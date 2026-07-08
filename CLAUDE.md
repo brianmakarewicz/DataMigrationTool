@@ -31,7 +31,7 @@ Ports in use elsewhere: 1521 (rt-oracle-free), 1522 (old dmt-local). DMT2 = **15
 | Dir | Contents |
 |---|---|
 | `db/` | Full schema: install.sql + sequences/tables/views/packages/procedures/jobs/seed/grants/synonyms + tools/ |
-| `docs/` | DMT_DESIGN.html (authoritative requirements — tag v1.0 pending), object catalog, coding standards |
+| `docs/` | NO requirements doc here — it lives ONLY at `~/workspace/data-migration-tool/ConversionTool-dbfull/docs/DMT_DESIGN.html` (see docs/README.md). Local: object catalog, coding-standards mirror, tranche-reviews/ |
 | `objects/` | Per-CEMLI README.md (read before touching any object) |
 | `bip/` | BIP data models + reports per CEMLI (deploy target `/Custom/DMT2/`) |
 | `apex/` | f155.sql — latest APEX export from the old stack (port DEFERRED until regression gate passes) |
@@ -59,12 +59,12 @@ Never per-object; never skipped.
 Rules of the protocol:
 1. The reviewer is **blind**: it gets no build context, rationale, or history — only
    "read the spec, review these files, report."
-2. The reviewer **re-reads `docs/DMT_DESIGN.html` in full at the start of every review**
-   (the doc is in flux; never rely on a summary or a prior reading).
+2. The reviewer **re-reads the canonical requirements doc — `C:/Users/Monroe/workspace/data-migration-tool/ConversionTool-dbfull/docs/DMT_DESIGN.html` — in full at the start of every review**
+   (the doc is in flux; never rely on a summary, a prior reading, or any copy inside this repo).
 3. It reports: (a) requirement/naming violations, (b) internal inconsistencies across the
    tranche (same thing done two ways), (c) precisely-worded NEW coding-standard rules that
    would have prevented each class of drift found.
-4. Proposed new rules are added to the coding-standards section of `docs/DMT_DESIGN.html`
+4. Proposed new rules are added to the coding-standards section of that canonical doc
    **in RED with a PROPOSED marker + date** (`<span class="proposed-rule">`). Red = newly
    added and unverified — only the user promotes a red rule to accepted (normal styling).
 5. Every finding is fixed or explicitly logged before the next tranche begins.
@@ -77,8 +77,8 @@ Rules of the protocol:
       packages + Fusion/DB-link-dependent objects), DMT_LOOKUP = 0 invalid / 17 seed rows,
       lookup install proven idempotent (double-run clean), heartbeat job created disabled
       and enabled as final install step. All 5 tranche blind reviews done and triaged
-      (docs/tranche-reviews/); 27 proposed rules in RED in DMT_DESIGN.html section 7
-      awaiting user accept/reject.
+      (docs/tranche-reviews/); 28 proposed rules in RED in the canonical DMT_DESIGN.html
+      (ConversionTool-dbfull/docs) section 7 awaiting user accept/reject.
 - [ ] Stage B — Common utilities unit-tested (DMT_UTIL_PKG, Fusion call layer, CSV intake, generators w/ golden files)
 - [ ] Stage C — Queue engine proven with mock CEMLI
 - [ ] Stage D — Suppliers vertical slice E2E
