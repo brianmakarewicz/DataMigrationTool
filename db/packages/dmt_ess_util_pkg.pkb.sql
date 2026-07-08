@@ -30,14 +30,10 @@
         l_offset   INTEGER := 1;
         l_amount   INTEGER;
         l_body_len INTEGER;
-        l_raw      RAW(600);
         l_auth     VARCHAR2(500);
     BEGIN
-        l_raw  := UTL_ENCODE.BASE64_ENCODE(
-                       UTL_RAW.CAST_TO_RAW(
-                           DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME') || ':' ||
-                           DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD')));
-        l_auth := 'Basic ' || REPLACE(REPLACE(UTL_RAW.CAST_TO_VARCHAR2(l_raw), CHR(13)), CHR(10));
+        -- Central encode+CRLF-strip (was a private copy of the same logic)
+        l_auth := DMT_UTIL_PKG.BASIC_AUTH_HEADER;
 
         UTL_HTTP.SET_RESPONSE_ERROR_CHECK(FALSE);
         UTL_HTTP.SET_TRANSFER_TIMEOUT(300);
@@ -110,15 +106,11 @@
         l_offset   INTEGER := 1;
         l_amount   INTEGER;
         l_body_len INTEGER;
-        l_raw      RAW(600);
         l_auth     VARCHAR2(500);
         l_txt_chunk VARCHAR2(32767);
     BEGIN
-        l_raw  := UTL_ENCODE.BASE64_ENCODE(
-                       UTL_RAW.CAST_TO_RAW(
-                           NVL(p_username, DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME')) || ':' ||
-                           NVL(p_password, DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'))));
-        l_auth := 'Basic ' || REPLACE(REPLACE(UTL_RAW.CAST_TO_VARCHAR2(l_raw), CHR(13)), CHR(10));
+        -- Central encode+CRLF-strip (was a private copy of the same logic)
+        l_auth := DMT_UTIL_PKG.BASIC_AUTH_HEADER(p_username, p_password);
 
         UTL_HTTP.SET_RESPONSE_ERROR_CHECK(FALSE);
         UTL_HTTP.SET_TRANSFER_TIMEOUT(300);
@@ -374,8 +366,6 @@
         l_url       VARCHAR2(500);
         l_env       CLOB;
         l_resp      CLOB;
-        l_b64       VARCHAR2(32767);
-        l_xml_str   CLOB;
         l_xml       XMLTYPE;
         l_row_count NUMBER := 0;
     BEGIN
@@ -414,22 +404,19 @@
 
         DBMS_LOB.FREETEMPORARY(l_env);
 
-        -- Decode base64 reportBytes â†’ XML
-        l_b64 := REGEXP_SUBSTR(l_resp, '<reportBytes>([^<]+)</reportBytes>', 1, 1, NULL, 1);
-        IF l_b64 IS NOT NULL THEN
-            l_xml_str := UTL_RAW.CAST_TO_VARCHAR2(
-                UTL_ENCODE.BASE64_DECODE(UTL_RAW.CAST_TO_RAW(l_b64)));
-        END IF;
+        -- Decode base64 reportBytes -> XML via the shared any-size extractor.
+        -- (Was: a regexp read into a VARCHAR2(32767) + single-shot UTL_ENCODE
+        -- decode - the exact >32K truncation bug family BIP_REPORT_XML exists
+        -- to remove; a large hierarchy was silently dropped as
+        -- "No ESS hierarchy data returned".)
+        l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(l_resp);
 
-        -- Parse XML and insert into DMT_ESS_JOB_TBL
-        IF l_xml_str IS NULL THEN
+        IF l_xml IS NULL THEN
             DMT_UTIL_PKG.LOG(p_run_id,
                 'No ESS hierarchy data returned for parent ' || p_parent_request_id,
                 'WARN', C_PKG, C_PROC);
             RETURN;
         END IF;
-
-        l_xml := XMLTYPE(l_xml_str);
 
         FOR r IN (
             SELECT x.req_id, x.parent_id, x.job_def, x.state_code, x.submitter,
@@ -1043,8 +1030,6 @@
         l_url       VARCHAR2(500);
         l_env       CLOB;
         l_resp      CLOB;
-        l_b64       VARCHAR2(32767);
-        l_xml_str   CLOB;
         l_xml       XMLTYPE;
         l_report_id NUMBER;
         l_import_depth NUMBER;
@@ -1099,18 +1084,15 @@
             'http://xmlns.oracle.com/oxp/service/v2/ReportService/runReportRequest', l_env);
         DBMS_LOB.FREETEMPORARY(l_env);
 
-        -- Extract reportBytes
-        l_b64 := REGEXP_SUBSTR(l_resp, '<reportBytes>([^<]+)</reportBytes>', 1, 1, NULL, 1);
-        IF l_b64 IS NULL THEN
+        -- Extract + decode reportBytes via the shared any-size extractor
+        -- (was the same VARCHAR2(32767) single-shot decode as CAPTURE_ESS_HIERARCHY)
+        l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(l_resp);
+        IF l_xml IS NULL THEN
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ': No ' || l_report_job_def || ' found for import ESS ' || p_import_ess_id,
                 'WARN', C_PKG, C_PROC);
             RETURN NULL;
         END IF;
-
-        l_xml_str := UTL_RAW.CAST_TO_VARCHAR2(
-            UTL_ENCODE.BASE64_DECODE(UTL_RAW.CAST_TO_RAW(l_b64)));
-        l_xml := XMLTYPE(l_xml_str);
 
         BEGIN
             l_report_id := l_xml.extract('/DATA_DS/G_1/REQUESTID/text()').getNumberVal();

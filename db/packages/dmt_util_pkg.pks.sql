@@ -183,6 +183,19 @@ AS
     -- read into a VARCHAR2(32767) and truncated (corrupting any report over 32K).
     FUNCTION BASE64_DECODE_CLOB (p_b64 IN CLOB) RETURN BLOB;
 
+    -- Build an HTTP Basic Authorization header value ('Basic <base64>').
+    -- Credentials default to FUSION_USERNAME/FUSION_PASSWORD from DMT_CONFIG_TBL;
+    -- pass p_username/p_password to override (per-CEMLI credentials).
+    -- Strips the CR/LF line breaks UTL_ENCODE.BASE64_ENCODE inserts every 64
+    -- output chars — without the strip, any user:password over 48 bytes produced
+    -- a corrupt multi-line header. Centralised so the SOAP/REST helpers stop
+    -- carrying private copies of the encode+strip logic.
+    -- Raises -20002 when a credential resolves to NULL.
+    FUNCTION BASIC_AUTH_HEADER (
+        p_username IN VARCHAR2 DEFAULT NULL,
+        p_password IN VARCHAR2 DEFAULT NULL
+    ) RETURN VARCHAR2;
+
     -- --------------------------------------------------------
     -- BIP report reconciliation (SOAP v2 ReportService)
     -- --------------------------------------------------------

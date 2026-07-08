@@ -31,16 +31,18 @@
         l_group    XMLTYPE;
         l_items    XMLTYPE;
         l_item     XMLTYPE;
-        l_grp_cnt  NUMBER;
-        l_itm_cnt  NUMBER;
         l_tag      VARCHAR2(200);
         l_msg      VARCHAR2(4000);
         l_ident    VARCHAR2(500);
         l_child    XMLTYPE;
         l_ch_tag   VARCHAR2(200);
         l_ch_val   VARCHAR2(4000);
-        l_ch_cnt   NUMBER;
         l_rec      t_import_error;
+        -- Positional iteration is bounded by EXISTSNODE probes, not by
+        -- extract('count(...)'): count() is not a node-set XPath and
+        -- raises ORA-31012 on current DB versions (found by the Stage B5
+        -- unit suite on 26ai — the parser failed on EVERY input).
+        C_MAX_SCAN CONSTANT PLS_INTEGER := 100000;
     BEGIN
         IF p_xml_clob IS NULL OR DBMS_LOB.GETLENGTH(p_xml_clob) = 0 THEN
             RETURN l_errors;
@@ -57,9 +59,8 @@
         -- Walk all child elements of the root node looking for
         -- elements whose tag contains 'ERROR' (case-insensitive).
         -- These are the error list containers (e.g. LIST_PROJECT_ERROR).
-        l_grp_cnt := NVL(l_xml.extract('count(/*/*)').getNumberVal(), 0);
-
-        FOR gi IN 1..l_grp_cnt LOOP
+        FOR gi IN 1..C_MAX_SCAN LOOP
+            EXIT WHEN l_xml.EXISTSNODE('/*/*[' || gi || ']') = 0;
             BEGIN
                 l_group := l_xml.extract('/*/*[' || gi || ']');
             EXCEPTION WHEN OTHERS THEN CONTINUE;
@@ -77,10 +78,9 @@
             -- Derive object type from the group tag (e.g. LIST_PROJECT_ERROR → PROJECT)
             l_rec.error_source := REPLACE(REPLACE(UPPER(l_tag), 'LIST_', ''), '_ERROR', '');
 
-            -- Count child error elements
-            l_itm_cnt := NVL(l_group.extract('count(/' || l_tag || '/*)').getNumberVal(), 0);
-
-            FOR ii IN 1..l_itm_cnt LOOP
+            -- Walk child error elements
+            FOR ii IN 1..C_MAX_SCAN LOOP
+                EXIT WHEN l_group.EXISTSNODE('/' || l_tag || '/*[' || ii || ']') = 0;
                 BEGIN
                     l_item := l_group.extract('/' || l_tag || '/*[' || ii || ']');
                 EXCEPTION WHEN OTHERS THEN CONTINUE;
@@ -93,9 +93,8 @@
                 l_rec.object_type := l_item.getRootElement();
 
                 -- Walk child elements of this error item
-                l_ch_cnt := NVL(l_item.extract('count(/' || l_rec.object_type || '/*)').getNumberVal(), 0);
-
-                FOR ci IN 1..l_ch_cnt LOOP
+                FOR ci IN 1..C_MAX_SCAN LOOP
+                    EXIT WHEN l_item.EXISTSNODE('/' || l_rec.object_type || '/*[' || ci || ']') = 0;
                     BEGIN
                         l_child := l_item.extract('/' || l_rec.object_type || '/*[' || ci || ']');
                     EXCEPTION WHEN OTHERS THEN CONTINUE;

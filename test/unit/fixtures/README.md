@@ -1,0 +1,17 @@
+# test/unit/fixtures — ESS output / import-report / BIP-response fixtures
+
+Fixtures used by `test/unit/test_import_report.sql` (Stage B5). The test script
+embeds these payloads as PL/SQL literals (the Docker DB cannot see host files);
+each embedded block cites its fixture file. **These files are the canonical copies** —
+if a fixture changes, change it here and in the test script together.
+
+| File | Provenance |
+|---|---|
+| `ess_output_rcv_9417057.log` | **REAL.** Full ESS output text of frozen-stack ESS request 9417057 (`Manage Receiving Transaction`, 2026-04-06), read read-only from the frozen ATP `DMT_LOG_TBL` (`ESS_OUTPUT[9417057] chunk 1` row written by `CAPTURE_ESS_OUTPUT`; log prefix stripped, content unmodified). A plain-text (non-XML) ESS output with real row-level rejection lines — used to prove `PARSE_ERRORS` returns an empty list (never raises) on non-XML input. |
+| `import_report_projects_rejects.xml` | **REAL structure + real project-error row; sibling error rows reconstructed.** Structure and the `PROJECT_ERROR` row (project `9173RTPRJ-BAD1`, message "The source application code isn't valid.") are transcribed verbatim from the live MTOM download of ESS request 9401822 (`ImportProjectReportJob`), documented 2026-04-03 in the frozen repo at `ConversionTool/docs/ess-output-download/ws3_excel_download.md`. The `TASK_ERROR` and `TXN_CTRL_ERROR` rows are reconstructed following the field pattern documented in that same file (marked "same pattern"; the `TC_ERR_*` field names are verbatim from the doc) — the raw XML of those sections was not preserved in the frozen stack. |
+| `import_report_projects_success.xml` | **RECONSTRUCTED (marked synthetic).** All-success variant of the same `ImportProjectReportJob` report family, using the `LIST_PROJECT_SUCCESS`/`SUCCESS_PROJECT_*` element names documented in `ws3_excel_download.md` and the prefix/count facts of the real all-loaded run 100000034 (prefix 9179, 2026-04-03, "ALL 9 ROWS LOADED" — `ConversionTool/objects/Projects/README.md`). No raw success-report XML survives on the frozen stack (interface rows are purged and only error captures were logged), so this file is a faithful reconstruction, not a byte capture. |
+| `bip_contract_v1_response.xml` | **SYNTHETIC per spec.** A BIP Contract v1 reconciliation response shaped exactly per `DMT_DESIGN.html` section 5: rowset `/DATA_DS/G_1`, the seven columns in order (`OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS, FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID`), one BASE/SUCCESS row with a Fusion id, one INTERFACE/ERROR row with a `[LINE]`-tagged message, one INTERFACE/ERROR row carrying the `#IMPORT_REPORT#` fallback marker. No Contract v1 report is deployed yet (the contract was decided 2026-07-07), so no real capture can exist. |
+| (in-test, no file) | **SYNTHETIC >32K payload.** `test_import_report.sql` builds a Contract v1 XML of 400 `G_1` rows (~90KB decoded, >32,767 base64 chars with CR/LF line breaks from `UTL_ENCODE`) at runtime and round-trips it through `BIP_REPORT_XML`. This is the fixture that exposes the 32K/base64 truncation bug family (third/fourth sightings: `CAPTURE_ESS_HIERARCHY`, `CAPTURE_REPORT_ESS_JOB`, `BIP_REQUEST`) — generated in-test because a 44KB+ base64 literal in a fixture file would be unreadable and add nothing over the generator loop. |
+
+Frozen-stack access was **read-only** (`conn_helper.connect_atp('queryapp','DMT_OWNER')`, SELECT only).
+No Fusion calls were made to produce any fixture.

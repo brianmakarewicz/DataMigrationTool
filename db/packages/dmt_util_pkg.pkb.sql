@@ -15,15 +15,22 @@
     END extract_host;
 
     -- --------------------------------------------------------
-    -- Private: build Basic Auth header value from config
+    -- BASIC_AUTH_HEADER
+    -- Build Basic Auth header value; credentials default to config.
+    -- UTL_ENCODE.BASE64_ENCODE inserts a CR/LF every 64 output chars
+    -- (i.e. beyond a 48-byte user:password), which corrupted the header
+    -- into multiple lines — strip all CR/LF from the encoded value.
     -- --------------------------------------------------------
-    FUNCTION basic_auth_header RETURN VARCHAR2 IS
+    FUNCTION BASIC_AUTH_HEADER (
+        p_username IN VARCHAR2 DEFAULT NULL,
+        p_password IN VARCHAR2 DEFAULT NULL
+    ) RETURN VARCHAR2 IS
         l_username  VARCHAR2(200);
         l_password  VARCHAR2(200);
         l_raw       RAW(600);
     BEGIN
-        l_username := GET_CONFIG('FUSION_USERNAME');
-        l_password := GET_CONFIG('FUSION_PASSWORD');
+        l_username := NVL(p_username, GET_CONFIG('FUSION_USERNAME'));
+        l_password := NVL(p_password, GET_CONFIG('FUSION_PASSWORD'));
 
         IF l_username IS NULL OR l_password IS NULL THEN
             RAISE_APPLICATION_ERROR(-20002,
@@ -32,8 +39,9 @@
 
         l_raw := UTL_ENCODE.BASE64_ENCODE(
                      UTL_RAW.CAST_TO_RAW(l_username || ':' || l_password));
-        RETURN 'Basic ' || UTL_RAW.CAST_TO_VARCHAR2(l_raw);
-    END basic_auth_header;
+        RETURN 'Basic ' || REPLACE(REPLACE(
+                   UTL_RAW.CAST_TO_VARCHAR2(l_raw), CHR(13)), CHR(10));
+    END BASIC_AUTH_HEADER;
 
     -- --------------------------------------------------------
     -- SET_FUSION_URL
@@ -335,12 +343,11 @@
         l_b64_start     INTEGER;
         l_b64_end       INTEGER;
         l_b64_data      CLOB;
-        l_raw_chunk     RAW(32767);
-        l_decoded       VARCHAR2(32767);
-        l_chunk_size    INTEGER := 32700; -- safe chunk size (multiple of 4 for base64)
-        l_b64_len       INTEGER;
-        l_offset        INTEGER;
-        l_chunk_len     INTEGER;
+        l_decoded_blob  BLOB;
+        l_dest_off      INTEGER := 1;
+        l_src_off       INTEGER := 1;
+        l_lang_ctx      INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
+        l_conv_warn     INTEGER;
     BEGIN
         LOG(p_run_id => p_run_id,
             p_message        => 'BIP_REQUEST start: ' || p_report_path,
@@ -424,26 +431,29 @@
         DBMS_LOB.CREATETEMPORARY(l_b64_data, TRUE);
         DBMS_LOB.COPY(l_b64_data, l_response, l_b64_end - l_b64_start, 1, l_b64_start);
 
-        -- Decode base64 in chunks and build output CLOB
-        DBMS_LOB.CREATETEMPORARY(x_report_data, TRUE);
-        l_b64_len := DBMS_LOB.GETLENGTH(l_b64_data);
-        l_offset  := 1;
-
-        WHILE l_offset <= l_b64_len LOOP
-            l_chunk_len := LEAST(l_chunk_size, l_b64_len - l_offset + 1);
-            -- Align to multiple of 4 for valid base64 decoding
-            l_chunk_len := TRUNC(l_chunk_len / 4) * 4;
-            EXIT WHEN l_chunk_len = 0;
-
-            l_raw_chunk := UTL_ENCODE.BASE64_DECODE(
-                               UTL_RAW.CAST_TO_RAW(
-                                   DBMS_LOB.SUBSTR(l_b64_data, l_chunk_len, l_offset)));
-            l_decoded   := UTL_RAW.CAST_TO_VARCHAR2(l_raw_chunk);
-            DBMS_LOB.APPEND(x_report_data, TO_CLOB(l_decoded));
-            l_offset := l_offset + l_chunk_len;
-        END LOOP;
-
+        -- Decode via the central whitespace-safe decoder (BASE64_DECODE_CLOB),
+        -- then convert the bytes to CLOB. The previous inline decoder aligned
+        -- its 4-char quanta over RAW chunk positions without stripping the
+        -- CR/LF line breaks base64 streams legally carry — the same bug family
+        -- BASE64_DECODE_CLOB exists to fix (silent corruption beyond one chunk).
+        l_decoded_blob := BASE64_DECODE_CLOB(l_b64_data);
         DBMS_LOB.FREETEMPORARY(l_b64_data);
+
+        DBMS_LOB.CREATETEMPORARY(x_report_data, TRUE);
+        IF DBMS_LOB.GETLENGTH(l_decoded_blob) > 0 THEN
+            DBMS_LOB.CONVERTTOCLOB(
+                dest_lob     => x_report_data,
+                src_blob     => l_decoded_blob,
+                amount       => DBMS_LOB.LOBMAXSIZE,
+                dest_offset  => l_dest_off,
+                src_offset   => l_src_off,
+                blob_csid    => DBMS_LOB.DEFAULT_CSID,
+                lang_context => l_lang_ctx,
+                warning      => l_conv_warn);
+        END IF;
+        IF DBMS_LOB.ISTEMPORARY(l_decoded_blob) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(l_decoded_blob);
+        END IF;
 
         LOG(p_run_id => p_run_id,
             p_message        => 'BIP_REQUEST complete: ' || p_report_path ||
@@ -1027,14 +1037,6 @@
         l_dms t_dm_list := t_dm_list();
 
         l_resp     CLOB;
-        l_b64_start INTEGER;
-        l_b64_end   INTEGER;
-        l_offset    INTEGER;
-        l_chunk_sz  INTEGER := 32700;
-        l_chunk_len INTEGER;
-        l_raw       RAW(32767);
-        l_decoded   VARCHAR2(32767);
-        l_xml_clob  CLOB;
         l_xml       XMLTYPE;
         l_merged    NUMBER;
         l_total     NUMBER := 0;
@@ -1088,30 +1090,15 @@
                 p_xdm_xml  => l_dms(i).xdm_xml
             );
 
-            -- Extract and decode reportBytes
-            l_b64_start := DBMS_LOB.INSTR(l_resp, '<reportBytes>') + LENGTH('<reportBytes>');
-            l_b64_end   := DBMS_LOB.INSTR(l_resp, '</reportBytes>', l_b64_start);
-            IF l_b64_start <= LENGTH('<reportBytes>') OR l_b64_end = 0 THEN
+            -- Extract + decode reportBytes via the shared any-size extractor
+            -- (was another inline whitespace-unsafe 4-aligned chunk decoder —
+            -- the same >32K corruption bug family BASE64_DECODE_CLOB fixes)
+            l_xml := BIP_REPORT_XML(l_resp);
+            IF l_xml IS NULL THEN
                 LOG(p_message => C_PROC || ': No reportBytes for ' || l_dms(i).dm_name || '. Skipping.',
                     p_log_type => C_LOG_WARN, p_package => C_PKG, p_procedure => C_PROC);
                 CONTINUE;
             END IF;
-
-            DBMS_LOB.CREATETEMPORARY(l_xml_clob, TRUE);
-            l_offset := l_b64_start;
-            WHILE l_offset < l_b64_end LOOP
-                l_chunk_len := LEAST(l_chunk_sz, l_b64_end - l_offset);
-                l_chunk_len := TRUNC(l_chunk_len / 4) * 4;
-                EXIT WHEN l_chunk_len = 0;
-                l_raw := UTL_ENCODE.BASE64_DECODE(
-                    UTL_RAW.CAST_TO_RAW(DBMS_LOB.SUBSTR(l_resp, l_chunk_len, l_offset)));
-                l_decoded := UTL_RAW.CAST_TO_VARCHAR2(l_raw);
-                DBMS_LOB.APPEND(l_xml_clob, TO_CLOB(l_decoded));
-                l_offset := l_offset + l_chunk_len;
-            END LOOP;
-
-            l_xml := XMLTYPE(l_xml_clob);
-            DBMS_LOB.FREETEMPORARY(l_xml_clob);
 
             -- MERGE into DMT_LOOKUP_TBL (dedup by type+code+value)
             MERGE INTO DMT_OWNER.DMT_LOOKUP_TBL tgt
