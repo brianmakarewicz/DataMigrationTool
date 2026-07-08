@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ar_line_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    l.interface_line_context,
+    l.interface_line_attribute1,
+    l.interface_line_attribute2,
+    l.interface_line_attribute3,
+    l.trx_number,
+    TO_CHAR(l.customer_trx_id) AS customer_trx_id,
+    l.interface_status,
+    l.batch_source_name,
+    l.line_type,
+    TO_CHAR(l.amount) AS amount,
+    (
+        SELECT LISTAGG(
+                   CASE
+                       WHEN e.invalid_value IS NOT NULL
+                       THEN e.message_text || ' [value=' || e.invalid_value || ']'
+                       ELSE e.message_text
+                   END, '; ')
+               WITHIN GROUP (ORDER BY e.interface_line_id)
+        FROM   ra_interface_errors_all e
+        WHERE  e.interface_line_id = l.interface_line_id
+    ) AS error_message
+FROM   ra_interface_lines_all l
+WHERE  l.load_request_id = :P_BATCH_ID
+AND    l.line_type = 'LINE'
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="ar_line_results">
+          <element name="INTERFACE_LINE_CONTEXT"    value="INTERFACE_LINE_CONTEXT"    dataType="xsd:string" tagName="INTERFACE_LINE_CONTEXT"/>
+          <element name="INTERFACE_LINE_ATTRIBUTE1" value="INTERFACE_LINE_ATTRIBUTE1" dataType="xsd:string" tagName="INTERFACE_LINE_ATTRIBUTE1"/>
+          <element name="INTERFACE_LINE_ATTRIBUTE2" value="INTERFACE_LINE_ATTRIBUTE2" dataType="xsd:string" tagName="INTERFACE_LINE_ATTRIBUTE2"/>
+          <element name="INTERFACE_LINE_ATTRIBUTE3" value="INTERFACE_LINE_ATTRIBUTE3" dataType="xsd:string" tagName="INTERFACE_LINE_ATTRIBUTE3"/>
+          <element name="TRX_NUMBER"                value="TRX_NUMBER"                dataType="xsd:string" tagName="TRX_NUMBER"/>
+          <element name="CUSTOMER_TRX_ID"           value="CUSTOMER_TRX_ID"           dataType="xsd:string" tagName="CUSTOMER_TRX_ID"/>
+          <element name="INTERFACE_STATUS"           value="INTERFACE_STATUS"           dataType="xsd:string" tagName="INTERFACE_STATUS"/>
+          <element name="BATCH_SOURCE_NAME"         value="BATCH_SOURCE_NAME"         dataType="xsd:string" tagName="BATCH_SOURCE_NAME"/>
+          <element name="LINE_TYPE"                 value="LINE_TYPE"                 dataType="xsd:string" tagName="LINE_TYPE"/>
+          <element name="AMOUNT"                    value="AMOUNT"                    dataType="xsd:string" tagName="AMOUNT"/>
+          <element name="ERROR_MESSAGE"             value="ERROR_MESSAGE"             dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

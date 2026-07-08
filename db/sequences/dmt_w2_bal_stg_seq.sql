@@ -1,0 +1,7 @@
+-- DMT_W2_BAL_STG_SEQ
+begin
+  execute immediate 'CREATE SEQUENCE  "DMT_W2_BAL_STG_SEQ"  MINVALUE 1 MAXVALUE 9999999999999999999999999999 INCREMENT BY 1 START WITH 100008086 NOCACHE  NOORDER  NOCYCLE  NOKEEP  NOSCALE  GLOBAL';
+exception when others then
+  if sqlcode not in (-955) then raise; end if;
+end;
+/

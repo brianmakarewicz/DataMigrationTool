@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="supplier_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    i.vendor_interface_id,
+    i.vendor_id,
+    i.vendor_name,
+    i.segment1,
+    i.status,
+    i.load_request_id,
+    i.import_request_id,
+    (
+        SELECT LISTAGG(
+                   CASE
+                       WHEN r.attribute IS NOT NULL
+                       THEN r.reject_lookup_code || ' [' || r.attribute || ']'
+                       ELSE r.reject_lookup_code
+                   END, '; ')
+               WITHIN GROUP (ORDER BY r.rejection_id)
+        FROM   poz_supplier_int_rejections r
+        WHERE  r.parent_table = 'POZ_SUPPLIERS_INT'
+        AND    r.parent_id    = i.vendor_interface_id
+    ) AS error_message
+FROM   poz_suppliers_int i
+WHERE  i.load_request_id = :P_BATCH_ID
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="supplier_results">
+          <element name="VENDOR_INTERFACE_ID" value="VENDOR_INTERFACE_ID" dataType="xsd:string" tagName="VENDOR_INTERFACE_ID"/>
+          <element name="VENDOR_ID"           value="VENDOR_ID"           dataType="xsd:string" tagName="VENDOR_ID"/>
+          <element name="VENDOR_NAME"         value="VENDOR_NAME"         dataType="xsd:string" tagName="VENDOR_NAME"/>
+          <element name="SEGMENT1"            value="SEGMENT1"            dataType="xsd:string" tagName="SEGMENT1"/>
+          <element name="STATUS"              value="STATUS"              dataType="xsd:string" tagName="STATUS"/>
+          <element name="IMPORT_REQUEST_ID"   value="IMPORT_REQUEST_ID"   dataType="xsd:string" tagName="IMPORT_REQUEST_ID"/>
+          <element name="ERROR_MESSAGE"       value="ERROR_MESSAGE"       dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="bu_lookups" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT 'BU'              AS LOOKUP_TYPE,
+       bu.bu_name        AS LOOKUP_CODE,
+       TO_CHAR(bu.bu_id) AS LOOKUP_VALUE,
+       TO_CHAR(bu.primary_ledger_id) AS LOOKUP_VALUE2
+FROM   fun_all_business_units_v bu
+WHERE  bu.status = 'A'
+ORDER BY bu.bu_name
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_LKP" label="G_LKP" source="bu_lookups">
+          <element name="LOOKUP_TYPE" value="LOOKUP_TYPE" dataType="xsd:string" tagName="LOOKUP_TYPE"/>
+          <element name="LOOKUP_CODE" value="LOOKUP_CODE" dataType="xsd:string" tagName="LOOKUP_CODE"/>
+          <element name="LOOKUP_VALUE" value="LOOKUP_VALUE" dataType="xsd:string" tagName="LOOKUP_VALUE"/>
+          <element name="LOOKUP_VALUE2" value="LOOKUP_VALUE2" dataType="xsd:string" tagName="LOOKUP_VALUE2"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <valueSets/>
+  <bursting/>
+</dataModel>

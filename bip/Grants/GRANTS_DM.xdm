@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="grants_results_v2" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    h.award_interface_id                AS award_id,
+    h.award_name,
+    h.award_number,
+    'INTERFACE'                         AS source_type,
+    h.processed_status                  AS fusion_status,
+    h.award_interface_id                AS fusion_id,
+    CASE
+        WHEN h.processed_message IS NOT NULL THEN
+            h.processed_message ||
+            CASE WHEN h.message_user_details IS NOT NULL
+                 THEN ' | ' || h.message_user_details ELSE '' END ||
+            CASE WHEN h.message_user_action IS NOT NULL
+                 THEN ' | Action: ' || h.message_user_action ELSE '' END
+        ELSE NULL
+    END                                 AS error_message
+FROM   gms_award_headers_int h
+WHERE  h.load_request_id = :P_BATCH_ID
+
+UNION ALL
+
+SELECT
+    b.id                                AS award_id,
+    CAST(NULL AS VARCHAR2(300))         AS award_name,
+    b.sponsor_award_number              AS award_number,
+    'BASE'                              AS source_type,
+    'SUCCESS'                           AS fusion_status,
+    b.id                                AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))        AS error_message
+FROM   gms_award_headers_b b
+WHERE  b.award_source = 'FBDI'
+AND    b.creation_date >= SYSDATE - 1
+AND    :P_IMPORT_ESS_ID IS NOT NULL
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="grants_results_v2">
+          <element name="AWARD_ID" value="AWARD_ID" dataType="xsd:integer" tagName="AWARD_ID"/>
+          <element name="AWARD_NAME" value="AWARD_NAME" dataType="xsd:string" tagName="AWARD_NAME"/>
+          <element name="AWARD_NUMBER" value="AWARD_NUMBER" dataType="xsd:string" tagName="AWARD_NUMBER"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS" value="FUSION_STATUS" dataType="xsd:string" tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="2"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

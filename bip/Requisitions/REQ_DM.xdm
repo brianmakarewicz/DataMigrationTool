@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <!-- Dataset 1: Header status (LOADED/FAILED determination) + Tier 2 base table -->
+    <dataSet name="req_status" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    h.interface_header_key,
+    h.requisition_number,
+    'INTERFACE'                         AS source_type,
+    h.process_flag                      AS process_code,
+    CAST(NULL AS NUMBER)                AS fusion_id
+FROM   por_req_headers_interface_all h
+WHERE  h.load_request_id = :P_BATCH_ID
+
+UNION ALL
+
+SELECT
+    CAST(NULL AS VARCHAR2(50))          AS interface_header_key,
+    rh.requisition_number,
+    'BASE'                              AS source_type,
+    'SUCCESS'                           AS process_code,
+    rh.requisition_header_id            AS fusion_id
+FROM   por_requisition_headers_all rh
+WHERE  rh.request_id = :P_IMPORT_ESS_ID
+AND    :P_IMPORT_ESS_ID IS NOT NULL
+      ]]></sql>
+    </dataSet>
+
+    <!-- Dataset 2: Individual error rows with level + interface key for specific attribution.
+         Each error row is returned separately (not aggregated) so the results package
+         can write it to the exact TFM record that caused it.
+         INTERFACE_TYPE: HEADER / LINE / DISTRIBUTION
+         INTERFACE_KEY:  matches interface_header_key / interface_line_key / interface_distribution_key
+    -->
+    <dataSet name="req_errors" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    e.interface_type,
+    e.interface_key,
+    e.column_name  || '=' || e.column_value || ': ' || e.text_line AS error_message
+FROM   por_req_import_errors e
+WHERE  e.load_request_id = :P_BATCH_ID
+ORDER BY e.req_import_error_id
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_STATUS" label="G_STATUS" source="req_status">
+          <element name="INTERFACE_HEADER_KEY" value="INTERFACE_HEADER_KEY" dataType="xsd:string" tagName="INTERFACE_HEADER_KEY"/>
+          <element name="REQUISITION_NUMBER" value="REQUISITION_NUMBER" dataType="xsd:string" tagName="REQUISITION_NUMBER"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="PROCESS_CODE" value="PROCESS_CODE" dataType="xsd:string" tagName="PROCESS_CODE"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+        </group>
+        <group name="G_ERRORS" label="G_ERRORS" source="req_errors">
+          <element name="INTERFACE_TYPE" value="INTERFACE_TYPE" dataType="xsd:string" tagName="INTERFACE_TYPE"/>
+          <element name="INTERFACE_KEY" value="INTERFACE_KEY" dataType="xsd:string" tagName="INTERFACE_KEY"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="2"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

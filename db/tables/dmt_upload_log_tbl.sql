@@ -1,0 +1,39 @@
+-- DMT_UPLOAD_LOG_TBL (generated from ATP 2026-07-03)
+
+begin
+  execute immediate 'CREATE TABLE "DMT_UPLOAD_LOG_TBL" 
+   (	"LOG_ID" NUMBER GENERATED ALWAYS AS IDENTITY MINVALUE 1 MAXVALUE 9999999999999999999999999999 INCREMENT BY 1 START WITH 1 CACHE 20 NOORDER  NOCYCLE  NOKEEP  NOSCALE  NOT NULL ENABLE, 
+	"BATCH_ID" NUMBER NOT NULL ENABLE, 
+	"OBJECT_CODE" VARCHAR2(50) NOT NULL ENABLE, 
+	"FILE_NAME" VARCHAR2(500), 
+	"UPLOAD_DATE" TIMESTAMP (6) DEFAULT SYSTIMESTAMP, 
+	"ROWS_IN_FILE" NUMBER, 
+	"ROWS_LOADED" NUMBER, 
+	"ROWS_ERRORED" NUMBER, 
+	"STATUS" VARCHAR2(30) DEFAULT ''PROCESSING'', 
+	"ERROR_MSG" VARCHAR2(4000), 
+	"UPLOADED_BY" VARCHAR2(100) DEFAULT SYS_CONTEXT(''APEX$SESSION'',''APP_USER''), 
+	 PRIMARY KEY ("LOG_ID")
+  USING INDEX  ENABLE
+   ) ';
+exception when others then
+  if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "IDX_UPLOAD_LOG_BATCH" ON "DMT_UPLOAD_LOG_TBL" ("BATCH_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "IDX_UPLOAD_LOG_OBJ" ON "DMT_UPLOAD_LOG_TBL" ("OBJECT_CODE")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_UPLOAD_LOG_TBL"."STATUS" IS 'PROCESSING, COMPLETED, FAILED';
+COMMENT ON TABLE "DMT_UPLOAD_LOG_TBL"  IS 'Upload attempt log. One row per file per object per upload.';

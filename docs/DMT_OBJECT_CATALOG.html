@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DMT — Canonical Object Catalog</title>
+<style>
+  :root{
+    --ink:#1f2933; --muted:#6b7280; --line:#e3e8ee; --bg:#f7f9fc; --card:#fff;
+    --blue:#0b69d4; --green:#1a9c3e; --amber:#e07b00; --red:#c42b1c; --grey:#8a94a3;
+    --accent:#0b69d4;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  .wrap{display:flex;align-items:flex-start;max-width:1400px;margin:0 auto}
+  nav.toc{position:sticky;top:0;height:100vh;overflow:auto;width:266px;flex:0 0 266px;
+    background:#0f1b2d;color:#cdd7e5;padding:20px 16px;font-size:13px}
+  nav.toc h1{font-size:15px;color:#fff;margin:0 0 4px}
+  nav.toc .sub{color:#7f8ca0;font-size:11px;margin-bottom:16px}
+  nav.toc a{display:block;color:#aebacb;text-decoration:none;padding:4px 8px;border-radius:5px;margin:1px 0}
+  nav.toc a:hover{background:#1c2c44;color:#fff}
+  nav.toc .grp{color:#5e6b80;text-transform:uppercase;letter-spacing:.08em;font-size:10px;margin:14px 8px 4px}
+  main{flex:1;min-width:0;padding:34px 40px 120px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:22px 26px;margin:0 0 22px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  section>h2{margin:0 0 2px;font-size:19px}
+  section>.lead{color:var(--muted);margin:0 0 14px;font-size:13.5px}
+  h3{font-size:14.5px;margin:18px 0 6px;color:#243140}
+  p{margin:8px 0}
+  code{background:#eef2f7;border-radius:4px;padding:1px 5px;font:12.5px/1.4 ui-monospace,Consolas,monospace;color:#143a63}
+  .src{color:var(--muted);font:11.5px/1.4 ui-monospace,Consolas,monospace}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+  th{background:#f1f5fa;font-weight:600;color:#33445a}
+  tbody tr:nth-child(even){background:#fafcfe}
+  .b{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.03em;
+    padding:2px 7px;border-radius:11px;white-space:nowrap;vertical-align:middle}
+  .b-impl{background:#e6f4ea;color:#1a7a33;border:1px solid #b6e0c2}
+  .b-part{background:#fff3e0;color:#b45f00;border:1px solid #f3d199}
+  .b-todo{background:#e7f0fb;color:#0b5cc0;border:1px solid #bcd6f5}
+  .b-broke{background:#fce8e6;color:#a8271a;border:1px solid #f3c2bc}
+  .b-leg{background:#eef0f3;color:#5f6b7a;border:1px solid #d4dae2}
+  .note{border-left:4px solid var(--accent);background:#f3f8ff;padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13.5px}
+  .warn{border-left:4px solid var(--amber);background:#fff8ec}
+  .prop{border-left:4px solid #7b51d8;background:#f6f1fe}
+  @media(max-width:880px){nav.toc{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav class="toc">
+  <h1>Object Catalog</h1>
+  <div class="sub">Canonical objects, lineage &amp; naming · DMT_OWNER @ queryapp</div>
+  <a href="DMT_DESIGN.html">← Design Reference (main)</a>
+  <div class="grp">Catalog</div>
+  <a href="#definition">Definition &amp; naming convention</a>
+  <a href="#fbdi">FBDI objects (24)</a>
+  <a href="#hdl">HDL objects (14)</a>
+  <a href="#fbl">FBL / configuration (7)</a>
+  <a href="#ws">Web service (1)</a>
+  <div class="grp">Cross-cutting</div>
+  <a href="#bip">BIP validation DM &amp; report</a>
+  <a href="#packages">Pipeline packages</a>
+  <a href="#upload">Upload naming convention</a>
+  <a href="#surfaces">All naming surfaces</a>
+  <a href="#refs">Where codes are referenced</a>
+  <a href="#decisions">Open decisions</a>
+</nav>
+
+<main>
+
+<section id="definition">
+  <h2>Canonical object catalog <span class="b b-todo">agreed 2026-07-02</span></h2>
+  <p class="lead"><strong>One object = one upload unit</strong> — one FBDI ZIP, one HDL .dat submission, or one FBL ZIP, submitted to one Fusion import job. Nothing more, nothing less. Sub-tables inside a ZIP (Customer's 7 CSVs, Grants' 15 CSVs, Worker.dat's 7 METADATA sections) are <em>sub-objects</em>, never separate objects. Every registry, package, folder, doc, and UI label must use these codes and display names. <strong>46 objects total: 24 FBDI + 14 HDL + 7 FBL + 1 web service.</strong> The compact list lives in <a href="DMT_DESIGN.html#objects">Design Reference §14</a>; this page is the full lineage detail.</p>
+
+  <div class="note"><strong>Naming convention.</strong> CEMLI code = PascalCase, no spaces (<code>SupplierSiteAssignments</code>). Display name = the code with spaces (<code>Supplier Site Assignments</code>). Packages: <code>DMT_{ABBREV}_{FBDI|HDL|FBL}_GEN_PKG</code>, <code>DMT_{ABBREV}_VALIDATOR_PKG</code>, <code>DMT_{ABBREV}_RESULTS_PKG</code>. One <code>objects/{CemliCode}/</code> folder per object — sub-object folders get folded into their parent. Decided 2026-07-02: <strong><code>GLBudgets</code></strong> (not GLBudgetBalances), <strong><code>MiscReceipts</code></strong>, <strong><code>Grants</code></strong>.</div>
+
+  <div class="note"><strong>How to read the lineage tables.</strong> <em>Upload CSV</em> = the source file the upload UI stages (from <code>DMT_UPLOAD_OBJECT_TBL</code>, which keys on its own table-level codes — it gets a <code>CEMLI_CODE</code> column in the rename sweep). <em>FBDI file(s)</em> = the interface files the generator writes inside the ZIP. Table names omit the <code>DMT_</code> prefix and <code>_TBL</code> suffix. The four identifier columns show how each registry spells the CEMLI: <strong>✓</strong> = identical to the canonical code · <strong>—</strong> = object not present there · a <strong>bold value</strong> = spelled differently (a rename-sweep target). A bold ZIP prefix likewise deviates from the <code>{CemliCode}_</code> convention.</div>
+</section>
+
+<section id="fbdi">
+  <h2>FBDI objects (24)</h2>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>#</th><th>Object (CEMLI code)</th><th>Upload CSV(s)</th><th>FBDI file(s) in ZIP</th><th>STG table(s)</th><th>TFM table(s)</th><th>ZIP name</th><th>Sections by</th><th>Scheduler</th><th>ERP options</th><th>BIP registry</th><th>Catalog view</th></tr>
+    <tr><td>1</td><td><code>Suppliers</code></td><td><code>POZ_SUPPLIERS.csv</code></td><td><code>PoSupplierImport.csv</code></td><td><code>POZ_SUPPLIERS_STG</code></td><td><code>POZ_SUPPLIERS_TFM</code></td><td><code>Suppliers_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>2</td><td><code>SupplierAddresses</code></td><td><code>POZ_SUP_ADDR.csv</code></td><td><code>PozSupAddressesInt.csv</code></td><td><code>POZ_SUP_ADDR_STG</code></td><td><code>POZ_SUP_ADDR_TFM</code></td><td><code>SupplierAddresses_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>3</td><td><code>SupplierSites</code></td><td><code>POZ_SUP_SITE.csv</code></td><td><code>PozSupplierSitesInt.csv</code></td><td><code>POZ_SUP_SITE_STG</code></td><td><code>POZ_SUP_SITE_TFM</code></td><td><code>SupplierSites_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>4</td><td><code>SupplierSiteAssignments</code></td><td><code>POZ_SUP_SITE_ASSN.csv</code></td><td><code>PozSiteAssignmentsInt.csv</code></td><td><code>POZ_SUP_SITE_ASSN_STG</code></td><td><code>POZ_SUP_SITE_ASSN_TFM</code></td><td><code>SupplierSiteAssignments_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>5</td><td><code>SupplierContacts</code></td><td><code>POZ_SUP_CONTACTS.csv</code></td><td><code>PozSupContactsInt.csv</code></td><td><code>POZ_SUP_CONTACTS_STG</code></td><td><code>POZ_SUP_CONTACTS_TFM</code></td><td><code>SupplierContacts_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>6</td><td><code>PurchaseOrders</code></td><td><code>PO_HEADERS.csv</code><br><code>PO_LINES.csv</code><br><code>PO_LINE_LOCS.csv</code><br><code>PO_DISTS.csv</code></td><td><code>PoHeadersInterfaceOrder.csv</code><br><code>PoLinesInterfaceOrder.csv</code><br><code>PoLineLocationsInterfaceOrder.csv</code><br><code>PoDistributionsInterfaceOrder.csv</code></td><td><code>PO_HEADERS_INT_STG</code><br><code>PO_LINES_INT_STG</code><br><code>PO_LINE_LOCS_INT_STG</code><br><code>PO_DISTS_INT_STG</code></td><td><code>PO_HEADERS_INT_TFM</code><br><code>PO_LINES_INT_TFM</code><br><code>PO_LINE_LOCS_INT_TFM</code><br><code>PO_DISTS_INT_TFM</code></td><td><strong><code>PO*</code></strong></td><td><strong>Procurement BU</strong></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>7</td><td><code>BlanketPOs</code></td><td>shares PO uploads (style = Blanket)</td><td>shares PO interface files</td><td>shares <code>PO_*_INT_STG</code></td><td><code>PO_HEADERS_INT_TFM</code><br><code>PO_LINES_INT_TFM</code></td><td><strong><code>BlanketPO*</code></strong></td><td><strong>Procurement BU</strong></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>8</td><td><code>Contracts</code></td><td>shares PO uploads (style = Contract)</td><td>shares PO header file</td><td>shares <code>PO_HEADERS_INT_STG</code></td><td><code>PO_HEADERS_INT_TFM</code></td><td><strong><code>Contract*</code></strong></td><td><strong>Procurement BU</strong></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>9</td><td><code>APInvoices</code></td><td><code>AP_INVOICES.csv</code><br><code>AP_INVOICE_LINES.csv</code></td><td><code>ApInvoicesInterface.csv</code><br><code>ApInvoiceLinesInterface.csv</code></td><td><code>AP_INVOICES_INT_STG</code><br><code>AP_INVOICE_LINES_INT_STG</code></td><td><code>AP_INVOICES_INT_TFM</code><br><code>AP_INVOICE_LINES_INT_TFM</code></td><td><strong><code>AP*</code></strong></td><td><strong>Operating Unit</strong></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>10</td><td><code>1099Invoices</code></td><td>shares AP uploads (invoice type LIKE '%1099%')</td><td>shares AP interface files</td><td>shares <code>AP_*_INT_STG</code></td><td>shares <code>AP_*_INT_TFM</code></td><td><strong><code>1099*</code></strong></td><td><strong>Operating Unit</strong></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>11</td><td><code>ARInvoices</code></td><td><code>RA_LINES.csv</code><br><code>RA_DISTS.csv</code></td><td><code>RaInterfaceLinesAll.csv</code><br><code>RaInterfaceDistributionsAll.csv</code></td><td><code>RA_LINES_STG</code><br><code>RA_DISTS_STG</code></td><td><code>RA_LINES_TFM</code><br><code>RA_DISTS_TFM</code></td><td><code>ARInvoices*</code></td><td><strong>Business Unit</strong></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>12</td><td><code>Requisitions</code></td><td><strong>not in upload registry</strong></td><td><code>PorReqHeadersInterface.csv</code><br><code>PorReqLinesInterface.csv</code><br><code>PorReqDistsInterface.csv</code></td><td><code>POR_REQ_HEADERS_STG</code><br><code>POR_REQ_LINES_STG</code><br><code>POR_REQ_DISTS_STG</code></td><td><code>POR_REQ_HEADERS_TFM</code><br><code>POR_REQ_LINES_TFM</code><br><code>POR_REQ_DISTS_TFM</code></td><td><strong><code>REQ_*</code></strong></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>13</td><td><code>MiscReceipts</code></td><td><code>RCV_HEADERS.csv</code><br><code>RCV_TRANSACTIONS.csv</code></td><td><code>InvTransactionsInterface.csv</code> (+Lots, +Serials if present) — <strong>upload registry wrongly says <code>RcvHeadersInterface / RcvTransactionsInterface</code></strong></td><td><code>RCV_HEADERS_STG</code><br><code>RCV_TRANSACTIONS_STG</code></td><td><code>RCV_HEADERS_TFM</code><br><code>RCV_TRANSACTIONS_TFM</code></td><td><code>MiscReceipts_*</code></td><td>single</td><td><strong>—</strong> (absent from P2P)</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>14</td><td><code>Customers</code></td><td><code>HZ_PARTIES.csv</code><br><code>HZ_LOCATIONS.csv</code><br><code>HZ_PARTY_SITES.csv</code><br><code>HZ_PARTY_SITE_USES.csv</code><br><code>HZ_ACCOUNTS.csv</code><br><code>HZ_ACCT_SITES.csv</code><br><code>HZ_ACCT_SITE_USES.csv</code></td><td><code>HzImpPartiesT.csv</code><br><code>HzImpLocationsT.csv</code><br><code>HzImpPartySitesT.csv</code><br><code>HzImpPartySiteUsesT.csv</code><br><code>HzImpAccountsT.csv</code><br><code>HzImpAcctSitesT.csv</code><br><code>HzImpAcctSiteUsesT.csv</code></td><td><code>HZ_PARTIES_STG</code><br><code>HZ_LOCATIONS_STG</code><br><code>HZ_PARTY_SITES_STG</code><br><code>HZ_PARTY_SITE_USES_STG</code><br><code>HZ_ACCOUNTS_STG</code><br><code>HZ_ACCT_SITES_STG</code><br><code>HZ_ACCT_SITE_USES_STG</code></td><td>same 7, <code>_TFM</code></td><td><code>Customers_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>15</td><td><code>GLBalances</code></td><td><code>GL_INTERFACE.csv</code></td><td><code>GlInterface.csv</code></td><td><code>GL_INTERFACE_STG</code></td><td><code>GL_INTERFACE_TFM</code></td><td><code>GLBalances_*</code></td><td><strong>Ledger</strong></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>16</td><td><code>GLBudgets</code></td><td><code>GL_BUDGET.csv</code></td><td><code>GlBudgetInterface.csv</code></td><td><code>GL_BUDGET_INT_STG</code></td><td><code>GL_BUDGET_INT_TFM</code></td><td><strong><code>GLBudgetBalances_*</code></strong></td><td>single</td><td>✓</td><td><strong>GLBudgetBalances</strong></td><td><strong>GLBudgetBalances</strong></td><td>✓</td></tr>
+    <tr><td>17</td><td><code>PlanningBudgets</code></td><td><code>PLAN_BUDGET.csv</code></td><td><code>EpbcsDataImport.csv</code></td><td><code>PLAN_BUDGET_STG</code></td><td><code>PLAN_BUDGET_TFM</code></td><td><code>PlanningBudgets_*</code></td><td>single</td><td><strong>—</strong> (dormant)</td><td><strong>—</strong> (no seed)</td><td>✓</td><td>✓</td></tr>
+    <tr><td>18</td><td><code>Assets</code></td><td><code>FA_ASSET_HDR.csv</code><br><code>FA_ASSET_BOOK.csv</code><br><code>FA_ASSET_ASSIGN.csv</code></td><td><code>FaAssetHeaders.csv</code><br><code>FaAssetBooks.csv</code><br><code>FaAssetAssignments.csv</code> — <strong>upload registry says <code>FaMassAdditions / FaMassaddDistributions</code>, book blank</strong></td><td><code>FA_ASSET_HDR_STG</code><br><code>FA_ASSET_BOOK_STG</code><br><code>FA_ASSET_ASSIGN_STG</code></td><td>same 3, <code>_TFM</code></td><td><code>Assets_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>19</td><td><code>Projects</code></td><td><code>PJF_PROJECTS.csv</code><br><code>PJF_TASKS.csv</code><br><code>PJF_TEAM_MEMBERS.csv</code><br><code>PJC_TXN_CONTROLS.csv</code></td><td><code>PjfProjectsAllXface.csv</code><br><code>PjfProjElementsXface.csv</code><br><code>PjfProjectPartiesInt.csv</code><br><code>PjcTxnControlsStage.csv</code></td><td><code>PJF_PROJECTS_STG</code><br><code>PJF_TASKS_STG</code><br><code>PJF_TEAM_MEMBERS_STG</code><br><code>PJC_TXN_CONTROLS_STG</code></td><td>same 4, <code>_TFM</code></td><td><code>Projects_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>20</td><td><code>Expenditures</code></td><td><code>PJC_EXPENDITURES.csv</code></td><td><code>PjcTxnXfaceStageAll.csv</code></td><td><code>PJC_EXPENDITURES_STG</code></td><td><code>PJC_EXPENDITURES_TFM</code></td><td><code>Expenditures_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>21</td><td><code>ProjectBudgets</code></td><td><strong>not in upload registry</strong></td><td><code>PjoPlanVersionsXface.csv</code></td><td><code>PRJ_BUDGET_STG</code></td><td><code>PRJ_BUDGET_TFM</code></td><td><code>ProjectBudgets_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>22</td><td><code>BillingEvents</code></td><td><code>PJB_BILL_EVENTS.csv</code></td><td><code>PjbBillingEventsXface.csv</code></td><td><code>PJB_BILL_EVENTS_STG</code></td><td><code>PJB_BILL_EVENTS_TFM</code></td><td><code>BillingEvents_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>23</td><td><code>Grants</code></td><td>14 × <code>GMS_AWD_*.csv</code> (<strong><code>GMS_AWD_PRJ_TSK_BRD</code> not registered</strong>)</td><td>15 × <code>GmsAward*Interface.csv</code></td><td>16 × <code>GMS_AWD_*_STG</code></td><td><code>GMS_AWD_HEADERS_TFM</code> (children's TFMs not in catalog view yet)</td><td><code>Grants_*</code></td><td>single</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>24</td><td><code>Items</code></td><td><code>EGP_ITEM.csv</code><br><code>EGP_ITEM_CAT.csv</code></td><td><code>EgpSystemItemsInterface.csv</code><br><code>EgpItemCategoriesInterface.csv</code></td><td><code>EGP_ITEM_STG</code><br><code>EGP_ITEM_CAT_STG</code></td><td><code>EGP_ITEM_TFM</code><br><code>EGP_ITEM_CAT_TFM</code></td><td><strong><code>EgpItem_*</code></strong></td><td>single</td><td>✓</td><td>✓ + <strong>stray ItemCategories row</strong></td><td>✓ + <strong>stray ItemCategories row</strong></td><td>✓</td></tr>
+  </table>
+  </div>
+  <p class="src">Other rename-sweep items carried over: fold <code>objects/InvTransactions/</code> CTL artifacts into <code>objects/MiscReceipts/</code>; retire <code>ItemCategories</code> runner pkg + legacy <code>GENERATE_FBDI</code> + folder; rename <code>objects/GLBudget/</code> → <code>objects/GLBudgets/</code>; <code>DMT_ERP_INTERFACE_OPTIONS_TBL</code> also contains a <strong>row with NULL CEMLI_CODE</strong> — investigate and delete or fix.</p>
+</section>
+
+<section id="hdl">
+  <h2>HDL objects (14)</h2>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>#</th><th>Object (CEMLI code)</th><th>Upload CSV(s)</th><th>HDL file (.dat / sections)</th><th>STG table(s)</th><th>TFM table(s)</th><th>ZIP name</th><th>Sections by</th><th>Scheduler</th><th>ERP options</th><th>BIP registry</th><th>Catalog view</th></tr>
+    <tr><td>25</td><td><code>Workers</code></td><td><code>WORKER.csv</code><br><code>PERSON_NAME.csv</code><br><code>PERSON_ADDR.csv</code><br><code>PERSON_PHONE.csv</code><br><code>PERSON_EMAIL.csv</code><br><code>PERSON_NID.csv</code><br><code>PERSON_LEGISL.csv</code><br><code>WORK_REL.csv</code></td><td><code>Worker.dat</code> — 7 sections: Worker, PersonName, Address, Phone, Email, NID, LegislativeData</td><td><code>WORKER_STG</code> + 6 × <code>PERSON_*_STG</code> + <code>WORK_REL_STG</code></td><td>same 8, <code>_TFM</code></td><td><strong><code>Worker_*</code></strong></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓ (but Work Relationships mapped here while the <em>Assignments</em> generator emits them — move)</td></tr>
+    <tr><td>26</td><td><code>Assignments</code></td><td><code>ASSIGNMENT.csv</code></td><td><code>Worker.dat</code> — WorkRelationship + Assignment sections</td><td><code>ASSIGNMENT_STG</code></td><td><code>ASSIGNMENT_TFM</code></td><td><strong><code>Worker_*</code></strong></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>27</td><td><code>PayrollRelationships</code></td><td><code>PAY_REL.csv</code></td><td><code>Worker.dat</code> — PayrollRelationship section</td><td><code>PAY_REL_STG</code></td><td><code>PAY_REL_TFM</code></td><td><code>PayrollRelationships_*</code></td><td>single</td><td><strong>PayrollRels</strong></td><td>—</td><td>—</td><td><strong>PayrollRels</strong> (conformed to queue in C1 — <strong>DECIDE</strong> short vs long; GLBudgets precedent = short)</td></tr>
+    <tr><td>28</td><td><code>Salaries</code></td><td><code>SALARY.csv</code></td><td><code>Salary.dat</code> — 1 section</td><td><code>SALARY_STG</code></td><td><code>SALARY_TFM</code></td><td><strong><code>Salary_*</code></strong></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>29</td><td><code>SalaryBases</code></td><td><code>SAL_BASIS.csv</code></td><td><code>SalaryBasis.dat</code> — 1 section</td><td><code>SAL_BASIS_STG</code></td><td><code>SAL_BASIS_TFM</code></td><td><code>SalaryBases_*</code></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>30</td><td><code>Absences</code></td><td><code>ABSENCE.csv</code></td><td><code>AbsenceEntry.dat</code> — 1 section</td><td><code>ABSENCE_STG</code></td><td><code>ABSENCE_TFM</code></td><td><strong><code>AbsenceEntries_*</code></strong></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>31</td><td><code>BenParticipant</code></td><td><code>BEN_PARTIC.csv</code></td><td><code>BenefitParticipantEnrollment.dat</code> — 1 section</td><td><code>BEN_PARTIC_STG</code></td><td><code>BEN_PARTIC_TFM</code></td><td><strong><code>ParticipantEnrollments_*</code></strong></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>32</td><td><code>BenDependent</code></td><td><code>BEN_DEPEND.csv</code></td><td><code>BenefitParticipantEnrollment.dat</code> — 1 section</td><td><code>BEN_DEPEND_STG</code></td><td><code>BEN_DEPEND_TFM</code></td><td><strong><code>DependentEnrollments_*</code></strong></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>33</td><td><code>BenBeneficiary</code></td><td><code>BEN_BENFY.csv</code></td><td><code>BenefitParticipantEnrollment.dat</code> — 1 section</td><td><code>BEN_BENFY_STG</code></td><td><code>BEN_BENFY_TFM</code></td><td><strong><code>BeneficiaryDesignations_*</code></strong></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>34</td><td><code>W2Balances</code></td><td><code>W2_BAL.csv</code><br><code>W2_BAL_DTL.csv</code></td><td><code>PayrollBalanceInitialization.dat</code> — 2 sections</td><td><code>W2_BAL_STG</code><br><code>W2_BAL_DTL_STG</code></td><td><code>W2_BAL_TFM</code><br><code>W2_BAL_DTL_TFM</code></td><td><code>W2Balances_*</code></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>35</td><td><code>TaxCards</code></td><td><code>TAX_CARD.csv</code><br><code>TAX_CARD_COMP.csv</code></td><td><code>CalculationCard.dat</code> — CalculationCard + CardComponent</td><td><code>TAX_CARD_STG</code><br><code>TAX_CARD_COMP_STG</code></td><td><code>TAX_CARD_TFM</code><br><code>TAX_CARD_COMP_TFM</code></td><td><code>TaxCards_*</code></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>36</td><td><code>TalentProfiles</code></td><td><code>TALENT_PROF.csv</code><br><code>TALENT_PROF_ITEM.csv</code></td><td><code>TalentProfile.dat</code> — 2 sections</td><td><code>TALENT_PROF_STG</code><br><code>TALENT_PROF_ITEM_STG</code></td><td><code>TALENT_PROF_TFM</code><br><code>TALENT_PROF_ITEM_TFM</code></td><td><code>TalentProfiles_*</code></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>37</td><td><code>PerfEvaluations</code></td><td><code>PERF_EVAL.csv</code><br><code>PERF_EVAL_RATING.csv</code></td><td><code>PerformanceDocument.dat</code> — 2 sections</td><td><code>PERF_EVAL_STG</code><br><code>PERF_EVAL_RATING_STG</code></td><td><code>PERF_EVAL_TFM</code><br><code>PERF_EVAL_RATING_TFM</code></td><td><strong><code>PerformanceDocuments_*</code></strong></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>38</td><td><code>WorkSchedules</code></td><td><code>WORK_SCHED.csv</code><br><code>WORK_SCHED_DTL.csv</code></td><td><code>WorkSchedule.dat</code> — 2 sections</td><td><code>WORK_SCHED_STG</code><br><code>WORK_SCHED_DTL_STG</code></td><td><code>WORK_SCHED_TFM</code><br><code>WORK_SCHED_DTL_TFM</code></td><td><code>WorkSchedules_*</code></td><td>single</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+  </table>
+  </div>
+  <p class="src">"One METADATA line per HDL" is <em>not</em> the boundary — Worker.dat carries 7 sections; the boundary is <strong>one .dat submission per generator run</strong>. HDL objects are legitimately absent from ERP options and the BIP registry (they load via HDL REST, and HDL reconciliation isn't built yet) — those "—" are expected, not defects. Cleanup carried over: rename <code>objects/Absence/</code> → <code>Absences/</code>, <code>objects/TaxCalculationCard/</code> → <code>TaxCards/</code>; split <code>objects/Benefits/</code> into the 3 enrollment objects, resolve its dat-name contradiction (README says PersonBenefitBalance.dat, generators say BenefitParticipantEnrollment.dat), and <strong>remove the plaintext hcm_impl password from that README</strong>.</p>
+</section>
+
+<section id="fbl">
+  <h2>FBL / configuration objects (7)</h2>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>#</th><th>Object (CEMLI code)</th><th>Upload CSV(s)</th><th>FBL file(s) in ZIP (pipe-delimited, with headers)</th><th>STG table(s)</th><th>TFM table(s)</th><th>ZIP name</th><th>Sections by</th><th>Scheduler</th><th>ERP options</th><th>BIP registry</th><th>Catalog view</th></tr>
+    <tr><td>39</td><td><code>GLCalendar</code></td><td><code>GL_CALENDAR.csv</code></td><td>1 file</td><td><code>GL_CALENDAR_STG</code></td><td><code>GL_CALENDAR_TFM</code></td><td><strong><code>GlAccountingCalendar_*</code></strong></td><td>single</td><td>✓</td><td>—</td><td>—</td><td><strong>—</strong></td></tr>
+    <tr><td>40</td><td><code>UnitsOfMeasure</code></td><td><code>INV_UOM.csv</code></td><td>1 file</td><td><code>INV_UOM_STG</code></td><td><code>INV_UOM_TFM</code></td><td><strong><code>InvUnitOfMeasure_*</code></strong></td><td>single</td><td><strong>—</strong> (add to CONFIGURATION)</td><td>—</td><td>—</td><td><strong>—</strong></td></tr>
+    <tr><td>41</td><td><code>Lookups</code></td><td><code>FND_LOOKUP_TYPE.csv</code><br><code>FND_LOOKUP_VALUE.csv</code></td><td><code>LookupType.csv</code><br><code>LookupCode.csv</code></td><td><code>FND_LOOKUP_TYPE_STG</code><br><code>FND_LOOKUP_VALUE_STG</code></td><td><code>FND_LOOKUP_TYPE_TFM</code><br><code>FND_LOOKUP_VALUE_TFM</code></td><td><strong><code>FndLookup_*</code></strong></td><td>single</td><td>✓ token, <strong>resolves nowhere</strong></td><td>—</td><td><strong>COMMON_LOOKUPS</strong> (odd code — align or explain)</td><td><strong>—</strong></td></tr>
+    <tr><td>42</td><td><code>ValueSets</code></td><td><code>FND_VS_SET.csv</code><br><code>FND_VS_VALUE.csv</code></td><td><code>ValueSetCode.csv</code><br><code>ValueSetValue.csv</code></td><td><code>FND_VS_SET_STG</code><br><code>FND_VS_VALUE_STG</code></td><td><code>FND_VS_SET_TFM</code><br><code>FND_VS_VALUE_TFM</code></td><td><strong><code>FndValueSet_*</code></strong></td><td>single</td><td>✓ + <strong>extra ValueSetValues token</strong> (one object, drop the 2nd)</td><td>—</td><td>—</td><td><strong>—</strong></td></tr>
+    <tr><td>43</td><td><code>PaymentTerms</code></td><td><code>AP_PAY_TERM_HDR.csv</code><br><code>AP_PAY_TERM_LINE.csv</code></td><td><code>PayTermHeader.csv</code><br><code>PayTermLine.csv</code></td><td><code>AP_PAY_TERM_HDR_STG</code><br><code>AP_PAY_TERM_LINE_STG</code></td><td><code>AP_PAY_TERM_HDR_TFM</code><br><code>AP_PAY_TERM_LINE_TFM</code></td><td><strong><code>PayTerms_*</code></strong></td><td>single</td><td><strong>—</strong> (add to CONFIGURATION)</td><td>—</td><td>—</td><td><strong>—</strong></td></tr>
+    <tr><td>44</td><td><code>TaxConfig</code> (<strong>DECIDE</strong> — proposed)</td><td><code>ZX_REGIME.csv</code><br><code>ZX_RATE.csv</code></td><td><code>TaxRegime.csv</code><br><code>TaxRate.csv</code></td><td><code>ZX_REGIME_STG</code><br><code>ZX_RATE_STG</code></td><td><code>ZX_REGIME_TFM</code><br><code>ZX_RATE_TFM</code></td><td><strong><code>ZxTax_*</code></strong></td><td>single</td><td><strong>—</strong> (add to CONFIGURATION)</td><td>—</td><td>—</td><td><strong>—</strong></td></tr>
+    <tr><td>45</td><td><code>Banks</code></td><td><code>CE_BANK.csv</code><br><code>CE_BRANCH.csv</code><br><code>CE_BANK_ACCT.csv</code></td><td><code>CeBank.csv</code><br><code>CeBranch.csv</code><br><code>CeAccount.csv</code></td><td><code>CE_BANK_STG</code><br><code>CE_BRANCH_STG</code><br><code>CE_BANK_ACCT_STG</code></td><td><code>CE_BANK_TFM</code><br><code>CE_BRANCH_TFM</code><br><code>CE_BANK_ACCT_TFM</code></td><td><strong><code>CeBanks_*</code></strong></td><td>single</td><td><strong>—</strong> (add to CONFIGURATION)</td><td>—</td><td>—</td><td><strong>—</strong></td></tr>
+  </table>
+  </div>
+  <p class="src">None of the 7 FBL objects has catalog-view (run-detail) rows yet — all show "—" in that column; add <code>DMT_V_CEMLI_TFM_TABLES</code> branches when these are wired into the queue. Folder merges carried over: <code>LookupTypes/</code>+<code>LookupValues/</code> → <code>Lookups/</code>; <code>ValueSetValues/</code> → <code>ValueSets/</code>; <code>PaymentTermLines/</code> → <code>PaymentTerms/</code>; <code>TaxRegimes/</code>+<code>TaxRates/</code> → <code>TaxConfig/</code>; <code>BankBranches/</code>+<code>BankAccounts/</code> → <code>Banks/</code>.</p>
+</section>
+
+<section id="ws">
+  <h2>Web service (future, 1)</h2>
+  <table>
+    <tr><th>#</th><th>CEMLI code</th><th>Display name</th><th>Upload unit</th><th>Sections by</th><th>Status</th></tr>
+    <tr><td>46</td><td><code>ARReceipts</code></td><td>AR Receipts</td><td>REST/SOAP per-receipt API calls (no file)</td><td>n/a — record-at-a-time API</td><td>not built — deliberately last</td></tr>
+  </table>
+</section>
+
+<section id="bip">
+  <h2>BIP validation data model &amp; report per object</h2>
+  <p class="lead">Post-load reconciliation is BIP-driven: each object has a data model (<code>.xdm</code>) and report (<code>.xdo</code>) deployed under <code>/Custom/DMT/{CemliCode}/</code> that query the Fusion interface + base tables to return positive LOADED confirmation (with Fusion IDs) or interface errors. Registry: <code>DMT_BIP_REPORT_TBL</code>. Convention: <code>/Custom/DMT/{CemliCode}/{ABBREV}_DM.xdm</code> + <code>{ABBREV}_RPT.xdo</code>.</p>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>Object</th><th>Data model (.xdm)</th><th>Report (.xdo)</th><th>Fusion interface table</th><th>Deviation / note</th></tr>
+    <tr><td><code>Suppliers</code></td><td><code>/Custom/DMT/Suppliers/SUP_DM.xdm</code></td><td><code>SUP_RPT.xdo</code></td><td><code>POZ_SUPPLIERS_INT</code></td><td>—</td></tr>
+    <tr><td><code>SupplierAddresses</code></td><td><code>/Custom/DMT/SupplierAddresses/SUP_ADDR_DM.xdm</code></td><td><code>SUP_ADDR_RPT.xdo</code></td><td><code>POZ_SUP_ADDRESSES_INT</code></td><td>—</td></tr>
+    <tr><td><code>SupplierSites</code></td><td><code>/Custom/DMT/SupplierSites/SUP_SITE_DM.xdm</code></td><td><code>SUP_SITE_RPT.xdo</code></td><td><code>POZ_SUPPLIER_SITES_INT</code></td><td>—</td></tr>
+    <tr><td><code>SupplierSiteAssignments</code></td><td><code>/Custom/DMT/SupplierSiteAssignments/SUP_SITE_ASSN_DM.xdm</code></td><td><code>SUP_SITE_ASSN_RPT.xdo</code></td><td><code>POZ_SITE_ASSIGNMENTS_INT</code></td><td>—</td></tr>
+    <tr><td><code>SupplierContacts</code></td><td><code>/Custom/DMT/SupplierContacts/SUP_CONT_DM.xdm</code></td><td><code>SUP_CONT_RPT.xdo</code></td><td><code>POZ_SUP_CONTACTS_INT</code></td><td>—</td></tr>
+    <tr><td><code>PurchaseOrders</code></td><td><code>/Custom/DMT/PurchaseOrders/PO_DM.xdm</code></td><td><code>PO_RPT.xdo</code></td><td><code>PO_HEADERS_INTERFACE</code></td><td>—</td></tr>
+    <tr><td><code>BlanketPOs</code></td><td><code>/Custom/DMT/BlanketPOs/BLANKET_PO_DM.xdm</code></td><td><code>BLANKET_PO_RPT.xdo</code></td><td><code>PO_HEADERS_INTERFACE</code></td><td>—</td></tr>
+    <tr><td><code>Contracts</code></td><td><code>/Custom/DMT/Contracts/CONTRACT_DM.xdm</code></td><td><code>CONTRACT_RPT.xdo</code></td><td><code>PO_HEADERS_INTERFACE</code></td><td>—</td></tr>
+    <tr><td><code>APInvoices</code></td><td><code>/Custom/DMT/APInvoices/<strong>AP_DM_V4.xdm</strong></code></td><td><code><strong>AP_RPT_V4.xdo</strong></code></td><td><code>AP_INVOICES_INTERFACE</code></td><td><strong>versioned name</strong> — go versionless (<code>AP_DM</code>) at next redeploy</td></tr>
+    <tr><td><code>1099Invoices</code></td><td><code>/Custom/DMT/1099Invoices/AP_1099_DM.xdm</code></td><td><code>AP_1099_RPT.xdo</code></td><td><code>AP_INVOICES_INTERFACE</code></td><td>—</td></tr>
+    <tr><td><code>ARInvoices</code></td><td><code>/Custom/DMT/ARInvoices/AR_DM.xdm</code></td><td><code>AR_RPT.xdo</code></td><td><code>RA_INTERFACE_LINES_ALL</code></td><td>—</td></tr>
+    <tr><td><code>Requisitions</code></td><td><code>/Custom/DMT/Requisitions/REQ_DM.xdm</code></td><td><code>REQ_RPT.xdo</code></td><td><code>POR_REQ_HEADERS_INTERFACE_ALL</code></td><td>—</td></tr>
+    <tr><td><code>MiscReceipts</code></td><td><code>/Custom/DMT/MiscReceipts/MISC_RECEIPT_DM.xdm</code></td><td><code>MISC_RECEIPT_RPT.xdo</code></td><td><code>RCV_HEADERS_INTERFACE</code></td><td>verify vs generator, which writes <code>INV_TRANSACTIONS_INTERFACE</code> CSVs — the DM may need to reconcile against INV, not RCV</td></tr>
+    <tr><td><code>Customers</code></td><td><code>/Custom/DMT/Customers/CUST_DM.xdm</code></td><td><code>CUST_RPT.xdo</code></td><td><code>HZ_IMP_PARTIES_T</code></td><td>—</td></tr>
+    <tr><td><code>GLBalances</code></td><td><code>/Custom/DMT/GLBalances/GL_BAL_DM.xdm</code></td><td><code>GL_BAL_RPT.xdo</code></td><td><code>GL_INTERFACE</code></td><td>—</td></tr>
+    <tr><td><code>GLBudgets</code></td><td><code>/Custom/DMT/<strong>GLBudgetBalances</strong>/GL_BUDGET_DM.xdm</code></td><td><code>GL_BUDGET_RPT.xdo</code></td><td><code>GL_BUDGET_INTERFACE</code></td><td><strong>registry code + catalog folder still GLBudgetBalances</strong> — rename to <code>/Custom/DMT/GLBudgets/</code></td></tr>
+    <tr><td><code>PlanningBudgets</code></td><td><code>/Custom/DMT/PlanningBudgets/PLAN_BUDGET_DM.xdm</code></td><td><code>PLAN_BUDGET_RPT.xdo</code></td><td>N/A (EPBCS internal)</td><td>—</td></tr>
+    <tr><td><code>Assets</code></td><td><code>/Custom/DMT/Assets/FA_ASSET_DM.xdm</code></td><td><code>FA_ASSET_RPT.xdo</code></td><td><code>FA_MASS_ADDITIONS</code></td><td>—</td></tr>
+    <tr><td><code>Projects</code></td><td><code>/Custom/DMT/Projects/PROJECT_DM.xdm</code></td><td><code>PROJECT_RPT.xdo</code></td><td><code>PJF_PROJECTS_ALL_XFACE</code></td><td>—</td></tr>
+    <tr><td><code>Expenditures</code></td><td><code>/Custom/DMT/Expenditures/EXPENDITURE_DM.xdm</code></td><td><code>EXPENDITURE_RPT.xdo</code></td><td><code>PJC_TXN_XFACE_STAGE_ALL</code></td><td>—</td></tr>
+    <tr><td><code>ProjectBudgets</code></td><td><code>/Custom/DMT/ProjectBudgets/PRJ_BUDGET_DM.xdm</code></td><td><code>PRJ_BUDGET_RPT.xdo</code></td><td><code>PJO_PLAN_VERSIONS_XFACE</code></td><td>—</td></tr>
+    <tr><td><code>BillingEvents</code></td><td><code>/Custom/DMT/BillingEvents/BILLING_EVENT_DM.xdm</code></td><td><code>BILLING_EVENT_RPT.xdo</code></td><td><code>PJB_BILLING_EVENTS_INT</code></td><td>—</td></tr>
+    <tr><td><code>Grants</code></td><td><code>/Custom/DMT/Grants/GRANTS_DM.xdm</code></td><td><code>GRANTS_RPT.xdo</code></td><td><code>GMS_AWARD_HEADERS_INT</code></td><td>—</td></tr>
+    <tr><td><code>Items</code></td><td><code>/Custom/DMT/Items/ITEM_DM.xdm</code></td><td><code>ITEM_RPT.xdo</code></td><td><code>EGP_SYSTEM_ITEMS_INTERFACE</code></td><td>plus a <strong>stray <code>ItemCategories</code> registry row</strong> (<code>ITEM_CAT_DM/RPT</code>, <code>EGP_ITEM_CATEGORIES_INTERFACE</code>) — fold the categories query into the Items reconciliation, retire the standalone row</td></tr>
+    <tr><td><em>(shared)</em> <code>COMMON_LOOKUPS</code></td><td><code>/Custom/DMT/common/DMT_FBDI_LOOKUPS_DM.xdm</code></td><td><code>DMT_FBDI_LOOKUPS_RPT.xdo</code></td><td><code>FUN_ALL_BUSINESS_UNITS_V</code></td><td>not an object — the shared BU/lookup DM queried at pipeline start. Keep, but it doesn't belong in a per-object CEMLI_CODE column; move to a <code>SHARED</code> flag or separate table in the sweep</td></tr>
+    <tr><td>14 HDL objects</td><td>—</td><td>—</td><td>—</td><td>HDL reconciliation isn't BIP-registered yet — rows to add as HDL reconcilers are built (HCM base-table DMs)</td></tr>
+    <tr><td>7 FBL objects</td><td>—</td><td>—</td><td>—</td><td>no reconciliation rows yet; config verification TBD when wired into the queue</td></tr>
+  </table>
+  </div>
+  <p class="src">Source: <code>DMT_BIP_REPORT_TBL</code> (26 rows) @ queryapp, 2026-07-02. Local artifacts: <code>bip/{CEMLI}/</code> (.xdm, .xdo, query.sql) — folder names follow the same CEMLI codes.</p>
+</section>
+
+<section id="packages">
+  <h2>Pipeline packages per object</h2>
+  <p>Every object's PL/SQL follows one stem: <code>DMT_{stem}_VALIDATOR_PKG</code> · <code>DMT_{stem}_TRANSFORM_PKG</code> · <code>DMT_{stem}_{FBDI|HDL|FBL}_GEN_PKG</code> · <code>DMT_{stem}_RESULTS_PKG</code> (FBL objects add <code>DMT_{stem}_RUNNER_PKG</code>). The table lists each object's stem; ✓ = that stage uses the object's own stem, a <strong>bold stem</strong> = the stage is shared with another object (deliberate for shared-staging objects, but it means errors from those stages attribute to the parent stem's tables).</p>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>Object</th><th>Package stem</th><th>Validator</th><th>Transformer</th><th>Generator</th><th>Results</th></tr>
+    <tr><td><code>Suppliers</code></td><td><code>poz_sup</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>SupplierAddresses</code></td><td><code>poz_sup_addr</code></td><td>✓</td><td><strong>poz_sup</strong> (shared)</td><td>✓</td><td><strong>poz_sup</strong> (shared)</td></tr>
+    <tr><td><code>SupplierSites</code></td><td><code>poz_sup_site</code></td><td>✓</td><td><strong>poz_sup</strong></td><td>✓</td><td><strong>poz_sup</strong></td></tr>
+    <tr><td><code>SupplierSiteAssignments</code></td><td><code>poz_sup_site_assn</code></td><td>✓</td><td><strong>poz_sup</strong></td><td>✓</td><td><strong>poz_sup</strong></td></tr>
+    <tr><td><code>SupplierContacts</code></td><td><code>poz_sup_cont</code></td><td>✓</td><td><strong>poz_sup</strong></td><td>✓</td><td><strong>poz_sup</strong></td></tr>
+    <tr><td><code>PurchaseOrders</code></td><td><code>po</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>BlanketPOs</code></td><td><code>blanket_po</code></td><td><strong>po</strong> (shared)</td><td><strong>po</strong> (shared)</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Contracts</code></td><td><code>contract</code></td><td><strong>po</strong></td><td><strong>po</strong></td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>APInvoices</code></td><td><code>ap</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>1099Invoices</code></td><td><code>1099</code></td><td><strong>ap</strong> (shared)</td><td><strong>ap</strong> (shared)</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>ARInvoices</code></td><td><code>ar</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Requisitions</code></td><td><code>req</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>MiscReceipts</code></td><td><code>misc_receipt</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Customers</code></td><td><code>cust</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>GLBalances</code></td><td><code>gl</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>GLBudgets</code></td><td><code>gl_budget</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>PlanningBudgets</code></td><td><code>plan_budget</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Assets</code></td><td><code>fa_asset</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Projects</code></td><td><code>project</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Expenditures</code></td><td><code>expenditure</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>ProjectBudgets</code></td><td><code>prj_budget</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>BillingEvents</code></td><td><code>billing_event</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Grants</code></td><td><code>grants</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Items</code></td><td><code>egp_item</code></td><td>✓ + <strong>egp_item_cat</strong> sub-object set</td><td>✓ + <strong>egp_item_cat</strong></td><td>✓ (cat CSV bundled via <code>GENERATE_CSV</code>)</td><td>✓ + <strong>egp_item_cat</strong></td></tr>
+    <tr><td><code>Workers</code></td><td><code>worker</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Assignments</code></td><td><code>assignment</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>PayrollRelationships</code></td><td><code>pay_rel</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Salaries</code></td><td><code>salary</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>SalaryBases</code></td><td><code>sal_basis</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>Absences</code></td><td><code>absence</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>BenParticipant</code></td><td><code>ben_partic</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>BenDependent</code></td><td><code>ben_depend</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>BenBeneficiary</code></td><td><code>ben_benfy</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>W2Balances</code></td><td><code>w2_bal</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>TaxCards</code></td><td><code>tax_card</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>TalentProfiles</code></td><td><code>talent_prof</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>PerfEvaluations</code></td><td><code>perf_eval</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>WorkSchedules</code></td><td><code>work_sched</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td><code>GLCalendar</code></td><td><code>gl_calendar</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓ (+ runner)</td></tr>
+    <tr><td><code>UnitsOfMeasure</code></td><td><code>inv_uom</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓ (+ runner)</td></tr>
+    <tr><td><code>Lookups</code></td><td><code>fnd_lookup</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓ (+ runner)</td></tr>
+    <tr><td><code>ValueSets</code></td><td><code>fnd_vs</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓ (+ runner)</td></tr>
+    <tr><td><code>PaymentTerms</code></td><td><code>ap_pay_term</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓ (+ runner)</td></tr>
+    <tr><td><code>TaxConfig</code></td><td><code>zx</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓ (+ runner)</td></tr>
+    <tr><td><code>Banks</code></td><td><code>ce_bank</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓ (+ runner)</td></tr>
+  </table>
+  </div>
+  <p class="src">Shared-stage packages are intentional where objects share staging tables (Blankets/Contracts on PO tables, 1099 on AP tables, supplier children transformed/reconciled with the header) — but per the error-attribution rule, shared stages must still write errors against the correct object's rows. <code>Items</code> keeps a parallel <code>egp_item_cat</code> package set for the categories sub-object; that's inline processing under the Items token, not a separate object — only its <em>runner</em> and BIP-registry row get retired.</p>
+</section>
+
+<section id="upload">
+  <h2>Upload naming convention — dynamic header upload</h2>
+  <table>
+    <tr><th>Rule</th><th>Convention (enforced by <code>DMT_CSV_UPLOAD_PKG</code> / <code>DMT_UPLOAD_DICT_TBL</code>)</th></tr>
+    <tr><td>Single-CSV upload</td><td>User picks the object on the page — the file can be named anything; <code>p_object_code</code> drives the target table.</td></tr>
+    <tr><td>ZIP bundle upload</td><td>Each file inside the ZIP must be named exactly <code>{OBJECT_CODE}.csv</code> (case-insensitive match on <code>DMT_UPLOAD_OBJECT_TBL.CSV_FILENAME</code>, e.g. <code>POZ_SUPPLIERS.csv</code>, <code>PO_HEADERS.csv</code>). Unmatched files are skipped and reported.</td></tr>
+    <tr><td>Header row (dynamic)</td><td>Row 1 must contain <strong>STG-table column names</strong> — uppercased and matched against the uploadable columns in <code>DMT_UPLOAD_DICT_TBL</code> (seeded from <code>USER_TAB_COLUMNS</code>). Any column order, any subset; unknown headers are ignored with a warning; zero matches = hard error.</td></tr>
+    <tr><td>Dictionary upkeep</td><td>After any STG DDL change run <code>DMT_UPLOAD_DICT_PKG.REFRESH_DICTIONARY</code> — otherwise new columns aren't uploadable.</td></tr>
+    <tr><td>Gap</td><td>Upload object codes are <em>table-level</em> (<code>POZ_SUPPLIERS</code>), a different code system from CEMLI codes. Rename sweep adds <code>DMT_UPLOAD_OBJECT_TBL.CEMLI_CODE</code> so every upload row maps to one canonical object — and adds the missing Requisitions + ProjectBudgets rows so their CSVs are uploadable at all.</td></tr>
+  </table>
+</section>
+
+<section id="surfaces">
+  <h2>Every object-level naming surface (complete inventory)</h2>
+  <table>
+    <tr><th>Surface</th><th>Convention</th><th>Ours to control?</th></tr>
+    <tr><td>CEMLI code</td><td><code>{CemliCode}</code> PascalCase — the canonical identifier in scheduler, queue, ERP options, BIP registry, catalog views, loader branches</td><td>Yes — this page is the SSOT</td></tr>
+    <tr><td>Display name / sub-object labels</td><td>Code with spaces at object level; page-52 <code>DISPLAY_NAME</code> and page-57 <code>SUB_OBJECT</code> must be byte-identical and globally unique (Design Reference §13 drill rule)</td><td>Yes</td></tr>
+    <tr><td>Upload object code + CSV filename</td><td><code>{OBJECT_CODE}</code> table-level + <code>{OBJECT_CODE}.csv</code>; headers = STG column names (table above)</td><td>Yes</td></tr>
+    <tr><td>STG / TFM tables</td><td><code>DMT_{ABBREV}_STG_TBL</code> / <code>DMT_{ABBREV}_TFM_TBL</code>; DDL files <code>schema/tables/NN_dmt_{abbrev}_{stg|tfm}_tbl.sql</code></td><td>Yes</td></tr>
+    <tr><td>PL/SQL packages</td><td><code>DMT_{stem}_VALIDATOR / _TRANSFORM / _{FBDI|HDL|FBL}_GEN / _RESULTS (_RUNNER)_PKG</code> (table above)</td><td>Yes</td></tr>
+    <tr><td>Generated ZIP name</td><td>Target: <code>{CemliCode}_{run}.zip</code> — 20 of 45 generators currently deviate (bold ZIP cells above)</td><td>Yes</td></tr>
+    <tr><td>FBDI CSVs inside the ZIP + CTL column order</td><td>Oracle-defined per FBDI template (<code>PoSupplierImport.csv</code>, …) — must match the CTL exactly</td><td><strong>No</strong> — Oracle's</td></tr>
+    <tr><td>HDL .dat filename + discriminators/METADATA</td><td>Oracle-defined per business object (<code>Worker.dat</code>, <code>CalculationCard.dat</code>, …)</td><td><strong>No</strong> — Oracle's</td></tr>
+    <tr><td>ESS job path + ParameterList</td><td>Oracle job definitions; stored per CEMLI in <code>DMT_ERP_INTERFACE_OPTIONS_TBL</code></td><td><strong>No</strong> — Oracle's (our storage keys on CEMLI code)</td></tr>
+    <tr><td>BIP validation DM + report</td><td><code>/Custom/DMT/{CemliCode}/{ABBREV}_DM.xdm</code> + <code>{ABBREV}_RPT.xdo</code> (table above) — folder = CEMLI code; versionless inner names</td><td>Yes</td></tr>
+    <tr><td>BIP lookup data models</td><td>Common + per-CEMLI lookup DMs under the same <code>/Custom/DMT/</code> convention (no hardcoded IDs — queried at pipeline start)</td><td>Yes</td></tr>
+    <tr><td>Repo object folders</td><td><code>objects/{CemliCode}/README.md</code> + CTL/template artifacts — one folder per object after the merges above; <code>bip/{CemliCode}/</code> mirrors the catalog folder</td><td>Yes</td></tr>
+    <tr><td>EBSAdaptors extract views</td><td>EBS-side views are named per extract module, not per CEMLI — add a module→CEMLI mapping in <code>EBSAdaptors</code> README during the sweep</td><td>Yes</td></tr>
+    <tr><td>Regression seeds</td><td>Scenario <code>RegressionTest</code>; GOOD rows <code>SOURCE_ID = 'RT-…'</code>; BAD rows carry <code>BAD</code> in an identifier + failure-mode tag (<code>[BAD-REQ]/[BAD-LKP]/[BAD-AMT]/[BAD-UPS]</code>)</td><td>Yes</td></tr>
+  </table>
+</section>
+
+<section id="refs">
+  <h2>Where object codes are referenced — every location to conform</h2>
+  <table>
+    <tr><th>Location</th><th>What it holds today</th><th>Alignment vs this list</th></tr>
+    <tr><td><code>packages/generators/{fbdi,hdl,fbl}/</code></td><td>one generator package per upload unit — <strong>ground truth</strong> this list was derived from</td><td><span class="b b-impl">ALIGNED</span> by construction</td></tr>
+    <tr><td><code>DMT_SCHEDULER_PKG.GET_CEMLI_SEQUENCE</code> + <code>GET_CEMLI_DEPENDENCIES</code></td><td>pipeline dispatch tokens → <code>DMT_WORK_QUEUE_TBL.CEMLI_CODE</code></td><td>mostly aligned; fix: <code>PayrollRels</code> decision, phantom <code>Lookups</code>, <code>ValueSetValues</code> token, missing MiscReceipts, missing UOM/PaymentTerms/TaxConfig/Banks in CONFIGURATION</td></tr>
+    <tr><td><code>DMT_ERP_INTERFACE_OPTIONS_TBL</code></td><td>24 FBDI CEMLI codes + ESS job config</td><td>rename <code>GLBudgetBalances</code>→<code>GLBudgets</code>; seed PlanningBudgets when EPBCS ready; investigate the NULL-code row</td></tr>
+    <tr><td><code>DMT_LOADER_PKG.run_one_object_type</code></td><td>per-CEMLI load branches</td><td>rename GLBudgets branch; conform HDL branch codes</td></tr>
+    <tr><td><code>DMT_BIP_REPORT_TBL</code></td><td>26 CEMLI codes → BIP validation DM + report (table above)</td><td>rename <code>GLBudgetBalances</code>; retire <code>ItemCategories</code> row; mark <code>COMMON_LOOKUPS</code> as shared; add HDL/FBL rows as reconciliation is built</td></tr>
+    <tr><td><code>DMT_CEMLI_SPLIT_CFG</code></td><td>the "sections by" splits (7 rows) — source for the split column above</td><td><span class="b b-impl">ALIGNED</span></td></tr>
+    <tr><td><code>DMT_V_CEMLI_TFM_TABLES</code> / <code>DMT_RECORD_DETAIL_V</code></td><td>run-detail catalog: CEMLI → TFM tables / record lists (38 codes)</td><td>already conformed to short codes for GLBudgets/PayrollRels (§13 C1); move WorkRelationship sub-object Workers→Assignments</td></tr>
+    <tr><td><code>DMT_UPLOAD_OBJECT_TBL</code> (APEX upload UI)</td><td>89 rows at <strong>STG-table level</strong> (per-CSV upload registry)</td><td>per-CSV granularity is fine for uploads, but: add missing Requisitions (3), ProjectBudgets; add a <code>CEMLI_CODE</code> column so every upload row maps to exactly one canonical object; fix wrong FBDI filenames on MiscReceipts + Assets rows</td></tr>
+    <tr><td><code>objects/</code> folders (46 dirs)</td><td>per-object READMEs + CTL/templates</td><td>merge/rename per the cleanup notes above → exactly 46 folders, one per object</td></tr>
+    <tr><td><code>scripts/run_regression_test.py</code>, <code>insert_regression_test_data.py</code>, <code>dmt_regression_run.py</code></td><td>pipeline + TFM-table labels for the RegressionTest scenario</td><td>label tables with canonical codes; seed the missing objects (per the RegressionTest audit 2026-07-02)</td></tr>
+    <tr><td><code>status.md</code> (root + ConversionTool) &amp; Claude memory (<code>feedback_status_report_format</code>)</td><td>the old 28-object matrix list (Suppliers as one, no BlanketPOs/Contracts/1099/BillingEvents)</td><td>replace with this 46-object list — status reports enumerate all 46 individually</td></tr>
+    <tr><td><code>EBSAdaptors/Object_Matrix.xlsx</code></td><td>original 36-row DS.140 estimate (CNV_ naming)</td><td>historical — leave as-is, superseded by this page</td></tr>
+  </table>
+</section>
+
+<section id="decisions">
+  <h2>Open decisions before the rename sweep</h2>
+  <div class="note prop">(1) <code>PayrollRels</code> vs <code>PayrollRelationships</code> — short queue code or long generator code (GLBudgets precedent says short). (2) Tax config CEMLI code — <code>TaxConfig</code> proposed. (3) HDL display names <code>Salaries</code>/"Salary" and <code>SalaryBases</code>/"Salary Basis" — confirm code spellings. Once agreed, execute the rename/cleanup notes top to bottom, then re-run regression.</div>
+</section>
+
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,40 @@
+-- DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL (generated from ATP 2026-07-03)
+
+begin
+  execute immediate 'CREATE TABLE "DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL" 
+   (	"TFM_SEQUENCE_ID" NUMBER DEFAULT DMT_OWNER.DMT_GMS_AWD_PFSRC_TFM_SEQ.NEXTVAL NOT NULL ENABLE, 
+	"STG_SEQUENCE_ID" NUMBER NOT NULL ENABLE, 
+	"FBDI_CSV_ID" NUMBER, 
+	"AWARD_NUMBER" VARCHAR2(300), 
+	"PROJECT_NUMBER" VARCHAR2(25), 
+	"FUNDING_SOURCE_NAME" VARCHAR2(360), 
+	"FUNDING_SOURCE_NUMBER" VARCHAR2(240), 
+	"ENABLE_BURDENING_FLAG" VARCHAR2(1), 
+	"STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
+	"ERROR_TEXT" CLOB, 
+	"LAST_UPDATED_DATE" DATE, 
+	"RESULTS_UPDATED_DATE" DATE, 
+	"RUN_ID" NUMBER, 
+	 CONSTRAINT "DMT_GMS_AWD_PFSRC_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
+  USING INDEX  ENABLE
+   ) ';
+exception when others then
+  if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "DMT_GMS_AWD_PFSRC_TFM_AWD_IX" ON "DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL" ("AWARD_NUMBER")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "DMT_GMS_AWD_PFSRC_TFM_STG_IX" ON "DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL" ("STG_SEQUENCE_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON TABLE "DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL"  IS 'Grant award project funding sources transformed.';

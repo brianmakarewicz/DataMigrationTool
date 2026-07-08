@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<report xmlns="http://xmlns.oracle.com/oxp/xmlp"
+        defaultDataModelPath="/Custom/DMT/Lookups/PAYROLL_DM.xdm">
+  <property name="showControls" value="false"/>
+  <property name="online" value="true"/>
+  <property name="outputFormat" value="xml"/>
+</report>

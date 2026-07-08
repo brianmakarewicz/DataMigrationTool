@@ -1,0 +1,209 @@
+-- PACKAGE BODY DMT_FA_ASSET_TRANSFORM_PKG
+
+  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_FA_ASSET_TRANSFORM_PKG" AS
+
+    C_PKG CONSTANT VARCHAR2(50) := 'DMT_FA_ASSET_TRANSFORM_PKG';
+
+    FUNCTION get_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
+        l_prefix VARCHAR2(30);
+    BEGIN
+        SELECT PREFIX INTO l_prefix
+        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
+        RETURN l_prefix;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20001,
+                'RUN_ID ' || p_run_id || ' not found');
+    END get_prefix;
+
+    PROCEDURE TRANSFORM_HEADERS (
+        p_run_id   IN NUMBER,
+        p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
+        p_scenario_id      IN NUMBER DEFAULT NULL,
+        p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
+    ) IS
+        l_prefix VARCHAR2(30);
+        l_ok     NUMBER := 0;
+    BEGIN
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_HEADERS start.', C_PKG, 'TRANSFORM_HEADERS');
+        l_prefix := get_prefix(p_run_id);
+
+        INSERT INTO DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL (
+            STG_SEQUENCE_ID, RUN_ID,
+            ASSET_NUMBER, DESCRIPTION,
+            ASSET_CATEGORY_SEGMENT1, ASSET_CATEGORY_SEGMENT2, ASSET_CATEGORY_SEGMENT3,
+            ASSET_CATEGORY_SEGMENT4, ASSET_CATEGORY_SEGMENT5, ASSET_CATEGORY_SEGMENT6, ASSET_CATEGORY_SEGMENT7,
+            ASSET_TYPE, MANUFACTURER_NAME, SERIAL_NUMBER, TAG_NUMBER, MODEL_NUMBER,
+            PROPERTY_TYPE_CODE, PROPERTY_1245_1250_CODE, IN_USE_FLAG, OWNED_LEASED, NEW_USED,
+            DATE_PLACED_IN_SERVICE, ATTRIBUTE_CATEGORY,
+            ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5,
+            ATTRIBUTE6, ATTRIBUTE7, ATTRIBUTE8, ATTRIBUTE9, ATTRIBUTE10,
+            ATTRIBUTE11, ATTRIBUTE12, ATTRIBUTE13, ATTRIBUTE14, ATTRIBUTE15,
+            PARENT_ASSET_NUMBER, STATUS
+        )
+        SELECT
+            s.STG_SEQUENCE_ID, p_run_id,
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSET_NUMBER, 30), s.DESCRIPTION,
+            s.ASSET_CATEGORY_SEGMENT1, s.ASSET_CATEGORY_SEGMENT2, s.ASSET_CATEGORY_SEGMENT3,
+            s.ASSET_CATEGORY_SEGMENT4, s.ASSET_CATEGORY_SEGMENT5, s.ASSET_CATEGORY_SEGMENT6, s.ASSET_CATEGORY_SEGMENT7,
+            s.ASSET_TYPE, s.MANUFACTURER_NAME, s.SERIAL_NUMBER, s.TAG_NUMBER, s.MODEL_NUMBER,
+            s.PROPERTY_TYPE_CODE, s.PROPERTY_1245_1250_CODE, s.IN_USE_FLAG, s.OWNED_LEASED, s.NEW_USED,
+            s.DATE_PLACED_IN_SERVICE, s.ATTRIBUTE_CATEGORY,
+            s.ATTRIBUTE1, s.ATTRIBUTE2, s.ATTRIBUTE3, s.ATTRIBUTE4, s.ATTRIBUTE5,
+            s.ATTRIBUTE6, s.ATTRIBUTE7, s.ATTRIBUTE8, s.ATTRIBUTE9, s.ATTRIBUTE10,
+            s.ATTRIBUTE11, s.ATTRIBUTE12, s.ATTRIBUTE13, s.ATTRIBUTE14, s.ATTRIBUTE15,
+            CASE WHEN s.PARENT_ASSET_NUMBER IS NOT NULL THEN DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARENT_ASSET_NUMBER, 30) END,
+            'STAGED'
+        FROM   DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL s
+        WHERE  (
+            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL')
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
+
+        l_ok := SQL%ROWCOUNT;
+
+        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL
+        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  (
+            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
+          )
+        AND (p_scenario_id IS NULL
+             OR SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
+
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_HEADERS complete. Rows: ' || l_ok, C_PKG, 'TRANSFORM_HEADERS');
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'TRANSFORM_HEADERS failed.', SQLERRM, C_PKG, 'TRANSFORM_HEADERS');
+            RAISE;
+    END TRANSFORM_HEADERS;
+
+    PROCEDURE TRANSFORM_ASSIGNMENTS (
+        p_run_id   IN NUMBER,
+        p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
+        p_scenario_id      IN NUMBER DEFAULT NULL,
+        p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
+    ) IS
+        l_prefix VARCHAR2(30);
+        l_ok     NUMBER := 0;
+    BEGIN
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_ASSIGNMENTS start.', C_PKG, 'TRANSFORM_ASSIGNMENTS');
+        l_prefix := get_prefix(p_run_id);
+
+        INSERT INTO DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL (
+            STG_SEQUENCE_ID, RUN_ID,
+            ASSET_NUMBER, UNITS_ASSIGNED,
+            EXPENSE_ACCOUNT_SEGMENT1, EXPENSE_ACCOUNT_SEGMENT2, EXPENSE_ACCOUNT_SEGMENT3,
+            EXPENSE_ACCOUNT_SEGMENT4, EXPENSE_ACCOUNT_SEGMENT5, EXPENSE_ACCOUNT_SEGMENT6,
+            EXPENSE_ACCOUNT_SEGMENT7, EXPENSE_ACCOUNT_SEGMENT8, EXPENSE_ACCOUNT_SEGMENT9,
+            EXPENSE_ACCOUNT_SEGMENT10,
+            LOCATION_SEGMENT1, LOCATION_SEGMENT2, LOCATION_SEGMENT3,
+            LOCATION_SEGMENT4, LOCATION_SEGMENT5, LOCATION_SEGMENT6, LOCATION_SEGMENT7,
+            STATUS
+        )
+        SELECT
+            s.STG_SEQUENCE_ID, p_run_id,
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSET_NUMBER, 30), s.UNITS_ASSIGNED,
+            s.EXPENSE_ACCOUNT_SEGMENT1, s.EXPENSE_ACCOUNT_SEGMENT2, s.EXPENSE_ACCOUNT_SEGMENT3,
+            s.EXPENSE_ACCOUNT_SEGMENT4, s.EXPENSE_ACCOUNT_SEGMENT5, s.EXPENSE_ACCOUNT_SEGMENT6,
+            s.EXPENSE_ACCOUNT_SEGMENT7, s.EXPENSE_ACCOUNT_SEGMENT8, s.EXPENSE_ACCOUNT_SEGMENT9,
+            s.EXPENSE_ACCOUNT_SEGMENT10,
+            s.LOCATION_SEGMENT1, s.LOCATION_SEGMENT2, s.LOCATION_SEGMENT3,
+            s.LOCATION_SEGMENT4, s.LOCATION_SEGMENT5, s.LOCATION_SEGMENT6, s.LOCATION_SEGMENT7,
+            'STAGED'
+        FROM   DMT_OWNER.DMT_FA_ASSET_ASSIGN_STG_TBL s
+        WHERE  (
+            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL')
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
+
+        l_ok := SQL%ROWCOUNT;
+
+        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_STG_TBL
+        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  (
+            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
+          )
+        AND (p_scenario_id IS NULL
+             OR SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
+
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_ASSIGNMENTS complete. Rows: ' || l_ok, C_PKG, 'TRANSFORM_ASSIGNMENTS');
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'TRANSFORM_ASSIGNMENTS failed.', SQLERRM, C_PKG, 'TRANSFORM_ASSIGNMENTS');
+            RAISE;
+    END TRANSFORM_ASSIGNMENTS;
+
+    PROCEDURE TRANSFORM_BOOKS (
+        p_run_id   IN NUMBER,
+        p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
+        p_scenario_id      IN NUMBER DEFAULT NULL,
+        p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
+    ) IS
+        l_prefix VARCHAR2(30);
+        l_ok     NUMBER := 0;
+    BEGIN
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BOOKS start.', C_PKG, 'TRANSFORM_BOOKS');
+        l_prefix := get_prefix(p_run_id);
+
+        INSERT INTO DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL (
+            STG_SEQUENCE_ID, RUN_ID,
+            ASSET_NUMBER, BOOK_TYPE_CODE, COST, ORIGINAL_COST,
+            SALVAGE_VALUE, LIFE_IN_MONTHS, DEPRECIATION_METHOD,
+            DATE_PLACED_IN_SERVICE, PRORATE_CONVENTION_CODE, DEPRN_START_DATE,
+            CURRENT_UNITS, UNREVALUED_COST, YTD_DEPRN, DEPRN_RESERVE,
+            BONUS_YTD_DEPRN, BONUS_DEPRN_RESERVE, STATUS
+        )
+        SELECT
+            s.STG_SEQUENCE_ID, p_run_id,
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSET_NUMBER, 30), s.BOOK_TYPE_CODE, s.COST, s.ORIGINAL_COST,
+            s.SALVAGE_VALUE, s.LIFE_IN_MONTHS, s.DEPRECIATION_METHOD,
+            s.DATE_PLACED_IN_SERVICE, s.PRORATE_CONVENTION_CODE, s.DEPRN_START_DATE,
+            s.CURRENT_UNITS, s.UNREVALUED_COST, s.YTD_DEPRN, s.DEPRN_RESERVE,
+            s.BONUS_YTD_DEPRN, s.BONUS_DEPRN_RESERVE, 'STAGED'
+        FROM   DMT_OWNER.DMT_FA_ASSET_BOOK_STG_TBL s
+        WHERE  (
+            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL')
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
+
+        l_ok := SQL%ROWCOUNT;
+
+        UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_STG_TBL
+        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  (
+            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
+          )
+        AND (p_scenario_id IS NULL
+             OR SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
+
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BOOKS complete. Rows: ' || l_ok, C_PKG, 'TRANSFORM_BOOKS');
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'TRANSFORM_BOOKS failed.', SQLERRM, C_PKG, 'TRANSFORM_BOOKS');
+            RAISE;
+    END TRANSFORM_BOOKS;
+
+END DMT_FA_ASSET_TRANSFORM_PKG;
+/

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<report xmlns="http://xmlns.oracle.com/oxp/xmlp" version="1.1"
+        defaultDataSourceRef="ApplicationDB_FSCM">
+  <property name="online" value="true"/>
+  <property name="cacheDocument" value="false"/>
+  <property name="openLinkInNewWindow" value="true"/>
+  <dataModel url="DMT_ESS_HIERARCHY_DM.xdm"/>
+  <templates>
+    <template label="ESS Hierarchy XML" type="xsl" url="" outputType="xml" active="true"/>
+  </templates>
+</report>

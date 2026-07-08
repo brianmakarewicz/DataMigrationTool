@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1" defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties><property name="include_parameters" value="false"/><property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/><property name="xml_tag_case" value="upper"/></dataProperties>
+  <dataSets><dataSet name="bk" type="complex"><sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT book_type_code, book_class, NVL(date_ineffective,TO_DATE(NULL)) inact FROM fa_book_controls
+WHERE NVL(date_ineffective, SYSDATE+1) > SYSDATE ORDER BY book_class, book_type_code
+  ]]></sql></dataSet></dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false"><nodeList name="data-structure"><dataStructure tagName="DATA_DS">
+    <group name="G_1" label="G_1" source="bk">
+      <element name="BOOK_TYPE_CODE" value="BOOK_TYPE_CODE" dataType="xsd:string" tagName="BOOK_TYPE_CODE"/>
+      <element name="BOOK_CLASS" value="BOOK_CLASS" dataType="xsd:string" tagName="BOOK_CLASS"/>
+    </group></dataStructure></nodeList></output>
+  <eventTriggers/><lexicals/><parameters/><valueSets/><bursting/>
+</dataModel>

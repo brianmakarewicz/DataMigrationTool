@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="cust_party_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    p.party_orig_system_reference,
+    p.party_number,
+    p.party_id,
+    p.organization_name,
+    p.import_status_code                AS import_status,
+    p.interface_status,
+    p.batch_id,
+    (
+        SELECT LISTAGG(e.error_msg_text, '; ')
+               WITHIN GROUP (ORDER BY e.error_seq_id)
+        FROM   hz_imp_errors e
+        WHERE  e.error_id = p.error_id
+        AND    e.interface_table_name = 'HZ_IMP_PARTIES_T'
+        AND    ROWNUM <= 10
+    ) AS error_message
+FROM   hz_imp_parties_t p
+WHERE  p.load_request_id = :P_BATCH_ID
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="cust_party_results">
+          <element name="PARTY_ORIG_SYSTEM_REFERENCE" value="PARTY_ORIG_SYSTEM_REFERENCE" dataType="xsd:string" tagName="PARTY_ORIG_SYSTEM_REFERENCE"/>
+          <element name="PARTY_NUMBER"                value="PARTY_NUMBER"                dataType="xsd:string" tagName="PARTY_NUMBER"/>
+          <element name="PARTY_ID"                    value="PARTY_ID"                    dataType="xsd:string" tagName="PARTY_ID"/>
+          <element name="ORGANIZATION_NAME"           value="ORGANIZATION_NAME"           dataType="xsd:string" tagName="ORGANIZATION_NAME"/>
+          <element name="IMPORT_STATUS"               value="IMPORT_STATUS"               dataType="xsd:string" tagName="IMPORT_STATUS"/>
+          <element name="INTERFACE_STATUS"             value="INTERFACE_STATUS"            dataType="xsd:string" tagName="INTERFACE_STATUS"/>
+          <element name="BATCH_ID"                    value="BATCH_ID"                    dataType="xsd:string" tagName="BATCH_ID"/>
+          <element name="ERROR_MESSAGE"               value="ERROR_MESSAGE"               dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

@@ -1,0 +1,7 @@
+-- DMT_FBDI_ZIP_ID_SEQ
+begin
+  execute immediate 'CREATE SEQUENCE  "DMT_FBDI_ZIP_ID_SEQ"  MINVALUE 1 MAXVALUE 9999999999999999999999999999 INCREMENT BY 1 START WITH 100001459 NOCACHE  NOORDER  NOCYCLE  NOKEEP  NOSCALE  GLOBAL';
+exception when others then
+  if sqlcode not in (-955) then raise; end if;
+end;
+/

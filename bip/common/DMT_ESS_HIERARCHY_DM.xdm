@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ess_hierarchy" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT r.requestid AS req_id,
+       r.absparentid AS parent_id,
+       r.definition AS job_def,
+       r.state AS state_code,
+       r.username AS submitter,
+       TO_CHAR(r.processstart, 'YYYY-MM-DD HH24:MI:SS') AS start_ts,
+       TO_CHAR(r.processend,   'YYYY-MM-DD HH24:MI:SS') AS end_ts,
+       0 AS depth_lvl
+FROM   fusion.ess_request_history r
+WHERE  r.requestid = :P_PARENT_REQUEST_ID
+UNION ALL
+SELECT c.requestid, c.absparentid, c.definition, c.state, c.username,
+       TO_CHAR(c.processstart, 'YYYY-MM-DD HH24:MI:SS'),
+       TO_CHAR(c.processend,   'YYYY-MM-DD HH24:MI:SS'),
+       1
+FROM   fusion.ess_request_history c
+WHERE  c.absparentid = :P_PARENT_REQUEST_ID
+AND    c.requestid  != c.absparentid
+UNION ALL
+SELECT g.requestid, g.absparentid, g.definition, g.state, g.username,
+       TO_CHAR(g.processstart, 'YYYY-MM-DD HH24:MI:SS'),
+       TO_CHAR(g.processend,   'YYYY-MM-DD HH24:MI:SS'),
+       2
+FROM   fusion.ess_request_history g
+WHERE  g.absparentid IN (
+           SELECT c2.requestid
+           FROM   fusion.ess_request_history c2
+           WHERE  c2.absparentid = :P_PARENT_REQUEST_ID
+           AND    c2.requestid  != c2.absparentid)
+AND    g.requestid != g.absparentid
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="ess_hierarchy">
+          <element name="REQ_ID"     value="REQ_ID"     dataType="xsd:string" tagName="REQ_ID"/>
+          <element name="PARENT_ID"  value="PARENT_ID"  dataType="xsd:string" tagName="PARENT_ID"/>
+          <element name="JOB_DEF"    value="JOB_DEF"    dataType="xsd:string" tagName="JOB_DEF"/>
+          <element name="STATE_CODE" value="STATE_CODE"  dataType="xsd:string" tagName="STATE_CODE"/>
+          <element name="SUBMITTER"  value="SUBMITTER"   dataType="xsd:string" tagName="SUBMITTER"/>
+          <element name="START_TS"   value="START_TS"    dataType="xsd:string" tagName="START_TS"/>
+          <element name="END_TS"     value="END_TS"      dataType="xsd:string" tagName="END_TS"/>
+          <element name="DEPTH_LVL"  value="DEPTH_LVL"   dataType="xsd:string" tagName="DEPTH_LVL"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_PARENT_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_PARENT_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

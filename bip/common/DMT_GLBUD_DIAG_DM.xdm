@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="glbud_diag" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT 'BBAL' AS source_type,
+       bb.budget_name AS key1,
+       bb.period_name AS key2,
+       bb.concat_account AS c1,
+       TO_CHAR(bb.period_net_dr) AS c2,
+       TO_CHAR(bb.period_net_cr) AS c3,
+       bb.currency_code||'/'||bb.currency_type AS c4,
+       TO_CHAR(bb.ledger_id) AS c5,
+       bb.created_by AS c6,
+       NVL(bb.last_update_login,'(null)') AS c7,
+       'obj_ver='||TO_CHAR(bb.object_version_number)||' upd_by='||bb.last_updated_by AS c8,
+       TO_CHAR(bb.last_update_date,'YYYY-MM-DD HH24:MI:SS') AS cdate
+FROM   gl_budget_balances bb
+WHERE  bb.ledger_id = 300000046975971
+AND    bb.budget_name = 'Budget'
+AND    bb.period_name = '06-26'
+AND    bb.segment3 IN ('77600','60540','62510','63180')
+ORDER BY bb.segment3
+]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="glbud_diag">
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="KEY1"        value="KEY1"        dataType="xsd:string" tagName="KEY1"/>
+          <element name="KEY2"        value="KEY2"        dataType="xsd:string" tagName="KEY2"/>
+          <element name="C1"          value="C1"          dataType="xsd:string" tagName="C1"/>
+          <element name="C2"          value="C2"          dataType="xsd:string" tagName="C2"/>
+          <element name="C3"          value="C3"          dataType="xsd:string" tagName="C3"/>
+          <element name="C4"          value="C4"          dataType="xsd:string" tagName="C4"/>
+          <element name="C5"          value="C5"          dataType="xsd:string" tagName="C5"/>
+          <element name="C6"          value="C6"          dataType="xsd:string" tagName="C6"/>
+          <element name="C7"          value="C7"          dataType="xsd:string" tagName="C7"/>
+          <element name="C8"          value="C8"          dataType="xsd:string" tagName="C8"/>
+          <element name="CDATE"       value="CDATE"       dataType="xsd:string" tagName="CDATE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUNNAME" dataType="character" rowPlacement="1"
+               labelID="P_RUNNAME" defaultValue="Budget_EO_1" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LEDGER" dataType="character" rowPlacement="2"
+               labelID="P_LEDGER" defaultValue="300000046975971" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PERIOD" dataType="character" rowPlacement="3"
+               labelID="P_PERIOD" defaultValue="06-26" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

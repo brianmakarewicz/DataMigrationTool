@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="billing_event_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    b.sourceref,
+    b.project_number,
+    b.task_number,
+    'INTERFACE'                         AS source_type,
+    b.load_status,
+    b.import_status,
+    CAST(NULL AS NUMBER)                AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))        AS error_message
+FROM   pjb_billing_events_int b
+WHERE  b.load_request_id = :P_BATCH_ID
+
+UNION ALL
+
+SELECT
+    be.sourceref,
+    CAST(NULL AS VARCHAR2(25))          AS project_number,
+    CAST(NULL AS VARCHAR2(100))         AS task_number,
+    'BASE'                              AS source_type,
+    'SUCCESS'                           AS load_status,
+    'SUCCESS'                           AS import_status,
+    be.event_id                         AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))        AS error_message
+FROM   pjb_billing_events be
+WHERE  be.sourceref LIKE :P_PREFIX || '%'
+AND    :P_PREFIX IS NOT NULL
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="billing_event_results">
+          <element name="SOURCEREF"       value="SOURCEREF"       dataType="xsd:string"  tagName="SOURCEREF"/>
+          <element name="PROJECT_NUMBER"  value="PROJECT_NUMBER"  dataType="xsd:string"  tagName="PROJECT_NUMBER"/>
+          <element name="TASK_NUMBER"     value="TASK_NUMBER"     dataType="xsd:string"  tagName="TASK_NUMBER"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="LOAD_STATUS"     value="LOAD_STATUS"     dataType="xsd:string"  tagName="LOAD_STATUS"/>
+          <element name="IMPORT_STATUS"   value="IMPORT_STATUS"   dataType="xsd:string"  tagName="IMPORT_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="2"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="3"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

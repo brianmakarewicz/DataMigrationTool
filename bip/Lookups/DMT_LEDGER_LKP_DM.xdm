@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ledger_lookups" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT 'LEDGER'                AS LOOKUP_TYPE,
+       gl.name                 AS LOOKUP_CODE,
+       TO_CHAR(gl.ledger_id)   AS LOOKUP_VALUE,
+       TO_CHAR((SELECT MIN(gas.access_set_id)
+                FROM gl_access_sets gas
+                WHERE gas.default_ledger_id = gl.ledger_id
+                AND gas.automatically_created_flag = 'Y'))
+                               AS LOOKUP_VALUE2
+FROM   gl_ledgers gl
+WHERE  gl.object_type_code = 'L'
+ORDER BY gl.name
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_LKP" label="G_LKP" source="ledger_lookups">
+          <element name="LOOKUP_TYPE" value="LOOKUP_TYPE" dataType="xsd:string" tagName="LOOKUP_TYPE"/>
+          <element name="LOOKUP_CODE" value="LOOKUP_CODE" dataType="xsd:string" tagName="LOOKUP_CODE"/>
+          <element name="LOOKUP_VALUE" value="LOOKUP_VALUE" dataType="xsd:string" tagName="LOOKUP_VALUE"/>
+          <element name="LOOKUP_VALUE2" value="LOOKUP_VALUE2" dataType="xsd:string" tagName="LOOKUP_VALUE2"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <valueSets/>
+  <bursting/>
+</dataModel>

@@ -1,0 +1,47 @@
+-- DMT_GMS_AWD_CERTS_STG_TBL (generated from ATP 2026-07-03)
+
+begin
+  execute immediate 'CREATE TABLE "DMT_GMS_AWD_CERTS_STG_TBL" 
+   (	"STG_SEQUENCE_ID" NUMBER DEFAULT DMT_OWNER.DMT_GMS_AWD_CERT_STG_SEQ.NEXTVAL NOT NULL ENABLE, 
+	"AWARD_NUMBER" VARCHAR2(300), 
+	"PROJECT_NUMBER" VARCHAR2(25), 
+	"CERTIFICATION_NAME" VARCHAR2(240), 
+	"CERTIFICATION_DATE" DATE, 
+	"CERTIFIED_BY" VARCHAR2(240), 
+	"CERT_STATUS" VARCHAR2(30), 
+	"APPROVAL_DATE" DATE, 
+	"EXPIRATION_DATE" DATE, 
+	"EXPEDITED_REVIEW" VARCHAR2(1), 
+	"FULL_REVIEW" VARCHAR2(1), 
+	"ASSURANCE_NUMBER" VARCHAR2(240), 
+	"EXEMPTION_NUMBER" VARCHAR2(240), 
+	"COMMENTS" VARCHAR2(4000), 
+	"STAGE_DATE" DATE DEFAULT SYSDATE, 
+	"STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"ERROR_TEXT" CLOB, 
+	"SOURCE_ID" VARCHAR2(240), 
+	"LAST_UPDATED_DATE" DATE, 
+	"SCENARIO_ID" NUMBER, 
+	 CONSTRAINT "DMT_GMS_AWD_CERT_STG_PK" PRIMARY KEY ("STG_SEQUENCE_ID")
+  USING INDEX  ENABLE
+   ) ';
+exception when others then
+  if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "DMT_GMS_AWD_CERT_STG_AWD_IX" ON "DMT_GMS_AWD_CERTS_STG_TBL" ("AWARD_NUMBER")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "DMT_GMS_AWD_CERT_STG_STS_IX" ON "DMT_GMS_AWD_CERTS_STG_TBL" ("STATUS")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON TABLE "DMT_GMS_AWD_CERTS_STG_TBL"  IS 'Grant award certifications staging. CSV: GmsAwardCertsInterface.csv.';

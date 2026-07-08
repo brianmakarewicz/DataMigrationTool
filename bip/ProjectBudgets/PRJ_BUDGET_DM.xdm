@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="prj_budget_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    v.project_name,
+    v.project_number,
+    v.plan_version_name,
+    v.financial_plan_type,
+    v.src_budget_line_reference,
+    'INTERFACE'                         AS source_type,
+    v.process_code,
+    v.load_status,
+    CAST(NULL AS NUMBER)                AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))        AS error_message
+FROM   pjo_plan_versions_xface v
+WHERE  v.load_request_id = :P_BATCH_ID
+
+UNION ALL
+
+-- BASE tier: PJO_PLAN_VERSIONS_B carries no name/src-reference columns
+-- (version name is in PJO_PLAN_VERSIONS_TL, project name in
+-- PJF_PROJECTS_ALL_TL, project number is PJF_PROJECTS_ALL_B.SEGMENT1);
+-- SRC_BUDGET_LINE_REFERENCE exists only in the XFACE table, which the import
+-- PURGES on completion — so the base leg cannot key on it (and cannot join
+-- through XFACE). It returns recent plan versions keyed by prefixed project
+-- number + version name; the reconciler matches TFM rows on that pair.
+SELECT
+    ptl.name                            AS project_name,
+    p.segment1                          AS project_number,
+    vtl.version_name                    AS plan_version_name,
+    CAST(NULL AS VARCHAR2(240))         AS financial_plan_type,
+    CAST(NULL AS VARCHAR2(240))         AS src_budget_line_reference,
+    'BASE'                              AS source_type,
+    'SUCCESS'                           AS process_code,
+    'SUCCESS'                           AS load_status,
+    v.plan_version_id                   AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))        AS error_message
+FROM   pjo_plan_versions_b v,
+       pjo_plan_versions_tl vtl,
+       pjf_projects_all_b p,
+       pjf_projects_all_tl ptl
+WHERE  vtl.plan_version_id = v.plan_version_id
+AND    vtl.language      = 'US'
+AND    p.project_id      = v.project_id
+AND    ptl.project_id    = p.project_id
+AND    ptl.language      = 'US'
+AND    v.creation_date   > SYSDATE - 7
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="prj_budget_results">
+          <element name="PROJECT_NAME" value="PROJECT_NAME" dataType="xsd:string" tagName="PROJECT_NAME"/>
+          <element name="PROJECT_NUMBER" value="PROJECT_NUMBER" dataType="xsd:string" tagName="PROJECT_NUMBER"/>
+          <element name="PLAN_VERSION_NAME" value="PLAN_VERSION_NAME" dataType="xsd:string" tagName="PLAN_VERSION_NAME"/>
+          <element name="FINANCIAL_PLAN_TYPE" value="FINANCIAL_PLAN_TYPE" dataType="xsd:string" tagName="FINANCIAL_PLAN_TYPE"/>
+          <element name="SRC_BUDGET_LINE_REFERENCE" value="SRC_BUDGET_LINE_REFERENCE" dataType="xsd:string" tagName="SRC_BUDGET_LINE_REFERENCE"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="PROCESS_CODE" value="PROCESS_CODE" dataType="xsd:string" tagName="PROCESS_CODE"/>
+          <element name="LOAD_STATUS" value="LOAD_STATUS" dataType="xsd:string" tagName="LOAD_STATUS"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="2"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

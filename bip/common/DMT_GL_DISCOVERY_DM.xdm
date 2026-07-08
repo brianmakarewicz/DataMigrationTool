@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="gl_good_records" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    jh.name                          AS journal_name,
+    jh.period_name,
+    gl.name                          AS ledger_name,
+    jh.currency_code,
+    jh.je_category                   AS user_je_category_name,
+    jh.je_source                     AS user_je_source_name,
+    jh.actual_flag,
+    jh.default_effective_date        AS accounting_date,
+    jl.entered_dr,
+    jl.entered_cr,
+    jl.accounted_dr,
+    jl.accounted_cr,
+    gcc.segment1,
+    gcc.segment2,
+    gcc.segment3,
+    gcc.segment4,
+    gcc.segment5,
+    gcc.segment6,
+    gcc.segment7,
+    gcc.segment8,
+    gcc.segment9,
+    gcc.segment10
+FROM   gl_je_headers       jh
+JOIN   gl_je_lines          jl  ON jl.je_header_id = jh.je_header_id
+JOIN   gl_code_combinations gcc ON gcc.code_combination_id = jl.code_combination_id
+JOIN   gl_ledgers           gl  ON gl.ledger_id = jh.ledger_id
+WHERE  jh.status = 'P'
+AND    jh.actual_flag = 'A'
+AND    jl.entered_dr IS NOT NULL
+AND    jl.entered_dr > 0
+AND    ROWNUM <= 5
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="gl_good_records">
+          <element name="JOURNAL_NAME" value="JOURNAL_NAME" dataType="xsd:string" tagName="JOURNAL_NAME"/>
+          <element name="PERIOD_NAME" value="PERIOD_NAME" dataType="xsd:string" tagName="PERIOD_NAME"/>
+          <element name="LEDGER_NAME" value="LEDGER_NAME" dataType="xsd:string" tagName="LEDGER_NAME"/>
+          <element name="CURRENCY_CODE" value="CURRENCY_CODE" dataType="xsd:string" tagName="CURRENCY_CODE"/>
+          <element name="USER_JE_CATEGORY_NAME" value="USER_JE_CATEGORY_NAME" dataType="xsd:string" tagName="USER_JE_CATEGORY_NAME"/>
+          <element name="USER_JE_SOURCE_NAME" value="USER_JE_SOURCE_NAME" dataType="xsd:string" tagName="USER_JE_SOURCE_NAME"/>
+          <element name="ACTUAL_FLAG" value="ACTUAL_FLAG" dataType="xsd:string" tagName="ACTUAL_FLAG"/>
+          <element name="ACCOUNTING_DATE" value="ACCOUNTING_DATE" dataType="xsd:string" tagName="ACCOUNTING_DATE"/>
+          <element name="ENTERED_DR" value="ENTERED_DR" dataType="xsd:double" tagName="ENTERED_DR"/>
+          <element name="ENTERED_CR" value="ENTERED_CR" dataType="xsd:double" tagName="ENTERED_CR"/>
+          <element name="ACCOUNTED_DR" value="ACCOUNTED_DR" dataType="xsd:double" tagName="ACCOUNTED_DR"/>
+          <element name="ACCOUNTED_CR" value="ACCOUNTED_CR" dataType="xsd:double" tagName="ACCOUNTED_CR"/>
+          <element name="SEGMENT1" value="SEGMENT1" dataType="xsd:string" tagName="SEGMENT1"/>
+          <element name="SEGMENT2" value="SEGMENT2" dataType="xsd:string" tagName="SEGMENT2"/>
+          <element name="SEGMENT3" value="SEGMENT3" dataType="xsd:string" tagName="SEGMENT3"/>
+          <element name="SEGMENT4" value="SEGMENT4" dataType="xsd:string" tagName="SEGMENT4"/>
+          <element name="SEGMENT5" value="SEGMENT5" dataType="xsd:string" tagName="SEGMENT5"/>
+          <element name="SEGMENT6" value="SEGMENT6" dataType="xsd:string" tagName="SEGMENT6"/>
+          <element name="SEGMENT7" value="SEGMENT7" dataType="xsd:string" tagName="SEGMENT7"/>
+          <element name="SEGMENT8" value="SEGMENT8" dataType="xsd:string" tagName="SEGMENT8"/>
+          <element name="SEGMENT9" value="SEGMENT9" dataType="xsd:string" tagName="SEGMENT9"/>
+          <element name="SEGMENT10" value="SEGMENT10" dataType="xsd:string" tagName="SEGMENT10"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <valueSets/>
+  <bursting/>
+</dataModel>

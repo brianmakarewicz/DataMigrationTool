@@ -1,0 +1,35 @@
+-- DMT_BIP_REPORT_TBL (generated from ATP 2026-07-03)
+
+begin
+  execute immediate 'CREATE TABLE "DMT_BIP_REPORT_TBL" 
+   (	"BIP_REPORT_ID" NUMBER NOT NULL ENABLE, 
+	"CEMLI_CODE" VARCHAR2(50) NOT NULL ENABLE, 
+	"OBJECT_TYPE" VARCHAR2(100) NOT NULL ENABLE, 
+	"DM_CATALOG_PATH" VARCHAR2(500), 
+	"REPORT_CATALOG_PATH" VARCHAR2(500), 
+	"INTERFACE_TABLE" VARCHAR2(100), 
+	"CREATED_DATE" DATE DEFAULT SYSDATE, 
+	"NOTES" VARCHAR2(1000), 
+	"DEEP_LINK_OBJ_TYPE" VARCHAR2(100), 
+	"DEEP_LINK_KEY_TEMPLATE" VARCHAR2(500), 
+	 CONSTRAINT "DMT_BIP_REPORT_TBL_PK" PRIMARY KEY ("BIP_REPORT_ID")
+  USING INDEX  ENABLE, 
+	 CONSTRAINT "DMT_BIP_REPORT_TBL_UQ" UNIQUE ("CEMLI_CODE")
+  USING INDEX  ENABLE
+   ) ';
+exception when others then
+  if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."BIP_REPORT_ID" IS 'PK - from DMT_BIP_RPT_ID_SEQ';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."CEMLI_CODE" IS 'CEMLI identifier e.g. C001-Suppliers. Unique.';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."OBJECT_TYPE" IS 'Human-readable object label e.g. Supplier Address';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."DM_CATALOG_PATH" IS 'Full Fusion catalog path to the BIP data model .xdm';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."REPORT_CATALOG_PATH" IS 'Full Fusion catalog path to the BIP report .xdo';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."INTERFACE_TABLE" IS 'Primary Fusion interface table queried by the report';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."CREATED_DATE" IS 'Date row was seeded';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."NOTES" IS 'Free text deployment notes';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."DEEP_LINK_OBJ_TYPE" IS 'Fusion deep link objType parameter (e.g. PRC_SUPPLIER, PURCHASE_ORDER). NULL if no deep link exists.';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."DEEP_LINK_KEY_TEMPLATE" IS 'Deep link objKey template with {ID} placeholder (e.g. prcBuId%3D300000046987012%3BsupplierId%3D{ID}). Replaced at runtime by GET_DEEP_LINK.';
+COMMENT ON TABLE "DMT_BIP_REPORT_TBL"  IS 'BIP report registry. One row per CEMLI. Paths queried by results packages at runtime.';

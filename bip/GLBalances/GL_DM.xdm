@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="gl_interface_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    gi.reference1,
+    gi.status                            AS import_status,
+    'INTERFACE'                          AS source_type,
+    CAST(NULL AS NUMBER)                 AS fusion_id,
+    gi.reference10                       AS error_message
+FROM   gl_interface gi
+WHERE  gi.load_request_id = :P_BATCH_ID
+
+UNION ALL
+
+SELECT
+    jl.reference_1                       AS reference1,
+    'SUCCESS'                            AS import_status,
+    'BASE'                               AS source_type,
+    jh.je_header_id                      AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))         AS error_message
+FROM   gl_je_headers jh
+JOIN   gl_je_lines jl ON jl.je_header_id = jh.je_header_id
+WHERE  jh.request_id = :P_IMPORT_ESS_ID
+AND    :P_IMPORT_ESS_ID IS NOT NULL
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="gl_interface_results">
+          <element name="REFERENCE1" value="REFERENCE1" dataType="xsd:string" tagName="REFERENCE1"/>
+          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="2"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

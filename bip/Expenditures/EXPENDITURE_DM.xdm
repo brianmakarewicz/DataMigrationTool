@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="expenditure_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    e.orig_transaction_reference,
+    e.project_number,
+    e.task_number,
+    e.expenditure_type,
+    'INTERFACE'                         AS source_type,
+    e.transaction_status_code           AS fusion_status,
+    CAST(NULL AS NUMBER)                AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))        AS error_message
+FROM   pjc_txn_xface_stage_all e
+WHERE  e.load_request_id = :P_BATCH_ID
+
+UNION ALL
+
+SELECT
+    ei.orig_transaction_reference,
+    CAST(NULL AS VARCHAR2(25))          AS project_number,
+    CAST(NULL AS VARCHAR2(100))         AS task_number,
+    CAST(NULL AS VARCHAR2(240))         AS expenditure_type,
+    'BASE'                              AS source_type,
+    'SUCCESS'                           AS fusion_status,
+    ei.expenditure_item_id              AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))        AS error_message
+FROM   pjc_exp_items_all ei
+WHERE  ei.request_id = :P_IMPORT_ESS_ID
+AND    :P_IMPORT_ESS_ID IS NOT NULL
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="expenditure_results">
+          <element name="ORIG_TRANSACTION_REFERENCE" value="ORIG_TRANSACTION_REFERENCE" dataType="xsd:string" tagName="ORIG_TRANSACTION_REFERENCE"/>
+          <element name="PROJECT_NUMBER" value="PROJECT_NUMBER" dataType="xsd:string" tagName="PROJECT_NUMBER"/>
+          <element name="TASK_NUMBER" value="TASK_NUMBER" dataType="xsd:string" tagName="TASK_NUMBER"/>
+          <element name="EXPENDITURE_TYPE" value="EXPENDITURE_TYPE" dataType="xsd:string" tagName="EXPENDITURE_TYPE"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS" value="FUSION_STATUS" dataType="xsd:string" tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="2"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

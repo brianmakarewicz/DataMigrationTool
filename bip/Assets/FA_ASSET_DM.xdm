@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="fa_asset_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    fma.asset_number,
+    fma.posting_status                   AS import_status,
+    'INTERFACE'                          AS source_type,
+    CAST(NULL AS NUMBER)                 AS fusion_id,
+    fma.error_msg                        AS error_message
+FROM   fa_mass_additions fma
+WHERE  fma.load_request_id = :P_BATCH_ID
+
+UNION ALL
+
+SELECT
+    a.asset_number,
+    'POSTED'                             AS import_status,
+    'BASE'                               AS source_type,
+    a.asset_id                           AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))         AS error_message
+FROM   fa_additions_b a
+WHERE  a.asset_number LIKE :P_PREFIX || '%'
+AND    :P_PREFIX IS NOT NULL
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="fa_asset_results">
+          <element name="ASSET_NUMBER"  value="ASSET_NUMBER"  dataType="xsd:string"  tagName="ASSET_NUMBER"/>
+          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string"  tagName="IMPORT_STATUS"/>
+          <element name="SOURCE_TYPE"   value="SOURCE_TYPE"   dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_ID"     value="FUSION_ID"     dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="2"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="3"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

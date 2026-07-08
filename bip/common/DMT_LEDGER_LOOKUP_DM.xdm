@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ledgers" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    gl.ledger_id,
+    gl.name              AS ledger_name,
+    gl.short_name        AS ledger_short_name,
+    gl.currency_code,
+    gl.chart_of_accounts_id,
+    gl.period_set_name,
+    (SELECT MIN(gas.access_set_id) FROM gl_access_sets gas
+     WHERE gas.default_ledger_id = gl.ledger_id
+     AND gas.automatically_created_flag = 'Y') AS data_access_set_id
+FROM   gl_ledgers gl
+WHERE  gl.object_type_code = 'L'
+ORDER BY gl.name
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_LEDGER" label="G_LEDGER" source="ledgers">
+          <element name="LEDGER_ID" value="LEDGER_ID" dataType="xsd:string" tagName="LEDGER_ID"/>
+          <element name="LEDGER_NAME" value="LEDGER_NAME" dataType="xsd:string" tagName="LEDGER_NAME"/>
+          <element name="LEDGER_SHORT_NAME" value="LEDGER_SHORT_NAME" dataType="xsd:string" tagName="LEDGER_SHORT_NAME"/>
+          <element name="CURRENCY_CODE" value="CURRENCY_CODE" dataType="xsd:string" tagName="CURRENCY_CODE"/>
+          <element name="CHART_OF_ACCOUNTS_ID" value="CHART_OF_ACCOUNTS_ID" dataType="xsd:string" tagName="CHART_OF_ACCOUNTS_ID"/>
+          <element name="PERIOD_SET_NAME" value="PERIOD_SET_NAME" dataType="xsd:string" tagName="PERIOD_SET_NAME"/>
+          <element name="DATA_ACCESS_SET_ID" value="DATA_ACCESS_SET_ID" dataType="xsd:string" tagName="DATA_ACCESS_SET_ID"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <valueSets/>
+  <bursting/>
+</dataModel>

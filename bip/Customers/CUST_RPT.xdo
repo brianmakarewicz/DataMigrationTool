@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1">
+  <dataModelRef path="/Custom/DMT/Customers/CUST_DM.xdm"/>
+  <defaultOutputFormat>XML</defaultOutputFormat>
+  <reportProperties>
+    <reportProperty name="showControls"         value="false"/>
+    <reportProperty name="allowOnlineAnalysis"  value="false"/>
+  </reportProperties>
+</report>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="contract_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    h.interface_header_key,
+    h.document_num,
+    h.po_header_id,
+    h.process_code,
+    h.vendor_name,
+    h.vendor_num,
+    (
+        SELECT LISTAGG(e.error_message || ' [' || e.table_name || '.' || e.column_name || ']', '; ')
+               WITHIN GROUP (ORDER BY e.interface_transaction_id)
+        FROM   po_interface_errors e
+        WHERE  e.interface_header_id = h.interface_header_id
+    ) AS error_message
+FROM   po_headers_interface h
+WHERE  h.load_request_id = :P_BATCH_ID
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="contract_results">
+          <element name="INTERFACE_HEADER_KEY" value="INTERFACE_HEADER_KEY" dataType="xsd:string" tagName="INTERFACE_HEADER_KEY"/>
+          <element name="DOCUMENT_NUM" value="DOCUMENT_NUM" dataType="xsd:string" tagName="DOCUMENT_NUM"/>
+          <element name="PO_HEADER_ID" value="PO_HEADER_ID" dataType="xsd:string" tagName="PO_HEADER_ID"/>
+          <element name="PROCESS_CODE" value="PROCESS_CODE" dataType="xsd:string" tagName="PROCESS_CODE"/>
+          <element name="VENDOR_NAME" value="VENDOR_NAME" dataType="xsd:string" tagName="VENDOR_NAME"/>
+          <element name="VENDOR_NUM" value="VENDOR_NUM" dataType="xsd:string" tagName="VENDOR_NUM"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

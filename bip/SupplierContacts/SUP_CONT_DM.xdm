@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="contact_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    i.contact_interface_id,
+    i.per_party_id AS contact_id,
+    i.vendor_name,
+    i.first_name,
+    i.last_name,
+    i.import_status AS status,
+    i.load_request_id,
+    (
+        SELECT LISTAGG(
+                   CASE
+                       WHEN r.attribute IS NOT NULL
+                       THEN r.reject_lookup_code || ' [' || r.attribute || ']'
+                       ELSE r.reject_lookup_code
+                   END, '; ')
+               WITHIN GROUP (ORDER BY r.rejection_id)
+        FROM   poz_supplier_int_rejections r
+        WHERE  r.parent_table = 'POZ_SUP_CONTACTS_INT'
+        AND    r.parent_id    = i.contact_interface_id
+    ) AS error_message
+FROM   poz_sup_contacts_int i
+WHERE  i.load_request_id = :P_BATCH_ID
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="contact_results">
+          <element name="CONTACT_INTERFACE_ID" value="CONTACT_INTERFACE_ID" dataType="xsd:string" tagName="CONTACT_INTERFACE_ID"/>
+          <element name="CONTACT_ID"             value="CONTACT_ID"             dataType="xsd:string" tagName="CONTACT_ID"/>
+          <element name="VENDOR_NAME"           value="VENDOR_NAME"           dataType="xsd:string" tagName="VENDOR_NAME"/>
+          <element name="FIRST_NAME"            value="FIRST_NAME"            dataType="xsd:string" tagName="FIRST_NAME"/>
+          <element name="LAST_NAME"             value="LAST_NAME"             dataType="xsd:string" tagName="LAST_NAME"/>
+          <element name="STATUS"                value="STATUS"                dataType="xsd:string" tagName="STATUS"/>
+          <element name="ERROR_MESSAGE"         value="ERROR_MESSAGE"         dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

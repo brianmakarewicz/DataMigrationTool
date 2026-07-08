@@ -1,0 +1,49 @@
+-- DMT_UPLOAD_DICT_TBL (generated from ATP 2026-07-03)
+
+begin
+  execute immediate 'CREATE TABLE "DMT_UPLOAD_DICT_TBL" 
+   (	"DICT_ID" NUMBER GENERATED ALWAYS AS IDENTITY MINVALUE 1 MAXVALUE 9999999999999999999999999999 INCREMENT BY 1 START WITH 1 CACHE 20 NOORDER  NOCYCLE  NOKEEP  NOSCALE  NOT NULL ENABLE, 
+	"OBJECT_CODE" VARCHAR2(50) NOT NULL ENABLE, 
+	"DISPLAY_NAME" VARCHAR2(100) NOT NULL ENABLE, 
+	"PAGE_NUMBER" NUMBER NOT NULL ENABLE, 
+	"STAGING_TABLE" VARCHAR2(100) NOT NULL ENABLE, 
+	"COLUMN_NAME" VARCHAR2(100) NOT NULL ENABLE, 
+	"COLUMN_ORDER" NUMBER NOT NULL ENABLE, 
+	"DATA_TYPE" VARCHAR2(30), 
+	"NULLABLE" VARCHAR2(1) DEFAULT ''Y'', 
+	"DESCRIPTION" VARCHAR2(500), 
+	"SAMPLE_VALUE" VARCHAR2(200), 
+	"IS_ADMIN_COLUMN" VARCHAR2(1) DEFAULT ''N'', 
+	"CREATED_DATE" TIMESTAMP (6) DEFAULT SYSTIMESTAMP, 
+	"LAST_UPDATED_DATE" TIMESTAMP (6) DEFAULT SYSTIMESTAMP, 
+	"FBDI_POSITION" NUMBER, 
+	 PRIMARY KEY ("DICT_ID")
+  USING INDEX  ENABLE
+   ) ';
+exception when others then
+  if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "IDX_UPLOAD_DICT_OBJ" ON "DMT_UPLOAD_DICT_TBL" ("OBJECT_CODE")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "IDX_UPLOAD_DICT_PAGE" ON "DMT_UPLOAD_DICT_TBL" ("PAGE_NUMBER")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE UNIQUE INDEX "IDX_UPLOAD_DICT_UK" ON "DMT_UPLOAD_DICT_TBL" ("OBJECT_CODE", "COLUMN_NAME")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_UPLOAD_DICT_TBL"."FBDI_POSITION" IS 'Position of this column in the FBDI CSV (1-based). NULL = use sequential order from COLUMN_ORDER. Set explicitly when STG column order differs from CTL order.';

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="fa_diag" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT 'BASE_VER' AS source_type,
+       TO_CHAR(v.plan_version_id) AS id_value,
+       p.segment1 AS name1,
+       vtl.version_name AS name2,
+       'REQ=' || TO_CHAR(v.request_id) AS c1,
+       'ESS_REQ=' || TO_CHAR(v.ess_request_id) AS c2,
+       'STATUS=' || v.plan_status_code AS c3,
+       'CLASS=' || v.plan_class_code AS c4,
+       'VERNUM=' || TO_CHAR(v.version_number) AS c5,
+       NULL AS c6,
+       TO_CHAR(v.creation_date,'YYYY-MM-DD HH24:MI') AS cdate
+FROM   pjo_plan_versions_b v,
+       pjo_plan_versions_tl vtl,
+       pjf_projects_all_b p
+WHERE  p.project_id = v.project_id
+AND    vtl.plan_version_id = v.plan_version_id
+AND    vtl.language = 'US'
+AND    p.segment1 LIKE '%'||:P_MARKER||'%'
+AND    v.creation_date > SYSDATE - TO_NUMBER(:P_DAYS)
+]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="fa_diag">
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="ID_VALUE"    value="ID_VALUE"    dataType="xsd:string" tagName="ID_VALUE"/>
+          <element name="NAME1"       value="NAME1"       dataType="xsd:string" tagName="NAME1"/>
+          <element name="NAME2"       value="NAME2"       dataType="xsd:string" tagName="NAME2"/>
+          <element name="C1"          value="C1"          dataType="xsd:string" tagName="C1"/>
+          <element name="C2"          value="C2"          dataType="xsd:string" tagName="C2"/>
+          <element name="C3"          value="C3"          dataType="xsd:string" tagName="C3"/>
+          <element name="C4"          value="C4"          dataType="xsd:string" tagName="C4"/>
+          <element name="C5"          value="C5"          dataType="xsd:string" tagName="C5"/>
+          <element name="C6"          value="C6"          dataType="xsd:string" tagName="C6"/>
+          <element name="CDATE"       value="CDATE"       dataType="xsd:string" tagName="CDATE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_DAYS"   dataType="character" rowPlacement="1"
+               labelID="P_DAYS"   defaultValue="2" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_MARKER" dataType="character" rowPlacement="2"
+               labelID="P_MARKER" defaultValue=" " nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

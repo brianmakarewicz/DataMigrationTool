@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="item_cat_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    ic.item_number,
+    ic.organization_code,
+    ic.category_set_name,
+    ic.category_code,
+    ic.process_status AS process_flag,
+    NULL AS error_message
+FROM   egp_item_categories_interface ic
+WHERE  ic.batch_id = :P_BATCH_ID
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="item_cat_results">
+          <element name="ITEM_NUMBER" value="ITEM_NUMBER" dataType="xsd:string" tagName="ITEM_NUMBER"/>
+          <element name="ORGANIZATION_CODE" value="ORGANIZATION_CODE" dataType="xsd:string" tagName="ORGANIZATION_CODE"/>
+          <element name="CATEGORY_SET_NAME" value="CATEGORY_SET_NAME" dataType="xsd:string" tagName="CATEGORY_SET_NAME"/>
+          <element name="CATEGORY_CODE" value="CATEGORY_CODE" dataType="xsd:string" tagName="CATEGORY_CODE"/>
+          <element name="PROCESS_FLAG" value="PROCESS_FLAG" dataType="xsd:string" tagName="PROCESS_FLAG"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

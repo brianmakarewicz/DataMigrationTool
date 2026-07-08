@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="grades" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT name AS FUSION_VALUE, MIN(grade_id) AS FUSION_ID, NULL AS FUSION_DESCRIPTION
+FROM per_grades
+WHERE (effective_end_date IS NULL OR effective_end_date >= SYSDATE)
+GROUP BY name
+ORDER BY name
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_ROW" label="G_ROW" source="grades">
+          <element name="FUSION_VALUE" value="FUSION_VALUE" dataType="xsd:string" tagName="FUSION_VALUE"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:string" tagName="FUSION_ID"/>
+          <element name="FUSION_DESCRIPTION" value="FUSION_DESCRIPTION" dataType="xsd:string" tagName="FUSION_DESCRIPTION"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <parameters/>
+  <valueSets/>
+  <bursting/>
+</dataModel>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <!-- Business Units: BU_NAME -> BU_ID
+         Source: FUN_ALL_BUSINESS_UNITS_V (standard Fusion view)
+         Returns all active BUs, or filtered by P_BU_NAME if provided.
+         NOTE: PRIMARY_LEDGER_NAME is not exposed on this view;
+         only PRIMARY_LEDGER_ID is available. -->
+    <dataSet name="business_units" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT bu.bu_name,
+       bu.bu_id,
+       bu.primary_ledger_id
+FROM   fun_all_business_units_v bu
+WHERE  bu.status = 'A'
+AND    (:P_BU_NAME IS NULL OR bu.bu_name = :P_BU_NAME)
+ORDER BY bu.bu_name
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_BU" label="G_BU" source="business_units">
+          <element name="BU_NAME" value="BU_NAME" dataType="xsd:string" tagName="BU_NAME"/>
+          <element name="BU_ID" value="BU_ID" dataType="xsd:string" tagName="BU_ID"/>
+          <element name="PRIMARY_LEDGER_ID" value="PRIMARY_LEDGER_ID" dataType="xsd:string" tagName="PRIMARY_LEDGER_ID"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <parameters>
+    <parameter name="P_BU_NAME" dataType="character" defaultValue=""/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
