@@ -161,16 +161,6 @@ prompt == Sequences ==
 @@sequences/dmt_por_req_headers_tfm_seq.sql
 @@sequences/dmt_por_req_lines_stg_seq.sql
 @@sequences/dmt_por_req_lines_tfm_seq.sql
-@@sequences/dmt_poz_suppliers_id_seq.sql
-@@sequences/dmt_poz_suppliers_tfm_id_seq.sql
-@@sequences/dmt_poz_sup_addr_id_seq.sql
-@@sequences/dmt_poz_sup_addr_tfm_id_seq.sql
-@@sequences/dmt_poz_sup_contacts_id_seq.sql
-@@sequences/dmt_poz_sup_contacts_tfm_id_seq.sql
-@@sequences/dmt_poz_sup_site_assn_id_seq.sql
-@@sequences/dmt_poz_sup_site_assn_tfm_id_seq.sql
-@@sequences/dmt_poz_sup_site_id_seq.sql
-@@sequences/dmt_poz_sup_site_tfm_id_seq.sql
 @@sequences/dmt_po_dists_int_stg_seq.sql
 @@sequences/dmt_po_dists_int_tfm_seq.sql
 @@sequences/dmt_po_headers_int_stg_seq.sql
