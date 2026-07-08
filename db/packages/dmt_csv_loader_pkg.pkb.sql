@@ -304,13 +304,35 @@
             RETURN;
         END IF;
 
+        -- Scenario is mandatory on every ingestion path (decided 2026-07-07):
+        -- untagged staging rows are disallowed. Fail the landing row with a
+        -- reportable error instead of silently loading untagged rows.
+        IF v_scenario_name IS NULL THEN
+            UPDATE dmt_csv_landing_tbl
+               SET status = 'FAILED',
+                   error_text = 'SCENARIO_NAME is required: scenario is mandatory on ' ||
+                                'every ingestion path — untagged staging rows are disallowed',
+                   rows_loaded = 0,
+                   processed_date = SYSDATE
+             WHERE csv_landing_id = p_csv_landing_id;
+            COMMIT;
+            DMT_UTIL_PKG.LOG(
+                p_message   => 'FAILED: SCENARIO_NAME is required for landing_id=' || p_csv_landing_id ||
+                               ' (' || v_view_name || ' → ' || v_atp_table || ')',
+                p_log_type  => 'WARN',
+                p_package   => c_pkg,
+                p_procedure => c_proc
+            );
+            RETURN;
+        END IF;
+
         -- Mark as processing
         UPDATE dmt_csv_landing_tbl
            SET status = 'PROCESSING', error_text = NULL
          WHERE csv_landing_id = p_csv_landing_id;
         COMMIT;
 
-        -- 2. Resolve scenario if provided
+        -- 2. Resolve the mandatory scenario
         IF v_scenario_name IS NOT NULL THEN
             v_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(v_scenario_name);
             DMT_UTIL_PKG.LOG(

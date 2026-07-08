@@ -13,9 +13,11 @@
 -- loaded. Infrastructure columns (STG_SEQUENCE_ID, STAGE_DATE, STATUS, etc.)
 -- are left to their DB defaults.
 --
--- Scenario support: if SCENARIO_NAME is set on the landing row, it is resolved
--- to SCENARIO_ID via DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO and stamped on each
--- inserted row (if the target table has a SCENARIO_ID column).
+-- Scenario support: SCENARIO_NAME is MANDATORY on the landing row (decided
+-- 2026-07-07 — untagged staging rows are disallowed on every ingestion path).
+-- A landing row without one fails with a reportable error. The name is
+-- resolved to SCENARIO_ID via DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO and stamped
+-- on each inserted row (if the target table has a SCENARIO_ID column).
 -- =============================================================================
 
     -- Load one specific landing row by ID.
