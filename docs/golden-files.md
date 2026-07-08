@@ -92,6 +92,29 @@ captures). Generated content embeds run-scoped tokens — run id `116`, prefix `
 keys, dates — so the compare harness must replay with pinned run id/prefix/date or normalize
 before diffing (see step 5 below).
 
+## Byte-compare harness (Stage B4)
+
+Lives in `test/golden/`:
+
+- `compare_fbdi.py` — stdlib-only compare: extracts both zips, rewrites the declared
+  run-scoped tokens on both sides to shared placeholders, masks declared generation-date
+  CSV positions (only when both sides are `YYYY/MM/DD`), then byte-compares. Any other
+  difference is reported field-by-field and fails the run — never widen the map to make
+  a compare pass.
+- `normalization_map.json` — per-object token/date-mask data (golden token → `$PREFIX`/
+  `$RUN_ID`, match mode, optional field-position restriction). Extend with one entry per
+  object; no code changes needed for new FBDI objects.
+- `inputs/{Object}_input.csv` — headered staging input reproducing the golden's exact
+  source rows (from the old stack's `insert_regression_test_data.py`). NOTE: the
+  repo-level `regression_test_bundle.zip` CSVs are dictionary-built and hold DIFFERENT
+  data — they cannot reproduce the run-116/100000740 goldens.
+- `test_glbalances_golden.sh` — reference orchestration: land input via
+  `DMT_CSV_LOADER_PKG`, run row via `DMT_PIPELINE_INIT_PKG.INIT_RUN`, transform,
+  `GENERATE_FBDI`, extract from `DMT_FBDI_ZIP_TBL`, compare. Verified byte-identical
+  2026-07-08 on dmt2-local.
+- `run_golden_tests.sh` — sibling of `test/unit/run_unit_tests.sh`; runs every
+  `test_*_golden.sh`, exit 0 only if all pass (CI hook).
+
 ## Capture procedure for the gaps
 
 The old stack's ATP (queryapp, schema `DMT_OWNER`) retains every generated artifact per run:

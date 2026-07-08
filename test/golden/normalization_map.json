@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "Per-object token-normalization map for the golden-file byte-compare harness",
+    "(Stage B4). One entry per object type. For each zip member:",
+    "  tokens           — run-scoped literals embedded in the golden vs the local",
+    "                     run. Both sides are rewritten to the same placeholder",
+    "                     before the byte compare: the golden value 'golden' and",
+    "                     the local value supplied on the compare_fbdi.py command",
+    "                     line ('local' = $PREFIX or $RUN_ID) each become",
+    "                     'placeholder'. 'match' restricts where a token may hit:",
+    "                     whole_field (default) | startswith | substring — so short",
+    "                     numeric ids cannot collide with unrelated business data.",
+    "                     'fields' (optional, 0-based positions) further restricts a",
+    "                     token to the named CSV columns.",
+    "  date_mask_fields — 0-based CSV field positions (per the object's CTL",
+    "                     column order) that carry generation-time dates",
+    "                     (e.g. DATE_CREATED = NVL(input, SYSDATE)). Masked on",
+    "                     both sides ONLY when both sides match the FBDI date",
+    "                     pattern YYYY/MM/DD — a non-date difference there is",
+    "                     still reported as a real diff.",
+    "Nothing else is normalized. Any other difference is a finding."
+  ],
+  "GLBalances": {
+    "golden_zip": "test/fbdi_zips/GLBalances_100000740.zip",
+    "golden_provenance": "Old-stack run 100000740, prefix 9403, GROUP_ID 100000294 (old stack used a separate group-id sequence; rebuilt stack sets GROUP_ID = RUN_ID per ParameterList)",
+    "members": {
+      "GlInterface.csv": {
+        "tokens": [
+          { "placeholder": "{PREFIX}", "golden": "9403",      "local": "$PREFIX", "match": "startswith",  "fields": [42] },
+          { "placeholder": "{RUN_ID}", "golden": "100000294", "local": "$RUN_ID", "match": "whole_field", "fields": [66] }
+        ],
+        "date_mask_fields": [6]
+      }
+    }
+  }
+}

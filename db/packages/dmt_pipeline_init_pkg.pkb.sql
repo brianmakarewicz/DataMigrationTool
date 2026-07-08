@@ -11,22 +11,11 @@
         x_prefix             OUT VARCHAR2
     ) IS
         l_use_prefix    VARCHAR2(10);
-        l_scenario_id   NUMBER;
     BEGIN
-        -- Get prefix configuration
-        BEGIN
-            SELECT config_value INTO l_use_prefix
-            FROM DMT_OWNER.DMT_CONFIG_TBL
-            WHERE config_key = 'USE_PREFIX';
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                l_use_prefix := 'Y';  -- default: always use prefix
-        END;
-
-        -- Generate integration_id (always)
-        SELECT DMT_OWNER.DMT_INTEGRATION_ID_SEQ.NEXTVAL
-        INTO   x_integration_id
-        FROM   DUAL;
+        -- Prefix configuration (default Y: always use prefix)
+        SELECT NVL(MAX(config_value), 'Y') INTO l_use_prefix
+        FROM   DMT_OWNER.DMT_CONFIG_TBL
+        WHERE  config_key = 'USE_PREFIX';
 
         -- Generate prefix (unless explicitly disabled)
         IF l_use_prefix = 'Y' THEN
@@ -37,27 +26,21 @@
             x_prefix := NULL;
         END IF;
 
-        -- Resolve scenario
-        IF p_scenario_name IS NOT NULL THEN
-            BEGIN
-                SELECT scenario_id INTO l_scenario_id
-                FROM DMT_OWNER.DMT_SCENARIO_TBL
-                WHERE scenario_name = p_scenario_name
-                AND   status = 'ACTIVE';
-            EXCEPTION
-                WHEN NO_DATA_FOUND THEN
-                    l_scenario_id := NULL;
-            END;
-        END IF;
-
-        -- Create master row
-        INSERT INTO DMT_OWNER.DMT_CONVERSION_MASTER_TBL (
-            INTEGRATION_ID, INSTANCE_ID, ORCHESTRATION_CODE, SOURCE_FILENAME,
-            START_DATE, STATUS, PREFIX, DEPENDENT_PREFIX, SCENARIO_ID
+        -- Create the run row directly in DMT_PIPELINE_RUN_TBL.
+        -- (2026-07-08 fix: the previous body inserted into the
+        -- DMT_CONVERSION_MASTER_TBL compatibility VIEW — not insertable
+        -- (constant/virtual columns), STATUS 'OPEN' violates
+        -- DMT_PIPELINE_RUN_STATUS_CK, CEMLI_SEQUENCE NOT NULL was missing,
+        -- and DMT_INTEGRATION_ID_SEQ does not exist in the rebuilt schema.
+        -- RUN_ID comes from the column default DMT_PIPELINE_RUN_SEQ.)
+        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+            PIPELINE_CODES, RUN_TYPE, SUBMITTED_BY,
+            CEMLI_SEQUENCE, SCENARIO_NAME, PREFIX
         ) VALUES (
-            x_integration_id, p_instance_id, p_orchestration_code, p_source_filename,
-            SYSDATE, 'OPEN', x_prefix, x_prefix, l_scenario_id
-        );
+            p_orchestration_code, 'STANDALONE',
+            SUBSTR(p_instance_id || ':' || p_source_filename, 1, 100),
+            p_orchestration_code, p_scenario_name, x_prefix
+        ) RETURNING RUN_ID INTO x_integration_id;
         COMMIT;
 
         DMT_UTIL_PKG.LOG(x_integration_id,
