@@ -244,6 +244,7 @@ prompt == Tables ==
 @@tables/dmt_ben_partic_tfm_tbl.sql
 @@tables/dmt_bip_report_tbl.sql
 @@tables/dmt_bu_lookup_tbl.sql
+@@tables/dmt_cemli_catalog_tbl.sql
 @@tables/dmt_cemli_split_cfg.sql
 @@tables/dmt_ce_bank_acct_stg_tbl.sql
 @@tables/dmt_ce_bank_acct_tfm_tbl.sql
@@ -356,6 +357,7 @@ prompt == Tables ==
 @@tables/dmt_person_nid_tfm_tbl.sql
 @@tables/dmt_person_phone_stg_tbl.sql
 @@tables/dmt_person_phone_tfm_tbl.sql
+@@tables/dmt_pipeline_def_tbl.sql
 @@tables/dmt_pipeline_run_tbl.sql
 @@tables/dmt_pjb_bill_events_stg_tbl.sql
 @@tables/dmt_pjb_bill_events_tfm_tbl.sql
@@ -412,6 +414,7 @@ prompt == Tables ==
 @@tables/dmt_sal_basis_stg_tbl.sql
 @@tables/dmt_sal_basis_tfm_tbl.sql
 @@tables/dmt_scenario_tbl.sql
+@@tables/dmt_stg_tfm_error_tbl.sql
 @@tables/dmt_talent_prof_item_stg_tbl.sql
 @@tables/dmt_talent_prof_item_tfm_tbl.sql
 @@tables/dmt_talent_prof_stg_tbl.sql
@@ -1057,6 +1060,8 @@ prompt == Seed data ==
 @@seed/dmt_rest_lookup_tbl.sql
 @@seed/dmt_bu_lookup_tbl.sql
 @@seed/dmt_config_tbl.sql
+@@seed/dmt_pipeline_def_tbl.sql
+@@seed/dmt_cemli_catalog_tbl.sql
 
 prompt == Recompile schema ==
 exec dbms_utility.compile_schema(schema => user, compile_all => false)
