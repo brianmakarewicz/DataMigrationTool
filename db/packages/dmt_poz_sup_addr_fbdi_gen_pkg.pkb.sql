@@ -71,6 +71,7 @@
             FROM   DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    STATUS         = 'STAGED'
+            ORDER BY TFM_SEQUENCE_ID
         ) LOOP
             l_row_count := l_row_count + 1;
             DBMS_LOB.APPEND(l_csv,
