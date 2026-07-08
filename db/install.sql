@@ -494,14 +494,8 @@ prompt == Synonyms ==
 
 prompt == Views (dependency order) ==
 @@views/dmt_conversion_master_tbl.sql
-@@views/dmt_absences_v.sql
-@@views/dmt_assignments_v.sql
-@@views/dmt_benefits_v.sql
-@@views/dmt_billing_events_v.sql
 @@views/dmt_bip_reports_admin_v.sql
 @@views/dmt_cfg_gl_calendar_v.sql
-@@views/dmt_cfg_lookup_types_v.sql
-@@views/dmt_cfg_lookup_values_v.sql
 @@views/dmt_cfg_pay_terms_v.sql
 @@views/dmt_cfg_pay_term_lines_v.sql
 @@views/dmt_cfg_tax_rates_v.sql
@@ -516,8 +510,6 @@ prompt == Views (dependency order) ==
 @@views/dmt_ess_jobs_monitor_v.sql
 @@views/dmt_ess_job_detail_v.sql
 @@views/dmt_ess_job_files_v.sql
-@@views/dmt_fa_assets_v.sql
-@@views/dmt_gl_balances_v.sql
 @@views/dmt_gl_budget_v.sql
 @@views/dmt_grants_v.sql
 @@views/dmt_mst_banks_v.sql
@@ -526,25 +518,12 @@ prompt == Views (dependency order) ==
 @@views/dmt_mst_items_v.sql
 @@views/dmt_mst_item_cats_v.sql
 @@views/dmt_object_detail_v.sql
-@@views/dmt_otc_ar_invoices_v.sql
-@@views/dmt_otc_customers_v.sql
-@@views/dmt_otc_receipts_v.sql
-@@views/dmt_p2p_ap_invoices_v.sql
-@@views/dmt_p2p_po_headers_v.sql
-@@views/dmt_p2p_requisitions_v.sql
-@@views/dmt_p2p_suppliers_v.sql
 @@views/dmt_v_cemli_status.sql
 @@views/dmt_pipeline_summary_v.sql
-@@views/dmt_projects_v.sql
-@@views/dmt_project_budgets_v.sql
-@@views/dmt_project_expenditures_v.sql
-@@views/dmt_project_tasks_v.sql
 @@views/dmt_record_detail_v.sql
 @@views/dmt_run_history_v.sql
 @@views/dmt_run_metrics_v.sql
 @@views/dmt_run_status_v.sql
-@@views/dmt_salaries_v.sql
-@@views/dmt_timecards_v.sql
 @@views/dmt_v_absence_detail.sql
 @@views/dmt_v_ap_invoices_detail.sql
 @@views/dmt_v_ap_inv_lines_detail.sql
@@ -626,7 +605,6 @@ prompt == Views (dependency order) ==
 @@views/dmt_v_work_rel_detail.sql
 @@views/dmt_v_work_sched_detail.sql
 @@views/dmt_v_work_sched_dtl_detail.sql
-@@views/dmt_workers_v.sql
 
 prompt == Package specs (dependency order) ==
 @@packages/dmt_1099_fbdi_gen_pkg.pks.sql
