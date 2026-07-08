@@ -1,0 +1,4 @@
+IMPORT_ACTION,VENDOR_NAME,FIRST_NAME,LAST_NAME,EMAIL_ADDRESS,PRIMARY_ADMIN_CONTACT,SOURCE_ID
+CREATE,RT Supplier Good-1,Alice,Good,alice@good1.test,Y,RT-CON-AliceGood
+CREATE,RT Supplier Good-2,Bob,Good,bob@good2.test,Y,RT-CON-BobGood
+CREATE,DOES NOT EXIST SUPPLIER,Ghost,Contact,ghost@nowhere.test,Y,RT-CON-BAD1

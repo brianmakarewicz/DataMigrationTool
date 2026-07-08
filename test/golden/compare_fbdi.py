@@ -17,7 +17,9 @@ and the script exits nonzero. HONESTY RULE: never widen the map to make a
 compare pass — a diff beyond the declared tokens is a generator finding.
 
 FBDI generator output contract assumed (and verified per line, "self-check"):
-every field is double-quoted, quotes escaped by doubling, records end with LF.
+every field is double-quoted, quotes escaped by doubling, records end with the
+member's declared record terminator (LF by default; "record_terminator":
+"CRLF" in the map for generators that emit CRLF, e.g. the supplier family).
 If a file does not round-trip through that canonical form, the compare falls
 back to reporting it as a finding (quoting/format drift between generators).
 
@@ -52,16 +54,22 @@ def is_fbdi_date(v):
     return True
 
 
-def parse_records(data, label, problems):
+def parse_records(data, label, problems, terminator="\n"):
     """Parse CSV bytes into a list of field-lists, honoring quoted fields with
     embedded commas/newlines and doubled-quote escapes. Also self-check: the
     canonical re-serialization of each record must reproduce the original
-    bytes, so a field-level compare is exactly a byte compare."""
+    bytes, so a field-level compare is exactly a byte compare.
+
+    terminator is the member's DECLARED record terminator ("\\n" default, or
+    "\\r\\n" when the map says record_terminator=CRLF — the supplier-family
+    generators emit CRLF). A terminator the file doesn't actually use is
+    still a format-drift finding, because the self-check fails."""
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as e:
         problems.append("%s: not valid UTF-8 (%s); comparing raw bytes only" % (label, e))
         return None
+    crlf = terminator == "\r\n"
     records, field, fields = [], [], []
     in_quotes = False
     i, n = 0, len(text)
@@ -82,34 +90,45 @@ def parse_records(data, label, problems):
             elif ch == ",":
                 fields.append("".join(field))
                 field = []
-            elif ch == "\n":
+            elif crlf and ch == "\r" and i + 1 < n and text[i + 1] == "\n":
                 fields.append("".join(field))
                 records.append(fields)
                 field, fields = [], []
-            elif ch == "\r":
-                problems.append("%s: CR byte outside quotes (CRLF line ending?) — format drift" % label)
+                i += 1
+            elif not crlf and ch == "\n":
+                fields.append("".join(field))
+                records.append(fields)
+                field, fields = [], []
+            elif ch in ("\r", "\n"):
+                problems.append(
+                    "%s: bare %s byte outside quotes does not match the declared "
+                    "%s record terminator — format drift"
+                    % (label, "CR" if ch == "\r" else "LF",
+                       "CRLF" if crlf else "LF"))
                 return None
             else:
                 field.append(ch)
         i += 1
     if fields or field or in_quotes:
-        problems.append("%s: last record not LF-terminated (or unclosed quote) — format drift" % label)
+        problems.append("%s: last record not terminated with the declared "
+                        "terminator (or unclosed quote) — format drift" % label)
         return None
     # self-check: canonical serialization must equal the original bytes
-    if serialize(records) != data:
+    if serialize(records, terminator) != data:
         problems.append(
             "%s: file does not round-trip the canonical FBDI quoting "
-            "(all fields double-quoted, LF endings) — quoting/format drift; "
-            "field-level normalization would not be byte-honest" % label)
+            "(all fields double-quoted, declared record terminator) — "
+            "quoting/format drift; field-level normalization would not "
+            "be byte-honest" % label)
         return None
     return records
 
 
-def serialize(records):
+def serialize(records, terminator="\n"):
     out = []
     for rec in records:
         out.append(",".join('"' + f.replace('"', '""') + '"' for f in rec))
-    return ("\n".join(out) + "\n").encode("utf-8") if records else b""
+    return (terminator.join(out) + terminator).encode("utf-8") if records else b""
 
 
 def apply_tokens(records, tokens):
@@ -236,8 +255,9 @@ def main():
             print("  %s: raw bytes identical (no normalization needed)" % member)
             continue
 
-        g_recs = parse_records(g_data, "golden %s" % member, problems)
-        l_recs = parse_records(l_data, "generated %s" % member, problems)
+        term = "\r\n" if mspec.get("record_terminator") == "CRLF" else "\n"
+        g_recs = parse_records(g_data, "golden %s" % member, problems, term)
+        l_recs = parse_records(l_data, "generated %s" % member, problems, term)
         if g_recs is None or l_recs is None:
             diffs.append("%s: format drift (see problems); raw bytes differ "
                          "(golden %d bytes, generated %d bytes)"
@@ -256,7 +276,7 @@ def main():
         l_recs = apply_tokens(l_recs, l_tokens)
         mask_dates(g_recs, l_recs, mspec.get("date_mask_fields", []), member, problems)
 
-        if serialize(g_recs) == serialize(l_recs):
+        if serialize(g_recs, term) == serialize(l_recs, term):
             print("  %s: byte-identical after declared normalization "
                   "(tokens: %s; date-mask fields: %s)"
                   % (member,
