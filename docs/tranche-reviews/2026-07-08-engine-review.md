@@ -59,3 +59,21 @@ Remaining (documented): per-object p_include_untagged/'RETRY' literals fold at S
 ports; legacy sync orchestrators flagged for retirement; work-queue CK vocabulary + rename
 still P2; dynamic-SQL exception ruling now covers 3 named sites (dispatch + accounting).
 RE-REVIEW: dispatched per the FAIL verdict.
+
+## RE-REVIEW verdict (2026-07-08): PASS-WITH-FINDINGS
+Every fix-now finding confirmed genuinely fixed against the spec sentences cited, verified
+in both git and the live Docker DB. Three bounded items keep it short of a clean pass, all
+being closed now:
+1. DMT_SUBMIT_RUN_V2 (the old APEX submission procedure) bypasses all new submission
+   guards — being rewritten to delegate to the scheduler; the 3 dead submit procedures
+   are being dropped.
+2. The catalog's ROW_FILTER predicate is concatenated into accounting SQL unvalidated —
+   now named explicitly in the pending dynamic-SQL exception ruling (user decides).
+3. The TEST pipeline / mock fixtures had no spec entry — a red proposed entry now names
+   them in the canonical doc.
+Small items also being fixed: config-typo-becomes-verdict on the timeout key, no wait
+limit on the submission lock, two stale comments. Known residues documented: accounting
+counts TFM rows only (pre-transform failures wait on the stage-to-transform error table —
+tied to that existing backlog item); Assets whole-object accounting until partition work
+(Stage C task 5); the archived APEX export calls retired signatures (rework at the Stage F
+APEX port). Deferred-table corrections: A9b/c, C2b, C5, A13 are done.
