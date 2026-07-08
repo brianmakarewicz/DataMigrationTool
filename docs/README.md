@@ -9,3 +9,9 @@ rules are added there in red per its change-review convention.
 
 Local to this repo: DMT_OBJECT_CATALOG.html (naming worklist snapshot), coding-standards.md
 (mirror, regenerate from the design doc on acceptance), tranche-reviews/ (blind review logs).
+
+## Automated PR review
+Every open pull request is reviewed hourly by the cloud routine
+"Hourly PR review & approve — DataMigrationTool" (claude.ai). Approvals and
+change requests carry an AUTOMATED banner. Reviews are independent of the
+PR author; merges require the review approval per branch protection.
