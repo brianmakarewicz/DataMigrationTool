@@ -18,5 +18,7 @@ order, roadmap, risks, execution status).
 Old locations (ConversionTool-dbfull/docs/ and the data-migration-tool project root)
 now hold pointer stubs only. Never create another copy of either document.
 
-Also local: DMT_OBJECT_CATALOG.html (naming worklist snapshot), coding-standards.md
-(mirror), tranche-reviews/ (blind review logs).
+Also local: DMT_OBJECT_CATALOG.html (naming worklist snapshot), tranche-reviews/ (blind
+review logs), archive/ (retired files). The old coding-standards.md mirror is RETIRED —
+the standards live solely in DMT_DESIGN.html section 7; its four still-valuable items
+were proposed into the red block on 2026-07-08.
