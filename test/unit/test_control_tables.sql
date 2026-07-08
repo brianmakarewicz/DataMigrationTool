@@ -102,11 +102,15 @@ begin
     -- 4-5. Catalog seed counts match the design
     --      (section 1: 45 in-scope objects = 23 FBDI + 14 HDL +
     --       6 FBL + 2 REST; PlanningBudgets out of scope;
-    --       86 record-type rows as seeded)
+    --       86 record-type rows as seeded).
+    --      MockObject / MockChild are engine-test fixtures in the
+    --      TEST pipeline (db/seed/dmt_mock_object.sql), not canonical
+    --      objects -- excluded by exact code.
     -- ----------------------------------------------------------
     select count(distinct cemli_code), count(*)
       into l_cnt, l_cnt2
-      from dmt_cemli_catalog_tbl;
+      from dmt_cemli_catalog_tbl
+     where cemli_code not in ('MockObject','MockChild');
     assert(l_cnt = 45, 4, 'catalog covers exactly the 45 in-scope canonical objects (got '||l_cnt||')');
     assert(l_cnt2 = 86, 5, 'catalog has the 86 seeded record-type rows (got '||l_cnt2||')');
 
@@ -153,10 +157,13 @@ begin
 
     -- ----------------------------------------------------------
     -- 13-14. Pipeline-def seed counts and one-home rule
+    --        (TEST pipeline = the Mock engine-test fixtures,
+    --         excluded from the canonical 45)
     -- ----------------------------------------------------------
     select count(*), count(distinct cemli_code)
       into l_cnt, l_cnt2
-      from dmt_pipeline_def_tbl;
+      from dmt_pipeline_def_tbl
+     where pipeline_code <> 'TEST';
     assert(l_cnt = 45, 13, 'pipeline definitions seed all 45 in-scope objects (got '||l_cnt||')');
     assert(l_cnt = l_cnt2, 14, 'every object has exactly one pipeline home');
 

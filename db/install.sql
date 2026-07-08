@@ -745,6 +745,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_misc_receipt_results_pkg.pks.sql
 @@packages/dmt_misc_receipt_transform_pkg.pks.sql
 @@packages/dmt_misc_receipt_validator_pkg.pks.sql
+@@packages/dmt_mock_pkg.pks.sql
 @@packages/dmt_pay_rel_hdl_gen_pkg.pks.sql
 @@packages/dmt_pay_rel_results_pkg.pks.sql
 @@packages/dmt_pay_rel_transform_pkg.pks.sql
@@ -964,6 +965,7 @@ prompt == Package bodies ==
 @@packages/dmt_misc_receipt_results_pkg.pkb.sql
 @@packages/dmt_misc_receipt_transform_pkg.pkb.sql
 @@packages/dmt_misc_receipt_validator_pkg.pkb.sql
+@@packages/dmt_mock_pkg.pkb.sql
 @@packages/dmt_pay_rel_hdl_gen_pkg.pkb.sql
 @@packages/dmt_pay_rel_results_pkg.pkb.sql
 @@packages/dmt_pay_rel_transform_pkg.pkb.sql
@@ -1062,6 +1064,7 @@ prompt == Seed data ==
 @@seed/dmt_config_tbl.sql
 @@seed/dmt_pipeline_def_tbl.sql
 @@seed/dmt_cemli_catalog_tbl.sql
+@@seed/dmt_mock_object.sql
 
 prompt == Recompile schema ==
 exec dbms_utility.compile_schema(schema => user, compile_all => false)

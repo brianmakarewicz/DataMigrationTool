@@ -9,7 +9,8 @@ AS
     -- ============================================================
     FUNCTION dependencies_met (
         p_run_id     IN NUMBER,
-        p_depends_on IN VARCHAR2
+        p_depends_on IN VARCHAR2,
+        p_policy     IN VARCHAR2 DEFAULT 'HALT'
     ) RETURN BOOLEAN IS
         l_remaining VARCHAR2(4000);
         l_dep       VARCHAR2(60);
@@ -26,15 +27,27 @@ AS
             l_remaining := SUBSTR(l_remaining, l_pos + 1);
             IF l_dep IS NULL THEN CONTINUE; END IF;
 
-            -- A dependency is satisfied ONLY when it is DONE. A SKIPPED (or FAILED, or
-            -- still-running) dependency must NOT let this row dispatch — otherwise a row
-            -- whose parent was skipped runs without its master data. Such rows are instead
-            -- cascade-skipped by handle_failures. (Absent dep = no rows = treated as met.)
-            SELECT COUNT(*) INTO l_done
-            FROM DMT_WORK_QUEUE_TBL
-            WHERE RUN_ID = p_run_id
-              AND CEMLI_CODE = l_dep
-              AND WORK_STATUS <> 'DONE';
+            -- HALT (default): a dependency is satisfied ONLY when it is DONE.
+            -- A SKIPPED (or FAILED, or still-running) dependency must NOT let
+            -- this row dispatch — otherwise a row whose parent was skipped runs
+            -- without its master data. Such rows are instead cascade-skipped by
+            -- handle_failures. (Absent dep = no rows = treated as met.)
+            -- CONTINUE (section 2, decided 2026-07-07): dependencies need only
+            -- be terminal (DONE or FAILED) — dependents launch anyway and
+            -- per-row dependency validation sorts out individual rows.
+            IF p_policy = 'CONTINUE' THEN
+                SELECT COUNT(*) INTO l_done
+                FROM DMT_WORK_QUEUE_TBL
+                WHERE RUN_ID = p_run_id
+                  AND CEMLI_CODE = l_dep
+                  AND WORK_STATUS NOT IN ('DONE', 'FAILED');
+            ELSE
+                SELECT COUNT(*) INTO l_done
+                FROM DMT_WORK_QUEUE_TBL
+                WHERE RUN_ID = p_run_id
+                  AND CEMLI_CODE = l_dep
+                  AND WORK_STATUS <> 'DONE';
+            END IF;
 
             IF l_done > 0 THEN RETURN FALSE; END IF;
         END LOOP;
@@ -82,12 +95,14 @@ AS
     PROCEDURE promote_ready IS
     BEGIN
         FOR rec IN (
-            SELECT QUEUE_ID, RUN_ID, DEPENDS_ON
-            FROM DMT_WORK_QUEUE_TBL
-            WHERE WORK_STATUS = 'PENDING'
+            SELECT q.QUEUE_ID, q.RUN_ID, q.DEPENDS_ON,
+                   NVL(r.ON_FAILURE_POLICY, 'HALT') AS POLICY
+            FROM DMT_WORK_QUEUE_TBL q
+            JOIN DMT_PIPELINE_RUN_TBL r ON r.RUN_ID = q.RUN_ID
+            WHERE q.WORK_STATUS = 'PENDING'
         )
         LOOP
-            IF dependencies_met(rec.RUN_ID, rec.DEPENDS_ON) THEN
+            IF dependencies_met(rec.RUN_ID, rec.DEPENDS_ON, rec.POLICY) THEN
                 UPDATE DMT_WORK_QUEUE_TBL
                 SET WORK_STATUS = 'READY'
                 WHERE QUEUE_ID = rec.QUEUE_ID;

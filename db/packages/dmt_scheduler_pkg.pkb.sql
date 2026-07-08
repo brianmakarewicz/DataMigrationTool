@@ -5,97 +5,91 @@ AS
     C_PKG CONSTANT VARCHAR2(30) := 'DMT_SCHEDULER_PKG';
 
     -- ============================================================
-    -- Pipeline CEMLI sequences
+    -- Pipeline CEMLI sequences — registry-driven (Stage C task 3).
+    -- Reads DMT_PIPELINE_DEF_TBL (the decided section-6 seed content)
+    -- instead of the retired hardcoded CASE. Only objects with a
+    -- registered EXEC_PROC are queued: an unbuilt registration
+    -- (ARReceipts, the CONFIGURATION objects pending the section-12
+    -- fold) must not create work items EXECUTE_ONE cannot dispatch.
+    -- 'OTC' is accepted as an alias of the canonical 'O2C'.
     -- ============================================================
     FUNCTION GET_CEMLI_SEQUENCE (p_pipeline_code IN VARCHAR2) RETURN VARCHAR2 IS
+        l_pipeline VARCHAR2(30);
+        l_seq      VARCHAR2(4000);
     BEGIN
-        RETURN CASE UPPER(p_pipeline_code)
-            WHEN 'P2P' THEN
-                -- ItemCategories (and the never-wired ItemCategoryAssignments) are NOT separate
-                -- tokens: their CSV is bundled into the single Items FBDI ZIP / ItemImportJobDef
-                -- ESS call, and the 'Items' token validates/transforms/reconciles them inline
-                -- (see DMT_LOADER_PKG.run_one_object_type 'Items' branch). One token => one card.
-                'Items,'
-                || 'Suppliers,SupplierAddresses,SupplierSites,SupplierSiteAssignments,SupplierContacts,'
-                || 'PurchaseOrders,BlanketPOs,Contracts,APInvoices,1099Invoices,Requisitions'
-            WHEN 'O2C' THEN
-                'Customers,ARInvoices'
-            WHEN 'OTC' THEN
-                'Customers,ARInvoices'
-            WHEN 'PROJECTS' THEN
-                'Projects,BillingEvents,Expenditures,Grants,ProjectBudgets'
-            WHEN 'HCM' THEN
-                'Workers,Assignments,Salaries,SalaryBases,PayrollRels,TaxCards,W2Balances,'
-                || 'BenParticipant,BenDependent,BenBeneficiary,Absences,TalentProfiles,PerfEvaluations,WorkSchedules'
-            WHEN 'FINANCIALS' THEN
-                -- PlanBudgets (EPBCS PlanningBudgets) is DORMANT — no ERP-options seed exists
-                -- on this instance, so it is excluded from the queue. Re-add once EPBCS is seeded.
-                'GLBalances,GLBudgets,Assets'
-            WHEN 'CONFIGURATION' THEN
-                'GLCalendar,ValueSets,ValueSetValues,Lookups'
-            ELSE NULL
-        END;
+        l_pipeline := UPPER(p_pipeline_code);
+        IF l_pipeline = 'OTC' THEN
+            l_pipeline := 'O2C';
+        END IF;
+
+        SELECT LISTAGG(CEMLI_CODE, ',') WITHIN GROUP (ORDER BY SORT_ORDER)
+        INTO   l_seq
+        FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+        WHERE  PIPELINE_CODE = l_pipeline
+        AND    EXEC_PROC IS NOT NULL;
+
+        RETURN l_seq;  -- NULL when the pipeline is unknown (existing contract)
     END GET_CEMLI_SEQUENCE;
 
     -- ============================================================
-    -- CEMLI dependency graph
+    -- CEMLI dependency graph — registry-driven (Stage C task 3).
+    -- One pipeline home per object (DMT_PIPELINE_DEF_UK1), so the
+    -- pipeline code parameter is no longer consulted; it is kept
+    -- for signature compatibility with existing callers.
     -- ============================================================
     FUNCTION GET_CEMLI_DEPENDENCIES (p_pipeline_code IN VARCHAR2, p_cemli_code IN VARCHAR2) RETURN VARCHAR2 IS
+        l_deps VARCHAR2(4000);
     BEGIN
-        RETURN CASE p_cemli_code
-            -- P2P
-            -- ItemCategories / ItemCategoryAssignments are bundled into the Items token (one FBDI
-            -- ZIP); they are no longer emitted as standalone CEMLIs, so no dependency rows are needed.
-            WHEN 'Items'                    THEN NULL
-            WHEN 'Suppliers'                THEN NULL
-            WHEN 'SupplierAddresses'        THEN 'Suppliers'
-            WHEN 'SupplierSites'            THEN 'Suppliers,SupplierAddresses'
-            WHEN 'SupplierSiteAssignments'  THEN 'SupplierSites'
-            WHEN 'SupplierContacts'         THEN 'Suppliers'
-            WHEN 'PurchaseOrders'           THEN 'Items,Suppliers'
-            WHEN 'BlanketPOs'               THEN 'Items,Suppliers'
-            WHEN 'Contracts'                THEN 'Suppliers'
-            WHEN 'APInvoices'               THEN 'Suppliers'
-            WHEN '1099Invoices'             THEN 'Suppliers'
-            WHEN 'Requisitions'             THEN 'Items,Suppliers'
-            WHEN 'MiscReceipts'             THEN NULL
-            -- O2C
-            WHEN 'Customers'                THEN NULL
-            WHEN 'ARInvoices'               THEN 'Customers'
-            -- Projects
-            WHEN 'Projects'                 THEN NULL
-            WHEN 'BillingEvents'            THEN 'Projects'
-            WHEN 'Expenditures'             THEN 'Projects'
-            WHEN 'Grants'                   THEN 'Projects'
-            WHEN 'ProjectBudgets'           THEN 'Projects'
-            -- Financials
-            WHEN 'GLBalances'               THEN NULL
-            WHEN 'GLBudgets'                THEN NULL
-            WHEN 'PlanBudgets'              THEN NULL
-            WHEN 'Assets'                   THEN NULL
-            -- HCM
-            WHEN 'Workers'                  THEN NULL
-            WHEN 'Assignments'              THEN 'Workers'
-            WHEN 'Salaries'                 THEN 'Workers,Assignments'
-            WHEN 'SalaryBases'              THEN 'Salaries'
-            WHEN 'PayrollRels'              THEN 'Workers'
-            WHEN 'TaxCards'                 THEN 'Workers'
-            WHEN 'W2Balances'               THEN NULL
-            WHEN 'BenParticipant'           THEN 'Workers'
-            WHEN 'BenDependent'             THEN 'Workers'
-            WHEN 'BenBeneficiary'           THEN 'Workers'
-            WHEN 'Absences'                 THEN 'Workers'
-            WHEN 'TalentProfiles'           THEN 'Workers'
-            WHEN 'PerfEvaluations'          THEN 'Workers'
-            WHEN 'WorkSchedules'            THEN NULL
-            -- Configuration
-            WHEN 'GLCalendar'               THEN NULL
-            WHEN 'ValueSets'                THEN NULL
-            WHEN 'ValueSetValues'           THEN 'ValueSets'
-            WHEN 'Lookups'                  THEN NULL
-            ELSE NULL
-        END;
+        SELECT DEPENDS_ON
+        INTO   l_deps
+        FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+        WHERE  CEMLI_CODE = p_cemli_code;
+
+        RETURN l_deps;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RETURN NULL;  -- unregistered object: no dependencies (existing contract)
     END GET_CEMLI_DEPENDENCIES;
+
+    -- ============================================================
+    -- assert_objects_not_active — one-active-run-per-object rule
+    -- (section 2, decided 2026-07-07): an object may be part of only
+    -- one active run at a time, enforced at submission — a run whose
+    -- selection includes an object already in an active run is
+    -- rejected with a clear message naming the object and the
+    -- blocking run.
+    -- ============================================================
+    PROCEDURE assert_objects_not_active (p_cemli_csv IN VARCHAR2) IS
+        l_remaining    VARCHAR2(4000);
+        l_cemli        VARCHAR2(60);
+        l_pos          PLS_INTEGER;
+        l_blocking_run NUMBER;
+    BEGIN
+        l_remaining := REPLACE(p_cemli_csv, ' ', '') || ',';
+        LOOP
+            l_pos := INSTR(l_remaining, ',');
+            EXIT WHEN NVL(l_pos, 0) = 0;
+            l_cemli := TRIM(SUBSTR(l_remaining, 1, l_pos - 1));
+            l_remaining := SUBSTR(l_remaining, l_pos + 1);
+            IF l_cemli IS NULL THEN CONTINUE; END IF;
+
+            SELECT MAX(q.RUN_ID)
+            INTO   l_blocking_run
+            FROM   DMT_WORK_QUEUE_TBL q
+            JOIN   DMT_PIPELINE_RUN_TBL r ON r.RUN_ID = q.RUN_ID
+            WHERE  q.CEMLI_CODE = l_cemli
+            AND    r.RUN_STATUS IN ('QUEUED', 'IN_PROGRESS')
+            AND    q.WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
+
+            IF l_blocking_run IS NOT NULL THEN
+                RAISE_APPLICATION_ERROR(-20105,
+                    'Object ' || l_cemli || ' is already part of active run #'
+                    || l_blocking_run
+                    || '. An object may be part of only one active run at a time; '
+                    || 'wait for that run to finish.');
+            END IF;
+        END LOOP;
+    END assert_objects_not_active;
 
     -- ============================================================
     -- Internal: create PIPELINE_RUN + WORK_QUEUE rows
@@ -119,6 +113,9 @@ AS
         l_has_deps      BOOLEAN;
         l_is_split      NUMBER;
     BEGIN
+        -- One-active-run-per-object (section 2): reject before creating anything.
+        assert_objects_not_active(p_cemli_csv);
+
         -- Assign prefix from sequence
         SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
 
@@ -139,7 +136,7 @@ AS
         l_remaining := REPLACE(p_pipeline_codes, ' ', '') || ',';
         LOOP
             l_pos := INSTR(l_remaining, ',');
-            EXIT WHEN l_pos = 0;
+            EXIT WHEN NVL(l_pos, 0) = 0;
             l_pipeline := TRIM(SUBSTR(l_remaining, 1, l_pos - 1));
             l_remaining := SUBSTR(l_remaining, l_pos + 1);
             IF l_pipeline IS NULL THEN CONTINUE; END IF;
@@ -180,7 +177,7 @@ AS
                 l_seq_remaining := l_seq || ',';
                 LOOP
                     l_seq_pos := INSTR(l_seq_remaining, ',');
-                    EXIT WHEN l_seq_pos = 0;
+                    EXIT WHEN NVL(l_seq_pos, 0) = 0;
                     l_cemli := TRIM(SUBSTR(l_seq_remaining, 1, l_seq_pos - 1));
                     l_seq_remaining := SUBSTR(l_seq_remaining, l_seq_pos + 1);
                     IF l_cemli IS NULL THEN CONTINUE; END IF;
@@ -244,7 +241,7 @@ AS
         l_remaining := REPLACE(p_pipeline_codes, ' ', '') || ',';
         LOOP
             l_pos := INSTR(l_remaining, ',');
-            EXIT WHEN l_pos = 0;
+            EXIT WHEN NVL(l_pos, 0) = 0;
             l_pipeline := TRIM(SUBSTR(l_remaining, 1, l_pos - 1));
             l_remaining := SUBSTR(l_remaining, l_pos + 1);
             IF l_pipeline IS NULL THEN CONTINUE; END IF;
@@ -298,7 +295,7 @@ AS
         l_remaining := p_objects || '|';
         LOOP
             l_pos := INSTR(l_remaining, '|');
-            EXIT WHEN l_pos = 0;
+            EXIT WHEN NVL(l_pos, 0) = 0;
             l_obj := TRIM(SUBSTR(l_remaining, 1, l_pos - 1));
             l_remaining := SUBSTR(l_remaining, l_pos + 1);
             IF l_obj IS NULL THEN CONTINUE; END IF;
@@ -360,16 +357,16 @@ AS
 
     -- ============================================================
     -- PLAN_RUN — preview without committing
-    -- Populates APEX_COLLECTION 'PLAN_PREVIEW' with proposed queue
-    -- rows. Returns a SYS_REFCURSOR over the collection.
-    -- Collection columns:
-    --   C001 = PIPELINE, C002 = CEMLI_CODE, C003 = DEPENDS_ON,
-    --   C004 = INITIAL_STATUS, N001 = SORT_ORDER
+    -- Populates DMT_PLAN_PREVIEW_GTT (session-scoped, ON COMMIT
+    -- DELETE ROWS) with the proposed queue rows and returns a
+    -- SYS_REFCURSOR over it. Previously used APEX_COLLECTION, which
+    -- made this package invalid on any database without APEX (the
+    -- local Docker engine instance); the GTT was already committed
+    -- for exactly this purpose.
     -- ============================================================
     FUNCTION PLAN_RUN (
         p_pipeline_codes   IN  VARCHAR2
     ) RETURN SYS_REFCURSOR IS
-        C_COLLECTION CONSTANT VARCHAR2(30) := 'PLAN_PREVIEW';
         l_cur          SYS_REFCURSOR;
         l_remaining    VARCHAR2(4000);
         l_pipeline     VARCHAR2(30);
@@ -378,24 +375,20 @@ AS
         l_deps         VARCHAR2(4000);
         l_cemli        VARCHAR2(60);
     BEGIN
-        IF APEX_COLLECTION.COLLECTION_EXISTS(C_COLLECTION) THEN
-            APEX_COLLECTION.DELETE_COLLECTION(C_COLLECTION);
-        END IF;
-        APEX_COLLECTION.CREATE_COLLECTION(C_COLLECTION);
+        DELETE FROM DMT_PLAN_PREVIEW_GTT;
 
         IF p_pipeline_codes IS NULL THEN
             OPEN l_cur FOR
-                SELECT N001 AS sort_order, C001 AS pipeline, C002 AS cemli_code,
-                       C003 AS depends_on, C004 AS initial_status
-                FROM APEX_COLLECTIONS WHERE COLLECTION_NAME = C_COLLECTION
-                ORDER BY N001;
+                SELECT SORT_ORDER, PIPELINE, CEMLI_CODE, DEPENDS_ON, INITIAL_STATUS
+                FROM DMT_PLAN_PREVIEW_GTT
+                ORDER BY SORT_ORDER;
             RETURN l_cur;
         END IF;
 
         l_remaining := REPLACE(p_pipeline_codes, ' ', '') || ',';
         LOOP
             l_pos := INSTR(l_remaining, ',');
-            EXIT WHEN l_pos = 0;
+            EXIT WHEN NVL(l_pos, 0) = 0;
             l_pipeline := TRIM(SUBSTR(l_remaining, 1, l_pos - 1));
             l_remaining := SUBSTR(l_remaining, l_pos + 1);
             IF l_pipeline IS NULL THEN CONTINUE; END IF;
@@ -404,13 +397,11 @@ AS
                 l_cemli := SUBSTR(l_pipeline, 12);
                 l_sort := l_sort + 1;
                 l_deps := GET_CEMLI_DEPENDENCIES('STANDALONE', l_cemli);
-                APEX_COLLECTION.ADD_MEMBER(
-                    p_collection_name => C_COLLECTION,
-                    p_c001 => 'STANDALONE', p_c002 => l_cemli,
-                    p_c003 => l_deps,
-                    p_c004 => CASE WHEN l_deps IS NULL THEN 'READY' ELSE 'PENDING' END,
-                    p_n001 => l_sort
-                );
+                INSERT INTO DMT_PLAN_PREVIEW_GTT
+                    (SORT_ORDER, PIPELINE, CEMLI_CODE, DEPENDS_ON, INITIAL_STATUS)
+                VALUES
+                    (l_sort, 'STANDALONE', l_cemli, l_deps,
+                     CASE WHEN l_deps IS NULL THEN 'READY' ELSE 'PENDING' END);
                 CONTINUE;
             END IF;
 
@@ -421,42 +412,38 @@ AS
             BEGIN
                 IF l_seq IS NULL THEN
                     l_sort := l_sort + 1;
-                    APEX_COLLECTION.ADD_MEMBER(
-                        p_collection_name => C_COLLECTION,
-                        p_c001 => UPPER(l_pipeline),
-                        p_c002 => '** Unknown pipeline: ' || l_pipeline || ' **',
-                        p_c003 => NULL, p_c004 => 'ERROR', p_n001 => l_sort
-                    );
+                    INSERT INTO DMT_PLAN_PREVIEW_GTT
+                        (SORT_ORDER, PIPELINE, CEMLI_CODE, DEPENDS_ON, INITIAL_STATUS)
+                    VALUES
+                        (l_sort, UPPER(l_pipeline),
+                         '** Unknown pipeline: ' || l_pipeline || ' **',
+                         NULL, 'ERROR');
                     CONTINUE;
                 END IF;
 
                 l_seq_remaining := l_seq || ',';
                 LOOP
                     l_seq_pos := INSTR(l_seq_remaining, ',');
-                    EXIT WHEN l_seq_pos = 0;
+                    EXIT WHEN NVL(l_seq_pos, 0) = 0;
                     l_cemli := TRIM(SUBSTR(l_seq_remaining, 1, l_seq_pos - 1));
                     l_seq_remaining := SUBSTR(l_seq_remaining, l_seq_pos + 1);
                     IF l_cemli IS NULL THEN CONTINUE; END IF;
 
                     l_sort := l_sort + 1;
                     l_deps := GET_CEMLI_DEPENDENCIES(l_pipeline, l_cemli);
-                    APEX_COLLECTION.ADD_MEMBER(
-                        p_collection_name => C_COLLECTION,
-                        p_c001 => UPPER(l_pipeline),
-                        p_c002 => l_cemli,
-                        p_c003 => l_deps,
-                        p_c004 => CASE WHEN l_deps IS NULL THEN 'READY' ELSE 'PENDING' END,
-                        p_n001 => l_sort
-                    );
+                    INSERT INTO DMT_PLAN_PREVIEW_GTT
+                        (SORT_ORDER, PIPELINE, CEMLI_CODE, DEPENDS_ON, INITIAL_STATUS)
+                    VALUES
+                        (l_sort, UPPER(l_pipeline), l_cemli, l_deps,
+                         CASE WHEN l_deps IS NULL THEN 'READY' ELSE 'PENDING' END);
                 END LOOP;
             END;
         END LOOP;
 
         OPEN l_cur FOR
-            SELECT N001 AS sort_order, C001 AS pipeline, C002 AS cemli_code,
-                   C003 AS depends_on, C004 AS initial_status
-            FROM APEX_COLLECTIONS WHERE COLLECTION_NAME = C_COLLECTION
-            ORDER BY N001;
+            SELECT SORT_ORDER, PIPELINE, CEMLI_CODE, DEPENDS_ON, INITIAL_STATUS
+            FROM DMT_PLAN_PREVIEW_GTT
+            ORDER BY SORT_ORDER;
         RETURN l_cur;
     END PLAN_RUN;
 

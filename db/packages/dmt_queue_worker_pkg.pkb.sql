@@ -6,19 +6,126 @@ AS
     C_ESS_TIMEOUT CONSTANT PLS_INTEGER := 30;  -- max polls before auto-fail (mirrors DMT_QUEUE_PKG.C_ESS_TIMEOUT)
 
     -- ============================================================
+    -- get_dispatch — read the object's dispatch registration from
+    -- DMT_PIPELINE_DEF_TBL (the section-12 one-row-per-object
+    -- registry). Replaces the retired hardcoded EXECUTE_ONE CASE /
+    -- RECONCILE_ONE ELSIF chain: adding an object is now a registry
+    -- seed insert, not a queue-worker edit. Missing registration is
+    -- reported as a clear error by the callers.
+    -- ============================================================
+    PROCEDURE get_dispatch (
+        p_cemli_code          IN  VARCHAR2,
+        x_exec_proc           OUT VARCHAR2,
+        x_exec_mode           OUT VARCHAR2,
+        x_recon_proc          OUT VARCHAR2,
+        x_recon_has_cemli_arg OUT VARCHAR2
+    ) IS
+    BEGIN
+        SELECT EXEC_PROC, EXEC_MODE, RECON_PROC, RECON_HAS_CEMLI_ARG
+        INTO   x_exec_proc, x_exec_mode, x_recon_proc, x_recon_has_cemli_arg
+        FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+        WHERE  CEMLI_CODE = p_cemli_code;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            x_exec_proc           := NULL;
+            x_exec_mode           := NULL;
+            x_recon_proc          := NULL;
+            x_recon_has_cemli_arg := NULL;
+    END get_dispatch;
+
+    -- ============================================================
+    -- invoke_registered — the ONE dynamic invocation in the queue
+    -- engine.
+    --
+    -- STANDARDS NOTE (flagged for user review): section 7 bans
+    -- EXECUTE IMMEDIATE in database code objects; the approved
+    -- exception (2026-07-07) covers deploy scripts only. Registry-
+    -- driven dispatch (section 12 "catalog-driven queue dispatch")
+    -- cannot name its target procedure statically — that is the
+    -- point of the registry — so this package carries exactly one
+    -- dynamic call, isolated here, pending an explicit approved-
+    -- exception ruling for registry dispatch. The procedure name is
+    -- validated against a strict PKG.PROC identifier pattern before
+    -- execution (no user-supplied text ever reaches the block), and
+    -- all three call shapes use named notation with bind variables.
+    --
+    -- p_style: EXEC        p_proc(p_run_id, p_scenario_name,
+    --                             p_include_untagged, p_run_mode,
+    --                             p_skip_bu_refresh => TRUE)
+    --          RECON       p_proc(p_run_id, p_load_ess_id, p_import_ess_id)
+    --          RECON_CEMLI p_proc(p_run_id, p_cemli_code,
+    --                             p_load_ess_id, p_import_ess_id)
+    -- ============================================================
+    PROCEDURE invoke_registered (
+        p_proc             IN VARCHAR2,
+        p_style            IN VARCHAR2,
+        p_run_id           IN NUMBER,
+        p_cemli_code       IN VARCHAR2,
+        p_scenario_name    IN VARCHAR2 DEFAULT NULL,
+        p_include_untagged IN VARCHAR2 DEFAULT NULL,
+        p_run_mode         IN VARCHAR2 DEFAULT NULL,
+        p_load_ess_id      IN NUMBER   DEFAULT NULL,
+        p_import_ess_id    IN NUMBER   DEFAULT NULL
+    ) IS
+    BEGIN
+        IF p_proc IS NULL
+           OR NOT REGEXP_LIKE(p_proc, '^[A-Z][A-Z0-9_$#]*\.[A-Z][A-Z0-9_$#]*$') THEN
+            RAISE_APPLICATION_ERROR(-20102,
+                'invoke_registered: registered procedure name "' || p_proc ||
+                '" for ' || p_cemli_code || ' is not a valid PKG.PROC identifier');
+        END IF;
+
+        IF p_style = 'EXEC' THEN
+            EXECUTE IMMEDIATE
+                'BEGIN ' || p_proc || '(p_run_id => :b1, p_scenario_name => :b2, '
+                || 'p_include_untagged => :b3, p_run_mode => :b4, '
+                || 'p_skip_bu_refresh => TRUE); END;'
+                USING p_run_id, p_scenario_name, p_include_untagged, p_run_mode;
+        ELSIF p_style = 'RECON_CEMLI' THEN
+            EXECUTE IMMEDIATE
+                'BEGIN ' || p_proc || '(p_run_id => :b1, p_cemli_code => :b2, '
+                || 'p_load_ess_id => :b3, p_import_ess_id => :b4); END;'
+                USING p_run_id, p_cemli_code, p_load_ess_id, p_import_ess_id;
+        ELSIF p_style = 'RECON' THEN
+            EXECUTE IMMEDIATE
+                'BEGIN ' || p_proc || '(p_run_id => :b1, p_load_ess_id => :b2, '
+                || 'p_import_ess_id => :b3); END;'
+                USING p_run_id, p_load_ess_id, p_import_ess_id;
+        ELSE
+            RAISE_APPLICATION_ERROR(-20102,
+                'invoke_registered: unknown dispatch style ' || p_style);
+        END IF;
+    END invoke_registered;
+
+    -- ============================================================
     -- EXECUTE_ONE — called by one-shot child job DMT_WQ_{queue_id}
     -- Runs in its own DB session. Does the full validate -> transform
     -- -> generate -> SUBMIT_LOAD cycle for one queue row, then sets
-    -- AWAITING_LOAD. For sync-only objects (MiscReceipts, grouped,
-    -- HDL), runs the full RUN_* cycle and sets DONE.
+    -- AWAITING_LOAD. For sync objects (EXEC_MODE = SYNC: MiscReceipts;
+    -- HDL cycles return no load ESS id), runs the full RUN_* cycle and
+    -- sets DONE. LOCAL objects (no Fusion load stage — the mocks) go
+    -- to RECONCILING when a reconciler is registered, else DONE.
+    -- Dispatch is registry-driven (DMT_PIPELINE_DEF_TBL.EXEC_PROC) —
+    -- the former hardcoded ~39-branch CASE over CEMLI codes is retired.
     -- ============================================================
     PROCEDURE EXECUTE_ONE (p_queue_id IN NUMBER) IS
         l_rec       DMT_WORK_QUEUE_TBL%ROWTYPE;
         l_run_rec   DMT_PIPELINE_RUN_TBL%ROWTYPE;
         l_load_ess_id VARCHAR2(100);
+        l_exec_proc   VARCHAR2(200);
+        l_exec_mode   VARCHAR2(10);
+        l_recon_proc  VARCHAR2(200);
+        l_recon_cemli VARCHAR2(1);
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
         SELECT * INTO l_run_rec FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = l_rec.RUN_ID;
+
+        get_dispatch(l_rec.CEMLI_CODE, l_exec_proc, l_exec_mode, l_recon_proc, l_recon_cemli);
+        IF l_exec_proc IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20100,
+                'No EXEC_PROC registered in DMT_PIPELINE_DEF_TBL for CEMLI code: '
+                || l_rec.CEMLI_CODE);
+        END IF;
 
         UPDATE DMT_WORK_QUEUE_TBL
         SET WORK_STATUS = 'LOADING'
@@ -26,11 +133,8 @@ AS
         COMMIT;
 
         -- Set async mode: run_one_object_type returns after SUBMIT_LOAD.
-        IF l_rec.CEMLI_CODE = 'MiscReceipts' THEN
-            DMT_LOADER_PKG.g_async_mode := FALSE;
-        ELSE
-            DMT_LOADER_PKG.g_async_mode := TRUE;
-        END IF;
+        -- SYNC (MiscReceipts) and LOCAL (mocks) run inline.
+        DMT_LOADER_PKG.g_async_mode := (l_exec_mode = 'ASYNC');
         DMT_LOADER_PKG.g_load_ess_id := NULL;
         -- Multi-book: a partitioned row carries its BOOK_TYPE_CODE; the loader uses this to
         -- skip re-transform and generate the FBDI for only this book.
@@ -71,48 +175,18 @@ AS
             RETURN;
         END IF;
 
-        CASE l_rec.CEMLI_CODE
-            WHEN 'Items'                    THEN DMT_LOADER_PKG.RUN_ITEMS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'ItemCategories'           THEN DMT_LOADER_PKG.RUN_ITEM_CATEGORIES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Suppliers'                THEN DMT_LOADER_PKG.RUN_SUPPLIERS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'SupplierAddresses'        THEN DMT_LOADER_PKG.RUN_SUPPLIER_ADDRESSES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'SupplierSites'            THEN DMT_LOADER_PKG.RUN_SUPPLIER_SITES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'SupplierSiteAssignments'  THEN DMT_LOADER_PKG.RUN_SUPPLIER_SITE_ASSIGNMENTS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'SupplierContacts'         THEN DMT_LOADER_PKG.RUN_SUPPLIER_CONTACTS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'PurchaseOrders'           THEN DMT_LOADER_PKG.RUN_PURCHASE_ORDERS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'BlanketPOs'               THEN DMT_LOADER_PKG.RUN_BLANKET_POS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Contracts'                THEN DMT_LOADER_PKG.RUN_CONTRACTS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'APInvoices'               THEN DMT_LOADER_PKG.RUN_AP_INVOICES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN '1099Invoices'             THEN DMT_LOADER_PKG.RUN_1099_INVOICES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Requisitions'             THEN DMT_LOADER_PKG.RUN_REQUISITIONS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'MiscReceipts'             THEN DMT_LOADER_PKG.RUN_MISC_RECEIPTS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Customers'                THEN DMT_LOADER_PKG.RUN_CUSTOMERS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'ARInvoices'               THEN DMT_LOADER_PKG.RUN_AR_INVOICES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Projects'                 THEN DMT_LOADER_PKG.RUN_PROJECTS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'BillingEvents'            THEN DMT_LOADER_PKG.RUN_BILLING_EVENTS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Expenditures'             THEN DMT_LOADER_PKG.RUN_EXPENDITURES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Grants'                   THEN DMT_LOADER_PKG.RUN_GRANTS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'ProjectBudgets'           THEN DMT_LOADER_PKG.RUN_PROJECT_BUDGETS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Workers'                  THEN DMT_LOADER_PKG.RUN_WORKERS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Assignments'              THEN DMT_LOADER_PKG.RUN_ASSIGNMENTS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Salaries'                 THEN DMT_LOADER_PKG.RUN_SALARIES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'SalaryBases'              THEN DMT_LOADER_PKG.RUN_SALARY_BASES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'PayrollRels'              THEN DMT_LOADER_PKG.RUN_PAYROLL_RELS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'TaxCards'                 THEN DMT_LOADER_PKG.RUN_TAX_CARDS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'W2Balances'               THEN DMT_LOADER_PKG.RUN_W2_BALANCES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'BenParticipant'           THEN DMT_LOADER_PKG.RUN_BEN_PARTICIPANT(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'BenDependent'             THEN DMT_LOADER_PKG.RUN_BEN_DEPENDENT(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'BenBeneficiary'           THEN DMT_LOADER_PKG.RUN_BEN_BENEFICIARY(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Absences'                 THEN DMT_LOADER_PKG.RUN_ABSENCES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'TalentProfiles'           THEN DMT_LOADER_PKG.RUN_TALENT_PROFILES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'PerfEvaluations'          THEN DMT_LOADER_PKG.RUN_PERF_EVALUATIONS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'WorkSchedules'            THEN DMT_LOADER_PKG.RUN_WORK_SCHEDULES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'GLBalances'               THEN DMT_LOADER_PKG.RUN_GL_BALANCES(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'GLBudgets'                THEN DMT_LOADER_PKG.RUN_GL_BUDGETS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'PlanBudgets'              THEN DMT_LOADER_PKG.RUN_PLAN_BUDGETS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            WHEN 'Assets'                   THEN DMT_LOADER_PKG.RUN_ASSETS(l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE, TRUE);
-            ELSE RAISE_APPLICATION_ERROR(-20100, 'Unknown CEMLI code: ' || l_rec.CEMLI_CODE);
-        END CASE;
+        -- Registry-driven dispatch (was: hardcoded ~39-branch CASE over
+        -- CEMLI codes). The registered procedures all share the
+        -- DMT_LOADER_PKG.RUN_* signature; p_skip_bu_refresh is TRUE here
+        -- exactly as every retired CASE arm passed it.
+        invoke_registered(
+            p_proc             => l_exec_proc,
+            p_style            => 'EXEC',
+            p_run_id           => l_rec.RUN_ID,
+            p_cemli_code       => l_rec.CEMLI_CODE,
+            p_scenario_name    => l_run_rec.SCENARIO_NAME,
+            p_include_untagged => l_run_rec.INCLUDE_UNTAGGED,
+            p_run_mode         => l_run_rec.RUN_MODE);
 
         l_load_ess_id := DMT_LOADER_PKG.g_load_ess_id;
         DMT_LOADER_PKG.g_async_mode := FALSE;
@@ -125,6 +199,13 @@ AS
                 LOAD_ESS_JOB_ID = l_load_ess_id,
                 POLL_COUNT = 0,
                 NEXT_POLL_AFTER = SYSTIMESTAMP + INTERVAL '60' SECOND
+            WHERE QUEUE_ID = p_queue_id;
+        ELSIF l_exec_mode = 'LOCAL' AND l_recon_proc IS NOT NULL THEN
+            -- LOCAL objects have no Fusion load stage: route straight to
+            -- RECONCILING so the registered reconciler runs via the same
+            -- RECONCILE_ONE path a real object takes after its ESS jobs.
+            UPDATE DMT_WORK_QUEUE_TBL
+            SET WORK_STATUS = 'RECONCILING'
             WHERE QUEUE_ID = p_queue_id;
         ELSE
             UPDATE DMT_WORK_QUEUE_TBL
@@ -164,6 +245,10 @@ AS
     -- ============================================================
     PROCEDURE RECONCILE_ONE (p_queue_id IN NUMBER) IS
         l_rec DMT_WORK_QUEUE_TBL%ROWTYPE;
+        l_exec_proc   VARCHAR2(200);
+        l_exec_mode   VARCHAR2(10);
+        l_recon_proc  VARCHAR2(200);
+        l_recon_cemli VARCHAR2(1);
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
 
@@ -187,28 +272,34 @@ AS
             END;
         END IF;
 
-        -- BIP reconciliation dispatch
-        IF l_rec.CEMLI_CODE LIKE 'Supplier%' THEN
-            DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID, l_rec.CEMLI_CODE,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'Customers' THEN
-            DMT_CUST_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'Projects' THEN
-            DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'BillingEvents' THEN
-            DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'Expenditures' THEN
-            DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'Grants' THEN
-            DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'Items' THEN
-            DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
+        -- BIP reconciliation dispatch — registry-driven (was: a hardcoded
+        -- ELSIF chain over CEMLI codes, including a LIKE 'Supplier%' branch;
+        -- the supplier family is now five exact registry rows with
+        -- RECON_HAS_CEMLI_ARG = 'Y' for the shared reconciler's extra
+        -- p_cemli_code parameter).
+        get_dispatch(l_rec.CEMLI_CODE, l_exec_proc, l_exec_mode, l_recon_proc, l_recon_cemli);
+        IF l_recon_proc IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20101,
+                'RECONCILE_ONE: No RECON_PROC registered in DMT_PIPELINE_DEF_TBL '
+                || 'for CEMLI code: ' || l_rec.CEMLI_CODE);
+        END IF;
+
+        invoke_registered(
+            p_proc          => l_recon_proc,
+            p_style         => CASE l_recon_cemli WHEN 'Y' THEN 'RECON_CEMLI' ELSE 'RECON' END,
+            p_run_id        => l_rec.RUN_ID,
+            p_cemli_code    => l_rec.CEMLI_CODE,
+            p_load_ess_id   => TO_NUMBER(l_rec.LOAD_ESS_JOB_ID),
+            p_import_ess_id => TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
+
+        -- Items special case (kept from the retired chain, deliberately NOT
+        -- registry-expressible yet: the Items FBDI ZIP bundles the
+        -- ItemCategories CSV, so an Items work item conditionally reconciles
+        -- the categories too when this run generated any category rows.
+        -- A data-dependent secondary reconciler does not fit the
+        -- one-RECON_PROC-per-object registry; folding this into the Items
+        -- results package is the clean end state.)
+        IF l_rec.CEMLI_CODE = 'Items' THEN
             DECLARE l_cat_gen NUMBER;
             BEGIN
                 SELECT COUNT(*) INTO l_cat_gen FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
@@ -218,51 +309,6 @@ AS
                         TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
                 END IF;
             END;
-        ELSIF l_rec.CEMLI_CODE = 'ItemCategories' THEN
-            DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'Requisitions' THEN
-            DMT_REQ_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'PurchaseOrders' THEN
-            DMT_PO_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'ARInvoices' THEN
-            DMT_AR_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'BlanketPOs' THEN
-            DMT_BLANKET_PO_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'Contracts' THEN
-            DMT_CONTRACT_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'APInvoices' THEN
-            DMT_AP_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = '1099Invoices' THEN
-            DMT_1099_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'GLBalances' THEN
-            DMT_GL_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'GLBudgets' THEN
-            DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'PlanBudgets' THEN
-            DMT_PLAN_BUDGET_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'ProjectBudgets' THEN
-            DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'Assets' THEN
-            DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSIF l_rec.CEMLI_CODE = 'MiscReceipts' THEN
-            DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
-        ELSE
-            RAISE_APPLICATION_ERROR(-20101,
-                'RECONCILE_ONE: Unknown CEMLI code: ' || l_rec.CEMLI_CODE);
         END IF;
 
         -- Object-level status. An object is DONE when EVERY record is accounted for:
