@@ -420,6 +420,206 @@
     END RUN_DATA_MODEL;
 
     -- --------------------------------------------------------
+    -- Private: -20055 guard — persistent catalog writes may only
+    -- target this stack's root (/Custom/DMT2). The frozen stack's
+    -- /Custom/DMT catalog is read-only to DMT2 by hard rule.
+    -- --------------------------------------------------------
+    PROCEDURE assert_dmt2_path (p_path IN VARCHAR2) IS
+    BEGIN
+        IF p_path IS NULL
+           OR (p_path != C_CATALOG_ROOT
+               AND SUBSTR(p_path, 1, LENGTH(C_CATALOG_ROOT) + 1)
+                   != C_CATALOG_ROOT || '/') THEN
+            RAISE_APPLICATION_ERROR(-20055,
+                'BIP catalog write refused: "' || p_path ||
+                '" is outside this stack''s catalog root ' || C_CATALOG_ROOT ||
+                '. The frozen stack''s /Custom/DMT catalog is never written.');
+        END IF;
+    END assert_dmt2_path;
+
+    -- --------------------------------------------------------
+    -- DEPLOY_CATALOG_OBJECT
+    -- --------------------------------------------------------
+    PROCEDURE DEPLOY_CATALOG_OBJECT (
+        p_session_token IN VARCHAR2,
+        p_folder        IN VARCHAR2,
+        p_object_name   IN VARCHAR2,
+        p_object_type   IN VARCHAR2,
+        p_object_data   IN CLOB
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'DEPLOY_CATALOG_OBJECT';
+        l_url    VARCHAR2(500);
+        l_action VARCHAR2(500) :=
+            'http://xmlns.oracle.com/oxp/service/v2/CatalogService/createObjectInSessionRequest';
+        l_b64    CLOB;
+        l_env    CLOB;
+        l_resp   CLOB;
+    BEGIN
+        assert_dmt2_path(p_folder);
+        IF p_object_type NOT IN ('xdm', 'xdo') THEN
+            RAISE_APPLICATION_ERROR(-20054,
+                C_PROC || ': p_object_type must be xdm or xdo, got "' ||
+                p_object_type || '"');
+        END IF;
+
+        l_url := fusion_base || '/xmlpserver/services/v2/CatalogService';
+        l_b64 := clob_to_b64(p_object_data);
+
+        DBMS_LOB.CREATETEMPORARY(l_env, TRUE);
+        DBMS_LOB.APPEND(l_env,
+            '<soapenv:Envelope'||
+            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"'||
+            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">'||
+            '  <soapenv:Header/>'||
+            '  <soapenv:Body>'||
+            '    <v2:createObjectInSession>'||
+            '      <v2:folderAbsolutePathURL>'||p_folder||'</v2:folderAbsolutePathURL>'||
+            '      <v2:objectName>'||p_object_name||'</v2:objectName>'||
+            '      <v2:objectType>'||p_object_type||'</v2:objectType>'||
+            '      <v2:bipSessionToken>'||p_session_token||'</v2:bipSessionToken>'||
+            '      <v2:objectData>');
+        DBMS_LOB.APPEND(l_env, l_b64);
+        DBMS_LOB.APPEND(l_env,
+            '</v2:objectData>'||
+            '    </v2:createObjectInSession>'||
+            '  </soapenv:Body>'||
+            '</soapenv:Envelope>');
+
+        l_resp := soap_post(l_url, l_action, l_env);
+
+        IF INSTR(l_resp, 'soapenv:Fault') > 0 OR
+           INSTR(l_resp, 'soap:Fault')    > 0 THEN
+            RAISE_APPLICATION_ERROR(-20053,
+                C_PROC || ': createObjectInSession returned a Fault. Object: ' ||
+                p_folder || '/' || p_object_name || '.' || p_object_type ||
+                ' | Response: ' || SUBSTR(l_resp, 1, 500));
+        END IF;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_message   => C_PROC || ' failed. Object: ' || p_folder || '/' ||
+                               p_object_name || '.' || p_object_type,
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END DEPLOY_CATALOG_OBJECT;
+
+    -- --------------------------------------------------------
+    -- DELETE_CATALOG_OBJECT
+    -- --------------------------------------------------------
+    PROCEDURE DELETE_CATALOG_OBJECT (
+        p_session_token IN VARCHAR2,
+        p_object_path   IN VARCHAR2
+    ) IS
+        l_url    VARCHAR2(500);
+        l_action VARCHAR2(500) :=
+            'http://xmlns.oracle.com/oxp/service/v2/CatalogService/deleteObjectInSessionRequest';
+        l_env    CLOB;
+        l_tmp    CLOB;
+    BEGIN
+        assert_dmt2_path(p_object_path);
+        l_url := fusion_base || '/xmlpserver/services/v2/CatalogService';
+
+        l_env :=
+            '<soapenv:Envelope'||
+            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"'||
+            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">'||
+            '  <soapenv:Header/>'||
+            '  <soapenv:Body>'||
+            '    <v2:deleteObjectInSession>'||
+            '      <v2:objectAbsolutePath>'||p_object_path||'</v2:objectAbsolutePath>'||
+            '      <v2:bipSessionToken>'||p_session_token||'</v2:bipSessionToken>'||
+            '    </v2:deleteObjectInSession>'||
+            '  </soapenv:Body>'||
+            '</soapenv:Envelope>';
+
+        -- Swallow SOAP errors — the object may simply not exist yet.
+        BEGIN
+            l_tmp := soap_post(l_url, l_action, l_env);
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+    END DELETE_CATALOG_OBJECT;
+
+    -- --------------------------------------------------------
+    -- DEPLOY_RECON_REPORT
+    -- --------------------------------------------------------
+    PROCEDURE DEPLOY_RECON_REPORT (
+        p_folder   IN VARCHAR2,
+        p_dm_name  IN VARCHAR2,
+        p_rpt_name IN VARCHAR2,
+        p_xdm_xml  IN CLOB
+    ) IS
+        C_PROC    CONSTANT VARCHAR2(30) := 'DEPLOY_RECON_REPORT';
+        l_token   VARCHAR2(4000);
+        l_xdo_xml CLOB;
+    BEGIN
+        assert_dmt2_path(p_folder);
+
+        DMT_UTIL_PKG.LOG(
+            p_message   => 'DEPLOY_RECON_REPORT start. Folder: ' || p_folder ||
+                           ' | DM: ' || p_dm_name || '.xdm | Report: ' ||
+                           p_rpt_name || '.xdo',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+        l_token := GET_SESSION_TOKEN;
+
+        -- Remove any prior versions (createObjectInSession does not overwrite)
+        DELETE_CATALOG_OBJECT(l_token, p_folder || '/' || p_rpt_name || '.xdo');
+        DELETE_CATALOG_OBJECT(l_token, p_folder || '/' || p_dm_name || '.xdm');
+
+        -- Data model
+        DEPLOY_CATALOG_OBJECT(l_token, p_folder, p_dm_name, 'xdm', p_xdm_xml);
+
+        -- Report definition: a trivial XML-output wrapper linked to the DM.
+        -- Structure derived from a UI-built report (same template the old
+        -- stack's deploy tooling used): dataModel="true" on the root,
+        -- <parameters> so BIP surfaces the DM parameters, and a <templates>
+        -- block with defaultFormat="xml" so runReport returns raw data.
+        l_xdo_xml :=
+            '<?xml version="1.0" encoding="UTF-8"?>'||CHR(10)||
+            '<report xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.0"'||CHR(10)||
+            '        dataModel="true" useBipParameters="true">'||CHR(10)||
+            '  <dataModel url="'||p_folder||'/'||p_dm_name||'.xdm" cache="true"/>'||CHR(10)||
+            '  <description/>'||CHR(10)||
+            '  <property name="showControls" value="true"/>'||CHR(10)||
+            '  <property name="online" value="true"/>'||CHR(10)||
+            '  <property name="openLinkInNewWindow" value="true"/>'||CHR(10)||
+            '  <property name="autoRun" value="true"/>'||CHR(10)||
+            '  <property name="cacheDocument" value="false"/>'||CHR(10)||
+            '  <property name="showReportLinks" value="false"/>'||CHR(10)||
+            '  <property name="asynchronousRun" value="false"/>'||CHR(10)||
+            '  <property name="saveXMLForRepublishing" value="true"/>'||CHR(10)||
+            '  <property name="disableMakeOutputPublic" value="false"/>'||CHR(10)||
+            '  <parameters paramPerLine="3" style="parameterLocation:in-horizontal;promptLocation:side;"/>'||CHR(10)||
+            '  <templates default="default">'||CHR(10)||
+            '    <template label="default" url="default.rtf" type="rtf"'||CHR(10)||
+            '              outputFormat="html,pdf,rtf,xlsx,pptx,xml,csv" defaultFormat="xml"'||CHR(10)||
+            '              locale="en" disableMasterTemplate="true" active="true" viewOnline="true"/>'||CHR(10)||
+            '  </templates>'||CHR(10)||
+            '</report>';
+
+        DEPLOY_CATALOG_OBJECT(l_token, p_folder, p_rpt_name, 'xdo', l_xdo_xml);
+
+        DMT_UTIL_PKG.LOG(
+            p_message   => 'DEPLOY_RECON_REPORT complete: ' || p_folder || '/' ||
+                           p_rpt_name || '.xdo -> ' || p_dm_name || '.xdm',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_message   => 'DEPLOY_RECON_REPORT failed. Folder: ' || p_folder,
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END DEPLOY_RECON_REPORT;
+
+    -- --------------------------------------------------------
     -- RUN_POC_TEST
     -- --------------------------------------------------------
     PROCEDURE RUN_POC_TEST (
