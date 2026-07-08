@@ -493,21 +493,11 @@ prompt == Synonyms ==
 
 prompt == Views (dependency order) ==
 @@views/dmt_conversion_master_tbl.sql
-@@views/dmt_1099_imp_rpt_v.sql
 @@views/dmt_absences_v.sql
-@@views/dmt_absence_imp_rpt_v.sql
-@@views/dmt_ap_inv_imp_rpt_v.sql
-@@views/dmt_ar_imp_rpt_v.sql
 @@views/dmt_assignments_v.sql
-@@views/dmt_assignment_imp_rpt_v.sql
 @@views/dmt_benefits_v.sql
-@@views/dmt_ben_benfy_imp_rpt_v.sql
-@@views/dmt_ben_depend_imp_rpt_v.sql
-@@views/dmt_ben_partic_imp_rpt_v.sql
 @@views/dmt_billing_events_v.sql
-@@views/dmt_billing_event_imp_rpt_v.sql
 @@views/dmt_bip_reports_admin_v.sql
-@@views/dmt_blanket_po_imp_rpt_v.sql
 @@views/dmt_cfg_gl_calendar_v.sql
 @@views/dmt_cfg_lookup_types_v.sql
 @@views/dmt_cfg_lookup_values_v.sql
@@ -519,24 +509,16 @@ prompt == Views (dependency order) ==
 @@views/dmt_cfg_value_sets_v.sql
 @@views/dmt_cfg_vs_values_v.sql
 @@views/dmt_config_admin_v.sql
-@@views/dmt_contract_imp_rpt_v.sql
-@@views/dmt_cust_imp_rpt_v.sql
 @@views/dmt_scenario_summary_v.sql
 @@views/dmt_dashboard_cemli_summary_v.sql
 @@views/dmt_dashboard_runs_v.sql
 @@views/dmt_ess_jobs_monitor_v.sql
 @@views/dmt_ess_job_detail_v.sql
 @@views/dmt_ess_job_files_v.sql
-@@views/dmt_expenditure_imp_rpt_v.sql
 @@views/dmt_fa_assets_v.sql
-@@views/dmt_fa_asset_imp_rpt_v.sql
 @@views/dmt_gl_balances_v.sql
-@@views/dmt_gl_bal_imp_rpt_v.sql
-@@views/dmt_gl_budget_imp_rpt_v.sql
 @@views/dmt_gl_budget_v.sql
-@@views/dmt_grants_imp_rpt_v.sql
 @@views/dmt_grants_v.sql
-@@views/dmt_misc_receipt_imp_rpt_v.sql
 @@views/dmt_mst_banks_v.sql
 @@views/dmt_mst_bank_accts_v.sql
 @@views/dmt_mst_bank_branches_v.sql
@@ -550,32 +532,17 @@ prompt == Views (dependency order) ==
 @@views/dmt_p2p_po_headers_v.sql
 @@views/dmt_p2p_requisitions_v.sql
 @@views/dmt_p2p_suppliers_v.sql
-@@views/dmt_pay_rel_imp_rpt_v.sql
-@@views/dmt_perf_eval_imp_rpt_v.sql
 @@views/dmt_v_cemli_status.sql
 @@views/dmt_pipeline_summary_v.sql
-@@views/dmt_plan_budget_imp_rpt_v.sql
-@@views/dmt_po_imp_rpt_v.sql
-@@views/dmt_prj_budget_imp_rpt_v.sql
 @@views/dmt_projects_v.sql
 @@views/dmt_project_budgets_v.sql
 @@views/dmt_project_expenditures_v.sql
-@@views/dmt_project_imp_rpt_v.sql
 @@views/dmt_project_tasks_v.sql
 @@views/dmt_record_detail_v.sql
 @@views/dmt_run_history_v.sql
 @@views/dmt_run_metrics_v.sql
 @@views/dmt_run_status_v.sql
 @@views/dmt_salaries_v.sql
-@@views/dmt_salary_imp_rpt_v.sql
-@@views/dmt_sal_basis_imp_rpt_v.sql
-@@views/dmt_supplier_imp_rpt_v.sql
-@@views/dmt_sup_addr_imp_rpt_v.sql
-@@views/dmt_sup_contacts_imp_rpt_v.sql
-@@views/dmt_sup_site_assn_imp_rpt_v.sql
-@@views/dmt_sup_site_imp_rpt_v.sql
-@@views/dmt_talent_prof_imp_rpt_v.sql
-@@views/dmt_tax_card_imp_rpt_v.sql
 @@views/dmt_timecards_v.sql
 @@views/dmt_v_absence_detail.sql
 @@views/dmt_v_ap_invoices_detail.sql
@@ -658,10 +625,7 @@ prompt == Views (dependency order) ==
 @@views/dmt_v_work_rel_detail.sql
 @@views/dmt_v_work_sched_detail.sql
 @@views/dmt_v_work_sched_dtl_detail.sql
-@@views/dmt_w2_bal_imp_rpt_v.sql
 @@views/dmt_workers_v.sql
-@@views/dmt_worker_imp_rpt_v.sql
-@@views/dmt_work_sched_imp_rpt_v.sql
 
 prompt == Package specs (dependency order) ==
 @@packages/dmt_1099_fbdi_gen_pkg.pks.sql
@@ -1086,9 +1050,6 @@ prompt == Package bodies ==
 @@packages/fbt_bip_pkg.pkb.sql
 @@packages/utl_zip.pkb.sql
 
-prompt == Scheduler jobs ==
-@@jobs/dmt_queue_poller.sql
-
 prompt == Grants made ==
 @@grants/grants_made.sql
 
@@ -1102,6 +1063,13 @@ prompt == Seed data ==
 
 prompt == Recompile schema ==
 exec dbms_utility.compile_schema(schema => user, compile_all => false)
+
+prompt == Scheduler jobs (created disabled, enabled last — after seeds + recompile) ==
+@@jobs/dmt_queue_poller.sql
+begin
+  dbms_scheduler.enable('"DMT_QUEUE_POLLER"');
+end;
+/
 
 prompt == Invalid objects remaining (expected: DB-link/Fusion-dependent) ==
 select object_type, object_name from user_objects where status='INVALID' order by 1,2;

@@ -176,3 +176,21 @@ exception when dup_val_on_index then null;
 end;
 /
 commit;
+
+-- Decided admin config keys (DMT_DESIGN.html sections 2, 5, 6) — added 2026-07-07
+-- after the blind infrastructure-tranche review found them missing from the seed.
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('ESS_POLL_TIMEOUT_MINUTES','30','Max minutes to poll an ESS job before marking GENERATED rows FAILED [LOAD_ERROR]; reconciliation still runs after (design section 2)',sysdate,'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('BIP_CHUNK_SIZE','5000','Rows per BIP reconciliation fetch chunk (Contract v1, design section 5)',sysdate,'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('RETENTION_DAYS','90','Days to retain CSV CLOBs / ZIP BLOBs / activity-log entries before the purge job clears them (design section 6)',sysdate,'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
