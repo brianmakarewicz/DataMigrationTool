@@ -11,7 +11,12 @@ per-stage test plan, roadmap, risks. Read the "Build Order of Operations" sectio
 
 - **Docker-only.** No ATP exists yet — all work runs against the local Docker instance
   (`dmt2-local`, port **1523**). The new Always Free ATP comes later.
-- **GitHub repo:** not yet created (user will create). Local git only until then.
+- **GitHub repo:** https://github.com/brianmakarewicz/DataMigrationTool — main is protected
+  (pull request + 1 approval required, no force pushes). ALL changes go through PRs.
+- **PR workflow:** this machine authors branches/PRs as brainmakeassistant. An hourly
+  automated reviewer (cloud routine "Hourly PR review & approve — DataMigrationTool")
+  reviews as brianmakarewicz and approves+merges clean PRs with an AUTOMATED APPROVAL
+  banner, or requests changes with file/line findings. Never merge without its review.
 - **Fusion BIP folder for this stack:** `/Custom/DMT2/` (never `/Custom/DMT/` — that belongs to the frozen stack).
 - **FBL file delivery:** decision deferred (blocks the 6 FBL config objects only — Phase 4).
 - **Frozen stack:** bugs may still be fixed on the old ATP; every such fix must be ported here.
