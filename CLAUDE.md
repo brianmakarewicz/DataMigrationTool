@@ -44,6 +44,18 @@ Ports in use elsewhere: 1521 (rt-oracle-free), 1522 (old dmt-local). DMT2 = **15
 | `scripts/` | Core harness only: dmt_regression_run.py, dmt_run_assert.py, dmt_deploy.py, dmt_db_git_sync.py, insert_regression_test_data.py, hooks/dmt_db_guard.py |
 | `cicd/` | GitHub Actions workflows + CI docker assets (to be built — Phase 1D) |
 
+## THE OBJECT MODEL — repeatedly corrected; get it right (2026-07-08)
+
+**One object = one FBDI zip = one load ESS job.** Nothing else defines an object.
+- PurchaseOrders = ONE object; its single zip carries several CSVs (headers, lines,
+  locations, distributions) = record types of one object.
+- The supplier family = FIVE SEPARATE OBJECTS (Suppliers, SupplierAddresses,
+  SupplierSites, SupplierSiteAssignments, SupplierContacts): five zips, five ESS jobs,
+  chained by DEPENDS_ON. They are NOT sub-objects. Never use "sub-object" for them.
+- Before describing ANY object's structure (chat, prompts, code, tests, PR bodies):
+  read its rows in db/seed/dmt_cemli_catalog_tbl.sql and db/seed/dmt_pipeline_def_tbl.sql.
+  The registry is the truth. Structure claims without that lookup are guesses.
+
 ## Rules carried over from the old stack (all still binding)
 
 1. No test passes unless GOOD rows reach Fusion base tables (LOADED via BIP) AND BAD rows reach FAILED with reportable ERROR_TEXT.
