@@ -71,7 +71,14 @@ Rules of the protocol:
 
 ## Build-order status (plan section 4)
 
-- [ ] Stage A — Foundation DDL proven on dmt2-local (install runs clean twice, zero invalid)
+- [x] Stage A — Foundation DDL proven on dmt2-local (2026-07-07): fresh greenfield install
+      from committed files; **DMT_OWNER baseline = 49 invalid** (all categorized:
+      37 INTEGRATION_ID-drifted summary views pending usage check + 2 known-invalid
+      packages + Fusion/DB-link-dependent objects), DMT_LOOKUP = 0 invalid / 17 seed rows,
+      lookup install proven idempotent (double-run clean), heartbeat job created disabled
+      and enabled as final install step. All 5 tranche blind reviews done and triaged
+      (docs/tranche-reviews/); 27 proposed rules in RED in DMT_DESIGN.html section 7
+      awaiting user accept/reject.
 - [ ] Stage B — Common utilities unit-tested (DMT_UTIL_PKG, Fusion call layer, CSV intake, generators w/ golden files)
 - [ ] Stage C — Queue engine proven with mock CEMLI
 - [ ] Stage D — Suppliers vertical slice E2E
