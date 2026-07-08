@@ -60,8 +60,19 @@ jobs:
             2. Review for: correctness bugs, logic errors, SQL mistakes, broken or
                weakened test assertions, security problems (credentials committed,
                injection), anything that would break the install or the pipeline.
-            3. Enforce the repository standards (docs/coding-standards.md and
-               docs/tranche-reviews/):
+            3. Enforce the repository standards. The AUTHORITATIVE source is
+               docs/DMT_DESIGN.html in this checkout - read its "Coding standards"
+               section (section 7) before judging any PL/SQL, DDL, or test change.
+               Rules in the normal-styled accepted table are BINDING. The red
+               "PROPOSED RULES - pending user review" block at the end of that
+               section is NOT binding: never block a PR solely on a red rule, but
+               you may mention red-rule concerns in the approval text. When the
+               diff touches error handling, reconciliation, the queue engine, or
+               control tables, also consult the matching design sections. The
+               docs/tranche-reviews/ logs record known deferred findings - do not
+               re-block PRs for defects already logged there as deferred.
+               Quick orientation (the binding rules seen most often - the document
+               wins wherever it says more):
                (1) no EXECUTE IMMEDIATE / dynamic SQL in any database object EXCEPT the
                    three named procedures in DMT_QUEUE_WORKER_PKG (invoke_registered,
                    ACCOUNT_ROWS, MARK_GENERATED_ROWS_FAILED);
