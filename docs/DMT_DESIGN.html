@@ -10,6 +10,7 @@
     --blue:#0b69d4; --green:#1a9c3e; --amber:#e07b00; --red:#c42b1c; --grey:#8a94a3;
     --accent:#0b69d4;
   }
+  .pending{color:var(--red);}
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{margin:0;font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
@@ -92,6 +93,7 @@
 <!-- ============================ OVERVIEW ============================ -->
 <section id="overview">
   <h2>Overview &amp; status legend <span class="b b-impl">VERIFIED 2026-07-04</span></h2>
+  <p class="pending"><strong>Change-review convention (added 2026-07-07, pending acceptance).</strong> Any new or changed entry made to this document after the 2026-07-04&ndash;07 review is written in <span class="pending">red</span> like this paragraph. Red text means the content has not yet been reviewed. It is turned to normal color only after the owner explicitly states the change is accepted &mdash; never silently, and never by the author of the change on their own judgment.</p>
   <p class="lead">Single source of design truth for the Data Migration Tool — DB schema, pipeline, error handling, packages, and the APEX UI that sits on top. Review here before building so code does not diverge from intent.</p>
 
   <p><strong>Purpose.</strong> The point of the tool is <em>not</em> to pre-validate all the data (although some validation is possible) — it is to move all available data into the cloud and ensure that <strong>every record is accounted for</strong> through a positive success or a positive failure message. The tool gives users one place to put data, and hides the complexity of running the loads, re-running the same data, and reporting on different loads that could otherwise load the same data twice.</p>
