@@ -18,8 +18,78 @@
     "                     both sides ONLY when both sides match the FBDI date",
     "                     pattern YYYY/MM/DD — a non-date difference there is",
     "                     still reported as a real diff.",
+    "  record_terminator - optional, per member: 'CRLF' when the generator",
+    "                     emits CRLF record endings (supplier family); default",
+    "                     is LF. Declared, never sniffed - a terminator the",
+    "                     file does not actually use fails the round-trip",
+    "                     self-check and is reported as format drift.",
     "Nothing else is normalized. Any other difference is a finding."
   ],
+  "Suppliers": {
+    "golden_zip": "test/fbdi_zips/Suppliers_116.zip",
+    "golden_provenance": "Old-stack regression run 116, prefix 9627. Rows are scripts/insert_regression_test_data.py section 1 (2 GOOD + 1 BAD invalid ORGANIZATION_TYPE; the pre-existing LOADED supplier never transforms so it is not in the file). Generated before the validation-order fix, so the BAD row is in the FBDI by design of that run.",
+    "members": {
+      "PoSupplierImport.csv": {
+        "record_terminator": "CRLF",
+        "tokens": [
+          { "placeholder": "{PREFIX}", "golden": "9627", "local": "$PREFIX", "match": "startswith", "fields": [1, 3] }
+        ],
+        "date_mask_fields": []
+      }
+    }
+  },
+  "SupplierAddresses": {
+    "golden_zip": "test/fbdi_zips/SupplierAddresses_116.zip",
+    "golden_provenance": "Old-stack regression run 116, prefix 9627. Rows are insert_regression_test_data.py section 2 (2 GOOD + 1 ghost-supplier BAD). The ghost row is in the golden because run 116 predates the pre-validation ordering fix.",
+    "members": {
+      "PozSupAddressesInt.csv": {
+        "record_terminator": "CRLF",
+        "tokens": [
+          { "placeholder": "{PREFIX}", "golden": "9627", "local": "$PREFIX", "match": "startswith", "fields": [1] }
+        ],
+        "date_mask_fields": []
+      }
+    }
+  },
+  "SupplierSites": {
+    "golden_zip": "test/fbdi_zips/SupplierSites_116.zip",
+    "golden_provenance": "Old-stack regression run 116, prefix 9627. Rows are insert_regression_test_data.py section 3 (2 GOOD + 1 ghost-supplier BAD; pre-existing LOADED site excluded). VENDOR_SITE_CODE is PREFIXED(...,15) so '9627RT-SITE-BAD1' truncates to '9627RT-SITE-BAD' -- reproduced, not normalized.",
+    "members": {
+      "PozSupplierSitesInt.csv": {
+        "record_terminator": "CRLF",
+        "tokens": [
+          { "placeholder": "{PREFIX}", "golden": "9627", "local": "$PREFIX", "match": "startswith", "fields": [1, 4] }
+        ],
+        "date_mask_fields": []
+      }
+    }
+  },
+  "SupplierSiteAssignments": {
+    "golden_zip": "test/fbdi_zips/SupplierSiteAssignments_116.zip",
+    "golden_provenance": "Old-stack regression run 116, prefix 9627. Rows are insert_regression_test_data.py section 4 (2 GOOD + 1 invalid-BU BAD; pre-existing LOADED assignment excluded). BILL_TO_BU_NAME column is NVL-derived from BUSINESS_UNIT_NAME by the transform.",
+    "members": {
+      "PozSiteAssignmentsInt.csv": {
+        "record_terminator": "CRLF",
+        "tokens": [
+          { "placeholder": "{PREFIX}", "golden": "9627", "local": "$PREFIX", "match": "startswith", "fields": [1, 2] }
+        ],
+        "date_mask_fields": []
+      }
+    }
+  },
+  "SupplierContacts": {
+    "golden_zip": "test/fbdi_zips/SupplierContacts_116.zip",
+    "golden_provenance": "Old-stack regression run 116, prefix 9627. Rows are insert_regression_test_data.py section 5 (2 GOOD + 1 ghost-supplier BAD).",
+    "members": {
+      "PozSupContactsInt.csv": {
+        "record_terminator": "CRLF",
+        "tokens": [
+          { "placeholder": "{PREFIX}", "golden": "9627", "local": "$PREFIX", "match": "startswith", "fields": [1] }
+        ],
+        "date_mask_fields": []
+      }
+    }
+  },
   "GLBalances": {
     "golden_zip": "test/fbdi_zips/GLBalances_100000740.zip",
     "golden_provenance": "Old-stack run 100000740, prefix 9403, GROUP_ID 100000294 (old stack used a separate group-id sequence; rebuilt stack sets GROUP_ID = RUN_ID per ParameterList)",
