@@ -1,0 +1,1019 @@
+Data Migration Tool — Design Reference
+DMT Design Reference
+Data Migration Tool · DMT_OWNER @ queryapp ATP
+Overview & status legend
+1 · Canonical object list (SSOT)
+Database
+2 · Execution engine (queue & heartbeat)
+3 · Table architecture & lineage
+4 · Package structure
+5 · Error handling
+6 · Control & config tables
+7 · Coding standards
+User Interface
+8 · App & navigation inventory
+9 · Drill-through chain & tile colors
+10 · Object Detail & the funnel
+Tracking
+11 · Object display catalog
+12 · Open items / backlog
+13 · Open design questions
+Appendix · Historical notes
+Overview & status legend VERIFIED 2026-07-04
+Single source of design truth for the Data Migration Tool — DB schema, pipeline, error handling, packages, and the APEX UI that sits on top. Review here before building so code does not diverge from intent.
+Purpose. The point of the tool is not to pre-validate all the data (although some validation is possible) — it is to move all available data into the cloud and ensure that every record is accounted for through a positive success or a positive failure message. The tool gives users one place to put data, and hides the complexity of running the loads, re-running the same data, and reporting on different loads that could otherwise load the same data twice.
+DMT moves data from source systems (Oracle EBS or generic CSV) into Oracle Fusion Cloud through a multi-stage pipeline. Two load patterns: FBDI (CSV, ERP modules) and HDL (DAT, HCM). Everything is pure PL/SQL on ATP (schema DMT_OWNER); APEX is the UI layer.
+Ways to get data in.
+CSV upload with proprietary load syntax — users send in data shaped like the FBDI, but column order is determined by the file header rather than fixed position. IMPLEMENTED
+FBDI structured upload — users upload files in the exact FBDI-generated format: position-based columns, no header row, as produced by the Oracle FBDI templates. Both this and the proprietary format are accepted by the same upload path. IMPLEMENTED
+Direct DB load — insert straight into the STG tables (EBS DB-link push or SQL). The EBS push comes from the separate EBSAdaptors repo through a three-object interface contract — see §4. IMPLEMENTED
+REST APIs exposing the STG tables for external loaders. TO-DO (future state)
+AI-assisted loading — allow an AI agent to move data into the STG tables, or expose an MCP server over the STG layer. TO-DO (next stage after REST)
+Pipeline stages defined
+Worked example: follow two real records through every stage and status change →
+Stage | What it does | Tables touched |
+Stage | Raw source rows land in staging — via CSV upload (header-driven syntax), EBS DB-link push, or direct SQL. Rows arrive STATUS='NEW', tagged to their mandatory scenario. No prefix, no run association yet. | DMT_{obj}_STG_TBL |
+Pre-validate | Runs on STG rows before anything else. Two distinct checks:
+(1) Cross-object dependency — has the master data this record needs (a different object, loaded in an earlier run) gone all the way into Fusion? Requires the upstream record to have a LOADED TFM row from any run (decided 2026-07-07) — within one run, the dependency graph guarantees the parent work item finished first, so just-loaded parents qualify; in a failed-items re-run, parents loaded in earlier runs qualify. The match compares the source values as they appear in the data (no prefix) on both staging sides, then joins to the parent's TFM outcome. The reference written into the load file carries the prefix of the parent's most recent LOADED row — automatically correct for same-run, prior-run, and mixed cases; the submission screen's dependent-run picker is an optional override to pin a specific run. This validation can be turned off per run ("Validate upstream dependencies", default ON, section 8) — with it off, rows proceed and a genuinely missing parent still fails at Fusion with a reportable error. Example: a PO header requires its supplier LOADED. Enforces "no transactional record without loaded master data".
+(2) Within-object cascade — header, lines, locations, and distributions travel together in the same FBDI, so there is no Fusion check between them. Instead, if a parent row fails pre-validation in this pass, the failure cascades down (header → lines → locations → distributions) so no orphan children enter the file.
+Failing rows go FAILED [PRE_VALIDATION] and never enter the run. | STG (status/error updates only) |
+Transform | Copies each surviving STG row into the object's TFM table: applies the run prefix to business keys, derives/defaults fields, maps source values to Fusion values. The TFM row is stamped with RUN_ID and STG_SEQUENCE_ID (lineage back to source). Failures are recorded in the stage→transform result table with [TRANSFORM_ERROR] (section 5) — the staging row's status is set to FAILED (the message never goes on the staging row — it lives in the error table). Success is denoted by the TFM row itself — run-stamped and timestamped; this error table records failures only (section 5). | STG → DMT_{obj}_TFM_TBL |
+Post-validate | Runs on TFM rows after transform. Checks the content about to be sent to Fusion: required fields present, values in allowed sets, cross-field rules. Failing rows go FAILED [POST_VALIDATION] on their TFM row and are excluded from the file — nothing is written back to staging. Coverage is intentionally light — Fusion is the final judge; the pipeline's job is to account for every outcome. | TFM (status/error updates) |
+Generate FBDI/HDL | Writes surviving TFM rows into FBDI CSV(s) (position-based, no header) or an HDL DAT file, then zips. Grouped objects split into one file set per partition (BU/ledger/org). TFM rows become GENERATED with FBDI_CSV_ID pointing at the exact file they went into. | TFM → DMT_FBDI_CSV_TBL → DMT_FBDI_ZIP_TBL |
+Load (ESS) | Uploads the ZIP to Fusion UCM and submits the ESS load/import job(s) with the object's ParameterList. ESS request IDs are recorded on the work item. | DMT_WORK_QUEUE_TBL, DMT_ESS_JOB_TBL |
+Poll | The heartbeat checks ESS job state each tick until the job hierarchy reaches a terminal state (SUCCEEDED / WARNING / ERROR). WARNING from SqlLdr means zero rows committed — treated as a failure signal, not success. | DMT_ESS_JOB_TBL, DMT_WORK_QUEUE_TBL |
+Reconcile (BIP) | Runs a BIP report against the Fusion interface and base tables, joins results back to TFM rows by business key (prefix + key within the RUN_ID). A row found in base tables → LOADED + its FUSION_*_ID. A row rejected in the interface → FAILED [FUSION_ERROR] with the interface error text. Nothing is written back to staging — the TFM row is the sole record of the Fusion outcome (decided 2026-07-07). 0 BIP rows is never assumed to mean success. | Fusion (read) → TFM only |
+LOADED / FAILED | Terminal row states. Every record that entered the run must end in exactly one: positive success (in Fusion base tables, ID captured) or positive failure (a reportable error attributed to that row). Anything else is unaccounted for and fails the work item. | — |
+Three independent status levels — never conflate them
+Status is tracked at three altitudes, each with its own column and vocabulary. A run is one submission of the pipeline (one or more objects); a work item is one unit of queued work inside a run (typically one object, or one FBDI partition of an object); a row is one source record moving through the STG and TFM tables. A run can be COMPLETED while individual rows are FAILED; a row is only ever judged by its own STATUS.
+Run — RUN_STATUS · DMT_PIPELINE_RUN_TBL
+Status | Meaning |
+QUEUED | Run submitted; waiting for the queue poller to pick it up. |
+IN_PROGRESS | At least one work item is not yet finished (waiting, processing, or polling). |
+COMPLETED | All work items finished; every record accounted for with no failures. |
+COMPLETED_ERRORS | All work items finished; some rows ended FAILED (with reportable errors). |
+FAILED | The run itself could not finish — an unaccounted-for record or infrastructure failure. Work items SKIPPED because of that failure don't change the status further: their records were never selected, so they are untouched, not unaccounted (decided 2026-07-07). |
+NO_ROWS_PROCESSED | Run finished and every work item selected zero rows — nothing in the whole run matched the scenario/mode. An individual zero-row item is simply DONE with zero counts (grey tile); it does not make the run NO_ROWS_PROCESSED (decided 2026-07-07). |
+Work item — WORK_STATUS · DMT_WORK_QUEUE_TBL
+Status | Meaning |
+PENDING | Created; waiting for its DEPENDS_ON predecessor to finish. |
+READY | Dependencies satisfied; eligible for pickup by the heartbeat. |
+PROCESSING (end state — code/UI still say VALIDATING, P2 §12) | A child job is running the item's data phase end-to-end: pre-validate the object's STG rows (dependency checks) → transform STG → TFM (prefix, derivations) → post-validate TFM rows (content checks) → generate the FBDI/HDL file (TFM → DMT_FBDI_CSV_TBL → DMT_FBDI_ZIP_TBL) → submit the load to Fusion. One status covers the whole phase because it runs as a single child job (DMT_QUEUE_WORKER_PKG.EXECUTE_ONEsrc); the item leaves PROCESSING when the load is submitted (→ LOADING/AWAITING_LOAD) or the phase fails. See "Pipeline stages defined" above for what each step checks. |
+LOADING | Load submission in progress (ZIP → UCM upload → ESS job submit). |
+AWAITING_LOAD | ESS load job submitted; heartbeat is polling for completion. |
+AWAITING_IMPORT | Import ESS job submitted; polling. |
+AWAITING_POSTRUN | Post-run ESS step (per-object post-processing job) submitted; polling. Today only Assets has one (per-book Prepare + Post); the per-object post-run job is a catalog column (section 6). Distinction, stated to remove ambiguity: a post-run job is an ESS job that further processes the imported data. Reporting and reconciliation steps — including Projects' post-import reporting and every BIP validation report — are not post-run jobs; they belong to the Reconcile phase. |
+RECONCILING | BIP reconciliation child job is running. |
+DONE | Item finished and every row is accounted for — each row ended either LOADED (confirmed in Fusion base tables) or FAILED with a reportable error. Rows may have failed; DONE means nothing is unexplained. |
+FAILED | Item ended with at least one row unaccounted for (no positive success and no positive failure — e.g. reconciliation could not resolve it), or the item hit an unrecoverable infrastructure error. An ESS job ERROR does not short-circuit to FAILED — the item still reconciles, and only goes FAILED if rows remain unexplained. |
+SKIPPED | Not run because a dependency failed. |
+The accounting rule. A work item is DONE if and only if every record is accounted for (base-table LOADED or interface-errored FAILED); it is FAILED only if any record is unaccounted for. Row failures alone never fail the work item — unexplained rows do.
+Row — STATUS · STG & TFM tables
+Layer | Status | Meaning |
+STG | NEW | Loaded into staging; no run has attempted it yet. |
+STG | RETRY RETIRED | Retired (2026-07-07): run modes drive selection predicates directly, so no re-queue status is needed — the staging status is forward-only (NEW → TRANSFORMED or FAILED) and is never reset. Exists in current code only; removed by the mode-predicate change (P3, section 12). |
+STG | TRANSFORMED | The row's most recent stage→transform attempt succeeded — it was copied into TFM. Terminal from staging's point of view: whatever happens downstream (loaded or rejected in Fusion) is recorded on the TFM row and is never written back here. |
+STG | FAILED | The row's most recent stage→transform attempt failed (pre-validation or transform). The why is in the stage→transform error table — never on this row. Only the stage→transform step writes this column, and a later successful retry flips it to TRANSFORMED (decided 2026-07-07). |
+TFM | STAGED | Row created in TFM by the transform. |
+TFM | GENERATED | Row written into an FBDI CSV / HDL DAT (FBDI_CSV_ID set). |
+TFM | LOADED | BIP reconciliation confirmed the row in Fusion base tables (FUSION_*_ID captured). |
+TFM | FAILED | Positive failure — validation, generation, load, or interface rejection; ERROR_TEXT attributed to this row. |
+both | UNRECONCILED (derived — not stored) | Computed by the run-detail views (DMT_V_CEMLI_STATUSsrc, DMT_OBJECT_DETAIL_Vsrc, DMT_RECORD_DETAIL_Vsrc) when a row is FAILED with no ERROR_TEXT: the pipeline got neither a positive Fusion ID nor an error for it. This is the "unaccounted for" state — it counts as in-flight in the funnel rollup and fails the work item's accounting rule if it persists. End state (2026-07-07): no process may set FAILED without appending ERROR_TEXT in the same statement — the centralized [RECONCILE_ERROR] sweep guarantees this on the reconcile path — so this bucket exists purely as a defect detector and must trend to zero. (The legacy per-object DMT_*_IMP_RPT_V views computed the same bucket; they are invalid, unreferenced, and slated for deletion — §12.) |
+How users run and re-run data — run modes + prefixes
+Three run modes (RUN_MODE on the run), selected at submission. Combined with prefixes, they cover the real load lifecycle:
+Mode | Selects | Typical use case |
+NEW (default) | Staging rows with status NEW — never yet attempted. TRANSFORMED and FAILED rows are untouched. (RETRY and the ALL-mode reset are retired — run modes drive the selection predicates directly.) | Incremental loading. Load 10% of the data as a sanity check and run it; once it proves out, load the other 90% and run again — only the new rows are picked up. Repeat as more data arrives. |
+FAILED | Two sources, one union: staging rows whose status is FAILED (died before the transform table), plus staging rows whose most recent TFM attempt ended FAILED (rejected downstream — staging still says TRANSFORMED because downstream outcomes are never written back to staging). Must use the most recent attempt: a record that failed in run 57 and loaded in run 58 is not selected. NEW rows are ignored. | Retry after a fix. 100% loaded but 20% failed on a Fusion setup miss; fix the setup, run FAILED mode — just the failures re-run, the 80% that loaded stay untouched. |
+ALL (requires a scenario) | Every row in the scenario, selected directly by the run-mode parameter in the selection predicates (decided 2026-07-07) — no status reset, no extra procedure. The run still gets a new prefix. Current code instead calls reset_scenario_status to flip rows to a RETRY status — replace with mode-driven predicates and retire both the procedure and the RETRY status (P3, section 12). | Full regression re-run. After fixing the setup miss you want to reload all 100% to prove the fix didn't break the rows that previously worked. The new prefix keeps the re-load from colliding with the earlier load in Fusion. |
+Why prefixes make this safe. Every test run stamps a fresh numeric prefix onto business keys at transform, so the same source records can be loaded into Fusion repeatedly — each run creates distinct Fusion records, and reconciliation joins each run's rows by its prefix, so runs never blur together. A production cutover runs once, without a prefix, loading the data as-is.
+Status legend (used throughout)
+IMPLEMENTED built & deployed
+PARTIAL built, gaps or unverified
+TO-DO planned / proposed
+BROKEN exists but not working
+LEGACY superseded / retiring
+Historical notes (pipeline re-architecture, INTEGRATION_ID compatibility alias) have moved to the Appendix.
+Glossary
+Term | Meaning |
+CEMLI | Oracle's term for a customization work item (Configuration/Extension/Modification/Localization/Interface). In this document a "CEMLI code" is simply an object's unique identifier, e.g. PurchaseOrders. |
+FBDI | File-Based Data Import — Oracle Fusion's bulk-load mechanism for ERP data: position-based CSV files zipped and submitted to an import job. |
+HDL | HCM Data Loader — Fusion's bulk-load mechanism for HCM (Human Capital Management) data: pipe-delimited .dat files submitted over REST. |
+FBL | File-Based Loader for functional setup/configuration objects — pipe-delimited CSVs with headers (see open question on its load mechanism, section 13). |
+ESS | Enterprise Scheduler Service — Fusion's job scheduler. Every load/import runs as an ESS job with a request id. |
+BIP | Business Intelligence Publisher — Fusion's reporting engine. DMT runs BIP reports over Fusion tables to reconcile what actually loaded. |
+UCM | Universal Content Management — Fusion's file store; FBDI ZIPs are uploaded there before the import job runs. |
+ATP | Oracle Autonomous Transaction Processing — the cloud database DMT runs on (schema DMT_OWNER). |
+APEX | Oracle Application Express — the low-code web framework the DMT user interface is built in. |
+SqlLdr | SQL*Loader — the Fusion-side step that reads the CSV into interface tables during a load job. A SqlLdr WARNING means zero rows were committed. |
+P2P / O2C / FINANCIALS / PROJECTS / HCM / CONFIGURATION | Pipeline codes (canonical values of PIPELINE_CODE, exactly as in the section 6 seed — screens may display friendlier names) — named sequences of objects run together: Procure-to-Pay, Order-to-Cash, Financials, Projects, Human Capital Management, Configuration. |
+EPBCS | Enterprise Planning & Budgeting Cloud Service — the target for planning budgets. |
+CTL | SQL*Loader control file — defines an FBDI CSV's exact column order. |
+IR | Interactive Report — APEX's sortable/filterable grid component. |
+MCCS | The predecessor conversion project (a completed client engagement) whose codebase informed the coding standards (section 7). |
+P1 / P2 / P3 | Backlog priorities: P1 = fix ASAP (blocks correctness or rebuild), P2 = important, schedule soon, P3 = worthwhile cleanup. |
+Sections by | Column header in the object tables: the object's partitioning dimension — one work item + one generated file set per value ("single" = no split; "Procurement BU" = one per business unit; "Ledger" = one per ledger). The partition columns themselves are configured in DMT_CEMLI_SPLIT_CFG. |
+Scenario | A named dataset tag on every staging row (mandatory at ingestion). Used to scope runs to one dataset; required for ALL-mode re-runs. Production data is tagged too: a cutover run uses its own scenario, conventionally named PRODUCTION — a scenario like any other, so ALL-mode re-runs work for cutover exactly as for tests (decided 2026-07-07). |
+f155.sql / app N | An APEX application export file — "f155.sql" is the full export of application 155; citations like "f155:60626" are line references into that export, used as evidence in the Appendix. Historical only — the highest-numbered app is always current. |
+Rapid Implementation | Oracle's setup-spreadsheet bulk upload for configuration data (Setup and Maintenance → "Create … in Spreadsheet" tasks). Rejected for Banks partly for its documented weakness adding branches to existing banks (Oracle support notes 2234593.1 / 1923921.1). |
+STG / TFM | Staging / Transform — the two table layers every record passes through: STG holds the raw source rows; TFM holds the run-specific transformed copies that become the load file. |
+ParameterList | The ordered argument string an ESS import job requires at submission (business unit, ledger, options — different per job). Stored per object with the ERP interface options; a wrong ParameterList is the classic cause of a job stuck in WAIT. |
+Interface tier / Base tier | The two places a record can be seen in Fusion during reconciliation: the interface tables (arrived, possibly rejected — "Tier 1") and the base tables (fully imported — "Tier 2"). LOADED requires the base tier. |
+OIC | Oracle Integration Cloud — could serve as an orchestration layer (file transfer, callbacks, email) around the pipeline; not currently used. |
+1 · Canonical object list (SSOT) VERIFIED 2026-07-05
+One object = one upload unit — one FBDI ZIP, one HDL .dat submission, or one FBL ZIP, submitted to one Fusion import job. Sub-tables inside a ZIP are sub-objects (record types within the same FBDI), never separate objects. 45 in-scope objects (23 FBDI + 14 HDL + 6 FBL + 2 REST-loaded), plus PlanningBudgets — out of scope as of 2026-07-07. The tables below are the requirement — every object with its upload files, staging/transform tables, generated files, partitioning, and four registration checks. An object's code must be registered, spelled identically, in four places for the pipeline to work end to end: the scheduler sequence (so runs include it), the ERP options table (so the loader knows which Fusion import job to submit), the BIP registry (so reconciliation knows which report to run), and the display catalog view (so the UI can name it and drill into it). These places find each other by matching the code as text — a ✓ means that place has the object under the exact canonical code; a bold entry means it is spelled differently there, the lookup silently misses, and it must be fixed.
+FBDI objects (24)
+# | Object (CEMLI code) | Upload CSV(s) | FBDI file(s) in ZIP | STG table(s) | TFM table(s) | ZIP name | Sections by | Scheduler | ERP options | BIP registry | Catalog view |
+1 | Suppliers docs | POZ_SUPPLIERS.csv | PoSupplierImport.csv | POZ_SUPPLIERS_STG | POZ_SUPPLIERS_TFM | Suppliers_* | single | ✓ | ✓ | ✓ | ✓ |
+2 | SupplierAddresses docs | POZ_SUP_ADDR.csv | PozSupAddressesInt.csv | POZ_SUP_ADDR_STG | POZ_SUP_ADDR_TFM | SupplierAddresses_* | single | ✓ | ✓ | ✓ | ✓ |
+3 | SupplierSites docs | POZ_SUP_SITE.csv | PozSupplierSitesInt.csv | POZ_SUP_SITE_STG | POZ_SUP_SITE_TFM | SupplierSites_* | single | ✓ | ✓ | ✓ | ✓ |
+4 | SupplierSiteAssignments docs | POZ_SUP_SITE_ASSN.csv | PozSiteAssignmentsInt.csv | POZ_SUP_SITE_ASSN_STG | POZ_SUP_SITE_ASSN_TFM | SupplierSiteAssignments_* | single | ✓ | ✓ | ✓ | ✓ |
+5 | SupplierContacts docs | POZ_SUP_CONTACTS.csv | PozSupContactsInt.csv | POZ_SUP_CONTACTS_STG | POZ_SUP_CONTACTS_TFM | SupplierContacts_* | single | ✓ | ✓ | ✓ | ✓ |
+6 | PurchaseOrders docs | PO_HEADERS.csv
+PO_LINES.csv
+PO_LINE_LOCS.csv
+PO_DISTS.csv | PoHeadersInterfaceOrder.csv
+PoLinesInterfaceOrder.csv
+PoLineLocationsInterfaceOrder.csv
+PoDistributionsInterfaceOrder.csv | PO_HEADERS_INT_STG
+PO_LINES_INT_STG
+PO_LINE_LOCS_INT_STG
+PO_DISTS_INT_STG | PO_HEADERS_INT_TFM
+PO_LINES_INT_TFM
+PO_LINE_LOCS_INT_TFM
+PO_DISTS_INT_TFM | PO* | Procurement BU | ✓ | ✓ | ✓ | ✓ |
+7 | BlanketPOs docs | shares PO uploads (style = Blanket) | shares PO interface files | shares PO_*_INT_STG | PO_HEADERS_INT_TFM
+PO_LINES_INT_TFM | BlanketPO* | Procurement BU | ✓ | ✓ | ✓ | ✓ |
+8 | Contracts docs | shares PO uploads (style = Contract) | shares PO header file | shares PO_HEADERS_INT_STG | PO_HEADERS_INT_TFM | Contract* | Procurement BU | ✓ | ✓ | ✓ | ✓ |
+9 | APInvoices docs | AP_INVOICES.csv
+AP_INVOICE_LINES.csv | ApInvoicesInterface.csv
+ApInvoiceLinesInterface.csv | AP_INVOICES_INT_STG
+AP_INVOICE_LINES_INT_STG | AP_INVOICES_INT_TFM
+AP_INVOICE_LINES_INT_TFM | AP* | Operating Unit | ✓ | ✓ | ✓ | ✓ |
+10 | 1099Invoices docs≈ | shares AP uploads (invoice type LIKE '%1099%') | shares AP interface files | shares AP_*_INT_STG | shares AP_*_INT_TFM | 1099* | Operating Unit | ✓ | ✓ | ✓ | ✓ |
+11 | ARInvoices docs | RA_LINES.csv
+RA_DISTS.csv | RaInterfaceLinesAll.csv
+RaInterfaceDistributionsAll.csv | RA_LINES_STG
+RA_DISTS_STG | RA_LINES_TFM
+RA_DISTS_TFM | ARInvoices* | Business Unit | ✓ | ✓ | ✓ | ✓ |
+12 | Requisitions docs | not in upload registry | PorReqHeadersInterface.csv
+PorReqLinesInterface.csv
+PorReqDistsInterface.csv | POR_REQ_HEADERS_STG
+POR_REQ_LINES_STG
+POR_REQ_DISTS_STG | POR_REQ_HEADERS_TFM
+POR_REQ_LINES_TFM
+POR_REQ_DISTS_TFM | REQ_* | single | ✓ | ✓ | ✓ | ✓ |
+13 | MiscReceipts docs | RCV_HEADERS.csv
+RCV_TRANSACTIONS.csv | InvTransactionsInterface.csv (+Lots, +Serials if present) — upload registry wrongly says RcvHeadersInterface / RcvTransactionsInterface | INV_TRX_STG
+INV_TRX_LOTS_STG
+INV_TRX_SERIALS_STG (corrected 2026-07-07 — the pipeline uses the INV_TRX tables; the orphaned RCV_HEADERS/RCV_TRANSACTIONS tables are a sweep candidate) | INV_TRX_TFM
+INV_TRX_LOTS_TFM
+INV_TRX_SERIALS_TFM | MiscReceipts_* | single | — (absent from P2P) | ✓ | ✓ | ✓ |
+14 | Customers docs | HZ_PARTIES.csv
+HZ_LOCATIONS.csv
+HZ_PARTY_SITES.csv
+HZ_PARTY_SITE_USES.csv
+HZ_ACCOUNTS.csv
+HZ_ACCT_SITES.csv
+HZ_ACCT_SITE_USES.csv | HzImpPartiesT.csv
+HzImpLocationsT.csv
+HzImpPartySitesT.csv
+HzImpPartySiteUsesT.csv
+HzImpAccountsT.csv
+HzImpAcctSitesT.csv
+HzImpAcctSiteUsesT.csv | HZ_PARTIES_STG
+HZ_LOCATIONS_STG
+HZ_PARTY_SITES_STG
+HZ_PARTY_SITE_USES_STG
+HZ_ACCOUNTS_STG
+HZ_ACCT_SITES_STG
+HZ_ACCT_SITE_USES_STG | same 7, _TFM | Customers_* | single | ✓ | ✓ | ✓ | ✓ |
+15 | GLBalances docs | GL_INTERFACE.csv | GlInterface.csv | GL_INTERFACE_STG | GL_INTERFACE_TFM | GLBalances_* | Ledger | ✓ | ✓ | ✓ | ✓ |
+16 | GLBudgets docs | GL_BUDGET.csv | GlBudgetInterface.csv | GL_BUDGET_INT_STG | GL_BUDGET_INT_TFM | GLBudgetBalances_* | single | ✓ | GLBudgetBalances | GLBudgetBalances | ✓ |
+17 OUT OF SCOPE 2026-07-07 | PlanningBudgets docs≈ | PLAN_BUDGET.csv | EpbcsDataImport.csv | PLAN_BUDGET_STG | PLAN_BUDGET_TFM | PlanningBudgets_* | single | — (dormant) | — (no seed) | ✓ | ✓ |
+18 | Assets docs | FA_ASSET_HDR.csv
+FA_ASSET_BOOK.csv
+FA_ASSET_ASSIGN.csv | FaAssetHeaders.csv
+FaAssetBooks.csv
+FaAssetAssignments.csv — upload registry says FaMassAdditions / FaMassaddDistributions, book blank | FA_ASSET_HDR_STG
+FA_ASSET_BOOK_STG
+FA_ASSET_ASSIGN_STG | same 3, _TFM | Assets_* | single | ✓ | ✓ | ✓ | ✓ |
+19 | Projects docs | PJF_PROJECTS.csv
+PJF_TASKS.csv
+PJF_TEAM_MEMBERS.csv
+PJC_TXN_CONTROLS.csv | PjfProjectsAllXface.csv
+PjfProjElementsXface.csv
+PjfProjectPartiesInt.csv
+PjcTxnControlsStage.csv | PJF_PROJECTS_STG
+PJF_TASKS_STG
+PJF_TEAM_MEMBERS_STG
+PJC_TXN_CONTROLS_STG | same 4, _TFM | Projects_* | single | ✓ | ✓ | ✓ | ✓ |
+20 | Expenditures docs≈ | PJC_EXPENDITURES.csv | PjcTxnXfaceStageAll.csv | PJC_EXPENDITURES_STG | PJC_EXPENDITURES_TFM | Expenditures_* | single | ✓ | ✓ | ✓ | ✓ |
+21 | ProjectBudgets docs | not in upload registry | PjoPlanVersionsXface.csv | PRJ_BUDGET_STG | PRJ_BUDGET_TFM | ProjectBudgets_* | single | ✓ | ✓ | ✓ | ✓ |
+22 | BillingEvents docs | PJB_BILL_EVENTS.csv | PjbBillingEventsXface.csv | PJB_BILL_EVENTS_STG | PJB_BILL_EVENTS_TFM | BillingEvents_* | single | ✓ | ✓ | ✓ | ✓ |
+23 | Grants docs | 14 × GMS_AWD_*.csv (GMS_AWD_PRJ_TSK_BRD not registered) | 15 × GmsAward*Interface.csv | 16 × GMS_AWD_*_STG | GMS_AWD_HEADERS_TFM (children's TFMs not in catalog view yet) | Grants_* | single | ✓ | ✓ | ✓ | ✓ |
+24 | Items docs | EGP_ITEM.csv
+EGP_ITEM_CAT.csv | EgpSystemItemsInterface.csv
+EgpItemCategoriesInterface.csv | EGP_ITEM_STG
+EGP_ITEM_CAT_STG | EGP_ITEM_TFM
+EGP_ITEM_CAT_TFM | EgpItem_* | single | ✓ | ✓ + stray ItemCategories row | ✓ + stray ItemCategories row | ✓ |
+Other rename-sweep items carried over: fold objects/InvTransactions/ CTL artifacts into objects/MiscReceipts/; retire ItemCategories runner pkg + legacy GENERATE_FBDI + folder; rename objects/GLBudget/ → objects/GLBudgets/; DMT_ERP_INTERFACE_OPTIONS_TBL also contains a row with NULL CEMLI_CODE — investigate and delete or fix.
+HDL objects (14)
+About the "ZIP name" column (stated 2026-07-07): HDL generates .dat files, not zips — Fusion receives the .dat via REST. The .dat content is stored through the same file tables as FBDI output (the "ZIP" tables are the storage convention), and the names below are those storage/archive naming patterns.
+# | Object (CEMLI code) | Upload CSV(s) | HDL file (.dat / sections) | STG table(s) | TFM table(s) | ZIP name | Sections by | Scheduler | ERP options | BIP registry | Catalog view |
+25 | Workers docs | WORKER.csv
+PERSON_NAME.csv
+PERSON_ADDR.csv
+PERSON_PHONE.csv
+PERSON_EMAIL.csv
+PERSON_NID.csv
+PERSON_LEGISL.csv
+WORK_REL.csv | Worker.dat — 7 sections: Worker, PersonName, Address, Phone, Email, NID, LegislativeData | WORKER_STG + 6 × PERSON_*_STG + WORK_REL_STG | same 8, _TFM | Worker_* | single | ✓ | — | — | ✓ (but Work Relationships mapped here while the Assignments generator emits them — move) |
+26 | Assignments docs | ASSIGNMENT.csv | Worker.dat — WorkRelationship + Assignment sections | ASSIGNMENT_STG | ASSIGNMENT_TFM | Worker_* | single | ✓ | — | — | ✓ |
+27 | PayrollRelationships docs | PAY_REL.csv | Worker.dat — PayrollRelationship section | PAY_REL_STG | PAY_REL_TFM | PayrollRelationships_* | single | PayrollRels | — | — | PayrollRels (decided 2026-07-05: long code canonical — conform scheduler, queue, and catalog view to PayrollRelationships) |
+28 | Salaries docs | SALARY.csv | Salary.dat — 1 section | SALARY_STG | SALARY_TFM | Salary_* | single | ✓ | — | — | ✓ |
+29 | SalaryBases docs | SAL_BASIS.csv | SalaryBasis.dat — 1 section | SAL_BASIS_STG | SAL_BASIS_TFM | SalaryBases_* | single | ✓ | — | — | ✓ |
+30 | Absences docs | ABSENCE.csv | AbsenceEntry.dat — 1 section | ABSENCE_STG | ABSENCE_TFM | AbsenceEntries_* | single | ✓ | — | — | ✓ |
+31 | BenParticipant docs | BEN_PARTIC.csv | BenefitParticipantEnrollment.dat — 1 section | BEN_PARTIC_STG | BEN_PARTIC_TFM | ParticipantEnrollments_* | single | ✓ | — | — | ✓ |
+32 | BenDependent docs≈ | BEN_DEPEND.csv | BenefitParticipantEnrollment.dat — 1 section | BEN_DEPEND_STG | BEN_DEPEND_TFM | DependentEnrollments_* | single | ✓ | — | — | ✓ |
+33 | BenBeneficiary docs | BEN_BENFY.csv | BenefitParticipantEnrollment.dat — 1 section | BEN_BENFY_STG | BEN_BENFY_TFM | BeneficiaryDesignations_* | single | ✓ | — | — | ✓ |
+34 | W2Balances docs | W2_BAL.csv
+W2_BAL_DTL.csv | PayrollBalanceInitialization.dat — 2 sections | W2_BAL_STG
+W2_BAL_DTL_STG | W2_BAL_TFM
+W2_BAL_DTL_TFM | W2Balances_* | single | ✓ | — | — | ✓ |
+35 | TaxCards docs | TAX_CARD.csv
+TAX_CARD_COMP.csv | CalculationCard.dat — CalculationCard + CardComponent | TAX_CARD_STG
+TAX_CARD_COMP_STG | TAX_CARD_TFM
+TAX_CARD_COMP_TFM | TaxCards_* | single | ✓ | — | — | ✓ |
+36 | TalentProfiles docs | TALENT_PROF.csv
+TALENT_PROF_ITEM.csv | TalentProfile.dat — 2 sections | TALENT_PROF_STG
+TALENT_PROF_ITEM_STG | TALENT_PROF_TFM
+TALENT_PROF_ITEM_TFM | TalentProfiles_* | single | ✓ | — | — | ✓ |
+37 | PerfEvaluations docs | PERF_EVAL.csv
+PERF_EVAL_RATING.csv | PerformanceDocument.dat — 2 sections | PERF_EVAL_STG
+PERF_EVAL_RATING_STG | PERF_EVAL_TFM
+PERF_EVAL_RATING_TFM | PerformanceDocuments_* | single | ✓ | — | — | ✓ |
+38 | WorkSchedules docs≈ | WORK_SCHED.csv
+WORK_SCHED_DTL.csv | WorkSchedule.dat — 2 sections | WORK_SCHED_STG
+WORK_SCHED_DTL_STG | WORK_SCHED_TFM
+WORK_SCHED_DTL_TFM | WorkSchedules_* | single | ✓ | — | — | ✓ |
+"One METADATA line per HDL" is not the boundary — Worker.dat carries 7 sections; the boundary is one .dat submission per generator run. HDL objects are legitimately absent from ERP options (they load via HDL REST, not the ERP interface loader). The BIP-registry absence is no longer by design (decided 2026-07-07): each HDL object gets a Contract v1 reconciliation report supplying the positive per-record success proof (key + Fusion id from the HCM base tables); failures keep coming per-record from the HDL response messages (DMT_HDL_UTIL_PKG.RECONCILE_HDL). The "—" cells in the BIP-registry column are therefore to-build items, tracked in the backlog. Cleanup carried over: rename objects/Absence/ → Absences/, objects/TaxCalculationCard/ → TaxCards/; split objects/Benefits/ into the 3 enrollment objects, resolve its dat-name contradiction (README says PersonBenefitBalance.dat, generators say BenefitParticipantEnrollment.dat), and remove the plaintext hcm_impl password from that README.
+FBL / configuration objects (6)
+# | Object (CEMLI code) | Upload CSV(s) | FBL file(s) in ZIP (pipe-delimited, with headers) | STG table(s) | TFM table(s) | ZIP name | Sections by | Scheduler | ERP options | BIP registry | Catalog view |
+39 | GLCalendar docs≈ | GL_CALENDAR.csv | GlAccountingCalendar.csv | GL_CALENDAR_STG | GL_CALENDAR_TFM | GlAccountingCalendar_* | single | ✓ | — | — | — |
+40 | UnitsOfMeasure docs≈ | INV_UOM.csv | InvUnitOfMeasure.csv | INV_UOM_STG | INV_UOM_TFM | InvUnitOfMeasure_* | single | — (add to CONFIGURATION) | — | — | — |
+41 | Lookups docs | FND_LOOKUP_TYPE.csv
+FND_LOOKUP_VALUE.csv | LookupType.csv
+LookupCode.csv | FND_LOOKUP_TYPE_STG
+FND_LOOKUP_VALUE_STG | FND_LOOKUP_TYPE_TFM
+FND_LOOKUP_VALUE_TFM | FndLookup_* | single | ✓ token, resolves nowhere | — | COMMON_LOOKUPS (odd code — align or explain) | — |
+42 | ValueSets docs | FND_VS_SET.csv
+FND_VS_VALUE.csv | ValueSetCode.csv
+ValueSetValue.csv | FND_VS_SET_STG
+FND_VS_VALUE_STG | FND_VS_SET_TFM
+FND_VS_VALUE_TFM | FndValueSet_* | single | ✓ + extra ValueSetValues token (one object, drop the 2nd) | — | — | — |
+43 | PaymentTerms docs | AP_PAY_TERM_HDR.csv
+AP_PAY_TERM_LINE.csv | PayTermHeader.csv
+PayTermLine.csv | AP_PAY_TERM_HDR_STG
+AP_PAY_TERM_LINE_STG | AP_PAY_TERM_HDR_TFM
+AP_PAY_TERM_LINE_TFM | PayTerms_* | single | — (add to CONFIGURATION) | — | — | — |
+44 | TaxConfig docs | ZX_REGIME.csv
+ZX_RATE.csv | TaxRegime.csv
+TaxRate.csv | ZX_REGIME_STG
+ZX_RATE_STG | ZX_REGIME_TFM
+ZX_RATE_TFM | ZxTax_* | single | — (add to CONFIGURATION) | — | — | — |
+None of the 6 FBL objects has catalog-view (run-detail) rows yet — all show "—" in that column; add DMT_V_CEMLI_TFM_TABLESsrc branches when these are wired into the queue. Folder merges carried over: LookupTypes/+LookupValues/ → Lookups/; ValueSetValues/ → ValueSets/; PaymentTermLines/ → PaymentTerms/; TaxRegimes/+TaxRates/ → TaxConfig/; BankBranches/+BankAccounts/ → Banks/.
+Banks — resolved (2026-07-07): REST. Oracle supports both a Rapid Implementation bulk upload and full REST endpoints for the bank/branch/account hierarchy. Decided: REST, record at a time — bank master data is low volume, every API response is a positive per-record outcome (satisfying the accounting rule directly, with no BIP report), and it avoids the documented Rapid Implementation weakness adding branches to existing banks. The objects/Banks/README.md design becomes the specification (its staging table names must be corrected to the real DMT_CE_BANK_* tables); the FBL generator DMT_CE_BANK_FBL_GEN_PKG retires (section 12).
+REST-loaded objects (2)
+# | CEMLI code | Display name | Upload unit | Sections by | Status |
+45 | Banks docs | Banks / Bank Branches / Bank Accounts | REST, record at a time (decided 2026-07-07): POST /fscmRestApi/…/cashBanks, cashBankBranches, cashBankAccounts — three-level hierarchy created in order | n/a — low-volume master data; each API response is the reconciliation (success + Fusion id, or a specific error, per record — no BIP step) | to build per objects/Banks/README.md (P3, section 12); the FBL generator retires |
+46 | ARReceipts docs | AR Receipts | REST/SOAP per-receipt API calls (no file) | n/a — record-at-a-time API | not built — deliberately last |
+BIP validation data model & report per object
+Post-load reconciliation is BIP-driven: each object has a data model (.xdm) and report (.xdo) deployed under /Custom/DMT/{CemliCode}/ that query the Fusion interface + base tables to return positive LOADED confirmation (with Fusion IDs) or interface errors. Registry: DMT_BIP_REPORT_TBL. Current (legacy) naming — superseded by the Contract v1 convention DMT_{OBJ}_RECON_DM/_RPT (section 5); listed here as inventory: /Custom/DMT/{CemliCode}/{ABBREV}_DM.xdm + {ABBREV}_RPT.xdo.
+Object | Data model (.xdm) | Report (.xdo) | Fusion interface table | Deviation / note |
+Suppliers | /Custom/DMT/Suppliers/SUP_DM.xdm | SUP_RPT.xdo | POZ_SUPPLIERS_INT | — |
+SupplierAddresses | /Custom/DMT/SupplierAddresses/SUP_ADDR_DM.xdm | SUP_ADDR_RPT.xdo | POZ_SUP_ADDRESSES_INT | — |
+SupplierSites | /Custom/DMT/SupplierSites/SUP_SITE_DM.xdm | SUP_SITE_RPT.xdo | POZ_SUPPLIER_SITES_INT | — |
+SupplierSiteAssignments | /Custom/DMT/SupplierSiteAssignments/SUP_SITE_ASSN_DM.xdm | SUP_SITE_ASSN_RPT.xdo | POZ_SITE_ASSIGNMENTS_INT | — |
+SupplierContacts | /Custom/DMT/SupplierContacts/SUP_CONT_DM.xdm | SUP_CONT_RPT.xdo | POZ_SUP_CONTACTS_INT | — |
+PurchaseOrders | /Custom/DMT/PurchaseOrders/PO_DM.xdm | PO_RPT.xdo | PO_HEADERS_INTERFACE | — |
+BlanketPOs | /Custom/DMT/BlanketPOs/BLANKET_PO_DM.xdm | BLANKET_PO_RPT.xdo | PO_HEADERS_INTERFACE | — |
+Contracts | /Custom/DMT/Contracts/CONTRACT_DM.xdm | CONTRACT_RPT.xdo | PO_HEADERS_INTERFACE | — |
+APInvoices | /Custom/DMT/APInvoices/AP_DM_V4.xdm | AP_RPT_V4.xdo | AP_INVOICES_INTERFACE | versioned name — go versionless (AP_DM) at next redeploy |
+1099Invoices | /Custom/DMT/1099Invoices/AP_1099_DM.xdm | AP_1099_RPT.xdo | AP_INVOICES_INTERFACE | — |
+ARInvoices | /Custom/DMT/ARInvoices/AR_DM.xdm | AR_RPT.xdo | RA_INTERFACE_LINES_ALL | — |
+Requisitions | /Custom/DMT/Requisitions/REQ_DM.xdm | REQ_RPT.xdo | POR_REQ_HEADERS_INTERFACE_ALL | — |
+MiscReceipts | /Custom/DMT/MiscReceipts/MISC_RECEIPT_DM.xdm | MISC_RECEIPT_RPT.xdo | RCV_HEADERS_INTERFACE | verify vs generator, which writes INV_TRANSACTIONS_INTERFACE CSVs — the DM may need to reconcile against INV, not RCV |
+Customers | /Custom/DMT/Customers/CUST_DM.xdm | CUST_RPT.xdo | HZ_IMP_PARTIES_T | — |
+GLBalances | /Custom/DMT/GLBalances/GL_BAL_DM.xdm | GL_BAL_RPT.xdo | GL_INTERFACE | — |
+GLBudgets | /Custom/DMT/GLBudgetBalances/GL_BUDGET_DM.xdm | GL_BUDGET_RPT.xdo | GL_BUDGET_INTERFACE | registry code + catalog folder still GLBudgetBalances — rename to /Custom/DMT/GLBudgets/ |
+PlanningBudgets | /Custom/DMT/PlanningBudgets/PLAN_BUDGET_DM.xdm | PLAN_BUDGET_RPT.xdo | N/A (EPBCS internal) | — |
+Assets | /Custom/DMT/Assets/FA_ASSET_DM.xdm | FA_ASSET_RPT.xdo | FA_MASS_ADDITIONS | — |
+Projects | /Custom/DMT/Projects/PROJECT_DM.xdm | PROJECT_RPT.xdo | PJF_PROJECTS_ALL_XFACE | — |
+Expenditures | /Custom/DMT/Expenditures/EXPENDITURE_DM.xdm | EXPENDITURE_RPT.xdo | PJC_TXN_XFACE_STAGE_ALL | — |
+ProjectBudgets | /Custom/DMT/ProjectBudgets/PRJ_BUDGET_DM.xdm | PRJ_BUDGET_RPT.xdo | PJO_PLAN_VERSIONS_XFACE | — |
+BillingEvents | /Custom/DMT/BillingEvents/BILLING_EVENT_DM.xdm | BILLING_EVENT_RPT.xdo | PJB_BILLING_EVENTS_INT | — |
+Grants | /Custom/DMT/Grants/GRANTS_DM.xdm | GRANTS_RPT.xdo | GMS_AWARD_HEADERS_INT | — |
+Items | /Custom/DMT/Items/ITEM_DM.xdm | ITEM_RPT.xdo | EGP_SYSTEM_ITEMS_INTERFACE | plus a stray ItemCategories registry row (ITEM_CAT_DM/RPT, EGP_ITEM_CATEGORIES_INTERFACE) — fold the categories query into the Items reconciliation, retire the standalone row |
+(shared) COMMON_LOOKUPS | /Custom/DMT/common/DMT_FBDI_LOOKUPS_DM.xdm | DMT_FBDI_LOOKUPS_RPT.xdo | FUN_ALL_BUSINESS_UNITS_V | not an object — the shared BU/lookup DM queried at pipeline start. Keep, but it doesn't belong in a per-object CEMLI_CODE column; move to a SHARED flag or separate table in the sweep |
+14 HDL objects | — | — | — | HDL reconciliation isn't BIP-registered yet — rows to add as HDL reconcilers are built (HCM base-table DMs) |
+6 FBL objects | — | — | — | no reconciliation rows yet; config verification TBD when wired into the queue |
+Source: DMT_BIP_REPORT_TBL (26 rows) @ queryapp, 2026-07-02. Local artifacts: bip/{CEMLI}/ (.xdm, .xdo, query.sql) — folder names follow the same CEMLI codes.
+Pipeline packages per object
+Every object's PL/SQL follows one stem: DMT_{stem}_VALIDATOR_PKG · DMT_{stem}_TRANSFORM_PKG · DMT_{stem}_{FBDI|HDL|FBL}_GEN_PKG · DMT_{stem}_RESULTS_PKG (FBL objects add DMT_{stem}_RUNNER_PKG). The table lists each object's stem; ✓ = that stage uses the object's own stem, a bold stem = the stage is shared with another object (deliberate for shared-staging objects, but it means errors from those stages attribute to the parent stem's tables).
+Object | Package stem | Validator | Transformer | Generator | Results |
+Suppliers | poz_sup | ✓ | ✓ | ✓ | ✓ |
+SupplierAddresses | poz_sup_addr | ✓ | poz_sup (shared) | ✓ | poz_sup (shared) |
+SupplierSites | poz_sup_site | ✓ | poz_sup | ✓ | poz_sup |
+SupplierSiteAssignments | poz_sup_site_assn | ✓ | poz_sup | ✓ | poz_sup |
+SupplierContacts | poz_sup_cont | ✓ | poz_sup | ✓ | poz_sup |
+PurchaseOrders | po | ✓ | ✓ | ✓ | ✓ |
+BlanketPOs | blanket_po | po (shared) | po (shared) | ✓ | ✓ |
+Contracts | contract | po | po | ✓ | ✓ |
+APInvoices | ap | ✓ | ✓ | ✓ | ✓ |
+1099Invoices | 1099 | ap (shared) | ap (shared) | ✓ | ✓ |
+ARInvoices | ar | ✓ | ✓ | ✓ | ✓ |
+Requisitions | req | ✓ | ✓ | ✓ | ✓ |
+MiscReceipts | misc_receipt | ✓ | ✓ | ✓ | ✓ |
+Customers | cust | ✓ | ✓ | ✓ | ✓ |
+GLBalances | gl | ✓ | ✓ | ✓ | ✓ |
+GLBudgets | gl_budget | ✓ | ✓ | ✓ | ✓ |
+PlanningBudgets | plan_budget | ✓ | ✓ | ✓ | ✓ |
+Assets | fa_asset | ✓ | ✓ | ✓ | ✓ |
+Projects | project | ✓ | ✓ | ✓ | ✓ |
+Expenditures | expenditure | ✓ | ✓ | ✓ | ✓ |
+ProjectBudgets | prj_budget | ✓ | ✓ | ✓ | ✓ |
+BillingEvents | billing_event | ✓ | ✓ | ✓ | ✓ |
+Grants | grants | ✓ | ✓ | ✓ | ✓ |
+Items | egp_item | ✓ + egp_item_cat sub-object set | ✓ + egp_item_cat | ✓ (cat CSV bundled via GENERATE_CSV) | ✓ + egp_item_cat |
+Workers | worker | ✓ | ✓ | ✓ | ✓ |
+Assignments | assignment | ✓ | ✓ | ✓ | ✓ |
+PayrollRelationships | pay_rel | ✓ | ✓ | ✓ | ✓ |
+Salaries | salary | ✓ | ✓ | ✓ | ✓ |
+SalaryBases | sal_basis | ✓ | ✓ | ✓ | ✓ |
+Absences | absence | ✓ | ✓ | ✓ | ✓ |
+BenParticipant | ben_partic | ✓ | ✓ | ✓ | ✓ |
+BenDependent | ben_depend | ✓ | ✓ | ✓ | ✓ |
+BenBeneficiary | ben_benfy | ✓ | ✓ | ✓ | ✓ |
+W2Balances | w2_bal | ✓ | ✓ | ✓ | ✓ |
+TaxCards | tax_card | ✓ | ✓ | ✓ | ✓ |
+TalentProfiles | talent_prof | ✓ | ✓ | ✓ | ✓ |
+PerfEvaluations | perf_eval | ✓ | ✓ | ✓ | ✓ |
+WorkSchedules | work_sched | ✓ | ✓ | ✓ | ✓ |
+GLCalendar | gl_calendar | ✓ | ✓ | ✓ | ✓ (+ runner) |
+UnitsOfMeasure | inv_uom | ✓ | ✓ | ✓ | ✓ (+ runner) |
+Lookups | fnd_lookup | ✓ | ✓ | ✓ | ✓ (+ runner) |
+ValueSets | fnd_vs | ✓ | ✓ | ✓ | ✓ (+ runner) |
+PaymentTerms | ap_pay_term | ✓ | ✓ | ✓ | ✓ (+ runner) |
+TaxConfig | zx | ✓ | ✓ | ✓ | ✓ (+ runner) |
+Banks | ce_bank | ✓ | ✓ | ✓ | ✓ (+ runner) |
+Shared-stage packages are intentional where objects share staging tables (Blankets/Contracts on PO tables, 1099 on AP tables, supplier children transformed/reconciled with the header) — but per the error-attribution rule, shared stages must still write errors against the correct object's rows. Items keeps a parallel egp_item_cat package set for the categories sub-object; that's inline processing under the Items token, not a separate object — only its runner and BIP-registry row get retired.
+Upload naming convention — dynamic header upload
+Rule | Convention (enforced by DMT_CSV_UPLOAD_PKGsrc / DMT_UPLOAD_DICT_TBL) |
+Single-CSV upload | User picks the object on the page — the file can be named anything; p_object_code drives the target table. |
+ZIP bundle upload | Each file inside the ZIP must be named exactly {OBJECT_CODE}.csv (case-insensitive match on DMT_UPLOAD_OBJECT_TBL.CSV_FILENAME, e.g. POZ_SUPPLIERS.csv, PO_HEADERS.csv). Unmatched files are skipped and reported. |
+Header row (dynamic) | Row 1 must contain STG-table column names — uppercased and matched against the uploadable columns in DMT_UPLOAD_DICT_TBL (seeded from USER_TAB_COLUMNS). Any column order, any subset; unknown headers are ignored with a warning; zero matches = hard error. |
+Dictionary upkeep | After any STG DDL change run DMT_UPLOAD_DICT_PKG.REFRESH_DICTIONARYsrc — otherwise new columns aren't uploadable. |
+Gap | Upload object codes are table-level (POZ_SUPPLIERS), a different code system from CEMLI codes. Rename sweep adds DMT_UPLOAD_OBJECT_TBL.CEMLI_CODE so every upload row maps to one canonical object — and adds the missing Requisitions + ProjectBudgets rows so their CSVs are uploadable at all. Decision (2026-07-07): the upload codes stay table-level by design — they identify which CSV within a multi-file object (PO_HEADERS vs PO_LINES), a finer grain than the object — and the sweep adds the CEMLI_CODE mapping column rather than renaming, so every upload row maps to its canonical object without losing file-level grain. |
+Naming decisions 2026-07-02: GLBudgets (not GLBudgetBalances) · MiscReceipts · Grants. Decided 2026-07-05: PayrollRelationships is canonical (the queue/scheduler short code PayrollRels is the defect to conform — note this deliberately reverses the GLBudgets precedent of adopting the queue code); TaxConfig confirmed for the combined tax regimes+rates object; Salaries/SalaryBases confirmed — the singular Salary.dat/SalaryBasis.dat file names are Oracle-fixed HDL business-object names and are exempt from code matching (ZIP-name drift like Salary_* is still sweep scope). No naming decisions remain open. The remaining working inventories (every naming surface, every code-reference location, rename-sweep worklist) stay in DMT_OBJECT_CATALOG.html — they are task lists, not requirements.
+2 · Execution engine (queue & heartbeat) VERIFIED 2026-07-04
+How queued work actually gets executed. For what each pipeline stage does to the data, see Pipeline stages defined in the overview; for the status vocabularies, the status tables there.
+The heartbeat
+One permanent DBMS_SCHEDULER job, DMT_QUEUE_POLLER, fires DMT_QUEUE_PKG.HEARTBEAT_TICKsrc every 60 seconds (C_POLL_INTERVAL). Each tick is deliberately lightweight:
+Promotes PENDING → READY when a work item's DEPENDS_ON predecessors are DONE — or, when the run was submitted with On Failure = Continue, when they are terminal (DONE or FAILED): dependents launch anyway and per-row dependency validation sorts out individual rows (decided 2026-07-07).
+Handles data-dependent splits — partitions that can only be known after transform (Assets per book) get their per-partition work items created mid-run, and the Plan preview marks them "split at run". Partitions knowable from staging data (PO by business unit, GL by ledger) are computed by the Plan step and created at Confirm Submit — so "creates precisely what is shown" holds (stated 2026-07-07; per DMT_CEMLI_SPLIT_CFG).
+Checks ESS state for items in AWAITING_LOAD / AWAITING_IMPORT / AWAITING_POSTRUN.
+Spawns one-shot child jobs for the heavy work (below).
+Rolls the run status up from its work items — the mapping is exactly the run-status definitions in the Overview's status table: each status's stated meaning is its rollup condition — defined once, there. Precedence (stated 2026-07-07): a run is IN_PROGRESS while any work item is unfinished — failures do not settle the run status early — and the terminal statuses apply only once every item is terminal.
+Concurrency rule (decided 2026-07-07): an object may be part of only one active run at a time. Enforced at submission — a run whose selection includes an object already in an active run is rejected with a clear message naming the object and the blocking run. This removes row-level race conditions between overlapping runs by construction; background-job limits are the database scheduler's concern.
+Child jobs — the heavy work
+Heavy work runs in one-shot DBMS_SCHEDULER child jobs in a separate package, DMT_QUEUE_WORKER_PKGsrc (separate so the heartbeat never self-deadlocks on its own package in the library cache):
+Procedure | Does |
+EXECUTE_ONE | Runs the item's data phase: pre-validate → transform → post-validate → generate → submit load (the PROCESSING work status — currently named VALIDATING in code, P2 §12). |
+POLL_ONE | One ESS check; advances the work item through the AWAITING_* states. Transient SOAP faults retry next tick; EXPIRED is not treated as terminal. |
+RECONCILE_ONE | Runs BIP reconciliation and settles every row LOADED / FAILED. |
+The worker calls DMT_LOADER_PKG.RUN_* with g_async_mode=TRUE (return-after-submit instead of the loader's own inline poll loop).
+HDL work items use a subset of the statuses (decided 2026-07-07): PROCESSING (validate → transform → generate the .dat) → LOADING (upload + submit, one REST call each) → AWAITING_LOAD (poll the dataset to a terminal state; EXPIRED retries next tick) → RECONCILING (HDL failure messages + the object's Contract v1 report) → DONE or FAILED by the accounting rule. AWAITING_IMPORT and AWAITING_POSTRUN are never used by HDL items — HDL is one combined job with no post-run step.
+REST-loaded work items (Banks, ARReceipts) use the shortest subset (decided 2026-07-07): PROCESSING (validate → transform) → LOADING (the record-at-a-time API calls, each recording its outcome as it goes) → DONE or FAILED by the accounting rule. No AWAITING states at all — there is no job to await; the load is the reconciliation.
+Timeouts (decided 2026-07-07)
+The polling timeout is configurable — ESS_POLL_TIMEOUT_MINUTES in
+DMT_CONFIG_TBL (default 30), maintained at the administrator level: raise it before a 100,000-row load,
+keep it short for everyday runs. A timeout is a trigger for the failure path, never a verdict: when it
+expires, every GENERATED row of the file is marked FAILED with a [LOAD_ERROR]-tagged timeout message (the
+all-or-nothing rule — an unfinished load committed nothing trustworthy), and reconciliation still runs —
+if the job actually completed after we stopped watching, reconciliation finds the records in Fusion and marks them LOADED,
+overriding the precaution. The work item ends DONE or FAILED by the accounting rule alone, never directly from the timer. A row rescued this way is LOADED with historical error text — a defined, legal state: status is always current, error text is the accumulated history (the override appends a confirmation note rather than erasing the timeout message), and the UNRECONCILED derivation is unaffected (it reads FAILED + empty text).
+Human guidance, not engine behavior: a job still in WAIT/RETRY past ~20 minutes almost
+always means a bad ParameterList — an operator (or an investigating session) should stop watching and check the parameters
+rather than wait out the timeout. The engine never reads this number; nothing is marked differently because of it.
+Entry points — DMT_SCHEDULER_PKGsrc
+Entry point | Purpose |
+SUBMIT_PIPELINE | Submit a named pipeline (e.g. P2P): resolves the pipeline code(s) to a CEMLI sequence and creates the run + queue rows inline via create_run_and_queue. (A historical hang in this path was fixed by inlining the run creation — it is safe to call directly.) |
+SUBMIT_OBJECTS | Submit an explicit list of objects as one run. |
+PLAN_RUN (function) | Preview what a submission would queue — objects, dependencies, partitions — without committing anything. |
+CANCEL_RUN REMOVED | There is no cancellation (decided 2026-07-07) — runs always execute to their terminal state. If something goes wrong mid-flight (including an infrastructure crash that strands rows in non-terminal states), the fix is an ALL-mode re-run of the scenario under a new prefix — that is what ALL mode exists for. Remove the procedure and the CANCELLED status from code (section 12). |
+3 · Table architecture & lineage VERIFIED 2026-07-03 open P1s
+A layered chain — each layer has its own PK and a FK to the layer above. Raw data (STG) is kept cleanly separate from run-specific data (TFM), giving a full audit trail from any Fusion outcome back to the original source row.
+STG→
+TFM→
+FBDI_CSV→
+FBDI_ZIP→
+WORK_QUEUE→
+PIPELINE_RUN
+Layer | Table pattern | PK | FK up the chain | Key infra columns |
+STG (97) | DMT_{obj}_STG_TBL | STG_SEQUENCE_ID | — (top of data lineage) | STATUS='NEW', ERROR_TEXT, SOURCE_ID, SCENARIO_ID (added by ALTER). No RUN_ID. Staging rows are never deleted — by any process or any person; a record's history is permanent. |
+TFM (97) | DMT_{obj}_TFM_TBL | TFM_SEQUENCE_ID | STG_SEQUENCE_ID→STG; RUN_ID→run; FBDI_CSV_ID→CSV | RUN_ID, STATUS='STAGED', ERROR_TEXT, reconciliation cols (FUSION_*_ID) |
+STG→TFM errors proposed | DMT_STG_TFM_ERROR_TBL | ERROR_ID | STG_SEQUENCE_ID→STG; RUN_ID→run | Run-stamped home for rows that die before TFM (pre-validation / transform failures) — closes the lineage gap where STG has no RUN_ID. Design: §5. |
+FBDI_CSV (1) | DMT_FBDI_CSV_TBL | FBDI_CSV_ID | RUN_ID→run | CEMLI_CODE, OBJECT_TYPE ({Object}:{Group} for grouped), CSV_CONTENT CLOB |
+FBDI_ZIP (1) | DMT_FBDI_ZIP_TBL | FBDI_ZIP_ID | CSV rows point at their ZIP (FBDI_ZIP_ID on DMT_FBDI_CSV_TBL); RUN_ID (end state — the current build has a single NOT-NULL FBDI_CSV_ID on the ZIP; flipping it is the P1 below) | ZIP_CONTENT BLOB |
+WORK_QUEUE | DMT_WORK_QUEUE_TBL | QUEUE_ID | RUN_ID→run; FBDI_ZIP_ID→ZIP | CEMLI_CODE, PARTITION_KEY, WORK_STATUS, DEPENDS_ON, ESS-id cols, NEXT_POLL_AFTER |
+PIPELINE_RUN | DMT_PIPELINE_RUN_TBL | RUN_ID | — (top) | PIPELINE_CODES, RUN_STATUS, CEMLI_SEQUENCE, PREFIX, RUN_MODE, SCENARIO_NAME |
+How they join
+Worked example: a P2P run's actual rows — run, work queue, FBDI CSV/ZIP, TFM lineage →
+PIPELINE_RUN 1—N WORK_QUEUE (by RUN_ID); each queue row → one FBDI_ZIP; each ZIP → one FBDI_CSV row per physical file in the archive (a PurchaseOrders ZIP has four); TFM.FBDI_CSV_ID→FBDI_CSV and TFM.STG_SEQUENCE_ID→STG. BIP reconciliation joins result rows back to TFM by business key (e.g. prefix||stg.SEGMENT1 = r.segment1) within a RUN_ID. Downstream outcomes are never written back to staging.
+P1 — CSV storage model is wrong (fix ASAP). Today DMT_FBDI_ZIP_TBL.FBDI_CSV_ID is a single NOT-NULL FK, so the model is strictly 1 ZIP : 1 CSV row : 1 work item. When an object's FBDI physically contains several CSV files (e.g. PurchaseOrders zips headers + lines + locations + distributions), the generator writes one DMT_FBDI_CSV_TBL row holding only the header CSV content; the child files are built in memory and exist only inside the ZIP BLOB — their content is not individually auditable. Target design: every physical CSV file gets its own DMT_FBDI_CSV_TBL row (FILENAME, ROW_COUNT, CSV_CONTENT), the FK flips direction (CSV rows point at their ZIP, or a junction keys them), and the zip step assembles the archive from the CSV table rows — never from in-memory CLOBs. TFM child rows then stamp the FBDI_CSV_ID of the file they actually went into. Objects that split by BU/ledger/org continue to produce one ZIP + work item per partition, each with its per-file CSV rows.
+How the schema is deployed (git-first SSOT)
+Git is the single source of truth for the database, by construction: every object lives in its own file, and the DB is changed only by running those files — sql …@queryapp @db/install.sql (re-runnable; code objects are CREATE OR REPLACE, table files are idempotent create-if-missing + guarded ALTERs). A PreToolUse hook blocks ad-hoc DDL. Table changes go as guarded blocks in the table's own file under schema/tables/ — no separate migration scripts going forward.
+P1 — base DDL drift (fix ASAP). All 97 TFM base files (plus CSV/ZIP/ESS) still declare INTEGRATION_ID + FK to DMT_CONVERSION_MASTER_TBL; RUN_ID and the FK changes exist only in schema/migration/phase1_pipeline_redesign.sql. DMT_WORK_QUEUE_TBL and DMT_CEMLI_SPLIT_CFG have no standalone base DDL file at all. The live DB is correct — the risk is that git no longer describes the current model directly: a rebuild depends on replaying the migration, and the git-first guarantee ("files = truth") is broken for these tables. Fix: fold the phase1 changes into each table's own file as guarded idempotent blocks, create base files for the two queue tables, retire the migration script. schema/tables/13_dmt_poz_suppliers_tfm_tbl.sql:204; schema/migration/phase1_pipeline_redesign.sql:65,122
+P1 — install.sql enrollment gap (in progress, blocked on reboot). db/install.sql is the mandated deploy path, but only 6 objects are enrolled. Progress (2026-07-03): branch feature/db-full-install now carries db_full/ — a complete snapshot of the live ATP schema (244 tables, 206 sequences, 170 views, 203 package specs / 202 bodies, 12 procedures, 493 seed rows with credentials masked) with a dependency-ordered, re-runnable db_full/install.sql enrolling 1,063 files, plus tools to rebuild a local Docker database and compare it against ATP. Remaining before adoption: (1) reboot the machine — Docker Desktop was installed but never rebooted, so its backend can't start (dockerBackendApiServer: Access is denied); the Oracle Free image is already pulled; (2) run sh db_full/tools/build_local_db.sh --fresh and fix install errors iteratively; (3) run compare_schemas.py until only explained diffs remain (DB-link invalids, masked seeds); (4) switch deploys from db/install.sql to db_full/. Zero-rediscovery instructions: db_full/RESUME.md.
+4 · Package structure VERIFIED 2026-07-04 gaps P2
+All pipeline logic is PL/SQL under packages/ — one package per FBDI object per stage, plus shared engines. The FBDI is the unit of the system: each FBDI object gets its own validator, transformer, generator, and reconciler. Per-object coverage varies (P2P/O2C E2E; several HCM/Projects built but not fully wired).
+Group | Directory | What it contains | Intended use |
+Validators | packages/validators/ | One package per FBDI object: DMT_{obj}_VALIDATOR_PKG | Guard the pipeline before and after transform. VALIDATE_PRE_TRANSFORM checks STG rows for upstream dependencies (required master data LOADED in Fusion; writes [PRE_VALIDATION]); VALIDATE_POST_TRANSFORM checks TFM content about to be sent to Fusion (required fields, allowed values; writes [POST_VALIDATION]). Outliers: 4 pkgs use VALIDATE_BATCH, 1 VALIDATE_UPSTREAM, plus a few object-specific names — standardize (P3, §12). |
+Transformers | packages/transformers/ | One package per FBDI object: DMT_{obj}_TRANSFORM_PKG | Copy surviving STG rows into the object's TFM table — apply the run prefix to business keys, derive/default fields, map source values to Fusion values, stamp RUN_ID + STG_SEQUENCE_ID lineage. Entry point TRANSFORM. Deviation: DMT_POZ_SUP_TRANSFORM_PKGsrc covers five separate FBDI objects (Suppliers, Addresses, Sites, SiteAssignments, Contacts) in one package — split per object (P3, §12). |
+Generators | packages/generators/{fbdi,fbl,hdl}/ | One package per FBDI object: DMT_{obj}_{FBDI|FBL|HDL}_GEN_PKG | Write GENERATED TFM rows into the physical load file and zip it: GENERATE_FBDI builds position-based CSVs (ERP objects), GENERATE_FBL builds config-object files, GENERATE_HDL builds HCM DAT files. Each row is stamped with the FBDI_CSV_ID of the file it went into. |
+Reconciliation | packages/reconciliation/ | One package per FBDI object: DMT_{obj}_RESULTS_PKG | Settle every row after the load: run the object's BIP report against Fusion interface + base tables and mark each TFM row LOADED (with Fusion IDs) or FAILED (with error text) per the §5 resolution flow. RECONCILE_BATCH orchestrates; PARSE_AND_UPDATE applies the BIP result. FETCH_BIP_RESULTS still exists in 21 pkgs but is being folded into shared DMT_UTIL_PKG.RUN_BIP_REPORTsrc (§12). Deviation: DMT_POZ_SUP_RESULTS_PKGsrc covers the five supplier FBDI objects — split per object (P3, §12). |
+Loaders | packages/loaders/ | 3 packages: DMT_LOADER_PKGsrc, DMT_CSV_LOADER_PKGsrc, DMT_HDL_UTIL_PKGsrc | Get files into Fusion and drive per-object flows. DMT_LOADER_PKGsrc holds the RUN_* procedure for each object (validate → transform → generate → submit), SUBMIT_LOAD (UCM upload + ESS submit), and POLL_ESS_JOB. DMT_CSV_LOADER_PKGsrc parses CSV content into STG tables — both files pushed from EBS into DMT_CSV_LANDING_TBL over the DB link and content from the upload path. DMT_HDL_UTIL_PKGsrc handles the HCM HDL REST path (upload, submit, poll, per-row error retrieval). |
+Runners RETIRE | packages/runners/ | One package per config object: DMT_{obj}_RUNNER_PKG | Self-contained end-to-end pipelines (single RUN procedure) for the config objects — GL Calendar, Value Sets, Lookups, UOM, Banks, Payment Terms, Tax, Items, Item Categories. Dead orchestration path: nothing calls them — config objects can only be run manually from SQL and are invisible to the queue/Run History. End state: fold config objects into the queue dispatch and retire the runners (P2, §12). Items/ItemCategories already have queue branches — their runners are leftovers. |
+Scheduler / Queue | packages/scheduler/ | 3 packages: DMT_SCHEDULER_PKGsrc, DMT_QUEUE_PKGsrc, DMT_QUEUE_WORKER_PKGsrc | The execution engine (§2). DMT_SCHEDULER_PKGsrc is the submission API (SUBMIT_PIPELINE/SUBMIT_OBJECTS/PLAN_RUN/CANCEL_RUN); DMT_QUEUE_PKGsrc is the 60-second heartbeat (promote, poll, spawn, roll up); DMT_QUEUE_WORKER_PKGsrc runs the heavy child jobs (EXECUTE_ONE/POLL_ONE/RECONCILE_ONE). EXECUTE_ONE dispatches via a hardcoded ~36-branch CASE over CEMLI codes — end state is catalog-driven dispatch (P2, §12). |
+Common | packages/common/ | Shared utility packages: DMT_UTIL_PKGsrc, DMT_IMPORT_REPORT_PKGsrc, DMT_APEX_PAGE_PKGsrc, plus REST/ESS/BIP helpers | Code every stage shares. DMT_UTIL_PKGsrc: config lookup, BASE64/CLOB handling, APPEND_ERROR, RUN_BIP_REPORT. DMT_IMPORT_REPORT_PKGsrc: parse ESS import reports into per-row errors (§5). DMT_APEX_PAGE_PKGsrc: HTML rendering procedures for the drill-through pages (§10). |
+Reports | packages/reports/ | 1 package: DMT_REPORT_PKGsrc | Summary/reporting queries backing APEX report regions. |
+COA | packages/coa/ | 2 packages: DMT_COA_MAP_PKGsrc, DMT_COA_SUGGEST_PKGsrc | Chart-of-accounts mapping: store and apply source→Fusion segment mappings (MAP); suggest candidate mappings for unmapped values (SUGGEST). Backs the COA Mapping pages (30–36). |
+Lookup | packages/lookup/ | 2 packages: DMT_LKP_REFRESH_PKGsrc, DMT_LKP_SUGGEST_PKGsrc | Lookup-value mapping: refresh Fusion lookup values into local tables (REFRESH); suggest source→Fusion lookup matches (SUGGEST). Backs the Lookup Mapping pages (16–20). |
+Upload | packages/upload/ | 2 packages: DMT_CSV_UPLOAD_PKGsrc, DMT_UPLOAD_DICT_PKGsrc | The CSV upload path: parse an uploaded file (header-driven or positional FBDI format) and insert rows into the right STG table; the dictionary package holds the per-object column definitions that drive the parse and the Upload Reference Guide page. |
+Adaptors RETIRE | packages/adaptors/{ebs,generic}/ | 2 packages: DMT_EBS_ADAPTOR_PKGsrc, DMT_GENERIC_ADAPTOR_PKGsrc | Abandoned pull-model stubs — never built, never called (one TODO function each). They contradict the actual architecture: source data is pushed to ATP, never pulled. EBS: the separate EBSAdaptors repo runs on the EBS side and pushes CSV content over the ATP_LINK DB link into DMT_CSV_LANDING_TBL; DMT_CSV_LOADER_PKGsrc parses it into STG. (ATP cannot reach into a customer's EBS network; the EBS VM reaches ATP via TCPS wallet.) Generic sources arrive via the CSV upload path. End state: delete both stubs (P3, §12). |
+APEX support | packages/apex/ | Not a package — 1 standalone procedure: DMT_RUN_DETAIL_TILES | Renders the Run Detail (Page 82) tile grid HTML. End state: no standalone procedures. 12 exist on the DB (7 live APEX helpers + 5 dead) — fold the live ones into DMT_APEX_PAGE_PKGsrc/DMT_SCHEDULER_PKGsrc, drop the dead ones (P3 — quick, §12). Only this one has a source file in the tree; the other 11 are also part of the base-DDL-drift P1 (§3). |
+External interface contract — EBSAdaptors
+The EBS-side extraction code lives in the separate brianmakarewicz/EBSAdaptors repo (its own schema on the source EBS database, its own docs). It is not part of ConversionTool and ConversionTool has no knowledge of it. The two systems meet at a deliberately small, one-directional contract — EBSAdaptors pushes over the ATP_LINK DB link and touches exactly three ATP objects:
+ATP object | EBSAdaptors' use | Contract |
+DMT_CSV_LANDING_TBL | Writes CSV content (as CLOBs) per object | Landing rows carry the object identity and CSV payload in the loader's expected format; this is the only write path into DMT from EBS. |
+DMT_CSV_LOADER_PKGsrc | Invokes it after landing | The loader parses landing rows into the correct STG tables — same code path as the CSV upload UI, so EBS-sourced and user-uploaded data are indistinguishable from STG onward. |
+DMT_SCENARIO_TBL | Named dataset tags for selective runs. Scenario is mandatory on every ingestion path (decided 2026-07-07): untagged staging rows are disallowed. Every upload, EBS push, and direct insert must name a scenario or it errors — there is no such thing as an untagged row. | Every pushed row must carry a scenario (decided 2026-07-07): the push names a scenario resolved against this table and errors if it does not — untagged rows are disallowed on every ingestion path. |
+Anything beyond these three objects is out of contract. Direction is always EBS→ATP (the EBS VM reaches ATP via TCPS wallet; ATP cannot reach into a customer's EBS network). EBSAdaptors' internals — source views, module extractors, install — are documented in that repo, not here. This mirrors the fusion-bip-toolkit boundary: separate tool, no code sharing.
+End state — one orchestration mechanism, catalog-driven. Every object (FBDI, FBL config, HDL) runs through the same queue path: work-queue row → EXECUTE_ONE → per-object pipeline. Dispatch is driven by a catalog table (one row per CEMLI naming its run procedure), not a hardcoded CASE — adding an object means inserting a catalog row, not editing DMT_QUEUE_WORKER_PKGsrc. The 9 runner packages retire; config objects become visible in Run History and get the accounting-rule enforcement like everything else. Gaps: P2 (fold config objects + retire runners; catalog-driven dispatch) — §12.
+5 · Error handling VERIFIED 2026-07-04
+How failures are captured, attributed, and prevented from being mistaken for success.
+Prefix convention. ERROR_TEXT is tagged by the stage that raised it — see the tag table below for when each is written and by which package group.
+Accumulate, never overwrite. ERROR_TEXT is a CLOB appended via DMT_UTIL_PKG.APPEND_ERRORsrc at every step.
+Per-row attribution. Errors attach to the specific header/line/distribution row that failed — no rolling everything up to the header with a generic "parent failed" cascade.
+Cascade to children. A FAILED parent (e.g. PO header) cascades to its children (lines/locs/dists), each row carrying why.
+absence ≠ LOADED. 0 BIP rows is never treated as success — it is investigated. A row that comes back with neither positive Fusion id nor an error is UNRECONCILED — a derived classification (FAILED + no ERROR_TEXT), not a stored status; see the status vocabulary in the Overview.
+Object-status accounting. An object is DONE iff every record is accounted for (base-loaded OR interface-errored); FAILED only if any record is unaccounted. A Load ESS ERROR marks all GENERATED rows FAILED and routes to reconcile — it never short-circuits.
+How each row's outcome is resolved (end state)
+After the load ESS job finishes, reconciliation (DMT_{obj}_RESULTS_PKG.RECONCILE_BATCH) decides every TFM row's fate. In priority order:
+Positive base-table match → LOADED, no error. The BIP report finds the row in the Fusion base table (Tier 2) with its Fusion ID. Nothing is appended to ERROR_TEXT.
+Interface error table → FAILED + [FUSION_ERROR]. The row is still in the Fusion interface table with rejection text (Tier 1); the BIP report returns that text and it is appended per row. This is the standard path for FBDI objects (AP, PO, AR, GL, suppliers, customers, …).
+Purging imports → FAILED + [IMPORT_REPORT] (fallback). The Projects-family imports (PJC_TXN_XFACE_STAGE_ALL: Projects, Expenditures) purge rejected rows from the interface table, so BIP can return 0 rows even when rows failed. The reconciler then parses the ESS import report via DMT_IMPORT_REPORT_PKG.PARSE_ERRORSsrc and matches errors back to TFM rows on the row identifier (ORIG_TRANSACTION_REFERENCE).
+REST-loaded objects (Banks, ARReceipts) → outcome from each API response — success with the Fusion id, or a specific error, per record, recorded directly on the TFM row; no BIP step (low-volume master data).
+HDL objects (HCM) → failures from the HDL response, positive success from a Contract v1 BIP report (decided 2026-07-07). The failure tier is free and per-record: every failing line comes back as a message identifying the record by SourceReference001 — the object's business key, the same value as the report contract's RECORD_KEY — and is marked FAILED with [FUSION_ERROR]. "Dataset finished and the record is not in the failure list" is only the interface-tier signal — never sufficient for LOADED on its own. LOADED requires the base-tier proof: a Contract v1 reconciliation report per HDL object returns every record's key and Fusion-assigned id from the HCM base tables in one bulk call (a per-record REST lookup was rejected: at conversion volume — tens of thousands of workers — one call per record takes hours; the partial 3-object REST lookup retires). Records that are absent from the failure list but also missing from the report fall to the [RECONCILE_ERROR] sweep.
+Still unaccounted → FAILED + [RECONCILE_ERROR]. The unmatched-row sweep: not found in the BIP result, base table, or import report — "cannot verify import outcome." A row left FAILED with no ERROR_TEXT surfaces as the derived UNRECONCILED classification (Overview) and fails the object's accounting rule. End state — this sweep is enforcement, not per-object code: it runs as a shared common utility invoked by DMT_QUEUE_WORKER_PKG.RECONCILE_ONEsrc after each object's RECONCILE_BATCH, driven by the TFM-table catalog, so no reconciler can omit it. Today it exists inline in only 9 of ~42 reconcilers (P2, §12).
+When a load fails, assume our code or our data is wrong — download the Fusion job's diagnostics first and find the defect on our side; "the instance is broken" is the last hypothesis, not the first.
+Which columns hold what (stated to remove ambiguity): the outcome word (LOADED / FAILED) goes in the TFM row's STATUS column, and only there. The Fusion identifier goes in the object's FUSION_*_ID column(s) (e.g. FUSION_INVOICE_ID) — IDs only, never words: a FUSION_*_ID column never contains "LOADED" or any other text. Rejection text goes in ERROR_TEXT.
+Independently of row status, DMT_LOADER_PKGsrc calls DMT_IMPORT_REPORT_PKG.PARSE_AND_LOG_ERRORSsrc after each FBDI load to write all import-report errors to DMT_LOG_TBL — run-level diagnostics only; it does not touch TFM rows.
+ERROR_TEXT tag convention
+Every appended error is prefixed with a stage tag. This is the intended full set; adoption status is from a 2026-07-04 code census.
+Tag | When it is / should be written | Written from | Adoption (code census) |
+[PRE_VALIDATION] | Upstream dependency check fails — required parent object/row is not LOADED (e.g. supplier missing for a PO). Row never proceeds to transform. | Validators — DMT_{obj}_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM | PARTIAL — 18 of 43 validator bodies tag; the rest append untagged text (P3, §12) |
+[POST_VALIDATION] | Data-quality failure on the row itself (missing mandatory value, bad lookup, orphaned child within the batch). | Validators — DMT_{obj}_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM | PARTIAL — same census as above (P3, §12) |
+[TRANSFORM_ERROR] | Exception raised during STG→TFM transformation (derivation/mapping failure). | Transformers — DMT_{obj}_TRANSFORM_PKG.TRANSFORM_BATCH | NOT WRITTEN — no transformer emits any tag today; the funnel-classification query in DMT_LOADER_PKGsrc (dmt_loader_pkg.pkb:1003) already filters on it, so transform failures are undercounted until wired (P3, §12) |
+[FUSION_ERROR] | Row rejected by the Fusion import — interface-table error text returned via BIP reconciliation. | Reconcilers — DMT_{obj}_RESULTS_PKG.RECONCILE_BATCH | IMPLEMENTED — 30 packages, 121 call sites |
+[LOAD_ERROR] | All-or-nothing, whole ZIP: the load unit is the ZIP — one load job per ZIP; if any CSV inside it fails, the whole ZIP rolls back and nothing arrives (a SQL*Loader failure/WARNING errors the load job). When the load ESS job fails, every GENERATED row of that ZIP is marked FAILED with this tag plus the job's diagnostics — individual rows are never tagged, because individual rows can't fail this step alone (decided 2026-07-06). | DMT_LOADER_PKGsrc load-failure path (the existing "Load ESS ERROR marks all GENERATED rows FAILED" rule, now tagged) | TAG TO ADD — the marking exists, untagged |
+[IMPORT_REPORT] | Per-row error message parsed out of the ESS import report and attached to the matching TFM row. This is the BIP 0-row fallback for objects whose Fusion imports purge rejected rows from the interface table (Projects family) — for them the import report is the only per-row error source. | DMT_IMPORT_REPORT_PKG.PARSE_ERRORSsrc returns the parsed list; the row-matching UPDATE is inline in DMT_EXPENDITURE_RESULTS_PKGsrc and DMT_PROJECT_RESULTS_PKGsrc (matched on ORIG_TRANSACTION_REFERENCE). End state: the matching UPDATE becomes a shared DMT_IMPORT_REPORT_PKG.APPLY_ERRORS(p_tfm_table, p_key_column, p_run_id) so the next purging-import object doesn't get a third copy (P2, §12) | PARTIAL — 10 call sites, matching logic duplicated (P2, §12) |
+[RECONCILE_ERROR] | Reconciliation itself cannot account for the row — not found in the BIP result, Fusion base table, or import report ("cannot verify import outcome"). | End state: shared post-reconcile sweep called from DMT_QUEUE_WORKER_PKG.RECONCILE_ONEsrc (see resolution flow above). Today: inline in RECONCILE_BATCH of 9 reconcilers (billing events, customers, expenditures, FA assets, GL, grants, project budgets, projects, requisitions) | PARTIAL — 9 of ~42 reconcilers, 24 call sites; enforcement not yet centralized (P2, §12) |
+BIP reconciliation report contract — v1 DECIDED 2026-07-07 conformance TO-DO
+Every reconciliation report conforms to one contract, so the response parser is written once and each
+object's data model conforms to the parser — the predecessor project's proven pattern (one common parser served every
+object). Today ~25 bespoke parsers exist; conformance work is tracked in the backlog (section 12).
+Artifacts & naming. One catalog folder per object: /Custom/DMT/{CEMLI_CODE}/ containing
+DMT_{OBJ}_RECON_DM.xdm (data model) and DMT_{OBJ}_RECON_RPT.xdo (always a trivial XML-output wrapper).
+The _RECON_ infix is reserved for reconciliation reports so the class is greppable; lookup/diagnostic models stay
+DMT_*_DM under /Custom/DMT/common/. The repo mirrors each folder as bip/{CEMLI_CODE}/
+holding exactly the .xdm, the .xdo, and query.sql — one data model per folder, no orphans.
+Parameters — every data model declares exactly these six (it may ignore what it doesn't need; nothing
+else is allowed — anything object-specific must be derivable in the DM SQL from these):
+Parameter | Meaning | Nullable |
+P_RUN_ID | The pipeline run id (returned unchanged so results can be tied to the run; selection key where the object stamps it) | No |
+P_LOAD_REQUEST_ID | The ESS load job's request id — the value the interface table carries | No |
+P_IMPORT_ESS_ID | The ESS import job's request id — for base-table joins on REQUEST_ID | Yes |
+P_PREFIX | The run prefix — for base-table matching where no request id survives | Yes |
+P_CHUNK_SIZE | Page size for keyset pagination (decided 2026-07-07) — from the BIP_CHUNK_SIZE configuration value (admin-set, default 5,000) | No |
+P_AFTER_KEY | Keyset cursor: return only rows whose RECORD_KEY sorts after this value. Empty on the first call; each subsequent call passes the last key received | Yes |
+P_BATCH_ID is retired — it already means the load-ESS request id in some reports and the run id
+in others, a silent wrong-data trap.
+Response — every row of the report returns exactly these seven columns, in this order (rowset
+/DATA_DS/G_1, upper-case tags, no rowset tag). Per-object extra columns are allowed after them for human
+debugging only — the parser never reads them:
+Column | Meaning |
+OBJECT_TYPE | Sub-object discriminator (record type within the FBDI); single-record-type objects return the object code constant. Lets one report serve headers/lines/children. |
+RECORD_KEY | The business key, pre-concatenated in the DM (~-joined if composite, prefix included) — matched to the TFM row's RECON_KEY column, replacing per-object multi-column matching. |
+SOURCE_TYPE | BASE or INTERFACE — which tier the row came from. Mandatory for every object. |
+FUSION_STATUS | Normalized inside the DM SQL to exactly SUCCESS or ERROR — object-specific vocabularies (PROCESSED, REJECTED, UNBALANCED…) stay in the object's query. |
+FUSION_ID | The Fusion base-table id. Required non-null on every BASE/SUCCESS row — the "positive success + Fusion IDs" rule made structural. NULL on INTERFACE rows. |
+ERROR_MESSAGE | Level-tagged error text ([HDR]/[LINE]/[DIST]/[LLOC] prefix). Required non-null on every ERROR row. Objects whose interface purges error text return the literal marker #IMPORT_REPORT#, telling the parser to invoke the import-report fallback instead. |
+LOAD_REQUEST_ID | The request id the row matched on, returned unchanged so the match can be audited. |
+Volume — keyset pagination (decided 2026-07-07). Every data model orders its rows by RECORD_KEY and returns at most P_CHUNK_SIZE rows after P_AFTER_KEY. The shared fetch function loops — first call with an empty cursor, each next call passing the last key received — feeding each page to the parser as it arrives, until a page returns fewer rows than the chunk size. Memory is bounded to one chunk regardless of total volume; a page-count cap derived from the run's generated-row count stops a misbehaving report from looping forever. Keyset was chosen over offset-plus-overlap paging: the cursor is exact (no gaps, no duplicates, no drift — and the reconciliation population is fixed anyway once the load and import jobs finish), and every page costs the same. A scheduled bulk file export was considered and rejected as heavier machinery (delivery infrastructure, job polling, giant-file parsing) for the same result.
+Outcome semantics. A TFM row is LOADED only from a BASE / SUCCESS / FUSION_ID NOT NULL
+row; INTERFACE/SUCCESS is corroborating, never sufficient. Zero report rows is never success — the reconciler logs a warning,
+rows stay unaccounted, and the accounting rule fails the work item. A SOAP fault raises immediately, never a silent retry.
+HDL objects conform too (decided 2026-07-07): each HDL object gets a Contract v1 report whose rows are the BASE tier (key + Fusion id) — its ERROR rows are optional, because HDL failures arrive per-record in the HDL response and are tagged [FUSION_ERROR] before the report runs. The report's RECORD_KEY is the same business key written into the .dat as SourceReference001 — one key definition per object serving the screens, BIP matching, and HDL matching.
+One generic parser. The ~25 bespoke parse blocks collapse into one shared parser reading only the seven
+standard columns, driven by per-object registration added to DMT_BIP_REPORT_TBL: TFM_TABLE,
+FUSION_ID_COLUMN, and CONTRACT_VERSION — the key-building expression (RECON_KEY_SQL) lives on the per-object registry, shared by every consumer (decided 2026-07-07) (1 = conforms; 0 = legacy — the
+flag lets standard and legacy coexist during per-object migration, each step gated by the regression scenario).
+Showing final outcomes next to staging data (decided 2026-07-07): screens that want a "Loaded" column on staging lists read a view joining each staging row to its most recent TFM attempt — computed at query time from the single source of truth. No process ever writes downstream outcomes back to the staging table.
+Activity log — attribution contract QUEUE_ID + context: TO-DO
+DMT_LOG_TBL is the execution log for every package: LOG_ID (sequence — the read order), LOG_DATE, LOG_TYPE (INFO milestone / WARN non-fatal / ERROR with SQLERRM_TEXT), PACKAGE_NAME + PROCEDURE_NAME (who wrote it), MESSAGE (CLOB — full context fits), and the attribution ids below. It is written via autonomous transactions, so log entries survive rollbacks — when a step fails and its data changes roll back, the entries saying why still commit.
+Attribution ids (decided 2026-07-06). Every entry carries RUN_ID (exists) and QUEUE_ID — the work item that wrote it (to add). Both nullable: NULL means "no run/work-item context exists" (heartbeat ticks, config operations, entries preceding the run row). Both indexed. No foreign keys, by design — log rows may precede the run row, and diagnostics must never fail to write because of referential ordering.
+Coding standard — session log context. Procedures do not pass ids for logging. DMT_QUEUE_WORKER_PKGsrc calls DMT_UTIL_PKG.SET_LOG_CONTEXT(p_run_id, p_queue_id) at the top of each child job (EXECUTE_ONE / POLL_ONE / RECONCILE_ONE); standalone entry points set run-only context; DMT_UTIL_PKG.LOGsrc stamps both ids on every entry automatically. Only tick-level heartbeat entries log NULL. (Also to be added to docs/coding-standards.md.)
+Reading it (§9): one Activity Log browser screen, reached pre-filtered from Run Detail (this run) and Object Detail (this work item) — the Dashboard has no log entry point (decided 2026-07-06). Filtering by object joins the entry's work-item id through the work queue to the object code; entries with no work-item id (heartbeat ticks) never match an object filter, by design (decided 2026-07-07).
+Proposed — run-stamped home for pre-TFM failures TO-DO
+Decided (2026-07-06, refined 2026-07-07) — errors only; success is the TFM row. The table below records a row per failed STG record per run attempt — errors only (decided 2026-07-07): reaching the TFM table is the success record, since the TFM row carries the run id and a created timestamp. Together, this error table and the TFM table are the complete per-run record of what happened at the stage→transform step. The STG row carries the forward-only status (NEW → TRANSFORMED or FAILED — final decision 2026-07-07), written only by the stage→transform step, and never a message; failures live in this error table and success is denoted by the TFM row itself (run-stamped, timestamped) — no explicit success rows (decided 2026-07-07). The FAILED-mode "clearing" contradiction (section 13) dissolves — there is nothing on the STG row to clear — and run-mode selection (NEW / FAILED / ALL) becomes predicates over this table and TFM, not over an STG status column.  Downstream impacts are listed with the decision in section 13.
+Rows that fail before reaching TFM (pre-validation / transform) have no run-stamped home today: STG has no RUN_ID, so these failures are only flagged on the STG row and cannot be attributed to a historical run. The table below closes this gap; the per-run funnel that consumes it is defined in §10.
+New table — transform errors only
+Downstream errors already live on the run-stamped TFM row. The only gap is rows that never reached TFM. So the new table is scoped tightly to that — no TFM_SEQUENCE_ID (these rows have no TFM row by definition):
+DMT_STG_TFM_ERROR_TBL
+ERROR_ID         PK
+RUN_ID           -- the run that rejected it  (gives historical attribution STG lacks)
+QUEUE_ID         -- the work item that rejected it (nullable; decided 2026-07-06)
+CEMLI_CODE       -- e.g. PurchaseOrders
+SUB_OBJECT       -- e.g. PO Lines  (identifies which STG table, for multi-CSV FBDIs)
+STG_SEQUENCE_ID  -- FK to the staging row that failed to transform
+ERROR_TEXT       -- why it failed
+CREATED_DATE
+Wiring: when a pre-transform validation or transform rejects a staging row, INSERT it here with the RUN_ID — in addition to flagging the STG row FAILED (the STG flag stays; FAILED-mode reruns select on it). Pre-validation runs inside the work item, so both ids are always known when the row is written; for partitioned objects the row's partition is derived from its partition column(s) like any other row (section 9). ERROR_TEXT carries the §5 tags ([PRE_VALIDATION] or [TRANSFORM_ERROR]) so this table and the TFM rows share one tag vocabulary. Build the metrics into a view, and roll out one pipeline end-to-end (Suppliers) before generalizing.
+With this table the earlier idea of a "two-number run stamp" is unnecessary: Staged becomes derivable as Transformed + Transform-errors, both run-stamped.
+6 · Control & config tables VERIFIED 2026-07-03 prefix P1
+The tables that drive execution and supply instance-portable configuration.
+Worked example: prefixes across runs — history registry and a dependent-prefix one-off →
+Table | Purpose | Key columns / notes |  |
+DMT_CEMLI_SPLIT_CFG | Which CEMLIs split into multiple FBDIs (by BU/ledger/org) | CEMLI_CODE PK, TFM_TABLE, PARTITION_COLUMNS, WHERE_TEMPLATE; seeded PO/AR/AP/GL… | IMPL |
+DMT_SCENARIO_TBL | Named test-dataset tags for selective runs | SCENARIO_ID PK, SCENARIO_NAME unique; STG tables carry SCENARIO_ID | IMPL |
+Prefix mechanism | Run-isolation numeric prefix. Prefixes exist so the same data can be loaded repeatedly during testing without colliding in Fusion; a production cutover generally runs without a prefix — the data loads once, as-is. | P1 — decided design (2026-07-03): single sequence + run-history registry. One sequence, DMT_RUN_PREFIX_SEQ, assigns every prefix (uniqueness by construction); DMT_PIPELINE_RUN_TBL is the permanent registry of where each prefix was used (one row per run: prefix, objects, scenario, outcome, date). A new view DMT_PREFIX_HISTORY_V (run × work-queue join) explodes each run into one row per object for exact per-object prefix lookup and dependent-prefix pickers. Dependent-prefix runs (e.g. a PO run validated against a prior supplier run's prefix) use VALIDATE_PRE_TRANSFORM(p_dependent_prefix), with the prior prefix chosen from the history view. To fix: standalone entry points (DMT_LOADER_PKG.RUN_STANDALONEsrc + 5 others) still assign from a second sequence DMT_PREFIX_SEQ — repoint them to DMT_RUN_PREFIX_SEQ and drop the old sequence; drop dead code DMT_PREFIX_MASTER_TBL + its DMT_UTIL_PKGsrc functions; create the view. | P1 |
+Prefix — decided spec (2026-07-06) | Prefixes are 4-digit numbers assigned by one sequence, starting at 1000 (four digits to play with, never leading zeros). Prefixing is forced: the submission screen offers no choice — every run is prefixed unless an administrator sets the USE_PREFIX configuration value to N (DMT_CONFIG_TBL, Administration screen), which is the production-cutover switch; such runs store NULL prefix, and the production data is tagged with its own scenario, conventionally named PRODUCTION (decided 2026-07-07). The business key(s) that get prefixed are defined per object and belong in the canonical object list (section 1) — documenting that column is a P3 in the backlog. Examples: PurchaseOrders → PO number (1042PO-1002); Projects → project number and name (both — the ProjectBudgets defect came from prefixing one and not the other). | — | DECIDED |
+DMT_PIPELINE_DEF_TBL TO-DO | Pipeline definitions — which objects each pipeline code runs, in what order, with what dependencies (decided 2026-07-06; replaces the hardcoded sequences in DMT_SCHEDULER_PKGsrc) | PIPELINE_CODE, CEMLI_CODE, SORT_ORDER, DEPENDS_ON, POSTRUN_JOB (the per-object post-run ESS job — today only Assets has one: per-book Prepare + Post; every other object is explicitly none). Feeds catalog-driven queue dispatch (section 12 backlog). Decided memberships (2026-07-07): MiscReceipts → P2P; ARReceipts → O2C (when built); UnitsOfMeasure, PaymentTerms, TaxConfig (FBL) and Banks (REST-loaded) → CONFIGURATION; PlanningBudgets out of scope — every in-scope object has exactly one pipeline home. | P2 |
+DMT_CONFIG_TBL | Global key/value config (FUSION_URL, credentials, defaults, ESS_POLL_TIMEOUT_MINUTES, BIP_CHUNK_SIZE — the keyset page size for reconciliation reports, decided 2026-07-07) | CONFIG_KEY PK, CONFIG_VALUE | IMPL |
+DMT_BIP_REPORT_TBL | BIP catalog registry, one row per CEMLI | CEMLI_CODE, DM_CATALOG_PATH, REPORT_CATALOG_PATH, INTERFACE_TABLE; Contract v1 adds TFM_TABLE, FUSION_ID_COLUMN, CONTRACT_VERSION (section 5); the key expression lives on the per-object registry | IMPL |
+DMT_ERP_INTERFACE_OPTIONS_TBL | Mirror of Fusion FUN_ERP_INTERFACE_OPTIONS | CEMLI → UCM_ACCOUNT, IMPORT_JOB_NAME, ERP_INTERFACE_OPTIONS_ID | IMPL |
+DMT_BU_LOOKUP_TBL | BU name → Fusion BU id + per-BU ParameterList defaults | BU_NAME, FUSION_BU_ID, PRIMARY_LEDGER_ID, DEFAULT_BUYER_ID | IMPL |
+DMT_ESS_JOB_TBL | ESS job hierarchy captured after polling | REQUEST_ID, PARENT_REQUEST_ID, STATE, CEMLI_CODE, RUN_ID | IMPL |
+DMT_REST_LOOKUP_TBL | Fusion REST endpoints for the live "Verify" lookups | OBJECT_TYPE unique, REST_ENDPOINT, KEY_COLUMN, AUTH_TYPE | IMPL |
+DMT_UPLOAD_LOG_TBL / _ERROR_TBL | CSV upload audit + per-row upload errors | BATCH_ID, ROWS_IN_FILE/LOADED/ERRORED; error rows: ROW_NUMBER, COLUMN_NAME, ERROR_MESSAGE | IMPL |
+DMT_ESS_JOB_FILE_TBL | Catalog of the output files each Fusion job produced — metadata only (request id, file name, file type, content type); populated by the engine when a job reaches a terminal state (the job's file list is enumerated once); the ESS Output screen lists from here and fetches the actual file bytes from Fusion on demand at download time. Nothing is stored. | ESS_FILE_ID PK, ESS_JOB_ID, REQUEST_ID, FILE_TYPE, FILE_NAME, CONTENT_TYPE | IMPL |
+DMT_UPLOAD_OBJECT_TBL | The upload registry behind Smart Upload and the area pages — one row per uploadable CSV type, mapping an upload code to the staging table its rows land in and the filename patterns that identify it (single-CSV and ZIP-bundle). The rename sweep adds a CEMLI_CODE mapping column and the missing Requisitions/ProjectBudgets rows (section 1). | OBJECT_CODE unique, DISPLAY_NAME, PAGE_NUMBER, STAGING_TABLE, CSV_FILENAME, FBDI_CSV_FILENAME, PARENT_OBJECT_CODE, IS_ACTIVE | IMPL |
+DMT_LOG_TBL | The activity log every package writes through (full contract in section 5: autonomous transactions so entries survive rollbacks; no foreign keys by design; run/work-item attribution). | LOG_ID PK, LOG_DATE, LOG_TYPE (INFO/WARN/ERROR), PACKAGE_NAME, PROCEDURE_NAME, MESSAGE CLOB, SQLERRM_TEXT, RUN_ID, QUEUE_ID (to add, section 5) | IMPL |
+DMT_CONVERSION_MASTER_TBL, DMT_PREFIX_MASTER_TBL | Old run master & prefix store | Archived / being retired by phase1 migration | LEGACY |
+Credentials (decided 2026-07-07)
+How a credential is resolved — master with per-object overrides. One master Fusion account lives in
+DMT_CONFIG_TBL and is the default for every Fusion call. Individual objects override it where a load or a BIP report call needs different permissions — every object's override lives in one place: a credential-override column on the object registry (the one-row-per-object registration table the catalog-driven dispatch reads — decided 2026-07-07; the existing FBDI override rows in the ERP interface options migrate there, so FBDI, HDL, and REST-loaded objects all resolve identically). The resolution rule is: use the object's override if one exists, otherwise the master. One consequence is a hard
+rule learned in production: job-status polling must use the same account that submitted the job — Fusion
+will not show one user's job to another, so the poller resolves credentials exactly the way the submitter did.
+Inventory: every credential the tool holds (master account, per-object overrides, wallet) is listed
+with its storage location — no credential exists that isn't in the inventory.
+Display: the Administration screen shows credentials masked, with an explicit reveal action — never
+in plain lists or exports.
+Rotation: one procedure updates every place a credential is cached, in one operation (this exists
+operationally today); partial rotation is how loads break with 401 errors.
+Never in git: database exports, seed files, and repository content never contain credential values —
+the deploy snapshot masks them, and a committed credential is a defect (one was found and is tracked as issue #36).
+Pipeline definitions — the seed content (decided 2026-07-07)
+The complete membership and dependency graph for DMT_PIPELINE_DEF_TBL — extracted from the scheduler's current hardcoded sequences and corrected per the decisions: Requisitions runs before PurchaseOrders; the purchase-order family waits for supplier site assignments (a purchase order references a supplier site assigned to a business unit — waiting on Suppliers alone was the root of the standing P2P regression failures) and PurchaseOrders additionally for contacts; MiscReceipts waits for Items; ARReceipts waits for Customers and ARInvoices; the retired PayrollRels/ValueSetValues tokens and out-of-scope PlanningBudgets are gone; the four FBL objects join CONFIGURATION. A dependency means: the named work item(s) must be DONE before this one starts.
+Pipeline | Sort | Object | Waits for (DEPENDS_ON) |
+P2P | 10 | Items | — |
+| 20 | Suppliers | — |
+| 30 | SupplierAddresses | Suppliers |
+| 40 | SupplierSites | Suppliers, SupplierAddresses |
+| 50 | SupplierSiteAssignments | SupplierSites |
+| 60 | SupplierContacts | Suppliers |
+| 70 | Requisitions | Items, SupplierSiteAssignments |
+| 80 | PurchaseOrders | Items, Requisitions, SupplierSiteAssignments, SupplierContacts |
+| 90 | BlanketPOs | Items, SupplierSiteAssignments |
+| 100 | Contracts | SupplierSiteAssignments |
+| 110 | APInvoices | SupplierSiteAssignments |
+| 120 | 1099Invoices | SupplierSiteAssignments |
+| 130 | MiscReceipts | Items |
+O2C | 10 | Customers | — |
+| 20 | ARInvoices | Customers |
+| 30 | ARReceipts (future) | Customers, ARInvoices |
+PROJECTS | 10 | Projects | — |
+| 20 | BillingEvents | Projects |
+| 30 | Expenditures | Projects |
+| 40 | Grants | Projects |
+| 50 | ProjectBudgets | Projects |
+FINANCIALS | 10 | GLBalances | — |
+| 20 | GLBudgets | — |
+| 30 | Assets | — |
+HCM | 10 | Workers | — |
+| 20 | Assignments | Workers |
+| 30 | Salaries | Workers, Assignments |
+| 40 | SalaryBases | Salaries |
+| 50 | PayrollRelationships | Workers |
+| 60 | TaxCards | Workers |
+| 70 | W2Balances | — |
+| 80 | BenParticipant | Workers |
+| 90 | BenDependent | Workers |
+| 100 | BenBeneficiary | Workers |
+| 110 | Absences | Workers |
+| 120 | TalentProfiles | Workers |
+| 130 | PerfEvaluations | Workers |
+| 140 | WorkSchedules | — |
+CONFIGURATION | 10 | GLCalendar | — |
+| 20 | ValueSets | — |
+| 30 | Lookups | — |
+| 40 | UnitsOfMeasure | — |
+| 50 | PaymentTerms | — |
+| 60 | TaxConfig | — |
+| 70 | Banks | — |
+Workers and Assignments are two separate objects (two uploads, two submissions) even though both generate files named Worker.dat — that file name is Oracle's fixed HDL business-object name; the Workers submission carries the person sections, the Assignments submission the work-relationship and assignment sections.
+Retention (decided 2026-07-06 — config-driven)
+RETENTION_DAYS in DMT_CONFIG_TBL (default 90). A scheduled purge job empties the content of CSV CLOBs and ZIP BLOBs older than the window (ESS output files are never stored — their catalog is metadata only and their bytes are fetched from Fusion on demand) — the metadata rows stay, so lineage is never broken — and deletes activity-log entries and stage→transform error-table rows past the window. STG and TFM rows are never purged: they are the record of what was migrated.
+7 · Coding standards VERIFIED 2026-07-06
+Rules every DMT package, view, and page region follows. Initial set from the requirements review plus the 2026-07-06 audit of the MCCS conversion codebase (the predecessor project — its conventions and its scars both inform these). To be mirrored in docs/coding-standards.md.
+Gold standard — worked example. The complete AP Invoices object (DMT_GOLD_STANDARD.html (rendered page: README + full source of all 8 files; raw files in docs/gold-standard/): validator, transform, FBDI generator, reconciler) is written to every standard below and is the model for all other objects. Its README maps each standard to file:line examples. Reference code — not yet deployed; it codes against the end-state contracts (SET_LOG_CONTEXT, ERR$_ error tables) and its assumptions are listed in the README.
+Standard | Rule | Why | Known violations to sweep |
+No EXECUTE IMMEDIATE | All runtime SQL is static SQL. Dynamic SQL is banned in packages, page regions, and views. | Dynamic SQL defeats compile-time checking and ALL_DEPENDENCIES — the exact trap that made the Object Detail wiring undiscoverable (§11's investigation); it also hides table usage from impact analysis and invites injection. | Object Detail breakdown region (dynamic per-table COUNTs), DMT_LOADER_PKG.reset_scenario_statussrc + funnel-classification query, ESS-id lookup on Object Detail. Approved exception (2026-07-07), scoped hard: dynamic SQL is permitted only in deploy scripts — the guarded idempotent DDL blocks in schema/ files that run at install time and cannot be written statically. It may never appear in any code object that lives on the database: no package, procedure, view, trigger, or page region. If a database object needs dynamic SQL, the design is wrong. |
+No LIKE on known codes | Object codes, statuses, and lookup codes are a controlled vocabulary (§1) — match them with = or IN, never LIKE '%...%'. | Pattern matching on a controlled value is a latent routing bug: it matches values it was never meant to and silently misroutes new ones. The live example: 1099 routing on INVOICE_TYPE_LOOKUP_CODE LIKE '%1099%' flows into the FBDI as-is (§1 defect). | 1099 routing filter (loader/validator/transform/generator); audit for others. |
+Type suffix at the end | Object-type designator is always the suffix: _TBL, _V, _PKG, _SEQ. Never a prefix or mid-name. | One predictable pattern makes names sortable, greppable, and self-describing; two conventions guarantee misses in searches and sweeps. | The DMT_V_* view family (DMT_V_CEMLI_TFM_TABLESsrc, DMT_V_CEMLI_STATUSsrc, …) → rename to DMT_..._V; fold into the naming conformance sweep (§12). |
+One BEGIN/END per procedure | No mid-procedure anonymous BEGIN…END blocks. A procedure or function has exactly one BEGIN…END; if a piece of logic needs its own block or its own exception scope, it becomes its own (private) procedure. | Nested blocks hide control flow and let per-block WHEN OTHERS handlers swallow errors mid-stream; they are also where copy-paste logic accumulates. The 2026-07 code review flagged this pattern across the codebase. | Multiple packages (2026-07 review, issue set #43); sweep during refactors. |
+Every procedure returns an error code | Every procedure catches its own errors and reports outcome to the caller through an IN/OUT error-code parameter (0 = success, non-zero = failure; message text goes to the §5 log / ERROR_TEXT paths). Exceptions never escape a procedure unhandled. | Callers get a uniform, checkable contract instead of guessing which exceptions might propagate; failure handling becomes explicit at every call site — which is what the §5 accounting rule depends on. | Much of the current code signals by unhandled exceptions; applies to all new code immediately, retrofit folded into refactor sweeps (§12). |
+Identifier prefixes — one set | Parameters and variables use exactly these prefixes: p_ IN parameter, x_ OUT / IN OUT parameter, l_ local variable, g_ package-level state, c_ constant. Nothing else. (MCCS mixed five schemes — pv_/gv_/gi_/cv_/bare — so any search for "all package state" or "all OUT params" needed five patterns and missed silently.)
+✗ pv_job_id · gv_debug_mode · v_error_msg · p_message OUT
+✓ g_job_id · g_debug_mode · l_error_msg · x_message OUT
+|
+VARCHAR2 always; flags are VARCHAR2(1) | Never VARCHAR; never CHAR for Y/N flags — CHAR blank-pads, so flag = 'Y' comparisons fail unpredictably against padded values.
+✗ process_flag CHAR DEFAULT 'N'  · p_name VARCHAR
+✓ process_flag VARCHAR2(1) DEFAULT 'N' · p_name VARCHAR2
+|
+Step breadcrumb before every failable statement | Set a local l_step to a plain-language description before each statement that can fail; every handler reports it. Even an unanticipated ORA- error is then pinned to the exact step. (Strongest MCCS convention — 42 of 52 packages.)
+l_step := 'looking up BU id for '||l_bu_name;
+SELECT fusion_bu_id INTO l_bu_id FROM dmt_bu_lookup_tbl WHERE bu_name = l_bu_name;
+…
+EXCEPTION WHEN OTHERS THEN x_error_code := c_error;
+DMT_UTIL_PKG.LOG(p_type=>'ERROR', p_message=>l_step||' — '||SQLERRM);
+|
+Success/error constants, never literals | The error-code contract uses shared named constants; callers test against the constant. No magic numbers anywhere in status logic.
+✗ IF load_lines(l_rec) != 1 THEN … · RETURN -1;
+✓ IF load_lines(l_rec) != c_success THEN … · RETURN c_error;
+|
+Named notation into shared services | Every call to a shared/common procedure (logging, errors, lookups, config) uses named parameters — overload-safe and safe when parameters are added later. (52/52 MCCS packages did this; it is why their common API could grow 15 revisions without breaking callers.)
+✗ DMT_UTIL_PKG.LOG('ERROR', l_msg, 116);
+✓ DMT_UTIL_PKG.LOG(p_type=>'ERROR', p_message=>l_msg);  -- ids come from log context (Error handling section)
+|
+Named END closers | Every procedure, function, and package END repeats its name — a multi-thousand-line body stays navigable.
+✗ END;
+✓ END load_selected_lines; · END dmt_po_transform_pkg;
+|
+Set-based first, DML error logging for attribution | Validate set-based (UPDATE … SET STATUS='FAILED' marking whole classes of bad rows in one statement); load set-based (INSERT…SELECT) with LOG ERRORS INTO so failing rows divert to an error table with the Oracle error text instead of aborting the statement — then sweep that into the per-row ERROR_TEXT wiring (Error handling section). Row-at-a-time loops only for genuinely per-row work (e.g. one web-service call per record). (MCCS was 100% row-at-a-time — zero BULK COLLECT/FORALL in 52 packages — its known scaling wall.)
+✗ FOR r IN c_rows LOOP validate(r); INSERT …; COMMIT; END LOOP;
+✓ INSERT INTO dmt_po_lines_int_tfm_tbl (…) SELECT … FROM dmt_po_lines_int_stg_tbl s WHERE …
+LOG ERRORS INTO err$_dmt_po_lines_int_tfm_tbl ('RUN='||g_run_id) REJECT LIMIT UNLIMITED;
+|
+No session NLS dependence — explicit format masks | Never ALTER SESSION SET NLS_DATE_FORMAT. Every TO_CHAR/TO_DATE carries its mask. (MCCS altered session NLS ~80 times with five different masks — the correctness of a generated CSV depended on whichever ran last in the session.)
+✗ EXECUTE IMMEDIATE 'alter session set nls_date_format=…'; … TO_CHAR(d.invoice_date)
+✓ TO_CHAR(d.invoice_date, 'YYYY/MM/DD')
+|
+No swallow-and-continue; every path returns; explicit commits | A WHEN OTHERS handler must set the error code (and log) — a run may never end "successful" with its failure discoverable only in a log table. Every code path of a function ends in RETURN (an MCCS function handler with no RETURN produced ORA-06503, masking the original error). Commit points are explicit and documented — no commits scattered mid-loop (one MCCS body had 11).
+✗ WHEN OTHERS THEN log_error(SQLERRM); -- no return, no code, caller thinks it worked
+✓ WHEN OTHERS THEN x_error_code := c_error; DMT_UTIL_PKG.LOG(…l_step…); RETURN;
+|
+Delete, don't comment out | No dead code, no commented-out blocks, no … - Copy.sql files in deploy directories (the deploy glob installs them — in MCCS, last-alphabetical silently won). Git is the history.
+✗ --pv_prefix := p_prefix;  · RICE_021_…_STG_PKG - Copy.sql
+✓ delete the line / the file; recover from git if ever needed
+|
+BIP reconciliation artifacts follow Contract v1 | Naming: /Custom/DMT/{CEMLI}/DMT_{OBJ}_RECON_DM.xdm + DMT_{OBJ}_RECON_RPT.xdo — the _RECON_ infix reserved for reconciliation; four standard parameters; the seven-column response contract (Error handling, section 5). New objects build to the contract; a report that invents its own parameters or columns is non-conforming by definition.
+✗ SUP_DM.xdm · GL_BAL_DM.xdm · P_BATCH_ID
+✓ DMT_SUP_RECON_DM.xdm · DMT_GL_BAL_RECON_DM.xdm · P_RUN_ID/P_LOAD_REQUEST_ID/P_IMPORT_ESS_ID/P_PREFIX
+|
+NAME/PURPOSE header with brief revisions | Every package body opens with a boxed comment: NAME, PURPOSE (one or two lines — what the package is for), and a REVISIONS table appended (never rewritten) on each change. Revision descriptions are brief — one line; detail belongs in the git commit.
+-- NAME:    DMT_PO_TRANSFORM_PKG
+-- PURPOSE: STG→TFM transform for PurchaseOrders (headers/lines/locations/dists)
+-- REVISIONS:
+--  1.1  2026-07-03  BM  Prefix project refs at transform
+|
+8 · App & navigation inventory VERIFIED 2026-07-06
+One APEX application ("Data Migration Console") on APEX 24.2, ATP, schema/workspace DMT_OWNER. The highest-numbered app is always the current version. Never modify it in place: copy the highest-numbered app to a new id and make changes only in that copy. Follow that rule and no app number ever needs to be written down — the highest number is current, everything below it is history/fallback.
+Navigation & page inventory
+Nav group | Page | Name | Purpose |  |
+— | 0 | Global Page | Shared components rendered on every page (CSS/JS, header) | IMPL |
+— | 9999 | Login | Authentication page | IMPL |
+Dashboard | 1 | Dashboard | Landing page: welcome cards, run/record stat tiles, recent runs (no Activity Log entry point — decided 2026-07-06; errors are reached from the run screens) | redesign |
+Conversion Data | 2 | Procure to Pay | One page per functional area: view the area's staged (STG) data, upload CSVs into it, and see per-object row counts and status | upload E2E untested |
+4 | Order to Cash |
+3 | ERP Financials |
+5 | ERP Projects |
+6 | HCM Core |
+7 | HCM Employment |
+10 | HCM Talent & Time |
+11 | HCM Payroll |
+12 | Grants Management |
+Configuration | 21 | Config - Financial | Same pattern for configuration / master-data objects | IMPL |
+22 | Config - Procurement |
+23 | Master Data - Items |
+24 | Master Data - Banking |
+Data Management | 25 | Smart Upload | Upload any CSV; header-driven routing to the right STG table. Scenario selector is required — the upload errors without one; every row is tagged (decided 2026-07-07) | IMPL |
+26 | Run Loaders | Legacy manual loader launcher — superseded by queue submission (Page 84) | LEGACY |
+14 | Scenario Management | Create/manage named test-data scenarios | IMPL |
+Lookups & Mapping | 16 | Lookup Dashboard | Map source lookup values to Fusion lookup values (dashboard, mapping grid, source values, Fusion values, admin) | IMPL |
+17 | Value Mapping |
+18 | EBS Values |
+19 | Fusion Values |
+20 | Lookup Admin |
+30–36 | COA Mapping | Map source chart-of-accounts segments to the Fusion COA | IMPL |
+Pipeline Monitoring | 80 | Run History | All runs, newest first — the drill-through entry point (§8) | IMPL |
+82 | Run Detail | One run: header + per-object tile grid | tiles unverified |
+84 | Run Pipeline | Submit a run (pipeline or object list) with plan preview | verify vs spec (hang reported fixed 2026-07-07) |
+Data Management (proposed) | TBD | Activity Log browser | Searchable log/error history across runs and work items (§9) — new page, number TBD | TO-DO |
+Drill-through (no nav entries — reached by links) | 52 | Object Detail | One object in one run: breadcrumb, record breakdown (funnel redesign target, §9), ESS job chips | IMPL |
+57 | Record Detail | Record list filtered by object/status; REST Verify modal on LOADED rows | IMPL |
+53 | ESS Job Detail | ESS job hierarchy + status for one submission | IMPL |
+58 | ESS Job Output | Download ESS output files (import reports, logs) | HTTP 400 via p55 links |
+Administration | 8 | Administration | Config values, credentials, utilities | IMPL |
+9 | Upload Reference Guide | Per-object upload file formats (driven by the upload dictionary, §4) | IMPL |
+Deprecated pages — review for unique content, then delete
+Page | Name | Superseded by |
+13 | Upload (legacy unified uploader) | 25 Smart Upload |
+15 | Run Pipeline (legacy form) | 84 Run Pipeline |
+50 | Conversion dashboard (pre-queue) | 80/82 Run History + Run Detail |
+51 | CEMLI Object List | 52 Object Detail |
+54 | Log Entry Detail (one record at a time) | Activity Log browser (decided 2026-07-06; browser must exist first) |
+55 | Object Detail v2 | 52 Object Detail |
+56 | ESS Job Children | 53 ESS Job Detail |
+70 | Submit Pipeline | 84 Run Pipeline |
+71 | Run History (duplicate) | 80 Run History |
+72 | Run Detail (duplicate) | 82 Run Detail |
+81 | Submit Pipeline (duplicate) | 84 Run Pipeline |
+83 | Run Pipeline (duplicate) | 84 Run Pipeline |
+Deletion + nav-menu cleanup is tracked in §13. Page 26 (Run Loaders) joins this list once the queue path covers every object (config objects P2, §13).
+Run Pipeline — the submission screen (specification, 2026-07-07) spec decided; build/verify TO-DO
+The front door of the tool: where a user submits a run. Baseline: the legacy "Submit Pipeline Run" screen (Pipeline Selection + Run Configuration regions, checkbox groups, Plan → Confirm Submit flow — already built and working) with the decided additions below. Mock-up.
+Element | Behavior |
+What to run | A hierarchical checkbox tree — Run Configuration sits above it. Each pipeline is a parent checkbox with its member objects as child checkboxes beneath it (membership from the pipeline definition table, section 6). Two-way grey-out: checking a pipeline greys all its child objects (included wholesale); checking one or more individual objects greys that pipeline's parent checkbox. Any mix across pipelines is allowed — the run is the union of everything checked, sequenced by the dependency order in the pipeline definitions. |
+Scenario | Scenario selector (section 6). Required for ALL mode; optional otherwise. Selection scoping (stated 2026-07-07): when a scenario is chosen, every mode's selection predicates are scoped to it; without one, selection is unscoped and spans all scenarios — note that combined with the one-object-one-active-run rule, an unscoped run locks its objects across every scenario for its duration. There is no "include untagged" control — untagged rows cannot exist (every ingestion path requires a scenario, decided 2026-07-07). |
+Run mode | NEW (default) / FAILED / ALL, each with its one-line meaning from the Overview run-mode table displayed inline. ALL disabled until a scenario is chosen. |
+On Failure | Governs only a failed object's dependents — independent objects always run regardless (a Suppliers failure never affects Customers; different work streams). Halt (default): dependents are skipped when their parent fails (POs don't run because Suppliers failed). Continue: dependents launch anyway — each row's own dependency validation still applies, so rows whose parents loaded in earlier runs proceed and the rest fail per row. Decided 2026-07-07. |
+Prefix | Not a user choice. Every run gets a prefix, assigned automatically from the sequence and shown on the confirmation. The only way to run without a prefix (production cutover) is an administrator changing a configuration value (USE_PREFIX in DMT_CONFIG_TBL, maintained on the Administration screen) — the submission screen itself has no prefix control (decided 2026-07-07). |
+Dependent run (optional override) | Default None — references automatically carry the prefix of each parent's most recent LOADED row. The picker (over the prefix-history view, section 6) pins a specific earlier run instead, for one-off runs where automatic resolution isn't wanted. |
+Validate upstream dependencies | Toggle, default ON. OFF skips the cross-object pre-validation for this run — needed for failed-items re-runs of a full flow, where a record's parent was loaded in an earlier run and this run's parent items may process nothing. With it off, a genuinely missing parent still fails at Fusion with a reportable error (decided 2026-07-07). |
+Build step (two-step submission) | The primary button is Plan: it renders the exact work queue the submission would create — work items in dependency order, partition split, and the row count each item would select — computed by PLAN_RUN, committing nothing. It always renders or errors with a message; it never spins. Layout modeled on the legacy Run Pipeline screen (two panels: Pipeline Controls / Run Controls, plain-English mode labels). |
+Submit | Below the built pipeline: Confirm Submit creates exactly what is shown (run + work-queue rows via the scheduler API) and navigates to the new run's Run Detail; Back returns to the controls. Submission is rejected with a clear message naming the object and the blocking run if any selected object is already part of an active run (the concurrency rule, section 2). |
+Backed by DMT_SCHEDULER_PKG (SUBMIT_PIPELINE / SUBMIT_OBJECTS / PLAN_RUN). Receives nothing (entry screen). Page items: what-to-run pair, scenario, mode, on-failure, dependent run.
+9 · Drill-through chain VERIFIED 2026-07-06
+How a user gets from "how did my run go?" to any individual record, job, or log entry. The chain is hub-and-spoke, not linear: Run History → Run Detail → Object Detail, and Object Detail branches to both the Record List and ESS Job Detail. Screen HTML is generated by PL/SQL procedures wherever possible, so display changes are recompile-only — the known exception is the Object Detail breakdown, today an inline page region; converting it to a procedure is part of the funnel redesign (section 12). Each row links to a mock-up of the screen.
+What you click → where you land
+You click | You land on |
+A run id in Run History | Run Detail for that run |
+A tile on Run Detail | Object Detail for that object |
+A count on Object Detail (any funnel/breakdown number) | Record List filtered to exactly those records |
+Verify on a loaded record in the Record List | REST Verify modal — live lookup of that record in Fusion (in-page) |
+A load/import job id (chip) on Object Detail | ESS Job Detail — that job's hierarchy |
+A job id in the ESS Job Detail hierarchy | ESS Output — the list of that job's output files, each downloadable |
+View Activity Log on Run Detail / View Log on Object Detail | Activity Log browser, pre-filtered (run / work item) |
+A log row in the Activity Log browser | Nothing — the row expands in place to show the full message; there is no separate detail screen |
+One rule: files are listed and downloaded in exactly one place — ESS Output. ESS Job Detail shows the job hierarchy only; each job id in the hierarchy is the link to its files (decided 2026-07-06; the current app also renders a files table on ESS Job Detail — remove it, P3 §12).
+Submission chips generalize by load type (decided 2026-07-07): for FBDI objects the Object Detail chips are the ESS load/import jobs as described. For HDL objects, one chip per dataset submission — the HDL request id and dataset status — and clicking it shows the dataset's message list (the per-record failure detail) instead of the ESS screens. REST-loaded objects (Banks, ARReceipts) show no chips: there is no job to inspect; the per-record outcomes are already on the records.
+Screen | Shows | Backed by | Receives | Links to |  |
+Run History (p80) · mock-up | Sortable, filterable list of every run, newest first, with status badges | view DMT_RUN_HISTORY_Vsrc | — (entry point) | Run Detail (P82_RUN_ID) | IMPL |
+Run Detail (p82) · mock-up | Run header + one tile per object with status color; end state adds a "View Activity Log" link here (see defect note below) | Rendered by DMT_RUN_DETAIL_HEADER + DMT_RUN_DETAIL_TILES; the outcome counts and colors come from DMT_V_CEMLI_STATUS (one row per object per run, per partition) — the palette implementation builds against that view | P82_RUN_ID | Object Detail (P52_RUN_ID, P52_CEMLI_CODE) · Activity Log browser filtered to this run (end state) | tiles unverified |
+Object Detail (p52) · mock-up | One object in one run: breadcrumb, ESS job chips, record breakdown (funnel redesign — §10) | DMT_APEX_PAGE_PKGsrc · view DMT_V_CEMLI_TFM_TABLESsrc | P52_RUN_ID, P52_CEMLI_CODE, P52_PARTITION_KEY (for partitioned objects — one tile per partition, section 9) | Record List (P57_RUN_ID, P57_SUB_OBJECT, P57_STATUS) · ESS Job Detail (P53_ESS_JOB_ID, P53_RUN_ID, P53_CEMLI_CODE) · Activity Log browser filtered to this work item (end state) | IMPL |
+Record List (p57) · mock-up | The individual records behind any clicked count: status, error text, live "Verify in Fusion" for loaded rows | RENDER_RECORD_* · view DMT_RECORD_DETAIL_Vsrc | P57_RUN_ID, P57_SUB_OBJECT, P57_STATUS, P57_PARTITION_KEY (for partitioned objects, so counts and lists always agree) | REST Verify modal (in-page) | IMPL |
+REST Verify modal (in-page on Record List) · mock-up | Proof a loaded record really exists in Fusion, on demand: opens over the Record List and shows the live Fusion record (key fields + Fusion id) next to what the pipeline loaded. Available on LOADED rows only. | How it works: the Verify button calls openRestModal() → AJAX process QUERY_FUSION_REST → DMT_REST_QUERY_PKG.QUERY_FUSION_RECORDsrc, which looks up the object's REST endpoint and key column in DMT_REST_LOOKUP_TBL and makes a live HTTPS call to Fusion with stored credentials — a real-time query, not cached pipeline data | the record's object type + business key (from the clicked row) | — (modal; no navigation) | live call unverified in newest session |
+ESS Job Detail (p53) · mock-up | The submitted Fusion job + its child-job hierarchy and states — hierarchy only; each job id links to its output files | DMT_ESS_JOB_DETAIL · view DMT_ESS_JOB_DETAIL_Vsrc | P53_ESS_JOB_ID, P53_RUN_ID, P53_CEMLI_CODE | ESS Output (P58_REQUEST_ID) | IMPL |
+ESS Output (p58) · mock-up | Modal listing the job's output files (import report, log, spreadsheet); click to download — text and binary | DOWNLOAD_ESS_FILE_V2 process · DMT_ESS_JOB_FILE_TBL | P58_REQUEST_ID | — (file download) | HTTP 400 via deprecated-page links |
+Activity Log browser (new page) · mock-up | Searchable list over the activity log: filter by run, work item, object, type, date range, message text | DMT_LOG_TBL (RUN_ID + QUEUE_ID indexes) | optional pre-filters (run id / work-item id) | — rows expand in place (full message, SQLERRM) | TO-DO |
+Log Entry screen retired (decided 2026-07-06). The old one-record-at-a-time log page is superseded by the Activity Log browser — all attributes read horizontally in the table and long messages expand in place, so a separate detail screen serves no purpose. It joins the deprecated-pages list (§8) and is deleted with the rest; the browser must land first (P2, §12).
+Field naming. This section names the passed fields by their end-state names (P52_RUN_ID, P53_RUN_ID, P57_RUN_ID). The live app still uses the retired *_INTEGRATION_ID names for these — a P3 defect tracked in §12.
+What a tile counts, and partitions (decided 2026-07-06)
+Tile numbers count parent records only — for PurchaseOrders, orders (headers), not lines. But a parent is not successful unless all of its children loaded: an order with a failed line counts as failed, so child failures always surface in the tile numbers and color. The per-record-type split lives on the Object Detail funnel.
+The rollup formula — worst child wins (decided 2026-07-07): a parent record's displayed state is the worst state across itself and all of its children, ranked unaccounted > failed > loaded. A fully clean order counts as loaded; an order with any failed line (all accounted) counts as failed; an order with any unexplained line counts as unaccounted. The three counts always sum to the parent total, and the tile palette applies to these rolled-up numbers unchanged.
+Partitioned objects render one tile per partition (PurchaseOrders per Procurement BU, GL Balances per ledger) — each with its own counts and color. This is 1:1 with work items, which are already created per partition, so the tile palette stays honest per work item; the drill passes the partition key alongside the object code.
+Tile colors on Run Detail (decided 2026-07-06)
+Color |  | Meaning |
+Green |  | 100% of records loaded — every record confirmed in Fusion base tables. |
+Light green |  | Completed with some failures — every record accounted for, some ended FAILED with a reportable error (COMPLETED_ERRORS). |
+Light red |  | All records failed, or some records are unaccounted (no Fusion ID and no error). |
+Red |  | Infrastructure failure — uncaught exception, errored loader, BIP report failure, or all records unaccounted. The pipeline itself broke; record outcomes are unknown or untrustworthy. |
+Grey |  | No rows to process (nothing selected, or skipped because a dependency failed). |
+Blue |  | In progress. |
+White |  | Queued, not started. |
+The light red / red distinction is deliberate: light red means the pipeline worked and the data was bad (rows failed with reportable errors, or a few slipped through unaccounted); red means the pipeline itself broke — an exception, a dead loader, a BIP report that would not run, or every record unaccounted (the signature of a systemic failure, not bad data).
+Gap — current app does not implement this palette (P2, §12). Today dmt_run_detail_tiles.sql colors by status string on two diverging code paths: the queue path shows only green/red/grey/white/blue (a mixed loaded/failed object shows plain green), and the sync path shows COMPLETED_ERRORS as orange. Neither distinguishes data failures from infrastructure failures, and unaccounted records do not influence color at all. Implementing this requires the per-object outcome counts (loaded / failed-with-error / unaccounted — the same numbers the §10 funnel uses).
+What each screen's view returns (decided 2026-07-07)
+View | One row per… | Carrying |
+DMT_RUN_HISTORY_V | run | run id, pipelines, mode, scenario, prefix, status, submitted/completed dates |
+DMT_V_CEMLI_STATUS | object per run (per partition where split) | the outcome counts the tiles read |
+DMT_V_CEMLI_TFM_TABLES | record type per object | the object display catalog — defined in section 11; listed here as a pointer only |
+DMT_RECORD_DETAIL_V | record in a transform table — plus the run's pre-transform failures (a union with the stage→transform error table, shown with their unprefixed source keys, since the prefix is applied at transform and these rows never got there) | the record's business key, status, error text, Fusion id |
+DMT_ESS_JOB_DETAIL_V | Fusion job in a submission's hierarchy | request id, job name, state, parent job |
+How rows belong to a partition (stated 2026-07-07). Nothing extra is stamped: a row's partition is derived by evaluating the object's partition column(s) — defined in DMT_CEMLI_SPLIT_CFG (e.g. the business unit on a PO row, the ledger on a GL row) — directly on the TFM or error-table row. Every partition-scoped count, list, and log filter applies that same predicate, which is why a partition tile's count and its drilled record list can never disagree.
+One business key per object, defined once. The Record List's "Key" column and the reconciliation
+report contract's RECORD_KEY (section 5) are the same concept: the one value that identifies a record of
+that object (supplier name, PO number, project number…). Each object defines its key exactly once — as the key-building expression on its row in the per-object registry (decided 2026-07-07; the same table holding the run procedure and credential override). At generate time the transform stamps the computed value onto each TFM row; from then on the reconciliation report returns it as RECORD_KEY, the HDL generator writes it as SourceReference001, the Record List displays it, and the parser matches on plain equality. Two definitions of the
+same key is how a screen ends up showing a key the reconciliation cannot match.
+10 · Object Detail & the funnel UI VERIFIED 2026-07-06 redesign TO-DO
+Page 52's "Record Breakdown" is where the funnel lives — today it misleads, the redesign makes it the pipeline funnel.
+Current behaviour — and why it misleads
+The breakdown is an inline PL/SQL region on the Object Detail page: it reads the object display catalog view DMT_V_CEMLI_TFM_TABLESsrc (§11) and counts each record type's TFM table by current STATUS, drawing Sub-Object | Staged | Generated | Loaded | Failed | Total, each count a clickable pill to the Record List. Because row status is overwritten as a row advances (and never reset), a completed run has every row terminal ⇒ Staged = 0 and Generated = 0 by construction — the columns look like a funnel but cannot be one. Maintenance warning: DMT_APEX_PAGE_PKG.RENDER_OBJECT_BREAKDOWNsrc looks like this screen's renderer but is un-wired dead code, and DMT_OBJECT_DETAIL_Vsrc backs only the deprecated Object Detail v2 page plus a one-row job-id lookup — editing either does not change this screen. §11 records the verified wiring.
+The funnel — definition TO-DO
+Why the current counts can never be a funnel: STATUS is one mutable column, overwritten as a row advances — and pre-TFM failures need the run-stamped error table (§5) to be countable for historical runs. The funnel therefore takes each stage from a durable source:
+The funnel (stages 1, 3–6 are cumulative — each ⊇ the next; row 2 is the drop-out between 1 and 3)
+# | Column | Definition | Source |
+1 | Staged / available | Rows in STG for the run's scenario | = Transformed + Transform-errors (derived; see below) |
+2 | Transform errors | Failed validation/transform — never reached TFM | DMT_STG_TFM_ERROR_TBL count for the RUN_ID |
+3 | Transformed | Landed in the TFM table for this run | COUNT(TFM WHERE RUN_ID=x) |
+4 | Generated (in FBDI) | Written into the FBDI/HDL file, ready to push | COUNT(TFM WHERE RUN_ID=x AND FBDI_CSV_ID NOT NULL) |
+5 | Interfaced | Rows that physically arrived in Fusion | All-or-nothing per ZIP (decided 2026-07-07): the load unit is the ZIP — one load job per ZIP, and if any CSV inside it fails, the whole ZIP is rolled back; nothing partial survives. If the ZIP's load job truly succeeded, every Generated row of that file is Interfaced; if it failed — including a WARNING, which means zero rows committed — none are, and every row carries [LOAD_ERROR]. So per file: Interfaced = Generated on load success, 0 on load failure. Never inferred from "the job finished" — the job's actual outcome decides. |
+6 | Loaded / App errors / Unaccounted | Confirmed in Fusion base tables / rejected at import / neither | TFM STATUS='LOADED' / FAILED with [FUSION_ERROR] or [IMPORT_REPORT] / the derived UNRECONCILED bucket (Overview, §5) |
+HDL and REST-loaded objects (decided 2026-07-07): for HDL, Interfaced = the dataset accepted the submission — all-or-nothing per .dat, exactly like the ZIP rule — and the per-record failures then land at the Fusion stage from the dataset messages. REST-loaded objects have no Interfaced stage at all: the funnel collapses to Staged → Transformed → Loaded/Failed, because each API call is simultaneously the load and the reconciliation.
+Total errors = Staged − Loaded − Unaccounted, decomposed into the drop at each stage. Unaccounted is surfaced as its own number, never folded into an error column — it is the count the accounting rule exists to drive to zero.
+Mock-ups: the funnel on Object Detail — the horizontal per-record-type funnel table with drop-out counts, and the row expansion showing one record type's funnel visually. One image, one place: the mock-ups page.
+11 · Object display catalog — how the UI names and drills each object VERIFIED 2026-07-06
+Every drill-through screen needs three facts about each object: what to call it on screen, which TFM table holds its records, and how to build the drill link to those records. That mapping is the object display catalog (the DMT_V_CEMLI_TFM_TABLESsrc and DMT_RECORD_DETAIL_Vsrc views). When the catalog and the pipeline disagree — a code spelled two ways, a label that drifted, a missing branch — a screen shows the wrong counts or a dead drill link. This section defines the catalog and records the audit that found and fixed those defects.
+Canonical values every layer must use
+Screens match these names as exact text — the display name a drill link carries and the name the target screen filters on must be identical to the byte; a drifted label lands the user on an empty list (the defect class recorded in the Appendix).
+Code spelling. The canonical code for every object is decided per object in the canonical object list (section 1) — neither the long nor the short form wins globally (GLBudgets was decided short; PayrollRelationships long). Every layer — scheduler, queue, generators, reconcilers, this catalog — conforms to section 1's decided code; the remaining mismatches are the naming conformance sweep in section 12.
+Label alignment (the C3 fix) — conform page-52 DISPLAY_NAME to the page-57 SUB_OBJECT that already works, except the three the user renamed (applied to both sides):
+Object | Page-52 now | Page-57 now | Canonical (target, both sides) |
+GLBalances | GL Balances | GL Journal Lines | GL Journals (user) |
+Expenditures | Expenditures | Expenditure Items | Project Expenditures (user) |
+Projects / tasks | Project Tasks | Tasks | Project Tasks (user) |
+Projects / txn | Transaction Controls | Txn Controls | Txn Controls (conform to record) |
+PerfEvaluations | Performance Evaluations | Performance Docs | Performance Docs (conform to record) |
+Status column — not uniform. These use TFM_STATUS: GLBalances, GLBudgetBalances, Items (master + categories), and the Configuration objects. Everything else uses STATUS. Each DMT_V_CEMLI_TFM_TABLESsrc branch carries its correct STATUS_COLUMN.
+Shared-table children need the parent discriminator. Objects sharing a base table are separated by a header column; a child sub-object must inherit the parent filter, or it counts the wrong parents:
+Object / sub-row | Shared table | Discriminator the row_filter must carry |
+BlanketPOs / Blanket PO Lines | DMT_PO_LINES_INT_TFM_TBL | INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME='Blanket Purchase Agreement') |
+1099Invoices / 1099 Invoice Lines | DMT_AP_INVOICE_LINES_INT_TFM_TBL | header-key subquery filtering INVOICE_TYPE_LOOKUP_CODE LIKE '%1099%' headers |
+The page-52 region appends ' AND ' || ROW_FILTER to a single-table count, so the header-key subquery above fits the existing mechanism — no region change needed, just the metadata row.
+How the catalog is maintained (decided 2026-07-07). The catalog's entries move out of the hardcoded view (today ~90 UNION ALL … FROM DUAL branches) into a normal seed table — DMT_CEMLI_CATALOG_TBL: one row per record type per object carrying object code, display name, transform table, status column, row filter, and sort order — and DMT_V_CEMLI_TFM_TABLES becomes a plain SELECT over it. Registering an object is then three seed inserts — four for FBDI objects, which also need their ERP-options row: its pipeline definition rows (section 6), its BIP registry row (section 6), and its catalog rows here. The catalog-driven queue dispatch (section 12 backlog) reads the same registration data.
+How the catalog is enforced
+Catalog health is guarded automatically: the DMT_V_CATALOG_HEALTHsrc validator view checks that every catalog entry names a real table, column, and filter, and the regression harness (scripts/dmt_run_assert.py) asserts on every gate run that the catalog, the record views, and the live screens agree (drill pairs resolve, one row per work item, no unknown codes). The lettered assertions the Appendix cites (A–E) are enumerated in that script — the script is their definition; the letters here are citations, not spec. A catalog defect fails the regression gate rather than waiting for a user to hit a wrong count or dead link.
+How this contract was established — the 2026-07-01 wiring investigation, the C1–C7 defect log, and the misdiagnosis it corrected — is preserved in the Appendix.
+12 · Open items / backlog
+Consolidated tracker — update status badges as items land so code and design stay in sync.
+Item | Area | Status |
+P1 · Converge base DDL to the RUN_ID model — fold phase1_pipeline_redesign.sql into each table's own file (guarded idempotent blocks); create base DDL files for DMT_WORK_QUEUE_TBL / DMT_CEMLI_SPLIT_CFG; retire the migration script; includes reconciling the remaining older run-detail view DDL to git (absorbs the old C5 item) (§3) | DB | P1 — ASAP |
+P1 · Full install script (db_full/) — complete ATP snapshot + 1,063-file install.sql built on feature/db-full-install. Next: reboot machine (Docker Desktop backend blocked pending post-install reboot) → build local Docker DB (db_full/tools/build_local_db.sh --fresh) → fix install errors → run schema compare vs ATP → adopt db_full as the deploy path. See db_full/RESUME.md (§3) | DB | IN PROGRESS — blocked on reboot |
+P1 · Consolidate the prefix mechanism — decided 2026-07-03: single sequence (DMT_RUN_PREFIX_SEQ) + run-history registry. Repoint the 6 standalone entry points off DMT_PREFIX_SEQ, drop that sequence, drop dead DMT_PREFIX_MASTER_TBL + util functions, create DMT_PREFIX_HISTORY_V (one row per object-per-run) for prefix lookup and dependent-prefix pickers (§6) | DB | P1 — ASAP |
+P1 · One DMT_FBDI_CSV_TBL row per physical CSV file — multi-file FBDIs currently store only the header CSV; child files live only inside the ZIP BLOB. Re-model the CSV↔ZIP relationship and build zips from the CSV table rows, not in-memory CLOBs; TFM children stamp the FBDI_CSV_ID of their actual file (§3) | DB | P1 — ASAP |
+P2 · Funnel metrics view + Object Detail redesign — build the database view computing the per-record-type funnel counts (section 10) and rebuild the Object Detail breakdown to the approved mock-ups; depends on the outcome error table | DB+UI | P2 |
+P2 · Build the stage→transform error table — DMT_STG_TFM_ERROR_TBL: one row per failed staging record per run attempt, tagged [PRE_VALIDATION]/[TRANSFORM_ERROR], stamped with RUN_ID + QUEUE_ID; success is the TFM row itself (run-stamped, timestamped) — no success rows are written; staging rows carry the forward-only status and never a message; wire validators and transformers to write it (section 5). Prerequisite for the funnel. | DB | P2 |
+P2 · Fold config objects into the queue + retire packages/runners/ — the 9 DMT_{obj}_RUNNER_PKG packages are a dead orchestration path (nothing calls them; config objects run only via manual SQL, invisible to Run History and the accounting rule). Wire the config objects into the queue dispatch like every other object, then delete the runners (§4) | DB | P2 |
+P2 · Catalog-driven queue dispatch — replace the hardcoded ~36-branch CASE in DMT_QUEUE_WORKER_PKG.EXECUTE_ONEsrc with a one-row-per-object registry table (run procedure, post-run job, credential override, business-key definition); adding an object becomes a registry insert, not a queue-worker edit; the ERP-options credential override rows migrate here (§4) | DB | P2 |
+P2 · Fold FETCH_BIP_RESULTS + bip_soap_post (21 reconcilers) into shared DMT_UTIL_PKG.RUN_BIP_REPORTsrc (§4; spec: docs/soap_fetch_fold_spec.md) | DB | P2 |
+P2 · Conform the 25 reconciliation reports to Contract v1 — rename artifacts to DMT_{OBJ}_RECON_*, migrate all off P_BATCH_ID to the six standard parameters (including the keyset-pagination pair), return the seven-column response, add TFM RECON_KEY, build the generic parser + registry columns (CONTRACT_VERSION flag for per-object migration); sequence with the SOAP-fetch fold — the fold centralizes fetch, this centralizes parse (section 5) | DB+Fusion | P2 |
+P2 · Contract v1 reports for the 14 HDL objects — build a reconciliation report per HDL object (BASE tier: business key + Fusion id from the HCM base tables), register each in the BIP registry, and update DMT_HDL_UTIL_PKG.RECONCILE_HDL to mark LOADED only on report confirmation; retire the partial 3-object per-record REST lookup (LOOKUP_FUSION_IDS) (decided 2026-07-07, sections 2/5) | DB+Fusion | P2 |
+P2 · Add BASE tiers to the 15 interface-only reconciliation reports — Suppliers (all five), PurchaseOrders/BlanketPOs/Contracts, APInvoices/1099, ARInvoices, Customers, Items/ItemCategories infer success from interface status instead of positively confirming base-table rows with Fusion IDs — a direct gap against Rule #1, hiding in the report layer (section 5) | Fusion | P2 |
+P2 · Naming conformance sweep — conform every registry to the §1 canonical codes: all bold cells in the §1 tables (GLBudgets ZIP/ERP-options/BIP-registry still GLBudgetBalances, stray ItemCategories registry rows, MiscReceipts upload-registry filenames, unregistered Grants CSV, Lookups scheduler token resolving nowhere, FBL objects absent from the CONFIGURATION sequence, HDL ZIP-name drift, PayrollRels → PayrollRelationships, NULL-CEMLI row in DMT_ERP_INTERFACE_OPTIONS_TBL, object-folder merges/renames; DMT_V_* views → *_V suffix per §7; stale view header comments citing retired page numbers; decide keep-or-drop for the orphaned DMT_RCV_HEADERS/RCV_TRANSACTIONS tables). Full worklist: DMT_OBJECT_CATALOG.html. All naming decisions are now closed (§1) | DB | P2 |
+P2 · Rename work status VALIDATING → PROCESSING — the status covers the whole data phase (pre-validate → transform → post-validate → generate → submit), not just validation; rename in DMT_QUEUE_PKGsrc/DMT_QUEUE_WORKER_PKGsrc, the work-queue rows, and the APEX tile rendering (Overview status table already shows the end-state name) | DB+UI | P2 |
+P2 · Centralize the [RECONCILE_ERROR] unmatched-row sweep — the "absence ≠ LOADED" enforcement exists inline in only 9 of ~42 reconcilers; hoist it into a shared common utility invoked by DMT_QUEUE_WORKER_PKG.RECONCILE_ONEsrc after every RECONCILE_BATCH, driven by the TFM-table catalog, so no object can omit it (§5) | DB | P2 |
+P2 · Shared DMT_IMPORT_REPORT_PKG.APPLY_ERRORSsrc — the import-report row-matching UPDATE is copy-pasted inline in DMT_EXPENDITURE_RESULTS_PKGsrc and DMT_PROJECT_RESULTS_PKGsrc; extract to a shared procedure parameterized by TFM table + key column (§5) | DB | P2 |
+P2 · Implement the outcome-based tile palette — replace both color paths in DMT_RUN_DETAIL_TILES with the single palette decided 2026-07-06 (green / light green / light red / red / grey / blue / white, driven by per-object outcome counts incl. unaccounted); subsumes the old "async path never shows orange" item (§9) | DB+UI | P2 |
+P2 · Log attribution + Activity Log browser — add nullable QUEUE_ID to DMT_LOG_TBL (and to DMT_STG_TFM_ERROR_TBL when built); index RUN_ID and QUEUE_ID; implement DMT_UTIL_PKG.SET_LOG_CONTEXTsrc + auto-stamping in LOG and set context in the three DMT_QUEUE_WORKER_PKGsrc child jobs; build the Activity Log browser page with its two pre-filtered entry points (Run Detail / Object Detail — the Dashboard has none, decided 2026-07-06); update docs/coding-standards.md. Replaces the earlier "View Activity Log link" item; must land before the deprecated dashboard is deleted (§5, §9) | DB+UI | P2 |
+73 invalid views (36 *_imp_rpt_v + 37 summary DMT_*_V) bind to dropped INTEGRATION_ID / archived CONVERSION_MASTER. Decision 2026-07-04: DELETE the 36 *_imp_rpt_v views — confirmed invalid, unreferenced by app 155, and outside the git-first deploy tree; the run-detail views are the sole UNRECONCILED surface (Overview updated). The 37 summary DMT_*_V still need the usage check → fix vs delete. | DB | P2 — imp_rpt_v decided |
+P2 · Items ORA-01427 reconciler bug — data-sensitive scalar subquery in the Items reconciler (items do load; reconciliation errors) | DB | P2 |
+P3 · Remove cancellation — delete CANCEL_RUN and the CANCELLED run status from code and screens; runs always execute to a terminal state, and mid-flight problems are recovered by an ALL-mode re-run under a new prefix (decided 2026-07-07) | DB+UI | P3 |
+P3 · Banks to REST — retire DMT_CE_BANK_FBL_GEN_PKG and the Banks FBL artifacts; build/verify the REST pipeline per objects/Banks/README.md (correct its staging table names to DMT_CE_BANK_*); order: banks → branches → accounts (decided 2026-07-07, section 1) | DB | P3 |
+P3 · Delete the abandoned adaptor stubs — DMT_EBS_ADAPTOR_PKGsrc and DMT_GENERIC_ADAPTOR_PKGsrc are never-built pull-model stubs (TODO bodies, no callers) that contradict the push architecture (EBSAdaptors → DMT_CSV_LANDING_TBL → DMT_CSV_LOADER_PKGsrc); drop packages + directory (§4) | DB | P3 — quick |
+P3 · Eliminate standalone procedures (easy win — do soon) — 12 exist on the DB; fold the 6 live rendering procedures (DMT_RUN_DETAIL_TILES/_HEADER, DMT_OBJECT_DETAIL_BREADCRUMB, DMT_ESS_JOB_DETAIL, DMT_RENDER_VIEW, DMT_PLAN_PREVIEW_HTML) into DMT_APEX_PAGE_PKGsrc, fold DMT_SUBMIT_RUN_V2 into DMT_SCHEDULER_PKGsrc, re-point the APEX call sites (~11 in app 155), and drop the 5 dead ones (DMT_FBDI_FILE_CHAIN, DMT_PLAN_RUN_GTT, DMT_SUBMIT_RUN, DMT_SUBMIT_SIMPLE, DMT_SUBMIT_TEST) (§4) | DB+UI | P3 — quick |
+P3 · Standardize validator entry points — 4 pkgs use VALIDATE_BATCH, 1 VALIDATE_UPSTREAM, plus object-specific names; conform all 43 to VALIDATE_PRE_TRANSFORM/VALIDATE_POST_TRANSFORM (§4) | DB | P3 |
+P3 · Split the supplier transform/reconciler packages per FBDI object — DMT_POZ_SUP_TRANSFORM_PKGsrc and DMT_POZ_SUP_RESULTS_PKGsrc each cover five separate FBDI objects (Suppliers, Addresses, Sites, SiteAssignments, Contacts); one package per object per stage is the standard (§4) | DB | P3 |
+P2 · Enforce mandatory scenario on every ingestion path — require a scenario on Smart Upload/area-page uploads, the EBS push (reject the push without one), and direct inserts (NOT NULL once existing data is handled); retire the p_include_untagged parameters and the submission checkbox; one-time cleanup: tag or reject the existing untagged staging rows (decided 2026-07-07, section 6) | DB+UI | P2 |
+P3 · Mode-driven selection predicates; retire reset_scenario_status + RETRY — pass the run mode into validators/transforms and base the selection cursors on it (NEW = unprocessed, FAILED = failed last attempt, ALL = whole scenario); delete the reset procedure and the RETRY status (decided 2026-07-07, Overview) | DB | P3 |
+P3 · Document the prefixed business key(s) per object — add a "prefixed keys" column to the canonical object list (section 1) naming exactly which key(s) each object's transform prefixes (decided with the prefix spec, section 6) | Docs | P3 |
+P3 · Eliminate runtime EXECUTE IMMEDIATE — replace dynamic SQL with static SQL (Object Detail breakdown region, DMT_LOADER_PKGsrc dynamic updates, ESS-id lookup); dynamic SQL is allowed only in deploy scripts — never in any database code object (approved 2026-07-07, §7) | DB | P3 |
+P3 · Replace LIKE-matching on known codes with equality — starting with the 1099 routing filter; audit all packages/views (§7) | DB | P3 |
+P3 · Complete validator tag adoption — 25 of 43 validator bodies append untagged ERROR_TEXT; conform them to [PRE_VALIDATION]/[POST_VALIDATION] per the §5 tag table | DB | P3 |
+P3 · Verify the Run Pipeline screen against its new spec — the plan-preview modal was reported working 2026-07-07 (previously hung); the screen now has a full specification + mock-up (section 8) — verify behavior matches it in the next smoke run | UI | P3 |
+P3 · Dashboard redesign — live pipeline stats and recent runs — no Activity Log entry point (decided 2026-07-06); the approved mock exists on the mock-ups page; write the matching one-paragraph spec into section 8 when this is picked up | UI | P3 |
+CSV upload E2E verification (Pages 2–12) | UI | P3 — partial |
+Delete superseded pages (13,15,50,51,55,56,70-72,81,83) via Builder | UI | P3 — retire |
+P3 · Rename APEX *_INTEGRATION_ID page items/columns to *_RUN_ID — the drill-through screens still pass the retired name (P52/P53/P57); §9 documents the end-state names; retire the compat alias afterward (true convergence) | UI | P3 |
+P3 · Remove the files table from ESS Job Detail — files are listed/downloaded only on ESS Output; make each job id in the ESS Job Detail hierarchy the link to that job's files (decided 2026-07-06, §9) | DB+UI | P3 |
+2 invalid package bodies: DMT_PIPELINE_INIT_PKG, DMT_REST_LOADER_PKGsrc | DB | P3 |
+P3 · Retire the superseded docs — line-by-line port of DB_REQUIREMENTS.md + UI_REQUIREMENTS.md into this document, then delete both; update data-flow.md/architecture.md to the RUN_ID / queue model; archive (not delete) the stale pre-review copy of this document in the main working copy's docs folder | Docs | P3 |
+Browser-verify Page 82 tile grid + live REST Verify call | UI | P3 — partial |
+Generated from docs/ + repo cross-check. DMT_OWNER @ queryapp ATP. The highest-numbered APEX app is always the current version — never modify it in place; copy it to a new app ID and work on the copy.
+13 · Open design questions from the 2026-07-06 cold-read review
+An independent reviewer read this document with no other context and listed everything a new person would have to ask a human before building or approving. Each item below states the question in plain language, shows the evidence, and where possible lays out options with a suggestion. Each needs a decision; decisions get written back into their home section and the item here is closed.
+Q1 — What do a Run Detail tile's numbers count? DECIDED 2026-07-06
+Decision: parent records only — but a parent is not successful unless all of its children loaded. Written into section 9.
+The Run Detail screen shows one tile per object, e.g. "PurchaseOrders — 104 loaded / 15 failed". But one PurchaseOrders FBDI contains four record types with their own counts (headers 28 loaded, lines 104, locations 110, distributions 127). The document never says whether the tile shows the sum of all record types (369 loaded), one record type, or something else. The tile color rules (section 9) depend on these numbers, so the palette cannot be implemented until this is decided.
+Options: (a) sum every record type — "369 loaded / 15 failed / 1 unaccounted" — honest but big numbers; (b) show only the parent record type (headers: "28 / 1") — small numbers but hides child failures; (c) sum for the color decision but display "records: 369 ✓ · 15 ✗ · 1 ?" with the per-type split on the Object Detail funnel. Suggestion: (c) — color must consider every record (a child failure must be able to turn the tile light green/red), and the funnel is where the split already lives.
+Q2 — How do partitioned objects appear on screen? DECIDED 2026-07-06
+Decision: one tile per partition, each with its own counts — 1:1 with work items, which are already created per partition (so each partition has its own work-queue id today; no new mechanism needed). Written into section 9.
+A grouped object splits into one work item per partition — PurchaseOrders per Procurement BU, GL Balances per ledger (config table DMT_CEMLI_SPLIT_CFG). Each partition gets its own ZIP and its own ESS jobs. But the Object Detail screen receives only a run id and an object code — no partition. So: one tile per object or one per partition? Whose ESS job chips does Object Detail show? Does the funnel sum across partitions?
+Options: (a) one tile per partition ("PurchaseOrders — US1", "PurchaseOrders — US2") — matches the work-item granularity exactly, so the tile palette is honest per work item, and Object Detail receives the partition key and shows that partition's jobs and funnel; (b) one tile per object, aggregated, with a partition list inside Object Detail. Suggestion: (a) — the tile represents a work item everywhere else in the design; keeping that 1:1 avoids inventing an aggregation layer. Requires passing PARTITION_KEY alongside the object code in the drill.
+Q3 — FAILED-mode re-runs clear ERROR_TEXT DIRECTION DECIDED 2026-07-06
+Decision (updated 2026-07-07): the stage→transform result table records failures only — success is the TFM row itself (run-stamped, timestamped) — and the STG row carries a forward-only status (NEW → TRANSFORMED or FAILED, reflecting the most recent stage→transform attempt, written only by that step — final decision 2026-07-07). Messages never go on staging; downstream outcomes are never written back to staging; FAILED-mode selection combines staging FAILED rows with rows whose most recent TFM attempt failed; dependency checks read the parent's TFM row. Nothing to clear, full history per run. Written into section 5. Downstream impacts to accept: (1) STG ERROR_TEXT retires — any screen showing a staging row's error must join the outcome table for the latest attempt instead; (2) volume — one row per failed record per attempt; covered by the retention policy (section 6), and STG/TFM stay lean; (3) downstream outcomes are never written back to staging — staging status is written only by the stage→transform step; (4) the name stands as-is.
+The Overview run-mode table says FAILED mode re-attempts failed rows and "ERROR_TEXT is cleared". Error handling (section 5) says ERROR_TEXT "accumulates, never overwritten". The status vocabulary calls the ALL-mode reset "the one sanctioned status reset". The code really does clear (supplier transform):
+IF p_reprocess_errors THEN
+UPDATE DMT_POZ_SUPPLIERS_STG_TBL
+SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
+WHERE  STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+END IF;
+Options: (a) declare FAILED-mode clearing the second sanctioned reset — the STG row's ERROR_TEXT describes the current attempt only, and history is preserved anyway: every attempt's errors are in the activity log, and (once built) the run-stamped error table keeps pre-transform failures per run; (b) never clear — append an attempt separator instead ("—— retry, run 117 ——"), so one column holds the full history at the cost of ever-growing CLOBs and confusing "is this error current?" reads. Suggestion: (a), with the Overview and section 5 reworded to say exactly that: current-attempt errors on the row; full history in the log and the run-stamped error table.
+Q4 — Where are pipelines defined? DECIDED 2026-07-06
+Decision: the pipeline definition table is added — see DMT_PIPELINE_DEF_TBL in section 6, including the post-run job column (Q7) and, as of 2026-07-07, the complete seed content (membership + dependency graph for every in-scope object).
+P2P, O2C, FIN and the rest are used everywhere ("resolves the pipeline code(s) to a CEMLI sequence"), and section 1 makes "registered in the scheduler sequence" one of the four mandatory checks — but no table or file holding pipeline definitions is ever named. In the code today the sequences are hardcoded inside DMT_SCHEDULER_PKGsrc, which means adding an object to a pipeline is a package edit.
+Suggestion: a pipeline definition table, seeded like the other control tables — this is the same decision already made for queue dispatch ("catalog-driven dispatch", P2 in the backlog); doing both from one catalog table kills two hardcodings at once:
+DMT_PIPELINE_DEF_TBL
+PIPELINE_CODE  CEMLI_CODE        SORT_ORDER  DEPENDS_ON
+P2P            Suppliers        10          —
+P2P            SupplierSites    20          Suppliers
+P2P            PurchaseOrders   60          SupplierSiteAssignments
+Q5 — The prefix is never actually specified DECIDED 2026-07-06
+Decision: 4-digit prefixes from one sequence starting at 1000 (no test/production ranges — an earlier draft's "9001+" convention was wrong), prefixing forced at submission — no user choice; production cutover only via the administrator-controlled USE_PREFIX configuration value (NULL prefix on such runs). Prefixed key(s) per object to be documented as a section 1 column (P3). Written into section 6.
+The Overview says a run stamps "a fresh numeric prefix onto business keys"; the mock-ups show 9627PO-1002. Not written down anywhere: where the numbers come from and their range; which business key(s) get prefixed for each object (PO number? supplier name and number? project number and name — the ProjectBudgets defect happened exactly because one reference wasn't prefixed); whether a production run stores NULL prefix; and how a user requests a no-prefix production run — no submission flag appears in the document.
+Suggestion: a "Prefix" subsection in Control & config tables (section 6) stating: one sequence (DMT_RUN_PREFIX_SEQ) assigns every prefix; the prefixed key(s) per object are listed as a column in the canonical object list (section 1) — that makes it reviewable per object; submission takes p_use_prefix defaulting to Y, and a production cutover passes N storing NULL on the run row.
+Q6 — What is the life of an HDL work item? DECIDED 2026-07-07
+Decision: HDL items use the status subset PROCESSING → LOADING → AWAITING_LOAD → RECONCILING → DONE/FAILED (no import or post-run states — written into section 2). Failures are positive and per-record from the HDL messages; positive success requires the object's Contract v1 BIP report (bulk key + Fusion id from the HCM base tables) — the not-in-the-failure-list complement rule is never sufficient alone, and the per-record REST lookup was rejected on volume (hours at conversion scale). Written into section 5; build work in the backlog.
+The work-item statuses are shaped around ESS jobs and BIP reconciliation (AWAITING_LOAD / AWAITING_IMPORT / RECONCILING). HDL objects load over REST and, per section 1, "HDL reconciliation isn't built yet". So which statuses does an HDL item pass through, what does DONE mean for the 14 HDL objects, and under the accounting rule (every record positively accounted for) can one ever legitimately reach DONE today?
+Suggestion: define the HDL lifecycle as VALIDATING → LOADING (REST upload + submit) → AWAITING_LOAD (poll the dataset status) → RECONCILING (retrieve per-row results) → DONE/FAILED — the reconcile step already has a concrete mechanism to specify against, the HCM REST messages endpoint the utility package documents:
+-- dmt_hdl_util_pkg.pks
+--  Errors: GET /hcmRestApi/resources/11.13.18.05/dataLoadDataSets/{RequestId}/child/messages
+And state plainly: until that reconcile step is built, an HDL work item may not be marked DONE — it ends FAILED with its rows unaccounted, which is the truthful outcome. That closes the loophole where an HDL "load succeeded" could be mistaken for records confirmed.
+Q7 — Which objects have a post-run step? DECIDED 2026-07-06
+Decision: post-run job is a column on the pipeline definition table (section 6). Today only Assets (per-book Prepare + Post); all others explicitly none.
+The status exists ("post-run ESS step — per-object post-processing job submitted; polling") but no section says which objects have one or what the jobs are. From the code, Assets is the known case: after import, each asset book runs Prepare and Post jobs. Suggestion: add a "post-run job" column to the per-object catalog (the same table proposed in Q4) — today it holds a value only for Assets; every other object is explicitly "none", which is itself information.
+Q8 — Rows rejected at the load step DECIDED 2026-07-06
+Decision: the load step is all-or-nothing per file — a SQL*Loader failure errors the whole load job and nothing arrives; individual rows cannot fail this step alone. A [LOAD_ERROR] tag is added (section 5) applied to every GENERATED row of the failed file — never to individual rows. The funnel's per-row "rejected at load" drop is removed from the mock-ups.
+The funnel shows a drop between Generated and Interfaced ("2 rejected at load") — rows that were in the file but never arrived in the interface tables (SQL*Loader rejected them: bad format, wrong data type, oversize value). Section 5's tag table has no tag for this: [FUSION_ERROR] is for interface-table rejections, [IMPORT_REPORT] is described only as the Projects-family fallback. Which tag, parsed from where, written by what?
+Suggestion: a [LOAD_ERROR] tag, produced during reconciliation by parsing the load ESS job's log/rejection output (the same DMT_IMPORT_REPORT_PKGsrc parsing machinery pointed at the load job instead of the import job), matched to rows by position/key like the import-report fallback. Rows still unmatched after that fall to the [RECONCILE_ERROR] sweep as today.
+Q9 — How do FBL configuration files actually get into Fusion? OPEN — parked
+Banks was carved out and resolved separately (REST, decided 2026-07-07 — section 1); this question now applies to the six remaining FBL objects.
+Section 1 defines the 6 FBL objects' files precisely; section 4 retires their runner packages; the backlog says "wire the config objects into the queue". But no section states the Fusion mechanism that consumes an FBL ZIP — which ESS job or setup service imports it. That makes the queue-wiring backlog item unbuildable as written. The answer exists in the runner packages' load steps — it needs to be extracted and written here as part of the fold. Action: document the FBL load mechanism (from the runner code) before or during the "fold config objects into the queue" work; until then that backlog item has a stated prerequisite.
+Q10 — Who may do what? (roles / authorization) OPEN — parked
+The document specifies a login page and an Administration page, and nothing else about authorization: who can submit or cancel runs, change configuration, see credentials, download ESS files. Nothing to approve against. Suggestion (minimal): three roles as APEX authorization schemes — Viewer (all read-only screens and drills), Operator (Viewer + submit/cancel runs + uploads), Administrator (everything, including configuration and credential management) — with each screen's required role added to the App & navigation inventory (section 8).
+Q11 — The cross-run dependency check and the dependent prefix don't compose into one algorithm
+The situation, step by step. Suppliers were loaded in run 42, which used prefix 1042 — so the
+supplier the source system calls "ACME Corp" exists in Fusion as "1042ACME Corp". Weeks later you run
+PurchaseOrders as run 57 (its own prefix, 1057). Each PO's staging row references its supplier by the raw name,
+"ACME Corp". Two things must now both work:
+The dependency check — "is this PO's supplier loaded?" — must compare the values exactly as they appear in the source data — no prefix applied: the PO's
+"ACME Corp" against the supplier staging row's "ACME Corp" with STATUS='LOADED'. Comparing the raw name to the
+prefixed value ("1042ACME Corp") can never match — that was exactly the ProjectBudgets defect fixed 2026-07-03.
+The reference written into the FBDI file must carry the supplier run's prefix, not the PO run's:
+the PO file must say supplier "1042ACME Corp" (what Fusion actually contains), not "ACME Corp" (doesn't exist
+in Fusion) and not "1057ACME Corp" (wrong run's prefix — also doesn't exist).
+-- 1. VALIDATE (source values as-is, no prefix, against the parent's STAGING row):
+SELECT 1 FROM dmt_poz_suppliers_stg_tbl s
+JOIN  dmt_poz_suppliers_tfm_tbl t ON t.stg_sequence_id = s.stg_sequence_id
+WHERE s.supplier_name = po.supplier_name  -- 'ACME Corp' = 'ACME Corp' (source values, no prefix)
+AND   t.status = 'LOADED';  -- loaded-ness is proven on the TFM row, never on staging
+-- 2. TRANSFORM (write the PARENT run's prefix into the reference):
+tfm.vendor_name := p_dependent_prefix || stg.supplier_name;  -- '1042' || 'ACME Corp'
+-- 3. p_dependent_prefix ('1042') is picked at submission from the prefix-history view:
+--   "which run loaded the suppliers I depend on, and what prefix did it use?"
+DECIDED 2026-07-07: the pattern is the standard, generalized — the check accepts a LOADED parent from any run, the reference prefix comes from the parent's most recent LOADED row (the dependent-run picker is an optional override), and dependency validation can be turned off per run (submission screen, section 8).
+Q12 — Retention DECIDED 2026-07-06
+Decision: config-driven retention — written into section 6 (RETENTION_DAYS, content purged, metadata and STG/TFM never).
+Every run stores full CSV content (CLOBs), full ZIPs (BLOBs), ESS output files, and an ever-growing activity log that survives rollbacks by design. No retention or purge policy exists anywhere. Suggestion: a config-driven purge (e.g. RETENTION_DAYS in DMT_CONFIG_TBL, default 90): a scheduled job empties CSV/ZIP/ESS-file content older than the window while keeping the metadata rows (lineage stays intact), and deletes log entries past the window. STG/TFM rows are never purged — they are the record of what was migrated.
+Scope questions — should the document contain these at all?
+The cold reader flagged the following as missing. Some are genuine gaps; some may be deliberate altitude (this document specifies behavior; git holds DDL). Each needs a ruling:
+Item | What's missing | Suggested ruling |
+Run Pipeline screen (the submission form) | No specification, no mock-up — yet it is the front door: pipeline vs object list, mode, scenario, prefix choice, dependent-prefix picker, plan preview. (The preview-modal hang was reported fixed 2026-07-07 — verify against the new specification.) | DONE 2026-07-07 — specified in section 8 ("Run Pipeline — the submission screen") with a mock-up; prefix flag (Q5) and dependent-run picker (Q11) included. Remaining: build/fix to the spec and add the concurrency rule once ruled. |
+Dashboard content | Named as the third Activity Log entry point and "live pipeline stats", no spec or mock. | Mock approved 2026-07-05 (mock-ups page — welcome cards, stat tiles, recent runs; no Activity Log entry point). Remaining: write the matching one-paragraph spec into section 8 when the redesign is picked up. |
+Table definitions (DMT_ESS_JOB_FILE_TBL, DMT_UPLOAD_OBJECT_TBL, full DMT_LOG_TBL columns) | Named as backing stores but absent from the control-table inventory. | DONE 2026-07-07 — all three added to the Control & config inventory (section 6) with purpose + key columns; full DDL stays in git. Correction found doing it: the ESS file table is metadata only — file bytes are fetched from Fusion on demand, never stored (retention wording fixed to match). |
+Backing view definitions (DMT_RUN_HISTORY_Vsrc, DMT_RECORD_DETAIL_Vsrc "Key" column, …) | Load-bearing names with no grain/column definition. | DONE 2026-07-07 — grain table added to the drill-through chain (section 9), plus the one-business-key-per-object rule shared with the report contract's RECORD_KEY. |
+How the object display catalog is maintained | The catalog view is a hardcoded 90-branch UNION ALL … FROM DUAL — "adding an object = editing a view" is nowhere stated as procedure. | DECIDED 2026-07-07 — seed table DMT_CEMLI_CATALOG_TBL; the catalog view becomes a plain SELECT over it; registering an object = seed inserts matching the registration checks. Written into section 11. |
+Funnel "Interfaced" per record type | Defined as "rows BIP accounted for" with no formula. | DONE 2026-07-07 — Interfaced is all-or-nothing per file, decided by the load job's true outcome (WARNING = failure = zero): Generated on success, 0 on failure. Written into the funnel definition (section 10). |
+Run-status rollup rules | "Rolls the run status up from its work items" — mapping never given. | DONE 2026-07-07 — defined once, in the Overview: the run-status definitions are the rollup conditions, with precedence stated in the Execution engine (IN_PROGRESS until every item is terminal; skips follow their causing failure; there is no cancellation). |
+Concurrency | Max concurrent child jobs unstated; two concurrent NEW-mode runs could select the same STG rows (selection is by STATUS). | DECIDED 2026-07-07: one object, one active run — enforced at submission with a clear rejection message; written into the Execution engine (section 2) and the submission-screen specification (section 8). |
+Scenario assignment at upload | STG rows carry SCENARIO_ID but no upload path says how it's set, or what happens to untagged rows. | DECIDED 2026-07-07 — scenario is mandatory everywhere: every ingestion path (Smart Upload, area pages, EBS push, direct insert) must name a scenario or it errors; untagged rows are disallowed; the "include untagged" control and the p_include_untagged parameters retire. Written into sections 4, 6, and 8. |
+Credential storage | "Creds" in DMT_CONFIG_TBL and "stored credentials" for REST verify — format, masking, rotation unspecified. | DONE 2026-07-07 — Credentials subsection added to section 6: master account with per-object overrides (resolution rule + the poll-as-submitter rule), inventory, masked display, one-step rotation, never-in-git. |
+Appendix · Historical & drift notes
+Background that matters for archaeology, not for day-to-day design decisions.
+2026-05 — pipeline re-architecture. The pipeline was re-architected from a synchronous INTEGRATION_ID / DMT_CONVERSION_MASTER_TBL model to a queue-based RUN_ID / DMT_PIPELINE_RUN_TBL model. The base CREATE TABLE DDL still describes the old model; the current schema is base DDL + schema/migration/phase1_pipeline_redesign.sql. This document describes the current (RUN_ID, queue) model and flags drift where it matters.
+Decision (2026-06-23) — INTEGRATION_ID compat alias. The conversion-data-page IRs still carry an INTEGRATION_ID column. APEX wraps the IR source as (SELECT * FROM v) D and selects D.INTEGRATION_ID; since the detail views now expose RUN_ID, that threw ORA-00904 "D"."INTEGRATION_ID" on every page. Resolved by re-exposing the column in all detail views as RUN_ID AS INTEGRATION_ID (same shim DMT_OBJECT_DETAIL_Vsrc already uses) — zero APEX edits. This is a deliberate compatibility shim; the real convergence is to rename the APEX IR columns/items INTEGRATION_ID → RUN_ID and retire the alias (backlog §12).
+2026-07-01 investigation — run-detail wiring & the object display catalog
+The evidence record behind the catalog contract (section 11): the verified live wiring, the misdiagnosis self-correction, and the resolved defect log.
+Live run-detail wiring (verified against f155.sql + DB)
+Layer | Source (DB object) | Drives | Keyed on |
+Tiles/cards | DMT_WORK_QUEUE_TBL.CEMLI_CODE via DMT_RUN_DETAIL_TILES | page 82 cards; drill :52: (f155:46/122) passing P52_CEMLI_CODE | code the scheduler enqueued |
+Breakdown (user's page) | DMT_V_CEMLI_TFM_TABLESsrc — page-52 inline region (f155:60626) | per-TFM-table dynamic COUNT (WHEN OTHERS => 0); drill :57: passing branch DISPLAY_NAME as P57_SUB_OBJECT+status | CEMLI_CODE → table + status col + row filter |
+Record list | DMT_RECORD_DETAIL_Vsrc — page 57 | failed/loaded rows | INTEGRATION_ID (=RUN_ID) + SUB_OBJECT [+ status] |
+off-tile | DMT_OBJECT_DETAIL_Vsrc | separate page 55 breakdown (f155:61291) + page-52 ESS-job header lookup (f155:60583, ROWNUM=1) | CEMLI_CODE (long codes; C1 persists here too) |
+un-wired | DMT_APEX_PAGE_PKG.RENDER_OBJECT_BREAKDOWNsrc | parallel package copy of a page-52 renderer; not wired in app 155 | — |
+Drill join key = the label string. Page 52 passes its branch DISPLAY_NAME; page 57 filters DMT_RECORD_DETAIL_Vsrc on RUN_ID + SUB_OBJECT only (not CEMLI_CODE). So page-52 DISPLAY_NAME and page-57 SUB_OBJECT must be byte-identical, and labels must be globally unique across objects. Any one-sided rename creates an empty drill — harness assertion B gates this.
+Self-correction (2026-07-01). Mid-investigation this session I wrongly declared DMT_V_CEMLI_TFM_TABLESsrc dead and pivoted the diagnosis to DMT_OBJECT_DETAIL_Vsrc. Two mistakes caused it: (1) a grep … | head -30 truncation hid the view's reference in f155.sql; (2) ALL_DEPENDENCIES does not track APEX inline-region SQL, so the view looked unreferenced. It is in fact the live page-52 breakdown driver (region record_breakdown, f155:60626) and emits the user's exact error at f155:60679. Re-verified by reproduction: the page-52 model fires all three reported symptoms (GLBudgets/PayrollRels “No TFM config”, phantom Blanket lines, label-drift broken drills); DMT_OBJECT_DETAIL_Vsrc fires none. The prior session's C1/C2/C3 diagnosis stands. The only genuinely-new item is a fan-out bug in DMT_OBJECT_DETAIL_Vsrc (B1) — real, but on the off-tile page 55, not the user's page.
+Correctness bugs (diagnosed + reproduced on run 113)
+ID | Symptom (user-reported unless noted) | Root cause | Fix | Status |
+C1 | Drill GL Budgets / Payroll → “No TFM table configuration found for CEMLI: GLBudgets / PayrollRels” | Tile drills the short queue code; the page-52 cursor over DMT_V_CEMLI_TFM_TABLESsrc has only the long-code branches → 0 rows → that exact message (f155:60679). Exactly these two mismatch. | Two codes exist for one object — generators/reconcilers use the long code (GLBudgetBalances), while the scheduler→queue→worker→loader dispatch chain uses the short code (GLBudgets), and the work queue the UI reads holds the short one. Real fix (low-risk, display-only): conform the run-detail catalog to the short codes the queue already carries — change the DMT_V_CEMLI_TFM_TABLESsrc branch code long→short and add the matching DMT_RECORD_DETAIL_Vsrc sub-object (GL Budget exists as “GL Budget Lines”; Payroll Rel has no record-view branch yet — must be added). Applied the display-side fix: changed the two DMT_V_CEMLI_TFM_TABLESsrc branch codes long→short (GLBudgets, PayrollRels) and aligned the record view (GL Budget sub-object → “GL Budget Balances”; the Payroll Rel branch already existed, just re-coded). Verified end-to-end on run 112 (GL budget data): drill resolves and count matches (5 rows), harness 0 failures. On run 113 both objects have no staged data, so they now show as honest “0 records” instead of a drill error. The alternative (unify on the long code across the load path) was rejected — more churn, no gain. | FIXED |
+C2 | Blanket PO card: “0 headers, 3 failed lines”; clicking the 3 shows nothing | Shared-table child branches (Blanket PO Lines, AP/1099 Invoice Lines) carried no row_filter, so each counted all lines of the shared table — phantoms that also masked real coverage gaps (the “1099 lines” were really 4 non-1099 AP lines, hiding that 1099 has zero data). | Added header-key subquery row_filter to Blanket PO Lines (DMT_V_CEMLI_TFM_TABLESsrc) and to AP + 1099 Invoice Lines on both views (INVOICE_ID IN (…typed headers…)). Verified: AP=4 lines / 1099=0 on run 113; harness B=0. Blanket/Contract record-view line branches still absent (additive, needs blanket data to exercise). | FIXED |
+C3 | Drilling GL Balances / Expenditures / Project Tasks / Transaction Controls / Performance Evaluations shows counts but opens an empty list | Page-52 DISPLAY_NAME ≠ page-57 SUB_OBJECT for these objects; the drill passes a label the record view doesn't carry. 5 broken drills on run 113. | Aligned labels on both views: GL Journals, Project Expenditures, Project Tasks (user); Transaction Controls, Performance Evaluations (fuller names, user-chosen). Harness B=0. | FIXED |
+C4 | A wrong table/column in the catalog shows as an innocent 0, not an error | The live page-52 region wraps each dynamic count in EXCEPTION WHEN OTHERS THEN … := 0 (f155:60675) — this is how the drift stayed invisible. | Added DMT_V_CATALOG_HEALTHsrc view (each catalog row checked against USER_TABLES/USER_TAB_COLUMNS; empty = healthy) + harness assertion E. Data-independent — flags a broken row before a user sees a silent 0. Deployed clean (0 issues). (Optional follow-up: make the region render an error cell instead of 0 — needs an app copy.) | FIXED |
+C6 | Objects with no data still show active cards that drill to empty pages | Tiles proc renders every queue row as a live, clickable card regardless of record count. | Modified DMT_RUN_DETAIL_TILES (both async + sync paths): each card now looks up its record count (async: DMT_RECORD_DETAIL_Vsrc by cemli_code = what the drill shows; sync: TOTAL_ROWS) and when 0 renders a greyed card with a muted label and no drill link. On run 113, 11 zero-record objects grey out. | FIXED |
+C7
+(data) | “Why is there no data?” on run 113 | Not a bug — two distinct situations. (a) All-failed objects (PurchaseOrders, Salaries, Absences, Grants, BillingEvents…) carry real [FUSION_ERROR] messages the pipeline correctly caught — invalid supplier site, missing AssignmentId/PersonId FK, PJB_TASK_NOT_LINKED. Bad rows reached FAILED with reportable errors = RULE #1 working as designed. (b) Zero-record objects (Assignments, TaxCards, ProjectBudgets, Contracts, BlanketPOs, 1099Invoices, Ben*, W2Balances) simply had no test data staged in this scenario. | (a) Nothing to fix in the tool — fix the source data (create the referenced parents first) if these should load; the errors are accurate. (b) Add regression seeds for the objects that should be covered, then re-run with a new prefix. Neither is a run-detail defect. | WORKS AS DESIGNED / seed coverage |
+B1
+(bycatch) | NOT user-reported. DMT_OBJECT_DETAIL_Vsrc listed Assets sub-objects twice with doubled counts (page 55 + ESS lookup) | Outer LEFT JOIN DMT_WORK_QUEUE_TBL q with q.*_ESS_JOB_ID in the GROUP BY fans out counts when an object has >1 queue row (retry). Assets had 2 (runs 108/110/113). Unused LEFT JOIN DMT_FBDI_ZIP_TBL z was the same latent trap. | Dropped z; pre-aggregated q to one row per (run, cemli) via MAX(...ESS_JOB_ID). Harness assertion D (one-row) gates the class. ESS lookup re-verified. | FIXED |
+C5 | Committed DDL ≠ deployed DB — a DB change deployed ad-hoc silently drifts from git | No single deploy path; git and DB were updated independently. | Primary fix — db/install.sql: one re-runnable master script that runs every object file (one file per object) in dependency order. Code uses CREATE OR REPLACE; table files are idempotent (create-if-missing + guarded ALTERs in the same file — no separate migration/log needed). Re-running @db/install.sql converges the DB to git, so drift can't accumulate. Validated re-runnable (2 passes, all valid). Optional backstops retained: dmt_db_git_sync.py --check, dmt_deploy.py, and the dmt_db_guard.py hook. Currently enrols the run-detail objects; add the rest one @@ line each. | IN PROGRESS |
+Decisions (2026-07-01). (1) Empty cards — zero-record objects render as a greyed card with no drill link (C6). (2) Labels — GLBalances→GL Journals, Expenditures→Project Expenditures, Projects/tasks→Project Tasks (user's choice, both views); all other drifted labels conform page-52 to the page-57 record view. (3) SSOT end-state — have the page-52 breakdown aggregate from the row-grain record view so count==list by construction; until then the harness enforces agreement. (4) Verification — DB-assertion harness first; HTTP click-through later.
