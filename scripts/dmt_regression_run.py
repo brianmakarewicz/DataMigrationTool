@@ -57,7 +57,8 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 
 DEFAULT_PIPELINES = 'P2P,O2C,FINANCIALS,PROJECTS,HCM'   # run 113 reference set
 SCENARIO = 'RegressionTest'
-TERMINAL_RUN_STATUSES = {'COMPLETED', 'COMPLETED_ERRORS', 'FAILED', 'CANCELLED', 'NO_ROWS_PROCESSED'}
+# CANCELLED removed 2026-07-08 (A8): no cancellation — Overview run-status table.
+TERMINAL_RUN_STATUSES = {'COMPLETED', 'COMPLETED_ERRORS', 'FAILED', 'NO_ROWS_PROCESSED'}
 TERMINAL_QUEUE_STATUSES = {'DONE', 'FAILED', 'SKIPPED'}
 KNOWN_LOG_TYPES = {'INFO', 'WARN', 'ERROR', 'DEBUG'}
 

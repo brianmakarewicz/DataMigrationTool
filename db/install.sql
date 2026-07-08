@@ -339,6 +339,7 @@ prompt == Tables ==
 @@tables/dmt_log_tbl.sql
 @@tables/dmt_lookup_tbl.sql
 @@tables/dmt_migration_log.sql
+@@tables/dmt_mock_tfm_tbl.sql
 @@tables/dmt_pay_rel_stg_tbl.sql
 @@tables/dmt_pay_rel_tfm_tbl.sql
 @@tables/dmt_perf_eval_rating_stg_tbl.sql
@@ -1064,7 +1065,10 @@ prompt == Seed data ==
 @@seed/dmt_config_tbl.sql
 @@seed/dmt_pipeline_def_tbl.sql
 @@seed/dmt_cemli_catalog_tbl.sql
-@@seed/dmt_mock_object.sql
+-- E1 (2026-07-08): the Mock engine-test registrations are TEST-SETUP only —
+-- test/unit/setup_mock_objects.sql, run by test/unit/test_queue_engine.sql.
+-- A production install carries no dispatchable mock objects and no MOCK_*
+-- config keys.
 
 prompt == Recompile schema ==
 exec dbms_utility.compile_schema(schema => user, compile_all => false)

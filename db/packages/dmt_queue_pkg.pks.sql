@@ -26,12 +26,15 @@ AS
 
     C_POLLER_JOB     CONSTANT VARCHAR2(30) := 'DMT_QUEUE_POLLER';
     C_POLL_INTERVAL  CONSTANT PLS_INTEGER  := 60;   -- seconds
-    C_ESS_TIMEOUT    CONSTANT PLS_INTEGER  := 30;   -- max polls before auto-fail (30 * 60s = 30min)
+    -- (A3, 2026-07-08: the hardcoded C_ESS_TIMEOUT constant is retired —
+    --  the poll timeout is the ESS_POLL_TIMEOUT_MINUTES configuration
+    --  value in DMT_CONFIG_TBL, read by DMT_QUEUE_WORKER_PKG.POLL_ONE;
+    --  design section 2 "Timeouts (decided 2026-07-07)".)
 
     -- Heartbeat: called by DBMS_SCHEDULER every 60s.
-    -- Promotes PENDING, splits multi-FBDI, polls ESS, spawns
-    -- child jobs for READY/RECONCILING rows, handles failures,
-    -- updates run statuses. Returns in seconds.
+    -- Promotes PENDING, polls ESS, spawns child jobs for
+    -- READY/RECONCILING rows, handles failures, and rolls run
+    -- statuses up from work items (the single RUN_STATUS writer).
     PROCEDURE HEARTBEAT_TICK;
 
     -- Legacy alias — calls HEARTBEAT_TICK.

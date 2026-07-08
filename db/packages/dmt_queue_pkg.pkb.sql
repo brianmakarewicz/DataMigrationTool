@@ -112,98 +112,17 @@ AS
     END promote_ready;
 
     -- ============================================================
-    -- Phase 2: Split multi-FBDI objects
-    -- READY rows with no PARTITION_KEY that have a split config
+    -- (2026-07-08, C2a) split_multi_fbdi DELETED. It was unreachable
+    -- dead code — create_run_and_queue stamps every split-configured
+    -- object PARTITION_KEY = 'ALL' at submission, so no READY row
+    -- without a partition key could exist for it to act on — and it
+    -- carried banned dynamic SQL plus a partition model that
+    -- contradicts the decided plan-computes-partitions design
+    -- (section 2: partitions knowable from staging data are computed
+    -- by the Plan step and created at Confirm Submit; only data-
+    -- dependent splits — Assets per book — are created mid-run, by
+    -- EXECUTE_ONE). Partition support proper is Stage C task 5.
     -- ============================================================
-    PROCEDURE split_multi_fbdi IS
-        l_sql        VARCHAR2(4000);
-        l_cur        SYS_REFCURSOR;
-        l_key        VARCHAR2(500);
-        l_label      VARCHAR2(500);
-        l_child_cnt  PLS_INTEGER;
-
-        TYPE t_part_rec IS RECORD (pkey VARCHAR2(500), plabel VARCHAR2(500));
-        TYPE t_part_tab IS TABLE OF t_part_rec;
-        l_parts t_part_tab := t_part_tab();
-    BEGIN
-        FOR rec IN (
-            SELECT q.QUEUE_ID, q.RUN_ID, q.CEMLI_CODE, q.PIPELINE, q.SORT_ORDER, q.DEPENDS_ON,
-                   c.TFM_TABLE, c.PARTITION_COLUMNS, c.LABEL_EXPRESSION,
-                   NVL(c.STATUS_COLUMN, 'STATUS') AS STATUS_COLUMN
-            FROM DMT_WORK_QUEUE_TBL q
-            JOIN DMT_CEMLI_SPLIT_CFG c ON c.CEMLI_CODE = q.CEMLI_CODE
-            WHERE q.WORK_STATUS = 'READY'
-              AND q.PARTITION_KEY IS NULL
-        )
-        LOOP
-            l_parts.DELETE;
-            l_child_cnt := 0;
-
-            l_sql := 'SELECT DISTINCT ' || rec.PARTITION_COLUMNS
-                  || ', ' || rec.LABEL_EXPRESSION
-                  || ' FROM DMT_OWNER.' || rec.TFM_TABLE
-                  || ' WHERE RUN_ID = :run_id'
-                  || ' AND ' || rec.STATUS_COLUMN || ' IN (''STAGED'',''NEW'',''GENERATED'')';
-
-            BEGIN
-                OPEN l_cur FOR l_sql USING rec.RUN_ID;
-                LOOP
-                    FETCH l_cur INTO l_key, l_label;
-                    EXIT WHEN l_cur%NOTFOUND;
-                    l_parts.EXTEND;
-                    l_parts(l_parts.COUNT).pkey := l_key;
-                    l_parts(l_parts.COUNT).plabel := l_label;
-                END LOOP;
-                CLOSE l_cur;
-            EXCEPTION
-                WHEN OTHERS THEN
-                    IF l_cur%ISOPEN THEN CLOSE l_cur; END IF;
-                    DECLARE l_err VARCHAR2(4000) := SQLERRM; BEGIN
-                    UPDATE DMT_WORK_QUEUE_TBL
-                    SET WORK_STATUS = 'FAILED',
-                        ERROR_MESSAGE = 'Split query failed: ' || SUBSTR(l_err, 1, 3000),
-                        COMPLETED_AT = SYSTIMESTAMP
-                    WHERE QUEUE_ID = rec.QUEUE_ID;
-                    COMMIT;
-                    END;
-                    CONTINUE;
-            END;
-
-            IF l_parts.COUNT = 0 THEN
-                UPDATE DMT_WORK_QUEUE_TBL
-                SET WORK_STATUS = 'DONE',
-                    COMPLETED_AT = SYSTIMESTAMP,
-                    ERROR_MESSAGE = 'No qualifying rows to process'
-                WHERE QUEUE_ID = rec.QUEUE_ID;
-            ELSIF l_parts.COUNT = 1 THEN
-                UPDATE DMT_WORK_QUEUE_TBL
-                SET PARTITION_KEY = l_parts(1).pkey,
-                    PARTITION_LABEL = l_parts(1).plabel,
-                    WORK_STATUS = 'READY'
-                WHERE QUEUE_ID = rec.QUEUE_ID;
-            ELSE
-                FOR i IN 1..l_parts.COUNT LOOP
-                    INSERT INTO DMT_WORK_QUEUE_TBL (
-                        RUN_ID, PIPELINE, CEMLI_CODE, PARTITION_KEY, PARTITION_LABEL,
-                        SORT_ORDER, DEPENDS_ON, WORK_STATUS
-                    ) VALUES (
-                        rec.RUN_ID, rec.PIPELINE, rec.CEMLI_CODE,
-                        l_parts(i).pkey, l_parts(i).plabel,
-                        rec.SORT_ORDER, rec.DEPENDS_ON, 'READY'
-                    );
-                END LOOP;
-
-                l_child_cnt := l_parts.COUNT;
-                UPDATE DMT_WORK_QUEUE_TBL
-                SET WORK_STATUS = 'DONE',
-                    PARTITION_LABEL = '(split into ' || l_child_cnt || ' partitions)',
-                    COMPLETED_AT = SYSTIMESTAMP
-                WHERE QUEUE_ID = rec.QUEUE_ID;
-            END IF;
-
-            COMMIT;
-        END LOOP;
-    END split_multi_fbdi;
 
     -- ============================================================
     -- Phase 3: Spawn child jobs for ESS polling
@@ -241,11 +160,16 @@ AS
     END dispatch_ess_polls;
 
     -- ============================================================
-    -- Phase 4: Spawn child jobs for READY rows
-    -- Only picks up rows that are READY and either:
-    --   (a) have a PARTITION_KEY (post-split child), or
-    --   (b) have no split config (single-FBDI object)
-    -- Marks them VALIDATING so next tick doesn't re-pick them.
+    -- Phase 4: Spawn child jobs for READY rows.
+    -- Marks them VALIDATING (the PROCESSING work status — rename is
+    -- P2 §12) so next tick doesn't re-pick them.
+    -- (2026-07-08: the split-config predicate is gone with
+    -- split_multi_fbdi — every READY row is dispatchable: split
+    -- objects arrive with PARTITION_KEY = 'ALL' from submission,
+    -- Assets children with their book key from EXECUTE_ONE.
+    -- The QUEUED → IN_PROGRESS run write that used to sit here moved
+    -- into rollup_run_statuses: one writer per status altitude —
+    -- RUN_STATUS is written only by the heartbeat rollup.)
     -- ============================================================
     PROCEDURE dispatch_ready IS
         l_job_name VARCHAR2(30);
@@ -254,9 +178,6 @@ AS
             SELECT q.QUEUE_ID, q.RUN_ID, q.CEMLI_CODE, q.PARTITION_KEY
             FROM DMT_WORK_QUEUE_TBL q
             WHERE q.WORK_STATUS = 'READY'
-              AND (q.PARTITION_KEY IS NOT NULL
-                   OR NOT EXISTS (SELECT 1 FROM DMT_CEMLI_SPLIT_CFG c
-                                  WHERE c.CEMLI_CODE = q.CEMLI_CODE))
             ORDER BY q.SORT_ORDER
         )
         LOOP
@@ -266,11 +187,6 @@ AS
             IF child_job_exists(l_job_name) THEN
                 CONTINUE;
             END IF;
-
-            -- Mark in-progress on the run if not already
-            UPDATE DMT_PIPELINE_RUN_TBL
-            SET RUN_STATUS = 'IN_PROGRESS', STARTED_DATE = SYSTIMESTAMP
-            WHERE RUN_ID = rec.RUN_ID AND RUN_STATUS = 'QUEUED';
 
             -- Claim the row so next tick doesn't re-pick it
             UPDATE DMT_WORK_QUEUE_TBL
@@ -346,9 +262,12 @@ AS
         l_changed PLS_INTEGER;
     BEGIN
         FOR run_rec IN (
+            -- QUEUED included: the run row flips to IN_PROGRESS only in the
+            -- end-of-tick rollup (single RUN_STATUS writer), so a first-tick
+            -- failure can arrive while the run row still says QUEUED.
             SELECT DISTINCT r.RUN_ID, NVL(r.ON_FAILURE_POLICY, 'HALT') AS policy
             FROM DMT_PIPELINE_RUN_TBL r
-            WHERE r.RUN_STATUS = 'IN_PROGRESS'
+            WHERE r.RUN_STATUS IN ('QUEUED', 'IN_PROGRESS')
               AND EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL q
                           WHERE q.RUN_ID = r.RUN_ID
                             AND q.WORK_STATUS IN ('FAILED', 'SKIPPED'))
@@ -390,40 +309,121 @@ AS
     END handle_failures;
 
     -- ============================================================
-    -- Phase 7: Update run-level statuses
+    -- Phase 7: rollup_run_statuses — THE single RUN_STATUS writer
+    -- (proposed rule "One writer per status altitude", 2026-07-08:
+    -- "RUN_STATUS is written only by the heartbeat rollup").
+    --
+    -- The mapping is exactly the run-status definitions in the
+    -- Overview's status table — each status's stated meaning is its
+    -- rollup condition (section 2 "Rolls the run status up from its
+    -- work items"). Precedence (stated 2026-07-07): a run is
+    -- IN_PROGRESS while any work item is unfinished — failures do
+    -- not settle the run status early — and the terminal statuses
+    -- apply only once every item is terminal.
+    --
+    -- QUEUED runs are included (A9b): a run whose items all went
+    -- terminal before the run row ever flipped IN_PROGRESS still
+    -- reaches its terminal status here. Runs with NO work items are
+    -- deliberately skipped — those are the standalone/legacy loader
+    -- run rows (DMT_PIPELINE_INIT_PKG / RUN_STANDALONE), which are
+    -- outside the queue lifecycle.
     -- ============================================================
-    PROCEDURE update_run_statuses IS
-        l_total    NUMBER;
-        l_done     NUMBER;
-        l_failed   NUMBER;
-        l_skipped  NUMBER;
+    PROCEDURE rollup_run_statuses IS
+        l_total       NUMBER;
+        l_terminal    NUMBER;
+        l_failed      NUMBER;
+        l_started     NUMBER;
+        l_row_total   NUMBER;
+        l_row_failed  NUMBER;
+        l_t           NUMBER;
+        l_ld          NUMBER;
+        l_fl          NUMBER;
+        l_un          NUMBER;
+        l_new_status  VARCHAR2(30);
     BEGIN
         FOR run_rec IN (
-            SELECT RUN_ID FROM DMT_PIPELINE_RUN_TBL
-            WHERE RUN_STATUS = 'IN_PROGRESS'
+            SELECT r.RUN_ID, r.RUN_STATUS
+            FROM DMT_PIPELINE_RUN_TBL r
+            WHERE r.RUN_STATUS IN ('QUEUED', 'IN_PROGRESS')
+              AND EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL q
+                          WHERE q.RUN_ID = r.RUN_ID)
         )
         LOOP
             SELECT COUNT(*),
-                   SUM(CASE WHEN WORK_STATUS = 'DONE' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN WORK_STATUS IN ('DONE','FAILED','SKIPPED') THEN 1 ELSE 0 END),
                    SUM(CASE WHEN WORK_STATUS = 'FAILED' THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN WORK_STATUS = 'SKIPPED' THEN 1 ELSE 0 END)
-            INTO l_total, l_done, l_failed, l_skipped
+                   SUM(CASE WHEN WORK_STATUS NOT IN ('PENDING','READY') THEN 1 ELSE 0 END)
+            INTO l_total, l_terminal, l_failed, l_started
             FROM DMT_WORK_QUEUE_TBL
             WHERE RUN_ID = run_rec.RUN_ID;
 
-            IF (l_done + l_failed + l_skipped) = l_total THEN
-                UPDATE DMT_PIPELINE_RUN_TBL
-                SET RUN_STATUS = CASE
-                        WHEN l_failed > 0 OR l_skipped > 0 THEN
-                            CASE WHEN l_done > 0 THEN 'COMPLETED_ERRORS' ELSE 'FAILED' END
-                        ELSE 'COMPLETED'
-                    END,
-                    COMPLETED_DATE = SYSTIMESTAMP
-                WHERE RUN_ID = run_rec.RUN_ID;
+            IF l_terminal < l_total THEN
+                -- Overview run-status table, IN_PROGRESS row: "At least one
+                -- work item is not yet finished (waiting, processing, or
+                -- polling)." Failures never settle the run early.
+                IF run_rec.RUN_STATUS = 'QUEUED' AND l_started > 0 THEN
+                    UPDATE DMT_PIPELINE_RUN_TBL
+                    SET RUN_STATUS = 'IN_PROGRESS', STARTED_DATE = SYSTIMESTAMP
+                    WHERE RUN_ID = run_rec.RUN_ID;
+                END IF;
+                CONTINUE;
             END IF;
+
+            -- Every item is terminal — settle per the Overview table.
+            IF l_failed > 0 THEN
+                -- Overview run-status table, FAILED row: "The run itself
+                -- could not finish — an unaccounted-for record or
+                -- infrastructure failure. Work items SKIPPED because of that
+                -- failure don't change the status further." A FAILED work
+                -- item IS that condition (work-item FAILED row: at least one
+                -- row unaccounted, or an unrecoverable infrastructure error).
+                l_new_status := 'FAILED';
+            ELSE
+                -- All items DONE (or SKIPPED with no failure). Distinguish
+                -- COMPLETED / COMPLETED_ERRORS / NO_ROWS_PROCESSED from ROW
+                -- outcomes (A12: the old rollup read only work statuses and
+                -- could never produce NO_ROWS_PROCESSED). Row counts come
+                -- from the same catalog-driven accounting the gate uses.
+                l_row_total  := 0;
+                l_row_failed := 0;
+                FOR obj IN (
+                    SELECT DISTINCT CEMLI_CODE
+                    FROM DMT_WORK_QUEUE_TBL
+                    WHERE RUN_ID = run_rec.RUN_ID
+                )
+                LOOP
+                    DMT_QUEUE_WORKER_PKG.ACCOUNT_ROWS(
+                        run_rec.RUN_ID, obj.CEMLI_CODE, l_t, l_ld, l_fl, l_un);
+                    l_row_total  := l_row_total  + l_t;
+                    l_row_failed := l_row_failed + l_fl + l_un;
+                END LOOP;
+
+                IF l_row_total = 0 THEN
+                    -- Overview run-status table, NO_ROWS_PROCESSED row: "Run
+                    -- finished and every work item selected zero rows —
+                    -- nothing in the whole run matched the scenario/mode."
+                    l_new_status := 'NO_ROWS_PROCESSED';
+                ELSIF l_row_failed > 0 THEN
+                    -- Overview run-status table, COMPLETED_ERRORS row: "All
+                    -- work items finished; some rows ended FAILED (with
+                    -- reportable errors)."
+                    l_new_status := 'COMPLETED_ERRORS';
+                ELSE
+                    -- Overview run-status table, COMPLETED row: "All work
+                    -- items finished; every record accounted for with no
+                    -- failures."
+                    l_new_status := 'COMPLETED';
+                END IF;
+            END IF;
+
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET RUN_STATUS = l_new_status,
+                STARTED_DATE = NVL(STARTED_DATE, SYSTIMESTAMP),
+                COMPLETED_DATE = SYSTIMESTAMP
+            WHERE RUN_ID = run_rec.RUN_ID;
         END LOOP;
         COMMIT;
-    END update_run_statuses;
+    END rollup_run_statuses;
 
     -- EXECUTE_ONE and RECONCILE_ONE are in DMT_QUEUE_WORKER_PKG
     -- (separate package avoids library cache lock self-deadlock
@@ -437,14 +437,16 @@ AS
     PROCEDURE HEARTBEAT_TICK IS
     BEGIN
         promote_ready;
-        split_multi_fbdi;
         dispatch_ess_polls;
         dispatch_ready;
         dispatch_reconcile;
         handle_failures;
-        update_run_statuses;
+        rollup_run_statuses;
 
-        -- Periodic log cleanup (every ~100 ticks = ~100 min)
+        -- Periodic scheduler-log cleanup. A13 comment fix (2026-07-08): the
+        -- old comment claimed "every ~100 ticks"; MOD(minute, 100) = 0 is
+        -- true only when the wall-clock minute is 00, i.e. once per hour
+        -- (for the ticks that land in that minute).
         IF MOD(TO_NUMBER(TO_CHAR(SYSTIMESTAMP, 'MI')), 100) = 0 THEN
             BEGIN
                 DBMS_SCHEDULER.PURGE_LOG(log_history => 7);

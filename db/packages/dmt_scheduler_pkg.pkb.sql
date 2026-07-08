@@ -92,6 +92,48 @@ AS
     END assert_objects_not_active;
 
     -- ============================================================
+    -- validate_depends_on — A13 (2026-07-08): every DEPENDS_ON token
+    -- must name a registered object. Section 6: "DEPENDS_ON:
+    -- comma-separated canonical CEMLI codes"; section 2: "A
+    -- dependency means: the named work item(s) must be DONE before
+    -- this one starts". An unknown token would otherwise be silently
+    -- permissive (dependencies_met treats an absent dependency — no
+    -- matching work items — as met), so a registry typo must fail
+    -- loudly at submit, not run with the dependency ignored.
+    -- ============================================================
+    PROCEDURE validate_depends_on (
+        p_cemli_code IN VARCHAR2,
+        p_depends_on IN VARCHAR2
+    ) IS
+        l_remaining VARCHAR2(4000);
+        l_dep       VARCHAR2(60);
+        l_pos       PLS_INTEGER;
+        l_cnt       NUMBER;
+    BEGIN
+        IF p_depends_on IS NULL THEN RETURN; END IF;
+
+        l_remaining := REPLACE(p_depends_on, ' ', '') || ',';
+        LOOP
+            l_pos := INSTR(l_remaining, ',');
+            EXIT WHEN NVL(l_pos, 0) = 0;
+            l_dep := TRIM(SUBSTR(l_remaining, 1, l_pos - 1));
+            l_remaining := SUBSTR(l_remaining, l_pos + 1);
+            IF l_dep IS NULL THEN CONTINUE; END IF;
+
+            SELECT COUNT(*) INTO l_cnt
+            FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+            WHERE  CEMLI_CODE = l_dep;
+
+            IF l_cnt = 0 THEN
+                RAISE_APPLICATION_ERROR(-20108,
+                    'DEPENDS_ON token "' || l_dep || '" on object ' || p_cemli_code
+                    || ' is not a registered CEMLI code in DMT_PIPELINE_DEF_TBL. '
+                    || 'Fix the registry seed before submitting.');
+            END IF;
+        END LOOP;
+    END validate_depends_on;
+
+    -- ============================================================
     -- Internal: create PIPELINE_RUN + WORK_QUEUE rows
     -- ============================================================
     PROCEDURE create_run_and_queue (
@@ -112,12 +154,50 @@ AS
         l_deps          VARCHAR2(4000);
         l_has_deps      BOOLEAN;
         l_is_split      NUMBER;
+        l_use_prefix    VARCHAR2(10);
     BEGIN
+        -- A9c (2026-07-08): ALL mode requires a scenario — Overview run-mode
+        -- table, ALL row: "ALL (requires a scenario) | Every row in the
+        -- scenario, selected directly by the run-mode parameter".
+        IF UPPER(NVL(p_run_mode, 'NEW')) = 'ALL' AND p_scenario_name IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20107,
+                'ALL run mode requires a scenario (design Overview, run-mode table): '
+                || 'ALL re-runs every row IN THE SCENARIO under a new prefix.');
+        END IF;
+
+        -- A9a (2026-07-08): serialize the one-active-run check. SELECT FOR
+        -- UPDATE on the (seeded, always present) USE_PREFIX configuration row
+        -- makes concurrent submitters queue on this row lock until the first
+        -- submission COMMITs its work-queue rows — closing the read-then-
+        -- insert race in assert_objects_not_active without touching any row
+        -- the heartbeat or workers write. It also IS the C6 read: prefixing
+        -- is forced unless an administrator set USE_PREFIX = 'N' — the
+        -- production-cutover switch; such runs store NULL prefix (design
+        -- section 6, "Prefix — decided spec (2026-07-06)").
+        BEGIN
+            SELECT NVL(CONFIG_VALUE, 'Y') INTO l_use_prefix
+            FROM   DMT_OWNER.DMT_CONFIG_TBL
+            WHERE  CONFIG_KEY = 'USE_PREFIX'
+            FOR UPDATE;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20106,
+                    'USE_PREFIX configuration row is missing from DMT_CONFIG_TBL '
+                    || '(seeded by db/seed/dmt_config_tbl.sql). It is required both as '
+                    || 'the prefix switch and as the submission serialization lock.');
+        END;
+
         -- One-active-run-per-object (section 2): reject before creating anything.
         assert_objects_not_active(p_cemli_csv);
 
-        -- Assign prefix from sequence
-        SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
+        -- C6 (2026-07-08): honor USE_PREFIX exactly as DMT_PIPELINE_INIT_PKG
+        -- .INIT_RUN does — one prefix per run from the single sequence, or
+        -- NULL when the administrator disabled prefixing for cutover.
+        IF l_use_prefix = 'Y' THEN
+            SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
+        ELSE
+            l_prefix := NULL;
+        END IF;
 
         -- Create PIPELINE_RUN row
         INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
@@ -146,6 +226,7 @@ AS
                 l_cemli := SUBSTR(l_pipeline, 12);  -- after 'STANDALONE:'
                 l_sort := l_sort + 1;
                 l_deps := GET_CEMLI_DEPENDENCIES('STANDALONE', l_cemli);
+                validate_depends_on(l_cemli, l_deps);  -- A13: unknown token = error
 
                 -- Split objects get PARTITION_KEY='ALL' so dispatch_ready
                 -- picks them up directly (EXECUTE_ONE handles grouping internally).
@@ -184,6 +265,7 @@ AS
 
                     l_sort := l_sort + 1;
                     l_deps := GET_CEMLI_DEPENDENCIES(l_pipeline, l_cemli);
+                    validate_depends_on(l_cemli, l_deps);  -- A13: unknown token = error
 
                     SELECT COUNT(*) INTO l_is_split
                     FROM DMT_CEMLI_SPLIT_CFG WHERE CEMLI_CODE = l_cemli;
@@ -319,41 +401,13 @@ AS
     END SUBMIT_OBJECTS;
 
     -- ============================================================
-    -- CANCEL_RUN
+    -- (A8, 2026-07-08) CANCEL_RUN REMOVED per design section 2:
+    -- "There is no cancellation (decided 2026-07-07) — runs always
+    -- execute to their terminal state ... the fix is an ALL-mode
+    -- re-run of the scenario under a new prefix." The CANCELLED
+    -- run status is likewise removed from DMT_PIPELINE_RUN_TBL's
+    -- check constraint (db/tables/dmt_pipeline_run_tbl.sql).
     -- ============================================================
-    PROCEDURE CANCEL_RUN (
-        p_run_id IN NUMBER
-    ) IS
-        l_status VARCHAR2(30);
-    BEGIN
-        SELECT RUN_STATUS INTO l_status
-        FROM   DMT_PIPELINE_RUN_TBL
-        WHERE  RUN_ID = p_run_id;
-
-        IF l_status NOT IN ('QUEUED', 'IN_PROGRESS') THEN
-            RAISE_APPLICATION_ERROR(-20104, 'Run ' || p_run_id || ' is already ' || l_status);
-        END IF;
-
-        -- Mark all non-terminal queue rows as SKIPPED
-        UPDATE DMT_WORK_QUEUE_TBL
-        SET    WORK_STATUS  = 'SKIPPED',
-               ERROR_MESSAGE = 'Cancelled by user',
-               COMPLETED_AT  = SYSTIMESTAMP
-        WHERE  RUN_ID = p_run_id
-        AND    WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
-
-        UPDATE DMT_PIPELINE_RUN_TBL
-        SET    RUN_STATUS     = 'CANCELLED',
-               COMPLETED_DATE = SYSTIMESTAMP,
-               ERROR_MESSAGE  = 'Cancelled by user'
-        WHERE  RUN_ID = p_run_id;
-
-        COMMIT;
-
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'Run #' || p_run_id || ' cancelled.',
-            'INFO', C_PKG, 'CANCEL_RUN');
-    END CANCEL_RUN;
 
     -- ============================================================
     -- PLAN_RUN — preview without committing

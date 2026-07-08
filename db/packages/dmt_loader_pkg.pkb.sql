@@ -178,23 +178,14 @@
     END get_erp_options;
 
     -- --------------------------------------------------------
-    -- Private: reset all non-NEW/RETRY rows in a staging table
-    -- back to RETRY for the given scenario. Used by 'ALL' run mode.
+    -- (A8/C2b, 2026-07-08) reset_scenario_status DELETED. The Overview
+    -- run-mode table (ALL row, decided 2026-07-07): rows are "selected
+    -- directly by the run-mode parameter in the selection predicates ...
+    -- no status reset, no extra procedure", and the STG RETRY status is
+    -- RETIRED ("the staging status is forward-only (NEW -> TRANSFORMED
+    -- or FAILED) and is never reset"). Per-object ALL-mode selection
+    -- predicates land with each object's Stage D/E port.
     -- --------------------------------------------------------
-    PROCEDURE reset_scenario_status (
-        p_scenario_id IN NUMBER,
-        p_table_name  IN VARCHAR2
-    ) IS
-    BEGIN
-        IF p_scenario_id IS NULL THEN
-            RETURN; -- Can't reset without a scenario
-        END IF;
-        EXECUTE IMMEDIATE
-            'UPDATE ' || p_table_name ||
-            ' SET STATUS = ''RETRY'', ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE' ||
-            ' WHERE SCENARIO_ID = :1 AND STATUS NOT IN (''NEW'', ''RETRY'')'
-        USING p_scenario_id;
-    END reset_scenario_status;
 
     -- --------------------------------------------------------
     -- SUBMIT_LOAD
@@ -958,93 +949,13 @@
     --   generate → upload → poll load → find import job →
     --   poll import → reconcile
     -- --------------------------------------------------------
-    -- Private: update CONVERSION_MASTER summary counts.
-    -- Queries all 5 supplier staging tables cumulatively so counts
-    -- reflect every object type processed so far in this run.
+    -- (C2b/A12, 2026-07-08) update_master_totals DELETED. It was a
+    -- second run-status rollup (dynamic SQL over every TFM table) that
+    -- disagreed with the queue rollup. One writer per status altitude:
+    -- RUN_STATUS is written only by the heartbeat rollup
+    -- (DMT_QUEUE_PKG.rollup_run_statuses), whose row counts come from
+    -- the catalog-driven DMT_QUEUE_WORKER_PKG.ACCOUNT_ROWS.
     -- --------------------------------------------------------
-    PROCEDURE update_master_totals (
-        p_run_id IN NUMBER,
-        p_force_status   IN VARCHAR2 DEFAULT NULL,
-        p_is_final       IN BOOLEAN  DEFAULT TRUE
-    ) IS
-        C_PROC    CONSTANT VARCHAR2(30) := 'UPDATE_MASTER_TOTALS';
-        l_total   NUMBER := 0;
-        l_loaded  NUMBER := 0;
-        l_failed  NUMBER := 0;
-        l_valid   NUMBER := 0;
-        l_invalid NUMBER := 0;
-        l_status  VARCHAR2(30);
-        l_cnt     NUMBER;
-        l_ld      NUMBER;
-        l_fl      NUMBER;
-        l_vl      NUMBER;
-        l_iv      NUMBER;
-    BEGIN
-        -- Dynamically scan ALL TFM tables owned by DMT_OWNER.
-        -- Each TFM table has RUN_ID and a status column (STATUS or TFM_STATUS).
-        -- Tables with 0 rows for this run_id contribute nothing.
-        FOR r IN (
-            SELECT t.table_name,
-                   -- Detect whether this table uses STATUS or TFM_STATUS
-                   (SELECT c.column_name FROM all_tab_columns c
-                    WHERE c.owner = 'DMT_OWNER' AND c.table_name = t.table_name
-                    AND c.column_name IN ('TFM_STATUS','STATUS')
-                    ORDER BY CASE c.column_name WHEN 'TFM_STATUS' THEN 1 ELSE 2 END
-                    FETCH FIRST 1 ROW ONLY) AS status_col
-            FROM   all_tables t
-            WHERE  t.owner = 'DMT_OWNER'
-            AND    t.table_name LIKE 'DMT\_%\_TFM\_TBL' ESCAPE '\'
-            ORDER BY t.table_name
-        ) LOOP
-            BEGIN
-                EXECUTE IMMEDIATE
-                    'SELECT COUNT(*), ' ||
-                    '       SUM(CASE WHEN ' || r.status_col || ' = ''LOADED'' THEN 1 ELSE 0 END), ' ||
-                    '       SUM(CASE WHEN ' || r.status_col || ' = ''FAILED'' THEN 1 ELSE 0 END), ' ||
-                    '       SUM(CASE WHEN ' || r.status_col || ' IN (''VALIDATED'',''GENERATED'',''LOADED'') THEN 1 ELSE 0 END), ' ||
-                    '       SUM(CASE WHEN ' || r.status_col || ' = ''FAILED'' AND (ERROR_TEXT LIKE ''[PRE_VALIDATION]%'' OR ERROR_TEXT LIKE ''[POST_VALIDATION]%'' OR ERROR_TEXT LIKE ''[TRANSFORM_ERROR]%'') THEN 1 ELSE 0 END) ' ||
-                    'FROM DMT_OWNER.' || r.table_name ||
-                    ' WHERE RUN_ID = :1'
-                INTO l_cnt, l_ld, l_fl, l_vl, l_iv
-                USING p_run_id;
-
-                IF l_cnt > 0 THEN
-                    l_total   := l_total   + l_cnt;
-                    l_loaded  := l_loaded  + NVL(l_ld, 0);
-                    l_failed  := l_failed  + NVL(l_fl, 0);
-                    l_valid   := l_valid   + NVL(l_vl, 0);
-                    l_invalid := l_invalid + NVL(l_iv, 0);
-                END IF;
-            EXCEPTION
-                WHEN OTHERS THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'update_master_totals: skipping ' || r.table_name || ' — ' || SQLERRM,
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
-            END;
-        END LOOP;
-
-        l_status := NVL(p_force_status,
-                        CASE WHEN l_total = 0 THEN 'NO_ROWS_PROCESSED'
-                             WHEN l_failed = 0 THEN 'COMPLETED'
-                             WHEN l_loaded > 0 AND l_failed > 0 THEN 'COMPLETED_ERRORS'
-                             ELSE 'FAILED' END);
-
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'update_master_totals: total=' || l_total || ' loaded=' || l_loaded ||
-            ' failed=' || l_failed || ' valid=' || l_valid || ' invalid=' || l_invalid ||
-            ' status=' || l_status,
-            'INFO', C_PKG, C_PROC);
-
-        -- Update run status only on final call or when forced.
-        -- Mid-pipeline calls (p_is_final=FALSE) log counts but don't change status.
-        IF p_is_final AND l_status IS NOT NULL THEN
-            UPDATE DMT_OWNER.DMT_PIPELINE_RUN_TBL
-            SET    RUN_STATUS     = l_status,
-                   COMPLETED_DATE = SYSTIMESTAMP
-            WHERE  RUN_ID = p_run_id
-            AND    RUN_STATUS NOT IN ('COMPLETED', 'COMPLETED_ERRORS', 'FAILED', 'CANCELLED');
-        END IF;
-    END update_master_totals;
 
     -- Returns TRUE if rows were generated and processed,
     -- FALSE if no VALIDATED rows existed (object type skipped).
@@ -1054,7 +965,6 @@
         p_run_id   IN NUMBER,
         p_cemli_code       IN VARCHAR2,
         p_scenario_id      IN NUMBER   DEFAULT NULL,
-        p_include_untagged IN VARCHAR2  DEFAULT 'N',
         p_run_mode         IN VARCHAR2  DEFAULT 'NEW',
         p_skip_bu_refresh  IN BOOLEAN   DEFAULT FALSE
     ) RETURN BOOLEAN IS
@@ -1312,8 +1222,8 @@
                 l_req_bu_id VARCHAR2(30);
             BEGIN
                 -- Look up BU ID from the first STG header's REQ_BU_NAME.
-                -- In ALL mode, rows may still be in TRANSFORMED/GENERATED/LOADED/FAILED
-                -- (reset_scenario_status runs later in Step 1.4), so widen the status filter.
+                -- In ALL mode, rows may be in any status (no reset -- mode-driven
+                -- selection, Overview run-mode table), so widen the status filter.
                 -- Scenario filter included to match the rows this run will actually process.
                 SELECT lkp.LOOKUP_VALUE INTO l_req_bu_id
                 FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL h
@@ -1324,8 +1234,7 @@
                     OR (p_run_mode = 'ALL')
                   )
                 AND    (p_scenario_id IS NULL
-                        OR h.SCENARIO_ID = p_scenario_id
-                        OR (p_include_untagged = 'Y' AND h.SCENARIO_ID IS NULL))
+                        OR h.SCENARIO_ID = p_scenario_id)
                 AND    ROWNUM = 1;
 
                 l_param_list := '#NULL,'                     -- 1: ImportSource (optional — #NULL = all sources)
@@ -1397,98 +1306,11 @@
         -- AFTER the ALL-mode reset, otherwise the reset (Step 1.4) wipes any FAILED status
         -- the validator sets, letting bad rows flow into the FBDI/HDL and on to Fusion.
 
-        -- Step 1.4: ALL mode — reset staging rows back to RETRY so they get picked up again.
-        -- The caller sets p_run_mode='ALL' to reprocess every row in the scenario.
-        -- Each CEMLI knows which staging table(s) it owns and resets those.
-        IF p_run_mode = 'ALL' AND p_scenario_id IS NOT NULL THEN
-            IF    p_cemli_code = 'Suppliers' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL');
-            ELSIF p_cemli_code = 'SupplierAddresses' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_POZ_SUP_ADDR_STG_TBL');
-            ELSIF p_cemli_code = 'SupplierSites' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL');
-            ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL');
-            ELSIF p_cemli_code = 'SupplierContacts' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL');
-            ELSIF p_cemli_code = 'PurchaseOrders' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PO_LINES_INT_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL');
-            ELSIF p_cemli_code = 'BlanketPOs' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PO_LINES_INT_STG_TBL');
-            ELSIF p_cemli_code = 'Contracts' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL');
-            ELSIF p_cemli_code = 'Customers' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_HZ_PARTIES_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL');
-            ELSIF p_cemli_code = 'ARInvoices' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_RA_LINES_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_RA_DISTS_STG_TBL');
-            ELSIF p_cemli_code = 'APInvoices' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL');
-            ELSIF p_cemli_code = '1099Invoices' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL');
-            ELSIF p_cemli_code = 'Projects' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PJF_TASKS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PJF_TEAM_MEMBERS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PJC_TXN_CONTROLS_STG_TBL');
-            ELSIF p_cemli_code = 'BillingEvents' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL');
-            ELSIF p_cemli_code = 'Expenditures' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL');
-            ELSIF p_cemli_code = 'Grants' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_HEADERS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_FUNDING_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_PROJECTS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_PERSONNEL_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_FUND_SRC_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_KEYWORDS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_CERTS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_CFDAS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_REFERENCES_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GMS_AWD_TERMS_STG_TBL');
-            ELSIF p_cemli_code = 'Items' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_EGP_ITEM_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_EGP_ITEM_CAT_STG_TBL');  -- bundled categories
-            ELSIF p_cemli_code = 'MiscReceipts' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_INV_TRX_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_INV_TRX_LOTS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_INV_TRX_SERIALS_STG_TBL');
-            ELSIF p_cemli_code = 'Requisitions' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_POR_REQ_LINES_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_POR_REQ_DISTS_STG_TBL');
-            ELSIF p_cemli_code = 'GLBalances' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GL_INTERFACE_STG_TBL');
-            ELSIF p_cemli_code = 'GLBudgetBalances' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_GL_BUDGET_INT_STG_TBL');
-            ELSIF p_cemli_code = 'PlanningBudgets' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PLAN_BUDGET_STG_TBL');
-            ELSIF p_cemli_code = 'ProjectBudgets' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_PRJ_BUDGET_STG_TBL');
-            ELSIF p_cemli_code = 'Assets' THEN
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_FA_ASSET_ASSIGN_STG_TBL');
-                reset_scenario_status(p_scenario_id, 'DMT_OWNER.DMT_FA_ASSET_BOOK_STG_TBL');
-            END IF;
-            COMMIT;
-        END IF;
+        -- (A8/C2b, 2026-07-08) The "Step 1.4 ALL-mode reset" block is DELETED
+        -- (~70 reset_scenario_status calls). ALL mode selects every row in the
+        -- scenario directly via the p_run_mode predicates (Overview run-mode
+        -- table, ALL row) -- no status reset, and the retired RETRY status is
+        -- never written.
 
         -- Step 1.4b: Pre-transform upstream dependency validation on staging rows.
         -- Marks staging rows FAILED if their upstream parent is not LOADED.
@@ -1559,100 +1381,100 @@
 
         -- Step 1.5: Transform staging rows → transformed table (applies prefix, derives fields).
         -- Only rows with STATUS IN ('NEW','RETRY') that passed pre-validation are picked up.
-        -- Scenario filter: when p_scenario_id is non-NULL, only rows matching the scenario
-        -- (or untagged rows when p_include_untagged = 'Y') are transformed.
+        -- Scenario filter: when p_scenario_id is non-NULL, only rows matching
+        -- the scenario are transformed (scenarios are mandatory at ingestion).
         IF    p_cemli_code = 'Suppliers' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SUPPLIERS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SUPPLIERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'SupplierAddresses' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_ADDRESSES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_ADDRESSES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'SupplierSites' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SITES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SITES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'SupplierContacts' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_CONTACTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_CONTACTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'PurchaseOrders' THEN
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_LINE_LOCS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_PO_TRANSFORM_PKG.TRANSFORM_LINE_LOCS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_PO_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'BlanketPOs' THEN
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Blanket Purchase Agreement', p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => 'Blanket Purchase Agreement', p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Blanket Purchase Agreement', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => 'Blanket Purchase Agreement', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Contracts' THEN
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Contract Purchase Agreement', p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Contract Purchase Agreement', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Customers' THEN
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTIES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_LOCATIONS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTY_SITES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTY_SITE_USES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCOUNTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITE_USES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTIES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_CUST_TRANSFORM_PKG.TRANSFORM_LOCATIONS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTY_SITES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTY_SITE_USES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCOUNTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITE_USES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'ARInvoices' THEN
-            DMT_AR_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_AR_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_AR_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_AR_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'APInvoices' THEN
-            DMT_AP_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_AP_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_AP_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_AP_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Projects' THEN
-            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_PROJECTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TASKS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TEAM_MEMBERS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TXN_CONTROLS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_PROJECTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TASKS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TEAM_MEMBERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TXN_CONTROLS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'BillingEvents' THEN
-            DMT_BILLING_EVENT_TRANSFORM_PKG.TRANSFORM_EVENTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_BILLING_EVENT_TRANSFORM_PKG.TRANSFORM_EVENTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Expenditures' THEN
-            DMT_EXPENDITURE_TRANSFORM_PKG.TRANSFORM_EXPENDITURES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_EXPENDITURE_TRANSFORM_PKG.TRANSFORM_EXPENDITURES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Grants' THEN
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUNDING(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PROJECTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PERSONNEL(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUND_SOURCES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_FUND_SRCS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_KEYWORDS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_BUDGET_PERIODS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_CERTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_CFDAS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUND_ALLOCS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_ORG_CREDITS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_TASK_BURDEN(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_REFERENCES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_TERMS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUNDING(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PROJECTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PERSONNEL(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUND_SOURCES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_FUND_SRCS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_KEYWORDS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_BUDGET_PERIODS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_CERTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_CFDAS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUND_ALLOCS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_ORG_CREDITS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_TASK_BURDEN(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_REFERENCES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_TERMS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = '1099Invoices' THEN
-            DMT_AP_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_inv_type_filter => '%1099%', p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_AP_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_inv_type_filter => '%1099%', p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_AP_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_inv_type_filter => '%1099%', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_AP_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_inv_type_filter => '%1099%', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Items' THEN
-            DMT_EGP_ITEM_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_EGP_ITEM_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
             -- Transform bundled categories before the Items FBDI generator picks them up
             -- (DMT_EGP_ITEM_FBDI_GEN_PKG reads DMT_EGP_ITEM_CAT_TFM_TBL for the bundled CSV).
-            DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'ItemCategories' THEN
             -- Dead in the standard pipeline (categories run under the Items token); retained
             -- for the RUN_ITEM_CATEGORIES standalone helper.
-            DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'MiscReceipts' THEN
-            DMT_MISC_RECEIPT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_MISC_RECEIPT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Requisitions' THEN
-            DMT_REQ_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_REQ_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-            DMT_REQ_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_REQ_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_REQ_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            DMT_REQ_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'GLBalances' THEN
-            DMT_GL_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_GL_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'GLBudgetBalances' THEN
-            DMT_GL_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_GL_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'PlanningBudgets' THEN
-            DMT_PLAN_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_PLAN_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'ProjectBudgets' THEN
-            DMT_PRJ_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+            DMT_PRJ_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Assets' THEN
             -- Multi-book: a child row (g_partition_key set) is already transformed by the
             -- parent's transform-only pass. Re-transforming would reset STAGED rows.
             IF g_partition_key IS NULL THEN
-                DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-                DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-                DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_BOOKS(p_run_id, p_scenario_id => p_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+                DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+                DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+                DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_BOOKS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
             END IF;
         END IF;
         COMMIT;
@@ -1738,7 +1560,7 @@
 
                     IF NOT l_bu_ok THEN
                         DECLARE
-                            l_err VARCHAR2(500) := '[FUSION_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.';
+                            l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.';
                         BEGIN
                             UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
                             SET STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
@@ -1848,7 +1670,7 @@
 
                     IF NOT l_ar_ok THEN
                         DECLARE
-                            l_err VARCHAR2(500) := '[FUSION_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ar_load_id || ' logs for details.';
+                            l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ar_load_id || ' logs for details.';
                         BEGIN
                             UPDATE DMT_OWNER.DMT_RA_LINES_TFM_TBL
                             SET STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
@@ -1961,7 +1783,7 @@
                     IF NOT l_bu_ok THEN
                         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
                         SET STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                            '[FUSION_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.'),
+                            '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.'),
                             LAST_UPDATED_DATE=SYSDATE
                         WHERE RUN_ID=p_run_id AND STATUS='GENERATED' AND PRC_BU_NAME=bu_rec.PRC_BU_NAME
                         AND STYLE_DISPLAY_NAME='Blanket Purchase Agreement';
@@ -2047,7 +1869,7 @@
                     IF NOT l_bu_ok THEN
                         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
                         SET STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                            '[FUSION_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.'),
+                            '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.'),
                             LAST_UPDATED_DATE=SYSDATE
                         WHERE RUN_ID=p_run_id AND STATUS='GENERATED' AND PRC_BU_NAME=bu_rec.PRC_BU_NAME
                         AND STYLE_DISPLAY_NAME='Contract Purchase Agreement';
@@ -2129,7 +1951,7 @@
 
                     IF NOT l_ou_ok THEN
                         DECLARE
-                            l_err VARCHAR2(500) := '[FUSION_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ou_load_id || ' logs for details.';
+                            l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ou_load_id || ' logs for details.';
                         BEGIN
                             UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
                             SET STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
@@ -2231,7 +2053,7 @@
 
                     IF NOT l_ou_ok THEN
                         DECLARE
-                            l_err VARCHAR2(500) := '[FUSION_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ou_load_id || ' logs for details.';
+                            l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ou_load_id || ' logs for details.';
                         BEGIN
                             UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
                             SET STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
@@ -2329,7 +2151,7 @@
                     UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
                     SET    TFM_STATUS = 'FAILED',
                            ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[FUSION_ERROR] Load to GL_BUDGET_INTERFACE failed. Check ESS job ' || l_gb_load_id || '.'),
+                               '[LOAD_ERROR] Load to GL_BUDGET_INTERFACE failed. Check ESS job ' || l_gb_load_id || '.'),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
                     COMMIT;
@@ -2476,7 +2298,7 @@
                         UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
                         SET    TFM_STATUS = 'FAILED',
                                ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                   '[FUSION_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_gl_load_id || ' logs for details.'),
+                                   '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_gl_load_id || ' logs for details.'),
                                LAST_UPDATED_DATE = SYSDATE
                         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                         AND    LEDGER_NAME = led_rec.LEDGER_NAME;
@@ -2644,7 +2466,7 @@
                 DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
             -- Mark GENERATED → FAILED in the appropriate TFM table(s)
             DECLARE
-                l_err_msg VARCHAR2(500) := '[FUSION_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_load_ess_id || ' logs for details.';
+                l_err_msg VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_load_ess_id || ' logs for details.';
             BEGIN
                 IF    p_cemli_code = 'Suppliers' THEN
                     UPDATE DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL SET STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND STATUS='GENERATED';
@@ -3072,9 +2894,6 @@
             END IF;
         END;
 
-        -- Log running totals but don't change run status mid-pipeline
-        update_master_totals(p_run_id, p_is_final => FALSE);
-
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'Object type complete: ' || p_cemli_code,
@@ -3098,7 +2917,7 @@
     -- RUN_SUPPLIER_PIPELINE
     -- Orchestrates all 5 object types in strict dependency order.
     -- --------------------------------------------------------
-    PROCEDURE RUN_SUPPLIER_PIPELINE (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_SUPPLIER_PIPELINE (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC  CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_PIPELINE';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
@@ -3110,30 +2929,24 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        UPDATE DMT_OWNER.DMT_PIPELINE_RUN_TBL
-        SET    RUN_STATUS       = 'IN_PROGRESS'
-        WHERE  RUN_ID   = p_run_id;
-        COMMIT;
+        -- (A12, 2026-07-08) direct RUN_STATUS write removed: one writer per
+        -- status altitude -- RUN_STATUS is written only by the heartbeat
+        -- rollup (DMT_QUEUE_PKG.rollup_run_statuses).
 
         -- Process in strict dependency order
-        l_dummy := run_one_object_type(p_run_id, 'Suppliers', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Suppliers', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
-        l_dummy := run_one_object_type(p_run_id, 'SupplierAddresses', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'SupplierAddresses', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
-        l_dummy := run_one_object_type(p_run_id, 'SupplierSites', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'SupplierSites', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
-        l_dummy := run_one_object_type(p_run_id, 'SupplierSiteAssignments', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'SupplierSiteAssignments', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
-        l_dummy := run_one_object_type(p_run_id, 'SupplierContacts', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
-        COMMIT;
-
-        -- Final summary — update_master_totals already called by each run_one_object_type,
-        -- but call again here to set END_DATE after all 5 types complete.
-        update_master_totals(p_run_id);
+        l_dummy := run_one_object_type(p_run_id, 'SupplierContacts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
         DMT_UTIL_PKG.LOG(
@@ -3151,34 +2964,25 @@
                 p_sqlerrm        => SQLERRM,
                 p_package        => C_PKG,
                 p_procedure      => C_PROC);
-            -- Update master to FAILED
-            UPDATE DMT_OWNER.DMT_PIPELINE_RUN_TBL
-            SET    RUN_STATUS       = 'FAILED',
-                   COMPLETED_DATE    = SYSTIMESTAMP
-            WHERE  RUN_ID   = p_run_id;
-            COMMIT;
+            -- (A12, 2026-07-08) direct RUN_STATUS write removed (single-writer
+            -- rule); the raised exception fails the work item and the heartbeat
+            -- rollup settles the run.
             RAISE;
     END RUN_SUPPLIER_PIPELINE;
 
-    -- --------------------------------------------------------
-    -- Private: update CONVERSION_MASTER summary counts.
-    -- Queries all 5 supplier staging tables cumulatively so counts
-    -- reflect every object type processed so far in this run.
-    -- Called at the end of run_one_object_type and RUN_SUPPLIER_PIPELINE.
-    -- --------------------------------------------------------
     -- --------------------------------------------------------
     -- Individual object-type runners (public)
     -- Thin wrappers over run_one_object_type; callable from APEX
     -- and Python test scripts for unit testing or one-off loads.
     -- --------------------------------------------------------
-    PROCEDURE RUN_SUPPLIERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_SUPPLIERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIERS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIERS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Suppliers', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Suppliers', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIERS complete.', 'INFO', C_PKG, C_PROC);
@@ -3189,14 +2993,14 @@
             RAISE;
     END RUN_SUPPLIERS;
 
-    PROCEDURE RUN_SUPPLIER_ADDRESSES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_SUPPLIER_ADDRESSES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_ADDRESSES';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_ADDRESSES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'SupplierAddresses', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'SupplierAddresses', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_ADDRESSES complete.', 'INFO', C_PKG, C_PROC);
@@ -3207,14 +3011,14 @@
             RAISE;
     END RUN_SUPPLIER_ADDRESSES;
 
-    PROCEDURE RUN_SUPPLIER_SITES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_SUPPLIER_SITES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_SITES';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'SupplierSites', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'SupplierSites', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITES complete.', 'INFO', C_PKG, C_PROC);
@@ -3225,14 +3029,14 @@
             RAISE;
     END RUN_SUPPLIER_SITES;
 
-    PROCEDURE RUN_SUPPLIER_SITE_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_SUPPLIER_SITE_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_SITE_ASSIGNMENTS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITE_ASSIGNMENTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'SupplierSiteAssignments', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'SupplierSiteAssignments', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITE_ASSIGNMENTS complete.', 'INFO', C_PKG, C_PROC);
@@ -3243,14 +3047,14 @@
             RAISE;
     END RUN_SUPPLIER_SITE_ASSIGNMENTS;
 
-    PROCEDURE RUN_SUPPLIER_CONTACTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_SUPPLIER_CONTACTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_CONTACTS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_CONTACTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'SupplierContacts', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'SupplierContacts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_CONTACTS complete.', 'INFO', C_PKG, C_PROC);
@@ -3261,14 +3065,14 @@
             RAISE;
     END RUN_SUPPLIER_CONTACTS;
 
-    PROCEDURE RUN_PURCHASE_ORDERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_PURCHASE_ORDERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_PURCHASE_ORDERS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PURCHASE_ORDERS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'PurchaseOrders', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'PurchaseOrders', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PURCHASE_ORDERS complete.', 'INFO', C_PKG, C_PROC);
@@ -3289,7 +3093,6 @@
         x_run_id   OUT NUMBER,
         p_cemli_code       IN  VARCHAR2,
         p_scenario_name    IN  VARCHAR2 DEFAULT NULL,
-        p_include_untagged IN  VARCHAR2 DEFAULT 'N',
         p_run_mode         IN  VARCHAR2 DEFAULT 'NEW'
     ) IS
         C_PROC           CONSTANT VARCHAR2(30) := 'RUN_STANDALONE';
@@ -3306,11 +3109,11 @@
         INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
-            SCENARIO_NAME, RUN_MODE, INCLUDE_UNTAGGED
+            SCENARIO_NAME, RUN_MODE
         ) VALUES (
             l_run_id, l_run_id, p_cemli_code, 'STANDALONE',
             'MANUAL', 'IN_PROGRESS', l_prefix, p_cemli_code,
-            p_scenario_name, p_run_mode, p_include_untagged
+            p_scenario_name, p_run_mode
         );
         COMMIT;
 
@@ -3325,10 +3128,8 @@
 
         l_dummy := run_one_object_type(
             l_run_id, p_cemli_code, v_scenario_id,
-            p_include_untagged, p_run_mode);
+            p_run_mode);
 
-        -- Update master totals
-        UPDATE_MASTER_TOTALS(l_run_id);
         COMMIT;
 
         DMT_UTIL_PKG.LOG(l_run_id,
@@ -3350,7 +3151,7 @@
     -- Returns the generated integration ID via x_run_id OUT.
     -- Future: add PO, AP Invoice, etc. runners here in order.
     -- --------------------------------------------------------
-    PROCEDURE RUN_PROCURE_TO_PAY (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
+    PROCEDURE RUN_PROCURE_TO_PAY (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         C_PROC           CONSTANT VARCHAR2(30) := 'RUN_PROCURE_TO_PAY';
         l_run_id NUMBER;
         l_prefix         VARCHAR2(20);
@@ -3365,12 +3166,12 @@
         INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
-            SCENARIO_NAME, RUN_MODE, INCLUDE_UNTAGGED
+            SCENARIO_NAME, RUN_MODE
         ) VALUES (
             l_run_id, l_run_id, 'ProcureToPay', 'PIPELINE',
             'MANUAL', 'IN_PROGRESS', l_prefix,
             'Suppliers,SupplierAddresses,SupplierSites,SupplierSiteAssignments,SupplierContacts,PurchaseOrders,BlanketPOs,ContractPOs,APInvoices,1099Invoices,Requisitions',
-            p_scenario_name, p_run_mode, p_include_untagged
+            p_scenario_name, p_run_mode
         );
         COMMIT;
 
@@ -3384,27 +3185,26 @@
         DMT_UTIL_PKG.REFRESH_BU_LOOKUPS;
 
         -- Suppliers (all 5 object types in dependency order)
-        RUN_SUPPLIER_PIPELINE(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_SUPPLIER_PIPELINE(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Purchase Orders (one ESS job for all 4 object types)
-        RUN_PURCHASE_ORDERS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_PURCHASE_ORDERS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Blanket Purchase Agreements
-        RUN_BLANKET_POS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_BLANKET_POS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Contract Purchase Agreements
-        RUN_CONTRACTS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_CONTRACTS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- AP Invoices (headers + lines, grouped by operating unit)
-        RUN_AP_INVOICES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_AP_INVOICES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- 1099 Invoices (shares AP tables, filtered by invoice type)
-        RUN_1099_INVOICES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_1099_INVOICES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Requisitions (headers + lines + distributions)
-        RUN_REQUISITIONS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_REQUISITIONS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
-        update_master_totals(l_run_id);
         COMMIT;
 
         DMT_UTIL_PKG.LOG(l_run_id,
@@ -3414,14 +3214,6 @@
             IF l_run_id IS NOT NULL THEN
                 DMT_UTIL_PKG.LOG_ERROR(l_run_id,
                     'RUN_PROCURE_TO_PAY failed.', SQLERRM, C_PKG, C_PROC);
-                BEGIN
-                    update_master_totals(l_run_id, 'FAILED');
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        DMT_UTIL_PKG.LOG_ERROR(l_run_id,
-                            'update_master_totals failed in exception handler.',
-                            SQLERRM, C_PKG, C_PROC);
-                END;
                 COMMIT;
             END IF;
             RAISE;
@@ -3431,14 +3223,14 @@
     -- RUN_CUSTOMERS (public)
     -- Customers: single FBDI with 7 CSVs, single BulkImportJob ESS.
     -- --------------------------------------------------------
-    PROCEDURE RUN_CUSTOMERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_CUSTOMERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_CUSTOMERS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CUSTOMERS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Customers', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Customers', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CUSTOMERS complete.', 'INFO', C_PKG, C_PROC);
@@ -3455,14 +3247,14 @@
     -- Each group gets its own FBDI zip + loadAndImportData + BIP reconciliation.
     -- Upstream dependency: customers must be LOADED.
     -- --------------------------------------------------------
-    PROCEDURE RUN_AR_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_AR_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_AR_INVOICES';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AR_INVOICES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'ARInvoices', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'ARInvoices', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AR_INVOICES complete.', 'INFO', C_PKG, C_PROC);
@@ -3476,14 +3268,14 @@
     -- --------------------------------------------------------
     -- RUN_BILLING_EVENTS (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_BILLING_EVENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_BILLING_EVENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_BILLING_EVENTS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BILLING_EVENTS start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'BillingEvents', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'BillingEvents', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BILLING_EVENTS complete.', 'INFO', C_PKG, C_PROC);
@@ -3497,14 +3289,14 @@
     -- --------------------------------------------------------
     -- RUN_EXPENDITURES (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_EXPENDITURES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_EXPENDITURES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_EXPENDITURES';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_EXPENDITURES start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Expenditures', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Expenditures', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_EXPENDITURES complete.', 'INFO', C_PKG, C_PROC);
@@ -3518,14 +3310,14 @@
     -- --------------------------------------------------------
     -- RUN_GRANTS (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_GRANTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_GRANTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_GRANTS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GRANTS start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Grants', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Grants', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GRANTS complete.', 'INFO', C_PKG, C_PROC);
@@ -3539,14 +3331,14 @@
     -- --------------------------------------------------------
     -- RUN_1099_INVOICES (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_1099_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_1099_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_1099_INVOICES';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_1099_INVOICES start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, '1099Invoices', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, '1099Invoices', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_1099_INVOICES complete.', 'INFO', C_PKG, C_PROC);
@@ -3560,14 +3352,14 @@
     -- --------------------------------------------------------
     -- RUN_REQUISITIONS (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_REQUISITIONS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_REQUISITIONS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_REQUISITIONS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_REQUISITIONS start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Requisitions', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Requisitions', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_REQUISITIONS complete.', 'INFO', C_PKG, C_PROC);
@@ -3581,7 +3373,7 @@
     -- --------------------------------------------------------
     -- RUN_ITEMS (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_ITEMS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_ITEMS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_ITEMS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
@@ -3591,7 +3383,7 @@
 
         -- Categories are validated, transformed, bundled into the FBDI ZIP, and reconciled
         -- inside the 'Items' branch of run_one_object_type, so a single call covers both.
-        l_dummy := run_one_object_type(p_run_id, 'Items', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Items', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ITEMS complete.', 'INFO', C_PKG, C_PROC);
@@ -3605,7 +3397,7 @@
     -- --------------------------------------------------------
     -- RUN_ITEM_CATEGORIES (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_ITEM_CATEGORIES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_ITEM_CATEGORIES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_ITEM_CATEGORIES';
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
@@ -3620,7 +3412,6 @@
             p_run_id   => p_run_id,
             p_reprocess_errors => (p_run_mode = 'FAILED'),
             p_scenario_id      => v_scenario_id,
-            p_include_untagged => p_include_untagged,
             p_run_mode         => p_run_mode
         );
         COMMIT;
@@ -3637,14 +3428,14 @@
     -- --------------------------------------------------------
     -- RUN_MISC_RECEIPTS (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_MISC_RECEIPTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_MISC_RECEIPTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_MISC_RECEIPTS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_MISC_RECEIPTS start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'MiscReceipts', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'MiscReceipts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_MISC_RECEIPTS complete.', 'INFO', C_PKG, C_PROC);
@@ -3658,14 +3449,14 @@
     -- --------------------------------------------------------
     -- RUN_PROJECTS (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_PROJECTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_PROJECTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_PROJECTS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Projects', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Projects', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECTS complete.', 'INFO', C_PKG, C_PROC);
@@ -3679,14 +3470,14 @@
     -- --------------------------------------------------------
     -- RUN_BLANKET_POS (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_BLANKET_POS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_BLANKET_POS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_BLANKET_POS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BLANKET_POS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'BlanketPOs', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'BlanketPOs', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BLANKET_POS complete.', 'INFO', C_PKG, C_PROC);
@@ -3700,14 +3491,14 @@
     -- --------------------------------------------------------
     -- RUN_CONTRACTS (public)
     -- --------------------------------------------------------
-    PROCEDURE RUN_CONTRACTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_CONTRACTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_CONTRACTS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CONTRACTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Contracts', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Contracts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CONTRACTS complete.', 'INFO', C_PKG, C_PROC);
@@ -3724,14 +3515,14 @@
     -- Each group gets its own FBDI zip + loadAndImportData + BIP reconciliation.
     -- Upstream dependency: suppliers must be LOADED.
     -- --------------------------------------------------------
-    PROCEDURE RUN_AP_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_AP_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_AP_INVOICES';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AP_INVOICES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'APInvoices', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'APInvoices', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AP_INVOICES complete.', 'INFO', C_PKG, C_PROC);
@@ -3747,7 +3538,7 @@
     -- Full O2C pipeline: customers → AR invoices.
     -- Creates a CONVERSION_MASTER row; integration ID and prefix both from sequences.
     -- --------------------------------------------------------
-    PROCEDURE RUN_ORDER_TO_CASH (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
+    PROCEDURE RUN_ORDER_TO_CASH (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         C_PROC           CONSTANT VARCHAR2(30) := 'RUN_ORDER_TO_CASH';
         l_run_id NUMBER;
         l_prefix         VARCHAR2(20);
@@ -3761,12 +3552,12 @@
         INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
-            SCENARIO_NAME, RUN_MODE, INCLUDE_UNTAGGED
+            SCENARIO_NAME, RUN_MODE
         ) VALUES (
             l_run_id, l_run_id, 'OrderToCash', 'PIPELINE',
             'MANUAL', 'IN_PROGRESS', l_prefix,
             'Customers,ARInvoices',
-            p_scenario_name, p_run_mode, p_include_untagged
+            p_scenario_name, p_run_mode
         );
         COMMIT;
 
@@ -3779,12 +3570,11 @@
         DMT_UTIL_PKG.REFRESH_BU_LOOKUPS;
 
         -- Customers (all 7 object types in one FBDI)
-        RUN_CUSTOMERS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_CUSTOMERS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- AR Invoices (lines + distributions)
-        RUN_AR_INVOICES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_AR_INVOICES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
-        update_master_totals(l_run_id);
         COMMIT;
 
         DMT_UTIL_PKG.LOG(l_run_id,
@@ -3794,14 +3584,6 @@
             IF l_run_id IS NOT NULL THEN
                 DMT_UTIL_PKG.LOG_ERROR(l_run_id,
                     'RUN_ORDER_TO_CASH failed.', SQLERRM, C_PKG, C_PROC);
-                BEGIN
-                    update_master_totals(l_run_id, 'FAILED');
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        DMT_UTIL_PKG.LOG_ERROR(l_run_id,
-                            'update_master_totals failed in exception handler.',
-                            SQLERRM, C_PKG, C_PROC);
-                END;
                 COMMIT;
             END IF;
             RAISE;
@@ -3811,7 +3593,7 @@
     -- RUN_WORKERS (public) — HDL pattern
     -- Generates Worker.dat, uploads via HCM REST, polls, reconciles.
     -- --------------------------------------------------------
-    PROCEDURE RUN_WORKERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_WORKERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_WORKERS';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -3828,26 +3610,14 @@
         -- Step 1: Pre-validation (stub — no rules yet)
         DMT_WORKER_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        -- ALL mode: reset staging rows back to RETRY
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_WORKER_STG_TBL');
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_PERSON_NAME_STG_TBL');
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_PERSON_EMAIL_STG_TBL');
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_PERSON_PHONE_STG_TBL');
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_PERSON_ADDR_STG_TBL');
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_PERSON_NID_STG_TBL');
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_PERSON_LEGISL_STG_TBL');
-            COMMIT;
-        END IF;
-
         -- Step 2: Transform all 7 business objects (STG → TFM)
-        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_WORKERS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_NAMES(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_EMAILS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_PHONES(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_NIDS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_LEGISL(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_WORKERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_NAMES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_EMAILS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_PHONES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_NIDS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_LEGISL(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Step 3: Post-validation (stub)
@@ -3915,7 +3685,7 @@
     -- RUN_ASSIGNMENTS (public) — HDL pattern
     -- WorkRelationship + Assignment in Worker.dat HDL.
     -- --------------------------------------------------------
-    PROCEDURE RUN_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_ASSIGNMENTS';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -3931,15 +3701,8 @@
 
         DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        -- ALL mode: reset staging rows back to RETRY
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_WORK_REL_STG_TBL');
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_ASSIGNMENT_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_WORK_RELS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-        DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_WORK_RELS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
@@ -3978,7 +3741,7 @@
     -- --------------------------------------------------------
     -- RUN_SALARIES (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_SALARIES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_SALARIES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_SALARIES';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -3994,12 +3757,7 @@
 
         DMT_SALARY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_SALARY_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_SALARY_TRANSFORM_PKG.TRANSFORM_SALARIES(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_SALARY_TRANSFORM_PKG.TRANSFORM_SALARIES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_SALARY_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4034,7 +3792,7 @@
     -- --------------------------------------------------------
     -- RUN_SALARY_BASES (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_SALARY_BASES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_SALARY_BASES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_SALARY_BASES';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4050,12 +3808,7 @@
 
         DMT_SAL_BASIS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_SAL_BASIS_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_SAL_BASIS_TRANSFORM_PKG.TRANSFORM_SALARYBASES(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_SAL_BASIS_TRANSFORM_PKG.TRANSFORM_SALARYBASES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_SAL_BASIS_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4090,7 +3843,7 @@
     -- --------------------------------------------------------
     -- RUN_ABSENCES (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_ABSENCES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_ABSENCES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_ABSENCES';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4106,12 +3859,7 @@
 
         DMT_ABSENCE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_ABSENCE_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_ABSENCE_TRANSFORM_PKG.TRANSFORM_ABSENCEENTRIES(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_ABSENCE_TRANSFORM_PKG.TRANSFORM_ABSENCEENTRIES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_ABSENCE_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4146,7 +3894,7 @@
     -- --------------------------------------------------------
     -- RUN_W2_BALANCES (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_W2_BALANCES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_W2_BALANCES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_W2_BALANCES';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4162,12 +3910,7 @@
 
         DMT_W2_BAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_W2_BAL_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_W2_BAL_TRANSFORM_PKG.TRANSFORM_W2BALANCES(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_W2_BAL_TRANSFORM_PKG.TRANSFORM_W2BALANCES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_W2_BAL_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4202,7 +3945,7 @@
     -- --------------------------------------------------------
     -- RUN_BEN_PARTICIPANT (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_BEN_PARTICIPANT (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_BEN_PARTICIPANT (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_BEN_PARTICIPANT';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4218,12 +3961,7 @@
 
         DMT_BEN_PARTIC_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_BEN_PARTIC_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_BEN_PARTIC_TRANSFORM_PKG.TRANSFORM_PARTICIPANTENROLLMENTS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_BEN_PARTIC_TRANSFORM_PKG.TRANSFORM_PARTICIPANTENROLLMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_BEN_PARTIC_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4258,7 +3996,7 @@
     -- --------------------------------------------------------
     -- RUN_BEN_DEPENDENT (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_BEN_DEPENDENT (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_BEN_DEPENDENT (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_BEN_DEPENDENT';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4274,12 +4012,7 @@
 
         DMT_BEN_DEPEND_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_BEN_DEPEND_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_BEN_DEPEND_TRANSFORM_PKG.TRANSFORM_DEPENDENTENROLLMENTS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_BEN_DEPEND_TRANSFORM_PKG.TRANSFORM_DEPENDENTENROLLMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_BEN_DEPEND_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4314,7 +4047,7 @@
     -- --------------------------------------------------------
     -- RUN_BEN_BENEFICIARY (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_BEN_BENEFICIARY (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_BEN_BENEFICIARY (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_BEN_BENEFICIARY';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4330,12 +4063,7 @@
 
         DMT_BEN_BENFY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_BEN_BENFY_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_BEN_BENFY_TRANSFORM_PKG.TRANSFORM_BENEFICIARYDESIGNATIONS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_BEN_BENFY_TRANSFORM_PKG.TRANSFORM_BENEFICIARYDESIGNATIONS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_BEN_BENFY_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4370,7 +4098,7 @@
     -- --------------------------------------------------------
     -- RUN_PAYROLL_RELS (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_PAYROLL_RELS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_PAYROLL_RELS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_PAYROLL_RELS';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4386,12 +4114,7 @@
 
         DMT_PAY_REL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_PAY_REL_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_PAY_REL_TRANSFORM_PKG.TRANSFORM_PAYROLLRELATIONSHIPS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_PAY_REL_TRANSFORM_PKG.TRANSFORM_PAYROLLRELATIONSHIPS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_PAY_REL_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4426,7 +4149,7 @@
     -- --------------------------------------------------------
     -- RUN_TAX_CARDS (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_TAX_CARDS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_TAX_CARDS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_TAX_CARDS';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4442,12 +4165,7 @@
 
         DMT_TAX_CARD_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_TAX_CARD_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_TAX_CARD_TRANSFORM_PKG.TRANSFORM_TAXCARDS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_TAX_CARD_TRANSFORM_PKG.TRANSFORM_TAXCARDS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_TAX_CARD_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4482,7 +4200,7 @@
     -- --------------------------------------------------------
     -- RUN_TALENT_PROFILES (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_TALENT_PROFILES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_TALENT_PROFILES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_TALENT_PROFILES';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4498,12 +4216,7 @@
 
         DMT_TALENT_PROF_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_TALENT_PROF_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_TALENT_PROF_TRANSFORM_PKG.TRANSFORM_TALENTPROFILES(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_TALENT_PROF_TRANSFORM_PKG.TRANSFORM_TALENTPROFILES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_TALENT_PROF_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4538,7 +4251,7 @@
     -- --------------------------------------------------------
     -- RUN_PERF_EVALUATIONS (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_PERF_EVALUATIONS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_PERF_EVALUATIONS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_PERF_EVALUATIONS';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4554,12 +4267,7 @@
 
         DMT_PERF_EVAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_PERF_EVAL_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_PERF_EVAL_TRANSFORM_PKG.TRANSFORM_PERFORMANCEDOCUMENTS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_PERF_EVAL_TRANSFORM_PKG.TRANSFORM_PERFORMANCEDOCUMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_PERF_EVAL_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4594,7 +4302,7 @@
     -- --------------------------------------------------------
     -- RUN_WORK_SCHEDULES (public) — HDL pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_WORK_SCHEDULES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_WORK_SCHEDULES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'RUN_WORK_SCHEDULES';
         l_hdl_zip   BLOB;
         l_filename  VARCHAR2(200);
@@ -4610,12 +4318,7 @@
 
         DMT_WORK_SCHED_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        IF p_run_mode = 'ALL' AND v_scenario_id IS NOT NULL THEN
-            reset_scenario_status(v_scenario_id, 'DMT_OWNER.DMT_WORK_SCHED_STG_TBL');
-            COMMIT;
-        END IF;
-
-        DMT_WORK_SCHED_TRANSFORM_PKG.TRANSFORM_WORKSCHEDULES(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_WORK_SCHED_TRANSFORM_PKG.TRANSFORM_WORKSCHEDULES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_WORK_SCHED_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
@@ -4650,14 +4353,14 @@
     -- --------------------------------------------------------
     -- RUN_GL_BALANCES (public) — FBDI pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_GL_BALANCES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_GL_BALANCES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_GL_BALANCES';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BALANCES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'GLBalances', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'GLBalances', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BALANCES complete.', 'INFO', C_PKG, C_PROC);
@@ -4671,14 +4374,14 @@
     -- --------------------------------------------------------
     -- RUN_GL_BUDGETS (public) — FBDI pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_GL_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_GL_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_GL_BUDGETS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'GLBudgetBalances', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'GLBudgetBalances', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BUDGETS complete.', 'INFO', C_PKG, C_PROC);
@@ -4692,14 +4395,14 @@
     -- --------------------------------------------------------
     -- RUN_PLAN_BUDGETS (public) — FBDI pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_PLAN_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_PLAN_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_PLAN_BUDGETS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PLAN_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'PlanningBudgets', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'PlanningBudgets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PLAN_BUDGETS complete.', 'INFO', C_PKG, C_PROC);
@@ -4713,14 +4416,14 @@
     -- --------------------------------------------------------
     -- RUN_PROJECT_BUDGETS (public) — FBDI pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_PROJECT_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_PROJECT_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_PROJECT_BUDGETS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECT_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'ProjectBudgets', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'ProjectBudgets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECT_BUDGETS complete.', 'INFO', C_PKG, C_PROC);
@@ -4734,14 +4437,14 @@
     -- --------------------------------------------------------
     -- RUN_ASSETS (public) — FBDI pattern
     -- --------------------------------------------------------
-    PROCEDURE RUN_ASSETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
+    PROCEDURE RUN_ASSETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_ASSETS';
         l_dummy BOOLEAN;
         v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ASSETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Assets', v_scenario_id, p_include_untagged, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'Assets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ASSETS complete.', 'INFO', C_PKG, C_PROC);
@@ -4760,7 +4463,6 @@
     PROCEDURE RUN_ASSETS_TRANSFORM_ONLY (
         p_run_id           IN NUMBER,
         p_scenario_name    IN VARCHAR2 DEFAULT NULL,
-        p_include_untagged IN VARCHAR2 DEFAULT 'N',
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         C_PROC CONSTANT VARCHAR2(40) := 'RUN_ASSETS_TRANSFORM_ONLY';
@@ -4769,9 +4471,9 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ASSETS_TRANSFORM_ONLY start.', 'INFO', C_PKG, C_PROC);
         DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         COMMIT;
-        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
-        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_BOOKS(p_run_id, p_scenario_id => v_scenario_id, p_include_untagged => p_include_untagged, p_run_mode => p_run_mode);
+        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_BOOKS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ASSETS_TRANSFORM_ONLY complete.', 'INFO', C_PKG, C_PROC);
     EXCEPTION
@@ -4785,7 +4487,7 @@
     -- Full Project pipeline: projects → billing events → expenditures → grants → project budgets.
     -- Creates a new CONVERSION_MASTER row.
     -- --------------------------------------------------------
-    PROCEDURE RUN_PROJECT_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
+    PROCEDURE RUN_PROJECT_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         C_PROC           CONSTANT VARCHAR2(30) := 'RUN_PROJECT_PIPELINE';
         l_run_id NUMBER;
         l_prefix         VARCHAR2(20);
@@ -4800,12 +4502,12 @@
         INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
-            SCENARIO_NAME, RUN_MODE, INCLUDE_UNTAGGED
+            SCENARIO_NAME, RUN_MODE
         ) VALUES (
             l_run_id, l_run_id, 'Projects', 'PIPELINE',
             'MANUAL', 'IN_PROGRESS', l_prefix,
             'Projects,ProjectTasks,ProjectTeamMembers,TransactionControls,BillingEvents,Expenditures',
-            p_scenario_name, p_run_mode, p_include_untagged
+            p_scenario_name, p_run_mode
         );
         COMMIT;
 
@@ -4818,7 +4520,7 @@
         DMT_UTIL_PKG.REFRESH_BU_LOOKUPS;
 
         -- Projects must run first — all downstream objects depend on projects being LOADED.
-        RUN_PROJECTS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_PROJECTS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Check if any projects reached LOADED. If zero, skip all downstream objects.
         SELECT COUNT(*) INTO l_projects_loaded
@@ -4835,13 +4537,12 @@
             DMT_UTIL_PKG.LOG(l_run_id,
                 l_projects_loaded || ' project(s) LOADED. Proceeding with downstream objects.',
                 'INFO', C_PKG, C_PROC);
-            RUN_BILLING_EVENTS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
-            RUN_EXPENDITURES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
-            RUN_GRANTS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
-            RUN_PROJECT_BUDGETS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+            RUN_BILLING_EVENTS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+            RUN_EXPENDITURES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+            RUN_GRANTS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+            RUN_PROJECT_BUDGETS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
         END IF;
 
-        update_master_totals(l_run_id);
         COMMIT;
 
         DMT_UTIL_PKG.LOG(l_run_id,
@@ -4851,14 +4552,6 @@
             IF l_run_id IS NOT NULL THEN
                 DMT_UTIL_PKG.LOG_ERROR(l_run_id,
                     'RUN_PROJECT_PIPELINE failed.', SQLERRM, C_PKG, C_PROC);
-                BEGIN
-                    update_master_totals(l_run_id, 'FAILED');
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        DMT_UTIL_PKG.LOG_ERROR(l_run_id,
-                            'update_master_totals failed in exception handler.',
-                            SQLERRM, C_PKG, C_PROC);
-                END;
                 COMMIT;
             END IF;
             RAISE;
@@ -4869,7 +4562,7 @@
     -- Full HCM pipeline: all 14 HDL object types in dependency order.
     -- Creates a new CONVERSION_MASTER row.
     -- --------------------------------------------------------
-    PROCEDURE RUN_HCM_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
+    PROCEDURE RUN_HCM_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         C_PROC           CONSTANT VARCHAR2(30) := 'RUN_HCM_PIPELINE';
         l_run_id NUMBER;
         l_prefix         VARCHAR2(20);
@@ -4883,12 +4576,12 @@
         INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
-            SCENARIO_NAME, RUN_MODE, INCLUDE_UNTAGGED
+            SCENARIO_NAME, RUN_MODE
         ) VALUES (
             l_run_id, l_run_id, 'HCM', 'PIPELINE',
             'MANUAL', 'IN_PROGRESS', l_prefix,
             'Workers,Assignments,Salaries,SalaryBases,PayrollRels,TaxCards,W2Balances,BenParticipant,BenDependent,BenBeneficiary,Absences',
-            p_scenario_name, p_run_mode, p_include_untagged
+            p_scenario_name, p_run_mode
         );
         COMMIT;
 
@@ -4901,40 +4594,39 @@
         DMT_UTIL_PKG.REFRESH_BU_LOOKUPS;
 
         -- Workers first (master data — all other HCM objects depend on workers)
-        RUN_WORKERS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_WORKERS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Assignments depend on workers
-        RUN_ASSIGNMENTS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_ASSIGNMENTS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Salary and salary basis depend on assignments
-        RUN_SALARIES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
-        RUN_SALARY_BASES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_SALARIES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_SALARY_BASES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Payroll relationships depend on workers
-        RUN_PAYROLL_RELS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_PAYROLL_RELS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Tax cards depend on payroll relationships
-        RUN_TAX_CARDS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_TAX_CARDS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- W-2 balances depend on payroll relationships
-        RUN_W2_BALANCES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_W2_BALANCES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Benefits depend on workers
-        RUN_BEN_PARTICIPANT(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
-        RUN_BEN_DEPENDENT(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
-        RUN_BEN_BENEFICIARY(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_BEN_PARTICIPANT(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_BEN_DEPENDENT(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_BEN_BENEFICIARY(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Absences depend on workers
-        RUN_ABSENCES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_ABSENCES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Talent and performance depend on workers
-        RUN_TALENT_PROFILES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
-        RUN_PERF_EVALUATIONS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_TALENT_PROFILES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_PERF_EVALUATIONS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Work schedules are independent
-        RUN_WORK_SCHEDULES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_WORK_SCHEDULES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
-        update_master_totals(l_run_id);
         COMMIT;
 
         DMT_UTIL_PKG.LOG(l_run_id,
@@ -4944,14 +4636,6 @@
             IF l_run_id IS NOT NULL THEN
                 DMT_UTIL_PKG.LOG_ERROR(l_run_id,
                     'RUN_HCM_PIPELINE failed.', SQLERRM, C_PKG, C_PROC);
-                BEGIN
-                    update_master_totals(l_run_id, 'FAILED');
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        DMT_UTIL_PKG.LOG_ERROR(l_run_id,
-                            'update_master_totals failed in exception handler.',
-                            SQLERRM, C_PKG, C_PROC);
-                END;
                 COMMIT;
             END IF;
             RAISE;
@@ -4965,7 +4649,7 @@
     -- Re-add it once EPBCS UCM/ESS-job metadata is discovered and seeded.
     -- Creates a new CONVERSION_MASTER row.
     -- --------------------------------------------------------
-    PROCEDURE RUN_FINANCIALS_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
+    PROCEDURE RUN_FINANCIALS_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         C_PROC           CONSTANT VARCHAR2(30) := 'RUN_FINANCIALS_PIPELINE';
         l_run_id NUMBER;
         l_prefix         VARCHAR2(20);
@@ -4979,12 +4663,12 @@
         INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
-            SCENARIO_NAME, RUN_MODE, INCLUDE_UNTAGGED
+            SCENARIO_NAME, RUN_MODE
         ) VALUES (
             l_run_id, l_run_id, 'Financials', 'PIPELINE',
             'MANUAL', 'IN_PROGRESS', l_prefix,
             'GLBalances,GLBudgets,Assets',
-            p_scenario_name, p_run_mode, p_include_untagged
+            p_scenario_name, p_run_mode
         );
         COMMIT;
 
@@ -4996,13 +4680,12 @@
 
         DMT_UTIL_PKG.REFRESH_BU_LOOKUPS;
 
-        RUN_GL_BALANCES(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
-        RUN_GL_BUDGETS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_GL_BALANCES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_GL_BUDGETS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
         -- RUN_PLAN_BUDGETS intentionally not called — PlanningBudgets is DORMANT (no ERP-options
         -- seed on this instance). Procedure retained for future activation once EPBCS is seeded.
-        RUN_ASSETS(l_run_id, p_scenario_name, p_include_untagged, p_run_mode, p_skip_bu_refresh => TRUE);
+        RUN_ASSETS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
-        update_master_totals(l_run_id);
         COMMIT;
 
         DMT_UTIL_PKG.LOG(l_run_id,
@@ -5012,14 +4695,6 @@
             IF l_run_id IS NOT NULL THEN
                 DMT_UTIL_PKG.LOG_ERROR(l_run_id,
                     'RUN_FINANCIALS_PIPELINE failed.', SQLERRM, C_PKG, C_PROC);
-                BEGIN
-                    update_master_totals(l_run_id, 'FAILED');
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        DMT_UTIL_PKG.LOG_ERROR(l_run_id,
-                            'update_master_totals failed in exception handler.',
-                            SQLERRM, C_PKG, C_PROC);
-                END;
                 COMMIT;
             END IF;
             RAISE;

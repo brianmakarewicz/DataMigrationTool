@@ -43,3 +43,19 @@ no-vocabulary-extension-by-fixtures, serialization for uniqueness rules).
 Registry dispatch exactly per the proposed exception scoping (bind-only, validated,
 one named site); seed integrity clean on sample (no orphan EXEC/RECON procs); ESS
 ERROR routes to reconcile; zero-BIP-rows → FAILED (absence ≠ LOADED holds).
+
+## Task 4 executed (2026-07-08) — correctness cluster CLOSED
+All FIX NOW items implemented and spec-cited: single-writer rollup per the Overview status
+table (only 2 SET RUN_STATUS sites = the rollup's two arms), configurable timeout as
+trigger-never-verdict, single accounting gate (sole writer of DONE; one spec-cited Assets
+exemption), transient-fault retry-next-tick, [LOAD_ERROR] marking (9 loader sites also
+retagged from the wrong [FUSION_ERROR]), catalog-driven ACCOUNT_ROWS replacing the legacy
+view, USE_PREFIX honored + doubles as the submission mutex (FOR UPDATE — closes TOCTOU),
+ALL-requires-scenario, DEPENDS_ON validation, CANCEL_RUN/CANCELLED/reset_scenario_status/
+update_master_totals/INCLUDE_UNTAGGED fully removed (grep-proven), mock seeds moved out of
+the production install, invented tags fixed. Queue-engine suite 25 -> 39 assertions, all
+status assertions spec-cited. 6/6 suites + golden green; invalid = 46.
+Remaining (documented): per-object p_include_untagged/'RETRY' literals fold at Stage D/E
+ports; legacy sync orchestrators flagged for retirement; work-queue CK vocabulary + rename
+still P2; dynamic-SQL exception ruling now covers 3 named sites (dispatch + accounting).
+RE-REVIEW: dispatched per the FAIL verdict.

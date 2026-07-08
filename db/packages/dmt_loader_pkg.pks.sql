@@ -91,69 +91,69 @@ AS
     -- Call from APEX for one-off loads or unit testing.
     -- Each runner: Validate → Generate FBDI → Load → Poll → BIP reconcile.
     -- --------------------------------------------------------
-    PROCEDURE RUN_SUPPLIERS              (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
-    PROCEDURE RUN_SUPPLIER_ADDRESSES     (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
-    PROCEDURE RUN_SUPPLIER_SITES         (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
-    PROCEDURE RUN_SUPPLIER_SITE_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
-    PROCEDURE RUN_SUPPLIER_CONTACTS      (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_SUPPLIERS              (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_SUPPLIER_ADDRESSES     (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_SUPPLIER_SITES         (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_SUPPLIER_SITE_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_SUPPLIER_CONTACTS      (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- PurchaseOrders: all 4 PO object types per ESS job.
     -- Multi-BU: loops over distinct PRC_BU_NAMEs in the data,
     -- submitting a separate loadAndImportData+jobList per BU.
     -- Validate → Transform → [per BU: Generate FBDI → Load → Reconcile].
-    PROCEDURE RUN_PURCHASE_ORDERS       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_PURCHASE_ORDERS       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Customers: all 7 customer object types in one zip.
     -- Validate → Transform 7 types → Generate FBDI → Load → Reconcile.
-    PROCEDURE RUN_CUSTOMERS             (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_CUSTOMERS             (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- ARInvoices: lines + distributions in one zip.
     -- Upstream dependency: customers must be LOADED.
     -- Validate → Transform 2 types → [per BU: Generate FBDI → Load → Reconcile].
-    PROCEDURE RUN_AR_INVOICES           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_AR_INVOICES           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- APInvoices: headers + lines in one zip (no separate distributions).
     -- Upstream dependency: suppliers must be LOADED.
     -- Validate → Transform 2 types → [per OU: Generate FBDI → Load → Reconcile].
-    PROCEDURE RUN_AP_INVOICES           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_AP_INVOICES           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Projects: 4 object types in one zip (projects, tasks, team members, txn controls).
     -- No upstream dependency (projects are master data).
-    PROCEDURE RUN_PROJECTS              (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_PROJECTS              (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- BillingEvents: single CSV. Upstream: projects.
-    PROCEDURE RUN_BILLING_EVENTS        (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_BILLING_EVENTS        (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Expenditures: single CSV. Upstream: projects.
-    PROCEDURE RUN_EXPENDITURES          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_EXPENDITURES          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Grants: 15 CSVs in one zip. Upstream: projects.
-    PROCEDURE RUN_GRANTS                (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_GRANTS                (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- 1099Invoices: shares AP tables, filters by INVOICE_TYPE_LOOKUP_CODE.
-    PROCEDURE RUN_1099_INVOICES         (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_1099_INVOICES         (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Items: single CSV (EgpSystemItemsInterface). No upstream dependency.
-    PROCEDURE RUN_ITEMS                 (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_ITEMS                 (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- ItemCategories: single CSV (EgpItemCategoriesInterface). Upstream: Items.
-    PROCEDURE RUN_ITEM_CATEGORIES       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_ITEM_CATEGORIES       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- MiscReceipts: Items on Hand via miscellaneous receiving receipts.
     -- 2 CSVs: headers + transactions. Upstream: Items.
-    PROCEDURE RUN_MISC_RECEIPTS         (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_MISC_RECEIPTS         (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Requisitions: headers + lines + distributions. No upstream dependency.
     -- UCM: prc/requisition/import. ESS: RequisitionImportJob.
-    PROCEDURE RUN_REQUISITIONS          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_REQUISITIONS          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- BlanketPOs: headers + lines (no locs/dists). Shares PO tables.
     -- STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'.
-    PROCEDURE RUN_BLANKET_POS           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_BLANKET_POS           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Contracts: headers only (no lines/locs/dists). Shares PO tables.
     -- STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'.
-    PROCEDURE RUN_CONTRACTS             (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_CONTRACTS             (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- --------------------------------------------------------
     -- HCM Objects (HDL pattern — uses DMT_HDL_UTIL_PKG)
@@ -162,65 +162,65 @@ AS
     -- Workers: 7 business objects in Worker.dat (HDL).
     -- Worker + PersonName + PersonEmail + PersonPhone + PersonAddress
     -- + PersonNationalIdentifier + PersonLegislativeData.
-    PROCEDURE RUN_WORKERS               (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_WORKERS               (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Worker Assignments: WorkRelationship + Assignment in Worker.dat (HDL).
-    PROCEDURE RUN_ASSIGNMENTS           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_ASSIGNMENTS           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Salaries: Salary.dat (HDL).
-    PROCEDURE RUN_SALARIES              (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_SALARIES              (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Salary Bases: SalaryBasis.dat (HDL).
-    PROCEDURE RUN_SALARY_BASES          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_SALARY_BASES          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Absence Balances: AbsenceEntry.dat (HDL).
-    PROCEDURE RUN_ABSENCES              (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_ABSENCES              (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- W-2 Balances: PayrollBalanceInitialization.dat (HDL).
-    PROCEDURE RUN_W2_BALANCES           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_W2_BALANCES           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Participant Enrollment: BenefitParticipantEnrollment.dat (HDL).
-    PROCEDURE RUN_BEN_PARTICIPANT       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_BEN_PARTICIPANT       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Dependent Enrollment: BenefitParticipantEnrollment.dat (HDL).
-    PROCEDURE RUN_BEN_DEPENDENT         (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_BEN_DEPENDENT         (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Beneficiary Enrollment: BenefitParticipantEnrollment.dat (HDL).
-    PROCEDURE RUN_BEN_BENEFICIARY       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_BEN_BENEFICIARY       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Payroll Relationships: Worker.dat (HDL).
-    PROCEDURE RUN_PAYROLL_RELS          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_PAYROLL_RELS          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Tax Calculation Cards: CalculationCard.dat (HDL).
-    PROCEDURE RUN_TAX_CARDS             (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_TAX_CARDS             (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Talent Profiles: TalentProfile.dat (HDL).
-    PROCEDURE RUN_TALENT_PROFILES       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_TALENT_PROFILES       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Performance Evaluations: PerformanceDocument.dat (HDL).
-    PROCEDURE RUN_PERF_EVALUATIONS      (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_PERF_EVALUATIONS      (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Work Schedules: WorkSchedule.dat (HDL).
-    PROCEDURE RUN_WORK_SCHEDULES        (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_WORK_SCHEDULES        (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- --------------------------------------------------------
     -- FBDI Objects (Financials)
     -- --------------------------------------------------------
 
     -- GL Balances: GlInterface.csv (FBDI).
-    PROCEDURE RUN_GL_BALANCES           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_GL_BALANCES           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- GL Budget Balances: GlBudgetInterface.csv (FBDI).
-    PROCEDURE RUN_GL_BUDGETS            (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_GL_BUDGETS            (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Planning Budget Balances: EpbcsDataImport.csv (FBDI). Dormant — no EPBCS interface on this instance.
-    PROCEDURE RUN_PLAN_BUDGETS          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_PLAN_BUDGETS          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Project Budgets: PjoPlanVersionsXface.csv (FBDI). Upstream: projects.
-    PROCEDURE RUN_PROJECT_BUDGETS       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_PROJECT_BUDGETS       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Assets: 3 CSVs in one zip (FBDI).
-    PROCEDURE RUN_ASSETS                (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_ASSETS                (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- --------------------------------------------------------
     -- RUN_STANDALONE — single entry point for running any CEMLI
@@ -234,7 +234,6 @@ AS
         x_run_id   OUT NUMBER,
         p_cemli_code       IN  VARCHAR2,
         p_scenario_name    IN  VARCHAR2 DEFAULT NULL,
-        p_include_untagged IN  VARCHAR2 DEFAULT 'N',
         p_run_mode         IN  VARCHAR2 DEFAULT 'NEW'
     );
 
@@ -245,30 +244,30 @@ AS
 
     -- All 5 supplier object types in strict dependency order.
     -- Halts on any BIP reconciliation failure (hard stop).
-    PROCEDURE RUN_SUPPLIER_PIPELINE (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    PROCEDURE RUN_SUPPLIER_PIPELINE (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Full Procure-to-Pay flow: suppliers → POs → blankets → contracts → AP → 1099.
     -- Creates a new CONVERSION_MASTER row; integration ID and prefix both from sequences.
     -- x_run_id: returns the generated integration ID for the caller to log/display.
-    PROCEDURE RUN_PROCURE_TO_PAY (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW');
+    PROCEDURE RUN_PROCURE_TO_PAY (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
 
     -- Full Order-to-Cash flow: customers → AR invoices.
     -- Creates a new CONVERSION_MASTER row.
-    PROCEDURE RUN_ORDER_TO_CASH (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW');
+    PROCEDURE RUN_ORDER_TO_CASH (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
 
     -- Full Project pipeline: projects → billing events → expenditures → grants → project budgets.
     -- Creates a new CONVERSION_MASTER row.
-    PROCEDURE RUN_PROJECT_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW');
+    PROCEDURE RUN_PROJECT_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
 
     -- Full HCM pipeline: workers → assignments → salaries → salary bases →
     -- absences → W-2 balances → benefits (3) → payroll rels → tax cards →
     -- talent profiles → perf evaluations → work schedules.
     -- Creates a new CONVERSION_MASTER row.
-    PROCEDURE RUN_HCM_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW');
+    PROCEDURE RUN_HCM_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
 
     -- Full Financials pipeline: GL balances → GL budgets → plan budgets → assets.
     -- Creates a new CONVERSION_MASTER row.
-    PROCEDURE RUN_FINANCIALS_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW');
+    PROCEDURE RUN_FINANCIALS_PIPELINE (x_run_id OUT NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
 
     -- --------------------------------------------------------
     -- Async mode support for DMT_QUEUE_PKG
@@ -289,7 +288,6 @@ AS
     PROCEDURE RUN_ASSETS_TRANSFORM_ONLY (
         p_run_id           IN NUMBER,
         p_scenario_name    IN VARCHAR2 DEFAULT NULL,
-        p_include_untagged IN VARCHAR2 DEFAULT 'N',
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     );
 

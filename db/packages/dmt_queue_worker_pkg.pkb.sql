@@ -1,9 +1,8 @@
 -- PACKAGE BODY DMT_QUEUE_WORKER_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_QUEUE_WORKER_PKG" 
+  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_QUEUE_WORKER_PKG"
 AS
     C_PKG CONSTANT VARCHAR2(30) := 'DMT_QUEUE_WORKER_PKG';
-    C_ESS_TIMEOUT CONSTANT PLS_INTEGER := 30;  -- max polls before auto-fail (mirrors DMT_QUEUE_PKG.C_ESS_TIMEOUT)
 
     -- ============================================================
     -- get_dispatch — read the object's dispatch registration from
@@ -42,19 +41,23 @@ AS
     -- exception (2026-07-07) covers deploy scripts only. Registry-
     -- driven dispatch (section 12 "catalog-driven queue dispatch")
     -- cannot name its target procedure statically — that is the
-    -- point of the registry — so this package carries exactly one
-    -- dynamic call, isolated here, pending an explicit approved-
-    -- exception ruling for registry dispatch. The procedure name is
-    -- validated against a strict PKG.PROC identifier pattern before
-    -- execution (no user-supplied text ever reaches the block), and
-    -- all three call shapes use named notation with bind variables.
+    -- point of the registry — so this package carries this dynamic
+    -- call plus the catalog-driven accounting reads below, all
+    -- pending an explicit approved-exception ruling for registry
+    -- dispatch. The procedure name is validated against a strict
+    -- PKG.PROC identifier pattern before execution (no user-supplied
+    -- text ever reaches the block), and all call shapes use named
+    -- notation with bind variables.
     --
     -- p_style: EXEC        p_proc(p_run_id, p_scenario_name,
-    --                             p_include_untagged, p_run_mode,
+    --                             p_run_mode,
     --                             p_skip_bu_refresh => TRUE)
     --          RECON       p_proc(p_run_id, p_load_ess_id, p_import_ess_id)
     --          RECON_CEMLI p_proc(p_run_id, p_cemli_code,
     --                             p_load_ess_id, p_import_ess_id)
+    -- (p_include_untagged is REMOVED end-to-end: scenarios are
+    --  mandatory at ingestion — Overview glossary "Scenario" — so an
+    --  untagged-row switch cannot exist; design section 12 removal.)
     -- ============================================================
     PROCEDURE invoke_registered (
         p_proc             IN VARCHAR2,
@@ -62,7 +65,6 @@ AS
         p_run_id           IN NUMBER,
         p_cemli_code       IN VARCHAR2,
         p_scenario_name    IN VARCHAR2 DEFAULT NULL,
-        p_include_untagged IN VARCHAR2 DEFAULT NULL,
         p_run_mode         IN VARCHAR2 DEFAULT NULL,
         p_load_ess_id      IN NUMBER   DEFAULT NULL,
         p_import_ess_id    IN NUMBER   DEFAULT NULL
@@ -78,9 +80,9 @@ AS
         IF p_style = 'EXEC' THEN
             EXECUTE IMMEDIATE
                 'BEGIN ' || p_proc || '(p_run_id => :b1, p_scenario_name => :b2, '
-                || 'p_include_untagged => :b3, p_run_mode => :b4, '
+                || 'p_run_mode => :b3, '
                 || 'p_skip_bu_refresh => TRUE); END;'
-                USING p_run_id, p_scenario_name, p_include_untagged, p_run_mode;
+                USING p_run_id, p_scenario_name, p_run_mode;
         ELSIF p_style = 'RECON_CEMLI' THEN
             EXECUTE IMMEDIATE
                 'BEGIN ' || p_proc || '(p_run_id => :b1, p_cemli_code => :b2, '
@@ -98,13 +100,193 @@ AS
     END invoke_registered;
 
     -- ============================================================
+    -- assert_catalog_identifier — validate a catalog-supplied table
+    -- or column name before it is concatenated into a SQL text.
+    -- Same posture as invoke_registered: the values come only from
+    -- the seeded registry DMT_CEMLI_CATALOG_TBL, and are still
+    -- pattern-checked so no non-identifier text can ever reach a
+    -- dynamic statement.
+    -- ============================================================
+    PROCEDURE assert_catalog_identifier (p_name IN VARCHAR2, p_what IN VARCHAR2) IS
+    BEGIN
+        IF p_name IS NULL
+           OR NOT REGEXP_LIKE(p_name, '^[A-Z][A-Z0-9_$#]*$') THEN
+            RAISE_APPLICATION_ERROR(-20103,
+                'Catalog ' || p_what || ' "' || p_name ||
+                '" is not a valid SQL identifier (DMT_CEMLI_CATALOG_TBL seed defect)');
+        END IF;
+    END assert_catalog_identifier;
+
+    -- ============================================================
+    -- ACCOUNT_ROWS — catalog-driven accounting counts (design
+    -- section 5 "Object-status accounting": an object is DONE iff
+    -- every record is accounted for — base-loaded OR interface-
+    -- errored; FAILED only if any record is unaccounted).
+    -- Replaces the retired read of the hardcoded legacy view
+    -- DMT_OBJECT_DETAIL_V: counts come from DMT_CEMLI_CATALOG_TBL
+    -- (one row per record type: TFM_TABLE, STATUS_COLUMN,
+    -- ROW_FILTER). Objects with no TFM_TABLE registered (mock/
+    -- unbuilt record types) contribute zero rows.
+    -- Whole-object accounting for every work item — partition-aware
+    -- accounting (PARTITION_KEY other than ALL/NULL) is Stage C
+    -- task 5 (partition model rework), noted 2026-07-08.
+    -- ============================================================
+    PROCEDURE ACCOUNT_ROWS (
+        p_run_id      IN  NUMBER,
+        p_cemli_code  IN  VARCHAR2,
+        x_total       OUT NUMBER,
+        x_loaded      OUT NUMBER,
+        x_failed      OUT NUMBER,
+        x_unaccounted OUT NUMBER
+    ) IS
+        l_sql   VARCHAR2(4000);
+        l_cnt   NUMBER;
+        l_ld    NUMBER;
+        l_fl    NUMBER;
+        l_un    NUMBER;
+    BEGIN
+        x_total       := 0;
+        x_loaded      := 0;
+        x_failed      := 0;
+        x_unaccounted := 0;
+
+        FOR r IN (
+            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'STATUS') AS STATUS_COLUMN, ROW_FILTER
+            FROM   DMT_OWNER.DMT_CEMLI_CATALOG_TBL
+            WHERE  CEMLI_CODE = p_cemli_code
+            AND    TFM_TABLE IS NOT NULL
+            ORDER BY SORT_ORDER
+        ) LOOP
+            assert_catalog_identifier(r.TFM_TABLE, 'TFM_TABLE');
+            assert_catalog_identifier(r.STATUS_COLUMN, 'STATUS_COLUMN');
+
+            -- Accounted = LOADED, or FAILED with non-empty ERROR_TEXT.
+            -- FAILED + empty ERROR_TEXT is the derived UNRECONCILED
+            -- classification (Overview row-status table) — unaccounted.
+            l_sql :=
+                'SELECT COUNT(*), '
+                || 'SUM(CASE WHEN ' || r.STATUS_COLUMN || ' = ''LOADED'' THEN 1 ELSE 0 END), '
+                || 'SUM(CASE WHEN ' || r.STATUS_COLUMN || ' = ''FAILED'''
+                || '          AND ERROR_TEXT IS NOT NULL'
+                || '          AND DBMS_LOB.GETLENGTH(ERROR_TEXT) > 0 THEN 1 ELSE 0 END) '
+                || 'FROM DMT_OWNER.' || r.TFM_TABLE
+                || ' WHERE RUN_ID = :run_id'
+                || CASE WHEN r.ROW_FILTER IS NOT NULL
+                        THEN ' AND ' || r.ROW_FILTER END;
+
+            EXECUTE IMMEDIATE l_sql INTO l_cnt, l_ld, l_fl USING p_run_id;
+
+            l_un := l_cnt - NVL(l_ld, 0) - NVL(l_fl, 0);
+            x_total       := x_total       + l_cnt;
+            x_loaded      := x_loaded      + NVL(l_ld, 0);
+            x_failed      := x_failed      + NVL(l_fl, 0);
+            x_unaccounted := x_unaccounted + l_un;
+        END LOOP;
+    END ACCOUNT_ROWS;
+
+    -- ============================================================
+    -- MARK_GENERATED_ROWS_FAILED — the section-5 [LOAD_ERROR] rule
+    -- made catalog-generic: "When the load ESS job fails, every
+    -- GENERATED row of that ZIP is marked FAILED with this tag plus
+    -- the job's diagnostics" (tag table, [LOAD_ERROR] row). Also the
+    -- timeout trigger (section 2 Timeouts: "when it expires, every
+    -- GENERATED row of the file is marked FAILED with a
+    -- [LOAD_ERROR]-tagged timeout message ... and reconciliation
+    -- still runs"). ERROR_TEXT accumulates via APPEND_ERROR — a row
+    -- later confirmed in Fusion is flipped LOADED by reconciliation
+    -- with the timeout text kept as history.
+    -- ============================================================
+    PROCEDURE MARK_GENERATED_ROWS_FAILED (
+        p_run_id     IN NUMBER,
+        p_cemli_code IN VARCHAR2,
+        p_error_text IN VARCHAR2
+    ) IS
+        l_sql VARCHAR2(4000);
+    BEGIN
+        FOR r IN (
+            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'STATUS') AS STATUS_COLUMN, ROW_FILTER
+            FROM   DMT_OWNER.DMT_CEMLI_CATALOG_TBL
+            WHERE  CEMLI_CODE = p_cemli_code
+            AND    TFM_TABLE IS NOT NULL
+            ORDER BY SORT_ORDER
+        ) LOOP
+            assert_catalog_identifier(r.TFM_TABLE, 'TFM_TABLE');
+            assert_catalog_identifier(r.STATUS_COLUMN, 'STATUS_COLUMN');
+
+            l_sql :=
+                'UPDATE DMT_OWNER.' || r.TFM_TABLE
+                || ' SET ' || r.STATUS_COLUMN || ' = ''FAILED'','
+                || ' ERROR_TEXT = DMT_OWNER.DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, :msg)'
+                || ' WHERE RUN_ID = :run_id'
+                || ' AND ' || r.STATUS_COLUMN || ' = ''GENERATED'''
+                || CASE WHEN r.ROW_FILTER IS NOT NULL
+                        THEN ' AND ' || r.ROW_FILTER END;
+
+            EXECUTE IMMEDIATE l_sql USING p_error_text, p_run_id;
+        END LOOP;
+        COMMIT;
+    END MARK_GENERATED_ROWS_FAILED;
+
+    -- ============================================================
+    -- apply_accounting_gate — THE single accounting gate. The only
+    -- code that writes WORK_STATUS = DONE (proposed rule "Terminal
+    -- work-item states pass one accounting gate", 2026-07-08).
+    -- Overview work-item status table:
+    --   DONE   "Item finished and every row is accounted for — each
+    --           row ended either LOADED ... or FAILED with a
+    --           reportable error. Rows may have failed; DONE means
+    --           nothing is unexplained."
+    --   FAILED "Item ended with at least one row unaccounted for".
+    -- ============================================================
+    PROCEDURE apply_accounting_gate (
+        p_queue_id   IN NUMBER,
+        p_run_id     IN NUMBER,
+        p_cemli_code IN VARCHAR2
+    ) IS
+        l_total       NUMBER;
+        l_loaded      NUMBER;
+        l_failed      NUMBER;
+        l_unaccounted NUMBER;
+    BEGIN
+        ACCOUNT_ROWS(p_run_id, p_cemli_code,
+                     l_total, l_loaded, l_failed, l_unaccounted);
+
+        IF l_unaccounted > 0 THEN
+            UPDATE DMT_WORK_QUEUE_TBL
+            SET WORK_STATUS  = 'FAILED',
+                ERROR_MESSAGE = l_unaccounted || ' record(s) unaccounted — not confirmed in '
+                                || 'base tables or interface error tables ('
+                                || l_loaded || ' loaded, ' || l_failed || ' errored). '
+                                || 'Object cannot be confirmed.',
+                COMPLETED_AT = SYSTIMESTAMP
+            WHERE QUEUE_ID = p_queue_id;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Object ' || p_cemli_code || ' FAILED: ' || l_unaccounted ||
+                ' record(s) unaccounted (' || l_loaded || ' loaded, ' || l_failed || ' errored).',
+                'WARN', C_PKG, 'apply_accounting_gate');
+        ELSE
+            UPDATE DMT_WORK_QUEUE_TBL
+            SET WORK_STATUS = 'DONE',
+                COMPLETED_AT = SYSTIMESTAMP
+            WHERE QUEUE_ID = p_queue_id;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Object ' || p_cemli_code || ' DONE: all records accounted (' ||
+                l_loaded || ' loaded, ' || l_failed || ' errored of ' || l_total || ').',
+                'INFO', C_PKG, 'apply_accounting_gate');
+        END IF;
+    END apply_accounting_gate;
+
+    -- ============================================================
     -- EXECUTE_ONE — called by one-shot child job DMT_WQ_{queue_id}
     -- Runs in its own DB session. Does the full validate -> transform
-    -- -> generate -> SUBMIT_LOAD cycle for one queue row, then sets
-    -- AWAITING_LOAD. For sync objects (EXEC_MODE = SYNC: MiscReceipts;
-    -- HDL cycles return no load ESS id), runs the full RUN_* cycle and
-    -- sets DONE. LOCAL objects (no Fusion load stage — the mocks) go
-    -- to RECONCILING when a reconciler is registered, else DONE.
+    -- -> generate -> SUBMIT_LOAD cycle for one queue row. The item
+    -- keeps the processing status it was claimed with (VALIDATING —
+    -- the Overview's PROCESSING end-state name, rename is P2 §12)
+    -- for the WHOLE data phase; it leaves it only when the load is
+    -- submitted (→ AWAITING_LOAD) or the phase settles (Overview
+    -- work-item status table, PROCESSING row: "the item leaves
+    -- PROCESSING when the load is submitted (→ LOADING/AWAITING_LOAD)
+    -- or the phase fails").
     -- Dispatch is registry-driven (DMT_PIPELINE_DEF_TBL.EXEC_PROC) —
     -- the former hardcoded ~39-branch CASE over CEMLI codes is retired.
     -- ============================================================
@@ -127,10 +309,11 @@ AS
                 || l_rec.CEMLI_CODE);
         END IF;
 
-        UPDATE DMT_WORK_QUEUE_TBL
-        SET WORK_STATUS = 'LOADING'
-        WHERE QUEUE_ID = p_queue_id;
-        COMMIT;
+        -- A7b (2026-07-08): the premature WORK_STATUS = 'LOADING' write that
+        -- used to sit here is removed — LOADING before validate/transform/
+        -- generate contradicted the Overview status table (LOADING = "Load
+        -- submission in progress"). The row stays in its claimed processing
+        -- status (VALIDATING) until the load submission completes.
 
         -- Set async mode: run_one_object_type returns after SUBMIT_LOAD.
         -- SYNC (MiscReceipts) and LOCAL (mocks) run inline.
@@ -145,7 +328,7 @@ AS
         -- loads + Prepares + Posts (per book) + reconciles independently. One book per asset.
         IF l_rec.CEMLI_CODE = 'Assets' AND l_rec.PARTITION_KEY IS NULL THEN
             DMT_LOADER_PKG.RUN_ASSETS_TRANSFORM_ONLY(
-                l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.INCLUDE_UNTAGGED, l_run_rec.RUN_MODE);
+                l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.RUN_MODE);
             DECLARE
                 l_cnt PLS_INTEGER := 0;
             BEGIN
@@ -163,6 +346,13 @@ AS
                     );
                     l_cnt := l_cnt + 1;
                 END LOOP;
+                -- Accounting-gate exemption with spec citation (proposed rule
+                -- "Terminal work-item states pass one accounting gate"): this
+                -- parent row is split BOOKKEEPING, not a data item — section 2
+                -- "Handles data-dependent splits — partitions that can only be
+                -- known after transform (Assets per book) get their per-partition
+                -- work items created mid-run". Its records are owned and
+                -- accounted by the per-book child items created above.
                 UPDATE DMT_WORK_QUEUE_TBL
                 SET WORK_STATUS = 'DONE', COMPLETED_AT = SYSTIMESTAMP,
                     PARTITION_LABEL = CASE WHEN l_cnt = 0 THEN 'No qualifying asset rows'
@@ -185,7 +375,6 @@ AS
             p_run_id           => l_rec.RUN_ID,
             p_cemli_code       => l_rec.CEMLI_CODE,
             p_scenario_name    => l_run_rec.SCENARIO_NAME,
-            p_include_untagged => l_run_rec.INCLUDE_UNTAGGED,
             p_run_mode         => l_run_rec.RUN_MODE);
 
         l_load_ess_id := DMT_LOADER_PKG.g_load_ess_id;
@@ -200,18 +389,21 @@ AS
                 POLL_COUNT = 0,
                 NEXT_POLL_AFTER = SYSTIMESTAMP + INTERVAL '60' SECOND
             WHERE QUEUE_ID = p_queue_id;
-        ELSIF l_exec_mode = 'LOCAL' AND l_recon_proc IS NOT NULL THEN
-            -- LOCAL objects have no Fusion load stage: route straight to
-            -- RECONCILING so the registered reconciler runs via the same
-            -- RECONCILE_ONE path a real object takes after its ESS jobs.
+        ELSIF l_recon_proc IS NOT NULL THEN
+            -- No load ESS id (LOCAL objects, or a cycle that reconciles
+            -- separately): route to RECONCILING so the registered
+            -- reconciler + the accounting gate settle the item on the
+            -- same RECONCILE_ONE path a real object takes after its jobs.
             UPDATE DMT_WORK_QUEUE_TBL
             SET WORK_STATUS = 'RECONCILING'
             WHERE QUEUE_ID = p_queue_id;
         ELSE
-            UPDATE DMT_WORK_QUEUE_TBL
-            SET WORK_STATUS = 'DONE',
-                COMPLETED_AT = SYSTIMESTAMP
-            WHERE QUEUE_ID = p_queue_id;
+            -- A4 (2026-07-08): no more unconditional DONE. SYNC/HDL cycles
+            -- (loader ran its full inline cycle, no queue-dispatched
+            -- reconciler) still settle ONLY through the accounting gate —
+            -- section 5 "Object-status accounting": DONE iff every record
+            -- is accounted for; FAILED if any record is unaccounted.
+            apply_accounting_gate(p_queue_id, l_rec.RUN_ID, l_rec.CEMLI_CODE);
         END IF;
         COMMIT;
 
@@ -311,51 +503,10 @@ AS
             END;
         END IF;
 
-        -- Object-level status. An object is DONE when EVERY record is accounted for:
-        -- found in a Fusion base table (LOADED) or in the interface error table (FAILED
-        -- with a reportable error). A mix of loaded + errored records is a SUCCESSFUL
-        -- object. The object is FAILED only when one or more records cannot be accounted
-        -- for — still GENERATED (never confirmed), FAILED with no error message, or
-        -- in-progress — i.e. the import produced no positive/negative result for them.
-        -- "Unaccounted" is computed generically per CEMLI from DMT_OBJECT_DETAIL_V, which
-        -- pivots the TFM tables to LOADED/FAILED/GENERATED/UNRECONCILED counts.
-        DECLARE
-            l_unaccounted NUMBER;
-            l_loaded      NUMBER;
-            l_failed      NUMBER;
-        BEGIN
-            SELECT NVL(SUM(GENERATED_ROWS + IN_PROGRESS_ROWS + UNRECONCILED_ROWS), 0),
-                   NVL(SUM(LOADED_ROWS), 0),
-                   NVL(SUM(FAILED_ROWS), 0)
-            INTO   l_unaccounted, l_loaded, l_failed
-            FROM   DMT_OWNER.DMT_OBJECT_DETAIL_V
-            WHERE  RUN_ID = l_rec.RUN_ID
-            AND    CEMLI_CODE = l_rec.CEMLI_CODE;
-
-            IF l_unaccounted > 0 THEN
-                UPDATE DMT_WORK_QUEUE_TBL
-                SET WORK_STATUS  = 'FAILED',
-                    ERROR_MESSAGE = l_unaccounted || ' record(s) unaccounted — not confirmed in '
-                                    || 'base tables or interface error tables ('
-                                    || l_loaded || ' loaded, ' || l_failed || ' errored). '
-                                    || 'Object cannot be confirmed.',
-                    COMPLETED_AT = SYSTIMESTAMP
-                WHERE QUEUE_ID = p_queue_id;
-                DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
-                    'Object ' || l_rec.CEMLI_CODE || ' FAILED: ' || l_unaccounted ||
-                    ' record(s) unaccounted (' || l_loaded || ' loaded, ' || l_failed || ' errored).',
-                    'WARN', C_PKG, 'RECONCILE_ONE');
-            ELSE
-                UPDATE DMT_WORK_QUEUE_TBL
-                SET WORK_STATUS = 'DONE',
-                    COMPLETED_AT = SYSTIMESTAMP
-                WHERE QUEUE_ID = p_queue_id;
-                DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
-                    'Object ' || l_rec.CEMLI_CODE || ' DONE: all records accounted (' ||
-                    l_loaded || ' loaded, ' || l_failed || ' errored).',
-                    'INFO', C_PKG, 'RECONCILE_ONE');
-            END IF;
-        END;
+        -- B1 (2026-07-08): the object-level DONE/FAILED decision now runs
+        -- through the single catalog-driven accounting gate (was: an inline
+        -- read of the hardcoded legacy DMT_OBJECT_DETAIL_V).
+        apply_accounting_gate(p_queue_id, l_rec.RUN_ID, l_rec.CEMLI_CODE);
         COMMIT;
 
     EXCEPTION
@@ -378,13 +529,18 @@ AS
     END RECONCILE_ONE;
 
     -- ============================================================
-    -- ============================================================
     -- submit_postrun_job — Phase-2 staged load.
     -- After the import job (e.g. PrepareMassAdditions) succeeds, a CEMLI
-    -- configured with a POST_LOAD_JOB_NAME runs a standalone follow-up ESS
-    -- job before reconcile (Assets: PostMassAdditions). Returns the follow-up
-    -- ESS request id, or NULL when the CEMLI has no POST_LOAD_JOB_NAME
+    -- whose registry row carries a POSTRUN_JOB runs a standalone follow-up
+    -- ESS job before reconcile (Assets: PostMassAdditions). Returns the
+    -- follow-up ESS request id, or NULL when the CEMLI has no POSTRUN_JOB
     -- (every active CEMLI except Assets → NULL → unchanged behavior).
+    -- C5 (2026-07-08): the job name is read from DMT_PIPELINE_DEF_TBL
+    -- .POSTRUN_JOB — the section-6 registry column ("POSTRUN_JOB (the
+    -- per-object post-run ESS job — today only Assets has one ...)").
+    -- The duplicate POST_LOAD_JOB_NAME on DMT_ERP_INTERFACE_OPTIONS_TBL
+    -- is no longer read (one fact, one home); the column itself is left
+    -- for the ERP-options triage.
     -- ============================================================
     FUNCTION submit_postrun_job (p_run_id IN NUMBER, p_cemli_code IN VARCHAR2,
                                  p_partition_key IN VARCHAR2 DEFAULT NULL)
@@ -395,13 +551,22 @@ AS
         l_book  VARCHAR2(60);
     BEGIN
         BEGIN
-            SELECT POST_LOAD_JOB_NAME INTO l_job
-            FROM   DMT_OWNER.DMT_ERP_INTERFACE_OPTIONS_TBL
+            SELECT POSTRUN_JOB INTO l_job
+            FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
             WHERE  CEMLI_CODE = p_cemli_code;
         EXCEPTION WHEN NO_DATA_FOUND THEN l_job := NULL;
         END;
         IF l_job IS NULL THEN
-            RETURN NULL;  -- no post-load stage for this CEMLI
+            RETURN NULL;  -- no post-run stage for this CEMLI
+        END IF;
+
+        -- The registry stores the Fusion form 'package;JobDefinition'
+        -- (semicolon, as FUN_ERP_INTERFACE_OPTIONS does); SUBMIT_IMPORT_JOB
+        -- needs the comma form. Convert the last semicolon.
+        IF INSTR(l_job, ';', -1) > 0 THEN
+            l_job := SUBSTR(l_job, 1, INSTR(l_job, ';', -1) - 1)
+                     || ','
+                     || SUBSTR(l_job, INSTR(l_job, ';', -1) + 1);
         END IF;
 
         -- Derive the standalone job's ParameterList.
@@ -445,14 +610,13 @@ AS
         l_postrun_id VARCHAR2(30);
         l_ess_user   VARCHAR2(100);
         l_ess_pass   VARCHAR2(100);
+        l_timeout_min PLS_INTEGER;
+        l_recon_proc  VARCHAR2(200);
+        l_exec_proc   VARCHAR2(200);
+        l_exec_mode   VARCHAR2(10);
+        l_recon_cemli VARCHAR2(1);
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
-
-        -- Resolve the per-CEMLI Fusion credentials used to SUBMIT this job. getESSJobStatus
-        -- must be called as the submitting user — polling another user's ESS request returns
-        -- HTTP 500. P2P jobs are submitted by overrides (SCM_IMPL/calvin.roth); without this
-        -- the async poll used the default user and 500'd persistently (Runs 86/96/97).
-        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(l_rec.CEMLI_CODE, l_ess_user, l_ess_pass);
 
         l_ess_id := CASE l_rec.WORK_STATUS
             WHEN 'AWAITING_LOAD'    THEN l_rec.LOAD_ESS_JOB_ID
@@ -470,17 +634,64 @@ AS
             RETURN;
         END IF;
 
-        IF l_rec.POLL_COUNT >= C_ESS_TIMEOUT THEN
-            UPDATE DMT_WORK_QUEUE_TBL
-            SET WORK_STATUS = 'FAILED',
-                ERROR_MESSAGE = 'ESS timeout: polled ' || l_rec.POLL_COUNT || ' times',
-                COMPLETED_AT = SYSTIMESTAMP
-            WHERE QUEUE_ID = p_queue_id;
+        -- A3 (2026-07-08): configurable poll timeout — section 2 "Timeouts
+        -- (decided 2026-07-07)": "The polling timeout is configurable —
+        -- ESS_POLL_TIMEOUT_MINUTES in DMT_CONFIG_TBL (default 30) ... A
+        -- timeout is a trigger for the failure path, never a verdict: when
+        -- it expires, every GENERATED row of the file is marked FAILED with
+        -- a [LOAD_ERROR]-tagged timeout message ... and reconciliation still
+        -- runs ... The work item ends DONE or FAILED by the accounting rule
+        -- alone, never directly from the timer."
+        -- POLL_COUNT approximates elapsed minutes: the heartbeat schedules
+        -- one poll per ~60-second tick (C_POLL_INTERVAL / NEXT_POLL_AFTER).
+        -- Checked BEFORE any Fusion call so the timeout works offline too.
+        l_timeout_min := NVL(TO_NUMBER(DMT_UTIL_PKG.GET_CONFIG('ESS_POLL_TIMEOUT_MINUTES')), 30);
+        IF l_rec.POLL_COUNT >= l_timeout_min THEN
+            MARK_GENERATED_ROWS_FAILED(
+                p_run_id     => l_rec.RUN_ID,
+                p_cemli_code => l_rec.CEMLI_CODE,
+                p_error_text => '[LOAD_ERROR] ESS poll timeout: job ' || l_ess_id ||
+                                ' (' || l_rec.WORK_STATUS || ') not terminal after ' ||
+                                l_rec.POLL_COUNT || ' polls (~' || l_timeout_min ||
+                                ' min, ESS_POLL_TIMEOUT_MINUTES). All-or-nothing: an ' ||
+                                'unfinished load committed nothing trustworthy.');
+            DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                'ESS poll timeout for ' || l_rec.CEMLI_CODE || ' (job ' || l_ess_id ||
+                ', ' || l_rec.POLL_COUNT || ' polls >= ' || l_timeout_min ||
+                ' min). GENERATED rows marked FAILED [LOAD_ERROR]; routing to reconcile.',
+                'WARN', C_PKG, 'POLL_ONE');
+
+            get_dispatch(l_rec.CEMLI_CODE, l_exec_proc, l_exec_mode, l_recon_proc, l_recon_cemli);
+            IF l_recon_proc IS NOT NULL THEN
+                -- Reconciliation still runs — if the job actually completed
+                -- after we stopped watching, it finds the records in Fusion
+                -- and flips them LOADED, overriding the precaution.
+                UPDATE DMT_WORK_QUEUE_TBL
+                SET WORK_STATUS = 'RECONCILING'
+                WHERE QUEUE_ID = p_queue_id;
+            ELSE
+                -- No queue-dispatched reconciler registered: settle by the
+                -- accounting rule alone (never directly from the timer).
+                apply_accounting_gate(p_queue_id, l_rec.RUN_ID, l_rec.CEMLI_CODE);
+            END IF;
             COMMIT;
             RETURN;
         END IF;
 
-        -- Single ESS status check
+        -- Resolve the per-CEMLI Fusion credentials used to SUBMIT this job. getESSJobStatus
+        -- must be called as the submitting user — polling another user's ESS request returns
+        -- HTTP 500. P2P jobs are submitted by overrides (SCM_IMPL/calvin.roth); without this
+        -- the async poll used the default user and 500'd persistently (Runs 86/96/97).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(l_rec.CEMLI_CODE, l_ess_user, l_ess_pass);
+
+        -- Single ESS status check.
+        -- A5 (2026-07-08): a failure of the STATUS-CHECK call is never the
+        -- job's status. Section 2 (POLL_ONE row): "Transient SOAP faults
+        -- retry next tick; EXPIRED is not treated as terminal." A raised
+        -- fault here leaves l_status NULL, which falls to the retry-next-
+        -- tick branch below — only definitive terminal ESS states advance
+        -- the work item. (Was: WHEN OTHERS THEN l_status := 'ERROR', which
+        -- sent the item to premature reconcile on any transient fault.)
         BEGIN
             DMT_LOADER_PKG.POLL_ESS_JOB(
                 p_run_id         => l_rec.RUN_ID,
@@ -494,7 +705,12 @@ AS
                 p_password       => l_ess_pass
             );
         EXCEPTION
-            WHEN OTHERS THEN l_status := 'ERROR';
+            WHEN OTHERS THEN
+                l_status := NULL;
+                DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                    'ESS status check failed for job ' || l_ess_id ||
+                    ' — retrying next tick (' || SUBSTR(SQLERRM, 1, 300) || ')',
+                    'WARN', C_PKG, 'POLL_ONE');
         END;
 
         IF l_status IN ('SUCCEEDED', 'WARNING') THEN
@@ -526,9 +742,10 @@ AS
                 EXCEPTION WHEN OTHERS THEN NULL;
                 END;
 
-                -- Phase-2 staged load: if this CEMLI has a post-load job
-                -- (Assets → PostMassAdditions), submit it and poll it before
-                -- reconcile. Non-Assets CEMLIs → NULL → straight to RECONCILING.
+                -- Phase-2 staged load: if this CEMLI has a post-run job in
+                -- the registry (Assets → PostMassAdditions), submit it and
+                -- poll it before reconcile. Others → NULL → straight to
+                -- RECONCILING.
                 BEGIN
                     l_postrun_id := submit_postrun_job(l_rec.RUN_ID, l_rec.CEMLI_CODE, l_rec.PARTITION_KEY);
                 EXCEPTION
@@ -561,23 +778,46 @@ AS
                 WHERE QUEUE_ID = p_queue_id;
             END IF;
         ELSIF l_status IN ('FAILED', 'ERROR', 'CANCELLED') THEN
+            -- ('CANCELLED' here is a Fusion ESS JOB state — this list is the
+            -- ESS vocabulary, not the run-status vocabulary.)
             -- A terminal job error is NOT, by itself, an object failure. FBDI import jobs
             -- report job-level ERROR on PARTIAL success — some records reach Fusion base
             -- tables, some land in the interface error table — which is still a SUCCESSFUL
             -- object. So route to RECONCILING and let BIP positively account for every
-            -- record; RECONCILE_ONE then marks the OBJECT done (every record accounted:
-            -- base = LOADED, interface-error = FAILED) or failed (any record unaccounted,
-            -- or the import never produced data). This is the only place that decides
-            -- per-record outcome, so the job's coarse ERROR must not short-circuit it.
+            -- record; RECONCILE_ONE then settles the item through the accounting gate
+            -- (every record accounted: base = LOADED, interface-error = FAILED) or fails
+            -- it (any record unaccounted, or the import never produced data). This is the
+            -- only place that decides per-record outcome, so the job's coarse ERROR must
+            -- not short-circuit it.
             -- ('EXPIRED' is excluded above — it is a per-tick poll artifact, not a status.)
-            -- For an AWAITING_LOAD error, capture the import job id (if any) first so the
-            -- reconciler can read the import error table.
-            IF l_rec.WORK_STATUS = 'AWAITING_LOAD' AND l_rec.IMPORT_ESS_JOB_ID IS NULL THEN
-                BEGIN
-                    l_import_id := DMT_LOADER_PKG.GET_IMPORT_ESS_ID(
-                        l_rec.RUN_ID, l_rec.CEMLI_CODE, l_rec.LOAD_ESS_JOB_ID);
-                EXCEPTION WHEN OTHERS THEN l_import_id := NULL;
-                END;
+            IF l_rec.WORK_STATUS = 'AWAITING_LOAD' THEN
+                -- A6 (2026-07-08): section 5 tag table, [LOAD_ERROR] row —
+                -- "When the load ESS job fails, every GENERATED row of that
+                -- ZIP is marked FAILED with this tag plus the job's
+                -- diagnostics" (all-or-nothing, whole ZIP; a SQL*Loader
+                -- failure/WARNING errors the load job and nothing arrives).
+                -- Reconciliation still runs and can flip confirmed rows back
+                -- to LOADED (section 5 "A Load ESS ERROR marks all GENERATED
+                -- rows FAILED and routes to reconcile — it never
+                -- short-circuits").
+                MARK_GENERATED_ROWS_FAILED(
+                    p_run_id     => l_rec.RUN_ID,
+                    p_cemli_code => l_rec.CEMLI_CODE,
+                    p_error_text => '[LOAD_ERROR] Load ESS job ' || l_ess_id ||
+                                    ' ended ' || l_status ||
+                                    '. All-or-nothing: the whole ZIP rolled back; ' ||
+                                    'check the ESS job log for diagnostics.');
+                -- Capture the import job id (if any) first so the reconciler
+                -- can read the import error table.
+                IF l_rec.IMPORT_ESS_JOB_ID IS NULL THEN
+                    BEGIN
+                        l_import_id := DMT_LOADER_PKG.GET_IMPORT_ESS_ID(
+                            l_rec.RUN_ID, l_rec.CEMLI_CODE, l_rec.LOAD_ESS_JOB_ID);
+                    EXCEPTION WHEN OTHERS THEN l_import_id := NULL;
+                    END;
+                ELSE
+                    l_import_id := l_rec.IMPORT_ESS_JOB_ID;
+                END IF;
                 UPDATE DMT_WORK_QUEUE_TBL
                 SET WORK_STATUS = 'RECONCILING',
                     IMPORT_ESS_JOB_ID = l_import_id,
@@ -590,7 +830,8 @@ AS
                 WHERE QUEUE_ID = p_queue_id;
             END IF;
         ELSE
-            -- Non-terminal (WAIT/RUNNING) or EXPIRED-this-tick → poll again next tick.
+            -- Non-terminal (WAIT/RUNNING), EXPIRED-this-tick, or a transient
+            -- status-check fault (l_status NULL) → poll again next tick.
             UPDATE DMT_WORK_QUEUE_TBL
             SET POLL_COUNT = l_rec.POLL_COUNT + 1,
                 LAST_POLL_AT = SYSTIMESTAMP,

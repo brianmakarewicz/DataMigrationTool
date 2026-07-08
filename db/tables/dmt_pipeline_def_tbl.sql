@@ -17,7 +17,7 @@
 --   EXEC_PROC   PKG.PROC the queue worker's EXECUTE_ONE invokes for the
 --               object's data phase (validate/transform/generate/submit).
 --               All registered procedures share the DMT_LOADER_PKG.RUN_*
---               signature (p_run_id, p_scenario_name, p_include_untagged,
+--               signature (p_run_id, p_scenario_name,
 --               p_run_mode, p_skip_bu_refresh). NULL = the object cannot be
 --               dispatched yet (config objects pending the section-12
 --               "fold config objects into the queue" item; ARReceipts).
