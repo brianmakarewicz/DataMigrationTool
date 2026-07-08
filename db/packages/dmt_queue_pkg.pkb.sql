@@ -138,7 +138,17 @@ AS
             SELECT QUEUE_ID, RUN_ID, CEMLI_CODE
             FROM DMT_WORK_QUEUE_TBL
             WHERE WORK_STATUS IN ('AWAITING_LOAD', 'AWAITING_IMPORT', 'AWAITING_POSTRUN')
-              AND (NEXT_POLL_AFTER IS NULL OR NEXT_POLL_AFTER <= SYSTIMESTAMP)
+              -- (Stage D live, 2026-07-08) NEXT_POLL_AFTER is a plain
+              -- TIMESTAMP; comparing it to SYSTIMESTAMP (TIMESTAMP WITH
+              -- TIME ZONE) re-interprets the stored value in the SESSION
+              -- time zone. Scheduler-job sessions here run America/New_York
+              -- while the stored value is UTC wall time, so every poll was
+              -- silently deferred ~4 hours on the first live POLL_ONE run.
+              -- Both writer (worker) and reader now use
+              -- SYS_EXTRACT_UTC(SYSTIMESTAMP) -- naive UTC on both sides,
+              -- independent of session/OS time zone.
+              AND (NEXT_POLL_AFTER IS NULL
+                   OR NEXT_POLL_AFTER <= SYS_EXTRACT_UTC(SYSTIMESTAMP))
         )
         LOOP
             l_job_name := 'DMT_PL_' || rec.QUEUE_ID;
