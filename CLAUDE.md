@@ -89,7 +89,16 @@ Rules of the protocol:
       **REMAINING for Stage B full close:** B2 live Fusion run (blocked: demo password
       rotated externally — needs new password + rotate-demo-password skill); user decision
       on the error-code-contract exception for the utility layer.
-- [ ] Stage C — Queue engine proven with mock CEMLI
+- [~] Stage C — IN PROGRESS (offline core done 2026-07-08): prefix consolidated to one
+      per-run sequence; 3 decided control tables built+seeded (45 objects/86 record types);
+      catalog-driven dispatch live (65 hardcoded branches retired); queue engine proven
+      end-to-end with MockObject/MockChild (25/25) — one-active-run + CONTINUE promotion
+      implemented (were missing), SUBMIT_OBJECTS infinite loop fixed (the historical
+      submit hang), scheduler valid off-APEX. Invalid baseline 46. 6/6 suites + golden green.
+      REMAINING: blind engine review (running), transport/parser consolidation refactor,
+      poll-timeout config wiring + live ESS path (needs demo password), CANCEL_RUN removal,
+      DMT_PREFIX_HISTORY_V. OPEN RULING: single guarded dynamic invocation for registry
+      dispatch (red row in canonical doc).
 - [ ] Stage D — Suppliers vertical slice E2E
 - [ ] Stage E — Remaining Wave-1 objects (3 dependency waves)
 - [ ] Stage F — Full regression gate → then APEX port
