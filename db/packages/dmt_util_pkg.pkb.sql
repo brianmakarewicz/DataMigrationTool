@@ -672,8 +672,15 @@
         l_offset    INTEGER := 1;
         l_len       INTEGER;
         l_chunk_len INTEGER;
-        l_chunk     VARCHAR2(32764);   -- multiple of 4, < 32767
-        C_CHUNK     CONSTANT INTEGER := 32764;
+        l_buf       VARCHAR2(32767);   -- carry + whitespace-stripped chunk
+        l_carry     VARCHAR2(3) := '';
+        l_take      INTEGER;
+        -- Raw chars read per pass. Base64 streams legally contain CR/LF
+        -- line breaks (UTL_ENCODE emits one every 64 chars; BIP responses
+        -- carry them too), so the 4-char quantum alignment must be computed
+        -- AFTER stripping whitespace — counting raw chars mis-aligned every
+        -- chunk after the first and corrupted any payload > one chunk.
+        C_CHUNK     CONSTANT INTEGER := 24000;
     BEGIN
         DBMS_LOB.CREATETEMPORARY(l_blob, TRUE);
         IF p_b64 IS NULL THEN
@@ -682,13 +689,23 @@
         l_len := DBMS_LOB.GETLENGTH(p_b64);
         WHILE l_offset <= l_len LOOP
             l_chunk_len := LEAST(C_CHUNK, l_len - l_offset + 1);
-            -- never split a 4-char base64 quantum across chunks
-            l_chunk_len := TRUNC(l_chunk_len / 4) * 4;
-            EXIT WHEN l_chunk_len = 0;
-            l_chunk := DBMS_LOB.SUBSTR(p_b64, l_chunk_len, l_offset);
-            DBMS_LOB.APPEND(l_blob,
-                UTL_ENCODE.BASE64_DECODE(UTL_RAW.CAST_TO_RAW(l_chunk)));
+            -- strip CR/LF/tab/space so only real base64 chars are counted,
+            -- then prepend the 0-3 char remainder carried from the last pass
+            l_buf := l_carry || REPLACE(REPLACE(REPLACE(REPLACE(
+                         DBMS_LOB.SUBSTR(p_b64, l_chunk_len, l_offset),
+                         CHR(13)), CHR(10)), CHR(9)), ' ');
             l_offset := l_offset + l_chunk_len;
+            -- decode whole 4-char quanta; on the final pass decode everything
+            l_take := TRUNC(NVL(LENGTH(l_buf), 0) / 4) * 4;
+            IF l_offset > l_len THEN
+                l_take := NVL(LENGTH(l_buf), 0);
+            END IF;
+            IF l_take > 0 THEN
+                DBMS_LOB.APPEND(l_blob,
+                    UTL_ENCODE.BASE64_DECODE(
+                        UTL_RAW.CAST_TO_RAW(SUBSTR(l_buf, 1, l_take))));
+            END IF;
+            l_carry := SUBSTR(l_buf, l_take + 1);
         END LOOP;
         RETURN l_blob;
     END BASE64_DECODE_CLOB;
