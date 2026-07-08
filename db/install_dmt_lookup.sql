@@ -17,8 +17,9 @@
 --     schemas (below + build_local_db.sh) and the DMT_OWNER synonyms come
 --     from db_full/synonyms/.
 --
--- NOT re-runnable (the numbered scripts are sequential migrations, not
--- guarded DDL) — use only on a --fresh build.
+-- Re-runnable: every DDL statement in the lookup/coa scripts is guarded
+-- (already-exists errors swallowed) and the seed is re-run-safe, so this
+-- script can be run repeatedly with zero errors.
 -- ============================================================================
 set define off
 whenever sqlerror exit failure rollback
@@ -35,14 +36,7 @@ prompt == DMT_LOOKUP tables (lookup) ==
 @@lookup/schema/11_fix_mapping_identity_and_audit.sql
 
 prompt == DMT_LOOKUP tables (COA) ==
--- Errors tolerated for this one file: line 133 creates DMT_COA_MAP_SRC_N1 on
--- the exact column list of constraint DMT_COA_MAP_UK -> ORA-01408. The index
--- does not exist on ATP either (the statement can never have succeeded);
--- fix belongs in schema/coa on main. Everything after it in the file is
--- created normally.
-whenever sqlerror continue
 @@lookup/coa/01_coa_tables.sql
-whenever sqlerror exit failure rollback
 
 prompt == DMT_LOOKUP packages ==
 @@lookup/packages/dmt_lkp_refresh_pkg.pks

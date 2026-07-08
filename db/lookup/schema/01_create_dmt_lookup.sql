@@ -4,9 +4,15 @@
 -- Creates the DMT_LOOKUP schema for EBS-to-Fusion value mapping management.
 -- =============================================================================
 
+begin
+  execute immediate q'[
 CREATE USER DMT_LOOKUP IDENTIFIED BY "<SET_PASSWORD_HERE>"
     DEFAULT TABLESPACE DATA
-    TEMPORARY TABLESPACE TEMP;
+    TEMPORARY TABLESPACE TEMP]';
+exception when others then
+  if sqlcode not in (-1920) then raise; end if;  -- ORA-01920: user exists
+end;
+/
 
 -- Basic privileges
 GRANT CREATE SESSION TO DMT_LOOKUP;

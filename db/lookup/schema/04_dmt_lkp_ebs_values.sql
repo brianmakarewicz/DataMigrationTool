@@ -4,6 +4,8 @@
 -- EBS reference values pushed from EBS via DB link.
 -- =============================================================================
 
+begin
+  execute immediate q'[
 CREATE TABLE DMT_LKP_EBS_VALUES (
     EBS_VALUE_ID        NUMBER GENERATED ALWAYS AS IDENTITY,
     LOOKUP_TYPE         VARCHAR2(150)  NOT NULL,
@@ -15,6 +17,15 @@ CREATE TABLE DMT_LKP_EBS_VALUES (
     CREATED_DATE        DATE           DEFAULT SYSDATE,
     CONSTRAINT DMT_LKP_EV_PK PRIMARY KEY (EBS_VALUE_ID),
     CONSTRAINT DMT_LKP_EV_UK UNIQUE (LOOKUP_TYPE, EBS_VALUE)
-);
+)]';
+exception when others then
+  if sqlcode not in (-955) then raise; end if;
+end;
+/
 
-CREATE INDEX DMT_LKP_EV_TYPE_N1 ON DMT_LKP_EBS_VALUES (LOOKUP_TYPE);
+begin
+  execute immediate 'CREATE INDEX DMT_LKP_EV_TYPE_N1 ON DMT_LKP_EBS_VALUES (LOOKUP_TYPE)';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
