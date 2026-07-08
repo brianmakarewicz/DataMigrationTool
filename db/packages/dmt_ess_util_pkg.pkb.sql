@@ -989,7 +989,16 @@
         -- Halt the APEX engine. This raises ORA-20876, which MUST propagate to
         -- the APEX top level -- both this handler and the calling app process
         -- must re-raise it (a plain WHEN OTHERS would silently cancel the stop).
+        -- Conditional compilation: databases without APEX (e.g. the local Docker
+        -- dev DB) have no APEX_APPLICATION package, which left this whole package
+        -- body INVALID. Compile with PLSQL_CCFLAGS='apex_installed:TRUE' on any
+        -- instance that has APEX; without the flag the same ORA-20876 stop signal
+        -- is raised directly (this procedure is only ever called from APEX anyway).
+        $IF $$apex_installed $THEN
         APEX_APPLICATION.STOP_APEX_ENGINE;
+        $ELSE
+        RAISE_APPLICATION_ERROR(-20876, 'Stop APEX Engine');
+        $END
 
     EXCEPTION
         WHEN OTHERS THEN
