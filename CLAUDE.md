@@ -86,9 +86,10 @@ Rules of the protocol:
       error-text-as-data, silent SOAP fault, scenario-mandatory, ESS pkg APEX dependency);
       blind utilities review PASS-WITH-FINDINGS, triaged in docs/tranche-reviews/.
       Invalid baseline now 47.
-      **REMAINING for Stage B full close:** B2 live Fusion run (blocked: demo password
-      rotated externally — needs new password + rotate-demo-password skill); user decision
-      on the error-code-contract exception for the utility layer.
+      **Stage B FULLY CLOSED 2026-07-08:** demo password rotated (5 users verified,
+      hcm_impl added for HDL uploads); live Fusion suite 6/6 green (HTTP, BIP, fault,
+      ESS poll, UCM upload). Open user decision: error-code-contract exception for the
+      utility layer.
 - [~] Stage C — IN PROGRESS (offline core done 2026-07-08): prefix consolidated to one
       per-run sequence; 3 decided control tables built+seeded (45 objects/86 record types);
       catalog-driven dispatch live (65 hardcoded branches retired); queue engine proven
