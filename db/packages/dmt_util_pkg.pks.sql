@@ -14,7 +14,8 @@ AS
 --   - Execution logging to DMT_LOG_TBL (autonomous transaction)
 --   - Outbound HTTP wrapper (Fusion REST API calls)
 --   - BIP report fetch (Fusion xmlpserver REST)
---   - Prefix management (DMT_PREFIX_MASTER_TBL)
+--   - Prefix helper PREFIXED (run prefixes come from DMT_RUN_PREFIX_SEQ
+--     at run creation and live on DMT_PIPELINE_RUN_TBL.PREFIX)
 --   - Error text append helper (never overwrites ERROR_TEXT)
 --   - Base64 encode utility (used by FBDI generation)
 -- ============================================================
@@ -100,20 +101,13 @@ AS
     );
 
     -- --------------------------------------------------------
-    -- Prefix management
+    -- Prefix helper
+    -- (One prefix per run, assigned from DMT_RUN_PREFIX_SEQ at run
+    --  creation and stored on DMT_PIPELINE_RUN_TBL.PREFIX — design
+    --  section 6. The retired per-CEMLI prefix-master mechanism
+    --  (GET_PREFIX / INCREMENT_AND_GET_PREFIX over the old
+    --  prefix-master table) was removed 2026-07-08, Stage C.)
     -- --------------------------------------------------------
-
-    -- Return the current prefix for a CEMLI WITHOUT incrementing it.
-    -- Use for dependent upstream lookups.
-    FUNCTION GET_PREFIX (p_cemli IN VARCHAR2) RETURN VARCHAR2;
-
-    -- Increment the prefix for a CEMLI by 1, update PREFIX_MASTER,
-    -- and return the new value. Uses AUTONOMOUS_TRANSACTION so the
-    -- update commits even if the calling transaction rolls back.
-    FUNCTION INCREMENT_AND_GET_PREFIX (
-        p_cemli       IN VARCHAR2,
-        p_instance_id IN VARCHAR2 DEFAULT NULL
-    ) RETURN VARCHAR2;
 
     -- Prepend prefix to a value, truncating the value so the result
     -- fits within p_max_len characters.  If the prefix is NULL or empty,

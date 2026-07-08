@@ -473,61 +473,11 @@
     END BIP_REQUEST;
 
     -- --------------------------------------------------------
-    -- GET_PREFIX
+    -- (Retired per-CEMLI prefix functions GET_PREFIX /
+    --  INCREMENT_AND_GET_PREFIX removed 2026-07-08, Stage C prefix
+    --  consolidation — design section 6: one prefix per run from
+    --  DMT_RUN_PREFIX_SEQ, stored on DMT_PIPELINE_RUN_TBL.PREFIX.)
     -- --------------------------------------------------------
-    FUNCTION GET_PREFIX (p_cemli IN VARCHAR2) RETURN VARCHAR2 IS
-        l_prefix  DMT_OWNER.DMT_PREFIX_MASTER_TBL.PREFIX%TYPE;
-    BEGIN
-        SELECT PREFIX INTO l_prefix
-        FROM   DMT_OWNER.DMT_PREFIX_MASTER_TBL
-        WHERE  CEMLI = p_cemli;
-        RETURN l_prefix;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20010,
-                'CEMLI not found in DMT_PREFIX_MASTER_TBL: ' || p_cemli);
-    END GET_PREFIX;
-
-    -- --------------------------------------------------------
-    -- INCREMENT_AND_GET_PREFIX
-    -- Uses AUTONOMOUS_TRANSACTION so the prefix increment commits
-    -- even if the calling transaction rolls back. This prevents
-    -- the same prefix being re-used on a subsequent run.
-    -- --------------------------------------------------------
-    FUNCTION INCREMENT_AND_GET_PREFIX (
-        p_cemli       IN VARCHAR2,
-        p_instance_id IN VARCHAR2 DEFAULT NULL
-    ) RETURN VARCHAR2 IS
-        PRAGMA AUTONOMOUS_TRANSACTION;
-        l_current  DMT_OWNER.DMT_PREFIX_MASTER_TBL.PREFIX%TYPE;
-        l_new      DMT_OWNER.DMT_PREFIX_MASTER_TBL.PREFIX%TYPE;
-    BEGIN
-        -- Lock the row to prevent concurrent runs from grabbing the same prefix
-        SELECT PREFIX INTO l_current
-        FROM   DMT_OWNER.DMT_PREFIX_MASTER_TBL
-        WHERE  CEMLI = p_cemli
-        FOR UPDATE;
-
-        l_new := TO_CHAR(TO_NUMBER(l_current) + 1);
-
-        UPDATE DMT_OWNER.DMT_PREFIX_MASTER_TBL
-        SET    PREFIX            = l_new,
-               UPDATED_BY        = p_instance_id,
-               LAST_UPDATED_DATE = SYSDATE
-        WHERE  CEMLI = p_cemli;
-
-        COMMIT;
-        RETURN l_new;
-
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            ROLLBACK;
-            RAISE_APPLICATION_ERROR(-20010,
-                'CEMLI not found in DMT_PREFIX_MASTER_TBL: ' || p_cemli);
-        WHEN OTHERS THEN
-            ROLLBACK;
-            RAISE;
-    END INCREMENT_AND_GET_PREFIX;
 
     -- --------------------------------------------------------
     -- PREFIXED â€” prefix + value, truncated to fit column width

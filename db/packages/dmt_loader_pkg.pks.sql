@@ -225,7 +225,7 @@ AS
     -- --------------------------------------------------------
     -- RUN_STANDALONE — single entry point for running any CEMLI
     -- individually with automatic prefix assignment.
-    -- Creates CONVERSION_MASTER row with prefix from DMT_PREFIX_SEQ.
+    -- Creates the run row with one prefix per run from DMT_RUN_PREFIX_SEQ.
     -- Use this from APEX, regression scripts, or any caller that
     -- wants a self-contained run. The existing p_run_id IN
     -- versions remain for composite pipelines that share one IID.

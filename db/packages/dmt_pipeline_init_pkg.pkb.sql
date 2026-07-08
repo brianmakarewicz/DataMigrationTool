@@ -17,9 +17,12 @@
         FROM   DMT_OWNER.DMT_CONFIG_TBL
         WHERE  config_key = 'USE_PREFIX';
 
-        -- Generate prefix (unless explicitly disabled)
+        -- Generate prefix (unless explicitly disabled).
+        -- One prefix per run, assigned here at run creation from the
+        -- single sequence DMT_RUN_PREFIX_SEQ (design section 6) —
+        -- same semantics as DMT_SCHEDULER_PKG.create_run_and_queue.
         IF l_use_prefix = 'Y' THEN
-            SELECT TO_CHAR(DMT_OWNER.DMT_PREFIX_SEQ.NEXTVAL)
+            SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL)
             INTO   x_prefix
             FROM   DUAL;
         ELSE

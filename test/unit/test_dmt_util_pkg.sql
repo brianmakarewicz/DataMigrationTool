@@ -35,9 +35,10 @@ begin :passed := 0; end;
 -- ------------------------------------------------------------
 begin
     delete from dmt_log_tbl           where message    like 'TEST_DMT_UTIL_PKG_MARKER%';
+    delete from dmt_log_tbl           where message    like 'INIT_RUN: orchestration=TEST_DMT_UTIL_PKG_MARKER%';
     delete from dmt_config_tbl        where config_key like 'TEST_DMT_UTIL_PKG_MARKER%';
     delete from dmt_scenario_tbl      where upper(scenario_name) like 'TEST_DMT_UTIL_PKG_MARKER%';
-    delete from dmt_prefix_master_tbl where cemli      like 'TEST_DMT_UTIL_PKG_MARKER%';
+    delete from dmt_pipeline_run_tbl  where pipeline_codes like 'TEST_DMT_UTIL_PKG_MARKER%';
     commit;
 end;
 /
@@ -224,68 +225,75 @@ begin
     assert(l_cnt = 1, 13, 'SET_CONFIG re-set updates in place (no duplicate key row)');
 
     -- ----------------------------------------------------------
-    -- 14. GET_PREFIX on an unknown CEMLI raises ORA-20010
+    -- 14. Prefix consolidation (Stage C, design section 6):
+    --     INIT_RUN assigns one prefix per run from the single
+    --     sequence DMT_RUN_PREFIX_SEQ — 4-digit (1000-9999) — and
+    --     stores it on the run row (DMT_PIPELINE_RUN_TBL.PREFIX).
+    --     CURRVAL is session-scoped, so matching it proves the
+    --     prefix came from DMT_RUN_PREFIX_SEQ in this call.
+    --     Two consecutive runs must get distinct prefixes.
+    --     (Replaces the retired prefix-master tripwires 14/15/16 —
+    --     retirement landed 2026-07-08.)
     -- ----------------------------------------------------------
+    declare
+        l_run1     number;
+        l_run2     number;
+        l_prefix1  varchar2(20);
+        l_prefix2  varchar2(20);
+        l_row1     varchar2(20);
+        l_row2     varchar2(20);
+        l_currval  number;
     begin
-        l_vc := dmt_util_pkg.get_prefix(c_marker||'_NO_SUCH_CEMLI');
-        assert(false, 14, 'GET_PREFIX unknown CEMLI should have raised');
-    exception
-        when others then
-            assert(sqlcode = -20010, 14,
-                'GET_PREFIX unknown CEMLI raises ORA-20010 (got '||sqlcode||')');
+        dmt_pipeline_init_pkg.init_run(
+            p_orchestration_code => c_marker||'_RUN',
+            x_integration_id     => l_run1,
+            x_prefix             => l_prefix1);
+        select dmt_run_prefix_seq.currval into l_currval from dual;
+        select prefix into l_row1
+        from   dmt_pipeline_run_tbl where run_id = l_run1;
+
+        assert(l_prefix1 is not null
+           and regexp_like(l_prefix1, '^[1-9][0-9]{3}$')
+           and to_number(l_prefix1) between 1000 and 9999
+           and l_row1 = l_prefix1
+           and to_number(l_prefix1) = l_currval,
+           14, 'INIT_RUN assigns a 4-digit prefix from DMT_RUN_PREFIX_SEQ '||
+               'and stores it on the run row');
+
+        dmt_pipeline_init_pkg.init_run(
+            p_orchestration_code => c_marker||'_RUN',
+            x_integration_id     => l_run2,
+            x_prefix             => l_prefix2);
+        select prefix into l_row2
+        from   dmt_pipeline_run_tbl where run_id = l_run2;
+
+        assert(l_prefix2 is not null
+           and l_row2 = l_prefix2
+           and l_prefix2 <> l_prefix1,
+           15, 'Two consecutive INIT_RUN runs get distinct prefixes, each on its own run row');
     end;
 
     -- ----------------------------------------------------------
-    -- 15/16. TRIPWIRE: retired prefix-master mechanism (GET_PREFIX /
-    --        INCREMENT_AND_GET_PREFIX over DMT_PREFIX_MASTER_TBL).
-    --        Per-CEMLI prefixes are RETIRED — MUST be removed with the
-    --        Stage C prefix consolidation (design section 6 P1, single
-    --        per-run DMT_RUN_PREFIX_SEQ). These tests deliberately keep
-    --        executing the retired code so its removal is loud: if
-    --        GET_PREFIX / INCREMENT_AND_GET_PREFIX have been dropped,
-    --        DELETE these tests (14/15/16 here, 31 in the hostile-NLS
-    --        block) — a failure
-    --        here is the retirement landing, NOT a regression.
-    -- ----------------------------------------------------------
-    insert into dmt_prefix_master_tbl (prefix_id, cemli, prefix, last_updated_date)
-    values (999999901, c_marker||'_CEMLI', '9001', sysdate);
-    commit;
-
-    assert(dmt_util_pkg.get_prefix(c_marker||'_CEMLI') = '9001',
-       15, 'TRIPWIRE (retired prefix-master): GET_PREFIX still reads current prefix — '||
-           'if this fails, the retired mechanism was removed (Stage C prefix consolidation): '||
-           'delete this tripwire, not a regression');
-
-    l_vc := dmt_util_pkg.increment_and_get_prefix(c_marker||'_CEMLI', 'UNIT_TEST');
-    rollback;   -- must not undo the increment (autonomous)
-
-    assert(l_vc = '9002'
-       and dmt_util_pkg.get_prefix(c_marker||'_CEMLI') = '9002',
-       16, 'TRIPWIRE (retired prefix-master): INCREMENT_AND_GET_PREFIX still increments — '||
-           'if this fails, the retired mechanism was removed (Stage C prefix consolidation): '||
-           'delete this tripwire, not a regression');
-
-    -- ----------------------------------------------------------
-    -- 17. CLOB_TO_BLOB: NULL-safe (empty BLOB, not NULL) + correct length
+    -- 16. CLOB_TO_BLOB: NULL-safe (empty BLOB, not NULL) + correct length
     -- ----------------------------------------------------------
     l_blob := dmt_util_pkg.clob_to_blob(null);
     l_blob2 := dmt_util_pkg.clob_to_blob(to_clob('Hello'));
     assert(l_blob is not null
        and dbms_lob.getlength(l_blob) = 0
        and dbms_lob.getlength(l_blob2) = 5,
-       17, 'CLOB_TO_BLOB returns empty BLOB for NULL and correct bytes otherwise');
+       16, 'CLOB_TO_BLOB returns empty BLOB for NULL and correct bytes otherwise');
 
     -- ----------------------------------------------------------
-    -- 18. BASE64 round trip — small payload (single chunk)
+    -- 17. BASE64 round trip — small payload (single chunk)
     -- ----------------------------------------------------------
     l_blob := dmt_util_pkg.clob_to_blob(to_clob('The quick brown fox, 0123456789.'));
     l_b64  := dmt_util_pkg.base64_encode(l_blob);
     l_blob2 := dmt_util_pkg.base64_decode_clob(l_b64);
     assert(dbms_lob.compare(l_blob, l_blob2) = 0,
-       18, 'BASE64 encode/decode round trip — small payload');
+       17, 'BASE64 encode/decode round trip — small payload');
 
     -- ----------------------------------------------------------
-    -- 19. BASE64 round trip — large payload (> both chunk sizes:
+    -- 18. BASE64 round trip — large payload (> both chunk sizes:
     --     12000-byte encode chunks, 32764-char decode chunks).
     --     Exercises multi-chunk alignment incl. CRLFs UTL_ENCODE
     --     inserts into the encoded stream.
@@ -300,11 +308,11 @@ begin
     l_blob2 := dmt_util_pkg.base64_decode_clob(l_b64);
     assert(dbms_lob.getlength(l_blob) > 45000
        and dbms_lob.compare(l_blob, l_blob2) = 0,
-       19, 'BASE64 encode/decode round trip — 50KB multi-chunk payload');
+       18, 'BASE64 encode/decode round trip — 50KB multi-chunk payload');
     dbms_lob.freetemporary(l_clob);
 
     -- ----------------------------------------------------------
-    -- 20. BASE64 edge cases: NULL decode -> empty BLOB;
+    -- 19. BASE64 edge cases: NULL decode -> empty BLOB;
     --     empty BLOB encode -> zero-length CLOB
     -- ----------------------------------------------------------
     l_blob2 := dmt_util_pkg.base64_decode_clob(null);
@@ -313,20 +321,20 @@ begin
     assert(l_blob2 is not null
        and dbms_lob.getlength(l_blob2) = 0
        and nvl(dbms_lob.getlength(l_b64), 0) = 0,
-       20, 'BASE64_DECODE_CLOB(NULL) -> empty BLOB; BASE64_ENCODE(empty) -> empty CLOB');
+       19, 'BASE64_DECODE_CLOB(NULL) -> empty BLOB; BASE64_ENCODE(empty) -> empty CLOB');
 
     -- ----------------------------------------------------------
-    -- 21. BIP_REPORT_XML: NULL response and no <reportBytes> -> NULL
+    -- 20. BIP_REPORT_XML: NULL response and no <reportBytes> -> NULL
     --     (zero-rows policy belongs to the caller — section 5)
     -- ----------------------------------------------------------
     l_xml := dmt_util_pkg.bip_report_xml(null);
-    assert(l_xml is null, 21, 'BIP_REPORT_XML(NULL) returns NULL');
+    assert(l_xml is null, 20, 'BIP_REPORT_XML(NULL) returns NULL');
 
     l_xml := dmt_util_pkg.bip_report_xml(to_clob('<env><body>no report here</body></env>'));
-    assert(l_xml is null, 22, 'BIP_REPORT_XML without <reportBytes> returns NULL (no-rows)');
+    assert(l_xml is null, 21, 'BIP_REPORT_XML without <reportBytes> returns NULL (no-rows)');
 
     -- ----------------------------------------------------------
-    -- 23. BIP_REPORT_XML decodes a valid base64 payload to XMLTYPE
+    -- 22. BIP_REPORT_XML decodes a valid base64 payload to XMLTYPE
     -- ----------------------------------------------------------
     l_b64 := dmt_util_pkg.base64_encode(
                  dmt_util_pkg.clob_to_blob(
@@ -335,39 +343,39 @@ begin
                  to_clob('<resp><reportBytes>')||l_b64||to_clob('</reportBytes></resp>'));
     assert(l_xml is not null
        and l_xml.extract('/DATA_DS/G_1/RECORD_KEY/text()').getstringval() = 'K1',
-       23, 'BIP_REPORT_XML decodes <reportBytes> base64 into parseable XMLTYPE');
+       22, 'BIP_REPORT_XML decodes <reportBytes> base64 into parseable XMLTYPE');
 
     -- ----------------------------------------------------------
-    -- 24. BIP_REPORT_XML: malformed <reportBytes> raises ORA-20035
+    -- 23. BIP_REPORT_XML: malformed <reportBytes> raises ORA-20035
     -- ----------------------------------------------------------
     begin
         l_xml := dmt_util_pkg.bip_report_xml(to_clob('<resp><reportBytes>abcd'));
-        assert(false, 24, 'BIP_REPORT_XML malformed should have raised');
+        assert(false, 23, 'BIP_REPORT_XML malformed should have raised');
     exception
         when others then
-            assert(sqlcode = -20035, 24,
+            assert(sqlcode = -20035, 23,
                 'BIP_REPORT_XML malformed <reportBytes> raises ORA-20035 (got '||sqlcode||')');
     end;
 
     -- ----------------------------------------------------------
-    -- 25. BIP_REPORT_XML: undecodable garbage raises ORA-20036
+    -- 24. BIP_REPORT_XML: undecodable garbage raises ORA-20036
     -- ----------------------------------------------------------
     begin
         l_xml := dmt_util_pkg.bip_report_xml(
                      to_clob('<resp><reportBytes>####!!!!</reportBytes></resp>'));
-        assert(false, 25, 'BIP_REPORT_XML garbage bytes should have raised');
+        assert(false, 24, 'BIP_REPORT_XML garbage bytes should have raised');
     exception
         when others then
-            assert(sqlcode = -20036, 25,
+            assert(sqlcode = -20036, 24,
                 'BIP_REPORT_XML undecodable payload raises ORA-20036 (got '||sqlcode||')');
     end;
 
     -- ----------------------------------------------------------
-    -- 26/27. GET_OR_CREATE_SCENARIO: NULL passthrough; creates once,
+    -- 25/26. GET_OR_CREATE_SCENARIO: NULL passthrough; creates once,
     --        case-insensitive + trimmed match returns the same id
     -- ----------------------------------------------------------
     assert(dmt_util_pkg.get_or_create_scenario(null) is null,
-       26, 'GET_OR_CREATE_SCENARIO(NULL) returns NULL');
+       25, 'GET_OR_CREATE_SCENARIO(NULL) returns NULL');
 
     l_num  := dmt_util_pkg.get_or_create_scenario(c_marker||'_Scenario');
     l_num2 := dmt_util_pkg.get_or_create_scenario('  '||upper(c_marker||'_Scenario')||' ');
@@ -377,15 +385,15 @@ begin
     commit;   -- GET_OR_CREATE_SCENARIO does not commit; persist for cleanup visibility
 
     assert(l_num is not null and l_num = l_num2 and l_cnt = 1,
-       27, 'GET_OR_CREATE_SCENARIO creates once; case-insensitive/trimmed lookup reuses id');
+       26, 'GET_OR_CREATE_SCENARIO creates once; case-insensitive/trimmed lookup reuses id');
 
     -- ----------------------------------------------------------
-    -- 28. GET_DEEP_LINK NULL-safety: NULL fusion id and unknown
+    -- 27. GET_DEEP_LINK NULL-safety: NULL fusion id and unknown
     --     CEMLI both return NULL (never raise)
     -- ----------------------------------------------------------
     assert(dmt_util_pkg.get_deep_link('Suppliers', null) is null
        and dmt_util_pkg.get_deep_link(c_marker||'_NO_CEMLI', '123') is null,
-       28, 'GET_DEEP_LINK returns NULL for NULL id / unregistered CEMLI');
+       27, 'GET_DEEP_LINK returns NULL for NULL id / unregistered CEMLI');
 
     :passed := :passed + l_passed;
 end;
@@ -420,37 +428,28 @@ declare
 
 begin
     -- ----------------------------------------------------------
-    -- 29. String helpers identical under hostile NLS_DATE_FORMAT
+    -- 28. String helpers identical under hostile NLS_DATE_FORMAT
     -- ----------------------------------------------------------
     l_clob := dmt_util_pkg.append_error(null, 'e1');
     l_clob := dmt_util_pkg.append_error(l_clob, 'e2');
     assert(dmt_util_pkg.prefixed('9001', 'VENDOR1', 240) = '9001VENDOR1'
        and dbms_lob.compare(l_clob, to_clob('e1 | e2')) = 0,
-       29, 'PREFIXED / APPEND_ERROR output unchanged under NLS_DATE_FORMAT=''YYYY"x"MM''');
+       28, 'PREFIXED / APPEND_ERROR output unchanged under NLS_DATE_FORMAT=''YYYY"x"MM''');
 
     -- ----------------------------------------------------------
-    -- 30. LOG still writes a valid row (LOG_DATE stored as DATE,
+    -- 29. LOG still writes a valid row (LOG_DATE stored as DATE,
     --     no implicit char conversion) under hostile NLS
     -- ----------------------------------------------------------
-    dmt_util_pkg.log(p_message => c_marker||' T30 nls log');
+    dmt_util_pkg.log(p_message => c_marker||' T29 nls log');
     select max(log_date), count(*) into l_date, l_cnt
     from   dmt_log_tbl
-    where  message like c_marker||' T30%';
+    where  message like c_marker||' T29%';
     assert(l_cnt = 1 and l_date between sysdate - 1/24 and sysdate + 1/24,
-       30, 'LOG writes correct LOG_DATE under hostile session NLS');
+       29, 'LOG writes correct LOG_DATE under hostile session NLS');
 
-    -- ----------------------------------------------------------
-    -- 31. TRIPWIRE: retired prefix-master mechanism — MUST be removed
-    --     with the Stage C prefix consolidation (design section 6 P1).
-    --     If GET_PREFIX/INCREMENT_AND_GET_PREFIX have been dropped,
-    --     DELETE this test (with 15/16 above). Until then it also
-    --     guards NLS-safe prefix arithmetic on the retired path.
-    -- ----------------------------------------------------------
-    l_vc := dmt_util_pkg.increment_and_get_prefix(c_marker||'_CEMLI', 'UNIT_TEST_NLS');
-    assert(l_vc = '9003',
-       31, 'TRIPWIRE (retired prefix-master): INCREMENT_AND_GET_PREFIX NLS round trip — '||
-           'if this fails, the retired mechanism was removed (Stage C prefix consolidation): '||
-           'delete this tripwire, not a regression');
+    -- (Former test 31 — retired prefix-master NLS tripwire — deleted
+    --  2026-07-08 with the Stage C prefix consolidation, together
+    --  with tripwires 14/15/16 in Block A.)
 
     :passed := :passed + l_passed;
 end;
@@ -516,13 +515,13 @@ begin
 
     -- Date/number formatting helpers
     dbms_output.put_line('NOTE: DMT_UTIL_PKG exposes no date/number formatting helpers (no TO_CHAR '||
-        'wrappers); NLS-independence was asserted over PREFIXED/APPEND_ERROR/LOG/prefix arithmetic '||
-        '(tests 29-31). FBDI date formatting lives in the generators - test there with golden files.');
+        'wrappers); NLS-independence was asserted over PREFIXED/APPEND_ERROR/LOG '||
+        '(tests 28-29). FBDI date formatting lives in the generators - test there with golden files.');
 
     -- Retired-concept observations (tables tranche rules)
-    dbms_output.put_line('NOTE: package still reads DMT_PREFIX_MASTER_TBL and DMT_LOG_TBL still carries '||
-        'the virtual INTEGRATION_ID (RUN_ID+0) - both flagged retired concepts in the tables-tranche '||
-        'proposed rules; keep on the Stage B port list.');
+    dbms_output.put_line('NOTE: DMT_LOG_TBL still carries the virtual INTEGRATION_ID (RUN_ID+0) - '||
+        'flagged as a retired concept in the tables-tranche proposed rules. (The retired '||
+        'prefix-master mechanism was removed 2026-07-08, Stage C prefix consolidation.)');
 end;
 /
 
@@ -531,9 +530,10 @@ end;
 -- ------------------------------------------------------------
 begin
     delete from dmt_log_tbl           where message    like 'TEST_DMT_UTIL_PKG_MARKER%';
+    delete from dmt_log_tbl           where message    like 'INIT_RUN: orchestration=TEST_DMT_UTIL_PKG_MARKER%';
     delete from dmt_config_tbl        where config_key like 'TEST_DMT_UTIL_PKG_MARKER%';
     delete from dmt_scenario_tbl      where upper(scenario_name) like 'TEST_DMT_UTIL_PKG_MARKER%';
-    delete from dmt_prefix_master_tbl where cemli      like 'TEST_DMT_UTIL_PKG_MARKER%';
+    delete from dmt_pipeline_run_tbl  where pipeline_codes like 'TEST_DMT_UTIL_PKG_MARKER%';
     commit;
 end;
 /

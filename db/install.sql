@@ -179,8 +179,6 @@ prompt == Sequences ==
 @@sequences/dmt_po_lines_int_tfm_seq.sql
 @@sequences/dmt_po_line_locs_int_stg_seq.sql
 @@sequences/dmt_po_line_locs_int_tfm_seq.sql
-@@sequences/dmt_prefix_master_id_seq.sql
-@@sequences/dmt_prefix_seq.sql
 @@sequences/dmt_prj_budget_stg_seq.sql
 @@sequences/dmt_prj_budget_tfm_seq.sql
 @@sequences/dmt_ra_dists_stg_seq.sql
@@ -398,7 +396,6 @@ prompt == Tables ==
 @@tables/dmt_po_lines_int_tfm_tbl.sql
 @@tables/dmt_po_line_locs_int_stg_tbl.sql
 @@tables/dmt_po_line_locs_int_tfm_tbl.sql
-@@tables/dmt_prefix_master_tbl.sql
 @@tables/dmt_prj_budget_stg_tbl.sql
 @@tables/dmt_prj_budget_tfm_tbl.sql
 @@tables/dmt_ra_dists_stg_tbl.sql

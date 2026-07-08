@@ -49,3 +49,14 @@ promoted to the standards table in the canonical DMT_DESIGN.html. Consequences f
 - Proposed rules 1 ("Sequence name derives from its table") and 4 ("One PK-generation
   mechanism"): **superseded and removed** from the proposed block.
 - Finding 9 (15-vs-16 Grants tables) remains open — unaffected.
+
+## Consolidation executed (2026-07-08, Stage C task 1)
+
+Findings 3 and 5 CLOSED: DMT_PREFIX_SEQ, DMT_PREFIX_MASTER_ID_SEQ, and
+DMT_PREFIX_MASTER_TBL deleted from git + install + live DB (guarded drop tool:
+db/tools/drop_retired_prefix_objects.sql). INIT_RUN and all 6 loader entry points
+repointed to DMT_RUN_PREFIX_SEQ; the retired util functions had zero production
+callers. Verified: 4/4 unit suites green, GLBalances golden still byte-identical,
+zero grep hits, invalid count at the 47 baseline. Remaining from the section-6 P1:
+DMT_PREFIX_HISTORY_V (dependent-run picker view) — Stage C backlog. Known ceiling:
+DMT_RUN_PREFIX_SEQ is NOCYCLE 1000-9999 (~9,000 runs) per the decided 4-digit spec.
