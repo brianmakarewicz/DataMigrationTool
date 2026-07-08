@@ -35,3 +35,17 @@ committed-DDL-is-greenfield-state · one-PK-generation-mechanism.
 - Every STG sequence has a TFM partner and vice versa.
 - DMT_LOG_ID_SEQ and DMT_UPLOAD_BATCH_SEQ present per spec; DMT_SCENARIO_TBL correctly
   needs none (identity) — pending the #11 mechanism decision.
+
+## Rule acceptance update (2026-07-08)
+
+**"Identity columns for keys; sequences only for shared, meaningful values" ACCEPTED** —
+promoted to the standards table in the canonical DMT_DESIGN.html. Consequences for this log:
+- Findings 1, 2, 8, 12, 13 (naming drift across per-table sequences): disposition changes
+  from "rename in naming sweep" to **"deleted by identity conversion"** — the sequences cease
+  to exist; conversion lands per-object during Stage B/C/D ports.
+- Finding 10 (live counter START WITH values): moot for per-table sequences (deleted);
+  DMT_RUN_PREFIX_SEQ already fixed to greenfield.
+- Finding 11 (two PK mechanisms): **RESOLVED by the accepted rule** (identity chosen).
+- Proposed rules 1 ("Sequence name derives from its table") and 4 ("One PK-generation
+  mechanism"): **superseded and removed** from the proposed block.
+- Finding 9 (15-vs-16 Grants tables) remains open — unaffected.
