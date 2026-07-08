@@ -11,7 +11,9 @@ Local to this repo: DMT_OBJECT_CATALOG.html (naming worklist snapshot), coding-s
 (mirror, regenerate from the design doc on acceptance), tranche-reviews/ (blind review logs).
 
 ## Automated PR review
-Every open pull request is reviewed hourly by the cloud routine
-"Hourly PR review & approve — DataMigrationTool" (claude.ai). Approvals and
-change requests carry an AUTOMATED banner. Reviews are independent of the
-PR author; merges require the review approval per branch protection.
+Every pull request is reviewed the moment it opens or updates, by the GitHub
+Actions workflow `.github/workflows/pr-review.yml` running on GitHub's servers.
+The review and approval post as brianmakarewicz (a review-only token); the merge
+happens after approval. Approvals and change requests carry an AUTOMATED banner.
+Reviews are independent of the PR author; merges require the review approval
+per branch protection.
