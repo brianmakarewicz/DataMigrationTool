@@ -49,6 +49,26 @@ Ports in use elsewhere: 1521 (rt-oracle-free), 1522 (old dmt-local). DMT2 = **15
 6. Read `objects/{Name}/README.md` before working on any CEMLI.
 7. APEX work is deferred until the full regression scenario passes on the engine (see plan, Stage F).
 
+## Blind tranche-review protocol (MANDATORY)
+
+Every completed tranche gets a **blind subagent review** before the next tranche starts.
+Tranche boundaries: all sequences · all tables · indexes/FKs/synonyms · all views · seed data ·
+the common utility packages (Stage B) · then once after every ~5 object packages (Stages D/E).
+Never per-object; never skipped.
+
+Rules of the protocol:
+1. The reviewer is **blind**: it gets no build context, rationale, or history — only
+   "read the spec, review these files, report."
+2. The reviewer **re-reads `docs/DMT_DESIGN.html` in full at the start of every review**
+   (the doc is in flux; never rely on a summary or a prior reading).
+3. It reports: (a) requirement/naming violations, (b) internal inconsistencies across the
+   tranche (same thing done two ways), (c) precisely-worded NEW coding-standard rules that
+   would have prevented each class of drift found.
+4. Proposed new rules are added to the coding-standards section of `docs/DMT_DESIGN.html`
+   **in RED with a PROPOSED marker + date** (`<span class="proposed-rule">`). Red = newly
+   added and unverified — only the user promotes a red rule to accepted (normal styling).
+5. Every finding is fixed or explicitly logged before the next tranche begins.
+
 ## Build-order status (plan section 4)
 
 - [ ] Stage A — Foundation DDL proven on dmt2-local (install runs clean twice, zero invalid)

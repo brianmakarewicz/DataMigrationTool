@@ -24,15 +24,15 @@ set define off
 whenever sqlerror exit failure rollback
 
 prompt == DMT_LOOKUP tables (lookup) ==
-@@../schema/lookup/02_dmt_lkp_type_config.sql
-@@../schema/lookup/03_dmt_lkp_fusion_values.sql
-@@../schema/lookup/04_dmt_lkp_ebs_values.sql
-@@../schema/lookup/05_dmt_lkp_mapping.sql
-@@../schema/lookup/06_seed_type_config.sql
-@@../schema/lookup/07_add_default_fusion_value.sql
-@@../schema/lookup/08_create_unmatched_views.sql
-@@../schema/lookup/10_add_suggested_flag.sql
-@@../schema/lookup/11_fix_mapping_identity_and_audit.sql
+@@lookup/schema/02_dmt_lkp_type_config.sql
+@@lookup/schema/03_dmt_lkp_fusion_values.sql
+@@lookup/schema/04_dmt_lkp_ebs_values.sql
+@@lookup/schema/05_dmt_lkp_mapping.sql
+@@lookup/schema/06_seed_type_config.sql
+@@lookup/schema/07_add_default_fusion_value.sql
+@@lookup/schema/08_create_unmatched_views.sql
+@@lookup/schema/10_add_suggested_flag.sql
+@@lookup/schema/11_fix_mapping_identity_and_audit.sql
 
 prompt == DMT_LOOKUP tables (COA) ==
 -- Errors tolerated for this one file: line 133 creates DMT_COA_MAP_SRC_N1 on
@@ -41,18 +41,18 @@ prompt == DMT_LOOKUP tables (COA) ==
 -- fix belongs in schema/coa on main. Everything after it in the file is
 -- created normally.
 whenever sqlerror continue
-@@../schema/coa/01_coa_tables.sql
+@@lookup/coa/01_coa_tables.sql
 whenever sqlerror exit failure rollback
 
 prompt == DMT_LOOKUP packages ==
-@@../packages/lookup/dmt_lkp_refresh_pkg.pks
-@@../packages/lookup/dmt_lkp_suggest_pkg.pks
-@@../packages/coa/dmt_coa_map_pkg.pks
-@@../packages/coa/dmt_coa_suggest_pkg.pks
-@@../packages/lookup/dmt_lkp_refresh_pkg.pkb
-@@../packages/lookup/dmt_lkp_suggest_pkg.pkb
-@@../packages/coa/dmt_coa_map_pkg.pkb
-@@../packages/coa/dmt_coa_suggest_pkg.pkb
+@@lookup/packages/dmt_lkp_refresh_pkg.pks
+@@lookup/packages/dmt_lkp_suggest_pkg.pks
+@@lookup/packages/dmt_coa_map_pkg.pks
+@@lookup/packages/dmt_coa_suggest_pkg.pks
+@@lookup/packages/dmt_lkp_refresh_pkg.pkb
+@@lookup/packages/dmt_lkp_suggest_pkg.pkb
+@@lookup/packages/dmt_coa_map_pkg.pkb
+@@lookup/packages/dmt_coa_suggest_pkg.pkb
 
 prompt == Grants to DMT_OWNER (mirrors live ATP all_tab_privs, 2026-07-03) ==
 grant select, insert, update, delete on DMT_LKP_TYPE_CONFIG to DMT_OWNER;
