@@ -4,7 +4,7 @@ Clean re-platform of the Data Migration Tool (frozen predecessor: `brianmakarewi
 local `~/workspace/data-migration-tool/`). Seeded 2026-07-07 from the proven `db_full/` greenfield
 install (1,055 objects, verified on local Docker).
 
-**Master plan:** `~/workspace/data-migration-tool/DMT_REBUILD_PLAN.html` — phases, build order,
+**Master plan:** `docs/DMT_REBUILD_PLAN.html` (in this repo) — phases, build order,
 per-stage test plan, roadmap, risks. Read the "Build Order of Operations" section before building.
 
 ## Current posture (2026-07-07)
@@ -36,7 +36,7 @@ Ports in use elsewhere: 1521 (rt-oracle-free), 1522 (old dmt-local). DMT2 = **15
 | Dir | Contents |
 |---|---|
 | `db/` | Full schema: install.sql + sequences/tables/views/packages/procedures/jobs/seed/grants/synonyms + tools/ |
-| `docs/` | NO requirements doc here — it lives ONLY at `~/workspace/data-migration-tool/ConversionTool-dbfull/docs/DMT_DESIGN.html` (see docs/README.md). Local: object catalog, coding-standards mirror, tranche-reviews/ |
+| `docs/` | THE requirements doc (DMT_DESIGN.html — the one and only copy; moved here 2026-07-08) + the rebuild plan (DMT_REBUILD_PLAN.html) + object catalog, coding-standards mirror, tranche-reviews/ |
 | `objects/` | Per-CEMLI README.md (read before touching any object) |
 | `bip/` | BIP data models + reports per CEMLI (deploy target `/Custom/DMT2/`) |
 | `apex/` | f155.sql — latest APEX export from the old stack (port DEFERRED until regression gate passes) |
@@ -64,8 +64,8 @@ Never per-object; never skipped.
 Rules of the protocol:
 1. The reviewer is **blind**: it gets no build context, rationale, or history — only
    "read the spec, review these files, report."
-2. The reviewer **re-reads the canonical requirements doc — `C:/Users/Monroe/workspace/data-migration-tool/ConversionTool-dbfull/docs/DMT_DESIGN.html` — in full at the start of every review**
-   (the doc is in flux; never rely on a summary, a prior reading, or any copy inside this repo).
+2. The reviewer **re-reads the canonical requirements doc — `docs/DMT_DESIGN.html` in this repo — in full at the start of every review**
+   (the doc is in flux; never rely on a summary or a prior reading).
 3. It reports: (a) requirement/naming violations, (b) internal inconsistencies across the
    tranche (same thing done two ways), (c) precisely-worded NEW coding-standard rules that
    would have prevented each class of drift found.

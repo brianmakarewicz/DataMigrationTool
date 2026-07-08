@@ -1,19 +1,22 @@
 # DMT2 docs
 
-**The requirements/design document lives in ONE place only:**
-`C:\Users\Monroe\workspace\data-migration-tool\ConversionTool-dbfull\docs\DMT_DESIGN.html`
+**The requirements document lives HERE and only here:** `docs/DMT_DESIGN.html`
+(moved into this repo 2026-07-08 by user decision so every consumer — the automated
+PR reviewer, blind tranche reviewers, humans — reads the same file from the checkout).
+Changes to it arrive as pull requests like everything else. Its coding-standards
+section uses the red-text convention: red = proposed/unverified, promoted to normal
+styling only by the owner.
 
-Do NOT copy it into this repo — that forked the living document once already (2026-07-07/08).
-Blind tranche reviewers and all build work read it from the path above. Proposed coding-standard
-rules are added there in red per its change-review convention.
+A claude.ai artifact mirrors it for reading:
+https://claude.ai/code/artifact/4cb4cb91-8a81-462d-9d6d-42c51e8d28e9
+The artifact is a RENDERING, never the master — it is republished automatically
+(via a local hook) whenever the master changes.
 
-Local to this repo: DMT_OBJECT_CATALOG.html (naming worklist snapshot), coding-standards.md
-(mirror, regenerate from the design doc on acceptance), tranche-reviews/ (blind review logs).
+**The rebuild plan also lives here:** `docs/DMT_REBUILD_PLAN.html` (phases, build
+order, roadmap, risks, execution status).
 
-## Automated PR review
-Every pull request is reviewed the moment it opens or updates, by the GitHub
-Actions workflow `.github/workflows/pr-review.yml` running on GitHub's servers.
-The review and approval post as brianmakarewicz (a review-only token); the merge
-happens after approval. Approvals and change requests carry an AUTOMATED banner.
-Reviews are independent of the PR author; merges require the review approval
-per branch protection.
+Old locations (ConversionTool-dbfull/docs/ and the data-migration-tool project root)
+now hold pointer stubs only. Never create another copy of either document.
+
+Also local: DMT_OBJECT_CATALOG.html (naming worklist snapshot), coding-standards.md
+(mirror), tranche-reviews/ (blind review logs).

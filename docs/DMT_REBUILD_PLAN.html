@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMT Rebuild Plan — New Repo, New ATP, New CI/CD (Draft v0.1)</title>
+<style>
+  :root {
+    --ink: #1c2733; --muted: #5b6b7b; --line: #d9e1e8; --bg: #ffffff;
+    --accent: #0b5fff; --accent-soft: #eaf1ff;
+    --good: #1a7f37; --good-soft: #e6f4ea;
+    --warn: #9a6700; --warn-soft: #fff8e1;
+    --bad: #b42318; --bad-soft: #fdecea;
+    --phase0: #6b4fbb; --phase1: #0b5fff; --phase2: #0e7c86; --phase3: #1a7f37;
+    --phase4: #9a6700; --phase5: #b4551a; --phase6: #b42318;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--bg);
+         margin: 0; padding: 0 0 80px 0; line-height: 1.55; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 28px; }
+  header { background: linear-gradient(135deg, #10243e, #0b5fff); color: #fff; padding: 38px 0 30px 0; margin-bottom: 30px; }
+  header h1 { margin: 0 0 6px 0; font-size: 1.9em; }
+  header .sub { opacity: .85; font-size: 1.02em; }
+  header .meta { margin-top: 14px; font-size: .88em; opacity: .75; }
+  h2 { font-size: 1.45em; border-bottom: 2px solid var(--line); padding-bottom: 6px; margin-top: 44px; }
+  h3 { font-size: 1.15em; margin-top: 28px; }
+  h4 { font-size: 1.0em; margin-bottom: 6px; }
+  p, li { font-size: .95em; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .88em; }
+  th { background: #f2f5f8; text-align: left; padding: 8px 10px; border: 1px solid var(--line); }
+  td { padding: 7px 10px; border: 1px solid var(--line); vertical-align: top; }
+  tr:nth-child(even) td { background: #fafcfe; }
+  code { background: #f2f5f8; padding: 1px 5px; border-radius: 4px; font-size: .9em; font-family: Consolas, monospace; }
+  .toc { background: #f7f9fb; border: 1px solid var(--line); border-radius: 8px; padding: 16px 22px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc li { margin: 3px 0; }
+  .callout { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .callout.good { border-color: var(--good); background: var(--good-soft); }
+  .callout.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .callout.bad  { border-color: var(--bad);  background: var(--bad-soft); }
+  .pill { display: inline-block; padding: 1px 10px; border-radius: 12px; font-size: .78em; font-weight: 600; color: #fff; }
+  .phase-card { border: 1px solid var(--line); border-radius: 10px; margin: 22px 0; overflow: hidden; }
+  .phase-card > .ph-head { padding: 12px 18px; color: #fff; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+  .phase-card > .ph-head h3 { margin: 0; font-size: 1.12em; }
+  .phase-card > .ph-head .dur { font-size: .85em; opacity: .9; }
+  .phase-card > .ph-body { padding: 6px 20px 16px 20px; }
+  .exit { background: var(--good-soft); border: 1px solid #bfe3c8; border-radius: 6px; padding: 8px 14px; font-size: .9em; margin-top: 12px; }
+  .exit strong { color: var(--good); }
+  .risk-h { color: #fff; background: var(--bad); }
+  .risk-m { color: #fff; background: var(--warn); }
+  .risk-l { color: #fff; background: var(--good); }
+  .qtr { border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin: 14px 0; }
+  .qtr h4 { margin: 0 0 8px 0; }
+  .qtr .theme { color: var(--muted); font-size: .88em; font-style: italic; }
+  .small { font-size: .85em; color: var(--muted); }
+  .overflow { overflow-x: auto; }
+  footer { margin-top: 60px; color: var(--muted); font-size: .82em; border-top: 1px solid var(--line); padding-top: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>Data Migration Tool — Rebuild Plan</h1>
+    <div class="sub">New repository &middot; New ATP instance &middot; New CI/CD pipeline &middot; New Docker test environment &middot; Independent PR-approval agent &middot; EBS Conversion as Phase&nbsp;2</div>
+    <div class="meta">v0.2 &middot; updated 2026-07-08 &middot; Status: <strong>GO — execution started 2026-07-07</strong> &middot; Requirements source: <code>ConversionTool-dbfull\docs\DMT_DESIGN.html</code> — <strong>the ONE and ONLY requirements doc; never copied into any repo</strong> (a copy forked it once, 2026-07-07/08, and was deleted)</div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="callout good">
+<strong>Execution status (updated 2026-07-08, end of day).</strong> Working folder <code>C:\Users\Monroe\workspace\DMT2\</code>; GitHub repo <strong>github.com/brianmakarewicz/DataMigrationTool</strong> — main is protected (pull request + 1 approval required), and every PR is reviewed automatically by a GitHub Actions workflow the moment it opens (approves as brianmakarewicz with an AUTOMATED banner, merges on approval; proven live). Docker-first posture — all work on <code>dmt2-local</code> (port 1523); the new ATP remains deferred.
+<br><br>
+<strong>Stage A — COMPLETE.</strong> Greenfield install proven from committed files; all five DDL tranches blind-reviewed and triaged. After deleting the decided-dead report views and the 22 unreferenced broken summary views, the invalid-object count is <strong>24, every one explained</strong> (15 broken views awaiting scheduled repair, 9 APEX-dependent code objects that compile wherever APEX exists).
+<br>
+<strong>Stage B — FULLY CLOSED.</strong> Common utilities unit-tested (6 suites, ~140 assertions); ~15 real defects found and fixed (among them: a base64 decoder corrupting all large BIP payloads — five copies of the bug family consolidated; the ESS report parser dead on Oracle 26ai; both inherited invalid packages repaired). Golden files captured 15/15 from proven run 116; the GLBalances generator is byte-identical to the frozen stack. Demo password rotated (5 users verified); the live Fusion suite is 6/6 green (HTTP, BIP, fault handling, ESS poll, UCM upload).
+<br>
+<strong>Stage C — engine COMPLETE (offline + re-reviewed).</strong> Prefix consolidated to one per-run sequence; the three decided control tables built and seeded (45 objects / 86 record types); catalog-driven dispatch live (65 hardcoded branches retired); the queue engine proven end-to-end with a mock object. The blind engine review FAILED on decided-behavior gaps (rollup semantics inverted, DONE reachable without the accounting check, timeout-as-verdict, retired features shipped) — all fixed, and the re-review PASSED with residues closed. Remaining Stage C items: partition/plan support, transport+parser consolidation, live ESS poll-path testing.
+<br><br>
+<strong>Process:</strong> the blind tranche-review protocol is mandatory and has run 7 times (5 DDL tranches, utilities, engine + re-review). ~40 proposed rules sit in RED in the canonical requirements doc awaiting user accept/reject; one accepted so far (identity columns for keys). Open user decisions: the three-site dynamic-SQL exception, the utility-layer error-code exception, the drill-label spec self-contradiction.
+<br>
+<strong>Next: Stage D — the Suppliers vertical slice</strong>, arriving as the first substantial pull request through the automated review pipeline.
+</div>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#feedback">Feedback &amp; Recommendation</a></li>
+    <li><a href="#current">Current-State Findings (code + requirements review)</a></li>
+    <li><a href="#plan">Detailed Phased Plan (Phases 0–6)</a></li>
+    <li><a href="#buildorder">Build Order of Operations &amp; Incremental Test Plan</a></li>
+    <li><a href="#roadmap">Product Roadmap — Next 5 Quarters (full-time)</a></li>
+    <li><a href="#risks">Risk Register</a></li>
+    <li><a href="#decisions">Decisions Already Made / Still Open</a></li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="feedback">1. Feedback &amp; Recommendation</h2>
+
+<div class="callout good">
+<strong>Bottom line: the approach is sound, and you are closer to it than you think — but reframe it.</strong>
+This is not a restart; it is a <em>re-platform plus targeted refactor</em>. The <code>feature/db-full-install</code> work already produced the two hardest ingredients: a proven greenfield install (1,055 objects, 100% parity between ATP and local Docker per <code>COMPARE_REPORT.md</code>) and a git-first deployment discipline. The new repository should be seeded from <code>db_full/</code>, not from the old repo's history. That single decision converts "restart" from a 6-month rewrite risk into a 4–6 week migration.
+</div>
+
+<h3>What I agree with</h3>
+<ul>
+  <li><strong>New repository with a curated seed.</strong> The current repo carries drift baggage: 73 invalid <code>*_IMP_RPT_V</code> views, a legacy 40&nbsp;KB <code>deploy.sql</code>, 9 stale APEX export snapshots (apps 119–155), dead runner packages and abandoned adaptor stubs already marked RETIRE in the design doc. Starting a clean repo lets you apply the design doc's open-items naming sweep <em>at port time</em> instead of as churny in-place renames, and gives you clean git history for the approval agent to review.</li>
+  <li><strong>New ATP instance.</strong> Full isolation from the frozen instance is the right call given the drift history. It also forces the install script to prove itself on a truly empty instance — the exact discipline that prevents drift from recurring.</li>
+  <li><strong>Docker-based local testing before ATP deploys.</strong> You already have both halves: the APEXResourceTracker two-service compose stack (Oracle Free + ORDS + APEX) and the DMT <code>build_local_db.sh</code> (port 1522). Merging them gives PR-level CI that compiles the whole schema on every pull request.</li>
+  <li><strong>Independent approval agent on a second GitHub account.</strong> Correct separation of duties: author account opens PRs, reviewer account (which already exists) holds the required review under branch protection. You already run a cloud PR-review routine for RegressionTestScripts — the same pattern extends here.</li>
+  <li><strong>80% DDL reuse.</strong> The survey supports this. The 89 STG/TFM table pairs, control/config/queue/run tables, sequences, and most views carry over nearly verbatim; the 20% that changes is names (view <code>_V</code> suffix convention), the new <code>DMT_STG_TFM_ERROR_TBL</code>, dropped dead views, and the catalog-dispatch registry tables.</li>
+  <li><strong>EBS Conversion as Phase 2.</strong> Sensible sequencing. EBSAdaptors is production-ready (61 views, 1.1M rows extracted E2E) and only needs repointing at the new ATP; ConfigurationMigrationTool is ~90% through its own Phase 1 but blocked on EBS VM networking — putting it in your Phase 2 gives time to unblock it without holding up the core rebuild.</li>
+</ul>
+
+<h3>Where I'd push back or add caution</h3>
+<ul>
+  <li><strong>Do not redesign the pipeline.</strong> The biggest risk in any "restart" is the second-system effect. The design doc's open-items backlog (its section 12 — catalog-driven dispatch, shared <code>RUN_BIP_REPORT</code>, error-tag conformance, funnel view, config objects into the queue) is a complete, already-agreed refactor scope. Treat that list as the <em>entire</em> refactor budget; anything not on it ships as-is and gets improved later.</li>
+  <li><strong>Freeze the requirements before Phase 2 of the build, not before Phase 1.</strong> You noted the requirements are in flux. Infrastructure (repo, ATP, Docker, CI/CD, approval agent) is requirements-independent — start it immediately. Gate only the schema/engine port on a tagged <code>DMT_DESIGN.html v1.0</code>. Ten of twelve open design questions were resolved 2026-07-06/07; the two parked ones (FBL file delivery, authorization/roles) do not block the port.</li>
+  <li><strong>"Freeze the current instance" only freezes half the environment.</strong> The Fusion demo pod is shared between old and new stacks. BIP reports under <code>/Custom/DMT/</code>, ESS credentials, and demo password rotations affect both. Decide a Fusion-side convention early (e.g., new reports under <code>/Custom/DMT2/</code> or reuse in place) — see risk R4.</li>
+  <li><strong>An approval agent must review, not rubber-stamp.</strong> Wire the reviewer account to run the actual gates (schema compile in Docker, regression subset, code review against the 14 coding standards) and to <em>block</em> on failure. An auto-approve bot that always approves is worse than no branch protection, because it launders unreviewed changes.</li>
+  <li><strong>Port the regression harness in Phase 1, not at the end.</strong> "Testing on each object, not exhaustive" only stays cheap if the existing suite (<code>dmt_regression_run.py</code>, seeded 1–2 good + 1 bad rows per CEMLI, the <code>dmt-regression-tester</code> agent) moves over early so every wave of object migration is verified the day it lands — per Rule #1, LOADED in Fusion base tables and FAILED with reportable errors, never interface-only.</li>
+  <li><strong>Budget honestly for the objects that were never finished.</strong> Of 45 CEMLIs, 15 are E2E LOADED, 5 are wired but unproven, 17 are DDL-only (mostly FBL config objects with the parked file-delivery question), 3 are blocked by the demo instance, and the rest are HDL not-built or dormant. "80% reusable" is true of DDL; it is <em>not</em> true of finished pipelines. The roadmap below reflects that.</li>
+</ul>
+
+<div class="callout">
+<strong>Recommendation:</strong> Proceed, with the reframing above. Sequence: infrastructure first (requirements-independent), then freeze requirements v1.0, then port engine + objects in waves with per-wave regression, then EBS Phase 2. If you decide <em>not</em> to proceed, the fallback is nearly the same work on a branch: the db_full worktree + the same open-items backlog executed in place — you'd save ~3–4 weeks of infrastructure but keep the drifted repo history and shared instance. The isolation benefits justify the new-stack approach if you're working on this full time.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="current">2. Current-State Findings</h2>
+
+<h3>2.1 Codebase (ConversionTool + db_full worktree)</h3>
+<div class="overflow">
+<table>
+  <tr><th>Area</th><th>Finding</th><th>Rebuild implication</th></tr>
+  <tr><td>DB objects</td><td>1,055 objects: 89 STG/TFM table pairs, ~19 control/config/queue tables, 170 views, 32 sequences, 155 packages (~33K lines PL/SQL). Proven greenfield install on local Docker (port 1522), 100% ATP parity.</td><td><code>db_full/install.sql</code> is the seed of the new repo. High-confidence reuse.</td></tr>
+  <tr><td>Packages</td><td>Validator → Transformer → Generator → Reconciler pattern per CEMLI; core engine = DMT_SCHEDULER_PKG, DMT_QUEUE_PKG/WORKER, DMT_LOADER_PKG, DMT_UTIL_PKG, DMT_ESS_UTIL_PKG.</td><td>Engine ports as-is; per-CEMLI packages get the open-items conformance sweep (catalog dispatch, shared BIP fetch, error tags).</td></tr>
+  <tr><td>Known drift</td><td>73 invalid IMP_RPT views (INTEGRATION_ID→RUN_ID mismatch), 2 invalid packages on ATP not on the deploy path, collation/synonym generation quirks (fixed in snapshot tooling), DMT_LOOKUP as a second schema outside the main snapshot.</td><td>Drop dead views at port time; fold DMT_LOOKUP install into the master install; these are exactly why the clean-seed approach beats history-clone.</td></tr>
+  <tr><td>APEX</td><td>App 155 current (2.1&nbsp;MB export); 26 active pages + 13 deprecated; known issues: Run Pipeline modal hang, ESS Job Output HTTP 400, upload E2E untested.</td><td>Port app once to the new instance via the proven single-transaction import; drop deprecated pages; fix the three known issues during the port.</td></tr>
+  <tr><td>CEMLIs (45)</td><td>15 E2E LOADED &middot; 5 wired/unproven &middot; 17 DDL-only (mostly FBL config + banks) &middot; 3 blocked by demo instance &middot; 4 HDL not built &middot; 1 dormant.</td><td>Wave plan: proven 15 first, wired 5 next, FBL/banks after the parked file-delivery question is answered.</td></tr>
+  <tr><td>Automation</td><td><code>dmt_deploy.py</code>, git-sync check, PreToolUse DDL hook, regression suite (100+ scripts), <code>build_local_db.sh</code>, snapshot/compare tools. <strong>No GitHub Actions anywhere. No branch protection. No secrets management (connections.json local file).</strong></td><td>CI/CD, approval automation, and secrets are genuinely net-new build — the only part of this plan with no existing code to reuse.</td></tr>
+</table>
+</div>
+
+<h3>2.2 Requirements (DMT_DESIGN.html, reviewed 2026-07-04, decisions through 2026-07-07)</h3>
+<ul>
+  <li><strong>Scope:</strong> 46 canonical objects (24 FBDI, 14 HDL, 6 FBL, 2 REST); 6-stage pipeline (Stage → Transform → Generate → Load → Poll → Reconcile); run modes NEW/FAILED/ALL; auto-assigned prefixes; one-active-run-per-object concurrency rule; halt-vs-continue failure behavior.</li>
+  <li><strong>Contracts frozen:</strong> BIP Reconciliation Contract v1 (4 params / 7 columns), scheduler API, CSV landing format, EBSAdaptors 3-object interface, ERROR_TEXT tagging convention, 14 coding standards, accounting rule (DONE iff every row LOADED or FAILED-with-error).</li>
+  <li><strong>In flux (the refactor worklist):</strong> the open-items backlog in the design doc's section 12 — catalog-driven dispatch, DMT_STG_TFM_ERROR_TBL + funnel view, config objects into queue orchestration, shared RUN_BIP_REPORT, BIP contract conformance across 25 reports, 14 missing HDL reconciliation reports, 15 missing BASE-tier reports, log attribution + Activity Log page, naming sweep.</li>
+  <li><strong>Parked:</strong> the FBL file-delivery-to-Fusion question (blocks the 6 FBL objects' load stage) and the authorization/roles question (out of scope).</li>
+</ul>
+
+<h3>2.3 EBS-side assets (Phase 2 inputs)</h3>
+<div class="overflow">
+<table>
+  <tr><th>Asset</th><th>Maturity</th><th>Gap to Phase 2</th></tr>
+  <tr><td><strong>EBSAdaptors</strong> (data extraction) — 61 views / 14 modules, CSV-over-DB-link, lookup sync (17 types, ~13.8K values)</td><td>Production-ready; 1.11M rows extracted E2E in ~670s</td><td>Repoint ATP_LINK + wallet at new ATP; recreate landing-table contract; build the deferred DMT_LOOKUP mapping-editor UI</td></tr>
+  <tr><td><strong>ConfigurationMigrationTool</strong> — 112 config items, 107 ATP tables, 36 EBS extractor views, CMT_EXTRACT_PKG</td><td>Early build: Phase 1 ~90% (99/112 items seeded); <strong>blocked</strong> — EBS VM NIC on host-only adapter, unreachable</td><td>Fix VM networking; deploy extractors; first E2E extraction; then Phase 2 push packages (FSM/FBDI/HDL/REST) are 0% built</td></tr>
+</table>
+</div>
+
+<h3>2.4 Reusable CI/CD building blocks</h3>
+<ul>
+  <li><code>APEXResourceTracker/cicd/docker/docker-compose.yml</code> — Oracle 23ai Free + ORDS + APEX two-service stack with healthcheck-gated startup. Direct copy-and-adapt.</li>
+  <li><code>ConversionTool-dbfull/db_full/tools/build_local_db.sh</code> — DMT-specific container init (SYS grants → DMT_OWNER install → DMT_LOOKUP install).</li>
+  <li><code>snapshot_atp.py</code> / <code>compare_schemas.py</code> — drift detection, becomes a nightly CI job.</li>
+  <li><code>.claude/agents/dmt-regression-tester.md</code> + the existing cloud PR-review routine — pattern for the approval agent.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="plan">3. Detailed Phased Plan</h2>
+
+<p class="small">Durations assume one full-time developer plus Claude Code agents. Phases 0–1 can start before the go/no-go decision on requirements, because they are requirements-independent. Each phase ends with an explicit exit gate; no phase starts until its predecessor's gate passes (except where noted as parallel).</p>
+
+<!-- PHASE 0 -->
+<div class="phase-card">
+  <div class="ph-head" style="background:var(--phase0)">
+    <h3>Phase 0 — Decide, Freeze &amp; Baseline</h3><span class="dur">~1–2 weeks &middot; gate: GO decision</span>
+  </div>
+  <div class="ph-body">
+    <ol>
+      <li><strong>Go/no-go decision</strong> on the new-stack approach (this document is the input).</li>
+      <li><strong>Freeze the old stack:</strong> tag <code>ConversionTool</code> at the current commit (e.g. <code>v1-frozen</code>); document a bugfix policy for the frozen instance (recommendation: critical-fix-only, and every such fix must be logged for manual re-port to the new repo — see risk R3).</li>
+      <li><strong>Re-baseline requirements:</strong> fold the 2026-07-06/07 decisions into <code>DMT_DESIGN.html</code>, resolve or explicitly defer the two parked questions (FBL file delivery at minimum needs a decision before Phase 4), tag it <strong>v1.0</strong>. This is the gate for Phase 2, not Phase 1.</li>
+      <li><strong>Name things:</strong> new repo name, new ATP name, schema names (recommendation: keep <code>DMT_OWNER</code>/<code>DMT_LOOKUP</code> so 33K lines of PL/SQL and all grants/synonyms port without rename churn), Fusion BIP folder convention (<code>/Custom/DMT/</code> reuse vs <code>/Custom/DMT2/</code>).</li>
+      <li><strong>Final snapshot:</strong> re-run <code>snapshot_atp.py</code> against the frozen ATP so the seed reflects last-minute changes (a Run-115 scheduler fix was already caught this way once).</li>
+    </ol>
+    <div class="exit"><strong>Exit gate:</strong> GO recorded &middot; old repo tagged &middot; requirements v1.0 tagged (may complete during Phase 1) &middot; naming decisions written down.</div>
+  </div>
+</div>
+
+<!-- PHASE 1 -->
+<div class="phase-card">
+  <div class="ph-head" style="background:var(--phase1)">
+    <h3>Phase 1 — Infrastructure: Repo, ATP, Docker, CI/CD, Approval Agent</h3><span class="dur">~3–4 weeks &middot; requirements-independent, can start immediately after GO</span>
+  </div>
+  <div class="ph-body">
+    <h4>1A. New Git repository</h4>
+    <ul>
+      <li>Create the new repo; seed from a <em>curated</em> copy of <code>db_full/</code> (tables, views minus the 73 dead IMP_RPT views, packages minus RETIRE-marked runners/adaptor stubs, sequences, indexes, seed, grants), plus <code>objects/*/README.md</code>, the regression harness, and the latest APEX export only. No git-history import. <strong>The requirements doc is NOT copied in</strong> — it stays solely at <code>ConversionTool-dbfull\docs\DMT_DESIGN.html</code>; the new repo's <code>docs/</code> holds a pointer README, the object catalog, and the tranche-review logs (decided 2026-07-08 after a copy briefly forked the document).</li>
+      <li>Repo layout: <code>db/</code> (per-object DDL + master <code>install.sql</code>), <code>apex/</code>, <code>bip/</code>, <code>test/</code>, <code>cicd/</code>, <code>docs/</code>, <code>objects/</code>.</li>
+      <li>Branch protection on <code>main</code>: PRs required, 1 approving review required, status checks required, no direct pushes, no self-approval.</li>
+      <li>Port the PreToolUse git-first DDL hook and <code>CLAUDE.md</code>/skills (<code>copy-apex-app</code>, <code>ess-param-lookup</code>, <code>rotate-demo-password</code>).</li>
+    </ul>
+    <h4>1B. New ATP instance</h4>
+    <ul>
+      <li>Provision a brand-new Autonomous Database in OCI (decide Always Free — 1 OCPU/20&nbsp;GB, likely sufficient for dev — vs paid; see risk R5). Download wallet; add an entry to <code>connections.json</code>; extend <code>conn_helper.py</code>.</li>
+      <li>Create <code>DMT_OWNER</code> + <code>DMT_LOOKUP</code> as schema owners (never ADMIN for DDL); configure ORDS/APEX workspace; verify APEX version vs app-155 export compatibility.</li>
+      <li>Network/ACL setup for Fusion SOAP/BIP/REST callouts (UTL_HTTP ACLs, wallet certs) — this bit is easy to forget and blocks the first E2E test.</li>
+    </ul>
+    <h4>1C. Docker local test environment</h4>
+    <ul>
+      <li>New <code>cicd/docker/docker-compose.yml</code>: merge the APEXResourceTracker stack (Oracle Free + ORDS/APEX, healthcheck-gated) with <code>build_local_db.sh</code> init (SYS grants → install.sql → install_dmt_lookup.sql). Distinct port (e.g. 1523) so it coexists with the existing 1521/1522 stacks.</li>
+      <li>Seed regression data in the image bring-up so a fresh container is immediately testable.</li>
+      <li>Document the bring-up runbook (pattern: APEXResourceTracker <code>cicd/docker/README.md</code>).</li>
+    </ul>
+    <h4>1D. CI/CD pipeline (net-new — nothing exists today)</h4>
+    <ul>
+      <li><strong>PR check workflow (GitHub Actions):</strong> spin up the Docker stack → run <code>install.sql</code> from the PR branch → fail on any invalid object → run static checks (naming conventions, no <code>EXECUTE IMMEDIATE</code> outside deploy scripts, guarded-DDL pattern) → run a smoke regression subset that can pass without Fusion (stage → validate → transform → generate; the Fusion load/reconcile stages need live credentials and stay out of PR CI).</li>
+      <li><strong>Deploy workflow:</strong> on merge to <code>main</code>, deploy changed files to the new ATP via SQLcl (wallet + credentials from GitHub Secrets), then run <code>compare_schemas.py</code> git-vs-ATP as a drift gate. (Alternative if you prefer deploys to stay local: keep <code>dmt_deploy.py</code> manual and have CI only verify; decide in Phase 0.)</li>
+      <li><strong>Nightly drift job:</strong> snapshot + compare, open an issue on any diff.</li>
+      <li><strong>Secrets:</strong> GitHub Actions secrets for ATP wallet (base64) + passwords; <code>connections.json</code> stays the local source of truth; never in the repo.</li>
+    </ul>
+    <h4>1E. Approval agent (second GitHub user)</h4>
+    <ul>
+      <li>Use the existing second account as a machine reviewer: add as collaborator with review rights; scoped fine-grained PAT stored outside the repo.</li>
+      <li>Wire a scheduled cloud routine (same pattern as the existing RegressionTestScripts PR-review routine) authenticated as that account: on new PR → read the diff → review against the 14 coding standards + design-doc contracts → post inline findings → <strong>approve only if</strong> CI is green and no blocking findings; otherwise request changes.</li>
+      <li>Branch protection makes this review <em>required</em> — the author account cannot self-merge.</li>
+      <li>Prove the loop with a deliberately-broken PR (must be blocked) and a clean PR (must be approved and mergeable).</li>
+    </ul>
+    <div class="exit"><strong>Exit gate:</strong> A trivial DDL change flows PR → CI (Docker install + checks) → agent review → approval → merge → ATP deploy → drift check clean, end to end.</div>
+  </div>
+</div>
+
+<!-- PHASE 2 -->
+<div class="phase-card">
+  <div class="ph-head" style="background:var(--phase2)">
+    <h3>Phase 2 — Core Schema &amp; Engine Port (with the open-items refactor applied at port time)</h3><span class="dur">~4–6 weeks &middot; gate: requirements v1.0 tagged</span>
+  </div>
+  <div class="ph-body">
+    <ol>
+      <li><strong>Port the DDL with the naming sweep applied:</strong> 89 STG/TFM pairs, control/config/queue/run tables, sequences, indexes, seed data. Views renamed to the <code>*_V</code>-suffix convention; the 73 dead IMP_RPT views dropped; the 37 questionable summary views kept only if the APEX app references them.</li>
+      <li><strong>New base DDL from the backlog:</strong> <code>DMT_STG_TFM_ERROR_TBL</code> (closes the stage→transform error gap, prerequisite for the funnel), proper base files for <code>DMT_WORK_QUEUE_TBL</code> / <code>DMT_CEMLI_SPLIT_CFG</code>, nullable <code>QUEUE_ID</code> on <code>DMT_LOG_TBL</code>, and the catalog/registry table for dispatch.</li>
+      <li><strong>Engine refactors (the agreed P2 items, nothing more):</strong> catalog-driven queue dispatch replacing the hardcoded CASE; config objects into queue orchestration (retire the 9 dead runners); fold the 21 per-object <code>FETCH_BIP_RESULTS</code> copies into <code>DMT_UTIL_PKG.RUN_BIP_REPORT</code>; centralize the [RECONCILE_ERROR] sweep; VALIDATING→PROCESSING status rename.</li>
+      <li><strong>Port the engine packages</strong> (scheduler, queue + worker, loader, util, ESS util, REST, CSV loader, BIP setup/deploy, import report) against the refactored base; everything compiles clean in Docker via CI.</li>
+      <li><strong>Regression harness ported:</strong> seed scripts + <code>dmt_regression_run.py</code> pointed at the new instance; the <code>dmt-regression-tester</code> agent re-scoped to the new repo.</li>
+      <li><strong>Fusion-side bootstrap:</strong> deploy common BIP lookup data models to the chosen <code>/Custom/…</code> folder via fusion-bip-toolkit; verify ESS submit/poll and UCM upload from the new ATP with one throwaway job.</li>
+    </ol>
+    <div class="exit"><strong>Exit gate:</strong> Full install on Docker + new ATP with zero invalid objects &middot; queue heartbeat runs &middot; one reference object (Suppliers) passes full E2E on the new stack: GOOD rows LOADED in Fusion base tables with IDs, BAD rows FAILED with reportable errors.</div>
+  </div>
+</div>
+
+<!-- PHASE 3 -->
+<div class="phase-card">
+  <div class="ph-head" style="background:var(--phase3)">
+    <h3>Phase 3 — Object Migration Wave 1 (proven objects), regression gate, then APEX UI</h3><span class="dur">~8–10 weeks &middot; build/test order detailed in <a href="#buildorder" style="color:#fff;text-decoration:underline">section 4</a></span>
+  </div>
+  <div class="ph-body">
+    <h4>3A. The 15 E2E-proven objects, in dependency order</h4>
+    <p>P2P: Suppliers (done as Phase 2 reference) → Purchase Orders → Requisitions → AP Invoices. O2C: Customers → AR Invoices. Financials: GL Balances → Assets. Projects: Projects → Expenditures → Billing Events → Project Budgets. HCM: Workers → Salary → Talent Profiles.</p>
+    <ul>
+      <li>Per object: port validator/transformer/generator/reconciler with contract conformance (error tags, BIP Contract v1); re-deploy its BIP report(s); run the regression scenario (1–2 GOOD → LOADED, 1 BAD → FAILED). Not exhaustive — one pass per object, per your testing guidance.</li>
+      <li>Build the 15 missing <strong>BASE-tier reports</strong> as each object ports — this closes the "interface-only false pass" gap for Suppliers, POs, and friends while you're already in each object's reconciler.</li>
+    </ul>
+    <h4>3B. APEX application port (starts only after the full regression scenario passes — see the build-order section: no UI work before the engine is proven)</h4>
+    <ul>
+      <li>One-time port of app 155 to the new instance via the single-transaction import skill; renumber to a clean app ID; drop the 13 deprecated pages and the legacy Run Loaders page.</li>
+      <li>Implement the decided 2026-07-07 Run Pipeline spec (Plan/Confirm flow, On-Failure control, auto-prefix display) and fix the three known issues (modal hang, ESS output HTTP 400, upload E2E).</li>
+      <li>Implement the funnel-based Object Detail redesign (enabled by DMT_STG_TFM_ERROR_TBL) and the new Activity Log browser page.</li>
+    </ul>
+    <div class="exit"><strong>Exit gate:</strong> All 15 proven objects LOADED-verified on the new stack &middot; APEX app fully functional with drill-through chain Run History → Run Detail → Object Detail → Record/Job Detail &middot; full regression suite green.</div>
+  </div>
+</div>
+
+<!-- PHASE 4 -->
+<div class="phase-card">
+  <div class="ph-head" style="background:var(--phase4)">
+    <h3>Phase 4 — Object Migration Wave 2 (unfinished objects) + HDL reconciliation</h3><span class="dur">~10–12 weeks</span>
+  </div>
+  <div class="ph-body">
+    <ol>
+      <li><strong>Wired-but-unproven (5):</strong> Items (fix the known ORA-01427 reconciler bug), Item Categories, Misc Receipts, Blanket POs, Contracts — drive each to LOADED/FAILED.</li>
+      <li><strong>FBL config objects (6 objects / ~13 DDL-only CEMLIs):</strong> GL Calendar, Value Sets/Values, Lookups Types/Values, UOM, Payment Terms/Lines, Tax Rates/Regimes. <em>Blocked on the parked FBL file-delivery question</em> — resolve that first; then these are low-complexity generators.</li>
+      <li><strong>REST objects (2):</strong> Banks/Branches/Accounts and AR Receipts (web service — deliberately last per the standing convention).</li>
+      <li><strong>HDL reconciliation reports (14):</strong> replace REST-only lookup with BIP reports per HDL object under Contract v1.</li>
+      <li><strong>Blocked objects (3):</strong> Absence, Benefits, Performance Evaluations — re-attempt on the current demo pod; if still instance-blocked, document and park (not a code problem).</li>
+      <li><strong>1099 Invoices</strong> timing issue; <strong>Planning Budgets</strong> stays dormant unless EPBCS access appears.</li>
+    </ol>
+    <div class="exit"><strong>Exit gate:</strong> Every object in the 46-object catalog is either LOADED-verified on the new stack or explicitly parked with a documented external blocker. New stack is now the primary; old instance decommission decision can be taken.</div>
+  </div>
+</div>
+
+<!-- PHASE 5 -->
+<div class="phase-card">
+  <div class="ph-head" style="background:var(--phase5)">
+    <h3>Phase 5 — EBS Conversion (your "Phase 2"): data extraction + configuration migration</h3><span class="dur">~1.5–2 quarters &middot; 5A can overlap Phase 4</span>
+  </div>
+  <div class="ph-body">
+    <h4>5A. EBS data extraction onto the new stack (EBSAdaptors — mature, mostly re-wiring)</h4>
+    <ul>
+      <li>Fix the EBS VM networking (host-only NIC — currently also blocking CMT); repoint <code>ATP_LINK</code> + TCPS wallet at the new ATP.</li>
+      <li>Recreate the 3-object contract on the new ATP (<code>DMT_CSV_LANDING_TBL</code>, <code>DMT_CSV_LOADER_PKG</code>, scenario table — these port in Phase 2 anyway); re-sync the lookup system (17 types, ~13.8K values).</li>
+      <li>E2E EBS→ATP→Fusion runs module by module (Suppliers, AP, PO, GL first — they map to Wave-1 objects); one flow test per module, not exhaustive.</li>
+      <li>Build the deferred DMT_LOOKUP mapping-editor APEX UI.</li>
+    </ul>
+    <h4>5B. Configuration migration (ConfigurationMigrationTool — finish Phase 1, build Phase 2)</h4>
+    <ul>
+      <li>Bring CMT into the new-stack fold: decide same repo vs sibling repo under the same CI/CD (recommendation: sibling repo, shared Docker image and approval agent).</li>
+      <li>Finish CMT Phase 1: deploy the 36 EBS extractor views, fix the 13 apostrophe-broken seed inserts, first E2E extraction of the 112-item catalog into the ATP staging tables, fill the 35 stubbed extractors.</li>
+      <li>Build CMT Phase 2 (net-new, the big lift): push packages by channel — FSM setup workbooks, FBDI, HDL, REST — starting with the highest-value categories (GL/COA A-items, then AP/AR/Procurement); reconciliation per config item; APEX orchestration UI.</li>
+      <li>Scope honestly: 112 items across 12 categories will not all push in one quarter — prioritize by implementation-project value and carry the tail.</li>
+    </ul>
+    <div class="exit"><strong>Exit gate:</strong> One full EBS-sourced conversion (data + priority config categories) runs E2E into Fusion on the new stack.</div>
+  </div>
+</div>
+
+<!-- PHASE 6 -->
+<div class="phase-card">
+  <div class="ph-head" style="background:var(--phase6)">
+    <h3>Phase 6 — Hardening &amp; Productization (continuous from Phase 4 onward)</h3><span class="dur">ongoing</span>
+  </div>
+  <div class="ph-body">
+    <ul>
+      <li>Instance portability drill: point the tool at a second Fusion pod using only config changes (the design's stated goal); rotate-password runbook verified on the new stack.</li>
+      <li>Revisit the two parked design questions (FBL delivery is forced by Phase 4; authorization/roles when multi-user matters).</li>
+      <li>Documentation refresh: regenerate the design bundle from the as-built state; per-object READMEs current.</li>
+      <li>Old-stack decommission: archive the frozen repo, snapshot the frozen ATP, release it.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="buildorder">4. Build Order of Operations &amp; Incremental Test Plan</h2>
+
+<p>This is the construction sequence inside Phases 2–3: what gets created in which order, what can be built in parallel, and — critically — how each layer is proven <em>before</em> the next layer goes on top. Nothing waits for a big-bang test at the end: every stage has its own verification, and the full regression scenario is the gate <em>before</em> any APEX work begins. The ordering follows the dependency order already encoded in <code>db_full/install.sql</code> (sequences → tables → foreign keys/synonyms → views → package specs → procedures → package bodies → scheduler jobs → grants → seed data).</p>
+
+<div class="callout">
+<strong>Two guiding rules for this section.</strong> (1) <strong>Common utilities first:</strong> every per-object package calls DMT_UTIL_PKG for logging/errors and the shared ESS/BIP/REST plumbing, so those are built and unit-tested before any CEMLI code exists. (2) <strong>Docker before Fusion:</strong> everything that can be proven without Fusion credentials (DDL, CSV parsing, FBDI generation, queue mechanics) is tested in the local Docker instance via CI; only the Fusion-facing calls (ESS, UCM, BIP, REST) are tested against the live demo pod, and each of those gets its own isolated unit test before any pipeline uses it.</div>
+
+<h3>Stage A — Foundation DDL (sequential install, ~days)</h3>
+<div class="overflow">
+<table>
+  <tr><th style="width:4%">#</th><th style="width:26%">Build</th><th style="width:20%">Depends on</th><th style="width:14%">Parallelizable?</th><th style="width:36%">Test before moving on</th></tr>
+  <tr><td>A1</td><td>Schemas + instance plumbing: DMT_OWNER, DMT_LOOKUP, ORDS enablement, network ACLs + wallet certs for Fusion callouts</td><td>New ATP provisioned (Phase 1B)</td><td>—</td><td>Connect as DMT_OWNER (never ADMIN); UTL_HTTP smoke call to the Fusion base URL returns an HTTP response (proves ACL + certs before any package needs them).</td></tr>
+  <tr><td>A2</td><td>Sequences — <strong>revised by the accepted identity-columns standard (2026-07-08):</strong> per-table sequences are eliminated (tables use <code>GENERATED ALWAYS AS IDENTITY</code>, converted per-object during the Stage B/C/D ports); only purpose-named cross-table sequences remain (currently one: <code>DMT_RUN_PREFIX_SEQ</code>, greenfield 1000–9999)</td><td>A1</td><td>—</td><td>NEXTVAL on the prefix sequence; per-object identity conversion verified by that object's unit tests.</td></tr>
+  <tr><td>A3</td><td>Control/config tables first: DMT_CONFIG_TBL, DMT_LOG_TBL, DMT_PIPELINE_RUN_TBL, DMT_WORK_QUEUE_TBL, DMT_SCENARIO_TBL, DMT_BIP_REPORT_TBL, DMT_FBDI_CSV/ZIP_TBL, DMT_ESS_JOB(_FILE)_TBL, DMT_CSV_LANDING_TBL, prefix/lookup/ERP-options tables — plus the new ones: DMT_STG_TFM_ERROR_TBL, the dispatch registry table, QUEUE_ID column on DMT_LOG_TBL</td><td>A2</td><td>Within the group, yes</td><td>Install runs clean; re-run proves the guarded-DDL idempotency (this is also the CI check forever after).</td></tr>
+  <tr><td>A4</td><td>89 STG/TFM table pairs</td><td>A2 (their sequences)</td><td>Fully — pairs are independent; script by module</td><td>Object count matches git; <code>compare_schemas.py</code> git-vs-DB clean.</td></tr>
+  <tr><td>A5</td><td>Foreign keys, indexes, synonyms; <code>install_dmt_lookup.sql</code> (DMT_LOOKUP schema) before its synonyms</td><td>A3, A4</td><td>FKs/indexes yes; synonyms after DMT_LOOKUP</td><td>Zero invalid objects; synonyms resolve (SELECT through each).</td></tr>
+  <tr><td>A6</td><td>Seed data: DMT_CONFIG_TBL, DMT_BIP_REPORT_TBL registry, ERP interface options, BU lookup, split config, dispatch registry rows</td><td>A3</td><td>Yes</td><td>Row counts vs git seed files; re-run skips duplicates.</td></tr>
+</table>
+</div>
+<div class="exit"><strong>Stage A gate:</strong> full DDL install runs clean <em>twice</em> on Docker and once on the new ATP, zero invalid objects, schema compare clean. Entirely Fusion-free — this is also the permanent CI job.</div>
+
+<h3>Stage B — Common utility packages (the shared layer everything else calls)</h3>
+<div class="overflow">
+<table>
+  <tr><th style="width:4%">#</th><th style="width:26%">Build</th><th style="width:20%">Depends on</th><th style="width:14%">Parallelizable?</th><th style="width:36%">Unit test before moving on</th></tr>
+  <tr><td>B1</td><td><strong>DMT_UTIL_PKG</strong> — logging, error codes, ERROR_TEXT accumulation, SET_LOG_CONTEXT, string/date helpers</td><td>Stage A</td><td>— (everything depends on it; build first, alone)</td><td>Docker: write log rows with context and assert them back; append two errors to one ERROR_TEXT and assert both survive (accumulate-never-overwrite); date/number formats explicit (no session NLS dependence).</td></tr>
+  <tr><td>B2</td><td><strong>Fusion call layer:</strong> DMT_ESS_UTIL_PKG (submit/poll/output), the consolidated <code>DMT_UTIL_PKG.RUN_BIP_REPORT</code>, DMT_REST_QUERY/LOOKUP_PKG, UCM upload</td><td>B1, A1 ACLs, credentials seeded in DMT_CONFIG_TBL</td><td>ESS / BIP / REST / UCM sub-tests can proceed in parallel</td><td><strong>Live Fusion, isolated (this is the "unit test the BIP calls" step):</strong> (1) submit one harmless known ESS job, poll to terminal, download its log; (2) run one known BIP data model and assert the 7-column Contract v1 parse; (3) assert a SOAP <code>Fault</code> response raises immediately (never silently retried); (4) upload a dummy zip to UCM and get an ID back; (5) one REST GET. Each is a standalone script kept as a permanent smoke test.</td></tr>
+  <tr><td>B3</td><td><strong>CSV intake:</strong> DMT_CSV_LOADER_PKG + DMT_CSV_UPLOAD_PKG against DMT_CSV_LANDING_TBL</td><td>B1</td><td>Parallel with B2 and B4</td><td>Docker: land a fixture CSV CLOB → parse into a STG table → assert row count, column mapping, NLS-safe dates; land a malformed CSV → assert all-or-nothing rejection with a reportable error (no partial loads).</td></tr>
+  <tr><td>B4</td><td><strong>File generation framework:</strong> FBDI CSV writer (position-based, no header row), ZIP builder, HDL DAT writer, FBL writer</td><td>B1</td><td>Parallel with B2 and B3</td><td>Docker: generate from a fixture TFM table and <strong>byte-compare against golden files captured from the old stack</strong> — the cheapest possible proof that refactoring didn't change the output format Fusion expects. Zip content/structure asserted.</td></tr>
+  <tr><td>B5</td><td>DMT_IMPORT_REPORT_PKG (ESS output parsing), DMT_BIP_SETUP/DEPLOY_PKG</td><td>B2</td><td>Yes</td><td>Docker: parse saved real ESS log/report fixtures from the old stack; live: deploy one BIP report to <code>/Custom/…</code> and run it.</td></tr>
+  <tr><td>B6</td><td>Engine-required views only (run/queue/log status views). <em>Drill-through and summary views are deferred to Stage F with APEX.</em></td><td>A3</td><td>Yes</td><td>Compile clean; sanity SELECTs.</td></tr>
+</table>
+</div>
+<div class="exit"><strong>Stage B gate:</strong> every external interface the pipeline uses (ESS, BIP, UCM, REST, CSV in, FBDI/HDL out) has passed an isolated unit test, and the golden-file comparisons prove generation output is byte-identical to the proven stack.</div>
+
+<h3>Stage C — Orchestration engine (testable with a mock object, no Fusion)</h3>
+<div class="overflow">
+<table>
+  <tr><th style="width:4%">#</th><th style="width:26%">Build</th><th style="width:20%">Depends on</th><th style="width:14%">Parallelizable?</th><th style="width:36%">Unit test before moving on</th></tr>
+  <tr><td>C1</td><td>DMT_PIPELINE_INIT_PKG — run creation, automatic prefix allocation</td><td>Stage B</td><td>With C2</td><td>Docker: create runs, assert sequential prefixes from DMT_RUN_PREFIX_SEQ, run rows correct.</td></tr>
+  <tr><td>C2</td><td>DMT_SCHEDULER_PKG — PLAN_RUN (preview), SUBMIT_PIPELINE/SUBMIT_OBJECTS/CANCEL_RUN, catalog-driven dispatch (the refactor)</td><td>C1, dispatch registry (A3/A6)</td><td>With C1</td><td>Docker: PLAN_RUN for a multi-object request returns the right work items, partitions, and dependency edges without committing anything.</td></tr>
+  <tr><td>C3</td><td>DMT_QUEUE_PKG (heartbeat) + DMT_QUEUE_WORKER_PKG (EXECUTE_ONE / POLL_ONE / RECONCILE_ONE)</td><td>C2</td><td>—</td><td>Docker, using a <strong>MOCK CEMLI registered in the dispatch catalog</strong> (a side benefit of catalog-driven dispatch — a test object whose stages are no-ops/stubs): statuses walk PENDING→READY→PROCESSING→AWAITING→DONE; dependency Halt vs Continue behaves per spec; one-active-run-per-object is enforced at submission; a stub that throws produces FAILED-with-ERROR_TEXT, never a hang; poll timeout marks [LOAD_ERROR] and reconcile still runs after.</td></tr>
+  <tr><td>C4</td><td>Scheduler job <code>dmt_queue_poller</code> (the 60-second heartbeat)</td><td>C3</td><td>—</td><td>Docker: enable, watch a mock run complete hands-off; disable/re-enable cleanly.</td></tr>
+  <tr><td>C5</td><td>Wire B2's live calls into the worker</td><td>C3, B2</td><td>—</td><td>New ATP + Fusion: one throwaway work item exercises EXECUTE_ONE→POLL_ONE against a real ESS job.</td></tr>
+</table>
+</div>
+<div class="exit"><strong>Stage C gate:</strong> the queue runs a mock object end-to-end on Docker unattended, and one real ESS round-trip works from the new ATP. The engine is now provably correct before any real CEMLI code exists.</div>
+
+<h3>Stage D — First vertical slice: Suppliers (proves the whole pattern)</h3>
+<p>One object, built step-by-step with a test at every step — this is deliberately <em>not</em> parallelized, because it debugs the pattern every other object will reuse. Seed the regression STG rows (1–2 GOOD + 1 BAD) first, then:</p>
+<ol>
+  <li><strong>Validator</strong> (dmt_poz_sup_validator_pkg): run alone → BAD row tagged [PRE_VALIDATION]/[POST_VALIDATION], GOOD rows pass. <span class="small">(Docker)</span></li>
+  <li><strong>Transformer</strong>: run alone → TFM rows stamped with RUN_ID and prefix applied to business keys; STG rows untouched (never reset). <span class="small">(Docker)</span></li>
+  <li><strong>Generator</strong>: run alone → golden-file compare of the 5-import FBDI CSVs and zip against old-stack output. <span class="small">(Docker)</span></li>
+  <li><strong>BIP reports</strong>: deploy the Suppliers reconciliation (and new BASE-tier) reports; run them standalone against Fusion with a known old-stack run's parameters → Contract v1 columns come back. <span class="small">(Fusion)</span></li>
+  <li><strong>Reconciler</strong> (dmt_poz_sup_results_pkg): run against that known result set → rows marked LOADED-with-Fusion-ID / FAILED-with-error. <span class="small">(Fusion)</span></li>
+  <li><strong>Full E2E through the queue</strong>: submit via DMT_SCHEDULER_PKG → GOOD rows LOADED in POZ base tables, BAD row FAILED with reportable error — Rule #1 proven on the new stack. <span class="small">(Fusion)</span></li>
+</ol>
+<div class="exit"><strong>Stage D gate:</strong> Suppliers E2E LOADED via the queue. Every later object repeats steps 1–6 as its per-object test recipe.</div>
+
+<h3>Stage E — Remaining Wave-1 objects, in dependency waves (parallel tracks)</h3>
+<p>Objects within a wave have no data dependencies on each other and can be built/tested concurrently (separate agent tracks per module); waves are ordered by the master-before-transactional rule. Each object gets the Stage D six-step recipe — unit tests per stage, then one E2E, not exhaustive.</p>
+<div class="overflow">
+<table>
+  <tr><th style="width:10%">Wave</th><th style="width:45%">Objects (parallel within the wave)</th><th style="width:45%">Why this order</th></tr>
+  <tr><td>E-1</td><td>Customers &middot; Workers &middot; GL Balances &middot; Projects</td><td>Independent masters — no upstream conversion dependencies. Four parallel tracks (O2C, HCM, GL, PPM).</td></tr>
+  <tr><td>E-2</td><td>Purchase Orders &middot; Requisitions (after Suppliers) &middot; AR Invoices (after Customers) &middot; Salary (after Workers) &middot; Assets &middot; Expenditures (after Projects)</td><td>Each needs its wave-1/Stage-D master LOADED — which also exercises the per-row upstream-dependency validation for real.</td></tr>
+  <tr><td>E-3</td><td>AP Invoices (after Suppliers + POs) &middot; Billing Events + Project Budgets (after Projects/Expenditures) &middot; Talent Profiles (after Workers)</td><td>Deepest dependency chains last; completing E-3 completes the 15 proven objects.</td></tr>
+</table>
+</div>
+<div class="exit"><strong>Stage E gate:</strong> all 15 proven objects pass their six-step recipe individually.</div>
+
+<h3>Stage F — Full regression FIRST, then (and only then) APEX</h3>
+<ol>
+  <li><strong>Full regression scenario:</strong> the complete RegressionTest scenario through the real queue — all 15 objects, one scenario, NEW mode, auto prefix — driven by <code>dmt_regression_run.py</code> / the dmt-regression-tester agent. Per-object verdicts: every GOOD row LOADED, every BAD row FAILED-with-error, no uncaught exceptions, no unaccounted rows. Run it twice (second run proves re-runnability with a fresh prefix). <strong>This is the gate — no UI work starts until it is green.</strong></li>
+  <li><strong>Then the APEX port:</strong> app import, drill-through/summary views, and the <code>procedures/</code> folder (run-detail tiles, plan preview HTML, breadcrumbs — all APEX render support, which is why deferring it costs the engine nothing).</li>
+  <li><strong>UI verification pass:</strong> re-run one regression scenario driven through the UI (upload → submit with plan preview → drill Run History → Run Detail → Object Detail → Record/Job Detail → download an ESS log) so the UI is verified against real run data, not fixtures.</li>
+</ol>
+
+<h3>What is deliberately deferred (not on the critical path to the regression gate)</h3>
+<ul>
+  <li>APEX app, all drill-through/summary views, all <code>procedures/</code> render support — Stage F step 2.</li>
+  <li>The 73 dead report views — never ported.</li>
+  <li>Wave-2 objects (wired-5, FBL, HDL reports, REST) — Phase 4, after the gate.</li>
+  <li>OIC orchestration, Activity Log page, funnel redesign — post-parity polish.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="roadmap">5. Product Roadmap — Next 5 Quarters (full-time)</h2>
+
+<p class="small">Assumes one person full-time with heavy agent leverage, starting mid-Q3 2026. "Done" always means Rule #1 done: GOOD rows LOADED in Fusion base tables, BAD rows FAILED with reportable errors. The 4-quarter phased grouping you asked for is quarters Q3-2026 → Q2-2027; Q3-2027 is the fifth roadmap quarter.</p>
+
+<div class="qtr" style="border-left:6px solid var(--phase1)">
+  <h4>Q3 2026 (Jul–Sep) — Foundation &amp; Engine <span class="pill" style="background:var(--phase1)">Phases 0–2 + start 3</span></h4>
+  <div class="theme">Theme: the new stack exists and one object flows through it end to end.</div>
+  <ul>
+    <li>Go/no-go, freezes, naming; requirements re-baselined to v1.0.</li>
+    <li>New repo (curated seed), new ATP provisioned, Docker test image, GitHub Actions PR/deploy/drift workflows, approval agent live and proven on real PRs.</li>
+    <li>Core DDL + engine ported with the section-12 backlog refactors; regression harness live.</li>
+    <li>First objects E2E: Suppliers, Purchase Orders, Requisitions, AP Invoices (P2P slice).</li>
+  </ul>
+</div>
+
+<div class="qtr" style="border-left:6px solid var(--phase3)">
+  <h4>Q4 2026 (Oct–Dec) — Wave 1 Complete + Full UI <span class="pill" style="background:var(--phase3)">Phase 3</span></h4>
+  <div class="theme">Theme: everything that worked on the old stack works on the new stack, with a better UI.</div>
+  <ul>
+    <li>Remaining 11 proven objects: Customers, AR Invoices, GL Balances, Assets, Projects, Expenditures, Billing Events, Project Budgets, Workers, Salary, Talent Profiles.</li>
+    <li>15 BASE-tier reports built alongside their objects.</li>
+    <li>APEX app ported and cleaned: Run Pipeline spec implemented, funnel Object Detail, Activity Log page, three known bugs fixed, deprecated pages dropped.</li>
+    <li><strong>Milestone: new stack reaches feature parity with the frozen stack; old instance goes read-only.</strong></li>
+  </ul>
+</div>
+
+<div class="qtr" style="border-left:6px solid var(--phase4)">
+  <h4>Q1 2027 (Jan–Mar) — Wave 2: Finish the Catalog <span class="pill" style="background:var(--phase4)">Phase 4</span></h4>
+  <div class="theme">Theme: the 46-object catalog is fully built, not 15/46.</div>
+  <ul>
+    <li>Wired-5 driven to LOADED (Items + ORA-01427 fix, Item Categories, Misc Receipts, Blanket POs, Contracts).</li>
+    <li>FBL file-delivery decision → 6 FBL config objects built (GL Calendar, Value Sets, Lookups, UOM, Payment Terms, Tax).</li>
+    <li>14 HDL reconciliation reports; Banks via REST; blocked HCM objects re-attempted.</li>
+    <li>Start of Phase 5A in parallel: EBS VM networking fixed, EBSAdaptors repointed, first EBS→new-ATP data pushes.</li>
+  </ul>
+</div>
+
+<div class="qtr" style="border-left:6px solid var(--phase5)">
+  <h4>Q2 2027 (Apr–Jun) — EBS Conversion I: Data + Config Extraction <span class="pill" style="background:var(--phase5)">Phase 5A + 5B start</span></h4>
+  <div class="theme">Theme: EBS is a first-class source on the new stack.</div>
+  <ul>
+    <li>EBS data extraction E2E for the major modules (Suppliers, AP, PO, GL, AR, FA, HCM) — one verified flow per module; lookup mapping-editor UI shipped.</li>
+    <li>AR Receipts (web service) — the deliberately-last transactional object.</li>
+    <li>CMT Phase 1 finished: extractors deployed, 112-item catalog extracting E2E into staging.</li>
+    <li>CMT push architecture designed and first channel (FSM workbooks for GL/COA) prototyped.</li>
+  </ul>
+</div>
+
+<div class="qtr" style="border-left:6px solid var(--phase6)">
+  <h4>Q3 2027 (Jul–Sep) — EBS Conversion II: Config Push + Productization <span class="pill" style="background:var(--phase6)">Phase 5B + 6</span></h4>
+  <div class="theme">Theme: one tool, one pipeline, EBS-to-Fusion data <em>and</em> configuration.</div>
+  <ul>
+    <li>CMT push packages for priority categories (GL A1–A7, AP B1–B4, AR C1–C4, Procurement D1–D3, Inventory E1–E5) with per-item reconciliation; remaining categories triaged into a carry-forward backlog.</li>
+    <li>CMT orchestration UI in APEX.</li>
+    <li>Instance-portability drill (second Fusion pod via config only); docs regenerated as-built; frozen stack decommissioned.</li>
+    <li><strong>Milestone: full EBS-sourced conversion (data + priority config) demonstrable end to end.</strong></li>
+  </ul>
+</div>
+
+<div class="callout warn">
+<strong>Confidence calibration:</strong> Q3–Q4 2026 are high-confidence (the work is porting proven code onto proven infrastructure). Q1 2027 is medium (Wave-2 objects were never finished; each hides unknown Fusion-side quirks — ESS parameter lists, demo-instance module gaps). Q2–Q3 2027 are directional: CMT Phase 2 is the largest net-new build in the plan (8+ push channels, 0% built today) and is the most likely item to spill a quarter. If schedule pressure appears, the correct cut is CMT category coverage, not testing depth.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="risks">6. Risk Register</h2>
+
+<div class="overflow">
+<table>
+  <tr><th style="width:4%">#</th><th style="width:22%">Risk</th><th style="width:8%">Severity</th><th style="width:33%">Why it's real</th><th style="width:33%">Mitigation</th></tr>
+  <tr><td>R1</td><td>Requirements churn invalidates early port work</td><td><span class="pill risk-h">HIGH</span></td><td>You stated the requirements are in flux and this plan must be redone if you implement. Schema/engine decisions ripple into all 46 objects.</td><td>Phase-2 gate on tagged v1.0; infrastructure (Phase 1) is requirements-independent so churn costs nothing there; contracts already frozen (BIP v1, scheduler API, CSV landing) are the stable core to build against.</td></tr>
+  <tr><td>R2</td><td>Second-system effect / scope creep during "refactor"</td><td><span class="pill risk-h">HIGH</span></td><td>Classic rewrite failure mode; 33K lines of PL/SQL invite "while we're here" improvements indefinitely.</td><td>Refactor budget = the design doc's open-items backlog, verbatim, nothing else. Approval agent enforces: PRs mixing port + unscoped redesign get changes-requested.</td></tr>
+  <tr><td>R3</td><td>Two-stack divergence during the transition window</td><td><span class="pill risk-m">MED</span></td><td>If the frozen instance still gets used (demos, client work) and receives fixes, those fixes silently miss the new repo — recreating the exact drift problem that motivated the restart.</td><td>Critical-fix-only policy on the frozen stack; every frozen-side change logged and re-ported within the week; nightly drift job covers the new stack; hard read-only date at end of Q4 2026.</td></tr>
+  <tr><td>R4</td><td>Shared Fusion demo pod is a hidden coupling</td><td><span class="pill risk-m">MED</span></td><td>"Freeze the old instance" freezes ATP only. Both stacks hit the same Fusion pod: BIP catalog under <code>/Custom/DMT/</code>, ESS credentials, password rotations, and periodic demo refreshes (which already killed runDataModel once) affect both.</td><td>Decide BIP folder convention in Phase 0; extend the rotate-demo-password skill to cover the new stack's config on day one; treat a demo refresh as a rehearsed event (redeploy reports via fusion-bip-toolkit).</td></tr>
+  <tr><td>R5</td><td>New ATP provisioning surprises</td><td><span class="pill risk-m">MED</span></td><td>Always Free limits (1 OCPU, 20 GB, auto-stop after 7 idle days) may pinch under regression loads; paid ATP adds recurring cost; APEX version on a new instance may be ahead of the app-155 export.</td><td>Start Always Free, measure, upgrade only if pinched; verify APEX version compatibility before the app port; wallet + ACL setup scripted in Phase 1 so it's reproducible.</td></tr>
+  <tr><td>R6</td><td>Approval agent rubber-stamps or gets socially engineered</td><td><span class="pill risk-m">MED</span></td><td>An always-approve bot behind required-review branch protection launders unreviewed code into main with a green checkmark.</td><td>Agent approves only on green CI + no blocking findings; deliberately-broken-PR test in Phase 1 and periodically after; agent account PAT scoped to this repo only; keep human override for merges.</td></tr>
+  <tr><td>R7</td><td>Wave-2 objects hide unknown Fusion-side work</td><td><span class="pill risk-m">MED</span></td><td>17 DDL-only + 4 HDL-not-built objects have never touched Fusion: unknown ESS parameter lists, HDL attribute quirks, demo-instance module gaps (Absence/Benefits/Grants already blocked once), plus the unresolved FBL file-delivery path (parked in the design doc).</td><td>Q1-2027 buffer sized for discovery; ess-param-lookup skill + ESS_REQUEST_HISTORY discovery routine; park instance-blocked objects with documentation rather than burning schedule on them.</td></tr>
+  <tr><td>R8</td><td>CMT Phase 2 (config push) is underestimated</td><td><span class="pill risk-m">MED</span></td><td>8+ push channels (FSM/FBDI/HDL/REST) at 0% built, 112 items across 12 categories, and FSM workbook automation is poorly documented territory.</td><td>Roadmap allocates ~1.5 quarters and explicitly carries a tail backlog; prioritize by category value; reuse DMT's FBDI/HDL generators and ESS/BIP plumbing rather than building new channel code.</td></tr>
+  <tr><td>R9</td><td>EBS VM fragility (networking, single VM)</td><td><span class="pill risk-m">MED</span></td><td>The host-only NIC issue is blocking CMT today; the VM is a single point of failure for all of Phase 5 and lives outside any CI/CD.</td><td>Fix networking early (it's cheap and unblocks two projects); snapshot the VM after fixing; keep EBS-side DDL in git (CONVERSION_SCRIPT_INSTALL pattern already does this).</td></tr>
+  <tr><td>R10</td><td>Single developer / bus factor + full-time assumption</td><td><span class="pill risk-l">LOW-MED</span></td><td>The 5-quarter roadmap assumes uninterrupted full-time focus; you have 10+ other active projects (HJF, ResourceTracker, surveys, report automation) that historically interleave.</td><td>The roadmap is phase-gated, not date-gated — slips shift quarters without invalidating sequencing; status.md discipline + this plan doc make the work resumable after interruptions.</td></tr>
+  <tr><td>R11</td><td>Windows Docker reliability for CI</td><td><span class="pill risk-l">LOW</span></td><td>Local Docker on Windows has already blocked work once (APEXResourceTracker Phase 1 waiting on a reboot); GitHub-hosted runners need the Oracle container images pulled per run (slow) or a self-hosted runner (maintenance).</td><td>Cache the Oracle Free/ORDS images (GHCR mirror or self-hosted runner on the local machine); keep the full local compose stack as the fallback CI path.</td></tr>
+  <tr><td>R12</td><td>"Not exhaustive" testing lets regressions surface late</td><td><span class="pill risk-l">LOW-MED</span></td><td>One regression pass per object is the agreed depth; subtle cross-object issues (dependency validation, split/partition handling) can slip through single-object tests.</td><td>The regression suite runs as a whole (all objects, one scenario) after each wave, not only per-object; the dmt-regression-tester agent runs proactively after engine changes; keep the 1-2 GOOD + 1 BAD per object data maintained as objects land.</td></tr>
+  <tr><td>R13</td><td>Secrets migration missteps</td><td><span class="pill risk-l">LOW</span></td><td>Moving from a local connections.json to GitHub Secrets for CI introduces a second place credentials live; wallet files in CI are sensitive.</td><td>connections.json stays the single local source of truth; CI secrets hold only what deploy needs; rotate-demo-password skill updated to touch both; never commit wallets.</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="decisions">7. Decisions Already Made / Still Open</h2>
+
+<h3>Decided (from this review session)</h3>
+<ul>
+  <li><strong>GO decided 2026-07-07.</strong> Local working folder: <code>C:\Users\Monroe\workspace\DMT2\</code> (rename later if desired).</li>
+  <li><strong>One requirements doc (2026-07-08):</strong> <code>ConversionTool-dbfull\docs\DMT_DESIGN.html</code> is canonical and is never copied into a repo; all proposed standards changes go there in red per its change-review convention.</li>
+  <li><strong>Accepted standard (2026-07-08):</strong> identity columns for keys; standalone sequences only for cross-table meaningful values (one today: DMT_RUN_PREFIX_SEQ). Per-table sequences convert out during per-object ports.</li>
+  <li><strong>Blind tranche-review protocol adopted (2026-07-07):</strong> mandatory context-free review after every tranche; findings fixed or logged before the next tranche; proposed rules red-until-accepted.</li>
+  <li><strong>Docker-first:</strong> all build/test work stays on the local Docker instance for now; the new ATP (brand-new provisioned Autonomous Database, Always Free) is deferred until the engine work needs it.</li>
+  <li>Fusion BIP folder for the new stack = <strong><code>/Custom/DMT2/</code></strong> (isolated from the frozen stack's <code>/Custom/DMT/</code>).</li>
+  <li>FBL file-delivery question: <strong>explicitly deferred</strong> (needed before Phase 4, not before).</li>
+  <li>Frozen-stack policy: bugs may still be fixed on the existing ATP, and every such fix is ported to DMT2.</li>
+  <li>Authoritative requirements = <strong>DMT_DESIGN.html only</strong> (companion docs are reference, not requirements) — currently in flux, to be re-baselined before implementation.</li>
+  <li>PR approver = the <strong>existing second GitHub account</strong>; plan covers the wiring, not account creation.</li>
+  <li>EBS Conversion Phase 2 = <strong>both</strong> EBS data extraction (EBSAdaptors) and configuration migration (ConfigurationMigrationTool).</li>
+  <li>Current instance/code will be <strong>frozen</strong>, not maintained in parallel.</li>
+</ul>
+
+<h3>Open — needed in Phase 0</h3>
+<div class="overflow">
+<table>
+  <tr><th>Decision</th><th>Options / recommendation</th></tr>
+  <tr><td>Go/no-go on the whole approach</td><td>This document is the input. Recommendation: GO, reframed as re-platform + open-items refactor.</td></tr>
+  <tr><td>New repo &amp; ATP names</td><td>Your call; keep <code>DMT_OWNER</code>/<code>DMT_LOOKUP</code> schema names regardless (avoids renaming 33K lines).</td></tr>
+  <tr><td>ATP tier</td><td>Recommendation: start Always Free, upgrade if regression load pinches (R5).</td></tr>
+  <tr><td>Fusion BIP folder for the new stack</td><td><code>/Custom/DMT/</code> reuse (simpler, couples stacks) vs <code>/Custom/DMT2/</code> (isolated, needs report-path config). Recommendation: reuse — reports are versionless contracts and the old stack is frozen; revisit only if frozen-stack demos must keep working independently.</td></tr>
+  <tr><td>CI deploys to ATP automatically on merge, or deploys stay manual with CI verify-only</td><td>Recommendation: auto-deploy on merge with the drift check as the safety net — it is the whole point of the new pipeline; keep <code>dmt_deploy.py</code> as the local escape hatch.</td></tr>
+  <tr><td>Frozen-stack bugfix policy</td><td>Recommendation: critical-only, logged, re-ported within a week; hard read-only at end of Q4 2026 (R3).</td></tr>
+  <tr><td>FBL file delivery to Fusion (parked design question)</td><td>Must be resolved before Phase 4 (blocks 6 config objects).</td></tr>
+  <tr><td>CMT repo placement</td><td>Recommendation: sibling repo sharing the Docker image, CI templates, and approval agent — not merged into the DMT repo.</td></tr>
+</table>
+</div>
+
+<footer>
+  Prepared 2026-07-07 as a review-only deliverable. Sources: codebase survey of <code>ConversionTool</code> / <code>ConversionTool-dbfull</code> (1,055 objects, db_full COMPARE_REPORT), <code>DMT_DESIGN.html</code> + 2026-07-04 review transcript, <code>EBSAdaptors</code> and <code>ConfigurationMigrationTool</code> status files, <code>APEXResourceTracker/cicd</code> Docker stack. No existing files were modified. If the approach is adopted, re-baseline this plan against requirements v1.0.
+</footer>
+
+</div>
+</body>
+</html>
