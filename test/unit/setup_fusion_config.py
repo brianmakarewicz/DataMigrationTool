@@ -55,11 +55,17 @@ def main():
     set_config('FUSION_PASSWORD', fin_pwd,  'Fusion REST/SOAP password (injected, not committed)')
     set_config('BIP_USERNAME',    fin_user, 'BIP SOAP user (injected, not committed)')
     set_config('BIP_PASSWORD',    fin_pwd,  'BIP SOAP password (injected, not committed)')
-    # connections.json has no hcm_impl user for this pod; the HCM REST path
-    # (UCM uploadFile) is exercised with fin_impl. Override any stale snapshot
-    # values so DMT_HDL_UTIL_PKG.get_auth resolves to a live credential.
-    set_config('HCM_USERNAME', fin_user, 'HCM REST user (injected, not committed)')
-    set_config('HCM_PASSWORD', fin_pwd,  'HCM REST password (injected, not committed)')
+    # HDL/UCM uploads need the HCM Data Loader role: hcm_impl, not fin_impl
+    # (fin_impl gets HTTP 403 on hcmRestApi uploadFile — found 2026-07-08).
+    # hcm_impl was added to connections.json the same day; fall back to fin_impl
+    # only if it is ever missing, with a loud warning.
+    try:
+        hcm_user, hcm_pwd = get_fusion_user('hcm_impl')
+    except Exception:
+        print('WARNING: hcm_impl missing from connections.json — HDL upload tests will 403 under fin_impl')
+        hcm_user, hcm_pwd = fin_user, fin_pwd
+    set_config('HCM_USERNAME', hcm_user, 'HCM REST user (injected, not committed)')
+    set_config('HCM_PASSWORD', hcm_pwd,  'HCM REST password (injected, not committed)')
     print(f'Config injected: FUSION_URL={url}  user={fin_user}  (+BIP_*, HCM_* aliases)')
 
     # Best-effort: a known-terminal ESS request id from the frozen stack's ATP.

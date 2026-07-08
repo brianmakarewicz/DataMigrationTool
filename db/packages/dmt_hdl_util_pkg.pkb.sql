@@ -30,7 +30,10 @@
     -- --------------------------------------------------------
     FUNCTION get_url RETURN VARCHAR2 IS
     BEGIN
-        RETURN DMT_UTIL_PKG.GET_CONFIG('FUSION_URL');
+        -- Normalized: always ends with exactly one '/' so path joins work whether
+        -- the stored FUSION_URL carries a trailing slash or not (2026-07-08 fix:
+        -- a slash-less config value produced hostname garbage and ACL denials).
+        RETURN RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/') || '/';
     END get_url;
 
     -- --------------------------------------------------------

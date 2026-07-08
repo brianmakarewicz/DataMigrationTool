@@ -155,6 +155,11 @@ AS
         l_has_deps      BOOLEAN;
         l_is_split      NUMBER;
         l_use_prefix    VARCHAR2(10);
+        -- Engine re-review ITEM 3 (2026-07-08): ORA-30006 = FOR UPDATE WAIT
+        -- expired. Without a wait limit, an idle open transaction holding the
+        -- USE_PREFIX row lock would block every submission forever.
+        e_lock_timeout  EXCEPTION;
+        PRAGMA EXCEPTION_INIT(e_lock_timeout, -30006);
     BEGIN
         -- A9c (2026-07-08): ALL mode requires a scenario — Overview run-mode
         -- table, ALL row: "ALL (requires a scenario) | Every row in the
@@ -178,13 +183,18 @@ AS
             SELECT NVL(CONFIG_VALUE, 'Y') INTO l_use_prefix
             FROM   DMT_OWNER.DMT_CONFIG_TBL
             WHERE  CONFIG_KEY = 'USE_PREFIX'
-            FOR UPDATE;
+            FOR UPDATE WAIT 30;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
                 RAISE_APPLICATION_ERROR(-20106,
                     'USE_PREFIX configuration row is missing from DMT_CONFIG_TBL '
                     || '(seeded by db/seed/dmt_config_tbl.sql). It is required both as '
                     || 'the prefix switch and as the submission serialization lock.');
+            WHEN e_lock_timeout THEN
+                RAISE_APPLICATION_ERROR(-20109,
+                    'Another submission is in progress (could not acquire the '
+                    || 'submission serialization lock within 30 seconds). '
+                    || 'Wait for it to finish and submit again.');
         END;
 
         -- One-active-run-per-object (section 2): reject before creating anything.

@@ -127,13 +127,14 @@ begin
 
     -- ----------------------------------------------------------
     -- 1. HTTP_REQUEST GET returns 2xx (ACL + TLS + auth plumbing).
-    --    businessUnitsLOV?limit=1 is a standard pure-read REST LOV.
+    --    currenciesLOV?limit=1 is a standard pure-read REST LOV.
+    --    (Was businessUnitsLOV; that resource vanished from the demo pod 2026-07 — 404.)
     --    Note: HTTP_REQUEST raises -20003 on ANY non-2xx (including
     --    3xx), so reaching the assertion already proves 2xx.
     -- ----------------------------------------------------------
     dmt_util_pkg.http_request(
         p_url         => rtrim(l_url, '/') ||
-                         '/fscmRestApi/resources/11.13.18.05/businessUnitsLOV?limit=1&onlyData=true',
+                         '/fscmRestApi/resources/11.13.18.05/currenciesLOV?limit=1&onlyData=true',
         p_method      => 'GET',
         p_run_id      => c_run_id,
         x_response    => l_resp,

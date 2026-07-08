@@ -843,10 +843,7 @@ prompt == Procedures ==
 @@procedures/dmt_render_view.sql
 @@procedures/dmt_run_detail_header.sql
 @@procedures/dmt_run_detail_tiles.sql
-@@procedures/dmt_submit_run.sql
 @@procedures/dmt_submit_run_v2.sql
-@@procedures/dmt_submit_simple.sql
-@@procedures/dmt_submit_test.sql
 
 prompt == Package bodies ==
 @@packages/dmt_1099_fbdi_gen_pkg.pkb.sql

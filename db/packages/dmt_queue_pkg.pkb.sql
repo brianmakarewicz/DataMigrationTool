@@ -427,7 +427,13 @@ AS
 
     -- EXECUTE_ONE and RECONCILE_ONE are in DMT_QUEUE_WORKER_PKG
     -- (separate package avoids library cache lock self-deadlock
-    -- when heartbeat spawns child jobs via DBMS_SCHEDULER.CREATE_JOB)
+    -- when heartbeat spawns child jobs via DBMS_SCHEDULER.CREATE_JOB).
+    -- Note (engine re-review, 2026-07-08): the separation now carries a
+    -- one-way compile dependency — rollup_run_statuses above calls
+    -- DMT_QUEUE_WORKER_PKG.ACCOUNT_ROWS. That direction is safe: the
+    -- worker package never references this one, so the original
+    -- library-cache deadlock (this package spawning a child job that
+    -- executes a package depending back on it) is not recreated.
 
     -- ============================================================
     -- HEARTBEAT_TICK — main entry point, called every 60s

@@ -645,7 +645,21 @@ AS
         -- POLL_COUNT approximates elapsed minutes: the heartbeat schedules
         -- one poll per ~60-second tick (C_POLL_INTERVAL / NEXT_POLL_AFTER).
         -- Checked BEFORE any Fusion call so the timeout works offline too.
-        l_timeout_min := NVL(TO_NUMBER(DMT_UTIL_PKG.GET_CONFIG('ESS_POLL_TIMEOUT_MINUTES')), 30);
+        -- Engine re-review ITEM 2 (2026-07-08): a non-numeric config value
+        -- must not raise here — the outer handler would FAIL the work item,
+        -- turning a config typo into a verdict. On conversion failure, WARN
+        -- and fall back to the documented default of 30 minutes.
+        BEGIN
+            l_timeout_min := NVL(TO_NUMBER(DMT_UTIL_PKG.GET_CONFIG('ESS_POLL_TIMEOUT_MINUTES')), 30);
+        EXCEPTION
+            WHEN VALUE_ERROR OR INVALID_NUMBER THEN
+                DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                    'ESS_POLL_TIMEOUT_MINUTES config value "' ||
+                    DMT_UTIL_PKG.GET_CONFIG('ESS_POLL_TIMEOUT_MINUTES') ||
+                    '" is not a number; using default 30.',
+                    'WARN', C_PKG, 'POLL_ONE');
+                l_timeout_min := 30;
+        END;
         IF l_rec.POLL_COUNT >= l_timeout_min THEN
             MARK_GENERATED_ROWS_FAILED(
                 p_run_id     => l_rec.RUN_ID,

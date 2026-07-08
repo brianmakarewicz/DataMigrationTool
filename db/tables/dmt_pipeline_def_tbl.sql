@@ -24,8 +24,11 @@
 --   EXEC_MODE   ASYNC = loader returns after SUBMIT_LOAD, work item goes to
 --                       AWAITING_LOAD (the FBDI/HDL default);
 --               SYNC  = loader runs its full inline cycle including its own
---                       reconcile, work item goes straight to DONE
---                       (MiscReceipts);
+--                       reconcile (MiscReceipts). The work item still settles
+--                       through the accounting gate, never straight to DONE:
+--                       it routes to RECONCILING when a RECON_PROC is
+--                       registered, otherwise the gate marks it DONE/FAILED
+--                       by the every-record-accounted rule (section 5);
 --               LOCAL = no Fusion load stage at all -- after EXEC_PROC the
 --                       work item goes to RECONCILING when RECON_PROC is set,
 --                       else DONE (the Mock engine-test objects).

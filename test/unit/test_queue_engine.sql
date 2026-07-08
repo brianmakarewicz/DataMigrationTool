@@ -281,6 +281,28 @@ begin
         'second submit rejected naming the object and blocking run (got: '
         ||substr(nvl(l_reject,'no error raised'),1,150)||')');
 
+    -- 40 (engine re-review ITEM 1, 2026-07-08; numbered after the
+    -- pre-existing assertions): DMT_SUBMIT_RUN_V2 — the standalone
+    -- submission entry point the archived APEX export calls — is now
+    -- a thin wrapper over DMT_SCHEDULER_PKG.SUBMIT_PIPELINE, so it
+    -- must enforce the same one-active-run-per-object rule instead
+    -- of bypassing it as its old duplicated body did.
+    l_reject := null;
+    begin
+        dmt_submit_run_v2(
+            p_pipeline_codes => 'STANDALONE:MockObject',
+            p_scenario_name  => 'MOCK_ENGINE_C1',
+            p_submitted_by   => 'TEST_QUEUE_ENGINE',
+            x_run_id         => l_run_dup);
+    exception
+        when others then l_reject := sqlerrm;
+    end;
+    assert(l_reject is not null and instr(l_reject, 'MockObject') > 0
+       and instr(l_reject, 'active run #'||l_run_c1) > 0, 40,
+        'DMT_SUBMIT_RUN_V2 rejected while MockObject run active — wrapper '
+        ||'enforces the one-active-run rule (got: '
+        ||substr(nvl(l_reject,'no error raised'),1,150)||')');
+
     wait_for_run(l_run_c1, l_status);
     -- Run-status table, COMPLETED row (clean walk again).
     assert(l_status = 'COMPLETED', 16,
