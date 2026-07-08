@@ -291,6 +291,8 @@ declare
     l_ret     number;
     l_cnt     pls_integer;
     l_tagged  pls_integer;
+    l_raised  pls_integer := 0;
+    l_code    pls_integer;
 
     procedure assert (p_cond boolean, p_num pls_integer, p_name varchar2) is
     begin
@@ -305,22 +307,26 @@ begin
     l_saved_url := dmt_util_pkg.get_config('FUSION_URL');
     dmt_util_pkg.set_config('FUSION_URL', null);
     begin
-        -- PARSE_AND_LOG_ERRORS never raises by contract (WHEN OTHERS -> 0)
+        -- Contract (tranche findings 9/23): download failure RAISES out of
+        -- PARSE_AND_LOG_ERRORS. The return value only ever means "count of
+        -- errors found" — 0 no longer doubles as a failure signal.
         l_ret := dmt_import_report_pkg.parse_and_log_errors(
                      p_run_id     => c_run_id,
                      p_request_id => 999999999,
                      p_cemli_code => 'UNIT_TEST');
     exception
         when others then
-            dmt_util_pkg.set_config('FUSION_URL', l_saved_url);
-            raise;
+            l_raised := 1;
+            l_code   := sqlcode;
     end;
     dmt_util_pkg.set_config('FUSION_URL', l_saved_url);
 
     -- ----------------------------------------------------------
-    -- 11. Offline: returns 0 (no errors parsed), never raises, and
-    --     writes attributed diagnostics (package/run_id) to DMT_LOG_TBL.
-    --     No [IMPORT_REPORT]-tagged rows may appear (nothing parsed).
+    -- 11. Offline: download failure RAISES (ORA-20037 from
+    --     GET_ESS_OUTPUT_XML, propagated — never swallowed into a
+    --     0 return), writes attributed diagnostics (package/run_id)
+    --     to DMT_LOG_TBL, and no [IMPORT_REPORT]-tagged rows appear
+    --     (nothing was parsed).
     -- ----------------------------------------------------------
     select count(*),
            count(case when dbms_lob.substr(message, 15, 1) = '[IMPORT_REPORT]' then 1 end)
@@ -329,8 +335,9 @@ begin
     where  run_id = c_run_id
     and    package_name = 'DMT_IMPORT_REPORT_PKG';
 
-    assert(l_ret = 0 and l_cnt >= 1 and l_tagged = 0,
-       11, 'PARSE_AND_LOG_ERRORS offline: returns 0, logs attributed diagnostics, no [IMPORT_REPORT] rows');
+    assert(l_raised = 1 and l_code = -20037 and l_cnt >= 1 and l_tagged = 0,
+       11, 'PARSE_AND_LOG_ERRORS offline: raises ORA-20037 (download failure is never a 0 return), '||
+           'logs attributed diagnostics, no [IMPORT_REPORT] rows');
 
     :passed := :passed + l_passed;
 end;
@@ -650,13 +657,13 @@ begin
         'GET_ESS_OUTPUT_XML) — the [IMPORT_REPORT] log-tag emission is untestable offline. Proposed: '||
         'an overload taking p_xml IN CLOB so the parse+tag+log path is separable from the transport.');
 
-    dbms_output.put_line('GAP: PARSE_AND_LOG_ERRORS returns 0 both for "no errors in the report" and for '||
-        '"download/parse failed" (WHEN OTHERS -> 0). Callers cannot distinguish — against the "0 rows = '||
-        'investigate, never assume" rule; no error-code OUT parameter (section 7 contract).');
+    dbms_output.put_line('FIXED (finding 23): PARSE_AND_LOG_ERRORS no longer returns 0 for failures — '||
+        'download/parse failures are logged and RAISED (test 11 asserts ORA-20037); 0 now only means '||
+        '"report downloaded, no errors". Remaining: no error-code OUT parameter (section 7 contract).');
 
-    dbms_output.put_line('GAP: DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML / GET_ESS_OUTPUT_TEXT swallow every '||
-        'exception and RETURN the literal string ''Error downloading ESS output...'' AS the content CLOB — '||
-        'the caller then parses an error message as if it were the report. Should return NULL or raise.');
+    dbms_output.put_line('FIXED (finding 9): DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML / GET_ESS_OUTPUT_TEXT no '||
+        'longer return error text as the content CLOB — failures are logged via LOG_ERROR and raised as '||
+        'ORA-20037 with request-id context. NULL still means "no output/no matching file in the ZIP".');
 
     dbms_output.put_line('GAP: PARSE_ERRORS extracts error rows only — no API for the report summary '||
         '(PROJECT_ACCEPTED/REJECTED/WARNING counts) or success lists (test 6 read them directly from the '||

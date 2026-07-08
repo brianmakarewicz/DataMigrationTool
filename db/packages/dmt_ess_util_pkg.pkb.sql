@@ -317,6 +317,24 @@
         BEGIN LOOP UTL_HTTP.READ_TEXT(l_resp, l_chunk, 32767); DBMS_LOB.APPEND(l_response, l_chunk); END LOOP;
         EXCEPTION WHEN UTL_HTTP.END_OF_BODY THEN NULL; END;
         UTL_HTTP.END_RESPONSE(l_resp);
+
+        -- Status + fault checks (tranche finding 19), same idiom/codes as
+        -- DMT_UTIL_PKG.RUN_BIP_REPORT (-20030 HTTP, -20034 SOAP fault).
+        -- Full transport consolidation (single shared SOAP client) is a
+        -- tracked Stage C-adjacent refactor.
+        IF l_resp.status_code NOT BETWEEN 200 AND 299 THEN
+            RAISE_APPLICATION_ERROR(-20030,
+                'bip_soap: BIP SOAP HTTP ' || l_resp.status_code || ' for ' || p_url ||
+                ' | ' || DBMS_LOB.SUBSTR(l_response, 400, 1));
+        END IF;
+        IF DBMS_LOB.INSTR(l_response, 'soapenv:Fault') > 0
+           OR DBMS_LOB.INSTR(l_response, 'soap:Fault') > 0 THEN
+            RAISE_APPLICATION_ERROR(-20034,
+                'bip_soap: SOAP Fault from BIP for ' || p_url || ' | ' ||
+                SUBSTR(NVL(REGEXP_SUBSTR(l_response, '<faultstring[^>]*>([^<]*)</faultstring>', 1, 1, 'n', 1),
+                           DBMS_LOB.SUBSTR(l_response, 1000, 1)), 1, 1000));
+        END IF;
+
         RETURN l_response;
     EXCEPTION WHEN OTHERS THEN BEGIN UTL_HTTP.END_RESPONSE(l_resp); EXCEPTION WHEN OTHERS THEN NULL; END; RAISE;
     END bip_soap;
@@ -644,7 +662,17 @@
         RETURN l_clob;
     EXCEPTION
         WHEN OTHERS THEN
-            RETURN 'Error downloading ESS output: ' || SQLERRM;
+            -- Payload-returning function: never return error text in the data
+            -- position (tranche finding 9). Log with context, then raise.
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => NULL,
+                p_message   => 'GET_ESS_OUTPUT_TEXT failed for request ' || p_request_id,
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => 'GET_ESS_OUTPUT_TEXT');
+            RAISE_APPLICATION_ERROR(-20037,
+                'GET_ESS_OUTPUT_TEXT: failed to download/extract ESS output for request ' ||
+                p_request_id || ' | ' || SQLERRM);
     END GET_ESS_OUTPUT_TEXT;
 
     -- ============================================================
@@ -699,7 +727,17 @@
         RETURN l_clob;
     EXCEPTION
         WHEN OTHERS THEN
-            RETURN 'Error downloading ESS output XML: ' || SQLERRM;
+            -- Payload-returning function: never return error text in the data
+            -- position (tranche finding 9). Log with context, then raise.
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => NULL,
+                p_message   => 'GET_ESS_OUTPUT_XML failed for request ' || p_request_id,
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => 'GET_ESS_OUTPUT_XML');
+            RAISE_APPLICATION_ERROR(-20037,
+                'GET_ESS_OUTPUT_XML: failed to download/extract ESS output XML for request ' ||
+                p_request_id || ' | ' || SQLERRM);
     END GET_ESS_OUTPUT_XML;
 
     -- ============================================================

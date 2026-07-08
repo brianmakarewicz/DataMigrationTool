@@ -164,7 +164,15 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        -- Download the ESS output XML
+        -- Download the ESS output XML.
+        -- Download failure RAISES out of this function (tranche findings 9/23):
+        -- RETURN 0 previously meant both "no errors in the report" and
+        -- "download failed" — callers could not distinguish. After this change
+        -- the RETURN NUMBER value only ever means "count of errors found"
+        -- (0 = report downloaded, no errors / nothing to parse); any failure
+        -- signals via a raised exception. If a non-exception failure signal is
+        -- ever needed, that is a signature change (error-code OUT parameter
+        -- per the section 7 contract), not a re-overload of the 0 return.
         BEGIN
             l_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id);
         EXCEPTION
@@ -175,7 +183,7 @@
                     p_sqlerrm        => SQLERRM,
                     p_package        => C_PKG,
                     p_procedure      => C_PROC);
-                RETURN 0;
+                RAISE;
         END;
 
         IF l_xml IS NULL OR DBMS_LOB.GETLENGTH(l_xml) = 0 THEN
@@ -227,13 +235,15 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Log for attribution, then re-raise: 0 must never mean "failed"
+            -- (see download-failure comment above; tranche finding 23).
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => C_PROC || ' failed.',
                 p_sqlerrm        => SQLERRM,
                 p_package        => C_PKG,
                 p_procedure      => C_PROC);
-            RETURN 0;
+            RAISE;
     END PARSE_AND_LOG_ERRORS;
 
 END DMT_IMPORT_REPORT_PKG;

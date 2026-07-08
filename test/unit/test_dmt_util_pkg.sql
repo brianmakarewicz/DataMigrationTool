@@ -236,22 +236,34 @@ begin
     end;
 
     -- ----------------------------------------------------------
-    -- 15/16. Prefix master: GET_PREFIX reads; INCREMENT_AND_GET_PREFIX
-    --        increments by 1 and commits autonomously (survives rollback)
+    -- 15/16. TRIPWIRE: retired prefix-master mechanism (GET_PREFIX /
+    --        INCREMENT_AND_GET_PREFIX over DMT_PREFIX_MASTER_TBL).
+    --        Per-CEMLI prefixes are RETIRED — MUST be removed with the
+    --        Stage C prefix consolidation (design section 6 P1, single
+    --        per-run DMT_RUN_PREFIX_SEQ). These tests deliberately keep
+    --        executing the retired code so its removal is loud: if
+    --        GET_PREFIX / INCREMENT_AND_GET_PREFIX have been dropped,
+    --        DELETE these tests (14/15/16 here, 31 in the hostile-NLS
+    --        block) — a failure
+    --        here is the retirement landing, NOT a regression.
     -- ----------------------------------------------------------
     insert into dmt_prefix_master_tbl (prefix_id, cemli, prefix, last_updated_date)
     values (999999901, c_marker||'_CEMLI', '9001', sysdate);
     commit;
 
     assert(dmt_util_pkg.get_prefix(c_marker||'_CEMLI') = '9001',
-       15, 'GET_PREFIX returns current prefix without incrementing');
+       15, 'TRIPWIRE (retired prefix-master): GET_PREFIX still reads current prefix — '||
+           'if this fails, the retired mechanism was removed (Stage C prefix consolidation): '||
+           'delete this tripwire, not a regression');
 
     l_vc := dmt_util_pkg.increment_and_get_prefix(c_marker||'_CEMLI', 'UNIT_TEST');
     rollback;   -- must not undo the increment (autonomous)
 
     assert(l_vc = '9002'
        and dmt_util_pkg.get_prefix(c_marker||'_CEMLI') = '9002',
-       16, 'INCREMENT_AND_GET_PREFIX returns +1 and the commit survives caller rollback');
+       16, 'TRIPWIRE (retired prefix-master): INCREMENT_AND_GET_PREFIX still increments — '||
+           'if this fails, the retired mechanism was removed (Stage C prefix consolidation): '||
+           'delete this tripwire, not a regression');
 
     -- ----------------------------------------------------------
     -- 17. CLOB_TO_BLOB: NULL-safe (empty BLOB, not NULL) + correct length
@@ -428,11 +440,17 @@ begin
        30, 'LOG writes correct LOG_DATE under hostile session NLS');
 
     -- ----------------------------------------------------------
-    -- 31. Prefix arithmetic (TO_NUMBER/TO_CHAR) unaffected by NLS
+    -- 31. TRIPWIRE: retired prefix-master mechanism — MUST be removed
+    --     with the Stage C prefix consolidation (design section 6 P1).
+    --     If GET_PREFIX/INCREMENT_AND_GET_PREFIX have been dropped,
+    --     DELETE this test (with 15/16 above). Until then it also
+    --     guards NLS-safe prefix arithmetic on the retired path.
     -- ----------------------------------------------------------
     l_vc := dmt_util_pkg.increment_and_get_prefix(c_marker||'_CEMLI', 'UNIT_TEST_NLS');
     assert(l_vc = '9003',
-       31, 'INCREMENT_AND_GET_PREFIX numeric round trip unaffected by session NLS');
+       31, 'TRIPWIRE (retired prefix-master): INCREMENT_AND_GET_PREFIX NLS round trip — '||
+           'if this fails, the retired mechanism was removed (Stage C prefix consolidation): '||
+           'delete this tripwire, not a regression');
 
     :passed := :passed + l_passed;
 end;

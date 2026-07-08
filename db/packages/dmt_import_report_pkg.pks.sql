@@ -39,6 +39,9 @@
     -- Parse and log errors directly to DMT_LOG_TBL for an integration run.
     -- Calls GET_ESS_OUTPUT_XML internally, parses errors, logs each one,
     -- and returns the count of errors found.
+    -- Contract: the return value only ever means "count of errors found"
+    -- (0 = report downloaded, no errors). Download/parse failures are logged
+    -- and RAISED — never swallowed into a 0 return (tranche findings 9/23).
     FUNCTION PARSE_AND_LOG_ERRORS (
         p_run_id IN NUMBER,
         p_request_id     IN NUMBER,

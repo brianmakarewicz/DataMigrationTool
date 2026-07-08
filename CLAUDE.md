@@ -79,7 +79,16 @@ Rules of the protocol:
       and enabled as final install step. All 5 tranche blind reviews done and triaged
       (docs/tranche-reviews/); 28 proposed rules in RED in the canonical DMT_DESIGN.html
       (ConversionTool-dbfull/docs) section 7 awaiting user accept/reject.
-- [ ] Stage B — Common utilities unit-tested (DMT_UTIL_PKG, Fusion call layer, CSV intake, generators w/ golden files)
+- [x] Stage B (offline) — COMPLETE 2026-07-08: 4 unit suites green (util 31, csv 16,
+      import-report 23, fusion skip-gated); golden files 15/15 from proven run 116;
+      GLBalances generator byte-identical to frozen stack; 12+ real defects fixed
+      (base64/32K family ×5, PARSE_ERRORS dead on 26ai, DMT_PIPELINE_INIT_PKG invalid,
+      error-text-as-data, silent SOAP fault, scenario-mandatory, ESS pkg APEX dependency);
+      blind utilities review PASS-WITH-FINDINGS, triaged in docs/tranche-reviews/.
+      Invalid baseline now 47.
+      **REMAINING for Stage B full close:** B2 live Fusion run (blocked: demo password
+      rotated externally — needs new password + rotate-demo-password skill); user decision
+      on the error-code-contract exception for the utility layer.
 - [ ] Stage C — Queue engine proven with mock CEMLI
 - [ ] Stage D — Suppliers vertical slice E2E
 - [ ] Stage E — Remaining Wave-1 objects (3 dependency waves)
