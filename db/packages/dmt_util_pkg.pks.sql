@@ -190,6 +190,16 @@ AS
         p_password IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2;
 
+    -- Redact credential material from text that is about to be logged.
+    -- Masks the CONTENT of any <...password...> and <...userID...> XML element
+    -- (any namespace prefix, any case) and the value of any Authorization
+    -- header ('Basic ...' / 'Bearer ...' / raw token) with ***MASKED***.
+    -- EVERY log of a request envelope (SOAP/REST) MUST pass through this
+    -- helper — logging a raw request envelope is a security defect (the
+    -- 2026-07-08 Suppliers blind review found the Fusion password in
+    -- DMT_LOG_TBL in plaintext). NULL-safe: returns NULL for NULL input.
+    FUNCTION MASK_CREDENTIALS (p_text IN CLOB) RETURN CLOB;
+
     -- --------------------------------------------------------
     -- BIP report reconciliation (SOAP v2 ReportService)
     -- --------------------------------------------------------

@@ -14,9 +14,17 @@
 --         Seeded by the MERGE block in db/seed/dmt_bip_report_tbl.sql.
 --  11-15. LIVE (skip-gated like test_fusion_calls.sql): each deployed
 --         report answers a standalone DMT_UTIL_PKG.RUN_BIP_REPORT
---         call (P_BATCH_ID|0 — zero interface rows expected; the
---         assertion is "responds without HTTP error or SOAP fault",
---         and any returned XML parsed to XMLTYPE by BIP_REPORT_XML).
+--         call. The assertion is only that the report ANSWERS
+--         (no HTTP error, no SOAP fault; any returned XML parses to
+--         XMLTYPE via BIP_REPORT_XML). LEGACY CONTRACT NOTE: the
+--         P_BATCH_ID parameter these reports take is the retired
+--         pre-Contract-v1 shape — it is exercised here only because
+--         it is what is deployed today, NOT endorsed as correct.
+--         The parameter/column contract is replaced by the tracked
+--         "Suppliers Contract v1 report rework" work item
+--         (docs/tranche-reviews/2026-07-08-suppliers-review.md,
+--         H6/H7); when that lands, this suite must assert the
+--         Contract v1 parameters instead.
 --
 -- SKIP BEHAVIOR: without FUSION_URL / FUSION_USERNAME /
 -- FUSION_PASSWORD in DMT_CONFIG_TBL the live tests are skipped and
@@ -104,6 +112,8 @@ begin
             -- Raises -20030 (HTTP) / -20034 (SOAP fault) on failure;
             -- NULL return = zero rows (no <reportBytes>) — a valid
             -- standalone response for an unused P_BATCH_ID.
+            -- P_BATCH_ID = legacy contract, pending the tracked
+            -- "Suppliers Contract v1 report rework" (see header).
             l_xml := dmt_util_pkg.run_bip_report(
                          p_run_id     => null,
                          p_cemli_code => l_cemlis(i),

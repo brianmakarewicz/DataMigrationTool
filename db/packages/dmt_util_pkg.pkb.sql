@@ -44,6 +44,35 @@
     END BASIC_AUTH_HEADER;
 
     -- --------------------------------------------------------
+    -- MASK_CREDENTIALS — redact credential material before logging.
+    -- Masks the content of <...password...> / <...userID...> XML elements
+    -- (any namespace prefix, any case) and Authorization header values.
+    -- Every request-envelope log MUST route through this helper.
+    -- --------------------------------------------------------
+    FUNCTION MASK_CREDENTIALS (p_text IN CLOB) RETURN CLOB IS
+        l_out CLOB;
+    BEGIN
+        IF p_text IS NULL THEN
+            RETURN NULL;
+        END IF;
+        l_out := p_text;
+        -- <v2:password>secret</v2:password>, <password>...</password>, etc.
+        l_out := REGEXP_REPLACE(l_out,
+            '(<([A-Za-z0-9_]+:)?password[^>]*>).*?(</([A-Za-z0-9_]+:)?password>)',
+            '\1***MASKED***\3', 1, 0, 'in');
+        -- <v2:userID>user</v2:userID> — masked with the password: the pair
+        -- is a credential.
+        l_out := REGEXP_REPLACE(l_out,
+            '(<([A-Za-z0-9_]+:)?userID[^>]*>).*?(</([A-Za-z0-9_]+:)?userID>)',
+            '\1***MASKED***\3', 1, 0, 'in');
+        -- Authorization: Basic dXNlcjpwYXNz / Bearer eyJ... / raw token
+        l_out := REGEXP_REPLACE(l_out,
+            '(Authorization["'']?\s*[:=]\s*["'']?)((Basic|Bearer)\s+)?[A-Za-z0-9+/=._-]+',
+            '\1***MASKED***', 1, 0, 'in');
+        RETURN l_out;
+    END MASK_CREDENTIALS;
+
+    -- --------------------------------------------------------
     -- SET_FUSION_URL
     -- --------------------------------------------------------
     PROCEDURE SET_FUSION_URL (p_url IN VARCHAR2) IS

@@ -12,7 +12,7 @@
 #      tables via DMT_CSV_LOADER_PKG.LOAD_CSV (scenario-mandatory).
 #   2. Create ONE run row + prefix via DMT_PIPELINE_INIT_PKG.INIT_RUN
 #      (the goldens all come from one old-stack run: 116 / 9627).
-#   3. DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_* for all five sub-objects.
+#   3. DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_* for all five objects.
 #   4. The five DMT_POZ_SUP*_FBDI_GEN_PKG.GENERATE_FBDI calls.
 #   5. Extract each zip from DMT_FBDI_ZIP_TBL (base64 over
 #      dbms_output) and byte-compare against the run-116 goldens

@@ -1,6 +1,6 @@
 -- PACKAGE DMT_POZ_SUP_RESULTS_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_POZ_SUP_RESULTS_PKG" 
+  CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_POZ_SUP_RESULTS_PKG"
 AUTHID DEFINER
 AS
 -- ============================================================
@@ -13,8 +13,11 @@ AS
 --
 -- Call pattern (per object type, after ESS job completes):
 --   1. RECONCILE_BATCH calls FETCH_BIP_RESULTS then PARSE_AND_UPDATE
---   2. FETCH_BIP_RESULTS calls BIP v2 SOAP runReport with P_BATCH_ID
---   3. PARSE_AND_UPDATE updates the appropriate staging table
+--   2. FETCH_BIP_RESULTS delegates to DMT_UTIL_PKG.RUN_BIP_REPORT
+--      (the shared BIP SOAP transport) with P_BATCH_ID
+--   3. PARSE_AND_UPDATE updates the TFM tables only — nothing is
+--      written back to staging; the TFM row is the sole record of
+--      the Fusion outcome.
 --
 -- BIP report paths are read from DMT_BIP_REPORT_TBL at runtime.
 -- ============================================================
@@ -31,21 +34,23 @@ AS
         p_import_ess_id   IN NUMBER DEFAULT NULL
     );
 
-    -- Call the Fusion BIP v2 SOAP runReport and return raw XML response.
-    -- Exposed publicly for independent testing from APEX.
+    -- Run the reconciliation BIP report via the shared transport
+    -- (DMT_UTIL_PKG.RUN_BIP_REPORT) and return the decoded report data
+    -- as XMLTYPE (NULL = report answered with zero rows).
+    -- Exposed publicly for independent testing.
     FUNCTION FETCH_BIP_RESULTS (
         p_run_id  IN NUMBER,
         p_cemli_code      IN VARCHAR2,
         p_load_ess_id     IN NUMBER,
         p_import_ess_id   IN NUMBER DEFAULT NULL
-    ) RETURN CLOB;
+    ) RETURN XMLTYPE;
 
-    -- Parse the BIP XML response and update the appropriate staging table.
+    -- Parse the BIP report data and update the appropriate TFM table.
     -- Exposed publicly so results can be reprocessed without re-calling Fusion.
     PROCEDURE PARSE_AND_UPDATE (
         p_run_id IN NUMBER,
         p_cemli_code     IN VARCHAR2,
-        p_xml_data       IN CLOB
+        p_report_xml     IN XMLTYPE
     );
 
 END DMT_POZ_SUP_RESULTS_PKG;

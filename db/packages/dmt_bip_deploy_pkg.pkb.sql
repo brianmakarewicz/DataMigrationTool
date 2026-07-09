@@ -29,6 +29,17 @@
     -- Private: POST a SOAP envelope and return the full response
     -- as a CLOB.  No Authorization header — BIP v2 uses session
     -- tokens in the SOAP body, not HTTP auth.
+    -- Raises -20056 when the HTTP status is not 2xx; callers keep
+    -- their own SOAP-fault checks (faults can arrive with HTTP 200).
+    -- NEVER log p_envelope raw — login/createObject envelopes carry
+    -- credentials; any envelope logging must go through
+    -- DMT_UTIL_PKG.MASK_CREDENTIALS.
+    -- TRACKED REFACTOR: this private transport cannot delegate to
+    -- DMT_UTIL_PKG.RUN_BIP_REPORT today — that helper is runReport-
+    -- specific (report path + parameters), while this package needs
+    -- SecurityService login and CatalogService session calls. It is
+    -- consolidated by the Stage C transport/parser refactor (a shared
+    -- generic SOAP POST in DMT_UTIL_PKG).
     -- --------------------------------------------------------
     FUNCTION soap_post (
         p_url      IN VARCHAR2,
@@ -56,15 +67,26 @@
 
         l_resp := UTL_HTTP.GET_RESPONSE(l_req);
 
-        LOOP
-            UTL_HTTP.READ_TEXT(l_resp, l_buf, 32767);
-            DBMS_LOB.WRITEAPPEND(l_out, LENGTH(l_buf), l_buf);
-        END LOOP;
+        BEGIN
+            LOOP
+                UTL_HTTP.READ_TEXT(l_resp, l_buf, 32767);
+                DBMS_LOB.WRITEAPPEND(l_out, LENGTH(l_buf), l_buf);
+            END LOOP;
+        EXCEPTION
+            WHEN UTL_HTTP.END_OF_BODY THEN NULL;
+        END;
+        UTL_HTTP.END_RESPONSE(l_resp);
+
+        IF l_resp.status_code NOT BETWEEN 200 AND 299 THEN
+            RAISE_APPLICATION_ERROR(-20056,
+                'soap_post: BIP SOAP call failed. HTTP ' || l_resp.status_code ||
+                ' | Action: ' || p_action ||
+                ' | Response (first 500): ' || DBMS_LOB.SUBSTR(l_out, 500, 1));
+        END IF;
+
+        RETURN l_out;
 
     EXCEPTION
-        WHEN UTL_HTTP.END_OF_BODY THEN
-            UTL_HTTP.END_RESPONSE(l_resp);
-            RETURN l_out;
         WHEN OTHERS THEN
             BEGIN UTL_HTTP.END_RESPONSE(l_resp); EXCEPTION WHEN OTHERS THEN NULL; END;
             RAISE;
