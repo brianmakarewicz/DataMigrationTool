@@ -75,15 +75,30 @@ begin
 	"ATTRIBUTE15" VARCHAR2(150), 
 	"BU_NAME" VARCHAR2(240), 
 	"RESULTS_UPDATED_DATE" DATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
+	"TFM_STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
+	"RECON_KEY" VARCHAR2(1000), 
+	"FUSION_CUST_TRX_LINE_GL_DIST_ID" NUMBER, 
 	 CONSTRAINT "DMT_RA_DISTS_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
 exception when others then
   if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_RA_DISTS_TFM_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_RA_DISTS_TFM_TBL" RENAME COLUMN "STATUS" TO "TFM_STATUS"';
+  end if;
 end;
 /
 
@@ -105,6 +120,53 @@ COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_RA_
 COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_RA_DISTS_STG_TBL â€” which staging row this was transformed from';
 COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
 COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."INTERFACE_LINE_CONTEXT" IS 'Flexfield context â€” links this distribution to its parent line via INTERFACE_LINE_ATTRIBUTE1-15';
-COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."STATUS" IS 'STAGED > GENERATED > LOADED / FAILED';
 COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
 COMMENT ON TABLE "DMT_RA_DISTS_TFM_TBL"  IS 'AR Invoice distributions transformed. Run-specific â€” one row per staging row per run attempt. Account segments derived as needed. Reconciliation populated by BIP.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_RA_DISTS_TFM_TBL' and column_name = 'RECON_KEY';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_RA_DISTS_TFM_TBL" ADD ("RECON_KEY" VARCHAR2(1000))';
+  end if;
+end;
+/
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_RA_DISTS_TFM_TBL' and column_name = 'FUSION_CUST_TRX_LINE_GL_DIST_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_RA_DISTS_TFM_TBL" ADD ("FUSION_CUST_TRX_LINE_GL_DIST_ID" NUMBER)';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_RA_DISTS_TFM_N1" ON "DMT_RA_DISTS_TFM_TBL" ("RUN_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_RA_DISTS_TFM_N2" ON "DMT_RA_DISTS_TFM_TBL" ("RUN_ID", "TFM_STATUS")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_RA_DISTS_TFM_N3" ON "DMT_RA_DISTS_TFM_TBL" ("RECON_KEY")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
+COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
+COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."FUSION_CUST_TRX_LINE_GL_DIST_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';

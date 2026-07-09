@@ -52,7 +52,7 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -89,7 +89,7 @@
                     ATTRIBUTE_NUMBER6,  ATTRIBUTE_NUMBER7,  ATTRIBUTE_NUMBER8,  ATTRIBUTE_NUMBER9,  ATTRIBUTE_NUMBER10,
                     ATTRIBUTE_CATEGORY,
                     SOLDTO_LE_NAME,
-                    STATUS,
+                    TFM_STATUS,
                     LAST_UPDATED_DATE
         )
         SELECT
@@ -133,10 +133,10 @@
                     SYSDATE
         FROM DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -152,13 +152,13 @@
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL s
-        SET    s.STATUS            = 'TRANSFORMED',
+        SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -212,7 +212,7 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_OWNER.DMT_POR_REQ_LINES_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -296,7 +296,7 @@
                     FINAL_DISCHARGE_LOC_CODE,
                     UNIT_OF_MEASURE,
                     SECONDARY_UNIT_OF_MEASURE,
-                    STATUS,
+                    TFM_STATUS,
                     LAST_UPDATED_DATE
         )
         SELECT
@@ -389,10 +389,10 @@
                     SYSDATE
         FROM DMT_OWNER.DMT_POR_REQ_LINES_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -408,13 +408,13 @@
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_STG_TBL s
-        SET    s.STATUS            = 'TRANSFORMED',
+        SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -468,7 +468,7 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -520,7 +520,7 @@
                     CHARGE_ACCOUNT_SEGMENT28, CHARGE_ACCOUNT_SEGMENT29, CHARGE_ACCOUNT_SEGMENT30,
                     PJC_WORK_TYPE,
                     BUDGET_DATE,
-                    STATUS,
+                    TFM_STATUS,
                     LAST_UPDATED_DATE
         )
         SELECT
@@ -581,10 +581,10 @@
                     SYSDATE
         FROM DMT_OWNER.DMT_POR_REQ_DISTS_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -600,13 +600,13 @@
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_STG_TBL s
-        SET    s.STATUS            = 'TRANSFORMED',
+        SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id

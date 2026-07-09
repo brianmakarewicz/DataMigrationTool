@@ -13,7 +13,7 @@ AS
     -- VALIDATE_PRE_TRANSFORM
     -- Upstream dependency: VENDOR_NUM must match a LOADED supplier.
     -- For migrated suppliers: NVL(dep_prefix,'') || header.VENDOR_NUM
-    --   must exist in DMT_POZ_SUPPLIERS_STG_TBL with STATUS='LOADED'.
+    --   must exist in DMT_POZ_SUPPLIERS_STG_TBL with STG_STATUS='LOADED'.
     -- Failed headers cascade to child lines via INVOICE_ID match.
     -- --------------------------------------------------------
     PROCEDURE VALIDATE_PRE_TRANSFORM (
@@ -53,42 +53,42 @@ AS
         BEGIN
             SELECT COUNT(*) INTO l_any_loaded
             FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL
-            WHERE  STATUS = 'LOADED' AND ROWNUM = 1;
+            WHERE  STG_STATUS = 'LOADED' AND ROWNUM = 1;
 
             IF l_any_loaded > 0 THEN
                 UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL h
-                SET    STATUS            = 'FAILED',
+                SET    STG_STATUS            = 'FAILED',
                        ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                                ERROR_TEXT,
                                                '[PRE_VALIDATION] Supplier ''' ||
                                                h.VENDOR_NUM ||
                                                ''' is not loaded — invoice record skipped.'),
                        LAST_UPDATED_DATE = SYSDATE
-                WHERE  h.STATUS IN ('NEW', 'RETRY')
+                WHERE  h.STG_STATUS IN ('NEW', 'RETRY')
                 AND    (p_inv_type_filter IS NULL OR h.INVOICE_TYPE_LOOKUP_CODE LIKE p_inv_type_filter)
                 AND    NOT EXISTS (
                            SELECT 1
                            FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
                            WHERE  s.SEGMENT1 = h.VENDOR_NUM
-                           AND    s.STATUS   = 'LOADED'
+                           AND    s.STG_STATUS   = 'LOADED'
                        );
                 l_hdr_failed := SQL%ROWCOUNT;
 
                 -- Step 2: Cascade failures to child lines for any failed header.
                 UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL ln
-                SET    STATUS            = 'FAILED',
+                SET    STG_STATUS            = 'FAILED',
                        ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                                ERROR_TEXT,
                                                '[PRE_VALIDATION] Parent invoice ''' ||
                                                ln.INVOICE_ID ||
                                                ''' failed upstream validation — line skipped.'),
                        LAST_UPDATED_DATE = SYSDATE
-                WHERE  ln.STATUS IN ('NEW', 'RETRY')
+                WHERE  ln.STG_STATUS IN ('NEW', 'RETRY')
                 AND    EXISTS (
                            SELECT 1
                            FROM   DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL h
                            WHERE  h.INVOICE_ID = ln.INVOICE_ID
-                           AND    h.STATUS     = 'FAILED'
+                           AND    h.STG_STATUS     = 'FAILED'
                            AND    h.ERROR_TEXT LIKE '%[PRE_VALIDATION]%'
                            AND    (p_inv_type_filter IS NULL OR h.INVOICE_TYPE_LOOKUP_CODE LIKE p_inv_type_filter)
                        );

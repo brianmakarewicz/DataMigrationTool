@@ -281,14 +281,14 @@
         -- Echo outcomes back to STG table
         -- LOADED
         UPDATE DMT_OWNER.DMT_EGP_ITEM_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_EGP_ITEM_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         -- FAILED
         UPDATE DMT_OWNER.DMT_EGP_ITEM_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_EGP_ITEM_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -402,7 +402,7 @@
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
 
                 UPDATE DMT_EGP_ITEM_STG_TBL
-                SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (
                     SELECT STG_SEQUENCE_ID FROM DMT_EGP_ITEM_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
@@ -441,7 +441,7 @@
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
 
                 UPDATE DMT_EGP_ITEM_STG_TBL
-                SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (
                     SELECT STG_SEQUENCE_ID FROM DMT_EGP_ITEM_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
@@ -513,7 +513,7 @@
             l_count := SQL%ROWCOUNT;
 
             UPDATE DMT_EGP_ITEM_STG_TBL
-            SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+            SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_SEQUENCE_ID IN (
                 SELECT STG_SEQUENCE_ID FROM DMT_EGP_ITEM_TFM_TBL
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'

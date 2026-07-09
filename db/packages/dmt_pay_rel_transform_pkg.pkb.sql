@@ -54,7 +54,7 @@ AS
             PAYROLL_RELATIONSHIP_NUMBER,
             PAYROLL_STATUS_CODE,
             LEGISLATIVE_DATA_GROUP_NAME,
-            STATUS,
+            TFM_STATUS,
             LAST_UPDATED_DATE
         )
         SELECT
@@ -74,10 +74,10 @@ AS
             SYSDATE
         FROM DMT_OWNER.DMT_PAY_REL_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -92,17 +92,17 @@ AS
         l_ok_count := l_ok_count + SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PAY_REL_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
             FROM   DMT_OWNER.DMT_PAY_REL_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_reprocess_errors AND STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 
         DMT_UTIL_PKG.LOG(

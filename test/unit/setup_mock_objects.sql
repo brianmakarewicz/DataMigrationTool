@@ -9,7 +9,7 @@
 --
 -- MockObject / MockChild prove the queue engine end-to-end -- submission,
 -- catalog-driven dispatch, dependency promotion, failure policies, the
--- RECONCILE_ONE path, the accounting gate, and the run-status rollup --
+-- RECONCILE_ONE path, the accounting gate, and the run-tfm_status rollup --
 -- with no Fusion instance (EXEC_MODE = LOCAL).
 --
 -- They live in the dedicated TEST pipeline so they can never be swept into a
@@ -53,17 +53,17 @@ commit;
 
 -- Catalog rows: point at the committed DMT_MOCK_TFM_TBL so the catalog-
 -- driven accounting gate (DMT_QUEUE_WORKER_PKG.ACCOUNT_ROWS -- design
--- section 5 "Object-status accounting") counts real mock rows. ROW_FILTER
+-- section 5 "Object-tfm_status accounting") counts real mock rows. ROW_FILTER
 -- discriminates the two mocks sharing one table (the shared-table-children
 -- pattern the catalog contract defines).
 merge into "DMT_CEMLI_CATALOG_TBL" t
 using (
     select 'MockObject' cemli_code, 'Mock Records' display_name,
-           'DMT_MOCK_TFM_TBL' tfm_table, 'STATUS' status_column,
+           'DMT_MOCK_TFM_TBL' tfm_table, 'TFM_STATUS' status_column,
            'CEMLI_CODE = ''MockObject''' row_filter, 1 sort_order from dual
     union all
     select 'MockChild', 'Mock Child Records',
-           'DMT_MOCK_TFM_TBL', 'STATUS',
+           'DMT_MOCK_TFM_TBL', 'TFM_STATUS',
            'CEMLI_CODE = ''MockChild''', 1 from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)

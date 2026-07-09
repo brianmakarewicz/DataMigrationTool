@@ -493,10 +493,10 @@
             JOIN DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL b
             ON b.ASSET_NUMBER = h.ASSET_NUMBER
             AND b.RUN_ID = h.RUN_ID
-            AND b.STATUS = 'STAGED'
+            AND b.TFM_STATUS = 'STAGED'
             AND (p_book IS NULL OR b.BOOK_TYPE_CODE = p_book)
             WHERE h.RUN_ID = p_run_id
-            AND h.STATUS = 'STAGED'
+            AND h.TFM_STATUS = 'STAGED'
             ORDER BY b.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -587,7 +587,7 @@
                      FROM   DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL b
                      WHERE  b.ASSET_NUMBER = d.ASSET_NUMBER
                      AND    b.RUN_ID = d.RUN_ID
-                     AND    b.STATUS = 'STAGED') AS MASS_ADDITION_ID,
+                     AND    b.TFM_STATUS = 'STAGED') AS MASS_ADDITION_ID,
                     d.UNITS_ASSIGNED AS UNITS,
                     d.LOCATION_SEGMENT1, d.LOCATION_SEGMENT2, d.LOCATION_SEGMENT3,
                     d.LOCATION_SEGMENT4, d.LOCATION_SEGMENT5, d.LOCATION_SEGMENT6,
@@ -597,12 +597,12 @@
                     d.EXPENSE_ACCOUNT_SEGMENT7, d.EXPENSE_ACCOUNT_SEGMENT8, d.EXPENSE_ACCOUNT_SEGMENT9,
                     d.EXPENSE_ACCOUNT_SEGMENT10
                 FROM DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL d
-                WHERE d.RUN_ID = p_run_id AND d.STATUS = 'STAGED'
+                WHERE d.RUN_ID = p_run_id AND d.TFM_STATUS = 'STAGED'
                 AND (p_book IS NULL OR EXISTS (
                         SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL b2
                         WHERE b2.ASSET_NUMBER = d.ASSET_NUMBER
                         AND   b2.RUN_ID = d.RUN_ID
-                        AND   b2.STATUS = 'STAGED'
+                        AND   b2.TFM_STATUS = 'STAGED'
                         AND   b2.BOOK_TYPE_CODE = p_book))
                 ORDER BY d.TFM_SEQUENCE_ID
             )
@@ -662,15 +662,15 @@
 
         -- Mark only THIS book's rows GENERATED (one book per asset → HDR/ASSIGN scoped by
         -- the asset's book). p_book NULL = all books (single-FBDI / legacy path).
-        UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
-        WHERE RUN_ID=p_run_id AND STATUS='STAGED' AND (p_book IS NULL OR BOOK_TYPE_CODE=p_book);
-        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
-        WHERE RUN_ID=p_run_id AND STATUS='STAGED'
+        UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
+        WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED' AND (p_book IS NULL OR BOOK_TYPE_CODE=p_book);
+        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
+        WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
         AND (p_book IS NULL OR ASSET_NUMBER IN (
               SELECT ASSET_NUMBER FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
               WHERE RUN_ID=p_run_id AND BOOK_TYPE_CODE=p_book));
-        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
-        WHERE RUN_ID=p_run_id AND STATUS='STAGED'
+        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
+        WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
         AND (p_book IS NULL OR ASSET_NUMBER IN (
               SELECT ASSET_NUMBER FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
               WHERE RUN_ID=p_run_id AND BOOK_TYPE_CODE=p_book));

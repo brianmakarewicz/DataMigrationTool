@@ -16,7 +16,7 @@ AS
 -- ============================================================
 
     -- Pre-transform validation: check upstream dependencies on STG rows.
-    -- Future: verify PERSON_NUMBER exists in DMT_WORKER_STG_TBL with STATUS = LOADED.
+    -- Future: verify PERSON_NUMBER exists in DMT_WORKER_STG_TBL with STG_STATUS = LOADED.
     -- Stub — no rules implemented yet. Logs start/complete only.
     PROCEDURE VALIDATE_PRE_TRANSFORM (
         p_run_id IN NUMBER

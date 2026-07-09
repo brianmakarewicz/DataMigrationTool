@@ -214,7 +214,7 @@ AS
                 || '"' || REPLACE(NVL(INTERCOMPANY_CROSSCHARGE_FLAG,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             AND    (p_operating_unit IS NULL OR t.OPERATING_UNIT = p_operating_unit)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
@@ -411,12 +411,12 @@ AS
                 || '"' || NVL(TO_CHAR(RCV_TRANSACTION_ID), '') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
-            AND    l.STATUS = 'STAGED'
+            AND    l.TFM_STATUS = 'STAGED'
             AND    (p_operating_unit IS NULL OR l.INVOICE_ID IN (
             SELECT h.INVOICE_ID
             FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
-            AND    h.STATUS IN ('STAGED','GENERATED')
+            AND    h.TFM_STATUS IN ('STAGED','GENERATED')
             AND    h.OPERATING_UNIT = p_operating_unit))
             ORDER BY l.TFM_SEQUENCE_ID
                     ) LOOP
@@ -518,14 +518,14 @@ AS
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
         -- Headers: filter directly by OPERATING_UNIT.
         UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_operating_unit IS NULL OR OPERATING_UNIT = p_operating_unit);
 
         -- Lines: filter via header chain (INVOICE_ID).
         UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_operating_unit IS NULL OR INVOICE_ID IN (
             SELECT h.INVOICE_ID
             FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h

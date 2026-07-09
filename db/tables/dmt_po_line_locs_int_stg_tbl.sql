@@ -97,7 +97,7 @@ begin
 	"REQUESTED_DELIVERY_DATE" DATE, 
 	"PROMISED_DELIVERY_DATE" DATE, 
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
 	"ERROR_TEXT" CLOB, 
 	"SOURCE_ID" VARCHAR2(240), 
 	"LAST_UPDATED_DATE" DATE, 
@@ -110,8 +110,40 @@ exception when others then
 end;
 /
 
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PO_LINE_LOCS_INT_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_PO_LINE_LOCS_INT_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
+end;
+/
+
 COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_PO_LINE_LOCS_INT_STG_SEQ';
 COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."INTERFACE_LINE_LOCATION_KEY" IS 'Unique key for this shipment â€” links distributions back to this location';
 COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."INTERFACE_LINE_KEY" IS 'FK to line â€” must match DMT_PO_LINES_INT_STG_TBL.INTERFACE_LINE_KEY';
-COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."STATUS" IS 'NEW > TRANSFORMED > LOADED / FAILED. Cascaded FAILED if parent line fails.';
 COMMENT ON TABLE "DMT_PO_LINE_LOCS_INT_STG_TBL"  IS 'Purchase Order line locations (shipments) staging. Raw user data only. FBDI interface: PO_LINE_LOCATIONS_INTERFACE. CSV: PoLineLocationsInterfaceOrder.csv.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+begin
+  execute immediate 'CREATE INDEX "DMT_PO_LINE_LOCS_INT_STG_N1" ON "DMT_PO_LINE_LOCS_INT_STG_TBL" ("STG_STATUS")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PO_LINE_LOCS_INT_STG_N2" ON "DMT_PO_LINE_LOCS_INT_STG_TBL" ("SCENARIO_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';

@@ -173,7 +173,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_AP_PAY_TERM_HDR_STG_TBL
-                    SET    STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_hdr_loaded := l_hdr_loaded + 1;
@@ -190,7 +190,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_AP_PAY_TERM_HDR_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_hdr_failed := l_hdr_failed + 1;
@@ -213,7 +213,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_AP_PAY_TERM_HDR_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_hdr_failed := l_hdr_failed + 1;
@@ -257,7 +257,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_line_failed := l_line_failed + 1;
@@ -305,7 +305,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL
-                    SET    STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_line_loaded := l_line_loaded + 1;
@@ -319,7 +319,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_line_failed := l_line_failed + 1;
@@ -343,7 +343,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_line_failed := l_line_failed + 1;
@@ -370,12 +370,12 @@
 
         -- Echo orphan failures to STG
         UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL
-        SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID FROM DMT_AP_PAY_TERM_LINE_TFM_TBL
             WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
         )
-        AND    STATUS != 'FAILED';
+        AND    STG_STATUS != 'FAILED';
 
         COMMIT;
 

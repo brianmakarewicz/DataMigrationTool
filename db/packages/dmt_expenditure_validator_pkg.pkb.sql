@@ -14,7 +14,7 @@ AS
     -- VALIDATE_PRE_TRANSFORM
     -- Upstream dependency: PROJECT_NUMBER must match a LOADED project.
     -- For migrated projects: NVL(dep_prefix,'') || exp.PROJECT_NUMBER
-    --   must exist in DMT_PJF_PROJECTS_STG_TBL with STATUS='LOADED'.
+    --   must exist in DMT_PJF_PROJECTS_STG_TBL with STG_STATUS='LOADED'.
     -- --------------------------------------------------------
     PROCEDURE VALIDATE_PRE_TRANSFORM (
         p_run_id    IN NUMBER,
@@ -48,24 +48,24 @@ AS
         BEGIN
             SELECT COUNT(*) INTO l_any_loaded
             FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL
-            WHERE  STATUS = 'LOADED' AND ROWNUM = 1;
+            WHERE  STG_STATUS = 'LOADED' AND ROWNUM = 1;
 
             IF l_any_loaded > 0 THEN
                 UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL e
-                SET    STATUS            = 'FAILED',
+                SET    STG_STATUS            = 'FAILED',
                        ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                                ERROR_TEXT,
                                                '[PRE_VALIDATION] Project ''' ||
                                                e.PROJECT_NUMBER ||
                                                ''' is not loaded — expenditure record skipped.'),
                        LAST_UPDATED_DATE = SYSDATE
-                WHERE  e.STATUS IN ('NEW', 'RETRY')
+                WHERE  e.STG_STATUS IN ('NEW', 'RETRY')
                 AND    e.PROJECT_NUMBER IS NOT NULL
                 AND    NOT EXISTS (
                            SELECT 1
                            FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL p
                            WHERE  p.PROJECT_NUMBER = e.PROJECT_NUMBER
-                           AND    p.STATUS         = 'LOADED'
+                           AND    p.STG_STATUS         = 'LOADED'
                        );
                 l_failed := SQL%ROWCOUNT;
             END IF;

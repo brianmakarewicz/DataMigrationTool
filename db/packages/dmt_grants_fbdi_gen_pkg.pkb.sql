@@ -187,7 +187,7 @@ AS
                 || '"' || REPLACE(NVL(SHIP_TO_ACCT_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(PREPAY_TRX_TYPE_NAME,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED'
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -215,7 +215,7 @@ AS
                 || '"' || NVL(TO_CHAR(INDIRECT_FUNDING_AMOUNT), '') || '"' || ','
                 || '"' || REPLACE(NVL(FUNDING_SOURCE_NUMBER,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_FUNDING_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -288,7 +288,7 @@ AS
                 || '"' || NVL(TO_CHAR(ATTRIBUTE_TIMESTAMP9, 'MM/DD/YYYY'), '') || '"' || ','
                 || '"' || NVL(TO_CHAR(ATTRIBUTE_TIMESTAMP10, 'MM/DD/YYYY'), '') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_PROJECTS_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -366,7 +366,7 @@ AS
                 || '"' || NVL(TO_CHAR(ATTRIBUTE_TIMESTAMP9, 'MM/DD/YYYY'), '') || '"' || ','
                 || '"' || NVL(TO_CHAR(ATTRIBUTE_TIMESTAMP10, 'MM/DD/YYYY'), '') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_PERSONNEL_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -391,7 +391,7 @@ AS
                 || '"' || REPLACE(NVL(COST_SHARE_APPROVED_BY_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(COST_SHARE_APPROVAL_DATE, 'MM/DD/YYYY'), '') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_FUND_SRC_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -413,7 +413,7 @@ AS
                 || '"' || REPLACE(NVL(FUNDING_SOURCE_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ENABLE_BURDENING_FLAG,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -433,7 +433,7 @@ AS
                 || '"' || REPLACE(NVL(PROJECT_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(KEYWORD_NAME,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_KEYWORDS_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -454,7 +454,7 @@ AS
                 || '"' || NVL(TO_CHAR(START_DATE, 'MM/DD/YYYY'), '') || '"' || ','
                 || '"' || NVL(TO_CHAR(END_DATE, 'MM/DD/YYYY'), '') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -484,7 +484,7 @@ AS
                 || '"' || REPLACE(NVL(EXEMPTION_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(COMMENTS,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_CERTS_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -503,7 +503,7 @@ AS
                 '"' || REPLACE(NVL(AWARD_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(CFDA,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_CFDAS_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -524,7 +524,7 @@ AS
                 || '"' || REPLACE(NVL(ISSUE_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(FUNDING_AMOUNT), '') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -545,7 +545,7 @@ AS
                 || '"' || REPLACE(NVL(ORGANIZATION,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(CREDIT_PERCENTAGE), '') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -567,7 +567,7 @@ AS
                 || '"' || REPLACE(NVL(BURDEN_SCHEDULE,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(FIXED_DATE, 'MM/DD/YYYY'), '') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -589,7 +589,7 @@ AS
                 || '"' || REPLACE(NVL(VALUE,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(COMMENTS,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_REFERENCES_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -612,7 +612,7 @@ AS
                 || '"' || REPLACE(NVL(TERM_OPERAND,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(TERM_VALUE,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM DMT_OWNER.DMT_GMS_AWD_TERMS_TFM_TBL t
-            WHERE t.RUN_ID = p_run_id AND t.STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
+            WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED' ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
         END LOOP;
@@ -789,21 +789,21 @@ AS
         );
 
         -- Update all 15 TFM tables to GENERATED and stamp FBDI_CSV_ID
-        UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL      SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_FUNDING_TFM_TBL       SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PROJECTS_TFM_TBL      SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PERSONNEL_TFM_TBL     SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_SRC_TFM_TBL      SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL  SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_KEYWORDS_TFM_TBL      SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_TFM_TBL     SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_CERTS_TFM_TBL         SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_CFDAS_TFM_TBL         SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_TFM_TBL    SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_TFM_TBL   SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL   SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_REFERENCES_TFM_TBL    SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_TERMS_TFM_TBL         SET STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_FUNDING_TFM_TBL       SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_PROJECTS_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_PERSONNEL_TFM_TBL     SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_SRC_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL  SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_KEYWORDS_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_TFM_TBL     SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_CERTS_TFM_TBL         SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_CFDAS_TFM_TBL         SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_TFM_TBL    SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_TFM_TBL   SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL   SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_REFERENCES_TFM_TBL    SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_TERMS_TFM_TBL         SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
 
         -- Free temporary CLOBs
         DBMS_LOB.FREETEMPORARY(l_hdr_csv);   DBMS_LOB.FREETEMPORARY(l_fund_csv);

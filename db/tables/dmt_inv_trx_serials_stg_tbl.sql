@@ -110,10 +110,11 @@ begin
 	"ATTRIBUTE_TIMESTAMP4" TIMESTAMP (6), 
 	"ATTRIBUTE_TIMESTAMP5" TIMESTAMP (6), 
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
 	"ERROR_TEXT" CLOB, 
 	"SOURCE_ID" VARCHAR2(240), 
 	"LAST_UPDATED_DATE" DATE, 
+	"SCENARIO_ID" NUMBER, 
 	 CONSTRAINT "DMT_INV_TRX_SERIALS_STG_PK" PRIMARY KEY ("STG_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -121,3 +122,46 @@ exception when others then
   if sqlcode not in (-955) then raise; end if;
 end;
 /
+
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_INV_TRX_SERIALS_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_INV_TRX_SERIALS_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
+end;
+/
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_INV_TRX_SERIALS_STG_TBL' and column_name = 'SCENARIO_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_INV_TRX_SERIALS_STG_TBL" ADD ("SCENARIO_ID" NUMBER)';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_INV_TRX_SERIALS_STG_N1" ON "DMT_INV_TRX_SERIALS_STG_TBL" ("STG_STATUS")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_INV_TRX_SERIALS_STG_N2" ON "DMT_INV_TRX_SERIALS_STG_TBL" ("SCENARIO_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_INV_TRX_SERIALS_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';

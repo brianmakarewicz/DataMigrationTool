@@ -251,13 +251,13 @@
             -- No reportBytes at all — BIP returned 0 rows from BOTH tiers.
             -- Mark all GENERATED rows as FAILED (not reconciled).
             UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
-            SET    STATUS               = 'FAILED',
+            SET    TFM_STATUS               = 'FAILED',
                    ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                        '[RECONCILE_ERROR] BIP returned 0 rows from both interface and base tables. Cannot verify Fusion outcome.'),
                    RESULTS_UPDATED_DATE = SYSDATE,
                    LAST_UPDATED_DATE    = SYSDATE
             WHERE  RUN_ID       = p_run_id
-            AND    STATUS               = 'GENERATED';
+            AND    TFM_STATUS               = 'GENERATED';
             l_not_recon := SQL%ROWCOUNT;
             DMT_UTIL_PKG.LOG(
                 p_run_id => p_run_id,
@@ -288,35 +288,35 @@
             IF r.source_type = 'BASE' THEN
                 -- Tier 2: Found in FA_ADDITIONS_B = positively LOADED
                 UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
-                SET    STATUS               = 'LOADED',
+                SET    TFM_STATUS               = 'LOADED',
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    ASSET_NUMBER         = r.asset_number
-                AND    STATUS              NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'INTERFACE' THEN
                 -- Tier 1: Still in FA_MASS_ADDITIONS — check posting_status
                 IF r.import_status IN ('POSTED','POST','Y','PROCESSED','SUCCESS','COMPLETED') THEN
                     UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
-                    SET    STATUS               = 'LOADED',
+                    SET    TFM_STATUS               = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    ASSET_NUMBER         = r.asset_number
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSE
                     UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || NVL(r.error_msg, 'Asset not posted. Posting status: ' || NVL(r.import_status, 'NULL'))),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    ASSET_NUMBER         = r.asset_number
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;
             END IF;
@@ -324,75 +324,75 @@
 
         -- Any GENERATED rows not matched by either tier = not reconciled
         UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
-        SET    STATUS               = 'FAILED',
+        SET    TFM_STATUS               = 'FAILED',
                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                    '[RECONCILE_ERROR] Row not found in Fusion interface table or base application table. Cannot verify import outcome.'),
                RESULTS_UPDATED_DATE = SYSDATE,
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID       = p_run_id
-        AND    STATUS               = 'GENERATED';
+        AND    TFM_STATUS               = 'GENERATED';
         l_not_recon := SQL%ROWCOUNT;
 
         <<cascade_and_echo>>
-        -- Cascade to book TFM — match header status
+        -- Cascade to book TFM — match header tfm_status
         UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL bk
-        SET    bk.STATUS            = 'LOADED',
+        SET    bk.TFM_STATUS            = 'LOADED',
                bk.LAST_UPDATED_DATE = SYSDATE
         WHERE  bk.RUN_ID    = p_run_id
-        AND    bk.STATUS            = 'GENERATED'
+        AND    bk.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
             WHERE  hdr.RUN_ID  = bk.RUN_ID
             AND    hdr.ASSET_NUMBER    = bk.ASSET_NUMBER
-            AND    hdr.STATUS          = 'LOADED');
+            AND    hdr.TFM_STATUS          = 'LOADED');
 
         UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL bk
-        SET    bk.STATUS            = 'FAILED',
+        SET    bk.TFM_STATUS            = 'FAILED',
                bk.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
                    '[FUSION_ERROR] Parent asset header failed or not reconciled.'),
                bk.LAST_UPDATED_DATE = SYSDATE
         WHERE  bk.RUN_ID    = p_run_id
-        AND    bk.STATUS            = 'GENERATED'
+        AND    bk.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
             WHERE  hdr.RUN_ID  = bk.RUN_ID
             AND    hdr.ASSET_NUMBER    = bk.ASSET_NUMBER
-            AND    hdr.STATUS          = 'FAILED');
+            AND    hdr.TFM_STATUS          = 'FAILED');
 
-        -- Cascade to assignment TFM — match header status
+        -- Cascade to assignment TFM — match header tfm_status
         UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL asn
-        SET    asn.STATUS            = 'LOADED',
+        SET    asn.TFM_STATUS            = 'LOADED',
                asn.LAST_UPDATED_DATE = SYSDATE
         WHERE  asn.RUN_ID    = p_run_id
-        AND    asn.STATUS            = 'GENERATED'
+        AND    asn.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
             WHERE  hdr.RUN_ID  = asn.RUN_ID
             AND    hdr.ASSET_NUMBER    = asn.ASSET_NUMBER
-            AND    hdr.STATUS          = 'LOADED');
+            AND    hdr.TFM_STATUS          = 'LOADED');
 
         UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL asn
-        SET    asn.STATUS            = 'FAILED',
+        SET    asn.TFM_STATUS            = 'FAILED',
                asn.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
                    '[FUSION_ERROR] Parent asset header failed or not reconciled.'),
                asn.LAST_UPDATED_DATE = SYSDATE
         WHERE  asn.RUN_ID    = p_run_id
-        AND    asn.STATUS            = 'GENERATED'
+        AND    asn.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
             WHERE  hdr.RUN_ID  = asn.RUN_ID
             AND    hdr.ASSET_NUMBER    = asn.ASSET_NUMBER
-            AND    hdr.STATUS          = 'FAILED');
+            AND    hdr.TFM_STATUS          = 'FAILED');
 
         -- Echo outcomes back to STG
         UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -400,7 +400,7 @@
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 

@@ -265,7 +265,7 @@ def evaluate(run_id, baseline_arg):
             print(f"    warn  {cemli}: SKIPPED")
 
     # ---- 2. record-level verdicts ---------------------------------------
-    cur.execute("""SELECT CEMLI_CODE, SUB_OBJECT, DISPLAY_KEY, STATUS,
+    cur.execute("""SELECT CEMLI_CODE, SUB_OBJECT, DISPLAY_KEY, TFM_STATUS,
                           DBMS_LOB.SUBSTR(ERROR_TEXT, 300, 1)
                    FROM DMT_RECORD_DETAIL_V WHERE RUN_ID = :1""", [run_id])
     records = cur.fetchall()
@@ -408,7 +408,7 @@ def evaluate(run_id, baseline_arg):
     if baseline_id:
         print(f"\n[5] Baseline diff vs RUN_ID={baseline_id} (GOOD/BAD-aware: a regression is "
               f"fewer good rows loading, more good rows failing, or more bad rows loading)")
-        cur.execute("""SELECT SUB_OBJECT, DISPLAY_KEY, STATUS FROM DMT_RECORD_DETAIL_V
+        cur.execute("""SELECT SUB_OBJECT, DISPLAY_KEY, TFM_STATUS FROM DMT_RECORD_DETAIL_V
                        WHERE RUN_ID = :1""", [baseline_id])
         base = {}
         for sub, key, status in cur.fetchall():

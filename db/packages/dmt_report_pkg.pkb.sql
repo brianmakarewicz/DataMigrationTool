@@ -36,11 +36,11 @@
                    s.SOURCE_ID,
                    s.VENDOR_NAME,
                    s.SEGMENT1,
-                   s.STATUS,
+                   s.STG_STATUS,
                    s.ERROR_TEXT,
                    s.STAGE_DATE
             FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
-            WHERE  s.STATUS = 'FAILED'
+            WHERE  s.STG_STATUS = 'FAILED'
             AND    s.STG_SEQUENCE_ID IN (
                 SELECT t.STG_SEQUENCE_ID
                 FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t

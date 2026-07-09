@@ -68,7 +68,7 @@ AS
         l_cnt NUMBER;
     BEGIN
         EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM DMT_OWNER.' || p_tbl ||
-            ' WHERE RUN_ID = :1 AND STATUS = ''STAGED'' AND ROWNUM = 1'
+            ' WHERE RUN_ID = :1 AND TFM_STATUS = ''STAGED'' AND ROWNUM = 1'
             INTO l_cnt USING p_iid;
         RETURN l_cnt > 0;
     END has_rows;
@@ -120,7 +120,7 @@ AS
                        wr.DATE_START, wr.LEGAL_EMPLOYER_NAME, wr.ACTION_CODE
                 FROM   DMT_OWNER.DMT_WORK_REL_TFM_TBL wr
                 WHERE  wr.RUN_ID = p_run_id
-                AND    wr.STATUS = 'STAGED'
+                AND    wr.TFM_STATUS = 'STAGED'
             ) LOOP
                 l_vals := C_SOURCE_SYSTEM              || '|' ||
                           pv(r.PERSON_NUMBER)          || '|' ||  -- SourceSystemId
@@ -143,7 +143,7 @@ AS
                 SELECT DISTINCT wr.PERSON_NUMBER, wr.DATE_START
                 FROM   DMT_OWNER.DMT_WORK_REL_TFM_TBL wr
                 WHERE  wr.RUN_ID = p_run_id
-                AND    wr.STATUS = 'STAGED'
+                AND    wr.TFM_STATUS = 'STAGED'
             ) LOOP
                 -- Re-state PersonName with existing SSID pattern.
                 -- MERGE will match existing record and preserve values.
@@ -170,7 +170,7 @@ AS
                        wr.DATE_START, wr.LEGAL_EMPLOYER_NAME, wr.WORKER_TYPE
                 FROM   DMT_OWNER.DMT_WORK_REL_TFM_TBL wr
                 WHERE  wr.RUN_ID = p_run_id
-                AND    wr.STATUS = 'STAGED'
+                AND    wr.TFM_STATUS = 'STAGED'
             ) LOOP
                 l_vals := C_SOURCE_SYSTEM                || '|' ||
                           pv(r.PERSON_NUMBER) || '_POS'  || '|' ||  -- SourceSystemId
@@ -194,7 +194,7 @@ AS
                        wr.DATE_START, wr.ACTION_CODE
                 FROM   DMT_OWNER.DMT_WORK_REL_TFM_TBL wr
                 WHERE  wr.RUN_ID = p_run_id
-                AND    wr.STATUS = 'STAGED'
+                AND    wr.TFM_STATUS = 'STAGED'
             ) LOOP
                 l_vals := C_SOURCE_SYSTEM                || '|' ||
                           pv(r.PERSON_NUMBER) || '_TRM'  || '|' ||  -- SourceSystemId
@@ -220,7 +220,7 @@ AS
                 SELECT t.*
                 FROM   DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
-                AND    t.STATUS = 'STAGED'
+                AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
                 l_vals := C_SOURCE_SYSTEM                    || '|' ||
@@ -283,12 +283,12 @@ AS
         );
 
         UPDATE DMT_OWNER.DMT_WORK_REL_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         UPDATE DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         DBMS_LOB.FREETEMPORARY(l_dat);
 

@@ -156,7 +156,7 @@
   </table>
   <div class="note"><strong>The accounting rule.</strong> A work item is DONE if and only if every record is accounted for (base-table LOADED or interface-errored FAILED); it is FAILED only if any record is unaccounted for. Row failures alone never fail the work item — unexplained rows do.</div>
 
-  <h4>Row — <code>STATUS</code> · STG &amp; TFM tables</h4>
+  <h4>Row — <code>STG_STATUS</code> / <code>TFM_STATUS</code> · STG &amp; TFM tables</h4>
   <table>
     <tr><th>Layer</th><th>Status</th><th>Meaning</th></tr>
     <tr><td>STG</td><td><code>NEW</code></td><td>Loaded into staging; no run has attempted it yet.</td></tr>

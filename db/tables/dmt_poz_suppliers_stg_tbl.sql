@@ -196,7 +196,7 @@ begin
 	"DATAFOX_COMPANY_ID" VARCHAR2(100), 
 	"SOURCE_ID" VARCHAR2(200), 
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
 	"SCENARIO_ID" NUMBER, 
@@ -208,8 +208,21 @@ exception when others then
 end;
 /
 
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
+declare
+  l_n pls_integer;
 begin
-  execute immediate 'CREATE INDEX "DMT_POZ_SUPPLIERS_STG_TBL_N1" ON "DMT_POZ_SUPPLIERS_STG_TBL" ("STATUS")';
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_POZ_SUPPLIERS_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_POZ_SUPPLIERS_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "DMT_POZ_SUPPLIERS_STG_TBL_N1" ON "DMT_POZ_SUPPLIERS_STG_TBL" ("STG_STATUS")';
 exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
@@ -219,6 +232,19 @@ COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identit
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_STG_TBL"."IMPORT_ACTION" IS 'CREATE or UPDATE';
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_STG_TBL"."SEGMENT1" IS 'Supplier number. Maps to POZ_SUPPLIERS_INT.SEGMENT1. Prefix applied in TFM table.';
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_STG_TBL"."SOURCE_ID" IS 'Natural key from source system';
-COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_STG_TBL"."STATUS" IS 'NEW > RETRY > TRANSFORMED > LOADED / FAILED';
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten.';
 COMMENT ON TABLE "DMT_POZ_SUPPLIERS_STG_TBL"  IS 'Supplier header staging. Raw user-loaded data only. Run-specific data in DMT_POZ_SUPPLIERS_TFM_TBL. Interface table: POZ_SUPPLIERS_INT. CTL: PozSuppliersInt.ctl (25B).';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+begin
+  execute immediate 'CREATE INDEX "DMT_POZ_SUPPLIERS_STG_N1" ON "DMT_POZ_SUPPLIERS_STG_TBL" ("SCENARIO_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';

@@ -60,7 +60,7 @@
         DBMS_LOB.CREATETEMPORARY(l_csv, TRUE);
         FOR r IN (
             SELECT t.* FROM DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'STAGED'
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             -- 62 columns per PjoPlanVersionsXface.ctl
@@ -160,8 +160,8 @@
         VALUES (DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id, 'ProjectBudgets', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now);
 
         UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         DBMS_LOB.FREETEMPORARY(l_csv);
         x_fbdi_zip := l_zip; x_fbdi_csv_id := l_fbdi_csv_id;

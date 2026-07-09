@@ -163,16 +163,16 @@ begin
     select scenario_id into l_scn
     from   dmt_scenario_tbl where upper(scenario_name) = 'TEST_SUPPLIERS_SCN';
 
-    -- 6. Every landed STG row is scenario-stamped and STATUS 'NEW'
-    --    (section 3: STG STATUS default 'NEW'; scenario bound in the
+    -- 6. Every landed STG row is scenario-stamped and STG_STATUS 'NEW'
+    --    (section 3: STG STG_STATUS default 'NEW'; scenario bound in the
     --    ingesting INSERT — "Scenario guard is structural").
     select count(*) into l_cnt from (
-        select status, scenario_id from dmt_poz_suppliers_stg_tbl     where scenario_id = l_scn union all
-        select status, scenario_id from dmt_poz_sup_addr_stg_tbl      where scenario_id = l_scn union all
-        select status, scenario_id from dmt_poz_sup_site_stg_tbl      where scenario_id = l_scn union all
-        select status, scenario_id from dmt_poz_sup_site_assn_stg_tbl where scenario_id = l_scn union all
-        select status, scenario_id from dmt_poz_sup_contacts_stg_tbl  where scenario_id = l_scn
-    ) where status = 'NEW';
+        select stg_status, scenario_id from dmt_poz_suppliers_stg_tbl     where scenario_id = l_scn union all
+        select stg_status, scenario_id from dmt_poz_sup_addr_stg_tbl      where scenario_id = l_scn union all
+        select stg_status, scenario_id from dmt_poz_sup_site_stg_tbl      where scenario_id = l_scn union all
+        select stg_status, scenario_id from dmt_poz_sup_site_assn_stg_tbl where scenario_id = l_scn union all
+        select stg_status, scenario_id from dmt_poz_sup_contacts_stg_tbl  where scenario_id = l_scn
+    ) where stg_status = 'NEW';
     assert(l_cnt = 11, 6, 'all 11 landed STG rows scenario-stamped with STATUS NEW');
 
     -- 7. Identity PK conversion tripwire (section 7 accepted standard
@@ -192,15 +192,15 @@ begin
     -- TFM tier — a LOADED TFM row from a (notional) prior run, linked to a
     -- TRANSFORMED STG row. LOADED is illegal on STG (vocabulary is
     -- NEW / TRANSFORMED / FAILED).
-    insert into dmt_poz_suppliers_stg_tbl (vendor_name, segment1, status, scenario_id, source_id)
+    insert into dmt_poz_suppliers_stg_tbl (vendor_name, segment1, stg_status, scenario_id, source_id)
     values ('TESTSUP LoadedSup', 'TSUP-L1', 'TRANSFORMED', l_scn, 'TESTSUP_FIXTURE')
     returning stg_sequence_id into l_stg_id;
-    insert into dmt_poz_suppliers_tfm_tbl (stg_sequence_id, vendor_name, segment1, status, fusion_vendor_id)
+    insert into dmt_poz_suppliers_tfm_tbl (stg_sequence_id, vendor_name, segment1, tfm_status, fusion_vendor_id)
     values (l_stg_id, 'TESTSUP LoadedSup', 'TSUP-L1', 'LOADED', 300000000000001);
-    insert into dmt_poz_sup_site_stg_tbl (vendor_name, vendor_site_code, procurement_business_unit_name, party_site_name, status, scenario_id, source_id)
+    insert into dmt_poz_sup_site_stg_tbl (vendor_name, vendor_site_code, procurement_business_unit_name, party_site_name, stg_status, scenario_id, source_id)
     values ('TESTSUP LoadedSup', 'TSUP-SITE-L1', 'US1 Business Unit', 'TESTSUP HQ', 'TRANSFORMED', l_scn, 'TESTSUP_FIXTURE')
     returning stg_sequence_id into l_stg_id;
-    insert into dmt_poz_sup_site_tfm_tbl (stg_sequence_id, vendor_name, procurement_business_unit_name, party_site_name, vendor_site_code, status, fusion_vendor_site_id)
+    insert into dmt_poz_sup_site_tfm_tbl (stg_sequence_id, vendor_name, procurement_business_unit_name, party_site_name, vendor_site_code, tfm_status, fusion_vendor_site_id)
     values (l_stg_id, 'TESTSUP LoadedSup', 'US1 Business Unit', 'TESTSUP HQ', 'TSUP-SITE-L1', 'LOADED', 300000000000002);
     commit;
 
@@ -253,13 +253,13 @@ begin
     -- 9-10. Fixture shape proves the check is TFM-tier: the parent's
     --       evidence of LOADED is its TFM row; its STG row carries only
     --       legal STG vocabulary (TRANSFORMED — never 'LOADED' on STG).
-    select s.status, t.status into l_status, l_tfm
+    select s.stg_status, t.tfm_status into l_status, l_tfm
     from   dmt_poz_suppliers_stg_tbl s
     join   dmt_poz_suppliers_tfm_tbl t on t.stg_sequence_id = s.stg_sequence_id
     where  s.scenario_id = l_scn and s.source_id = 'TESTSUP_FIXTURE';
     assert(l_status = 'TRANSFORMED' and l_tfm = 'LOADED', 9,
            'parent supplier evidence is TFM-tier: STG TRANSFORMED, TFM LOADED');
-    select s.status, t.status into l_status, l_tfm
+    select s.stg_status, t.tfm_status into l_status, l_tfm
     from   dmt_poz_sup_site_stg_tbl s
     join   dmt_poz_sup_site_tfm_tbl t on t.stg_sequence_id = s.stg_sequence_id
     where  s.scenario_id = l_scn and s.source_id = 'TESTSUP_FIXTURE';
@@ -281,7 +281,7 @@ begin
     --    resolution order) proven in phase 2, not here.
     dmt_poz_sup_validator_pkg.validate_suppliers(:run_id);
     select count(*) into l_cnt from dmt_poz_suppliers_stg_tbl
-    where  scenario_id = l_scn and status = 'NEW';
+    where  scenario_id = l_scn and stg_status = 'NEW';
     assert(l_cnt = 3, 11, 'VALIDATE_SUPPLIERS is a no-op: all 3 supplier rows stay NEW');
 
     -- 12-15. Addresses: parent supplier must have a LOADED TFM row from
@@ -289,10 +289,10 @@ begin
     -- tagged [PRE_VALIDATION] (section 5 tag table) and never proceed
     -- to transform.
     dmt_poz_sup_validator_pkg.validate_addresses(:run_id);
-    select status into l_status from dmt_poz_sup_addr_stg_tbl
+    select stg_status into l_status from dmt_poz_sup_addr_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP LoadedSup';
     assert(l_status = 'NEW', 12, 'GOOD address (parent has LOADED TFM row) passes: stays NEW');
-    select status, error_text into l_status, l_err from dmt_poz_sup_addr_stg_tbl
+    select stg_status, error_text into l_status, l_err from dmt_poz_sup_addr_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP Ghost';
     assert(l_status = 'FAILED', 13, 'BAD address (ghost supplier — no TFM row anywhere) marked FAILED');
     assert(l_err like '%[PRE_VALIDATION]%', 14, 'BAD address ERROR_TEXT carries the [PRE_VALIDATION] tag');
@@ -301,10 +301,10 @@ begin
 
     -- 16-17. Sites: parent supplier must have a LOADED TFM row.
     dmt_poz_sup_validator_pkg.validate_sites(:run_id);
-    select status into l_status from dmt_poz_sup_site_stg_tbl
+    select stg_status into l_status from dmt_poz_sup_site_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP LoadedSup' and vendor_site_code = 'TSUP-SITE-G1';
     assert(l_status = 'NEW', 16, 'GOOD site (parent has LOADED TFM row) passes: stays NEW');
-    select status, error_text into l_status, l_err from dmt_poz_sup_site_stg_tbl
+    select stg_status, error_text into l_status, l_err from dmt_poz_sup_site_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP Ghost';
     assert(l_status = 'FAILED' and l_err like '%[PRE_VALIDATION]%', 17,
            'BAD site (ghost supplier) FAILED with [PRE_VALIDATION] tag');
@@ -314,20 +314,20 @@ begin
     -- but has no LOADED TFM row — proving the check reads the TFM
     -- tier, not STG status.
     dmt_poz_sup_validator_pkg.validate_site_assignments(:run_id);
-    select status into l_status from dmt_poz_sup_site_assn_stg_tbl
+    select stg_status into l_status from dmt_poz_sup_site_assn_stg_tbl
     where  scenario_id = l_scn and vendor_site_code = 'TSUP-SITE-L1';
     assert(l_status = 'NEW', 18, 'GOOD assignment (parent site has LOADED TFM row) passes: stays NEW');
-    select status, error_text into l_status, l_err from dmt_poz_sup_site_assn_stg_tbl
+    select stg_status, error_text into l_status, l_err from dmt_poz_sup_site_assn_stg_tbl
     where  scenario_id = l_scn and vendor_site_code = 'TSUP-SITE-G1' and source_id = 'TESTSUP-ASSN-BAD1';
     assert(l_status = 'FAILED' and l_err like '%[PRE_VALIDATION]%', 19,
            'BAD assignment (site STG row present but no LOADED TFM row) FAILED with [PRE_VALIDATION] tag');
 
     -- 20-21. Contacts: parent supplier must have a LOADED TFM row.
     dmt_poz_sup_validator_pkg.validate_contacts(:run_id);
-    select status into l_status from dmt_poz_sup_contacts_stg_tbl
+    select stg_status into l_status from dmt_poz_sup_contacts_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP LoadedSup';
     assert(l_status = 'NEW', 20, 'GOOD contact (parent has LOADED TFM row) passes: stays NEW');
-    select status, error_text into l_status, l_err from dmt_poz_sup_contacts_stg_tbl
+    select stg_status, error_text into l_status, l_err from dmt_poz_sup_contacts_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP Ghost';
     assert(l_status = 'FAILED' and l_err like '%[PRE_VALIDATION]%', 21,
            'BAD contact (ghost supplier) FAILED with [PRE_VALIDATION] tag');
@@ -378,10 +378,10 @@ begin
     where  run_id = :run_id;
     assert(l_cnt = 3, 22, 'suppliers: 3 NEW rows transform; TRANSFORMED fixture excluded');
 
-    -- 23. TFM rows stamped: RUN_ID, STATUS STAGED (section 3 TFM
+    -- 23. TFM rows stamped: RUN_ID, TFM_STATUS STAGED (section 3 TFM
     --     lifecycle), STG_SEQUENCE_ID lineage populated.
     select count(*) into l_cnt from dmt_poz_suppliers_tfm_tbl
-    where  run_id = :run_id and status = 'STAGED' and stg_sequence_id is not null;
+    where  run_id = :run_id and tfm_status = 'STAGED' and stg_sequence_id is not null;
     assert(l_cnt = 3, 23, 'supplier TFM rows: STATUS STAGED + STG_SEQUENCE_ID lineage stamped');
 
     -- 24-25. Prefix applied to the supplier business keys at
@@ -416,22 +416,22 @@ begin
     assert(l_cnt = 3, 28, 'sites/assignments/contacts: exactly the 1 GOOD row each transforms');
 
     -- 29. Transformed STG rows move to TRANSFORMED — the decided
-    --     forward-only stage status (section 5, run-stamped-home
+    --     forward-only stage stg_status (section 5, run-stamped-home
     --     decision: "NEW -> TRANSFORMED or FAILED, written only by
     --     the stage->transform step").
     select count(*) into l_cnt from (
-        select 1 from dmt_poz_suppliers_stg_tbl     where scenario_id = l_scn and status = 'TRANSFORMED' and source_id != 'TESTSUP_FIXTURE' union all
-        select 1 from dmt_poz_sup_addr_stg_tbl      where scenario_id = l_scn and status = 'TRANSFORMED' union all
-        select 1 from dmt_poz_sup_site_stg_tbl      where scenario_id = l_scn and status = 'TRANSFORMED' and source_id != 'TESTSUP_FIXTURE' union all
-        select 1 from dmt_poz_sup_site_assn_stg_tbl where scenario_id = l_scn and status = 'TRANSFORMED' union all
-        select 1 from dmt_poz_sup_contacts_stg_tbl  where scenario_id = l_scn and status = 'TRANSFORMED');
+        select 1 from dmt_poz_suppliers_stg_tbl     where scenario_id = l_scn and stg_status = 'TRANSFORMED' and source_id != 'TESTSUP_FIXTURE' union all
+        select 1 from dmt_poz_sup_addr_stg_tbl      where scenario_id = l_scn and stg_status = 'TRANSFORMED' union all
+        select 1 from dmt_poz_sup_site_stg_tbl      where scenario_id = l_scn and stg_status = 'TRANSFORMED' and source_id != 'TESTSUP_FIXTURE' union all
+        select 1 from dmt_poz_sup_site_assn_stg_tbl where scenario_id = l_scn and stg_status = 'TRANSFORMED' union all
+        select 1 from dmt_poz_sup_contacts_stg_tbl  where scenario_id = l_scn and stg_status = 'TRANSFORMED');
     assert(l_cnt = 7, 29, 'the 7 transformed STG rows move NEW -> TRANSFORMED (3+1+1+1+1; fixtures excluded)');
 
     -- 30. FAILED STG rows are untouched by transform: still FAILED,
     --     no TFM row.
     select count(*) into l_cnt from dmt_poz_sup_addr_stg_tbl s
     where  s.scenario_id = l_scn and s.vendor_name = 'TESTSUP Ghost'
-    and    s.status = 'FAILED'
+    and    s.stg_status = 'FAILED'
     and    not exists (select 1 from dmt_poz_sup_addr_tfm_tbl t
                        where t.stg_sequence_id = s.stg_sequence_id);
     assert(l_cnt = 1, 30, 'FAILED ghost address untouched: still FAILED, no TFM row');
@@ -484,7 +484,7 @@ begin
     assert(l_zip is not null and l_fn = 'Suppliers_'||:run_id||'.zip',
            33, 'Suppliers GENERATE_FBDI returns a zip named Suppliers_<run>.zip');
     select count(*) into l_cnt from dmt_poz_suppliers_tfm_tbl
-    where  run_id = :run_id and status = 'GENERATED' and fbdi_csv_id is not null;
+    where  run_id = :run_id and tfm_status = 'GENERATED' and fbdi_csv_id is not null;
     assert(l_cnt = 3, 34, 'supplier TFM rows advance to GENERATED with FBDI_CSV_ID stamped');
     select row_count, csv_content into l_rows, l_csv
     from   dmt_fbdi_csv_tbl

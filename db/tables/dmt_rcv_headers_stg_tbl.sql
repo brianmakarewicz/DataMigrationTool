@@ -116,7 +116,7 @@ begin
 	"EXTERNAL_SYS_TXN_REFERENCE" VARCHAR2(300), 
 	"EMPLOYEE_ID" VARCHAR2(240), 
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
 	"ERROR_TEXT" CLOB, 
 	"SOURCE_ID" VARCHAR2(240), 
 	"LAST_UPDATED_DATE" DATE, 
@@ -129,8 +129,21 @@ exception when others then
 end;
 /
 
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
+declare
+  l_n pls_integer;
 begin
-  execute immediate 'CREATE INDEX "DMT_RCV_HDR_STG_N1" ON "DMT_RCV_HEADERS_STG_TBL" ("STATUS")';
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_RCV_HEADERS_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_RCV_HEADERS_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "DMT_RCV_HDR_STG_N1" ON "DMT_RCV_HEADERS_STG_TBL" ("STG_STATUS")';
 exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
@@ -140,6 +153,19 @@ COMMENT ON COLUMN "DMT_RCV_HEADERS_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_
 COMMENT ON COLUMN "DMT_RCV_HEADERS_STG_TBL"."HEADER_INTERFACE_NUM" IS 'Unique key for this receipt header in the FBDI import â€” links transactions back to this header';
 COMMENT ON COLUMN "DMT_RCV_HEADERS_STG_TBL"."RECEIPT_NUM" IS 'Receipt number from source system â€” prefix applied in TFM table';
 COMMENT ON COLUMN "DMT_RCV_HEADERS_STG_TBL"."SHIP_TO_ORGANIZATION_CODE" IS 'Inventory organization code â€” Items on Hand target org';
-COMMENT ON COLUMN "DMT_RCV_HEADERS_STG_TBL"."STATUS" IS 'NEW > TRANSFORMED > LOADED / FAILED. RETRY = user override for selective reprocess.';
 COMMENT ON COLUMN "DMT_RCV_HEADERS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_RCV_HEADERS_STG_TBL"  IS 'Receiving header staging (MiscReceipts / Items on Hand). Raw user data only. Run-specific data in DMT_RCV_HEADERS_TFM_TBL. FBDI interface: RCV_HEADERS_INTERFACE. CSV: RcvHeadersInterface.csv.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+begin
+  execute immediate 'CREATE INDEX "DMT_RCV_HEADERS_STG_N1" ON "DMT_RCV_HEADERS_STG_TBL" ("SCENARIO_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_RCV_HEADERS_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';

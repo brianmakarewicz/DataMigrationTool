@@ -57,15 +57,29 @@ begin
 	"ATTRIBUTE20" VARCHAR2(150), 
 	"FUSION_LOCATION_ID" NUMBER, 
 	"RESULTS_UPDATED_DATE" DATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
+	"TFM_STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
+	"RECON_KEY" VARCHAR2(1000), 
 	 CONSTRAINT "DMT_HZ_LOCATIONS_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
 exception when others then
   if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_HZ_LOCATIONS_TFM_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_HZ_LOCATIONS_TFM_TBL" RENAME COLUMN "STATUS" TO "TFM_STATUS"';
+  end if;
 end;
 /
 
@@ -88,6 +102,42 @@ COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_HZ_
 COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
 COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."LOCATION_ORIG_SYSTEM_REFERENCE" IS 'Location reference with run prefix applied: NVL(prefix,'''') || stg.LOCATION_ORIG_SYSTEM_REFERENCE';
 COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."FUSION_LOCATION_ID" IS 'Fusion internal LOCATION_ID â€” populated by BIP reconciliation';
-COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."STATUS" IS 'STAGED > GENERATED > LOADED / FAILED';
 COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
 COMMENT ON TABLE "DMT_HZ_LOCATIONS_TFM_TBL"  IS 'Customer location transformed. Run-specific â€” one row per staging row per run attempt. LOCATION_ORIG_SYSTEM_REFERENCE has run prefix applied. Reconciliation populated by BIP.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_HZ_LOCATIONS_TFM_TBL' and column_name = 'RECON_KEY';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_HZ_LOCATIONS_TFM_TBL" ADD ("RECON_KEY" VARCHAR2(1000))';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_HZ_LOCATIONS_TFM_N1" ON "DMT_HZ_LOCATIONS_TFM_TBL" ("RUN_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_HZ_LOCATIONS_TFM_N2" ON "DMT_HZ_LOCATIONS_TFM_TBL" ("RUN_ID", "TFM_STATUS")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_HZ_LOCATIONS_TFM_N3" ON "DMT_HZ_LOCATIONS_TFM_TBL" ("RECON_KEY")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';

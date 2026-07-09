@@ -14,7 +14,7 @@ AS
     -- VALIDATE_PRE_TRANSFORM
     -- Upstream dependency: PROJECT_NAME must match a LOADED project.
     -- For migrated projects: PROJECT_NAME must exist in
-    --   DMT_PJF_PROJECTS_STG_TBL with STATUS='LOADED'.
+    --   DMT_PJF_PROJECTS_STG_TBL with STG_STATUS='LOADED'.
     -- STG holds raw (unprefixed) values, so the match is raw-to-raw
     -- (same pattern as DMT_EXPENDITURE_VALIDATOR_PKG); the TFM table
     -- holds PREFIXED names and must not be used here.
@@ -51,24 +51,24 @@ AS
         BEGIN
             SELECT COUNT(*) INTO l_any_loaded
             FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL
-            WHERE  STATUS = 'LOADED' AND ROWNUM = 1;
+            WHERE  STG_STATUS = 'LOADED' AND ROWNUM = 1;
 
             IF l_any_loaded > 0 THEN
                 UPDATE DMT_OWNER.DMT_PRJ_BUDGET_STG_TBL e
-                SET    STATUS            = 'FAILED',
+                SET    STG_STATUS            = 'FAILED',
                        ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                                ERROR_TEXT,
                                                '[PRE_VALIDATION] Project ''' ||
                                                e.PROJECT_NAME ||
                                                ''' is not loaded — budget record skipped.'),
                        LAST_UPDATED_DATE = SYSDATE
-                WHERE  e.STATUS IN ('NEW', 'RETRY')
+                WHERE  e.STG_STATUS IN ('NEW', 'RETRY')
                 AND    e.PROJECT_NAME IS NOT NULL
                 AND    NOT EXISTS (
                            SELECT 1
                            FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL p
                            WHERE  p.PROJECT_NAME = e.PROJECT_NAME
-                           AND    p.STATUS       = 'LOADED'
+                           AND    p.STG_STATUS       = 'LOADED'
                        );
                 l_failed := SQL%ROWCOUNT;
             END IF;
@@ -111,49 +111,49 @@ AS
 
         -- FINANCIAL_PLAN_TYPE is required
         UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
-        SET    STATUS            = 'FAILED',
+        SET    TFM_STATUS            = 'FAILED',
                ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                        ERROR_TEXT,
                                        '[POST_VALIDATION] FINANCIAL_PLAN_TYPE is required and cannot be blank.'),
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id
-        AND    STATUS = 'STAGED'
+        AND    TFM_STATUS = 'STAGED'
         AND    FINANCIAL_PLAN_TYPE IS NULL;
         l_failed := l_failed + SQL%ROWCOUNT;
 
         -- PROJECT_NAME is required
         UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
-        SET    STATUS            = 'FAILED',
+        SET    TFM_STATUS            = 'FAILED',
                ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                        ERROR_TEXT,
                                        '[POST_VALIDATION] PROJECT_NAME is required and cannot be blank.'),
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id
-        AND    STATUS IN ('STAGED', 'FAILED')
+        AND    TFM_STATUS IN ('STAGED', 'FAILED')
         AND    PROJECT_NAME IS NULL;
         l_failed := l_failed + SQL%ROWCOUNT;
 
         -- PLAN_VERSION_NAME is required
         UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
-        SET    STATUS            = 'FAILED',
+        SET    TFM_STATUS            = 'FAILED',
                ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                        ERROR_TEXT,
                                        '[POST_VALIDATION] PLAN_VERSION_NAME is required and cannot be blank.'),
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id
-        AND    STATUS IN ('STAGED', 'FAILED')
+        AND    TFM_STATUS IN ('STAGED', 'FAILED')
         AND    PLAN_VERSION_NAME IS NULL;
         l_failed := l_failed + SQL%ROWCOUNT;
 
         -- SRC_BUDGET_LINE_REFERENCE is required (used as BIP reconciliation match key)
         UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
-        SET    STATUS            = 'FAILED',
+        SET    TFM_STATUS            = 'FAILED',
                ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                        ERROR_TEXT,
                                        '[POST_VALIDATION] SRC_BUDGET_LINE_REFERENCE is required — used as the reconciliation match key.'),
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id
-        AND    STATUS IN ('STAGED', 'FAILED')
+        AND    TFM_STATUS IN ('STAGED', 'FAILED')
         AND    SRC_BUDGET_LINE_REFERENCE IS NULL;
         l_failed := l_failed + SQL%ROWCOUNT;
 

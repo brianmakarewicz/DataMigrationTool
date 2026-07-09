@@ -26,7 +26,7 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_OWNER.DMT_INV_UOM_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         INSERT INTO DMT_OWNER.DMT_INV_UOM_TFM_TBL (
@@ -70,10 +70,10 @@
                     SYSDATE
         FROM DMT_OWNER.DMT_INV_UOM_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_UOM_TFM_TBL t
@@ -84,13 +84,13 @@
         l_ok_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_INV_UOM_STG_TBL s
-        SET    s.STATUS            = 'TRANSFORMED',
+        SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_UOM_TFM_TBL t

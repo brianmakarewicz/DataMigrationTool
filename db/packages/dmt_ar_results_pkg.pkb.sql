@@ -254,21 +254,21 @@ AS
             ) x
         ) LOOP
             IF UPPER(r.interface_status) = 'P' OR r.customer_trx_id IS NOT NULL THEN
-                -- Processed (status=P) or transaction created (customer_trx_id populated) = LOADED
+                -- Processed (tfm_status=P) or transaction created (customer_trx_id populated) = LOADED
                 UPDATE DMT_OWNER.DMT_RA_LINES_TFM_TBL
-                SET    STATUS                = 'LOADED',
+                SET    TFM_STATUS                = 'LOADED',
                        FUSION_CUSTOMER_TRX_ID = TO_NUMBER(r.customer_trx_id),
                        FUSION_TRX_NUMBER     = r.trx_number,
                        RESULTS_UPDATED_DATE  = SYSDATE,
                        LAST_UPDATED_DATE     = SYSDATE
                 WHERE  RUN_ID        = p_run_id
                 AND    INTERFACE_LINE_ATTRIBUTE1 = r.interface_line_attribute1
-                AND    STATUS               != 'LOADED';
+                AND    TFM_STATUS               != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSE
-                -- NULL or any non-P status = FAILED
+                -- NULL or any non-P tfm_status = FAILED
                 UPDATE DMT_OWNER.DMT_RA_LINES_TFM_TBL
-                SET    STATUS               = 'FAILED',
+                SET    TFM_STATUS               = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                  '[FUSION_ERROR] ' || NVL(r.error_msg,
                                                  'Interface status: ' || NVL(r.interface_status, 'NULL'))),
@@ -276,7 +276,7 @@ AS
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    INTERFACE_LINE_ATTRIBUTE1 = r.interface_line_attribute1
-                AND    STATUS              != 'FAILED';
+                AND    TFM_STATUS              != 'FAILED';
                 l_failed := l_failed + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -284,46 +284,46 @@ AS
         -- Cascade LOADED to distribution TFM rows
         -- Distributions link to lines via INTERFACE_LINE_CONTEXT + INTERFACE_LINE_ATTRIBUTE1.
         UPDATE DMT_OWNER.DMT_RA_DISTS_TFM_TBL d
-        SET    d.STATUS              = 'LOADED',
+        SET    d.TFM_STATUS              = 'LOADED',
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE  = SYSDATE
         WHERE  d.RUN_ID     = p_run_id
-        AND    d.STATUS            != 'LOADED'
+        AND    d.TFM_STATUS            != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL ln
             WHERE  ln.RUN_ID           = p_run_id
             AND    ln.INTERFACE_LINE_CONTEXT    = d.INTERFACE_LINE_CONTEXT
             AND    ln.INTERFACE_LINE_ATTRIBUTE1 = d.INTERFACE_LINE_ATTRIBUTE1
-            AND    ln.STATUS                    = 'LOADED');
+            AND    ln.TFM_STATUS                    = 'LOADED');
 
         -- Cascade FAILED to distribution TFM rows
         UPDATE DMT_OWNER.DMT_RA_DISTS_TFM_TBL d
-        SET    d.STATUS              = 'FAILED',
+        SET    d.TFM_STATUS              = 'FAILED',
                d.ERROR_TEXT          = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
                    '[FUSION_ERROR] Parent AR invoice line (attr1=''' ||
                    d.INTERFACE_LINE_ATTRIBUTE1 || ''') was rejected by Fusion.'),
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE  = SYSDATE
         WHERE  d.RUN_ID     = p_run_id
-        AND    d.STATUS            != 'FAILED'
+        AND    d.TFM_STATUS            != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL ln
             WHERE  ln.RUN_ID           = p_run_id
             AND    ln.INTERFACE_LINE_CONTEXT    = d.INTERFACE_LINE_CONTEXT
             AND    ln.INTERFACE_LINE_ATTRIBUTE1 = d.INTERFACE_LINE_ATTRIBUTE1
-            AND    ln.STATUS                    = 'FAILED');
+            AND    ln.TFM_STATUS                    = 'FAILED');
 
         -- Echo outcomes back to STG tables (both lines and distributions)
         -- Lines: LOADED
         UPDATE DMT_OWNER.DMT_RA_LINES_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         -- Lines: FAILED
         UPDATE DMT_OWNER.DMT_RA_LINES_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -331,18 +331,18 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Distributions: LOADED
         UPDATE DMT_OWNER.DMT_RA_DISTS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_RA_DISTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         -- Distributions: FAILED
         UPDATE DMT_OWNER.DMT_RA_DISTS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_RA_DISTS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -350,7 +350,7 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_RA_DISTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 

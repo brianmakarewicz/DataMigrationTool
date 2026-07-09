@@ -70,7 +70,7 @@
             SELECT *
             FROM   DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL
             WHERE  RUN_ID = p_run_id
-            AND    STATUS         = 'STAGED'
+            AND    TFM_STATUS         = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
         ) LOOP
             l_row_count := l_row_count + 1;
@@ -209,12 +209,12 @@
         );
 
         UPDATE DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL
-        SET    STATUS             = 'GENERATED',
+        SET    TFM_STATUS             = 'GENERATED',
                FBDI_CSV_ID       = (SELECT MAX(FBDI_CSV_ID) FROM DMT_OWNER.DMT_FBDI_CSV_TBL
                                     WHERE RUN_ID = p_run_id AND OBJECT_TYPE = 'SupplierAddresses'),
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID    = p_run_id
-        AND    STATUS             = 'STAGED';
+        AND    TFM_STATUS             = 'STAGED';
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

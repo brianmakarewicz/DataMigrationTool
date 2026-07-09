@@ -28,7 +28,7 @@
         IF g_skip_cols.COUNT = 0 THEN
             g_skip_cols('STG_SEQUENCE_ID')   := 'Y';
             g_skip_cols('STAGE_DATE')        := 'Y';
-            g_skip_cols('STATUS')            := 'Y';
+            g_skip_cols('STG_STATUS')            := 'Y';
             g_skip_cols('ERROR_TEXT')         := 'Y';
             g_skip_cols('LAST_UPDATED_DATE') := 'Y';
         END IF;

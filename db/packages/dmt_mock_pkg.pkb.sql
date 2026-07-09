@@ -41,7 +41,7 @@ AS
     -- ============================================================
     -- run_mock — the shared data-phase stub: VALIDATE → TRANSFORM
     -- → GENERATE markers in order, then MOCK_ROW_COUNT rows written
-    -- to DMT_MOCK_TFM_TBL as GENERATED (the Overview TFM row-status
+    -- to DMT_MOCK_TFM_TBL as GENERATED (the Overview TFM row-tfm_status
     -- table: GENERATED = "Row written into an FBDI CSV / HDL DAT").
     -- Exceptions propagate to the queue worker deliberately: that is
     -- the contract EXECUTE_ONE guards (unhandled RAISE must land the
@@ -74,7 +74,7 @@ AS
         l_rows := NVL(TO_NUMBER(DMT_UTIL_PKG.GET_CONFIG('MOCK_ROW_COUNT')), 2);
         FOR i IN 1 .. l_rows LOOP
             INSERT INTO DMT_OWNER.DMT_MOCK_TFM_TBL
-                (RUN_ID, CEMLI_CODE, RECORD_KEY, STATUS)
+                (RUN_ID, CEMLI_CODE, RECORD_KEY, TFM_STATUS)
             VALUES
                 (p_run_id, p_cemli_code, p_cemli_code || '-' || i, 'GENERATED');
         END LOOP;
@@ -123,18 +123,18 @@ AS
 
         IF l_outcome = 'LOADED' THEN
             UPDATE DMT_OWNER.DMT_MOCK_TFM_TBL
-            SET    STATUS = 'LOADED'
+            SET    TFM_STATUS = 'LOADED'
             WHERE  RUN_ID = p_run_id
             AND    CEMLI_CODE = p_cemli_code
-            AND    STATUS = 'GENERATED';
+            AND    TFM_STATUS = 'GENERATED';
         ELSIF l_outcome = 'FAILED_ERROR' THEN
             UPDATE DMT_OWNER.DMT_MOCK_TFM_TBL
-            SET    STATUS = 'FAILED',
+            SET    TFM_STATUS = 'FAILED',
                    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                        '[FUSION_ERROR] DMT_MOCK simulated interface rejection')
             WHERE  RUN_ID = p_run_id
             AND    CEMLI_CODE = p_cemli_code
-            AND    STATUS = 'GENERATED';
+            AND    TFM_STATUS = 'GENERATED';
         ELSE
             -- UNACCOUNTED: leave rows GENERATED — no positive success and no
             -- positive failure; the accounting gate must fail the item.

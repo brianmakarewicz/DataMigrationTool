@@ -50,7 +50,7 @@
             SELECT
                 -- 38 columns matching GlBudgetInterface.ctl order
                 '"' || REPLACE(NVL(RUN_NAME,''), '"', '""') || '"' || ','           -- 1  RUN_NAME
-                || '"' || REPLACE(NVL(STATUS_FBDI,''), '"', '""') || '"' || ','     -- 2  STATUS
+                || '"' || REPLACE(NVL(STATUS_FBDI,''), '"', '""') || '"' || ','     -- 2  TFM_STATUS
                 || '"' || NVL(TO_CHAR(LEDGER_ID), '') || '"' || ','                 -- 3  LEDGER_ID
                 || '"' || REPLACE(NVL(BUDGET_NAME,''), '"', '""') || '"' || ','     -- 4  BUDGET_NAME
                 || '"' || REPLACE(NVL(PERIOD_NAME,''), '"', '""') || '"' || ','     -- 5  PERIOD_NAME

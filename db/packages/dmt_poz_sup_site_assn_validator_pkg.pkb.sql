@@ -13,13 +13,13 @@
             'INFO', 'DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG', 'VALIDATE_BATCH');
 
         UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL
-        SET    STATUS = 'VALIDATED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STATUS = 'NEW';
+        SET    STG_STATUS = 'VALIDATED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_STATUS = 'NEW';
         l_valid := SQL%ROWCOUNT;
 
         SELECT COUNT(*) INTO l_invalid
         FROM   DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL
-        WHERE  STATUS = 'INVALID';
+        WHERE  STG_STATUS = 'INVALID';
 
         DMT_UTIL_PKG.LOG(p_run_id,
             'VALIDATE_BATCH complete. Valid: ' || l_valid || ' | Invalid: ' || l_invalid,

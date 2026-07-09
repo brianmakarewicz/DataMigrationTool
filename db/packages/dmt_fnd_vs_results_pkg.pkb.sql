@@ -183,7 +183,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_FND_VS_SET_STG_TBL
-                    SET    STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_sets_loaded := l_sets_loaded + 1;
@@ -198,7 +198,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_FND_VS_SET_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_sets_failed := l_sets_failed + 1;
@@ -221,7 +221,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_FND_VS_SET_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_sets_failed := l_sets_failed + 1;
@@ -285,7 +285,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_FND_VS_VALUE_STG_TBL
-                    SET    STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_values_loaded := l_values_loaded + 1;
@@ -298,7 +298,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_FND_VS_VALUE_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_values_failed := l_values_failed + 1;
@@ -321,7 +321,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_FND_VS_VALUE_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_values_failed := l_values_failed + 1;
@@ -347,11 +347,11 @@
 
         -- Echo those to STG
         UPDATE DMT_FND_VS_VALUE_STG_TBL
-        SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID FROM DMT_FND_VS_VALUE_TFM_TBL
             WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
-            AND    STATUS != 'FAILED'
+            AND    STG_STATUS != 'FAILED'
         );
 
         COMMIT;

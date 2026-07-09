@@ -36,20 +36,20 @@
         l_failed NUMBER := 0;
     BEGIN
         UPDATE DMT_OWNER.DMT_POZ_SUP_ADDR_STG_TBL a
-        SET    STATUS            = 'FAILED',
+        SET    STG_STATUS        = 'FAILED',
                ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                        ERROR_TEXT,
                                        '[PRE_VALIDATION] Supplier ''' || a.VENDOR_NAME ||
                                        ''' has no LOADED TFM row in any run — address skipped.'),
                LAST_UPDATED_DATE = SYSDATE
-        WHERE  a.STATUS = 'NEW'
+        WHERE  a.STG_STATUS = 'NEW'
         AND    NOT EXISTS (
                    SELECT 1
                    FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
                    JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
                           ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
                    WHERE  s.VENDOR_NAME = a.VENDOR_NAME
-                   AND    t.STATUS      = 'LOADED'
+                   AND    t.TFM_STATUS      = 'LOADED'
                );
         l_failed := SQL%ROWCOUNT;
 
@@ -73,20 +73,20 @@
         l_failed NUMBER := 0;
     BEGIN
         UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL si
-        SET    STATUS            = 'FAILED',
+        SET    STG_STATUS        = 'FAILED',
                ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                        ERROR_TEXT,
                                        '[PRE_VALIDATION] Supplier ''' || si.VENDOR_NAME ||
                                        ''' has no LOADED TFM row in any run — site skipped.'),
                LAST_UPDATED_DATE = SYSDATE
-        WHERE  si.STATUS = 'NEW'
+        WHERE  si.STG_STATUS = 'NEW'
         AND    NOT EXISTS (
                    SELECT 1
                    FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
                    JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
                           ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
                    WHERE  s.VENDOR_NAME = si.VENDOR_NAME
-                   AND    t.STATUS      = 'LOADED'
+                   AND    t.TFM_STATUS      = 'LOADED'
                );
         l_failed := SQL%ROWCOUNT;
 
@@ -111,14 +111,14 @@
         l_failed NUMBER := 0;
     BEGIN
         UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL a
-        SET    STATUS            = 'FAILED',
+        SET    STG_STATUS        = 'FAILED',
                ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                        ERROR_TEXT,
                                        '[PRE_VALIDATION] Site ''' || a.VENDOR_NAME ||
                                        ' / ' || a.VENDOR_SITE_CODE ||
                                        ''' has no LOADED TFM row in any run — site assignment skipped.'),
                LAST_UPDATED_DATE = SYSDATE
-        WHERE  a.STATUS = 'NEW'
+        WHERE  a.STG_STATUS = 'NEW'
         AND    NOT EXISTS (
                    SELECT 1
                    FROM   DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL sis
@@ -126,7 +126,7 @@
                           ON t.STG_SEQUENCE_ID = sis.STG_SEQUENCE_ID
                    WHERE  sis.VENDOR_NAME      = a.VENDOR_NAME
                    AND    sis.VENDOR_SITE_CODE = a.VENDOR_SITE_CODE
-                   AND    t.STATUS             = 'LOADED'
+                   AND    t.TFM_STATUS             = 'LOADED'
                );
         l_failed := SQL%ROWCOUNT;
 
@@ -150,20 +150,20 @@
         l_failed NUMBER := 0;
     BEGIN
         UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL c
-        SET    STATUS            = 'FAILED',
+        SET    STG_STATUS        = 'FAILED',
                ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                        ERROR_TEXT,
                                        '[PRE_VALIDATION] Supplier ''' || c.VENDOR_NAME ||
                                        ''' has no LOADED TFM row in any run — contact skipped.'),
                LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.STATUS = 'NEW'
+        WHERE  c.STG_STATUS = 'NEW'
         AND    NOT EXISTS (
                    SELECT 1
                    FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
                    JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
                           ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
                    WHERE  s.VENDOR_NAME = c.VENDOR_NAME
-                   AND    t.STATUS      = 'LOADED'
+                   AND    t.TFM_STATUS      = 'LOADED'
                );
         l_failed := SQL%ROWCOUNT;
 
@@ -202,11 +202,11 @@
         VALIDATE_CONTACTS(p_run_id);
 
         -- Log summary counts
-        SELECT COUNT(*) INTO l_sup_failed  FROM DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL    WHERE STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
-        SELECT COUNT(*) INTO l_addr_failed FROM DMT_OWNER.DMT_POZ_SUP_ADDR_STG_TBL     WHERE STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
-        SELECT COUNT(*) INTO l_site_failed FROM DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL     WHERE STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
-        SELECT COUNT(*) INTO l_assn_failed FROM DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL WHERE STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
-        SELECT COUNT(*) INTO l_cont_failed FROM DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL WHERE STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
+        SELECT COUNT(*) INTO l_sup_failed  FROM DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL    WHERE STG_STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
+        SELECT COUNT(*) INTO l_addr_failed FROM DMT_OWNER.DMT_POZ_SUP_ADDR_STG_TBL     WHERE STG_STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
+        SELECT COUNT(*) INTO l_site_failed FROM DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL     WHERE STG_STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
+        SELECT COUNT(*) INTO l_assn_failed FROM DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL WHERE STG_STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
+        SELECT COUNT(*) INTO l_cont_failed FROM DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL WHERE STG_STATUS = 'FAILED' AND ERROR_TEXT LIKE '%[PRE_VALIDATION]%';
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

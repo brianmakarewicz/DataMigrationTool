@@ -111,7 +111,7 @@ AS
             SELECT t.*
             FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             AND    t.STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
             AND    (p_prc_bu_name IS NULL OR t.PRC_BU_NAME = p_prc_bu_name)
             ORDER BY t.TFM_SEQUENCE_ID
@@ -347,13 +347,13 @@ AS
             SELECT l.*
             FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
-            AND    l.STATUS = 'STAGED'
+            AND    l.TFM_STATUS = 'STAGED'
             AND    l.INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
             FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
-            AND    h.STATUS IN ('STAGED','GENERATED')
+            AND    h.TFM_STATUS IN ('STAGED','GENERATED')
             AND    (p_prc_bu_name IS NULL OR h.PRC_BU_NAME = p_prc_bu_name))
             ORDER BY l.TFM_SEQUENCE_ID
         ) LOOP
@@ -612,7 +612,7 @@ AS
             'BlanketPOs',
             x_filename,
             (SELECT COUNT(*) FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-             WHERE RUN_ID = p_run_id AND STATUS = 'STAGED'
+             WHERE RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
              AND STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
              AND (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name)),
             l_hdr_csv, l_now
@@ -632,15 +632,15 @@ AS
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
         -- Headers: filter by STYLE_DISPLAY_NAME and PRC_BU_NAME.
         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
         AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
 
         -- Lines: filter via header chain (only lines belonging to blanket headers).
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
             FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h

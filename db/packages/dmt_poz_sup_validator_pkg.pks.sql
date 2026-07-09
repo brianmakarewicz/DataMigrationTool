@@ -8,7 +8,7 @@ AS
 -- Pre-transform validator: upstream dependency checks on staging rows.
 -- Runs BEFORE the transformation proc.
 --
--- Checks that all upstream parent records have STATUS = 'LOADED'
+-- Checks that all upstream parent records have TFM_STATUS = 'LOADED'
 -- before allowing a row to proceed to transformation.
 -- Rows that fail are marked STATUS = 'FAILED' with an
 -- [PRE_VALIDATION] prefix on ERROR_TEXT.
