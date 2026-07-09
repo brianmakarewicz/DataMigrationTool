@@ -119,18 +119,6 @@ prompt == Sequences ==
 @@sequences/dmt_perf_eval_rating_tfm_seq.sql
 @@sequences/dmt_perf_eval_stg_seq.sql
 @@sequences/dmt_perf_eval_tfm_seq.sql
-@@sequences/dmt_person_addr_stg_seq.sql
-@@sequences/dmt_person_addr_tfm_seq.sql
-@@sequences/dmt_person_email_stg_seq.sql
-@@sequences/dmt_person_email_tfm_seq.sql
-@@sequences/dmt_person_legisl_stg_seq.sql
-@@sequences/dmt_person_legisl_tfm_seq.sql
-@@sequences/dmt_person_name_stg_seq.sql
-@@sequences/dmt_person_name_tfm_seq.sql
-@@sequences/dmt_person_nid_stg_seq.sql
-@@sequences/dmt_person_nid_tfm_seq.sql
-@@sequences/dmt_person_phone_stg_seq.sql
-@@sequences/dmt_person_phone_tfm_seq.sql
 @@sequences/dmt_pipeline_run_seq.sql
 @@sequences/dmt_pjb_bill_events_stg_seq.sql
 @@sequences/dmt_pjb_bill_events_tfm_seq.sql
@@ -184,8 +172,6 @@ prompt == Sequences ==
 @@sequences/dmt_w2_bal_dtl_tfm_seq.sql
 @@sequences/dmt_w2_bal_stg_seq.sql
 @@sequences/dmt_w2_bal_tfm_seq.sql
-@@sequences/dmt_worker_stg_seq.sql
-@@sequences/dmt_worker_tfm_seq.sql
 @@sequences/dmt_work_queue_seq.sql
 @@sequences/dmt_work_rel_stg_seq.sql
 @@sequences/dmt_work_rel_tfm_seq.sql

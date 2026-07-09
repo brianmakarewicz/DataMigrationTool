@@ -233,7 +233,11 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
-        ;
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
+        -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
+        -- generated file's row order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -466,7 +470,11 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
-        ;
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
+        -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
+        -- generated file's row order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -803,7 +811,11 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
-        ;
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
+        -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
+        -- generated file's row order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -932,7 +944,11 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
-        ;
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
+        -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
+        -- generated file's row order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -1109,7 +1125,11 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
-        ;
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
+        -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
+        -- generated file's row order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
