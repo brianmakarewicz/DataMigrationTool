@@ -126,3 +126,72 @@ See `v2_audit.md` for full attribute audit details.
 - 2026-04-04 (DB-19): E2E LOADED — 3/3 workers with mandatory 5 components. Optional components blocked by phone data quality.
 - 2026-04-04 (DB-20): **E2E LOADED — ALL 10 COMPONENTS.** Fixed Phone (LegislationCode, DateFrom, 7-digit), Email (DateFrom), NID (no hyphens). 3L/0F with prefix 9210.
 - 2026-04-07 (DB-27): **Phone fix + duplicate cleanup.** Workers 0L/42F → 19L/19F. Phone AREA_CODE split from PHONE_NUMBER. STG duplicates deleted. 3 Workers + 3 PersonNames + 2 each of Email/Phone/Address/NID/Legislation + 2 Salaries + 1 TalentProfile = 19 LOADED.
+
+## Offline build (obj/workers-offline, 2026-07-09)
+
+Six-step offline recipe built and proven on dmt2-local (no Fusion). Results:
+
+- **Identity conversion (accepted rule 2026-07-08):** the 7 Workers-owned STG/TFM
+  table pairs (worker + person_name/email/phone/addr/nid/legisl = 14 tables)
+  converted from sequence-default PKs to `GENERATED ALWAYS AS IDENTITY`, using the
+  empty-table drop-and-recreate template from the Suppliers tables. All 14 now pass
+  `db/tools/check_column_dictionary.sql` (no longer sanctioned deferrals). The
+  transformer's explicit `..._TFM_SEQ.NEXTVAL` inserts were removed (an identity
+  column rejects an explicit value, ORA-32795). WorkRelationship and Assignment
+  tables were left unconverted — they belong to the separate Assignments object
+  (catalog #26), not Workers, and the Worker generator does not read them.
+- **Golden inputs:** `test/golden/inputs/Workers*_input.csv` (7 files) reproduce the
+  run-116 HCM regression rows (2 GOOD DMTW001/DMTW002 with all components + 1 BAD
+  DMTW-BAD, mandatory-5 only). Source of record: the frozen repo's
+  `scripts/insert_hcm_regression_data.py` (NOT `insert_regression_test_data.py`,
+  which has no Worker rows).
+- **Golden compare — HDL mode added:** `test/golden/compare_fbdi.py` gained a
+  `format: "hdl_dat"` member mode (pipe-delimited METADATA/MERGE lines, LF-terminated,
+  not quoted CSV) plus `$PREFIX`/`$RUN_ID` substitution inside literal tokens.
+  `normalization_map.json` has a Workers entry (member Worker.dat) with two declared
+  tokens: `{PREFIX}` (startswith on the run prefix) and `{ET_PREFIX}` (substring
+  `ET-<prefix>` for the WorkTerms AssignmentName/Number). **VERDICT: Worker.dat is
+  byte-identical to the golden after those two declared tokens — no other diff.**
+- **Determinism fix:** the transformer's `INSERT..SELECT` had no `ORDER BY`, so
+  identity assignment order (and thus the generator's `ORDER BY TFM_SEQUENCE_ID` line
+  order) was not guaranteed run-to-run — one golden run in ~6 produced a reordered
+  Worker section. Added `ORDER BY s.STG_SEQUENCE_ID` to all 7 transform inserts;
+  5/5 consecutive golden runs then byte-identical.
+- **Validator:** `VALIDATE_PRE_TRANSFORM` was a stub. Added two offline structural
+  rules (PERSON_NUMBER required; ACTION_CODE in HIRE/ADD_CWK), tagging a failing STG
+  row FAILED with an appended `[PRE_VALIDATION]` message (accumulate, never
+  overwrite). The unit test's BAD row uses ACTION_CODE=TERMINATE (a validator
+  failure), distinct from the golden's DMTW-BAD (missing DOB is optional and loads).
+- **Unit suite:** `test/unit/test_workers.sql`, 26 assertions, all green — land,
+  validate-alone (GOOD pass / BAD tagged), transform-alone (prefix on TFM, STG
+  untouched, idempotent), HDL generate (Worker.dat METADATA/MERGE + auto-generated
+  WorkTerms).
+
+### Reconciler audit (accepted-rule violations) — TRACKED, shared-layer
+
+The Workers results package `DMT_WORKER_RESULTS_PKG` is itself clean: no
+write-back-to-staging, no STG-status='LOADED' read, no INSTR/SUBSTR parsing, no
+P_BATCH_ID. It only calls the shared `DMT_HDL_UTIL_PKG`. The violations below live
+in that SHARED HDL loader (used by all 14 HDL objects), so they are NOT fixed in this
+Workers-object PR — they need a dedicated shared-layer change (other object agents
+run concurrently against the same package):
+
+- **Write-back-to-staging + STG-status='LOADED' (violation).**
+  `DMT_HDL_UTIL_PKG.RECONCILE_HDL` "Step 3: Echo to STG tables"
+  (`db/packages/dmt_hdl_util_pkg.pkb.sql:504-526`) issues
+  `UPDATE <p_stg_table> SET STG_STATUS='LOADED'` / `'FAILED'`. This both writes back
+  to staging and sets a staging status of LOADED — two accepted-rule violations. Fix
+  belongs in the shared package (remove the STG echo; TFM is the sole run-outcome
+  record).
+- **REST-inside-a-FUNCTION (violation).** `REST_HTTP`, `UPLOAD_HDL`, `SUBMIT_HDL`,
+  `GET_HDL_ERRORS` are FUNCTIONs performing UTL_HTTP network calls
+  (`db/packages/dmt_hdl_util_pkg.pkb.sql`). The accepted rule is procedures-only for
+  network work. Shared-layer fix.
+- **Positive-proof-of-load reconciler is a to-build gap (not invented here).** Per
+  DMT_DESIGN.html, HDL objects have no Contract v1 reconciliation report yet (the
+  BIP-registry "—" cells are backlog). Today HDL LOADED is inferred from the dataset
+  status + the absence of a per-record HDL failure message; the design's required
+  base-tier proof (key + Fusion id from HCM base tables, one bulk BIP call) is not yet
+  built for Workers. `LOOKUP_FUSION_IDS` does a per-record REST lookup that the design
+  explicitly rejected at conversion volume ("retires"). These are tracked gaps for the
+  live (Rule #1) phase, not offline scope.

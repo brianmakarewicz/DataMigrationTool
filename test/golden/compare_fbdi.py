@@ -23,6 +23,13 @@ member's declared record terminator (LF by default; "record_terminator":
 If a file does not round-trip through that canonical form, the compare falls
 back to reporting it as a finding (quoting/format drift between generators).
 
+HDL (.dat) members: HCM Data Loader files are pipe-delimited, NOT quoted CSV.
+A member with "format": "hdl_dat" in the map is parsed line-by-line (split on
+'|', LF-terminated, no quoting) into field lists, then the SAME token and
+date-mask normalization is applied per field. METADATA/MERGE lines are plain
+records; the discriminator (Worker, PersonName, ...) is just field 1. This is
+the first HDL golden (the B4 notes anticipated it).
+
 Usage:
   python compare_fbdi.py --object GLBalances --generated out.zip \
       --prefix 9591 --run-id 117 [--map normalization_map.json] [--golden g.zip]
@@ -52,6 +59,38 @@ def is_fbdi_date(v):
         elif not ch.isdigit():
             return False
     return True
+
+
+def parse_dat_records(data, label, problems):
+    """Parse a pipe-delimited HDL .dat file into field-lists. HDL .dat is NOT
+    quoted CSV: each line is split on '|', lines are LF-terminated, and there is
+    no quoting/escaping (HDL forbids '|' inside values). Self-check: the
+    canonical re-serialization must reproduce the original bytes, so a
+    field-level compare is exactly a byte compare (a CRLF or trailing-content
+    drift fails the round-trip and is reported)."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        problems.append("%s: not valid UTF-8 (%s); comparing raw bytes only" % (label, e))
+        return None
+    if "\r" in text:
+        problems.append("%s: contains CR bytes; HDL .dat must be LF-terminated "
+                        "-- format drift" % label)
+        return None
+    if not text.endswith("\n"):
+        problems.append("%s: last line not LF-terminated -- format drift" % label)
+        return None
+    records = [line.split("|") for line in text[:-1].split("\n")]
+    if serialize_dat(records) != data:
+        problems.append("%s: file does not round-trip the canonical HDL .dat "
+                        "form (pipe-delimited, LF-terminated) -- format drift" % label)
+        return None
+    return records
+
+
+def serialize_dat(records):
+    return ("\n".join("|".join(rec) for rec in records) + "\n").encode("utf-8") \
+        if records else b''
 
 
 def parse_records(data, label, problems, terminator="\n"):
@@ -269,9 +308,15 @@ def main():
             print("  %s: raw bytes identical (no normalization needed)" % member)
             continue
 
-        term = "\r\n" if mspec.get("record_terminator") == "CRLF" else "\n"
-        g_recs = parse_records(g_data, "golden %s" % member, problems, term)
-        l_recs = parse_records(l_data, "generated %s" % member, problems, term)
+        is_dat = mspec.get("format") == "hdl_dat"
+        if is_dat:
+            term = "\n"
+            g_recs = parse_dat_records(g_data, "golden %s" % member, problems)
+            l_recs = parse_dat_records(l_data, "generated %s" % member, problems)
+        else:
+            term = "\r\n" if mspec.get("record_terminator") == "CRLF" else "\n"
+            g_recs = parse_records(g_data, "golden %s" % member, problems, term)
+            l_recs = parse_records(l_data, "generated %s" % member, problems, term)
         if g_recs is None or l_recs is None:
             diffs.append("%s: format drift (see problems); raw bytes differ "
                          "(golden %d bytes, generated %d bytes)"
@@ -284,7 +329,12 @@ def main():
             fields = tok.get("fields")
             max_len = tok.get("max_len")
             lv = tok["local"]
-            lv = str(local_values.get(lv, lv))
+            if lv in local_values:
+                lv = local_values[lv]              # whole-field placeholder
+            else:
+                for k, v in local_values.items():  # $PREFIX/$RUN_ID inside a literal
+                    lv = lv.replace(k, v)
+            lv = str(lv)
             g_tokens.append((str(tok["golden"]), tok["placeholder"], mode, fields,
                              max_len, len(lv)))
             l_tokens.append((lv, tok["placeholder"], mode, fields,
@@ -293,7 +343,8 @@ def main():
         l_recs = apply_tokens(l_recs, l_tokens)
         mask_dates(g_recs, l_recs, mspec.get("date_mask_fields", []), member, problems)
 
-        if serialize(g_recs, term) == serialize(l_recs, term):
+        ser = serialize_dat if is_dat else (lambda recs: serialize(recs, term))
+        if ser(g_recs) == ser(l_recs):
             print("  %s: byte-identical after declared normalization "
                   "(tokens: %s; date-mask fields: %s)"
                   % (member,
