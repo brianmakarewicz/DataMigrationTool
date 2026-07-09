@@ -34,6 +34,11 @@ That multi-CSV-in-one-zip pattern does NOT apply to the supplier family.
 - BIP reconciliation key: filter the POZ_*_INT tables by LOAD_REQUEST_ID
   (IMPORT_REQUEST_ID is NULL when the import job errors; LOAD_REQUEST_ID is
   always populated)
+- BIP report parameters: Contract v1 — P_RUN_ID, P_LOAD_REQUEST_ID (the
+  selection key), P_IMPORT_ESS_ID, P_PREFIX (P_BATCH_ID retired 2026-07-08,
+  conformance tranche Part 3). The seven-column Contract v1 response shape
+  and base-tier id backfill remain the tracked "Suppliers Contract v1
+  report rework" item.
 
 ## The five objects
 1. Suppliers

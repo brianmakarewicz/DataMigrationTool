@@ -111,9 +111,19 @@ def main():
     # ── Get or create scenario ──────────────────────────────────────────────
     print(f"=== Scenario: {SCENARIO_NAME} ===")
     scenario_id_var = cur.var(oracledb.NUMBER)
+    err_var = cur.var(oracledb.NUMBER)
     cur.execute("""
-        BEGIN :sid := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(:n); END;
-    """, sid=scenario_id_var, n=SCENARIO_NAME)
+        BEGIN
+            DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+                p_scenario_name => :n,
+                x_scenario_id   => :sid,
+                x_error_code    => :err);
+        END;
+    """, sid=scenario_id_var, n=SCENARIO_NAME, err=err_var)
+    err = err_var.getvalue()
+    err = err[0] if isinstance(err, list) else err
+    if err is None or int(err) != 0:
+        sys.exit(f"GET_OR_CREATE_SCENARIO failed (x_error_code={err}); see DMT_LOG_TBL")
     val = scenario_id_var.getvalue()
     scenario_id = int(val[0]) if isinstance(val, list) else int(val)
     print(f"  Scenario ID: {scenario_id}\n")

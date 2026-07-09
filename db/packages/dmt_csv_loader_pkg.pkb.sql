@@ -258,6 +258,7 @@
         v_csv_positions pos_arr_t;
         v_has_scenario  BOOLEAN;
         v_scenario_id   NUMBER := NULL;
+        v_scn_err       NUMBER;
 
         v_fields        val_arr_t;
         v_offset        NUMBER;
@@ -334,7 +335,15 @@
 
         -- 2. Resolve the mandatory scenario
         IF v_scenario_name IS NOT NULL THEN
-            v_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(v_scenario_name);
+            DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+                p_scenario_name => v_scenario_name,
+                x_scenario_id   => v_scenario_id,
+                x_error_code    => v_scn_err);
+            IF v_scn_err != DMT_UTIL_PKG.C_SUCCESS THEN
+                RAISE_APPLICATION_ERROR(-20115,
+                    'GET_OR_CREATE_SCENARIO failed for scenario "' ||
+                    v_scenario_name || '" (detail in DMT_LOG_TBL).');
+            END IF;
             DMT_UTIL_PKG.LOG(
                 p_message   => 'Scenario ''' || v_scenario_name || ''' resolved to ID ' || v_scenario_id,
                 p_package   => c_pkg,

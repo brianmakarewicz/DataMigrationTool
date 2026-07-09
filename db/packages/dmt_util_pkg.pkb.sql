@@ -269,7 +269,11 @@
         p_content_type   IN  VARCHAR2    DEFAULT 'application/json',
         p_run_id IN  NUMBER      DEFAULT NULL,
         x_response       OUT CLOB,
-        x_status_code    OUT NUMBER
+        x_status_code    OUT NUMBER,
+        p_soap_action    IN  VARCHAR2    DEFAULT NULL,
+        p_accept         IN  VARCHAR2    DEFAULT 'application/json',
+        p_send_auth      IN  BOOLEAN     DEFAULT TRUE,
+        p_raise_on_error IN  BOOLEAN     DEFAULT TRUE
     ) IS
         l_req       UTL_HTTP.REQ;
         l_resp      UTL_HTTP.RESP;
@@ -288,9 +292,16 @@
         UTL_HTTP.SET_TRANSFER_TIMEOUT(600); -- 10 min for long Fusion operations
 
         l_req := UTL_HTTP.BEGIN_REQUEST(p_url, p_method, 'HTTP/1.1');
-        UTL_HTTP.SET_HEADER(l_req, 'Authorization',  basic_auth_header);
+        -- SOAP callers whose credentials travel inside the envelope
+        -- (BIP v2 userID/password elements) suppress the Basic header.
+        IF p_send_auth THEN
+            UTL_HTTP.SET_HEADER(l_req, 'Authorization', basic_auth_header);
+        END IF;
         UTL_HTTP.SET_HEADER(l_req, 'Content-Type',   p_content_type);
-        UTL_HTTP.SET_HEADER(l_req, 'Accept',         'application/json');
+        UTL_HTTP.SET_HEADER(l_req, 'Accept',         p_accept);
+        IF p_soap_action IS NOT NULL THEN
+            UTL_HTTP.SET_HEADER(l_req, 'SOAPAction', p_soap_action);
+        END IF;
 
         -- Write request body in 8000-byte chunks
         IF p_body IS NOT NULL THEN
@@ -327,8 +338,10 @@
             p_package        => 'DMT_UTIL_PKG',
             p_procedure      => 'HTTP_REQUEST');
 
-        -- Raise on non-2xx so callers do not have to check status themselves
-        IF x_status_code NOT BETWEEN 200 AND 299 THEN
+        -- Raise on non-2xx so callers do not have to check status themselves.
+        -- Callers passing p_raise_on_error => FALSE map failures to their own
+        -- documented error codes and MUST check x_status_code.
+        IF p_raise_on_error AND x_status_code NOT BETWEEN 200 AND 299 THEN
             RAISE_APPLICATION_ERROR(-20003,
                 'HTTP ' || p_method || ' failed. Status: ' || x_status_code ||
                 ' | URL: ' || p_url ||
@@ -748,49 +761,46 @@
 
     -- --------------------------------------------------------
     -- RUN_BIP_REPORT â€” run a deployed BIP report (SOAP v2 ReportService)
-    -- and return its data as XMLTYPE. Centralised replacement for the
+    -- through the shared HTTP_REQUEST transport and return its data as
+    -- XMLTYPE via x_report_xml. Centralised replacement for the
     -- per-reconciler bip_soap_post + FETCH_BIP_RESULTS + b64_to_clob +
-    -- <reportBytes> extraction. Returns NULL when there is no <reportBytes>
-    -- (zero rows) so the caller applies its own no-rows policy.
+    -- <reportBytes> extraction. x_report_xml NULL with x_error_code =
+    -- C_SUCCESS means no <reportBytes> (zero rows) â€” the caller applies
+    -- its own no-rows policy. PROCEDURE per the section 7 procedures-only
+    -- contract: every failure is caught here, logged with the step in
+    -- flight, and reported through x_error_code; exceptions never escape.
+    -- The request envelope carries credentials and is NEVER logged.
     -- --------------------------------------------------------
-    FUNCTION RUN_BIP_REPORT (
-        p_run_id      IN NUMBER,
-        p_cemli_code  IN VARCHAR2,
-        p_params      IN VARCHAR2,
-        p_report_path IN VARCHAR2 DEFAULT NULL
-    ) RETURN XMLTYPE IS
+    PROCEDURE RUN_BIP_REPORT (
+        p_run_id      IN  NUMBER,
+        p_cemli_code  IN  VARCHAR2,
+        p_params      IN  VARCHAR2,
+        x_report_xml  OUT XMLTYPE,
+        x_error_code  OUT NUMBER,
+        p_report_path IN  VARCHAR2 DEFAULT NULL
+    ) IS
         C_PROC   CONSTANT VARCHAR2(30) := 'RUN_BIP_REPORT';
         C_ACTION CONSTANT VARCHAR2(200) :=
             'http://xmlns.oracle.com/oxp/service/v2/ReportService/runReportRequest';
+        l_step      VARCHAR2(500);
         l_base_url  VARCHAR2(500);
         l_user      VARCHAR2(100);
         l_pass      VARCHAR2(100);
         l_path      VARCHAR2(500);
-        l_url       VARCHAR2(500);
         l_items     CLOB;
         l_env       CLOB;
         l_resp      CLOB;
-        l_req       UTL_HTTP.REQ;
-        l_http      UTL_HTTP.RESP;
-        l_chunk     VARCHAR2(32767);
-        l_offset    INTEGER := 1;
-        l_blen      INTEGER;
-        l_amt       INTEGER;
-        l_b64_start INTEGER;
-        l_b64_end   INTEGER;
-        l_b64       CLOB;
-        l_blob      BLOB;
-        l_xmlclob   CLOB;
-        l_dest      INTEGER := 1;
-        l_src       INTEGER := 1;
-        l_lang      INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
-        l_warn      INTEGER;
+        l_status    NUMBER;
         l_rem       VARCHAR2(4000) := p_params;
         l_pair      VARCHAR2(600);
         l_pos       INTEGER;
         l_pname     VARCHAR2(200);
         l_pval      VARCHAR2(2000);
     BEGIN
+        x_report_xml := NULL;
+        x_error_code := C_ERROR;   -- pessimistic until proven successful
+
+        l_step := 'reading Fusion BIP connection config';
         l_base_url := RTRIM(GET_CONFIG('FUSION_URL'), '/');
         l_user := NVL(GET_CONFIG('BIP_USERNAME'), GET_CONFIG('FUSION_USERNAME'));
         l_pass := NVL(GET_CONFIG('BIP_PASSWORD'), GET_CONFIG('FUSION_PASSWORD'));
@@ -798,6 +808,7 @@
             RAISE_APPLICATION_ERROR(-20031, C_PROC || ': Fusion BIP connection config incomplete.');
         END IF;
 
+        l_step := 'resolving report catalog path for CEMLI ' || p_cemli_code;
         l_path := p_report_path;
         IF l_path IS NULL THEN
             BEGIN
@@ -814,6 +825,7 @@
         END IF;
 
         -- Build parameterNameValues items from 'NAME|VAL~NAME2|VAL2'
+        l_step := 'building runReport parameter list';
         DBMS_LOB.CREATETEMPORARY(l_items, TRUE);
         WHILE l_rem IS NOT NULL LOOP
             l_pos := INSTR(l_rem, '~');
@@ -834,6 +846,7 @@
             END IF;
         END LOOP;
 
+        l_step := 'building runReport SOAP envelope for ' || l_path;
         DBMS_LOB.CREATETEMPORARY(l_env, TRUE);
         DBMS_LOB.APPEND(l_env, TO_CLOB(
             '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' ||
@@ -852,36 +865,28 @@
             '</v2:runReport></soapenv:Body></soapenv:Envelope>'));
         DBMS_LOB.FREETEMPORARY(l_items);
 
-        l_url := l_base_url || '/xmlpserver/services/v2/ReportService';
-        UTL_HTTP.SET_RESPONSE_ERROR_CHECK(FALSE);
-        UTL_HTTP.SET_TRANSFER_TIMEOUT(600);
-        l_req := UTL_HTTP.BEGIN_REQUEST(l_url, 'POST', 'HTTP/1.1');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Type',   'text/xml; charset=utf-8');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Length', DBMS_LOB.GETLENGTH(l_env));
-        UTL_HTTP.SET_HEADER(l_req, 'SOAPAction',     '"' || C_ACTION || '"');
-        UTL_HTTP.SET_HEADER(l_req, 'Accept',         'text/xml');
-        l_blen := DBMS_LOB.GETLENGTH(l_env);
-        WHILE l_offset <= l_blen LOOP
-            l_amt := LEAST(8000, l_blen - l_offset + 1);
-            UTL_HTTP.WRITE_TEXT(l_req, DBMS_LOB.SUBSTR(l_env, l_amt, l_offset));
-            l_offset := l_offset + l_amt;
-        END LOOP;
+        -- Shared transport: credentials travel in the envelope (no Basic
+        -- header); non-2xx comes back as x_status_code so this procedure
+        -- maps it to its documented -20030 code below.
+        l_step := 'posting runReport to BIP for ' || l_path;
+        HTTP_REQUEST(
+            p_url            => l_base_url || '/xmlpserver/services/v2/ReportService',
+            p_method         => 'POST',
+            p_body           => l_env,
+            p_content_type   => 'text/xml; charset=utf-8',
+            p_run_id         => p_run_id,
+            x_response       => l_resp,
+            x_status_code    => l_status,
+            p_soap_action    => '"' || C_ACTION || '"',
+            p_accept         => 'text/xml',
+            p_send_auth      => FALSE,
+            p_raise_on_error => FALSE);
         DBMS_LOB.FREETEMPORARY(l_env);
 
-        l_http := UTL_HTTP.GET_RESPONSE(l_req);
-        DBMS_LOB.CREATETEMPORARY(l_resp, TRUE);
-        BEGIN
-            LOOP
-                UTL_HTTP.READ_TEXT(l_http, l_chunk, 32767);
-                DBMS_LOB.APPEND(l_resp, l_chunk);
-            END LOOP;
-        EXCEPTION WHEN UTL_HTTP.END_OF_BODY THEN NULL;
-        END;
-        UTL_HTTP.END_RESPONSE(l_http);
-
-        IF l_http.status_code NOT BETWEEN 200 AND 299 THEN
+        l_step := 'checking BIP response status/fault for ' || l_path;
+        IF l_status NOT BETWEEN 200 AND 299 THEN
             RAISE_APPLICATION_ERROR(-20030,
-                C_PROC || ': BIP SOAP HTTP ' || l_http.status_code || ' for ' || l_path ||
+                C_PROC || ': BIP SOAP HTTP ' || l_status || ' for ' || l_path ||
                 ' | ' || DBMS_LOB.SUBSTR(l_resp, 400, 1));
         END IF;
         IF DBMS_LOB.INSTR(l_resp, 'soapenv:Fault') > 0
@@ -892,44 +897,65 @@
         END IF;
 
         -- Extract <reportBytes> + decode + parse via the shared helper.
-        DECLARE
-            l_xml XMLTYPE;
-        BEGIN
-            l_xml := BIP_REPORT_XML(l_resp);
-            DBMS_LOB.FREETEMPORARY(l_resp);
-            RETURN l_xml;
-        END;
+        l_step := 'decoding reportBytes for ' || l_path;
+        x_report_xml := BIP_REPORT_XML(l_resp);
+        x_error_code := C_SUCCESS;
     EXCEPTION
         WHEN OTHERS THEN
-            BEGIN UTL_HTTP.END_RESPONSE(l_http); EXCEPTION WHEN OTHERS THEN NULL; END;
-            RAISE;
+            x_report_xml := NULL;
+            x_error_code := C_ERROR;
+            LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step ||
+                               ' | CEMLI: ' || NVL(p_cemli_code, '(path only)'),
+                p_sqlerrm   => SQLERRM,
+                p_package   => 'DMT_UTIL_PKG',
+                p_procedure => C_PROC);
     END RUN_BIP_REPORT;
 
     -- --------------------------------------------------------
     -- GET_OR_CREATE_SCENARIO
+    -- PROCEDURE per the section 7 procedures-only contract (writes
+    -- rows). NULL name passes through as a NULL id with C_SUCCESS;
+    -- failures are logged here and reported via x_error_code —
+    -- exceptions never escape. Does not commit.
     -- --------------------------------------------------------
-    FUNCTION GET_OR_CREATE_SCENARIO (
-        p_scenario_name IN VARCHAR2
-    ) RETURN NUMBER
-    IS
-        v_scenario_id NUMBER;
+    PROCEDURE GET_OR_CREATE_SCENARIO (
+        p_scenario_name IN  VARCHAR2,
+        x_scenario_id   OUT NUMBER,
+        x_error_code    OUT NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'GET_OR_CREATE_SCENARIO';
+        l_step VARCHAR2(500);
     BEGIN
+        x_scenario_id := NULL;
+        x_error_code  := C_SUCCESS;
+
         IF p_scenario_name IS NULL THEN
-            RETURN NULL;
+            RETURN;
         END IF;
 
+        l_step := 'looking up scenario "' || p_scenario_name || '"';
         BEGIN
-            SELECT SCENARIO_ID INTO v_scenario_id
+            SELECT SCENARIO_ID INTO x_scenario_id
             FROM DMT_SCENARIO_TBL
             WHERE UPPER(SCENARIO_NAME) = UPPER(TRIM(p_scenario_name));
-            RETURN v_scenario_id;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
+                l_step := 'creating scenario "' || p_scenario_name || '"';
                 INSERT INTO DMT_SCENARIO_TBL (SCENARIO_NAME)
                 VALUES (TRIM(p_scenario_name))
-                RETURNING SCENARIO_ID INTO v_scenario_id;
-                RETURN v_scenario_id;
+                RETURNING SCENARIO_ID INTO x_scenario_id;
         END;
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_scenario_id := NULL;
+            x_error_code  := C_ERROR;
+            LOG_ERROR(
+                p_message   => C_PROC || ' failed while ' || l_step,
+                p_sqlerrm   => SQLERRM,
+                p_package   => 'DMT_UTIL_PKG',
+                p_procedure => C_PROC);
     END GET_OR_CREATE_SCENARIO;
 
     -- --------------------------------------------------------

@@ -608,6 +608,7 @@ AS
         l_batch_id       NUMBER;
         l_log_id         NUMBER;
         l_scenario_id    NUMBER;
+        l_scn_err        NUMBER;
         l_max_seq_before NUMBER;
         l_batch_tag      VARCHAR2(200);
     BEGIN
@@ -655,7 +656,15 @@ AS
 
         -- Resolve scenario (if provided)
         IF p_scenario_name IS NOT NULL THEN
-            l_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+            DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+                p_scenario_name => p_scenario_name,
+                x_scenario_id   => l_scenario_id,
+                x_error_code    => l_scn_err);
+            IF l_scn_err != DMT_UTIL_PKG.C_SUCCESS THEN
+                RAISE_APPLICATION_ERROR(-20115,
+                    'GET_OR_CREATE_SCENARIO failed for scenario "' ||
+                    p_scenario_name || '" (detail in DMT_LOG_TBL).');
+            END IF;
         END IF;
 
         -- Capture max STG_SEQUENCE_ID before insert so we can tag new rows with scenario
@@ -1120,6 +1129,7 @@ AS
         l_matched        BOOLEAN;
         l_log_id         NUMBER;
         l_scenario_id    NUMBER;
+        l_scn_err        NUMBER;
         l_max_seq_before NUMBER;
     BEGIN
         p_error_msg := NULL;
@@ -1133,7 +1143,15 @@ AS
 
         -- Resolve scenario once for the entire zip
         IF p_scenario_name IS NOT NULL THEN
-            l_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+            DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+                p_scenario_name => p_scenario_name,
+                x_scenario_id   => l_scenario_id,
+                x_error_code    => l_scn_err);
+            IF l_scn_err != DMT_UTIL_PKG.C_SUCCESS THEN
+                RAISE_APPLICATION_ERROR(-20115,
+                    'GET_OR_CREATE_SCENARIO failed for scenario "' ||
+                    p_scenario_name || '" (detail in DMT_LOG_TBL).');
+            END IF;
         END IF;
 
         l_files := APEX_ZIP.GET_FILES(p_zipped_blob => p_zip_blob);

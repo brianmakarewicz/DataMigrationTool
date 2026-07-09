@@ -30,7 +30,7 @@ SELECT
         AND    r.parent_id    = i.address_interface_id
     ) AS error_message
 FROM   poz_sup_addresses_int i
-WHERE  i.load_request_id = :P_BATCH_ID
+WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -51,8 +51,17 @@ WHERE  i.load_request_id = :P_BATCH_ID
   <eventTriggers/>
   <lexicals/>
   <parameters>
-    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
-               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>

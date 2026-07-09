@@ -25,6 +25,13 @@ AS
     C_LOG_WARN   CONSTANT VARCHAR2(5) := 'WARN';
     C_LOG_ERROR  CONSTANT VARCHAR2(5) := 'ERROR';
 
+    -- Shared procedure-outcome constants (section 7 procedures-only
+    -- contract): every pipeline procedure reports its outcome through
+    -- an x_error_code OUT parameter set to one of these; callers test
+    -- against the constants, never literals.
+    C_SUCCESS    CONSTANT NUMBER := 0;
+    C_ERROR      CONSTANT NUMBER := 1;
+
     -- --------------------------------------------------------
     -- Configuration
     -- --------------------------------------------------------
@@ -72,9 +79,19 @@ AS
     -- HTTP â€” Fusion REST API calls
     -- --------------------------------------------------------
 
-    -- General-purpose HTTP request (GET or POST).
-    -- Raises an application error if the HTTP status code is not 2xx.
-    -- Logs the call (URL, method, status) via autonomous transaction.
+    -- General-purpose HTTP request (GET or POST) — the ONE shared
+    -- outbound transport (section 7 single-outbound-transport rule):
+    -- request build, chunked write, response read, timeout and
+    -- non-2xx raise implemented once. SOAP callers pass
+    -- p_soap_action (sets the SOAPAction header) and p_accept
+    -- ('text/xml'); callers whose credentials travel inside the
+    -- envelope pass p_send_auth => FALSE to suppress the Basic
+    -- Authorization header. p_raise_on_error => FALSE returns the
+    -- non-2xx status to the caller instead of raising, for callers
+    -- that map HTTP/SOAP failures to their own documented error
+    -- codes — those callers MUST still check x_status_code.
+    -- Logs the call (URL, method, status) via autonomous transaction;
+    -- never logs the request body (envelopes carry credentials).
     PROCEDURE HTTP_REQUEST (
         p_url            IN  VARCHAR2,
         p_method         IN  VARCHAR2,              -- 'GET' or 'POST'
@@ -82,7 +99,11 @@ AS
         p_content_type   IN  VARCHAR2    DEFAULT 'application/json',
         p_run_id IN  NUMBER      DEFAULT NULL,
         x_response       OUT CLOB,
-        x_status_code    OUT NUMBER
+        x_status_code    OUT NUMBER,
+        p_soap_action    IN  VARCHAR2    DEFAULT NULL,
+        p_accept         IN  VARCHAR2    DEFAULT 'application/json',
+        p_send_auth      IN  BOOLEAN     DEFAULT TRUE,
+        p_raise_on_error IN  BOOLEAN     DEFAULT TRUE
     );
 
     -- --------------------------------------------------------
@@ -204,21 +225,31 @@ AS
     -- BIP report reconciliation (SOAP v2 ReportService)
     -- --------------------------------------------------------
 
-    -- Run a deployed BIP report via SOAP runReport and return its data as XMLTYPE.
+    -- Run a deployed BIP report via SOAP runReport (through the shared
+    -- HTTP_REQUEST transport) and return its data as XMLTYPE.
     -- Centralised replacement for the per-reconciler bip_soap_post + FETCH_BIP_RESULTS
     -- + b64_to_clob + <reportBytes> extraction (previously copy-pasted into 21 packages,
     -- each carrying the VARCHAR2(32767) truncation bug).
     --   p_cemli_code  : resolves REPORT_CATALOG_PATH from DMT_BIP_REPORT_TBL (unless
     --                   p_report_path is supplied).
-    --   p_params      : 'NAME|VALUE~NAME2|VALUE2' (e.g. 'P_BATCH_ID|123~P_IMPORT_ESS_ID|456').
-    -- Returns NULL when BIP produced no <reportBytes> (zero rows) so the caller can apply
-    -- its own no-rows policy. Raises -20034 on SOAP fault, -20036 on decode/parse failure.
-    FUNCTION RUN_BIP_REPORT (
-        p_run_id      IN NUMBER,
-        p_cemli_code  IN VARCHAR2,
-        p_params      IN VARCHAR2,
-        p_report_path IN VARCHAR2 DEFAULT NULL
-    ) RETURN XMLTYPE;
+    --   p_params      : 'NAME|VALUE~NAME2|VALUE2' (Contract v1:
+    --                   'P_RUN_ID|1~P_LOAD_REQUEST_ID|2~P_IMPORT_ESS_ID|3~P_PREFIX|10001').
+    -- PROCEDURE per the section 7 procedures-only contract (network call):
+    --   x_report_xml : the decoded report data; NULL with x_error_code =
+    --                  C_SUCCESS means BIP produced no <reportBytes>
+    --                  (zero rows) — the caller applies its own no-rows policy.
+    --   x_error_code : C_SUCCESS or C_ERROR. On C_ERROR the failure detail
+    --                  (HTTP status / SOAP fault / decode failure, with the
+    --                  step in flight) is in DMT_LOG_TBL; x_report_xml is NULL.
+    --                  Exceptions never escape.
+    PROCEDURE RUN_BIP_REPORT (
+        p_run_id      IN  NUMBER,
+        p_cemli_code  IN  VARCHAR2,
+        p_params      IN  VARCHAR2,
+        x_report_xml  OUT XMLTYPE,
+        x_error_code  OUT NUMBER,
+        p_report_path IN  VARCHAR2 DEFAULT NULL
+    );
 
     -- Given a BIP SOAP runReport response CLOB, extract <reportBytes>, decode it
     -- (any size, via BASE64_DECODE_CLOB) and return the report as XMLTYPE. Returns
@@ -231,12 +262,20 @@ AS
     -- Scenario management
     -- --------------------------------------------------------
 
-    -- Look up a scenario by name (case-insensitive). If it does not
-    -- exist, create it and return the new SCENARIO_ID.
-    -- Returns NULL if p_scenario_name is NULL.
-    FUNCTION GET_OR_CREATE_SCENARIO (
-        p_scenario_name IN VARCHAR2
-    ) RETURN NUMBER;
+    -- Look up a scenario by name (case-insensitive, trimmed). If it
+    -- does not exist, create it. PROCEDURE per the section 7
+    -- procedures-only contract (writes rows):
+    --   x_scenario_id : the existing or newly created SCENARIO_ID;
+    --                   NULL (with x_error_code = C_SUCCESS) when
+    --                   p_scenario_name is NULL.
+    --   x_error_code  : C_SUCCESS or C_ERROR (failure detail logged
+    --                   to DMT_LOG_TBL; exceptions never escape).
+    -- Does not commit — the caller owns the transaction.
+    PROCEDURE GET_OR_CREATE_SCENARIO (
+        p_scenario_name IN  VARCHAR2,
+        x_scenario_id   OUT NUMBER,
+        x_error_code    OUT NUMBER
+    );
 
     -- --------------------------------------------------------
     -- Deep link generation

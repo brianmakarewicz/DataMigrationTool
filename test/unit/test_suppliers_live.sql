@@ -14,17 +14,12 @@
 --         Seeded by the MERGE block in db/seed/dmt_bip_report_tbl.sql.
 --  11-15. LIVE (skip-gated like test_fusion_calls.sql): each deployed
 --         report answers a standalone DMT_UTIL_PKG.RUN_BIP_REPORT
---         call. The assertion is only that the report ANSWERS
---         (no HTTP error, no SOAP fault; any returned XML parses to
---         XMLTYPE via BIP_REPORT_XML). LEGACY CONTRACT NOTE: the
---         P_BATCH_ID parameter these reports take is the retired
---         pre-Contract-v1 shape — it is exercised here only because
---         it is what is deployed today, NOT endorsed as correct.
---         The parameter/column contract is replaced by the tracked
---         "Suppliers Contract v1 report rework" work item
---         (docs/tranche-reviews/2026-07-08-suppliers-review.md,
---         H6/H7); when that lands, this suite must assert the
---         Contract v1 parameters instead.
+--         call carrying the Contract v1 parameters P_RUN_ID /
+--         P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID / P_PREFIX (design
+--         section 5; P_BATCH_ID is retired). The assertion is that
+--         the redeployed report ANSWERS with the new parameters
+--         (x_error_code = C_SUCCESS — no HTTP error, no SOAP fault;
+--         any returned XML parses to XMLTYPE via BIP_REPORT_XML).
 --
 -- SKIP BEHAVIOR: without FUSION_URL / FUSION_USERNAME /
 -- FUSION_PASSWORD in DMT_CONFIG_TBL the live tests are skipped and
@@ -50,6 +45,7 @@ declare
     l_dm   varchar2(500);
     l_rpt  varchar2(500);
     l_xml  xmltype;
+    l_err  number;
     l_num  pls_integer := 0;
 
     type t_cemli_tab is table of varchar2(30);
@@ -109,18 +105,22 @@ begin
     else
         for i in 1 .. l_cemlis.count loop
             l_num := l_num + 1;
-            -- Raises -20030 (HTTP) / -20034 (SOAP fault) on failure;
-            -- NULL return = zero rows (no <reportBytes>) — a valid
-            -- standalone response for an unused P_BATCH_ID.
-            -- P_BATCH_ID = legacy contract, pending the tracked
-            -- "Suppliers Contract v1 report rework" (see header).
-            l_xml := dmt_util_pkg.run_bip_report(
-                         p_run_id     => null,
-                         p_cemli_code => l_cemlis(i),
-                         p_params     => 'P_BATCH_ID|0');
-            assert(l_xml is null or l_xml.getrootelement() = 'DATA_DS',
-                   l_num, l_cemlis(i) || ' report responds standalone from '
-                          || '/Custom/DMT2/');
+            -- Contract v1 parameters (design section 5); unused ids are
+            -- passed as 0 so the report answers with zero rows. NULL XML
+            -- with C_SUCCESS = zero rows (no <reportBytes>) — a valid
+            -- standalone response. C_ERROR = HTTP error or SOAP fault
+            -- (e.g. the deployed report does not take these parameters).
+            dmt_util_pkg.run_bip_report(
+                p_run_id     => null,
+                p_cemli_code => l_cemlis(i),
+                p_params     => 'P_RUN_ID|0~P_LOAD_REQUEST_ID|0'
+                             || '~P_IMPORT_ESS_ID|0~P_PREFIX|0',
+                x_report_xml => l_xml,
+                x_error_code => l_err);
+            assert(l_err = dmt_util_pkg.c_success
+                   and (l_xml is null or l_xml.getrootelement() = 'DATA_DS'),
+                   l_num, l_cemlis(i) || ' report answers the Contract v1 '
+                          || 'parameters from /Custom/DMT2/');
         end loop;
     end if;
 
