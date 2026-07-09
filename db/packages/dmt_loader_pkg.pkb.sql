@@ -1231,7 +1231,30 @@
 
         -- Override ParameterList per CEMLI (MCCS patterns).
         -- Default is 'NEW,N' (suppliers). CEMLIs with different import jobs need different params.
-        IF p_cemli_code = 'Projects' THEN
+        IF p_cemli_code = 'Customers' THEN
+            -- BulkImportJob (Trading Community bulk import) takes 3 positional args:
+            --   1 = Import Options   ("New")  -> 'NEW'
+            --   2 = Report Exceptions Only    -> 'N'
+            --   3 = Batch ID  (populates the job's Batch_Id parameter)
+            -- Discovered 2026-07-09 (owner directive, issue: batchId null NPE):
+            -- the child DataImportJob throws java.lang.NullPointerException
+            -- ("this.batchId is null") whenever slot 3 is omitted. The frozen
+            -- stack sent only 'NEW,N' (proven via the frozen ATP loadAndImportData
+            -- envelope log AND ESS request_property: submit.argument1=NEW,
+            -- submit.argument2=N, Batch_Id=''), so no customer import ever reached
+            -- the HZ base tables there (frozen DMT_HZ_PARTIES_TFM: 18 LOADED / 0
+            -- real FUSION_PARTY_ID -- a fail-open false pass).
+            --
+            -- The Batch ID we supply MUST equal the BATCH_ID stamped on every HZ
+            -- interface row by the transformer (DMT_CUST_TRANSFORM_PKG sets
+            -- BATCH_ID = run_id) so the bulk import groups exactly this run's rows
+            -- and the two-tier reconciler's HZ_IMP_ERRORS join (e.batch_id =
+            -- ip.batch_id) lines up. That value is the object-per-run FBDI batch
+            -- id (== run_id at Customers' one-object-per-run granularity) -- a
+            -- stable pipeline id, never random. See the "batch/group id" standard
+            -- in docs/DMT_DESIGN.html section 7.
+            l_param_list := 'NEW,N,' || TO_CHAR(p_run_id);
+        ELSIF p_cemli_code = 'Projects' THEN
             -- MCCS RICE_006: ImportProjectJobDef takes 3 args (,,Y)
             l_param_list := ',,Y';
         ELSIF p_cemli_code = 'Expenditures' THEN
