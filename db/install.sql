@@ -67,8 +67,9 @@ prompt == Sequences ==
 @@sequences/dmt_gl_budget_int_tfm_seq.sql
 @@sequences/dmt_gl_calendar_stg_seq.sql
 @@sequences/dmt_gl_calendar_tfm_seq.sql
-@@sequences/dmt_gl_interface_stg_seq.sql
-@@sequences/dmt_gl_interface_tfm_seq.sql
+-- dmt_gl_interface_stg_seq / _tfm_seq removed 2026-07-09: GLBalances STG/TFM PKs
+-- converted to GENERATED ALWAYS AS IDENTITY (accepted identity rule 2026-07-08);
+-- no standalone sequence object exists for an identity PK.
 @@sequences/dmt_gms_awd_bdgt_stg_seq.sql
 @@sequences/dmt_gms_awd_bdgt_tfm_seq.sql
 @@sequences/dmt_gms_awd_cert_stg_seq.sql
