@@ -66,12 +66,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (accepted rule: ERROR_TEXT is append-only).
+        -- The former reprocess-time ERROR_TEXT reset (which was also unscoped --
+        -- it hit every FAILED row in the table regardless of scenario) is removed;
+        -- the FAILED reselection below stays scenario-scoped via the shared
+        -- p_scenario_id predicate.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL (
@@ -369,12 +368,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_PJF_TASKS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (accepted rule: ERROR_TEXT is append-only).
+        -- The former reprocess-time ERROR_TEXT reset (which was also unscoped --
+        -- it hit every FAILED row in the table regardless of scenario) is removed;
+        -- the FAILED reselection below stays scenario-scoped via the shared
+        -- p_scenario_id predicate.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_PJF_TASKS_TFM_TBL (
@@ -596,12 +594,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (accepted rule: ERROR_TEXT is append-only).
+        -- The former reprocess-time ERROR_TEXT reset (which was also unscoped --
+        -- it hit every FAILED row in the table regardless of scenario) is removed;
+        -- the FAILED reselection below stays scenario-scoped via the shared
+        -- p_scenario_id predicate.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL (
@@ -731,12 +728,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (accepted rule: ERROR_TEXT is append-only).
+        -- The former reprocess-time ERROR_TEXT reset (which was also unscoped --
+        -- it hit every FAILED row in the table regardless of scenario) is removed;
+        -- the FAILED reselection below stays scenario-scoped via the shared
+        -- p_scenario_id predicate.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL (

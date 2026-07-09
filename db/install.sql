@@ -136,14 +136,10 @@ prompt == Sequences ==
 @@sequences/dmt_pjb_bill_events_tfm_seq.sql
 @@sequences/dmt_pjc_expenditures_stg_seq.sql
 @@sequences/dmt_pjc_expenditures_tfm_seq.sql
-@@sequences/dmt_pjc_txn_controls_stg_seq.sql
-@@sequences/dmt_pjc_txn_controls_tfm_seq.sql
-@@sequences/dmt_pjf_projects_stg_seq.sql
-@@sequences/dmt_pjf_projects_tfm_seq.sql
-@@sequences/dmt_pjf_tasks_stg_seq.sql
-@@sequences/dmt_pjf_tasks_tfm_seq.sql
-@@sequences/dmt_pjf_team_members_stg_seq.sql
-@@sequences/dmt_pjf_team_members_tfm_seq.sql
+-- Projects STG/TFM id sequences retired 2026-07-09 (identity-PK conversion,
+-- accepted coding standard 2026-07-08). The 8 Projects STG/TFM tables now use
+-- GENERATED ALWAYS AS IDENTITY. Live objects dropped via
+-- db/tools/drop_retired_project_sequences.sql.
 @@sequences/dmt_plan_budget_stg_seq.sql
 @@sequences/dmt_plan_budget_tfm_seq.sql
 @@sequences/dmt_por_req_dists_stg_seq.sql
