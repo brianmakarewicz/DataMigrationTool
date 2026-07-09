@@ -130,11 +130,12 @@ begin
 	"SHIP_TO_ACCT_NUMBER" VARCHAR2(30), 
 	"PREPAY_TRX_TYPE_NAME" VARCHAR2(20), 
 	"FUSION_AWARD_ID" NUMBER, 
-	"STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
+	"TFM_STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
 	"RESULTS_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
+	"RECON_KEY" VARCHAR2(1000), 
 	 CONSTRAINT "DMT_GMS_AWD_HDR_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -165,10 +166,57 @@ end;
 /
 
 begin
-  execute immediate 'CREATE INDEX "DMT_GMS_AWD_HDR_TFM_STS_IX" ON "DMT_GMS_AWD_HEADERS_TFM_TBL" ("STATUS")';
+  execute immediate 'CREATE INDEX "DMT_GMS_AWD_HDR_TFM_STS_IX" ON "DMT_GMS_AWD_HEADERS_TFM_TBL" ("TFM_STATUS")';
 exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
 /
 
 COMMENT ON TABLE "DMT_GMS_AWD_HEADERS_TFM_TBL"  IS 'Grant award header transformed. Run-specific data with INTEGRATION_ID. FBDI interface: GMS_AWARD_HEADERS_INT.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_GMS_AWD_HEADERS_TFM_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_GMS_AWD_HEADERS_TFM_TBL" RENAME COLUMN "STATUS" TO "TFM_STATUS"';
+  end if;
+end;
+/
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_GMS_AWD_HEADERS_TFM_TBL' and column_name = 'RECON_KEY';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_GMS_AWD_HEADERS_TFM_TBL" ADD ("RECON_KEY" VARCHAR2(1000))';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_GMS_AWD_HEADERS_TFM_N1" ON "DMT_GMS_AWD_HEADERS_TFM_TBL" ("RUN_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_GMS_AWD_HEADERS_TFM_N2" ON "DMT_GMS_AWD_HEADERS_TFM_TBL" ("RUN_ID", "TFM_STATUS")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_GMS_AWD_HEADERS_TFM_N3" ON "DMT_GMS_AWD_HEADERS_TFM_TBL" ("RECON_KEY")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_GMS_AWD_HEADERS_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
+COMMENT ON COLUMN "DMT_GMS_AWD_HEADERS_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';

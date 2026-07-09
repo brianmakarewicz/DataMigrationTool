@@ -28,12 +28,28 @@ begin
 	"ATTRIBUTE4" VARCHAR2(4000), 
 	"ATTRIBUTE5" VARCHAR2(4000), 
 	"STAGE_DATE" VARCHAR2(4000), 
-	"STATUS" VARCHAR2(4000), 
+	"STG_STATUS" VARCHAR2(4000), 
 	"SOURCE_ID" VARCHAR2(4000), 
 	"LAST_UPDATED_DATE" VARCHAR2(4000), 
 	"SCENARIO_ID" VARCHAR2(4000)
    ) ';
 exception when others then
   if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'ERR$_DMT_ZX_RATE_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "ERR$_DMT_ZX_RATE_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
 end;
 /

@@ -107,10 +107,11 @@ begin
 	"FUSION_PO_HEADER_ID" NUMBER, 
 	"FUSION_DOCUMENT_NUM" VARCHAR2(20), 
 	"RESULTS_UPDATED_DATE" DATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
+	"TFM_STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
+	"RECON_KEY" VARCHAR2(1000), 
 	 CONSTRAINT "DMT_PO_HEADERS_INT_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -126,6 +127,64 @@ COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."DOCUMENT_NUM" IS 'PO number with
 COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."VENDOR_NUM" IS 'Supplier number qualified with DEPENDENT_PREFIX: NVL(dep_prefix,'''') || stg.VENDOR_NUM';
 COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."FUSION_PO_HEADER_ID" IS 'Fusion internal PO_HEADER_ID â€” populated by BIP reconciliation';
 COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."FUSION_DOCUMENT_NUM" IS 'Fusion-assigned PO document number â€” populated by BIP reconciliation';
-COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."STATUS" IS 'STAGED > GENERATED > LOADED / FAILED';
 COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
 COMMENT ON TABLE "DMT_PO_HEADERS_INT_TFM_TBL"  IS 'PO header transformed. Run-specific â€” one row per staging row per run attempt. DOCUMENT_NUM has run prefix applied. VENDOR_NUM qualified with dependent prefix for supplier lookup. Reconciliation populated by BIP.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PO_HEADERS_INT_TFM_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_PO_HEADERS_INT_TFM_TBL" RENAME COLUMN "STATUS" TO "TFM_STATUS"';
+  end if;
+end;
+/
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PO_HEADERS_INT_TFM_TBL' and column_name = 'RECON_KEY';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_PO_HEADERS_INT_TFM_TBL" ADD ("RECON_KEY" VARCHAR2(1000))';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PO_HEADERS_INT_TFM_N1" ON "DMT_PO_HEADERS_INT_TFM_TBL" ("RUN_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PO_HEADERS_INT_TFM_N2" ON "DMT_PO_HEADERS_INT_TFM_TBL" ("RUN_ID", "TFM_STATUS")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PO_HEADERS_INT_TFM_N3" ON "DMT_PO_HEADERS_INT_TFM_TBL" ("FBDI_CSV_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PO_HEADERS_INT_TFM_N4" ON "DMT_PO_HEADERS_INT_TFM_TBL" ("STG_SEQUENCE_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PO_HEADERS_INT_TFM_N5" ON "DMT_PO_HEADERS_INT_TFM_TBL" ("RECON_KEY")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
+COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';

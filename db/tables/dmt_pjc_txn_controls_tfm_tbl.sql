@@ -25,10 +25,12 @@ begin
 	"START_DATE_ACTIVE" DATE, 
 	"END_DATE_ACTIVE" DATE, 
 	"RESULTS_UPDATED_DATE" DATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
+	"TFM_STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
+	"RECON_KEY" VARCHAR2(1000), 
+	"FUSION_TXN_CONTROL_ID" NUMBER, 
 	 CONSTRAINT "DMT_PJC_TXN_CONTROLS_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -56,6 +58,63 @@ COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT
 COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
 COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_TFM_TBL"."PROJECT_NUMBER" IS 'Project number with run prefix applied';
 COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_TFM_TBL"."TASK_NUMBER" IS 'Task number with run prefix applied (if populated)';
-COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_TFM_TBL"."STATUS" IS 'STAGED > GENERATED > LOADED / FAILED';
 COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
 COMMENT ON TABLE "DMT_PJC_TXN_CONTROLS_TFM_TBL"  IS 'Project transaction controls transformed. Run-specific â€” one row per staging row per run attempt. PROJECT_NUMBER and TASK_NUMBER have run prefix applied. Reconciliation populated by BIP.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PJC_TXN_CONTROLS_TFM_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_PJC_TXN_CONTROLS_TFM_TBL" RENAME COLUMN "STATUS" TO "TFM_STATUS"';
+  end if;
+end;
+/
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PJC_TXN_CONTROLS_TFM_TBL' and column_name = 'RECON_KEY';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_PJC_TXN_CONTROLS_TFM_TBL" ADD ("RECON_KEY" VARCHAR2(1000))';
+  end if;
+end;
+/
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PJC_TXN_CONTROLS_TFM_TBL' and column_name = 'FUSION_TXN_CONTROL_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_PJC_TXN_CONTROLS_TFM_TBL" ADD ("FUSION_TXN_CONTROL_ID" NUMBER)';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PJC_TXN_CONTROLS_TFM_N1" ON "DMT_PJC_TXN_CONTROLS_TFM_TBL" ("RUN_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PJC_TXN_CONTROLS_TFM_N2" ON "DMT_PJC_TXN_CONTROLS_TFM_TBL" ("RUN_ID", "TFM_STATUS")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PJC_TXN_CONTROLS_TFM_N3" ON "DMT_PJC_TXN_CONTROLS_TFM_TBL" ("RECON_KEY")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
+COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
+COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_TFM_TBL"."FUSION_TXN_CONTROL_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';

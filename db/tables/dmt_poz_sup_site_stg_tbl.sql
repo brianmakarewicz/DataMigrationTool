@@ -240,7 +240,7 @@ begin
 	"OVERRIDE_B2B_COMM_CODE" VARCHAR2(1), 
 	"SOURCE_ID" VARCHAR2(200), 
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
 	"SCENARIO_ID" NUMBER, 
@@ -253,7 +253,7 @@ end;
 /
 
 begin
-  execute immediate 'CREATE INDEX "DMT_POZ_SUP_SITE_STG_TBL_N1" ON "DMT_POZ_SUP_SITE_STG_TBL" ("STATUS")';
+  execute immediate 'CREATE INDEX "DMT_POZ_SUP_SITE_STG_TBL_N1" ON "DMT_POZ_SUP_SITE_STG_TBL" ("STG_STATUS")';
 exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
@@ -264,6 +264,29 @@ COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."IMPORT_ACTION" IS 'CREATE or UPDAT
 COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."PROCUREMENT_BUSINESS_UNIT_NAME" IS 'Procurement BU that owns this site';
 COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."PARTY_SITE_NAME" IS 'Address name â€” must match an existing record in DMT_POZ_SUP_ADDR_STG_TBL';
 COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."SOURCE_ID" IS 'Natural key from source system';
-COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."STATUS" IS 'NEW > RETRY > TRANSFORMED > LOADED / FAILED';
 COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten.';
 COMMENT ON TABLE "DMT_POZ_SUP_SITE_STG_TBL"  IS 'Supplier site staging. Raw user-loaded data only. Run-specific data in DMT_POZ_SUP_SITE_TFM_TBL. Interface table: POZ_SUPPLIER_SITES_INT. CTL: PozSupplierSitesInt.ctl (25B).';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_POZ_SUP_SITE_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_POZ_SUP_SITE_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_POZ_SUP_SITE_STG_N1" ON "DMT_POZ_SUP_SITE_STG_TBL" ("SCENARIO_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';

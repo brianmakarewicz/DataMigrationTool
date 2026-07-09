@@ -123,7 +123,7 @@ begin
 	"PROJECT_ROLE_NAME" VARCHAR2(240), 
 	"PROJECT_ROLE_ID" NUMBER, 
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
 	"ERROR_TEXT" CLOB, 
 	"SOURCE_ID" VARCHAR2(240), 
 	"LAST_UPDATED_DATE" DATE, 
@@ -137,7 +137,7 @@ end;
 /
 
 begin
-  execute immediate 'CREATE INDEX "DMT_PJC_EXPENDITURES_STG_TBL_N1" ON "DMT_PJC_EXPENDITURES_STG_TBL" ("STATUS")';
+  execute immediate 'CREATE INDEX "DMT_PJC_EXPENDITURES_STG_TBL_N1" ON "DMT_PJC_EXPENDITURES_STG_TBL" ("STG_STATUS")';
 exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
@@ -145,6 +145,29 @@ end;
 
 COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_PJC_EXPENDITURES_STG_SEQ';
 COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."PROJECT_NUMBER" IS 'Project number from source system â€” prefix applied in TFM table';
-COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."STATUS" IS 'NEW > TRANSFORMED > LOADED / FAILED. RETRY = user override for selective reprocess.';
 COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_PJC_EXPENDITURES_STG_TBL"  IS 'Expenditures staging. Raw user data only. Run-specific data in DMT_PJC_EXPENDITURES_TFM_TBL. FBDI interface: PJC_TXN_XFACE_STAGE_ALL. CSV: PjcTxnXfaceStageAll.csv.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PJC_EXPENDITURES_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_PJC_EXPENDITURES_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_PJC_EXPENDITURES_STG_N1" ON "DMT_PJC_EXPENDITURES_STG_TBL" ("SCENARIO_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';

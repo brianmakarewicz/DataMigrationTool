@@ -175,7 +175,7 @@ begin
 	"GLOBAL_ATTRIBUTE19" VARCHAR2(150), 
 	"GLOBAL_ATTRIBUTE20" VARCHAR2(150), 
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
-	"STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
 	"ERROR_TEXT" CLOB, 
 	"SOURCE_ID" VARCHAR2(240), 
 	"LAST_UPDATED_DATE" DATE, 
@@ -189,3 +189,33 @@ end;
 /
 
 COMMENT ON TABLE "DMT_EGP_ITEM_STG_TBL"  IS 'Items staging. Raw user-loaded data. Run-specific data in DMT_EGP_ITEM_TFM_TBL.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_EGP_ITEM_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_EGP_ITEM_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_EGP_ITEM_STG_N1" ON "DMT_EGP_ITEM_STG_TBL" ("STG_STATUS")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_EGP_ITEM_STG_N2" ON "DMT_EGP_ITEM_STG_TBL" ("SCENARIO_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+COMMENT ON COLUMN "DMT_EGP_ITEM_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';
