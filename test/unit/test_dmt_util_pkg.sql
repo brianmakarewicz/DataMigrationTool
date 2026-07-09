@@ -61,6 +61,7 @@ declare
     l_xml      xmltype;
     l_num      number;
     l_num2     number;
+    l_err      number;
     l_type     varchar2(30);
     l_pkg      varchar2(100);
     l_proc     varchar2(100);
@@ -374,11 +375,23 @@ begin
     -- 25/26. GET_OR_CREATE_SCENARIO: NULL passthrough; creates once,
     --        case-insensitive + trimmed match returns the same id
     -- ----------------------------------------------------------
-    assert(dmt_util_pkg.get_or_create_scenario(null) is null,
-       25, 'GET_OR_CREATE_SCENARIO(NULL) returns NULL');
+    dmt_util_pkg.get_or_create_scenario(
+        p_scenario_name => null,
+        x_scenario_id   => l_num,
+        x_error_code    => l_err);
+    assert(l_num is null and l_err = dmt_util_pkg.c_success,
+       25, 'GET_OR_CREATE_SCENARIO(NULL) returns NULL id with C_SUCCESS');
 
-    l_num  := dmt_util_pkg.get_or_create_scenario(c_marker||'_Scenario');
-    l_num2 := dmt_util_pkg.get_or_create_scenario('  '||upper(c_marker||'_Scenario')||' ');
+    dmt_util_pkg.get_or_create_scenario(
+        p_scenario_name => c_marker||'_Scenario',
+        x_scenario_id   => l_num,
+        x_error_code    => l_err);
+    assert(l_err = dmt_util_pkg.c_success, 25,
+       'GET_OR_CREATE_SCENARIO create returns C_SUCCESS');
+    dmt_util_pkg.get_or_create_scenario(
+        p_scenario_name => '  '||upper(c_marker||'_Scenario')||' ',
+        x_scenario_id   => l_num2,
+        x_error_code    => l_err);
     select count(*) into l_cnt
     from   dmt_scenario_tbl
     where  upper(scenario_name) = upper(c_marker||'_SCENARIO');

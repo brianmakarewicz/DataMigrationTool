@@ -17,59 +17,92 @@
     -- --------------------------------------------------------
     -- FETCH_BIP_RESULTS
     -- Delegates to DMT_UTIL_PKG.RUN_BIP_REPORT with the CEMLI's
-    -- registered report and P_BATCH_ID = p_load_ess_id (the load
-    -- ESS request id — the reports filter POZ_*_INT by
-    -- LOAD_REQUEST_ID, which is populated even when the chained
-    -- import job errors).
-    -- Returns the decoded report data as XMLTYPE; NULL means the
-    -- report answered with zero rows.
+    -- registered report and the Contract v1 parameters (design
+    -- section 5): P_RUN_ID, P_LOAD_REQUEST_ID (the load ESS request
+    -- id — the reports filter POZ_*_INT by LOAD_REQUEST_ID, which is
+    -- populated even when the chained import job errors),
+    -- P_IMPORT_ESS_ID and P_PREFIX (from DMT_PIPELINE_RUN_TBL).
+    -- PROCEDURE per the section 7 procedures-only contract:
+    -- x_report_xml NULL with x_error_code = C_SUCCESS = zero rows;
+    -- failures are logged here and reported via x_error_code —
+    -- exceptions never escape.
     -- --------------------------------------------------------
-    FUNCTION FETCH_BIP_RESULTS (
+    PROCEDURE FETCH_BIP_RESULTS (
         p_run_id  IN NUMBER,
         p_cemli_code      IN VARCHAR2,
         p_load_ess_id     IN NUMBER,
+        x_report_xml      OUT XMLTYPE,
+        x_error_code      OUT NUMBER,
         p_import_ess_id   IN NUMBER DEFAULT NULL
-    ) RETURN XMLTYPE IS
+    ) IS
         C_PROC       CONSTANT VARCHAR2(30) := 'FETCH_BIP_RESULTS';
-        l_xml        XMLTYPE;
+        l_step       VARCHAR2(500);
+        l_prefix     VARCHAR2(20);
     BEGIN
+        x_report_xml := NULL;
+        x_error_code := DMT_UTIL_PKG.C_ERROR;   -- pessimistic until proven
+
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'FETCH_BIP_RESULTS start. CEMLI: ' || p_cemli_code ||
-                                ' | P_BATCH_ID (load ESS id): ' || p_load_ess_id,
+                                ' | P_RUN_ID: ' || p_run_id ||
+                                ' | P_LOAD_REQUEST_ID: ' || p_load_ess_id ||
+                                ' | P_IMPORT_ESS_ID: ' || NVL(TO_CHAR(p_import_ess_id), '(null)'),
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
+        l_step := 'reading run prefix for run ' || p_run_id;
+        SELECT PREFIX INTO l_prefix
+        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
+
         -- Shared transport: resolves REPORT_CATALOG_PATH from
-        -- DMT_BIP_REPORT_TBL, raises -20030 on HTTP error, -20034 on
-        -- SOAP fault, -20036 on decode failure. It does not log the
-        -- request envelope (credentials never reach DMT_LOG_TBL).
-        l_xml := DMT_UTIL_PKG.RUN_BIP_REPORT(
-                     p_run_id     => p_run_id,
-                     p_cemli_code => p_cemli_code,
-                     p_params     => 'P_BATCH_ID|' || TO_CHAR(p_load_ess_id));
+        -- DMT_BIP_REPORT_TBL; HTTP/SOAP/decode failures are logged by
+        -- RUN_BIP_REPORT and surfaced through x_error_code. It never
+        -- logs the request envelope (credentials never reach DMT_LOG_TBL).
+        l_step := 'running Contract v1 reconciliation report for ' || p_cemli_code;
+        DMT_UTIL_PKG.RUN_BIP_REPORT(
+            p_run_id     => p_run_id,
+            p_cemli_code => p_cemli_code,
+            p_params     => 'P_RUN_ID|'          || TO_CHAR(p_run_id) ||
+                            '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
+                            '~P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
+                            '~P_PREFIX|'          || l_prefix,
+            x_report_xml => x_report_xml,
+            x_error_code => x_error_code);
+
+        IF x_error_code != DMT_UTIL_PKG.C_SUCCESS THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id => p_run_id,
+                p_message        => 'FETCH_BIP_RESULTS failed while ' || l_step ||
+                                    ' (detail logged by RUN_BIP_REPORT).',
+                p_log_type       => DMT_UTIL_PKG.C_LOG_ERROR,
+                p_package        => C_PKG,
+                p_procedure      => C_PROC);
+            RETURN;
+        END IF;
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'FETCH_BIP_RESULTS complete. CEMLI: ' || p_cemli_code ||
-                                CASE WHEN l_xml IS NULL
+                                CASE WHEN x_report_xml IS NULL
                                      THEN ' | Report returned zero rows.'
                                      ELSE ' | Report data received.'
                                 END,
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        RETURN l_xml;
-
     EXCEPTION
         WHEN OTHERS THEN
+            x_report_xml := NULL;
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
-                p_message        => 'FETCH_BIP_RESULTS failed. CEMLI: ' || p_cemli_code,
+                p_message        => 'FETCH_BIP_RESULTS failed while ' || l_step ||
+                                    ' | CEMLI: ' || p_cemli_code,
                 p_sqlerrm        => SQLERRM,
                 p_package        => C_PKG,
                 p_procedure      => C_PROC);
-            RAISE;
     END FETCH_BIP_RESULTS;
 
     -- --------------------------------------------------------
@@ -141,7 +174,7 @@
                     WHERE  RUN_ID       = p_run_id
                     AND    VENDOR_NAME          = r.vendor_name
                     AND    (SEGMENT1 = r.segment1 OR (SEGMENT1 IS NULL AND r.segment1 IS NULL))
-                    AND    TFM_STATUS              != 'FAILED';
+                    AND    TFM_STATUS              NOT IN ('FAILED', 'LOADED');   -- never flip a proven-LOADED row (report row order is not guaranteed)
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;
             END LOOP;
@@ -181,7 +214,7 @@
                     WHERE  RUN_ID       = p_run_id
                     AND    VENDOR_NAME          = r.vendor_name
                     AND    PARTY_SITE_NAME      = r.party_site_name
-                    AND    TFM_STATUS              != 'FAILED';
+                    AND    TFM_STATUS              NOT IN ('FAILED', 'LOADED');   -- never flip a proven-LOADED row (report row order is not guaranteed)
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;
             END LOOP;
@@ -235,7 +268,7 @@
                     WHERE  RUN_ID       = p_run_id
                     AND    VENDOR_NAME          = r.vendor_name
                     AND    VENDOR_SITE_CODE     = r.vendor_site_code
-                    AND    TFM_STATUS              != 'FAILED';
+                    AND    TFM_STATUS              NOT IN ('FAILED', 'LOADED');   -- never flip a proven-LOADED row (report row order is not guaranteed)
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;
             END LOOP;
@@ -278,7 +311,7 @@
                     AND    VENDOR_NAME          = r.vendor_name
                     AND    VENDOR_SITE_CODE     = r.vendor_site_code
                     AND    BUSINESS_UNIT_NAME   = r.bu_name
-                    AND    TFM_STATUS              != 'FAILED';
+                    AND    TFM_STATUS              NOT IN ('FAILED', 'LOADED');   -- never flip a proven-LOADED row (report row order is not guaranteed)
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;
             END LOOP;
@@ -321,7 +354,7 @@
                     AND    VENDOR_NAME          = r.vendor_name
                     AND    FIRST_NAME           = r.first_name
                     AND    LAST_NAME            = r.last_name
-                    AND    TFM_STATUS              != 'FAILED';
+                    AND    TFM_STATUS              NOT IN ('FAILED', 'LOADED');   -- never flip a proven-LOADED row (report row order is not guaranteed)
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;
             END LOOP;
@@ -363,6 +396,7 @@
     ) IS
         C_PROC  CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml   XMLTYPE;
+        l_err   NUMBER;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -371,7 +405,22 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        l_xml := FETCH_BIP_RESULTS(p_run_id, p_cemli_code, p_load_ess_id);
+        FETCH_BIP_RESULTS(
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => p_load_ess_id,
+            x_report_xml    => l_xml,
+            x_error_code    => l_err,
+            p_import_ess_id => p_import_ess_id);
+        IF l_err != DMT_UTIL_PKG.C_SUCCESS THEN
+            -- Route the failure: RECONCILE_BATCH's contract with the
+            -- queue engine (invoke_registered) is exception-based, so
+            -- a fetch failure raises and the work item fails loudly —
+            -- never a silent zero-row "success" (design section 5).
+            RAISE_APPLICATION_ERROR(-20038,
+                'RECONCILE_BATCH: FETCH_BIP_RESULTS failed for CEMLI ' ||
+                p_cemli_code || ' (detail in DMT_LOG_TBL).');
+        END IF;
         PARSE_AND_UPDATE(p_run_id, p_cemli_code, l_xml);
 
         DMT_UTIL_PKG.LOG(

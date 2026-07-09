@@ -29,6 +29,31 @@
     END erp_soap_url;
 
     -- --------------------------------------------------------
+    -- Private: resolve a scenario name to its SCENARIO_ID via the
+    -- shared DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO procedure (section 7
+    -- procedures-only contract) and check its x_error_code. This
+    -- package's procedures signal failure by raising, so a scenario-
+    -- resolution failure is routed the same way — one check, defined
+    -- once, for every RUN_* entry point.
+    -- --------------------------------------------------------
+    PROCEDURE resolve_scenario (
+        p_scenario_name IN  VARCHAR2,
+        x_scenario_id   OUT NUMBER
+    ) IS
+        l_err NUMBER;
+    BEGIN
+        DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+            p_scenario_name => p_scenario_name,
+            x_scenario_id   => x_scenario_id,
+            x_error_code    => l_err);
+        IF l_err != DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20115,
+                'resolve_scenario: GET_OR_CREATE_SCENARIO failed for scenario "' ||
+                p_scenario_name || '" (detail in DMT_LOG_TBL).');
+        END IF;
+    END resolve_scenario;
+
+    -- --------------------------------------------------------
     -- Private: parse a scalar value from a simple flat JSON response.
     -- --------------------------------------------------------
     FUNCTION json_get (
@@ -2924,9 +2949,10 @@
     PROCEDURE RUN_SUPPLIER_PIPELINE (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC  CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_PIPELINE';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
 
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'RUN_SUPPLIER_PIPELINE start. Integration ID: ' || p_run_id,
@@ -2982,8 +3008,9 @@
     PROCEDURE RUN_SUPPLIERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIERS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIERS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'Suppliers', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3000,8 +3027,9 @@
     PROCEDURE RUN_SUPPLIER_ADDRESSES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_ADDRESSES';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_ADDRESSES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'SupplierAddresses', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3018,8 +3046,9 @@
     PROCEDURE RUN_SUPPLIER_SITES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_SITES';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'SupplierSites', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3036,8 +3065,9 @@
     PROCEDURE RUN_SUPPLIER_SITE_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_SITE_ASSIGNMENTS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITE_ASSIGNMENTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'SupplierSiteAssignments', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3054,8 +3084,9 @@
     PROCEDURE RUN_SUPPLIER_CONTACTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_CONTACTS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_CONTACTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'SupplierContacts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3072,8 +3103,9 @@
     PROCEDURE RUN_PURCHASE_ORDERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_PURCHASE_ORDERS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PURCHASE_ORDERS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'PurchaseOrders', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3105,7 +3137,7 @@
         v_scenario_id    NUMBER;
         l_dummy          BOOLEAN;
     BEGIN
-        v_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        resolve_scenario(p_scenario_name, v_scenario_id);
 
         SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
         SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
@@ -3161,7 +3193,7 @@
         l_prefix         VARCHAR2(20);
         v_scenario_id    NUMBER;
     BEGIN
-        v_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        resolve_scenario(p_scenario_name, v_scenario_id);
 
         -- Derive integration ID and prefix from sequences
         SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
@@ -3230,8 +3262,9 @@
     PROCEDURE RUN_CUSTOMERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_CUSTOMERS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CUSTOMERS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'Customers', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3254,8 +3287,9 @@
     PROCEDURE RUN_AR_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_AR_INVOICES';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AR_INVOICES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'ARInvoices', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3275,8 +3309,9 @@
     PROCEDURE RUN_BILLING_EVENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_BILLING_EVENTS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BILLING_EVENTS start.', 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'BillingEvents', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3296,8 +3331,9 @@
     PROCEDURE RUN_EXPENDITURES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_EXPENDITURES';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_EXPENDITURES start.', 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'Expenditures', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3317,8 +3353,9 @@
     PROCEDURE RUN_GRANTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_GRANTS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GRANTS start.', 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'Grants', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3338,8 +3375,9 @@
     PROCEDURE RUN_1099_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_1099_INVOICES';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_1099_INVOICES start.', 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, '1099Invoices', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3359,8 +3397,9 @@
     PROCEDURE RUN_REQUISITIONS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_REQUISITIONS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_REQUISITIONS start.', 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'Requisitions', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3380,8 +3419,9 @@
     PROCEDURE RUN_ITEMS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_ITEMS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ITEMS start (includes ItemCategories bundled in same ZIP).', 'INFO', C_PKG, C_PROC);
 
@@ -3403,8 +3443,9 @@
     -- --------------------------------------------------------
     PROCEDURE RUN_ITEM_CATEGORIES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_ITEM_CATEGORIES';
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         -- ItemCategories are bundled with Items in one FBDI ZIP under ItemImportJobDef.
         -- This proc only validates+transforms; FBDI gen + ESS submission happens in RUN_ITEMS.
         -- Kept for standalone validate/transform use (e.g. data quality check without submission).
@@ -3435,8 +3476,9 @@
     PROCEDURE RUN_MISC_RECEIPTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_MISC_RECEIPTS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_MISC_RECEIPTS start.', 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'MiscReceipts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3456,8 +3498,9 @@
     PROCEDURE RUN_PROJECTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_PROJECTS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'Projects', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3477,8 +3520,9 @@
     PROCEDURE RUN_BLANKET_POS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_BLANKET_POS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BLANKET_POS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'BlanketPOs', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3498,8 +3542,9 @@
     PROCEDURE RUN_CONTRACTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_CONTRACTS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CONTRACTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'Contracts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3522,8 +3567,9 @@
     PROCEDURE RUN_AP_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_AP_INVOICES';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AP_INVOICES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'APInvoices', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -3548,7 +3594,7 @@
         l_prefix         VARCHAR2(20);
         v_scenario_id    NUMBER;
     BEGIN
-        v_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        resolve_scenario(p_scenario_name, v_scenario_id);
 
         SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
         SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
@@ -3605,8 +3651,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_WORKERS start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -3697,8 +3744,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ASSIGNMENTS start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -3753,8 +3801,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SALARIES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -3804,8 +3853,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SALARY_BASES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -3855,8 +3905,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ABSENCES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -3906,8 +3957,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_W2_BALANCES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -3957,8 +4009,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BEN_PARTICIPANT start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -4008,8 +4061,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BEN_DEPENDENT start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -4059,8 +4113,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BEN_BENEFICIARY start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -4110,8 +4165,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PAYROLL_RELS start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -4161,8 +4217,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_TAX_CARDS start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -4212,8 +4269,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_TALENT_PROFILES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -4263,8 +4321,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PERF_EVALUATIONS start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -4314,8 +4373,9 @@
         l_content_id    VARCHAR2(100);
         l_request_id    VARCHAR2(100);
         l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_WORK_SCHEDULES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
@@ -4360,8 +4420,9 @@
     PROCEDURE RUN_GL_BALANCES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_GL_BALANCES';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BALANCES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'GLBalances', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -4381,8 +4442,9 @@
     PROCEDURE RUN_GL_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_GL_BUDGETS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'GLBudgetBalances', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -4402,8 +4464,9 @@
     PROCEDURE RUN_PLAN_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_PLAN_BUDGETS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PLAN_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'PlanningBudgets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -4423,8 +4486,9 @@
     PROCEDURE RUN_PROJECT_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_PROJECT_BUDGETS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECT_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'ProjectBudgets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -4444,8 +4508,9 @@
     PROCEDURE RUN_ASSETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_ASSETS';
         l_dummy BOOLEAN;
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ASSETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
         l_dummy := run_one_object_type(p_run_id, 'Assets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
@@ -4470,8 +4535,9 @@
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         C_PROC CONSTANT VARCHAR2(40) := 'RUN_ASSETS_TRANSFORM_ONLY';
-        v_scenario_id NUMBER := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        v_scenario_id NUMBER;
     BEGIN
+        resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ASSETS_TRANSFORM_ONLY start.', 'INFO', C_PKG, C_PROC);
         DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         COMMIT;
@@ -4498,7 +4564,7 @@
         v_scenario_id    NUMBER;
         l_projects_loaded NUMBER := 0;
     BEGIN
-        v_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        resolve_scenario(p_scenario_name, v_scenario_id);
 
         SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
         SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
@@ -4572,7 +4638,7 @@
         l_prefix         VARCHAR2(20);
         v_scenario_id    NUMBER;
     BEGIN
-        v_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        resolve_scenario(p_scenario_name, v_scenario_id);
 
         SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
         SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
@@ -4659,7 +4725,7 @@
         l_prefix         VARCHAR2(20);
         v_scenario_id    NUMBER;
     BEGIN
-        v_scenario_id := DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(p_scenario_name);
+        resolve_scenario(p_scenario_name, v_scenario_id);
 
         SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
         SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;

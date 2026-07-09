@@ -29,7 +29,7 @@
 --   2. BIP   — DMT_UTIL_PKG.RUN_BIP_REPORT on the shared lookup report
 --              /Custom/DMT/common/DMT_FBDI_LOOKUPS_RPT.xdo (read-only,
 --              no side effects) returns XML parseable by BIP_REPORT_XML
---   3. FAULT — RUN_BIP_REPORT on a nonexistent report path RAISES
+--   3. FAULT — RUN_BIP_REPORT on a nonexistent report path reports C_ERROR
 --              (-20034 SOAP fault / -20030 HTTP family) — never a
 --              silent retry or an empty success (design section 5)
 --   4. ESS   — poll-only: DMT_LOADER_PKG.POLL_ESS_JOB on a known
@@ -91,6 +91,7 @@ declare
     l_pass     varchar2(200);
     l_resp     clob;
     l_status   number;
+    l_err      number;
     l_xml      xmltype;
     l_ess_id   varchar2(50);
     l_fstatus  varchar2(50);
@@ -150,35 +151,35 @@ begin
     --    XML that parsed through BIP_REPORT_XML (RUN_BIP_REPORT calls
     --    it internally; a non-null XMLTYPE proves decode + parse).
     -- ----------------------------------------------------------
-    l_xml := dmt_util_pkg.run_bip_report(
+    dmt_util_pkg.run_bip_report(
         p_run_id      => c_run_id,
         p_cemli_code  => null,
         p_params      => null,
+        x_report_xml  => l_xml,
+        x_error_code  => l_err,
         p_report_path => c_lookup_rpt);
 
-    assert(l_xml is not null
+    assert(l_err = dmt_util_pkg.c_success
+       and l_xml is not null
        and l_xml.existsnode('/DATA_DS') = 1,
-       2, 'RUN_BIP_REPORT('||c_lookup_rpt||') returns parseable /DATA_DS XML');
+       2, 'RUN_BIP_REPORT('||c_lookup_rpt||') returns C_SUCCESS + parseable /DATA_DS XML');
 
     -- ----------------------------------------------------------
-    -- 3. Nonexistent report path RAISES the SOAP-fault error family
-    --    (-20034 SOAP fault, or -20030 if BIP answers with HTTP error)
-    --    — never NULL, never empty success (design section 5).
+    -- 3. Nonexistent report path reports C_ERROR through x_error_code
+    --    (procedures-only contract: the SOAP fault / HTTP failure is
+    --    caught inside RUN_BIP_REPORT and logged; exceptions never
+    --    escape) — never NULL-with-success, never empty success
+    --    (design section 5: a SOAP fault is never silent).
     -- ----------------------------------------------------------
-    begin
-        l_xml := dmt_util_pkg.run_bip_report(
-            p_run_id      => c_run_id,
-            p_cemli_code  => null,
-            p_params      => null,
-            p_report_path => c_bogus_rpt);
-        assert(false, 3, 'nonexistent report should have raised, got '||
-            case when l_xml is null then 'NULL' else 'XML' end);
-    exception
-        when others then
-            if sqlcode = -20999 then raise; end if;
-            assert(sqlcode in (-20034, -20030), 3,
-                'nonexistent BIP report raises -20034/-20030 (got '||sqlcode||')');
-    end;
+    dmt_util_pkg.run_bip_report(
+        p_run_id      => c_run_id,
+        p_cemli_code  => null,
+        p_params      => null,
+        x_report_xml  => l_xml,
+        x_error_code  => l_err,
+        p_report_path => c_bogus_rpt);
+    assert(l_err = dmt_util_pkg.c_error and l_xml is null, 3,
+        'nonexistent BIP report reports C_ERROR with NULL XML (got err='||l_err||')');
 
     -- ----------------------------------------------------------
     -- 4. ESS poll-only smoke: definitive terminal status for a known

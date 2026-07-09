@@ -4,10 +4,11 @@
 -- /Custom/DMT2/SupplierContacts/). The SQL below is the byte-exact
 -- CDATA body of that .xdm; regenerate this file from the .xdm
 -- whenever the data model changes -- the mirror must never drift.
--- Parameter: :P_BATCH_ID = load ESS request id (LOAD_REQUEST_ID --
--- populated even when the chained import job errors).
+-- Contract v1 parameters (design section 5): P_RUN_ID,
+-- P_LOAD_REQUEST_ID (the selection key -- LOAD_REQUEST_ID is
+-- populated even when the chained import job errors),
+-- P_IMPORT_ESS_ID, P_PREFIX. P_BATCH_ID is retired.
 -- ============================================================
-
 SELECT
     i.contact_interface_id,
     i.per_party_id AS contact_id,
@@ -29,4 +30,5 @@ SELECT
         AND    r.parent_id    = i.contact_interface_id
     ) AS error_message
 FROM   poz_sup_contacts_int i
-WHERE  i.load_request_id = :P_BATCH_ID
+WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
+      
