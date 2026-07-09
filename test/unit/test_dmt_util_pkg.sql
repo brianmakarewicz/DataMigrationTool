@@ -227,7 +227,7 @@ begin
     -- ----------------------------------------------------------
     -- 14. Prefix consolidation (Stage C, design section 6):
     --     INIT_RUN assigns one prefix per run from the single
-    --     sequence DMT_RUN_PREFIX_SEQ — 4-digit (1000-9999) — and
+    --     sequence DMT_RUN_PREFIX_SEQ — 5-digit (10000-99999, widened 2026-07-08) — and
     --     stores it on the run row (DMT_PIPELINE_RUN_TBL.PREFIX).
     --     CURRVAL is session-scoped, so matching it proves the
     --     prefix came from DMT_RUN_PREFIX_SEQ in this call.
@@ -253,11 +253,11 @@ begin
         from   dmt_pipeline_run_tbl where run_id = l_run1;
 
         assert(l_prefix1 is not null
-           and regexp_like(l_prefix1, '^[1-9][0-9]{3}$')
-           and to_number(l_prefix1) between 1000 and 9999
+           and regexp_like(l_prefix1, '^[1-9][0-9]{4}$')
+           and to_number(l_prefix1) between 10000 and 99999
            and l_row1 = l_prefix1
            and to_number(l_prefix1) = l_currval,
-           14, 'INIT_RUN assigns a 4-digit prefix from DMT_RUN_PREFIX_SEQ '||
+           14, 'INIT_RUN assigns a 5-digit prefix from DMT_RUN_PREFIX_SEQ '||
                'and stores it on the run row');
 
         dmt_pipeline_init_pkg.init_run(
