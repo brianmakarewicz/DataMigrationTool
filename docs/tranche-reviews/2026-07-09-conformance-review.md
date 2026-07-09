@@ -46,3 +46,18 @@ family.
   TRACKED F5; 8 explicit NOT CHECKED lines. Exit success.
 - `--fresh` rebuild + second install: recorded in the PR body.
 - Unit suites (8, live included) + supplier golden: recorded in the PR body.
+
+## RE-REVIEW verdict (2026-07-09): PASS — conformance tranche CLOSED
+All six fix-now findings (F1,F2,F3,F4,F11,F12) confirmed fixed correctly in committed
+files AND on the deployed dmt2-local DB. Extended checker 197/197 with honest NOT-CHECKED
+disclosure. Previously-hidden violations (nullable status columns, missing DMT_LOG_TBL
+RUN_ID/QUEUE_ID + DMT_WORK_QUEUE NEXT_POLL_AFTER indexes, missing QUEUE_ID column) genuinely
+fixed. FORCE/alias removals compile clean — the only invalid views are the 15 tracked-broken
+INTEGRATION_ID-drifted views (each commented). Both seeds converge, zero duplicate keys.
+Deferrals F5-F10 recorded. 4 new red rules present with example boxes.
+Two non-blocking residues logged for later: (a) catalog seed MERGE matches on
+(CEMLI_CODE, NVL(TFM_TABLE)) while the unique key is (CEMLI_CODE, SORT_ORDER) — converges
+today, tighten when next touched; (b) the proposed "one normative definition site" red rule,
+if accepted, is in tension with the checker header restating the dictionary — resolve at
+promotion. NEXT: owner gate — full live supplier rerun (all five objects, Rule #1 per object)
+before Wave 1.
