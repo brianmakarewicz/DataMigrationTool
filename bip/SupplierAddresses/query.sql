@@ -1,19 +1,16 @@
 -- ============================================================
--- SupplierAddresses BIP Reconciliation Query
--- Data source: ApplicationDB_FSCM
--- Interface table: POZ_SUP_ADDRESSES_INT
--- Error table: POZ_SUPPLIER_INT_REJECTIONS
--- Parameter: :P_BATCH_ID = ESS load request ID (LOAD_REQUEST_ID)
---
--- Natural keys for PARSE_AND_UPDATE match:
---   VENDOR_NAME + PARTY_SITE_NAME
---
--- Pattern mirrors confirmed Suppliers query (2026-03-13).
--- STATUS: 'PROCESSED' = success, 'REJECTED' = failed.
--- LOAD_REQUEST_ID filter confirmed correct (not BATCH_ID or IMPORT_REQUEST_ID).
+-- SupplierAddresses BIP reconciliation query -- MIRROR of the deployed
+-- data model bip/SupplierAddresses/SUP_ADDR_DM.xdm (deploy target
+-- /Custom/DMT2/SupplierAddresses/). The SQL below is the byte-exact
+-- CDATA body of that .xdm; regenerate this file from the .xdm
+-- whenever the data model changes -- the mirror must never drift.
+-- Parameter: :P_BATCH_ID = load ESS request id (LOAD_REQUEST_ID --
+-- populated even when the chained import job errors).
 -- ============================================================
+
 SELECT
     i.address_interface_id,
+    i.party_site_id,
     i.vendor_name,
     i.party_site_name,
     i.import_status AS status,

@@ -28,7 +28,7 @@ That multi-CSV-in-one-zip pattern does NOT apply to the supplier family.
 - Interface Tables: POZ_SUPPLIERS_INT, POZ_SUP_ADDRESSES_INT, POZ_SUPPLIER_SITES_INT, POZ_SITE_ASSIGNMENTS_INT, POZ_SUP_CONTACTS_INT
 - UCM Account: prc/supplier/import
 - ESS Job: /oracle/apps/ess/prc/poz/supplierImport,ImportSuppliers (each object's own submission)
-- ParameterList: NEW,N (no third argument) — see memory/project_suppliers.md
+- ParameterList: NEW,N (no third argument)
 - Loader Type: SQLLOADER (LOAD_JOB_NAME is NULL — loadAndImportData handles the load internally)
 - Auth User: calvin.roth (per-object override rows in DMT_ERP_INTERFACE_OPTIONS_TBL)
 - BIP reconciliation key: filter the POZ_*_INT tables by LOAD_REQUEST_ID
@@ -60,7 +60,17 @@ That multi-CSV-in-one-zip pattern does NOT apply to the supplier family.
 None in this folder (CTL files embedded in FBDI template).
 
 ## Known Issues
-None currently.
+- **SupplierSites: LOADED rows can carry a NULL FUSION_VENDOR_SITE_ID.** The
+  interface tier (POZ_SUPPLIER_SITES_INT) reports the site PROCESSED but does
+  not return VENDOR_SITE_ID on this instance. The rows stay LOADED because the
+  dependent SupplierSiteAssignments — which cannot exist without the site —
+  load with real Fusion ids, proving the sites transitively. The residue is
+  never silent: the reconciler appends
+  `[RECONCILE_ERROR] Fusion id not returned by interface tier` to the affected
+  rows' ERROR_TEXT (LOADED with historical error text is a defined, legal
+  state). The proper id backfill (base-table tier) lands with the tracked
+  "Suppliers Contract v1 report rework" work item (see
+  docs/tranche-reviews/2026-07-08-suppliers-review.md, H6-H8).
 
 ## History
 - Frozen stack: E2E LOADED confirmed working — five separate imports

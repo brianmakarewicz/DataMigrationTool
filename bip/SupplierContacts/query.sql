@@ -1,19 +1,16 @@
 -- ============================================================
--- SupplierContacts BIP Reconciliation Query
--- Data source: ApplicationDB_FSCM
--- Interface table: POZ_SUP_CONTACTS_INT
--- Error table: POZ_SUPPLIER_INT_REJECTIONS
--- Parameter: :P_BATCH_ID = ESS load request ID (LOAD_REQUEST_ID)
---
--- Natural keys for PARSE_AND_UPDATE match:
---   VENDOR_NAME + FIRST_NAME + LAST_NAME
---
--- Pattern mirrors confirmed Suppliers query (2026-03-13).
--- STATUS: 'PROCESSED' = success, 'REJECTED' = failed.
--- LOAD_REQUEST_ID filter confirmed correct (not BATCH_ID or IMPORT_REQUEST_ID).
+-- SupplierContacts BIP reconciliation query -- MIRROR of the deployed
+-- data model bip/SupplierContacts/SUP_CONT_DM.xdm (deploy target
+-- /Custom/DMT2/SupplierContacts/). The SQL below is the byte-exact
+-- CDATA body of that .xdm; regenerate this file from the .xdm
+-- whenever the data model changes -- the mirror must never drift.
+-- Parameter: :P_BATCH_ID = load ESS request id (LOAD_REQUEST_ID --
+-- populated even when the chained import job errors).
 -- ============================================================
+
 SELECT
     i.contact_interface_id,
+    i.per_party_id AS contact_id,
     i.vendor_name,
     i.first_name,
     i.last_name,

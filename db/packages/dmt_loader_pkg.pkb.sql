@@ -311,8 +311,12 @@
             '<typ:callbackURL></typ:callbackURL>' ||
             '</typ:loadAndImportData>' ||
             '</soapenv:Body></soapenv:Envelope>';
+        -- Envelope logs always route through MASK_CREDENTIALS (this envelope
+        -- authenticates via HTTP header, not body — masked anyway by rule).
         DMT_UTIL_PKG.LOG(p_run_id,
-            'loadAndImportData pre-send envelope: ' || l_soap_log,
+            'loadAndImportData pre-send envelope: ' ||
+                DBMS_LOB.SUBSTR(
+                    DMT_UTIL_PKG.MASK_CREDENTIALS(TO_CLOB(l_soap_log)), 32000, 1),
             'INFO', C_PKG, l_proc);
 
         -- Log the EXACT payload (tail after base64 content) for debugging
