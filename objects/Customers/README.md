@@ -2,8 +2,10 @@
 
 ## Status
 DMT2 offline slice proven 2026-07-09 (unit suite 27/27, golden byte-identical to
-run 116). Live E2E gate deferred to the serialized live phase. Frozen predecessor
-stack: E2E LOADED.
+run 116). Reconciler rebuilt fail-CLOSED / two-tier 2026-07-09 (obj/customers-rule1)
+— no more fail-open. Live Rule #1 gate BLOCKED upstream: the customer bulk import
+job fails with `batchId is null`, so GOOD rows cannot reach the Fusion base tables
+yet (see Known Issues). Frozen predecessor stack: E2E LOADED.
 
 ## The object model — ONE object, seven record types
 Customers is ONE object. Its single FBDI zip carries SEVEN HZ CSVs (parties,
@@ -51,42 +53,66 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 None in this folder.
 
 ## Known Issues
-- **Reconciliation is interface-tier only and cannot yet prove Rule #1 (OPEN,
-  found by the 2026-07-09 live gate).** The Customers BIP report reads only the
-  interface table `HZ_IMP_PARTIES_T`, filtered by `LOAD_REQUEST_ID`. On the
-  demo instance (fa-esew-dev28), after a *successful* bulk import (both the load
-  ESS job and the chained import ESS job return SUCCEEDED) the interface table
-  still shows `INTERFACE_STATUS` and `IMPORT_STATUS` NULL and `PARTY_ID` NULL
-  for every row. Consequences observed on live run 147 (prefix 10030):
-  - GOOD parties are marked LOADED but with a NULL `FUSION_PARTY_ID` — no
-    positive base-table id was captured.
-  - The BAD party (RT-CUST-BAD1, PARTY_TYPE = INVALID_TYPE) is wrongly marked
-    LOADED, because the NULL interface status is read as success and no
-    `HZ_IMP_ERRORS` row surfaced through the interface-tier query.
-  This is a genuine reconciliation gap, not a data-quality failure: the load
-  and import both succeeded and the rows are present in `HZ_IMP_PARTIES_T`. The
-  fix is a two-tier Contract v1 report that positively confirms each GOOD row
-  against the HZ **base** tables (real `HZ_PARTIES.PARTY_ID` etc.) and reads
-  `HZ_IMP_ERRORS` for the BAD row's rejection — the same base-tier read-back
-  the GLBalances report already does and the same "Contract v1 report rework"
-  tracked item the Suppliers site-id backfill and Projects interface-tier
-  children await. Until then the Customers live Rule #1 gate does NOT pass.
-- Related, upstream of the reconciler: the customer **validator**
-  (`DMT_CUST_VALIDATOR_PKG`) does not reject the BAD party's invalid
-  `PARTY_TYPE` before generation — RT-CUST-BAD1 reached STG_STATUS = TRANSFORMED
-  with no error and flowed into the FBDI zip. A stronger pre-validation would
-  have failed it before the ESS load. Tracked separately from this reconciler
-  work.
-- Child record types are reconciled by cascade, not by their own Fusion base
-  id. Only the party record type is read back from the BIP report. The six
-  child record types (locations, party sites, party site uses, accounts,
-  account sites, account site uses) are marked LOADED because their parent
-  reached LOADED — their FUSION_* id columns are NOT populated. A child row that
-  cannot be linked to a LOADED parent is marked FAILED with a
-  `[RECONCILE_ERROR]` note (never silently LOADED). Capturing each child's own
-  Fusion id also lands with the Contract v1 report rework.
+- **FIXED 2026-07-09 (obj/customers-rule1): the fail-open reconciler is gone.**
+  The old reconciler read only the interface table `HZ_IMP_PARTIES_T` and marked
+  a party LOADED when `INTERFACE_STATUS` was NULL. On this demo instance the
+  interface status is always NULL after import, so every row — including the BAD
+  one — was wrongly LOADED and no real Fusion id was captured. The reconciler is
+  now **two-tier and fail-CLOSED** (same shape as GLBalances): the BIP report
+  positively confirms each record type against its own Fusion **base** table via
+  `HZ_ORIG_SYS_REFERENCES` (`ORIG_SYSTEM='DMT'` + the prefixed reference) and
+  reads `HZ_IMP_ERRORS` for reject text. A TFM row is marked LOADED **only** when
+  a real base id is returned (stored in that record type's `FUSION_*_ID` column);
+  FAILED when Fusion error text is present; otherwise left un-LOADED and swept to
+  FAILED. There is no interface-status path and no parent→child LOADED cascade —
+  each record type is confirmed by its own base id. Absence is never LOADED.
+- **OPEN, upstream of the reconciler — the customer bulk import job fails with
+  `batchId is null`, so no row reaches the base tables (found by the
+  2026-07-09 live re-gate, run 152 / scenario CUSTOMERS_R1_0709 / prefix
+  10035).** The FBDI load ESS job (`InterfaceLoaderController` 9719106) SUCCEEDS
+  and lands all 3 parties in `HZ_IMP_PARTIES_T`, but the chained
+  `BulkImportJob` (9719122) is invoked with **Batch ID = null** and its child
+  `DataImportJob` (9719131) throws:
+  `java.lang.NullPointerException: Cannot invoke "String.trim()" because
+  "this.batchId" is null`. Nothing moves from the interface table to
+  `HZ_PARTIES`/`HZ_LOCATIONS`/…; `HZ_ORIG_SYS_REFERENCES` gets no `DMT` rows for
+  the prefix and `HZ_IMP_ERRORS` stays empty. The import ParameterList DMT sends
+  (`NEW,N,<run_id>`) does not carry the Batch ID this bulk import needs — this is
+  the "ParameterList: UNKNOWN — needs verification (live phase)" item above, now
+  pinned to a concrete failure. **Consequence:** the two-tier reconciler
+  correctly marks all 21 rows FAILED with `[RECONCILE_ERROR]` (unaccounted=0),
+  because the base tables genuinely lack the rows — it does **not** fake a pass.
+  The live Rule #1 gate therefore does NOT yet pass on this instance: the GOOD
+  half (LOADED with real base ids) cannot be shown until the import job gets its
+  Batch ID. The reconciler/report fix is complete and correct; the blocker is
+  the import ParameterList. Tracked as the next Customers live item.
+- Related, upstream: the customer **validator** (`DMT_CUST_VALIDATOR_PKG`) does
+  not reject the BAD party's invalid `PARTY_TYPE` before generation — RT-CUST-BAD1
+  reaches STG_STATUS = TRANSFORMED with no error and flows into the FBDI zip. A
+  stronger pre-validation would have failed it before the ESS load. Tracked
+  separately.
 
 ## History
+- 2026-07-09 (obj/customers-rule1 — fail-open fix): rebuilt the reconciler
+  `DMT_CUST_RESULTS_PKG.PARSE_AND_UPDATE` to be two-tier and fail-CLOSED and
+  rebuilt `bip/Customers/DMT_CUST_RECON_DM.xdm` to a two-tier query. The report
+  now LEFT JOINs each record type's Fusion base table via `HZ_ORIG_SYS_REFERENCES`
+  (`ORIG_SYSTEM='DMT'` + prefixed reference) for a real id, and reads
+  `HZ_IMP_ERRORS` (via BATCH_ID) for reject text; it emits per row RECORD_TYPE,
+  ORIG_SYSTEM_REFERENCE, FUSION_ID, ERROR_MESSAGE (GL-style Contract-v1 shape).
+  The reconciler marks LOADED only on a non-null base FUSION_ID (stored in each
+  record type's own FUSION_*_ID column), FAILED on error text, else sweeps to
+  FAILED — the `interface_status IS NULL => LOADED` path and the parent→child
+  LOADED cascade are removed entirely. Package VALID; check_column_dictionary
+  Customers 14/14 PASS; golden byte-identical twice-through; unit suite 27/27.
+  Report redeployed to `/Custom/DMT2/Customers/`; standalone RUN_BIP_REPORT
+  returns parseable Contract-v1 XML (root DATA_DS, 4 params echoed).
+  Live re-gate run 152 (scenario CUSTOMERS_R1_0709, prefix 10035): load ESS
+  9719106 SUCCEEDED, but the chained BulkImportJob 9719122 / DataImportJob
+  9719131 failed with `batchId is null` — no rows reached the base tables, so the
+  fail-closed reconciler correctly marked all 21 rows FAILED (unaccounted=0),
+  refusing to fake a pass. The fail-OPEN bug is fixed and proven; the live Rule #1
+  GOOD half is blocked on the import Batch ID parameter (see Known Issues).
 - 2026-07-09 (Stage E live enablement): reconciler modernized to the shared
   Contract v1 pattern (the Wave-1 blind-review FAIL fix). The private
   `bip_soap_post` UTL_HTTP function was deleted; the reconciler now routes its
