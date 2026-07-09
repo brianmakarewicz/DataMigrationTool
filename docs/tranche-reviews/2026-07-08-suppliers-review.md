@@ -43,3 +43,19 @@ decided architecture).
 
 ## Proposed rules: 5, added in red to the canonical doc (same PR as this log).
 ## Re-review: required after the fix PR merges (protocol).
+
+## RE-REVIEW verdict (2026-07-08): PASS-WITH-FINDINGS — Stage D CLOSED
+All nine fix-now findings confirmed genuinely fixed and deployed (verified live: zero
+unmasked credential content in DMT_LOG_TBL; deployed package source matches git). All
+five deferrals confirmed recorded. Follow-ups ordered by the re-review, now pinned:
+- **M4 worklist, named explicitly (MEDIUM):** the rewritten pre-validation UPDATEs are
+  still unscoped to the run's scenario/mode — a scoped run can permanently FAIL another
+  scenario's NEW children. Scoping MUST land with M4's run-mode selection predicates.
+- Contract v1 rework notes: FAILED branch must guard != LOADED (row-order flip hazard);
+  supplier report id backfill; generic parser replaces per-object branches.
+- Transport refactor notes: soap_post needs chunked writes (>32K envelopes fail today);
+  MASK_CREDENTIALS + scrub tool need WSSE <Username> and JSON credential patterns BEFORE
+  any WSSE/JSON transport logs a body (today's exposure: zero).
+- Protocol wording fixed: proposed rules are marked by the red PROPOSED block + inline
+  red styling (CLAUDE.md previously named a CSS class nobody uses).
+- Owner item unchanged: the SupplierContacts dependency red amendment (M5).
