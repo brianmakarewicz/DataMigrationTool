@@ -17,7 +17,7 @@ SELECT
     p.organization_name,
     p.import_status_code                AS import_status,
     p.interface_status,
-    p.batch_id,
+    p.load_request_id,
     (
         SELECT LISTAGG(e.error_msg_text, '; ')
                WITHIN GROUP (ORDER BY e.error_seq_id)
@@ -27,7 +27,7 @@ SELECT
         AND    ROWNUM <= 10
     ) AS error_message
 FROM   hz_imp_parties_t p
-WHERE  p.load_request_id = :P_BATCH_ID
+WHERE  p.load_request_id = :P_LOAD_REQUEST_ID
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -40,8 +40,8 @@ WHERE  p.load_request_id = :P_BATCH_ID
           <element name="PARTY_ID"                    value="PARTY_ID"                    dataType="xsd:string" tagName="PARTY_ID"/>
           <element name="ORGANIZATION_NAME"           value="ORGANIZATION_NAME"           dataType="xsd:string" tagName="ORGANIZATION_NAME"/>
           <element name="IMPORT_STATUS"               value="IMPORT_STATUS"               dataType="xsd:string" tagName="IMPORT_STATUS"/>
-          <element name="INTERFACE_STATUS"             value="INTERFACE_STATUS"            dataType="xsd:string" tagName="INTERFACE_STATUS"/>
-          <element name="BATCH_ID"                    value="BATCH_ID"                    dataType="xsd:string" tagName="BATCH_ID"/>
+          <element name="INTERFACE_STATUS"            value="INTERFACE_STATUS"            dataType="xsd:string" tagName="INTERFACE_STATUS"/>
+          <element name="LOAD_REQUEST_ID"             value="LOAD_REQUEST_ID"             dataType="xsd:string" tagName="LOAD_REQUEST_ID"/>
           <element name="ERROR_MESSAGE"               value="ERROR_MESSAGE"               dataType="xsd:string" tagName="ERROR_MESSAGE"/>
         </group>
       </dataStructure>
@@ -50,8 +50,17 @@ WHERE  p.load_request_id = :P_BATCH_ID
   <eventTriggers/>
   <lexicals/>
   <parameters>
-    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
-               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>

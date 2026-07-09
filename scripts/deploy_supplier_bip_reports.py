@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 """
-Deploy the five supplier-family BIP reconciliation reports to THIS stack's
-Fusion catalog root /Custom/DMT2/{CEMLI}/ (never /Custom/DMT/ -- that is the
-frozen stack's catalog and is read-only to DMT2).
+Deploy the Wave-1 BIP reconciliation reports (the five supplier-family objects
+plus Customers) to THIS stack's Fusion catalog root /Custom/DMT2/{CEMLI}/
+(never /Custom/DMT/ -- that is the frozen stack's catalog and is read-only to
+DMT2).
 
 Dev/test shim only (no pipeline logic): each report pair is deployed by the
 DB's own DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT -- login via SecurityService,
@@ -33,6 +34,7 @@ REPORTS = [
     ("SupplierSites",           "SUP_SITE_DM",      "SUP_SITE_RPT"),
     ("SupplierSiteAssignments", "SUP_SITE_ASSN_DM", "SUP_SITE_ASSN_RPT"),
     ("SupplierContacts",        "SUP_CONT_DM",      "SUP_CONT_RPT"),
+    ("Customers",               "DMT_CUST_RECON_DM", "DMT_CUST_RECON_RPT"),
 ]
 
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"
