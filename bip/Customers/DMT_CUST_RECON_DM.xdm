@@ -8,41 +8,79 @@
     <property name="xml_tag_case" value="upper"/>
   </dataProperties>
   <dataSets>
-    <dataSet name="cust_party_results" type="complex">
+    <dataSet name="cust_recon_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT
-    p.party_orig_system_reference,
-    p.party_number,
-    p.party_id,
-    p.organization_name,
-    p.import_status_code                AS import_status,
-    p.interface_status,
-    p.load_request_id,
-    (
-        SELECT LISTAGG(e.error_msg_text, '; ')
-               WITHIN GROUP (ORDER BY e.error_seq_id)
-        FROM   hz_imp_errors e
-        WHERE  e.error_id = p.error_id
-        AND    e.interface_table_name = 'HZ_IMP_PARTIES_T'
-        AND    ROWNUM <= 10
-    ) AS error_message
-FROM   hz_imp_parties_t p
-WHERE  p.load_request_id = :P_LOAD_REQUEST_ID
+SELECT record_type, orig_system_reference, fusion_id, error_message
+FROM (
+    -- ---- BASE tier: positive proof, one block per record type ----
+    SELECT 'Parties'         AS record_type, r.orig_system_reference, r.owner_table_id AS fusion_id, CAST(NULL AS VARCHAR2(4000)) AS error_message
+    FROM   hz_orig_sys_references r
+    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_PARTIES'
+    AND    r.orig_system_reference LIKE :P_PREFIX || '%'
+    UNION ALL
+    SELECT 'Locations', r.orig_system_reference, r.owner_table_id, NULL
+    FROM   hz_orig_sys_references r
+    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_LOCATIONS'
+    AND    r.orig_system_reference LIKE :P_PREFIX || '%'
+    UNION ALL
+    SELECT 'PartySites', r.orig_system_reference, r.owner_table_id, NULL
+    FROM   hz_orig_sys_references r
+    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_PARTY_SITES'
+    AND    r.orig_system_reference LIKE :P_PREFIX || '%'
+    UNION ALL
+    SELECT 'PartySiteUses', r.orig_system_reference, r.owner_table_id, NULL
+    FROM   hz_orig_sys_references r
+    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_PARTY_SITE_USES'
+    AND    r.orig_system_reference LIKE :P_PREFIX || '%'
+    UNION ALL
+    SELECT 'Accounts', r.orig_system_reference, r.owner_table_id, NULL
+    FROM   hz_orig_sys_references r
+    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_CUST_ACCOUNTS'
+    AND    r.orig_system_reference LIKE :P_PREFIX || '%'
+    UNION ALL
+    SELECT 'AccountSites', r.orig_system_reference, r.owner_table_id, NULL
+    FROM   hz_orig_sys_references r
+    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_CUST_ACCT_SITES_ALL'
+    AND    r.orig_system_reference LIKE :P_PREFIX || '%'
+    UNION ALL
+    SELECT 'AccountSiteUses', r.orig_system_reference, r.owner_table_id, NULL
+    FROM   hz_orig_sys_references r
+    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_CUST_SITE_USES_ALL'
+    AND    r.orig_system_reference LIKE :P_PREFIX || '%'
+    UNION ALL
+    -- ---- ERROR tier: reject text for BAD rows, by source ref ----
+    -- Parties interface table -> HZ_IMP_ERRORS via BATCH_ID.
+    SELECT 'Parties', ip.party_orig_system_reference, CAST(NULL AS NUMBER),
+           (SELECT LISTAGG(e.error_msg_text, '; ') WITHIN GROUP (ORDER BY e.error_seq_id)
+            FROM   hz_imp_errors e
+            WHERE  e.batch_id = ip.batch_id
+            AND    e.interface_table_name = 'HZ_IMP_PARTIES_T'
+            AND    ROWNUM <= 10)
+    FROM   hz_imp_parties_t ip
+    WHERE  ip.load_request_id = :P_LOAD_REQUEST_ID
+    UNION ALL
+    -- Accounts interface table -> HZ_IMP_ERRORS via BATCH_ID.
+    SELECT 'Accounts', ia.cust_orig_system_reference, CAST(NULL AS NUMBER),
+           (SELECT LISTAGG(e.error_msg_text, '; ') WITHIN GROUP (ORDER BY e.error_seq_id)
+            FROM   hz_imp_errors e
+            WHERE  e.batch_id = ia.batch_id
+            AND    e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'
+            AND    ROWNUM <= 10)
+    FROM   hz_imp_accounts_t ia
+    WHERE  ia.load_request_id = :P_LOAD_REQUEST_ID
+)
+WHERE  fusion_id IS NOT NULL OR error_message IS NOT NULL
       ]]></sql>
     </dataSet>
   </dataSets>
   <output rootName="DATA_DS" uniqueRowName="false">
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
-        <group name="G_1" label="G_1" source="cust_party_results">
-          <element name="PARTY_ORIG_SYSTEM_REFERENCE" value="PARTY_ORIG_SYSTEM_REFERENCE" dataType="xsd:string" tagName="PARTY_ORIG_SYSTEM_REFERENCE"/>
-          <element name="PARTY_NUMBER"                value="PARTY_NUMBER"                dataType="xsd:string" tagName="PARTY_NUMBER"/>
-          <element name="PARTY_ID"                    value="PARTY_ID"                    dataType="xsd:string" tagName="PARTY_ID"/>
-          <element name="ORGANIZATION_NAME"           value="ORGANIZATION_NAME"           dataType="xsd:string" tagName="ORGANIZATION_NAME"/>
-          <element name="IMPORT_STATUS"               value="IMPORT_STATUS"               dataType="xsd:string" tagName="IMPORT_STATUS"/>
-          <element name="INTERFACE_STATUS"            value="INTERFACE_STATUS"            dataType="xsd:string" tagName="INTERFACE_STATUS"/>
-          <element name="LOAD_REQUEST_ID"             value="LOAD_REQUEST_ID"             dataType="xsd:string" tagName="LOAD_REQUEST_ID"/>
-          <element name="ERROR_MESSAGE"               value="ERROR_MESSAGE"               dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        <group name="G_1" label="G_1" source="cust_recon_results">
+          <element name="RECORD_TYPE"           value="RECORD_TYPE"           dataType="xsd:string"  tagName="RECORD_TYPE"/>
+          <element name="ORIG_SYSTEM_REFERENCE" value="ORIG_SYSTEM_REFERENCE" dataType="xsd:string"  tagName="ORIG_SYSTEM_REFERENCE"/>
+          <element name="FUSION_ID"             value="FUSION_ID"             dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"         value="ERROR_MESSAGE"         dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
         </group>
       </dataStructure>
     </nodeList>
