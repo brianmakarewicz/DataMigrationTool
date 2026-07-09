@@ -158,19 +158,7 @@ begin
 end;
 /
 
-begin
-  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_TFM_TBL_N1" ON "DMT_POZ_SUP_CONTACTS_TFM_TBL" ("STG_SEQUENCE_ID")';
-exception when others then
-  if sqlcode not in (-955,-1408) then raise; end if;
-end;
-/
 
-begin
-  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_TFM_TBL_N4" ON "DMT_POZ_SUP_CONTACTS_TFM_TBL" ("FBDI_CSV_ID")';
-exception when others then
-  if sqlcode not in (-955,-1408) then raise; end if;
-end;
-/
 
 COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS).';
 COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_POZ_SUP_CONTACTS_STG_TBL â€” which staging row this was transformed from';
@@ -211,12 +199,48 @@ exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
 /
+
+COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
+COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-09 conformance review F11: the supplier tables carried two index
+-- numbering schemes (DMT_POZ_SUP_CONTACTS_TFM_TBL_N* and DMT_POZ_SUP_CONTACTS_TFM_N* both in
+-- flight, colliding at N1). Renumbered to the single clean per-table sequence
+-- used by every other object table; old non-conforming names are dropped by
+-- the guarded block below, then the clean set is (re)created.
+-- ---------------------------------------------------------------------------
+declare
+  l_n    pls_integer;
+  l_cols varchar2(400);
 begin
-  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_TFM_N3" ON "DMT_POZ_SUP_CONTACTS_TFM_TBL" ("RECON_KEY")';
+  select count(*) into l_n from user_indexes where index_name = 'DMT_POZ_SUP_CONTACTS_TFM_TBL_N1';
+  if l_n > 0 then execute immediate 'DROP INDEX "DMT_POZ_SUP_CONTACTS_TFM_TBL_N1"'; end if;
+  select count(*) into l_n from user_indexes where index_name = 'DMT_POZ_SUP_CONTACTS_TFM_TBL_N4';
+  if l_n > 0 then execute immediate 'DROP INDEX "DMT_POZ_SUP_CONTACTS_TFM_TBL_N4"'; end if;
+  select listagg(column_name,',') within group (order by column_position) into l_cols
+    from user_ind_columns where index_name = 'DMT_POZ_SUP_CONTACTS_TFM_N3';
+  if l_cols = 'RECON_KEY' then execute immediate 'DROP INDEX "DMT_POZ_SUP_CONTACTS_TFM_N3"'; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_TFM_N3" ON "DMT_POZ_SUP_CONTACTS_TFM_TBL" ("FBDI_CSV_ID")';
 exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
 /
 
-COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
-COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
+begin
+  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_TFM_N4" ON "DMT_POZ_SUP_CONTACTS_TFM_TBL" ("STG_SEQUENCE_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_TFM_N5" ON "DMT_POZ_SUP_CONTACTS_TFM_TBL" ("RECON_KEY")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/

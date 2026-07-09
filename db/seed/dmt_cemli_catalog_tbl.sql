@@ -121,7 +121,11 @@ using (
     union all select 'Banks', 'Banks', 'DMT_CE_BANK_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'Banks', 'Bank Branches', 'DMT_CE_BRANCH_TFM_TBL', 'TFM_STATUS', null, 2 from dual
     union all select 'Banks', 'Bank Accounts', 'DMT_CE_BANK_ACCT_TFM_TBL', 'TFM_STATUS', null, 3 from dual
-    union all select 'ARReceipts', 'AR Receipts', null, null, null, 1 from dual
+    -- STATUS_COLUMN is TFM_STATUS even before the object is built: the
+    -- dictionary makes TFM_STATUS the only legal value, and a NULL here
+    -- would make the engine's catalog-driven SQL malformed the day the
+    -- object's TFM table lands (fixed 2026-07-09, conformance review F12).
+    union all select 'ARReceipts', 'AR Receipts', null, 'TFM_STATUS', null, 1 from dual
 ) s
 on (    t."CEMLI_CODE" = s.cemli_code
     and nvl(t."TFM_TABLE", '~NONE~') = nvl(s.tfm_table, '~NONE~'))
