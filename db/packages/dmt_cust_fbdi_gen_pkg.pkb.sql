@@ -9,6 +9,9 @@ AS
 -- Customers FBDI zip generation.
 -- ONE zip with 7 CSVs, ONE ESS job (BulkImportJob).
 -- No multi-BU grouping needed.
+-- Records are LF-terminated (CHR(10)), matching the golden Customers_116.zip
+-- (Wave-1 offline port 2026-07-09; the HZ bulk-import CSVs use LF, unlike the
+-- CRLF supplier-family CSVs).
 -- ============================================================
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS

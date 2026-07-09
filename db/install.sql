@@ -100,20 +100,10 @@ prompt == Sequences ==
 @@sequences/dmt_gms_awd_ref_tfm_seq.sql
 @@sequences/dmt_gms_awd_term_stg_seq.sql
 @@sequences/dmt_gms_awd_term_tfm_seq.sql
-@@sequences/dmt_hz_accounts_stg_seq.sql
-@@sequences/dmt_hz_accounts_tfm_seq.sql
-@@sequences/dmt_hz_acct_sites_stg_seq.sql
-@@sequences/dmt_hz_acct_sites_tfm_seq.sql
-@@sequences/dmt_hz_acct_site_uses_stg_seq.sql
-@@sequences/dmt_hz_acct_site_uses_tfm_seq.sql
-@@sequences/dmt_hz_locations_stg_seq.sql
-@@sequences/dmt_hz_locations_tfm_seq.sql
-@@sequences/dmt_hz_parties_stg_seq.sql
-@@sequences/dmt_hz_parties_tfm_seq.sql
-@@sequences/dmt_hz_party_sites_stg_seq.sql
-@@sequences/dmt_hz_party_sites_tfm_seq.sql
-@@sequences/dmt_hz_party_site_uses_stg_seq.sql
-@@sequences/dmt_hz_party_site_uses_tfm_seq.sql
+-- Customers HZ STG/TFM per-table id sequences retired 2026-07-09: the 14
+-- HZ tables now number their PKs with GENERATED ALWAYS AS IDENTITY (Wave-1
+-- offline port). Object files removed in the same commit; drop the live
+-- objects from an existing DB with db/tools/drop_retired_customer_sequences.sql.
 @@sequences/dmt_inv_trx_lots_stg_seq.sql
 @@sequences/dmt_inv_trx_lots_tfm_seq.sql
 @@sequences/dmt_inv_trx_serials_stg_seq.sql

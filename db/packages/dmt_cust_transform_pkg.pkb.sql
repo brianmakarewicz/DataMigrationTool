@@ -69,12 +69,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_HZ_PARTIES_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (design section 5): ERROR_TEXT is
+        -- append-only. The former reprocess-time ERROR_TEXT reset -- a write
+        -- back to staging that also blanked accumulated errors -- is removed
+        -- (mirrors the Stage D Suppliers transform conformance fix). The
+        -- FAILED reselection below stays scenario-scoped via p_scenario_id.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL (
@@ -216,12 +215,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (design section 5): ERROR_TEXT is
+        -- append-only. The former reprocess-time ERROR_TEXT reset -- a write
+        -- back to staging that also blanked accumulated errors -- is removed
+        -- (mirrors the Stage D Suppliers transform conformance fix). The
+        -- FAILED reselection below stays scenario-scoped via p_scenario_id.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL (
@@ -385,12 +383,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (design section 5): ERROR_TEXT is
+        -- append-only. The former reprocess-time ERROR_TEXT reset -- a write
+        -- back to staging that also blanked accumulated errors -- is removed
+        -- (mirrors the Stage D Suppliers transform conformance fix). The
+        -- FAILED reselection below stays scenario-scoped via p_scenario_id.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL (
@@ -530,12 +527,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (design section 5): ERROR_TEXT is
+        -- append-only. The former reprocess-time ERROR_TEXT reset -- a write
+        -- back to staging that also blanked accumulated errors -- is removed
+        -- (mirrors the Stage D Suppliers transform conformance fix). The
+        -- FAILED reselection below stays scenario-scoped via p_scenario_id.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL (
@@ -665,12 +661,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (design section 5): ERROR_TEXT is
+        -- append-only. The former reprocess-time ERROR_TEXT reset -- a write
+        -- back to staging that also blanked accumulated errors -- is removed
+        -- (mirrors the Stage D Suppliers transform conformance fix). The
+        -- FAILED reselection below stays scenario-scoped via p_scenario_id.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL (
@@ -800,12 +795,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (design section 5): ERROR_TEXT is
+        -- append-only. The former reprocess-time ERROR_TEXT reset -- a write
+        -- back to staging that also blanked accumulated errors -- is removed
+        -- (mirrors the Stage D Suppliers transform conformance fix). The
+        -- FAILED reselection below stays scenario-scoped via p_scenario_id.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL (
@@ -945,12 +939,11 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
-        END IF;
+        -- Accumulate, never overwrite (design section 5): ERROR_TEXT is
+        -- append-only. The former reprocess-time ERROR_TEXT reset -- a write
+        -- back to staging that also blanked accumulated errors -- is removed
+        -- (mirrors the Stage D Suppliers transform conformance fix). The
+        -- FAILED reselection below stays scenario-scoped via p_scenario_id.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL (
