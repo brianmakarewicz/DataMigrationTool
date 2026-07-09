@@ -1,7 +1,7 @@
 -- ============================================================
 -- Projects BIP Reconciliation Query (Two-Tier + Child Objects)
 -- Data source: ApplicationDB_FSCM
--- Parameters: :P_BATCH_ID = Load ESS request ID (LOAD_REQUEST_ID)
+-- Parameters: :P_LOAD_REQUEST_ID = Load ESS request ID (LOAD_REQUEST_ID)
 --             :P_PREFIX = Run prefix (e.g. '9393') for Tier 2 base table matching
 --
 -- Returns rows for ALL 4 object types: Projects, Tasks, TeamMembers, TxnControls.
@@ -40,7 +40,7 @@ SELECT
     CAST(NULL AS NUMBER)                AS fusion_id,
     CAST(NULL AS VARCHAR2(4000))        AS error_message
 FROM   pjf_projects_all_xface p
-WHERE  p.load_request_id = :P_BATCH_ID
+WHERE  p.load_request_id = :P_LOAD_REQUEST_ID
 
 UNION ALL
 
@@ -77,7 +77,7 @@ SELECT
     CAST(NULL AS NUMBER)                AS fusion_id,
     CAST(NULL AS VARCHAR2(4000))        AS error_message
 FROM   pjf_proj_elements_xface t
-WHERE  t.load_request_id = :P_BATCH_ID
+WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
 
 UNION ALL
 
@@ -95,7 +95,7 @@ SELECT
     CAST(NULL AS NUMBER)                AS fusion_id,
     CAST(NULL AS VARCHAR2(4000))        AS error_message
 FROM   pjf_project_parties_int tm
-WHERE  tm.load_request_id = :P_BATCH_ID
+WHERE  tm.load_request_id = :P_LOAD_REQUEST_ID
 
 UNION ALL
 
@@ -113,4 +113,4 @@ SELECT
     CAST(NULL AS NUMBER)                AS fusion_id,
     CAST(NULL AS VARCHAR2(4000))        AS error_message
 FROM   pjc_txn_controls_stage tc
-WHERE  tc.load_request_id = :P_BATCH_ID
+WHERE  tc.load_request_id = :P_LOAD_REQUEST_ID

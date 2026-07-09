@@ -1,7 +1,26 @@
 # Projects
 
 ## Status
-E2E LOADED (9 LOADED: 3 Projects, 2 Tasks, 2 Team Members, 2 Txn Controls)
+E2E LOADED on the frozen stack (9 LOADED: 3 Projects, 2 Tasks, 2 Team Members, 2 Txn Controls).
+
+**DMT2 offline port — DONE 2026-07-09** (branch `obj/projects-offline`):
+- Identity-PK conversion of all 8 Projects STG/TFM tables (GENERATED ALWAYS AS IDENTITY;
+  the 8 per-table sequences retired); `check_column_dictionary.sql` passes for all 8 with
+  no identity deferral.
+- Golden byte-compare of the generated 4-CSV zip vs `test/fbdi_zips/Projects_116.zip` is
+  BYTE-IDENTICAL after the one declared token (run prefix). No date masking, no undeclared diffs.
+- Reconciler (`dmt_project_results_pkg`) ported to the accepted architecture: shared BIP
+  transport (`DMT_UTIL_PKG.RUN_BIP_REPORT`, no private UTL_HTTP), Contract v1 params
+  (`P_RUN_ID / P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID / P_PREFIX`; `P_BATCH_ID` retired in the
+  package and the BIP data model), `FETCH_BIP_RESULTS` is a procedure with an error code,
+  TFM is the sole outcome record (the write-back-to-staging `echo_to_stg` block removed).
+- Transform: removed the reprocess-time `ERROR_TEXT = NULL` reset (ERROR_TEXT is append-only).
+- Unit suite `test/unit/test_projects.sql` green (land -> validator -> transform -> generate).
+- Live Fusion gate (Rule #1: GOOD rows LOADED, BAD rows FAILED) is deferred to the online phase.
+
+## ONE object, four record-type CSVs
+Projects is ONE object: a single FBDI zip (`Projects_*.zip`) carrying four record-type CSVs —
+like PurchaseOrders, NOT a family of separate objects. One load ESS job (ImportProjectJobDef).
 
 ## Pipeline
 - Module: Projects
@@ -13,26 +32,26 @@ E2E LOADED (9 LOADED: 3 Projects, 2 Tasks, 2 Team Members, 2 Txn Controls)
 - Loader Type: SQLLOADER
 - Auth User: fin_impl
 
-## Sub-Objects
-1. Projects
-2. Tasks
-3. TeamMembers
-4. TransactionControls
+## Record types (four CSVs in the one zip)
+1. Projects  -> PjfProjectsAllXface.csv
+2. Tasks     -> PjfProjElementsXface.csv
+3. TeamMembers -> PjfProjectPartiesInt.csv
+4. TransactionControls -> PjcTxnControlsStage.csv
 
-## Code References
-- STG Table DDL (Projects): `schema/tables/50_dmt_pjf_projects_stg_tbl.sql`
-- STG Table DDL (Tasks): `schema/tables/51_dmt_pjf_tasks_stg_tbl.sql`
-- STG Table DDL (TeamMembers): `schema/tables/52_dmt_pjf_team_members_stg_tbl.sql`
-- STG Table DDL (TxnControls): `schema/tables/53_dmt_pjc_txn_controls_stg_tbl.sql`
-- TFM Table DDL (Projects): `schema/tables/54_dmt_pjf_projects_tfm_tbl.sql`
-- TFM Table DDL (Tasks): `schema/tables/55_dmt_pjf_tasks_tfm_tbl.sql`
-- TFM Table DDL (TeamMembers): `schema/tables/56_dmt_pjf_team_members_tfm_tbl.sql`
-- TFM Table DDL (TxnControls): `schema/tables/57_dmt_pjc_txn_controls_tfm_tbl.sql`
-- Validator: `packages/validators/dmt_project_validator_pkg.*`
-- Transformer: `packages/transformers/dmt_project_transform_pkg.*`
-- FBDI Generator: `packages/generators/fbdi/projects/dmt_project_fbdi_gen_pkg.*`
-- Results/Reconciliation: `packages/reconciliation/dmt_project_results_pkg.*`
+## Code References (DMT2 layout)
+- STG Table DDL: `db/tables/dmt_pjf_projects_stg_tbl.sql`, `dmt_pjf_tasks_stg_tbl.sql`,
+  `dmt_pjf_team_members_stg_tbl.sql`, `dmt_pjc_txn_controls_stg_tbl.sql`
+- TFM Table DDL: `db/tables/dmt_pjf_projects_tfm_tbl.sql`, `dmt_pjf_tasks_tfm_tbl.sql`,
+  `dmt_pjf_team_members_tfm_tbl.sql`, `dmt_pjc_txn_controls_tfm_tbl.sql`
+- Validator: `db/packages/dmt_project_validator_pkg.{pks,pkb}.sql`
+- Transformer: `db/packages/dmt_project_transform_pkg.{pks,pkb}.sql`
+- FBDI Generator: `db/packages/dmt_project_fbdi_gen_pkg.{pks,pkb}.sql`
+- Results/Reconciliation: `db/packages/dmt_project_results_pkg.{pks,pkb}.sql`
+- Retired-sequence drop tool: `db/tools/drop_retired_project_sequences.sql`
 - BIP Data Model/Report: `bip/Projects/`
+- Unit test: `test/unit/test_projects.sql`
+- Golden compare: `test/golden/test_projects_golden.sh` (+ `Projects` entry in `normalization_map.json`)
+- Golden inputs: `test/golden/inputs/Project*_input.csv`
 
 ## Reference Files
 None in this folder.

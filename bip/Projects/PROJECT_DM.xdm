@@ -23,7 +23,7 @@ SELECT
     CAST(NULL AS NUMBER)                AS fusion_id,
     CAST(NULL AS VARCHAR2(4000))        AS error_message
 FROM   pjf_projects_all_xface p
-WHERE  p.load_request_id = :P_BATCH_ID
+WHERE  p.load_request_id = :P_LOAD_REQUEST_ID
 
 UNION ALL
 
@@ -58,7 +58,7 @@ SELECT
     CAST(NULL AS NUMBER)                AS fusion_id,
     CAST(NULL AS VARCHAR2(4000))        AS error_message
 FROM   pjf_proj_elements_xface t
-WHERE  t.load_request_id = :P_BATCH_ID
+WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
 
 UNION ALL
 
@@ -75,7 +75,7 @@ SELECT
     CAST(NULL AS NUMBER)                AS fusion_id,
     CAST(NULL AS VARCHAR2(4000))        AS error_message
 FROM   pjf_project_parties_int tm
-WHERE  tm.load_request_id = :P_BATCH_ID
+WHERE  tm.load_request_id = :P_LOAD_REQUEST_ID
 
 UNION ALL
 
@@ -92,7 +92,7 @@ SELECT
     CAST(NULL AS NUMBER)                AS fusion_id,
     CAST(NULL AS VARCHAR2(4000))        AS error_message
 FROM   pjc_txn_controls_stage tc
-WHERE  tc.load_request_id = :P_BATCH_ID
+WHERE  tc.load_request_id = :P_LOAD_REQUEST_ID
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -118,13 +118,16 @@ WHERE  tc.load_request_id = :P_BATCH_ID
   <eventTriggers/>
   <lexicals/>
   <parameters>
-    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
-               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="2"
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="3"
                labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_PREFIX" dataType="character" rowPlacement="3"
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
                labelID="P_PREFIX" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
