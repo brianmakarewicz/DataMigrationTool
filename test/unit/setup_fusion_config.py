@@ -68,6 +68,36 @@ def main():
     set_config('HCM_PASSWORD', hcm_pwd,  'HCM REST password (injected, not committed)')
     print(f'Config injected: FUSION_URL={url}  user={fin_user}  (+BIP_*, HCM_* aliases)')
 
+    # Per-CEMLI credential overrides. DMT_ERP_INTERFACE_OPTIONS_TBL ships in the seed
+    # with FUSION_PASSWORD='***MASKED-SET-ME***' for objects that authenticate as a
+    # non-default demo user (e.g. Suppliers as calvin.roth, SCM objects as scm_impl).
+    # DMT_UTIL_PKG resolves the per-CEMLI override BEFORE the global config, so on a
+    # fresh Docker build these placeholders reach Fusion and 401. Populate every
+    # override password by resolving its username against connections.json — generic,
+    # so it covers Suppliers and every Wave-1/2 object that uses an override.
+    cur.execute("""
+        select distinct fusion_username
+        from   dmt_erp_interface_options_tbl
+        where  fusion_username is not null
+    """)
+    override_users = [r[0] for r in cur.fetchall()]
+    filled, skipped = [], []
+    for ov_user in override_users:
+        try:
+            un, pw = get_fusion_user(ov_user.lower())  # connections.json keys are lowercase
+        except Exception:
+            skipped.append(ov_user)
+            continue
+        # Match case-insensitively so both 'scm_impl' and 'SCM_IMPL' rows are filled.
+        cur.execute("""
+            update dmt_erp_interface_options_tbl
+            set    fusion_password = :pw
+            where  upper(fusion_username) = upper(:ov)
+        """, pw=pw, ov=ov_user)
+        filled.append(f'{ov_user}({cur.rowcount})')
+    print(f'Override passwords set: {", ".join(filled) if filled else "none"}'
+          + (f'  | UNRESOLVED (left as-is): {", ".join(skipped)}' if skipped else ''))
+
     # Best-effort: a known-terminal ESS request id from the frozen stack's ATP.
     try:
         from conn_helper import connect_atp
