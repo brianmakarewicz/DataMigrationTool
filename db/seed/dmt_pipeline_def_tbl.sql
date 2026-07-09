@@ -18,7 +18,15 @@ using (
     union all select 'P2P', 30, 'SupplierAddresses', 'Suppliers', null from dual
     union all select 'P2P', 40, 'SupplierSites', 'Suppliers,SupplierAddresses', null from dual
     union all select 'P2P', 50, 'SupplierSiteAssignments', 'SupplierSites', null from dual
-    union all select 'P2P', 60, 'SupplierContacts', 'Suppliers', null from dual
+    -- (Stage D live, 2026-07-08) SupplierContacts depended only on Suppliers,
+    -- which let the contact import run CONCURRENTLY with the address/site
+    -- imports. On the first live run (270) a good contact was rejected with
+    -- Fusion's generic help-desk error ([CONTACT_INTERFACE_ID]) while the
+    -- address import was updating the same supplier party. The frozen stack's
+    -- proven sequence imports contacts strictly LAST (memory
+    -- project_suppliers.md, confirmed 2026-03-06); depending on
+    -- SupplierSiteAssignments restores that serialization transitively.
+    union all select 'P2P', 60, 'SupplierContacts', 'SupplierSiteAssignments', null from dual
     union all select 'P2P', 70, 'Requisitions', 'Items,SupplierSiteAssignments', null from dual
     union all select 'P2P', 80, 'PurchaseOrders', 'Items,Requisitions,SupplierSiteAssignments,SupplierContacts', null from dual
     union all select 'P2P', 90, 'BlanketPOs', 'Items,SupplierSiteAssignments', null from dual

@@ -387,7 +387,7 @@ AS
             SET WORK_STATUS = 'AWAITING_LOAD',
                 LOAD_ESS_JOB_ID = l_load_ess_id,
                 POLL_COUNT = 0,
-                NEXT_POLL_AFTER = SYSTIMESTAMP + INTERVAL '60' SECOND
+                NEXT_POLL_AFTER = SYS_EXTRACT_UTC(SYSTIMESTAMP) + INTERVAL '60' SECOND
             WHERE QUEUE_ID = p_queue_id;
         ELSIF l_recon_proc IS NOT NULL THEN
             -- No load ESS id (LOCAL objects, or a cycle that reconciles
@@ -741,7 +741,7 @@ AS
                     SET WORK_STATUS = 'AWAITING_IMPORT',
                         IMPORT_ESS_JOB_ID = l_import_id,
                         POLL_COUNT = 0,
-                        NEXT_POLL_AFTER = SYSTIMESTAMP + INTERVAL '60' SECOND
+                        NEXT_POLL_AFTER = SYS_EXTRACT_UTC(SYSTIMESTAMP) + INTERVAL '60' SECOND
                     WHERE QUEUE_ID = p_queue_id;
                 ELSE
                     UPDATE DMT_WORK_QUEUE_TBL
@@ -776,7 +776,7 @@ AS
                     SET WORK_STATUS = 'AWAITING_POSTRUN',
                         POSTRUN_ESS_JOB_ID = l_postrun_id,
                         POLL_COUNT = 0,
-                        NEXT_POLL_AFTER = SYSTIMESTAMP + INTERVAL '60' SECOND
+                        NEXT_POLL_AFTER = SYS_EXTRACT_UTC(SYSTIMESTAMP) + INTERVAL '60' SECOND
                     WHERE QUEUE_ID = p_queue_id;
                 ELSE
                     UPDATE DMT_WORK_QUEUE_TBL
@@ -849,7 +849,7 @@ AS
             UPDATE DMT_WORK_QUEUE_TBL
             SET POLL_COUNT = l_rec.POLL_COUNT + 1,
                 LAST_POLL_AT = SYSTIMESTAMP,
-                NEXT_POLL_AFTER = SYSTIMESTAMP + INTERVAL '60' SECOND
+                NEXT_POLL_AFTER = SYS_EXTRACT_UTC(SYSTIMESTAMP) + INTERVAL '60' SECOND
             WHERE QUEUE_ID = p_queue_id;
         END IF;
         COMMIT;

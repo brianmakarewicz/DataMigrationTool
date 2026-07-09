@@ -14,7 +14,7 @@ AS
     -- 'OTC' is accepted as an alias of the canonical 'O2C'.
     -- ============================================================
     FUNCTION GET_CEMLI_SEQUENCE (p_pipeline_code IN VARCHAR2) RETURN VARCHAR2 IS
-        l_pipeline VARCHAR2(30);
+        l_pipeline VARCHAR2(100);
         l_seq      VARCHAR2(4000);
     BEGIN
         l_pipeline := UPPER(p_pipeline_code);
@@ -148,7 +148,11 @@ AS
         l_prefix        VARCHAR2(20);
         l_remaining     VARCHAR2(4000);
         l_cemli         VARCHAR2(60);
-        l_pipeline      VARCHAR2(30);
+        -- (Stage D live, 2026-07-08) was VARCHAR2(30): SUBMIT_OBJECTS builds
+        -- 'STANDALONE:{cemli}' tokens -- 'STANDALONE:SupplierSiteAssignments'
+        -- is 34 chars and overflowed on the first real object submission
+        -- (ORA-06502). 100 covers 'STANDALONE:' + the 60-char CEMLI_CODE.
+        l_pipeline      VARCHAR2(100);
         l_pos           PLS_INTEGER;
         l_sort          PLS_INTEGER := 0;
         l_deps          VARCHAR2(4000);
@@ -321,7 +325,7 @@ AS
     ) IS
         l_all_cemlis VARCHAR2(4000);
         l_remaining  VARCHAR2(4000);
-        l_pipeline   VARCHAR2(30);
+        l_pipeline   VARCHAR2(100);
         l_pos        PLS_INTEGER;
         l_seq        VARCHAR2(4000);
     BEGIN
@@ -433,7 +437,7 @@ AS
     ) RETURN SYS_REFCURSOR IS
         l_cur          SYS_REFCURSOR;
         l_remaining    VARCHAR2(4000);
-        l_pipeline     VARCHAR2(30);
+        l_pipeline     VARCHAR2(100);
         l_pos          PLS_INTEGER;
         l_sort         PLS_INTEGER := 0;
         l_deps         VARCHAR2(4000);
