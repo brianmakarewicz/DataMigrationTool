@@ -132,14 +132,25 @@ def serialize(records, terminator="\n"):
 
 
 def apply_tokens(records, tokens):
-    """tokens: list of (literal_value, placeholder, match_mode, fields).
-    Applied per field. match_mode limits how a token may hit, so short numeric
-    values (run ids, prefixes) cannot collide with unrelated business data:
+    """tokens: list of (literal_value, placeholder, match_mode, fields,
+    max_len, local_len). Applied per field. match_mode limits how a token may
+    hit, so short numeric values (run ids, prefixes) cannot collide with
+    unrelated business data:
       whole_field — field must equal the literal exactly
       startswith  — literal replaced only at the start of the field
       substring   — replace every occurrence (use only for long/unique tokens)
     'fields' (optional list of 0-based positions) restricts the token to those
     CSV columns; None = any column.
+
+    max_len (optional, startswith only): the generator's declared truncation
+    cap for this column (DMT_UTIL_PKG.PREFIXED(prefix, value, max_len)). The
+    prefix comes from a sequence, so its LENGTH can differ between the golden
+    run and the local run — a longer local prefix leaves fewer characters of
+    the business value inside the cap. With max_len declared, the remainder
+    after the prefix is truncated on BOTH sides to (max_len - local_len):
+    exactly the bytes the generator must emit for the local prefix. This is a
+    reconstruction of declared generator semantics, not a mask — no honest
+    diff is hidden (local_len is the length of the LOCAL prefix literal).
     """
     toks = sorted(tokens, key=lambda p: -len(p[0]))
     return [
@@ -149,7 +160,7 @@ def apply_tokens(records, tokens):
 
 
 def _apply_field(field, col, toks):
-    for lit, ph, mode, fields in toks:
+    for lit, ph, mode, fields, max_len, local_len in toks:
         if not lit:
             continue
         if fields is not None and col not in fields:
@@ -159,7 +170,10 @@ def _apply_field(field, col, toks):
                 field = ph
         elif mode == "startswith":
             if field.startswith(lit):
-                field = ph + field[len(lit):]
+                rest = field[len(lit):]
+                if max_len is not None:
+                    rest = rest[:max(max_len - local_len, 0)]
+                field = ph + rest
         else:  # substring
             if lit in field:
                 field = field.replace(lit, ph)
@@ -268,10 +282,13 @@ def main():
         for tok in mspec.get("tokens", []):
             mode = tok.get("match", "whole_field")
             fields = tok.get("fields")
-            g_tokens.append((str(tok["golden"]), tok["placeholder"], mode, fields))
+            max_len = tok.get("max_len")
             lv = tok["local"]
-            lv = local_values.get(lv, lv)
-            l_tokens.append((str(lv), tok["placeholder"], mode, fields))
+            lv = str(local_values.get(lv, lv))
+            g_tokens.append((str(tok["golden"]), tok["placeholder"], mode, fields,
+                             max_len, len(lv)))
+            l_tokens.append((lv, tok["placeholder"], mode, fields,
+                             max_len, len(lv)))
         g_recs = apply_tokens(g_recs, g_tokens)
         l_recs = apply_tokens(l_recs, l_tokens)
         mask_dates(g_recs, l_recs, mspec.get("date_mask_fields", []), member, problems)
