@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.0"
+        dataModel="true" useBipParameters="true">
+  <dataModel url="/Custom/DMT2/Customers/DMT_CUST_RECON_DM.xdm" cache="true"/>
+  <description/>
+  <property name="showControls" value="true"/>
+  <property name="online" value="true"/>
+  <property name="openLinkInNewWindow" value="true"/>
+  <property name="autoRun" value="true"/>
+  <property name="cacheDocument" value="false"/>
+  <property name="showReportLinks" value="false"/>
+  <property name="asynchronousRun" value="false"/>
+  <property name="saveXMLForRepublishing" value="true"/>
+  <property name="disableMakeOutputPublic" value="false"/>
+  <parameters paramPerLine="3" style="parameterLocation:in-horizontal;promptLocation:side;"/>
+  <templates default="default">
+    <template label="default" url="default.rtf" type="rtf"
+              outputFormat="html,pdf,rtf,xlsx,pptx,xml,csv" defaultFormat="xml"
+              locale="en" disableMasterTemplate="true" active="true" viewOnline="true"/>
+  </templates>
+</report>

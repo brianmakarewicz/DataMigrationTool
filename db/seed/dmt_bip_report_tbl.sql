@@ -54,11 +54,11 @@ begin
 exception when dup_val_on_index then null;
 end;
 /
-begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000012,'Customers','Customer','/Custom/DMT/Customers/CUST_DM.xdm','/Custom/DMT/Customers/CUST_RPT.xdo','HZ_IMP_PARTIES_T',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Customer party import reconciliation',NULL,NULL);
-exception when dup_val_on_index then null;
-end;
-/
+-- Customers (100000012): moved out of this idempotent-insert block and into
+-- the MERGE-converging block at the end of this file (2026-07-09 Stage E) so
+-- re-running the seed repoints the Customers reconciliation report from the
+-- frozen stack's /Custom/DMT/ to THIS stack's /Custom/DMT2/Customers/ with the
+-- Contract v1 _RECON_ artifact names.
 begin
   insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000013,'PlanningBudgets','Planning Budget','/Custom/DMT/PlanningBudgets/PLAN_BUDGET_DM.xdm','/Custom/DMT/PlanningBudgets/PLAN_BUDGET_RPT.xdo','N/A (EPBCS internal)',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Planning budget import reconciliation â€” no BIP-accessible interface table; uses absence=LOADED pattern (EPBCS â€” dormant)',NULL,NULL);
 exception when dup_val_on_index then null;
@@ -112,11 +112,13 @@ end;
 commit;
 
 -- ----------------------------------------------------------------------
--- Supplier family (Stage D live slice, 2026-07-08): the five
--- reconciliation reports are deployed to THIS stack's catalog root
--- /Custom/DMT2/{CEMLI}/ (scripts/deploy_supplier_bip_reports.py +
--- DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT). MERGE on CEMLI_CODE so
--- re-running the seed converges pre-existing rows to these paths.
+-- Supplier family (Stage D live slice, 2026-07-08) + Customers (Stage E
+-- live slice, 2026-07-09): the reconciliation reports are deployed to THIS
+-- stack's catalog root /Custom/DMT2/{CEMLI}/ (scripts/deploy_supplier_bip_reports.py
+-- + DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT). MERGE on CEMLI_CODE so
+-- re-running the seed converges pre-existing rows to these paths -- for
+-- Customers this repoints the row from the frozen /Custom/DMT/ to
+-- /Custom/DMT2/Customers/ with the Contract v1 _RECON_ artifact names.
 -- ----------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
@@ -125,6 +127,11 @@ using (
            '/Custom/DMT2/Suppliers/SUP_RPT.xdo' report_catalog_path,
            'POZ_SUPPLIERS_INT' interface_table,
            'Supplier header import reconciliation' notes from dual
+    union all select 100000012, 'Customers', 'Customer',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_DM.xdm',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_RPT.xdo',
+           'HZ_IMP_PARTIES_T',
+           'Customer party import reconciliation (Contract v1)' from dual
     union all select 100000014, 'SupplierAddresses', 'Supplier Address',
            '/Custom/DMT2/SupplierAddresses/SUP_ADDR_DM.xdm',
            '/Custom/DMT2/SupplierAddresses/SUP_ADDR_RPT.xdo',

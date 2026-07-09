@@ -1,19 +1,15 @@
 -- ============================================================
--- Customers BIP Reconciliation Query
--- Data source: ApplicationDB_FSCM
--- Interface table: HZ_IMP_PARTIES_T
--- Error view: HZ_IMP_ERRORS (joined via ERROR_ID)
--- Parameter: :P_BATCH_ID = Load ESS request ID (LOAD_REQUEST_ID)
---
--- Key columns:
---   INTERFACE_STATUS: 'S' = success, NULL = pending/error
---   ERROR_ID: FK to HZ_IMP_ERRORS view (one error per party row)
---   IMPORT_STATUS_CODE: 'S' = success
---
--- HZ_IMP_ERRORS contains:
---   ERROR_MSG_TEXT — full error description
---   MESSAGE_NAME — error message code
---   INTERFACE_TABLE_NAME — which interface table the error belongs to
+-- Customers BIP reconciliation query -- MIRROR of the deployed
+-- data model bip/Customers/DMT_CUST_RECON_DM.xdm (deploy target
+-- /Custom/DMT2/Customers/). The SQL below is the byte-exact
+-- CDATA body of that .xdm; regenerate this file from the .xdm
+-- whenever the data model changes -- the mirror must never drift.
+-- Contract v1 parameters (design section 5): P_RUN_ID,
+-- P_LOAD_REQUEST_ID (the selection key -- HZ_IMP_PARTIES_T carries
+-- LOAD_REQUEST_ID, populated even when the chained import job
+-- errors), P_IMPORT_ESS_ID, P_PREFIX. P_BATCH_ID is retired.
+-- Primary interface table: HZ_IMP_PARTIES_T; errors from
+-- HZ_IMP_ERRORS joined via ERROR_ID.
 -- ============================================================
 SELECT
     p.party_orig_system_reference,
@@ -22,7 +18,7 @@ SELECT
     p.organization_name,
     p.import_status_code                AS import_status,
     p.interface_status,
-    p.batch_id,
+    p.load_request_id,
     (
         SELECT LISTAGG(e.error_msg_text, '; ')
                WITHIN GROUP (ORDER BY e.error_seq_id)
@@ -32,4 +28,4 @@ SELECT
         AND    ROWNUM <= 10
     ) AS error_message
 FROM   hz_imp_parties_t p
-WHERE  p.load_request_id = :P_BATCH_ID
+WHERE  p.load_request_id = :P_LOAD_REQUEST_ID
