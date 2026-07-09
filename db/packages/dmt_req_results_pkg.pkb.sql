@@ -234,32 +234,32 @@ AS
         IF l_xml IS NULL THEN
             -- No reportBytes at all — BIP returned 0 rows from BOTH datasets.
             UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-            SET    STATUS               = 'FAILED',
+            SET    TFM_STATUS               = 'FAILED',
                    ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                        '[RECONCILE_ERROR] BIP returned 0 rows from both interface and base tables. Cannot verify Fusion outcome.'),
                    RESULTS_UPDATED_DATE = SYSDATE,
                    LAST_UPDATED_DATE    = SYSDATE
             WHERE  RUN_ID       = p_run_id
-            AND    STATUS               = 'GENERATED';
+            AND    TFM_STATUS               = 'GENERATED';
             l_not_recon := SQL%ROWCOUNT;
 
             UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
-            SET    ln.STATUS            = 'FAILED',
+            SET    ln.TFM_STATUS            = 'FAILED',
                    ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
                        '[RECONCILE_ERROR] BIP returned 0 rows. Parent header not reconciled.'),
                    ln.RESULTS_UPDATED_DATE = SYSDATE,
                    ln.LAST_UPDATED_DATE = SYSDATE
             WHERE  ln.RUN_ID    = p_run_id
-            AND    ln.STATUS            = 'GENERATED';
+            AND    ln.TFM_STATUS            = 'GENERATED';
 
             UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
-            SET    d.STATUS            = 'FAILED',
+            SET    d.TFM_STATUS            = 'FAILED',
                    d.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
                        '[RECONCILE_ERROR] BIP returned 0 rows. Parent header not reconciled.'),
                    d.RESULTS_UPDATED_DATE = SYSDATE,
                    d.LAST_UPDATED_DATE = SYSDATE
             WHERE  d.RUN_ID    = p_run_id
-            AND    d.STATUS            = 'GENERATED';
+            AND    d.TFM_STATUS            = 'GENERATED';
 
             DMT_UTIL_PKG.LOG(
                 p_run_id => p_run_id,
@@ -273,7 +273,7 @@ AS
 
         -- ============================================================
         -- STEP 1: Process G_STATUS — determine header LOADED/FAILED
-        --         (no error text written here — just status)
+        --         (no error text written here — just tfm_status)
         -- ============================================================
         FOR r IN (
             SELECT x.interface_header_key,
@@ -292,46 +292,46 @@ AS
         ) LOOP
             IF r.source_type = 'BASE' THEN
                 UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-                SET    STATUS               = 'LOADED',
+                SET    TFM_STATUS               = 'LOADED',
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    REQUISITION_NUMBER   = r.requisition_number
-                AND    STATUS              NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'INTERFACE' THEN
                 IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
                     UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-                    SET    STATUS               = 'LOADED',
+                    SET    TFM_STATUS               = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
                     -- Mark FAILED but do NOT write error text here.
                     -- Specific errors come from G_ERRORS in Step 2.
                     UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
                 ELSE
-                    -- Unknown status — mark FAILED with status info
+                    -- Unknown tfm_status — mark FAILED with tfm_status info
                     UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] Unrecognized interface status: ' || NVL(r.process_code, 'NULL')),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;
             END IF;
@@ -339,13 +339,13 @@ AS
 
         -- Any GENERATED rows not matched by either tier = not reconciled
         UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-        SET    STATUS               = 'FAILED',
+        SET    TFM_STATUS               = 'FAILED',
                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                    '[RECONCILE_ERROR] Row not found in Fusion interface table or base application table. Cannot verify import outcome.'),
                RESULTS_UPDATED_DATE = SYSDATE,
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID       = p_run_id
-        AND    STATUS               = 'GENERATED';
+        AND    TFM_STATUS               = 'GENERATED';
         l_not_recon := SQL%ROWCOUNT;
 
         -- ============================================================
@@ -405,13 +405,13 @@ AS
 
         -- 3a. Dists with errors → mark parent LINE as FAILED + append message
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
-        SET    ln.STATUS            = 'FAILED',
+        SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
                    '[FUSION_ERROR] Child distribution rejected by Fusion. See distribution details.'),
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.STATUS           NOT IN ('LOADED','FAILED')
+        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
             WHERE  d.RUN_ID    = p_run_id
@@ -426,7 +426,7 @@ AS
                h.RESULTS_UPDATED_DATE = SYSDATE,
                h.LAST_UPDATED_DATE = SYSDATE
         WHERE  h.RUN_ID    = p_run_id
-        AND    h.STATUS            = 'FAILED'
+        AND    h.TFM_STATUS            = 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
             WHERE  ln.RUN_ID      = p_run_id
@@ -437,28 +437,28 @@ AS
         -- STEP 4: Top-down cascade LOADED to children of LOADED headers
         -- ============================================================
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
-        SET    ln.STATUS            = 'LOADED',
+        SET    ln.TFM_STATUS            = 'LOADED',
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.STATUS           NOT IN ('LOADED','FAILED')
+        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
             WHERE  h.RUN_ID      = p_run_id
             AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
-            AND    h.STATUS              = 'LOADED');
+            AND    h.TFM_STATUS              = 'LOADED');
 
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
-        SET    d.STATUS            = 'LOADED',
+        SET    d.TFM_STATUS            = 'LOADED',
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE = SYSDATE
         WHERE  d.RUN_ID    = p_run_id
-        AND    d.STATUS           NOT IN ('LOADED','FAILED')
+        AND    d.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
             WHERE  ln.RUN_ID    = p_run_id
             AND    ln.INTERFACE_LINE_KEY = d.INTERFACE_LINE_KEY
-            AND    ln.STATUS            = 'LOADED');
+            AND    ln.TFM_STATUS            = 'LOADED');
 
         -- ============================================================
         -- STEP 5: Top-down cascade FAILED for remaining GENERATED children.
@@ -469,52 +469,52 @@ AS
         -- 5a. Lines still GENERATED under FAILED headers — only if they
         --     don't already have their own error text (from Step 2 or 3a)
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
-        SET    ln.STATUS            = 'FAILED',
+        SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
                    '[FUSION_ERROR] Parent requisition header was rejected by Fusion. See header details.'),
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.STATUS           NOT IN ('LOADED','FAILED')
+        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    ln.ERROR_TEXT       IS NULL
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
             WHERE  h.RUN_ID      = p_run_id
             AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
-            AND    h.STATUS              = 'FAILED');
+            AND    h.TFM_STATUS              = 'FAILED');
 
         -- 5a2. Lines with their own error that are still GENERATED: just set FAILED
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
-        SET    ln.STATUS            = 'FAILED',
+        SET    ln.TFM_STATUS            = 'FAILED',
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.STATUS           NOT IN ('LOADED','FAILED')
+        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    ln.ERROR_TEXT       IS NOT NULL;
 
         -- 5b. Dists still GENERATED under FAILED lines — only if no own error
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
-        SET    d.STATUS            = 'FAILED',
+        SET    d.TFM_STATUS            = 'FAILED',
                d.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
                    '[FUSION_ERROR] Parent requisition line was rejected by Fusion. See line details.'),
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE = SYSDATE
         WHERE  d.RUN_ID    = p_run_id
-        AND    d.STATUS           NOT IN ('LOADED','FAILED')
+        AND    d.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    d.ERROR_TEXT       IS NULL
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
             WHERE  ln.RUN_ID    = p_run_id
             AND    ln.INTERFACE_LINE_KEY = d.INTERFACE_LINE_KEY
-            AND    ln.STATUS            = 'FAILED');
+            AND    ln.TFM_STATUS            = 'FAILED');
 
         -- 5b2. Dists with their own error that are still GENERATED: just set FAILED
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
-        SET    d.STATUS            = 'FAILED',
+        SET    d.TFM_STATUS            = 'FAILED',
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE = SYSDATE
         WHERE  d.RUN_ID    = p_run_id
-        AND    d.STATUS           NOT IN ('LOADED','FAILED')
+        AND    d.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    d.ERROR_TEXT       IS NOT NULL;
 
         <<echo_to_stg>>
@@ -523,13 +523,13 @@ AS
         -- ============================================================
         -- Headers
         UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -537,17 +537,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Lines
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -555,17 +555,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Distributions
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -573,7 +573,7 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 

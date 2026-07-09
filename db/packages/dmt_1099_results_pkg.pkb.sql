@@ -246,67 +246,67 @@ AS
         ) LOOP
             IF r.import_status IN ('Y','PROCESSED','SUCCESS','COMPLETED') THEN
                 UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                SET    STATUS               = 'LOADED',
+                SET    TFM_STATUS               = 'LOADED',
                        FUSION_INVOICE_ID    = TO_NUMBER(r.invoice_id),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    INVOICE_ID           = TO_NUMBER(r.invoice_id)
-                AND    STATUS              != 'LOADED';
+                AND    TFM_STATUS              != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSIF r.import_status IN ('N','ERROR','REJECTED','FAILED','FAILURE') THEN
                 UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                SET    STATUS               = 'FAILED',
+                SET    TFM_STATUS               = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                  '[FUSION_ERROR] ' || r.error_msg),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    INVOICE_ID           = TO_NUMBER(r.invoice_id)
-                AND    STATUS              != 'FAILED';
+                AND    TFM_STATUS              != 'FAILED';
                 l_failed := l_failed + SQL%ROWCOUNT;
             END IF;
         END LOOP;
 
         -- Cascade LOADED to child TFM table (lines via INVOICE_ID)
         UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
-        SET    ln.STATUS            = 'LOADED',
+        SET    ln.TFM_STATUS            = 'LOADED',
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.STATUS           != 'LOADED'
+        AND    ln.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.INVOICE_ID     = ln.INVOICE_ID
-            AND    h.STATUS         = 'LOADED');
+            AND    h.TFM_STATUS         = 'LOADED');
 
         -- Cascade FAILED to child TFM table (lines via INVOICE_ID)
         UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
-        SET    ln.STATUS            = 'FAILED',
+        SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
                    '[FUSION_ERROR] Parent invoice was rejected by Fusion.'),
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.STATUS           != 'FAILED'
+        AND    ln.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.INVOICE_ID     = ln.INVOICE_ID
-            AND    h.STATUS         = 'FAILED');
+            AND    h.TFM_STATUS         = 'FAILED');
 
         -- Echo outcomes back to STG tables (2 types: headers + lines)
         -- Headers â€” LOADED
         UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         -- Headers â€” FAILED
         UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -314,18 +314,18 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Lines â€” LOADED
         UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         -- Lines â€” FAILED
         UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -333,7 +333,7 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT â€” orchestrator controls transaction boundaries
 

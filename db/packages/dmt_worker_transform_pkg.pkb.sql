@@ -82,7 +82,7 @@
             REGION_OF_BIRTH,
             COUNTRY_OF_BIRTH,
             DATE_OF_DEATH,
-            STATUS,
+            TFM_STATUS,
             LAST_UPDATED_DATE
         )
         SELECT
@@ -109,10 +109,10 @@
             SYSDATE
         FROM DMT_OWNER.DMT_WORKER_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -127,17 +127,17 @@
         l_ok_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_WORKER_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
             FROM   DMT_OWNER.DMT_WORKER_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_reprocess_errors AND STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 
         DMT_UTIL_PKG.LOG(
@@ -205,7 +205,7 @@
             NAME_INFORMATION16, NAME_INFORMATION17, NAME_INFORMATION18, NAME_INFORMATION19, NAME_INFORMATION20,
             NAME_INFORMATION21, NAME_INFORMATION22, NAME_INFORMATION23, NAME_INFORMATION24, NAME_INFORMATION25,
             NAME_INFORMATION26, NAME_INFORMATION27, NAME_INFORMATION28, NAME_INFORMATION29, NAME_INFORMATION30,
-            STATUS,
+            TFM_STATUS,
             LAST_UPDATED_DATE
         )
         SELECT
@@ -239,10 +239,10 @@
             SYSDATE
         FROM DMT_OWNER.DMT_PERSON_NAME_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -257,17 +257,17 @@
         l_ok_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PERSON_NAME_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
             FROM   DMT_OWNER.DMT_PERSON_NAME_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_reprocess_errors AND STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 
         DMT_UTIL_PKG.LOG(
@@ -321,7 +321,7 @@
             PRIMARY_FLAG,
             FROM_DATE,
             TO_DATE,
-            STATUS,
+            TFM_STATUS,
             LAST_UPDATED_DATE
         )
         SELECT
@@ -341,10 +341,10 @@
             SYSDATE
         FROM DMT_OWNER.DMT_PERSON_EMAIL_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -359,17 +359,17 @@
         l_ok_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PERSON_EMAIL_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
             FROM   DMT_OWNER.DMT_PERSON_EMAIL_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_reprocess_errors AND STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 
         DMT_UTIL_PKG.LOG(
@@ -426,7 +426,7 @@
             PRIMARY_FLAG,
             FROM_DATE,
             TO_DATE,
-            STATUS,
+            TFM_STATUS,
             LAST_UPDATED_DATE
         )
         SELECT
@@ -449,10 +449,10 @@
             SYSDATE
         FROM DMT_OWNER.DMT_PERSON_PHONE_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -467,17 +467,17 @@
         l_ok_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PERSON_PHONE_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
             FROM   DMT_OWNER.DMT_PERSON_PHONE_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_reprocess_errors AND STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 
         DMT_UTIL_PKG.LOG(
@@ -545,7 +545,7 @@
             ADD_INFORMATION21, ADD_INFORMATION22, ADD_INFORMATION23, ADD_INFORMATION24,
             ADD_INFORMATION25, ADD_INFORMATION26, ADD_INFORMATION27, ADD_INFORMATION28,
             ADD_INFORMATION29, ADD_INFORMATION30,
-            STATUS,
+            TFM_STATUS,
             LAST_UPDATED_DATE
         )
         SELECT
@@ -579,10 +579,10 @@
             SYSDATE
         FROM DMT_OWNER.DMT_PERSON_ADDR_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -597,17 +597,17 @@
         l_ok_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PERSON_ADDR_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
             FROM   DMT_OWNER.DMT_PERSON_ADDR_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_reprocess_errors AND STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 
         DMT_UTIL_PKG.LOG(
@@ -663,7 +663,7 @@
             EXPIRATION_DATE,
             PLACE_OF_ISSUE,
             PRIMARY_FLAG,
-            STATUS,
+            TFM_STATUS,
             LAST_UPDATED_DATE
         )
         SELECT
@@ -685,10 +685,10 @@
             SYSDATE
         FROM DMT_OWNER.DMT_PERSON_NID_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -703,17 +703,17 @@
         l_ok_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PERSON_NID_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
             FROM   DMT_OWNER.DMT_PERSON_NID_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_reprocess_errors AND STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 
         DMT_UTIL_PKG.LOG(
@@ -776,7 +776,7 @@
             PER_INFORMATION16, PER_INFORMATION17, PER_INFORMATION18, PER_INFORMATION19, PER_INFORMATION20,
             PER_INFORMATION21, PER_INFORMATION22, PER_INFORMATION23, PER_INFORMATION24, PER_INFORMATION25,
             PER_INFORMATION26, PER_INFORMATION27, PER_INFORMATION28, PER_INFORMATION29, PER_INFORMATION30,
-            STATUS,
+            TFM_STATUS,
             LAST_UPDATED_DATE
         )
         SELECT
@@ -805,10 +805,10 @@
             SYSDATE
         FROM DMT_OWNER.DMT_PERSON_LEGISL_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -823,17 +823,17 @@
         l_ok_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PERSON_LEGISL_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
             FROM   DMT_OWNER.DMT_PERSON_LEGISL_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_reprocess_errors AND STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 
         DMT_UTIL_PKG.LOG(

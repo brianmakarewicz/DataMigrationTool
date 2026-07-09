@@ -143,15 +143,8 @@ exception when others then
 end;
 /
 
-COMMENT ON COLUMN "DMT_PO_DISTS_INT_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_PO_DISTS_INT_TFM_SEQ';
-COMMENT ON COLUMN "DMT_PO_DISTS_INT_TFM_TBL"."FUSION_DISTRIBUTION_ID" IS 'Fusion internal DISTRIBUTION_ID â€” populated by BIP reconciliation';
-COMMENT ON TABLE "DMT_PO_DISTS_INT_TFM_TBL"  IS 'PO distribution transformed. Run-specific â€” one row per staging row per run attempt. Reconciliation populated by BIP. Note: ATTRIBUTE5 absent per Fusion FBDI spec.';
-
--- ---------------------------------------------------------------------------
--- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
--- dictionary + contract-index dictionary): converges a pre-existing database.
--- Fresh installs already get the final shape from the CREATE above.
--- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
 declare
   l_n pls_integer;
 begin
@@ -162,6 +155,16 @@ begin
   end if;
 end;
 /
+
+COMMENT ON COLUMN "DMT_PO_DISTS_INT_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_PO_DISTS_INT_TFM_SEQ';
+COMMENT ON COLUMN "DMT_PO_DISTS_INT_TFM_TBL"."FUSION_DISTRIBUTION_ID" IS 'Fusion internal DISTRIBUTION_ID â€” populated by BIP reconciliation';
+COMMENT ON TABLE "DMT_PO_DISTS_INT_TFM_TBL"  IS 'PO distribution transformed. Run-specific â€” one row per staging row per run attempt. Reconciliation populated by BIP. Note: ATTRIBUTE5 absent per Fusion FBDI spec.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
 declare
   l_n pls_integer;
 begin

@@ -5,7 +5,7 @@
 -- DMT_EXPENDITURE_VALIDATOR_PKG spec
 -- Expenditures pre- and post-transform validation.
 -- Pre-transform: check PROJECT_NUMBER exists in DMT_PJF_PROJECTS_STG_TBL
---                with STATUS='LOADED' (using dependent prefix).
+--                with STG_STATUS='LOADED' (using dependent prefix).
 -- Post-transform: stub.
 -- ============================================================
     PROCEDURE VALIDATE_PRE_TRANSFORM (

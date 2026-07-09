@@ -24,13 +24,8 @@ exception when others then
 end;
 /
 
-COMMENT ON TABLE "DMT_WORK_SCHED_DTL_STG_TBL"  IS 'WorkScheduleShift staging. HDL business object: WorkScheduleShift.';
-
--- ---------------------------------------------------------------------------
--- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
--- dictionary + contract-index dictionary): converges a pre-existing database.
--- Fresh installs already get the final shape from the CREATE above.
--- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
 declare
   l_n pls_integer;
 begin
@@ -41,6 +36,14 @@ begin
   end if;
 end;
 /
+
+COMMENT ON TABLE "DMT_WORK_SCHED_DTL_STG_TBL"  IS 'WorkScheduleShift staging. HDL business object: WorkScheduleShift.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
+-- dictionary + contract-index dictionary): converges a pre-existing database.
+-- Fresh installs already get the final shape from the CREATE above.
+-- ---------------------------------------------------------------------------
 begin
   execute immediate 'CREATE INDEX "DMT_WORK_SCHED_DTL_STG_N1" ON "DMT_WORK_SCHED_DTL_STG_TBL" ("STG_STATUS")';
 exception when others then

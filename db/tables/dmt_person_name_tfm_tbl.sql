@@ -66,6 +66,19 @@ exception when others then
 end;
 /
 
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PERSON_NAME_TFM_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_PERSON_NAME_TFM_TBL" RENAME COLUMN "STATUS" TO "TFM_STATUS"';
+  end if;
+end;
+/
+
 COMMENT ON COLUMN "DMT_PERSON_NAME_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_PERSON_NAME_TFM_SEQ';
 COMMENT ON COLUMN "DMT_PERSON_NAME_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_PERSON_NAME_STG_TBL â€” which staging row this was transformed from';
 COMMENT ON COLUMN "DMT_PERSON_NAME_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when DAT generator runs';
@@ -79,16 +92,6 @@ COMMENT ON TABLE "DMT_PERSON_NAME_TFM_TBL"  IS 'Person name transformed. Run-spe
 -- dictionary + contract-index dictionary): converges a pre-existing database.
 -- Fresh installs already get the final shape from the CREATE above.
 -- ---------------------------------------------------------------------------
-declare
-  l_n pls_integer;
-begin
-  select count(*) into l_n from user_tab_columns
-  where  table_name = 'DMT_PERSON_NAME_TFM_TBL' and column_name = 'STATUS';
-  if l_n = 1 then
-    execute immediate 'ALTER TABLE "DMT_PERSON_NAME_TFM_TBL" RENAME COLUMN "STATUS" TO "TFM_STATUS"';
-  end if;
-end;
-/
 declare
   l_n pls_integer;
 begin

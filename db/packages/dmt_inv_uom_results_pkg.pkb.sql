@@ -171,7 +171,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_INV_UOM_STG_TBL
-                    SET    STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_loaded_count := l_loaded_count + 1;
@@ -186,7 +186,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_INV_UOM_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_failed_count := l_failed_count + 1;
@@ -209,7 +209,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_INV_UOM_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_failed_count := l_failed_count + 1;

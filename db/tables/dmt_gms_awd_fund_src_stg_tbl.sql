@@ -25,6 +25,19 @@ exception when others then
 end;
 /
 
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_GMS_AWD_FUND_SRC_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_GMS_AWD_FUND_SRC_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
+end;
+/
+
 begin
   execute immediate 'CREATE INDEX "DMT_GMS_AWD_FSRC_STG_AWD_IX" ON "DMT_GMS_AWD_FUND_SRC_STG_TBL" ("AWARD_NUMBER")';
 exception when others then
@@ -46,16 +59,6 @@ COMMENT ON TABLE "DMT_GMS_AWD_FUND_SRC_STG_TBL"  IS 'Grant award funding sources
 -- dictionary + contract-index dictionary): converges a pre-existing database.
 -- Fresh installs already get the final shape from the CREATE above.
 -- ---------------------------------------------------------------------------
-declare
-  l_n pls_integer;
-begin
-  select count(*) into l_n from user_tab_columns
-  where  table_name = 'DMT_GMS_AWD_FUND_SRC_STG_TBL' and column_name = 'STATUS';
-  if l_n = 1 then
-    execute immediate 'ALTER TABLE "DMT_GMS_AWD_FUND_SRC_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
-  end if;
-end;
-/
 begin
   execute immediate 'CREATE INDEX "DMT_GMS_AWD_FUND_SRC_STG_N1" ON "DMT_GMS_AWD_FUND_SRC_STG_TBL" ("SCENARIO_ID")';
 exception when others then

@@ -46,7 +46,7 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_OWNER.DMT_INV_TRX_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- ── Main transactions: STG → TFM ──
@@ -191,10 +191,10 @@
             SYSDATE
         FROM DMT_OWNER.DMT_INV_TRX_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
-            OR (p_reprocess_errors AND s.STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
@@ -204,16 +204,16 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
-        -- Update STG status
+        -- Update STG stg_status
         UPDATE DMT_OWNER.DMT_INV_TRX_STG_TBL s
-        SET    s.STATUS            = 'TRANSFORMED',
+        SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
-        AND s.STATUS != 'TRANSFORMED';
+        AND s.STG_STATUS != 'TRANSFORMED';
 
         -- ── Lots: STG → TFM (if any exist) ──
         INSERT INTO DMT_OWNER.DMT_INV_TRX_LOTS_TFM_TBL (
@@ -238,7 +238,7 @@
             s.PARENT_LOT_NUMBER, s.SUBLOT_NUM,
             'STAGED', SYSDATE
         FROM DMT_OWNER.DMT_INV_TRX_LOTS_STG_TBL s
-        WHERE s.STATUS IN ('NEW', 'RETRY')
+        WHERE s.STG_STATUS IN ('NEW', 'RETRY')
         AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_LOTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -248,8 +248,8 @@
         l_lot_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_INV_TRX_LOTS_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STATUS IN ('NEW', 'RETRY')
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_STATUS IN ('NEW', 'RETRY')
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_LOTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = DMT_INV_TRX_LOTS_STG_TBL.STG_SEQUENCE_ID
@@ -271,7 +271,7 @@
             s.STATUS_NAME, s.STATUS_CODE, s.ORIGINATION_DATE,
             'STAGED', SYSDATE
         FROM DMT_OWNER.DMT_INV_TRX_SERIALS_STG_TBL s
-        WHERE s.STATUS IN ('NEW', 'RETRY')
+        WHERE s.STG_STATUS IN ('NEW', 'RETRY')
         AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_SERIALS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -281,8 +281,8 @@
         l_ser_count := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_INV_TRX_SERIALS_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STATUS IN ('NEW', 'RETRY')
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_STATUS IN ('NEW', 'RETRY')
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_SERIALS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = DMT_INV_TRX_SERIALS_STG_TBL.STG_SEQUENCE_ID

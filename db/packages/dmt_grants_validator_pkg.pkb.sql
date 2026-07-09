@@ -31,16 +31,16 @@ AS
         FOR r IN (
             SELECT DISTINCT s.STG_SEQUENCE_ID, s.PROJECT_NUMBER
             FROM   DMT_OWNER.DMT_GMS_AWD_PROJECTS_STG_TBL s
-            WHERE  s.STATUS IN ('NEW', 'RETRY')
+            WHERE  s.STG_STATUS IN ('NEW', 'RETRY')
             AND    s.PROJECT_NUMBER IS NOT NULL
             AND    NOT EXISTS (
                 SELECT 1
                 FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL p
                 WHERE  p.PROJECT_NUMBER = NVL(p_dependent_prefix, '') || s.PROJECT_NUMBER
-                AND    p.STATUS = 'LOADED')
+                AND    p.STG_STATUS = 'LOADED')
         ) LOOP
             UPDATE DMT_OWNER.DMT_GMS_AWD_PROJECTS_STG_TBL
-            SET    STATUS    = 'FAILED',
+            SET    STG_STATUS    = 'FAILED',
                    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                        '[PRE_VALIDATION] Upstream error: Project ''' || r.PROJECT_NUMBER ||
                        ''' did not load successfully — record skipped.'),

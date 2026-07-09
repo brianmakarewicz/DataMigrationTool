@@ -9,7 +9,7 @@ AS
     -- Known admin (infrastructure) columns on staging tables.
     -- These are never supplied by users in CSV uploads.
     C_ADMIN_COLUMNS CONSTANT VARCHAR2(4000) :=
-        ',STG_SEQUENCE_ID,SOURCE_ID,STAGE_DATE,STATUS,ERROR_TEXT,LAST_UPDATED_DATE,';
+        ',STG_SEQUENCE_ID,SOURCE_ID,STAGE_DATE,STG_STATUS,ERROR_TEXT,LAST_UPDATED_DATE,';
 
     -- --------------------------------------------------------
     -- Map Oracle data type to simplified display type

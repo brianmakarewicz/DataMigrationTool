@@ -452,7 +452,7 @@ AS
                 || '""' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_RA_LINES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             AND    (p_bu_name IS NULL OR t.BU_NAME = p_bu_name)
             AND    (p_batch_source_name IS NULL OR t.BATCH_SOURCE_NAME = p_batch_source_name)
             ORDER BY t.TFM_SEQUENCE_ID
@@ -622,7 +622,7 @@ AS
                 || '""' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_RA_DISTS_TFM_TBL d
             WHERE  d.RUN_ID = p_run_id
-            AND    d.STATUS = 'STAGED'
+            AND    d.TFM_STATUS = 'STAGED'
             AND    (p_bu_name IS NULL OR d.BU_NAME = p_bu_name)
             AND    (p_batch_source_name IS NULL OR EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL l
@@ -736,15 +736,15 @@ AS
 
         -- Update lines TFM rows to GENERATED and stamp FBDI_CSV_ID.
         UPDATE DMT_OWNER.DMT_RA_LINES_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_bu_name IS NULL OR BU_NAME = p_bu_name)
         AND    (p_batch_source_name IS NULL OR BATCH_SOURCE_NAME = p_batch_source_name);
 
         -- Update dists TFM rows to GENERATED and stamp FBDI_CSV_ID.
         UPDATE DMT_OWNER.DMT_RA_DISTS_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_bu_name IS NULL OR BU_NAME = p_bu_name)
         AND    (p_batch_source_name IS NULL OR EXISTS (
                    SELECT 1 FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL l

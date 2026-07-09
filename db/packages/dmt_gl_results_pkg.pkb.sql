@@ -278,7 +278,7 @@
                     AND    TFM_STATUS          NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSE
-                    -- UNBALANCED (or any non-SUCCESS base status) = FAILED
+                    -- UNBALANCED (or any non-SUCCESS base tfm_status) = FAILED
                     UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
                     SET    TFM_STATUS           = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
@@ -293,12 +293,12 @@
                 END IF;
 
             ELSIF r.source_type = 'INTERFACE' THEN
-                -- Tier 1: GL_INTERFACE status interpretation:
+                -- Tier 1: GL_INTERFACE tfm_status interpretation:
                 --   P = Processed (success â€” journal created, row awaiting purge)
                 --   NEW = Not yet processed by JournalImport
                 --   E/EFxx = Error (rejected by Fusion)
                 IF r.import_status = 'P' THEN
-                    -- Status P = successfully imported into GL journals
+                    -- TFM_STATUS P = successfully imported into GL journals
                     UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -308,7 +308,7 @@
                     AND    TFM_STATUS          NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSE
-                    -- Any other status (NEW, E, EFxx) = FAILED
+                    -- Any other tfm_status (NEW, E, EFxx) = FAILED
                     UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
                     SET    TFM_STATUS           = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
@@ -342,13 +342,13 @@
         <<echo_to_stg>>
         -- Echo outcomes back to STG
         UPDATE DMT_OWNER.DMT_GL_INTERFACE_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_GL_INTERFACE_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID

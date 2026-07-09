@@ -210,7 +210,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BANK_STG_TBL
-                    SET    STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_banks_loaded := l_banks_loaded + 1;
@@ -227,7 +227,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BANK_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_banks_failed := l_banks_failed + 1;
@@ -250,7 +250,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BANK_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_banks_failed := l_banks_failed + 1;
@@ -294,7 +294,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BRANCH_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_branches_failed := l_branches_failed + 1;
@@ -344,7 +344,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BRANCH_STG_TBL
-                    SET    STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_branches_loaded := l_branches_loaded + 1;
@@ -361,7 +361,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BRANCH_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_branches_failed := l_branches_failed + 1;
@@ -384,7 +384,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BRANCH_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_branches_failed := l_branches_failed + 1;
@@ -409,12 +409,12 @@
         );
 
         UPDATE DMT_CE_BRANCH_STG_TBL
-        SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID FROM DMT_CE_BRANCH_TFM_TBL
             WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
         )
-        AND    STATUS != 'FAILED';
+        AND    STG_STATUS != 'FAILED';
 
         COMMIT;
 
@@ -476,7 +476,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BANK_ACCT_STG_TBL
-                    SET    STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_accts_loaded := l_accts_loaded + 1;
@@ -493,7 +493,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BANK_ACCT_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_accts_failed := l_accts_failed + 1;
@@ -516,7 +516,7 @@
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_CE_BANK_ACCT_STG_TBL
-                    SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                     WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
 
                     l_accts_failed := l_accts_failed + 1;
@@ -541,12 +541,12 @@
         );
 
         UPDATE DMT_CE_BANK_ACCT_STG_TBL
-        SET    STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID FROM DMT_CE_BANK_ACCT_TFM_TBL
             WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
         )
-        AND    STATUS != 'FAILED';
+        AND    STG_STATUS != 'FAILED';
 
         COMMIT;
 

@@ -40,7 +40,7 @@
             ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5,
             ATTRIBUTE6, ATTRIBUTE7, ATTRIBUTE8, ATTRIBUTE9, ATTRIBUTE10,
             ATTRIBUTE11, ATTRIBUTE12, ATTRIBUTE13, ATTRIBUTE14, ATTRIBUTE15,
-            PARENT_ASSET_NUMBER, STATUS
+            PARENT_ASSET_NUMBER, TFM_STATUS
         )
         SELECT
             s.STG_SEQUENCE_ID, p_run_id,
@@ -57,8 +57,8 @@
             'STAGED'
         FROM   DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL s
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
           )
         AND (p_scenario_id IS NULL
@@ -68,11 +68,11 @@
         l_ok := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id
@@ -106,7 +106,7 @@
             EXPENSE_ACCOUNT_SEGMENT10,
             LOCATION_SEGMENT1, LOCATION_SEGMENT2, LOCATION_SEGMENT3,
             LOCATION_SEGMENT4, LOCATION_SEGMENT5, LOCATION_SEGMENT6, LOCATION_SEGMENT7,
-            STATUS
+            TFM_STATUS
         )
         SELECT
             s.STG_SEQUENCE_ID, p_run_id,
@@ -120,8 +120,8 @@
             'STAGED'
         FROM   DMT_OWNER.DMT_FA_ASSET_ASSIGN_STG_TBL s
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
           )
         AND (p_scenario_id IS NULL
@@ -131,11 +131,11 @@
         l_ok := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id
@@ -166,7 +166,7 @@
             SALVAGE_VALUE, LIFE_IN_MONTHS, DEPRECIATION_METHOD,
             DATE_PLACED_IN_SERVICE, PRORATE_CONVENTION_CODE, DEPRN_START_DATE,
             CURRENT_UNITS, UNREVALUED_COST, YTD_DEPRN, DEPRN_RESERVE,
-            BONUS_YTD_DEPRN, BONUS_DEPRN_RESERVE, STATUS
+            BONUS_YTD_DEPRN, BONUS_DEPRN_RESERVE, TFM_STATUS
         )
         SELECT
             s.STG_SEQUENCE_ID, p_run_id,
@@ -177,8 +177,8 @@
             s.BONUS_YTD_DEPRN, s.BONUS_DEPRN_RESERVE, 'STAGED'
         FROM   DMT_OWNER.DMT_FA_ASSET_BOOK_STG_TBL s
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
           )
         AND (p_scenario_id IS NULL
@@ -188,11 +188,11 @@
         l_ok := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id

@@ -5,7 +5,7 @@
 -- DMT_PRJ_BUDGET_VALIDATOR_PKG spec
 -- Project Budgets pre- and post-transform validation.
 -- Pre-transform: check PROJECT_NAME exists in DMT_PJF_PROJECTS_TFM_TBL
---                with STATUS='LOADED' (project must be loaded first).
+--                with TFM_STATUS='LOADED' (project must be loaded first).
 -- Post-transform: required fields check.
 -- ============================================================
     PROCEDURE VALIDATE_PRE_TRANSFORM (

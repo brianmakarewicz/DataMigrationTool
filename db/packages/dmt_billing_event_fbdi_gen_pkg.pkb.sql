@@ -153,7 +153,7 @@ AS
                 || '"' || REPLACE(NVL(PREPAYMENT_REQ_EVENT_NUM,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -237,8 +237,8 @@ AS
 
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID
         UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         -- Free temporary CLOBs
         DBMS_LOB.FREETEMPORARY(l_events_csv);

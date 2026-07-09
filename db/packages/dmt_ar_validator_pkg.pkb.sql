@@ -51,31 +51,31 @@ AS
         BEGIN
             SELECT COUNT(*) INTO l_any_loaded
             FROM   DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL
-            WHERE  STATUS = 'LOADED' AND ROWNUM = 1;
+            WHERE  STG_STATUS = 'LOADED' AND ROWNUM = 1;
 
             IF l_any_loaded > 0 THEN
                 UPDATE DMT_OWNER.DMT_RA_LINES_STG_TBL ln
-                SET    STATUS            = 'FAILED',
+                SET    STG_STATUS            = 'FAILED',
                        ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                                ERROR_TEXT,
                                                '[PRE_VALIDATION] Customer account ''' ||
                                                ln.BILL_CUSTOMER_ACCOUNT_NUMBER ||
                                                ''' is not loaded — AR invoice line skipped.'),
                        LAST_UPDATED_DATE = SYSDATE
-                WHERE  ln.STATUS IN ('NEW', 'RETRY')
+                WHERE  ln.STG_STATUS IN ('NEW', 'RETRY')
                 AND    ln.BILL_CUSTOMER_ACCOUNT_NUMBER IS NOT NULL
                 AND    NOT EXISTS (
                            SELECT 1
                            FROM   DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL c
                            WHERE  c.ACCOUNT_NUMBER = ln.BILL_CUSTOMER_ACCOUNT_NUMBER
-                           AND    c.STATUS          = 'LOADED'
+                           AND    c.STG_STATUS          = 'LOADED'
                        );
                 l_line_failed := SQL%ROWCOUNT;
 
                 -- Step 2: Cascade failures to distributions for any failed line.
                 -- Distributions link to lines via INTERFACE_LINE_CONTEXT + INTERFACE_LINE_ATTRIBUTE1.
                 UPDATE DMT_OWNER.DMT_RA_DISTS_STG_TBL d
-                SET    STATUS            = 'FAILED',
+                SET    STG_STATUS            = 'FAILED',
                        ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
                                                ERROR_TEXT,
                                                '[PRE_VALIDATION] Parent AR invoice line (context=''' ||
@@ -83,13 +83,13 @@ AS
                                                d.INTERFACE_LINE_ATTRIBUTE1 ||
                                                ''') failed upstream validation — distribution skipped.'),
                        LAST_UPDATED_DATE = SYSDATE
-                WHERE  d.STATUS IN ('NEW', 'RETRY')
+                WHERE  d.STG_STATUS IN ('NEW', 'RETRY')
                 AND    EXISTS (
                            SELECT 1
                            FROM   DMT_OWNER.DMT_RA_LINES_STG_TBL ln
                            WHERE  ln.INTERFACE_LINE_CONTEXT    = d.INTERFACE_LINE_CONTEXT
                            AND    ln.INTERFACE_LINE_ATTRIBUTE1 = d.INTERFACE_LINE_ATTRIBUTE1
-                           AND    ln.STATUS                    = 'FAILED'
+                           AND    ln.STG_STATUS                    = 'FAILED'
                            AND    ln.ERROR_TEXT LIKE '%[PRE_VALIDATION]%'
                        );
                 l_dist_failed := SQL%ROWCOUNT;

@@ -414,7 +414,7 @@
         -- Count GENERATED rows before reconciliation
         EXECUTE IMMEDIATE
             'SELECT COUNT(*) FROM DMT_OWNER.' || p_tfm_table ||
-            ' WHERE RUN_ID = :iid AND STATUS = ''GENERATED'''
+            ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
             INTO l_gen_count USING p_run_id;
 
         IF l_gen_count = 0 THEN
@@ -430,7 +430,7 @@
         BEGIN
             EXECUTE IMMEDIATE
                 'UPDATE DMT_OWNER.' || p_tfm_table || ' t ' ||
-                'SET t.STATUS = ''FAILED'', ' ||
+                'SET t.TFM_STATUS = ''FAILED'', ' ||
                 '    t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, ' ||
                 '        ''[FUSION_ERROR] '' || (' ||
                 '        SELECT LISTAGG(jt.msg, ''; '') WITHIN GROUP (ORDER BY jt.msg) ' ||
@@ -440,7 +440,7 @@
                 '        WHERE jt.src_ref LIKE t.' || p_key_column || ' || ''%'')), ' ||
                 '    t.LAST_UPDATED_DATE = SYSDATE ' ||
                 'WHERE t.RUN_ID = :iid ' ||
-                'AND   t.STATUS = ''GENERATED'' ' ||
+                'AND   t.TFM_STATUS = ''GENERATED'' ' ||
                 'AND   EXISTS ( ' ||
                 '    SELECT 1 FROM JSON_TABLE(:json2, ''$.items[*]'' ' ||
                 '        COLUMNS (src_ref VARCHAR2(200) PATH ''$.SourceSystemId'')) jt ' ||
@@ -465,38 +465,38 @@
             -- All remaining are confirmed successes
             EXECUTE IMMEDIATE
                 'UPDATE DMT_OWNER.' || p_tfm_table ||
-                ' SET STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE RUN_ID = :iid AND STATUS = ''GENERATED'''
+                ' SET TFM_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
+                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
                 USING p_run_id;
             l_ok_count := SQL%ROWCOUNT;
         ELSIF p_dataset_status IN ('ORA_IN_ERROR', 'ERROR', 'WARNING') AND l_err_count > 0 THEN
             -- Partial success: specific rows failed, rest are OK
             EXECUTE IMMEDIATE
                 'UPDATE DMT_OWNER.' || p_tfm_table ||
-                ' SET STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE RUN_ID = :iid AND STATUS = ''GENERATED'''
+                ' SET TFM_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
+                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
                 USING p_run_id;
             l_ok_count := SQL%ROWCOUNT;
         ELSIF p_dataset_status IN ('ORA_IN_ERROR', 'ERROR') AND l_err_count = 0 THEN
             -- Error but no specific row match — mark all FAILED
             EXECUTE IMMEDIATE
                 'UPDATE DMT_OWNER.' || p_tfm_table ||
-                ' SET STATUS = ''FAILED'', ' ||
+                ' SET TFM_STATUS = ''FAILED'', ' ||
                 '    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, ' ||
                 '        ''[FUSION_ERROR] HDL data set ended in error but no row-level error matched. Check Fusion HCM Data Loader.''), ' ||
                 '    LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE RUN_ID = :iid AND STATUS = ''GENERATED'''
+                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
                 USING p_run_id;
             l_err_count := l_err_count + SQL%ROWCOUNT;
         ELSE
             -- Unknown status (EXPIRED, etc.) — mark FAILED
             EXECUTE IMMEDIATE
                 'UPDATE DMT_OWNER.' || p_tfm_table ||
-                ' SET STATUS = ''FAILED'', ' ||
+                ' SET TFM_STATUS = ''FAILED'', ' ||
                 '    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, ' ||
                 '        ''[FUSION_ERROR] HDL data set status: ' || NVL(p_dataset_status, 'UNKNOWN') || '''), ' ||
                 '    LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE RUN_ID = :iid AND STATUS = ''GENERATED'''
+                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
                 USING p_run_id;
             l_err_count := l_err_count + SQL%ROWCOUNT;
         END IF;
@@ -505,18 +505,18 @@
         BEGIN
             EXECUTE IMMEDIATE
                 'UPDATE DMT_OWNER.' || p_stg_table ||
-                ' SET STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE STATUS = ''TRANSFORMED'' AND STG_SEQUENCE_ID IN ' ||
+                ' SET STG_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
+                ' WHERE STG_STATUS = ''TRANSFORMED'' AND STG_SEQUENCE_ID IN ' ||
                 '(SELECT STG_SEQUENCE_ID FROM DMT_OWNER.' || p_tfm_table ||
-                ' WHERE RUN_ID = :iid AND STATUS = ''LOADED'')'
+                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''LOADED'')'
                 USING p_run_id;
 
             EXECUTE IMMEDIATE
                 'UPDATE DMT_OWNER.' || p_stg_table ||
-                ' SET STATUS = ''FAILED'', LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE STATUS = ''TRANSFORMED'' AND STG_SEQUENCE_ID IN ' ||
+                ' SET STG_STATUS = ''FAILED'', LAST_UPDATED_DATE = SYSDATE ' ||
+                ' WHERE STG_STATUS = ''TRANSFORMED'' AND STG_SEQUENCE_ID IN ' ||
                 '(SELECT STG_SEQUENCE_ID FROM DMT_OWNER.' || p_tfm_table ||
-                ' WHERE RUN_ID = :iid AND STATUS = ''FAILED'')'
+                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''FAILED'')'
                 USING p_run_id;
         EXCEPTION
             WHEN OTHERS THEN
@@ -598,7 +598,7 @@
             SELECT TFM_SEQUENCE_ID, PERSON_NUMBER
             FROM DMT_OWNER.DMT_WORKER_TFM_TBL
             WHERE RUN_ID = p_run_id
-              AND STATUS = 'LOADED'
+              AND TFM_STATUS = 'LOADED'
               AND FUSION_PERSON_ID IS NULL;
 
         -- Assignment cursor: LOADED rows with NULL FUSION_ASSIGNMENT_ID
@@ -606,7 +606,7 @@
             SELECT TFM_SEQUENCE_ID, PERSON_NUMBER
             FROM DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL
             WHERE RUN_ID = p_run_id
-              AND STATUS = 'LOADED'
+              AND TFM_STATUS = 'LOADED'
               AND FUSION_ASSIGNMENT_ID IS NULL;
 
         -- Salary cursor: LOADED rows with NULL FUSION_SALARY_ID
@@ -617,10 +617,10 @@
             LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = s.PERSON_NUMBER
               AND w.RUN_ID = s.RUN_ID
-              AND w.STATUS = 'LOADED'
+              AND w.TFM_STATUS = 'LOADED'
               AND w.FUSION_PERSON_ID IS NOT NULL
             WHERE s.RUN_ID = p_run_id
-              AND s.STATUS = 'LOADED'
+              AND s.TFM_STATUS = 'LOADED'
               AND s.FUSION_SALARY_ID IS NULL;
 
     BEGIN

@@ -147,7 +147,7 @@ AS
                 || '"N"' || CHR(10) AS csv_line  -- col 69: EXTERNALLY_MANAGED_FLAG = N
             FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -287,7 +287,7 @@ AS
                 || '"' || REPLACE(NVL(SECONDARY_UNIT_OF_MEASURE,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
-            AND    l.STATUS = 'STAGED'
+            AND    l.TFM_STATUS = 'STAGED'
             ORDER BY l.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -427,7 +427,7 @@ AS
                 || '"' || REPLACE(NVL(BUDGET_DATE,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
             WHERE  d.RUN_ID = p_run_id
-            AND    d.STATUS = 'STAGED'
+            AND    d.TFM_STATUS = 'STAGED'
             ORDER BY d.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -521,18 +521,18 @@ AS
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
         -- Headers
         UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         -- Lines
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         -- Distributions
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         -- Free temporary CLOBs
         DBMS_LOB.FREETEMPORARY(l_hdr_csv);

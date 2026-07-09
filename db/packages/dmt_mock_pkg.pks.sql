@@ -19,7 +19,7 @@ AS
 -- PROCEDURE_NAME = the stage). The data phase also writes
 -- MOCK_ROW_COUNT rows (config, default 2) into DMT_MOCK_TFM_TBL
 -- as GENERATED, so the accounting gate and the run rollup count
--- real rows (design section 5 "Object-status accounting").
+-- real rows (design section 5 "Object-tfm_status accounting").
 --
 -- Failure injection (DMT_CONFIG_TBL, seeded by the test setup):
 --   MOCK_FAIL_STAGE  = NONE | VALIDATE | TRANSFORM | GENERATE

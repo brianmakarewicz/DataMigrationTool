@@ -87,7 +87,7 @@ def run_sql(cur, sql, params=None, label=""):
         return False
 
 
-def tag_scenario(cur, table, scenario_id, status_col="STATUS"):
+def tag_scenario(cur, table, scenario_id, status_col="STG_STATUS"):
     """Update rows with no SCENARIO_ID and status NEW to the given scenario."""
     sql = f"""UPDATE DMT_OWNER.{table}
               SET SCENARIO_ID = :sid
@@ -301,7 +301,7 @@ def main():
     # Marked LOADED so BPA/CPA pre-validation passes.
     run_sql(cur, """
         INSERT INTO DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL (
-            VENDOR_NAME, SEGMENT1, STATUS, SOURCE_ID
+            VENDOR_NAME, SEGMENT1, STG_STATUS, SOURCE_ID
         ) VALUES (
             :vname, :vnum, 'LOADED', 'FUSION_PREEXISTING'
         )
@@ -390,7 +390,7 @@ def main():
     run_sql(cur, """
         INSERT INTO DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL (
             VENDOR_NAME, VENDOR_SITE_CODE, PROCUREMENT_BUSINESS_UNIT_NAME,
-            PARTY_SITE_NAME, STATUS, SOURCE_ID
+            PARTY_SITE_NAME, STG_STATUS, SOURCE_ID
         ) VALUES (
             :vname, :vsite, :bu, :vsite, 'LOADED', 'FUSION_PREEXISTING'
         )
@@ -437,7 +437,7 @@ def main():
         INSERT INTO DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL (
             VENDOR_NAME, VENDOR_SITE_CODE,
             PROCUREMENT_BUSINESS_UNIT_NAME, BUSINESS_UNIT_NAME,
-            STATUS, SOURCE_ID
+            STG_STATUS, SOURCE_ID
         ) VALUES (
             :vname, :vsite, :bu, :bu, 'LOADED', 'FUSION_PREEXISTING'
         )
@@ -1713,7 +1713,7 @@ def main():
                 ORGANIZATION_NAME, ITEM_NUMBER, SUBINVENTORY_CODE,
                 TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
                 TRANSACTION_DATE,
-                STAGE_DATE, STATUS
+                STAGE_DATE, STG_STATUS
             ) VALUES (
                 'Seattle', :item, 'Stores',
                 :qty, 'Each',
@@ -1735,7 +1735,7 @@ def main():
             TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
             TRANSACTION_DATE,
             INV_LOTSERIAL_INTERFACE_NUM,
-            STAGE_DATE, STATUS
+            STAGE_DATE, STG_STATUS
         ) VALUES (
             :seq,
             'Seattle', 'RA-100-4935-LOT', 'Stores',
@@ -1753,7 +1753,7 @@ def main():
         INSERT INTO DMT_OWNER.DMT_INV_TRX_LOTS_STG_TBL (
             INVENTORY_LOT_INTERFACE_NUMBER, SOURCE_CODE, SOURCE_LINE_ID,
             LOT_NUMBER, TRANSACTION_QUANTITY,
-            SOURCE_ID, STAGE_DATE, STATUS
+            SOURCE_ID, STAGE_DATE, STG_STATUS
         ) VALUES (
             TO_CHAR(:pseq), 'DMT', :pseq,
             'DMT-REG-LOT-001', 3,
@@ -1772,7 +1772,7 @@ def main():
             TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
             TRANSACTION_DATE,
             INV_LOTSERIAL_INTERFACE_NUM,
-            STAGE_DATE, STATUS
+            STAGE_DATE, STG_STATUS
         ) VALUES (
             :seq,
             'Seattle', 'AS88000', 'Stores',
@@ -1788,7 +1788,7 @@ def main():
     run_sql(cur, """
         INSERT INTO DMT_OWNER.DMT_INV_TRX_SERIALS_STG_TBL (
             FM_SERIAL_NUMBER, TO_SERIAL_NUMBER,
-            SOURCE_ID, STAGE_DATE, STATUS
+            SOURCE_ID, STAGE_DATE, STG_STATUS
         ) VALUES (
             'DMT-REG-SER-001', 'DMT-REG-SER-002',
             TO_CHAR(:pseq), SYSDATE, 'NEW'
@@ -2067,55 +2067,55 @@ def main():
     # ── Verify counts per table ─────────────────────────────────────────────
     tables = [
         # Suppliers
-        ("DMT_POZ_SUPPLIERS_STG_TBL",           "STATUS"),
-        ("DMT_POZ_SUP_ADDR_STG_TBL",            "STATUS"),
-        ("DMT_POZ_SUP_SITE_STG_TBL",            "STATUS"),
-        ("DMT_POZ_SUP_SITE_ASSN_STG_TBL",       "STATUS"),
-        ("DMT_POZ_SUP_CONTACTS_STG_TBL",        "STATUS"),
+        ("DMT_POZ_SUPPLIERS_STG_TBL",           "STG_STATUS"),
+        ("DMT_POZ_SUP_ADDR_STG_TBL",            "STG_STATUS"),
+        ("DMT_POZ_SUP_SITE_STG_TBL",            "STG_STATUS"),
+        ("DMT_POZ_SUP_SITE_ASSN_STG_TBL",       "STG_STATUS"),
+        ("DMT_POZ_SUP_CONTACTS_STG_TBL",        "STG_STATUS"),
         # Customers
-        ("DMT_HZ_PARTIES_STG_TBL",              "STATUS"),
-        ("DMT_HZ_LOCATIONS_STG_TBL",            "STATUS"),
-        ("DMT_HZ_PARTY_SITES_STG_TBL",          "STATUS"),
-        ("DMT_HZ_PARTY_SITE_USES_STG_TBL",      "STATUS"),
-        ("DMT_HZ_ACCOUNTS_STG_TBL",             "STATUS"),
-        ("DMT_HZ_ACCT_SITES_STG_TBL",           "STATUS"),
-        ("DMT_HZ_ACCT_SITE_USES_STG_TBL",       "STATUS"),
+        ("DMT_HZ_PARTIES_STG_TBL",              "STG_STATUS"),
+        ("DMT_HZ_LOCATIONS_STG_TBL",            "STG_STATUS"),
+        ("DMT_HZ_PARTY_SITES_STG_TBL",          "STG_STATUS"),
+        ("DMT_HZ_PARTY_SITE_USES_STG_TBL",      "STG_STATUS"),
+        ("DMT_HZ_ACCOUNTS_STG_TBL",             "STG_STATUS"),
+        ("DMT_HZ_ACCT_SITES_STG_TBL",           "STG_STATUS"),
+        ("DMT_HZ_ACCT_SITE_USES_STG_TBL",       "STG_STATUS"),
         # POs (Standard + Blanket + Contract)
-        ("DMT_PO_HEADERS_INT_STG_TBL",           "STATUS"),
-        ("DMT_PO_LINES_INT_STG_TBL",             "STATUS"),
-        ("DMT_PO_LINE_LOCS_INT_STG_TBL",         "STATUS"),
-        ("DMT_PO_DISTS_INT_STG_TBL",             "STATUS"),
+        ("DMT_PO_HEADERS_INT_STG_TBL",           "STG_STATUS"),
+        ("DMT_PO_LINES_INT_STG_TBL",             "STG_STATUS"),
+        ("DMT_PO_LINE_LOCS_INT_STG_TBL",         "STG_STATUS"),
+        ("DMT_PO_DISTS_INT_STG_TBL",             "STG_STATUS"),
         # AP Invoices (+ 1099)
-        ("DMT_AP_INVOICES_INT_STG_TBL",           "STATUS"),
-        ("DMT_AP_INVOICE_LINES_INT_STG_TBL",      "STATUS"),
+        ("DMT_AP_INVOICES_INT_STG_TBL",           "STG_STATUS"),
+        ("DMT_AP_INVOICE_LINES_INT_STG_TBL",      "STG_STATUS"),
         # AR Invoices
-        ("DMT_RA_LINES_STG_TBL",                "STATUS"),
+        ("DMT_RA_LINES_STG_TBL",                "STG_STATUS"),
         # GL
-        ("DMT_GL_INTERFACE_STG_TBL",             "STATUS"),
-        ("DMT_GL_BUDGET_INT_STG_TBL",            "STATUS"),
-        ("DMT_PLAN_BUDGET_STG_TBL",              "STATUS"),
-        ("DMT_PRJ_BUDGET_STG_TBL",               "STATUS"),
+        ("DMT_GL_INTERFACE_STG_TBL",             "STG_STATUS"),
+        ("DMT_GL_BUDGET_INT_STG_TBL",            "STG_STATUS"),
+        ("DMT_PLAN_BUDGET_STG_TBL",              "STG_STATUS"),
+        ("DMT_PRJ_BUDGET_STG_TBL",               "STG_STATUS"),
         # Projects
-        ("DMT_PJF_PROJECTS_STG_TBL",            "STATUS"),
-        ("DMT_PJF_TASKS_STG_TBL",               "STATUS"),
-        ("DMT_PJF_TEAM_MEMBERS_STG_TBL",         "STATUS"),
-        ("DMT_PJC_TXN_CONTROLS_STG_TBL",         "STATUS"),
-        ("DMT_PJC_EXPENDITURES_STG_TBL",         "STATUS"),
-        ("DMT_PJB_BILL_EVENTS_STG_TBL",          "STATUS"),
+        ("DMT_PJF_PROJECTS_STG_TBL",            "STG_STATUS"),
+        ("DMT_PJF_TASKS_STG_TBL",               "STG_STATUS"),
+        ("DMT_PJF_TEAM_MEMBERS_STG_TBL",         "STG_STATUS"),
+        ("DMT_PJC_TXN_CONTROLS_STG_TBL",         "STG_STATUS"),
+        ("DMT_PJC_EXPENDITURES_STG_TBL",         "STG_STATUS"),
+        ("DMT_PJB_BILL_EVENTS_STG_TBL",          "STG_STATUS"),
         # Grants
-        ("DMT_GMS_AWD_HEADERS_STG_TBL",          "STATUS"),
+        ("DMT_GMS_AWD_HEADERS_STG_TBL",          "STG_STATUS"),
         # Assets
-        ("DMT_FA_ASSET_HDR_STG_TBL",             "STATUS"),
-        ("DMT_FA_ASSET_BOOK_STG_TBL",            "STATUS"),
-        ("DMT_FA_ASSET_ASSIGN_STG_TBL",          "STATUS"),
+        ("DMT_FA_ASSET_HDR_STG_TBL",             "STG_STATUS"),
+        ("DMT_FA_ASSET_BOOK_STG_TBL",            "STG_STATUS"),
+        ("DMT_FA_ASSET_ASSIGN_STG_TBL",          "STG_STATUS"),
         # MiscReceipts
-        ("DMT_INV_TRX_STG_TBL",                  "STATUS"),
-        ("DMT_INV_TRX_LOTS_STG_TBL",             "STATUS"),
-        ("DMT_INV_TRX_SERIALS_STG_TBL",          "STATUS"),
+        ("DMT_INV_TRX_STG_TBL",                  "STG_STATUS"),
+        ("DMT_INV_TRX_LOTS_STG_TBL",             "STG_STATUS"),
+        ("DMT_INV_TRX_SERIALS_STG_TBL",          "STG_STATUS"),
         # Requisitions
-        ("DMT_POR_REQ_HEADERS_STG_TBL",           "STATUS"),
-        ("DMT_POR_REQ_LINES_STG_TBL",             "STATUS"),
-        ("DMT_POR_REQ_DISTS_STG_TBL",             "STATUS"),
+        ("DMT_POR_REQ_HEADERS_STG_TBL",           "STG_STATUS"),
+        ("DMT_POR_REQ_LINES_STG_TBL",             "STG_STATUS"),
+        ("DMT_POR_REQ_DISTS_STG_TBL",             "STG_STATUS"),
     ]
     print("Verification — rows tagged with this scenario:")
     total_good = 0

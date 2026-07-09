@@ -84,8 +84,8 @@
             'STAGED'
         FROM   DMT_OWNER.DMT_GL_INTERFACE_STG_TBL s
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
             OR (p_run_mode = 'ALL')
           )
         AND (p_scenario_id IS NULL
@@ -95,11 +95,11 @@
         l_ok := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_GL_INTERFACE_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id

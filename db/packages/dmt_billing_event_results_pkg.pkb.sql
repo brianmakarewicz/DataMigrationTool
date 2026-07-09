@@ -232,30 +232,30 @@ AS
 
             IF r.import_status IN ('ERROR', 'REJECTED', 'FAILED', 'FAILURE', 'N') THEN
                 UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                SET    STATUS               = 'FAILED',
+                SET    TFM_STATUS               = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                            '[FUSION_ERROR] ' || NVL(l_err_msgs, 'Import status: ' || r.import_status)),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    SOURCEREF            = r.sourceref
-                AND    STATUS              NOT IN ('LOADED', 'FAILED');
+                AND    TFM_STATUS              NOT IN ('LOADED', 'FAILED');
                 l_failed := l_failed + SQL%ROWCOUNT;
 
             ELSIF r.import_status IN ('COMPLETE', 'COMPLETED', 'IMPORTED', 'Y', 'PROCESSED', 'SUCCESS', 'P') THEN
                 UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                SET    STATUS               = 'LOADED',
+                SET    TFM_STATUS               = 'LOADED',
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    SOURCEREF            = r.sourceref
-                AND    STATUS              NOT IN ('LOADED', 'FAILED');
+                AND    TFM_STATUS              NOT IN ('LOADED', 'FAILED');
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSE
-                -- Unknown status — mark FAILED with whatever info we have
+                -- Unknown tfm_status — mark FAILED with whatever info we have
                 UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                SET    STATUS               = 'FAILED',
+                SET    TFM_STATUS               = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                            '[FUSION_ERROR] Import Report status: ' || NVL(r.import_status, 'NULL') ||
                            CASE WHEN l_err_msgs IS NOT NULL THEN ' — ' || l_err_msgs END),
@@ -263,7 +263,7 @@ AS
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    SOURCEREF            = r.sourceref
-                AND    STATUS              NOT IN ('LOADED', 'FAILED');
+                AND    TFM_STATUS              NOT IN ('LOADED', 'FAILED');
                 l_failed := l_failed + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -485,46 +485,46 @@ AS
             IF r.source_type = 'BASE' THEN
                 -- Tier 2: Found in base table = positively LOADED
                 UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                SET    STATUS               = 'LOADED',
+                SET    TFM_STATUS               = 'LOADED',
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    SOURCEREF            = r.sourceref
-                AND    STATUS              NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'INTERFACE' THEN
-                -- Tier 1: Interface table row — check status
+                -- Tier 1: Interface table row — check tfm_status
                 IF r.fusion_status IN ('COMPLETE','COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
                     UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                    SET    STATUS               = 'LOADED',
+                    SET    TFM_STATUS               = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    SOURCEREF            = r.sourceref
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N') THEN
                     UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.fusion_status)),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    SOURCEREF            = r.sourceref
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
                 ELSE
                     UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] Unrecognized interface status: ' || NVL(r.fusion_status, 'NULL')),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    SOURCEREF            = r.sourceref
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;
             END IF;
@@ -546,7 +546,7 @@ AS
         SELECT COUNT(*) INTO l_still_gen
         FROM   DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
         WHERE  RUN_ID = p_run_id
-        AND    STATUS         = 'GENERATED';
+        AND    TFM_STATUS         = 'GENERATED';
 
         IF l_still_gen > 0 AND p_import_ess_id IS NOT NULL THEN
             DMT_UTIL_PKG.LOG(
@@ -616,26 +616,26 @@ AS
         -- PHASE 3: Sweep — mark remaining GENERATED as FAILED
         -- ====================================================
         UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-        SET    STATUS               = 'FAILED',
+        SET    TFM_STATUS               = 'FAILED',
                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                    '[RECONCILE_ERROR] Row not found in BIP query, Fusion base table, or Import Report. Cannot verify import outcome.'),
                RESULTS_UPDATED_DATE = SYSDATE,
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID       = p_run_id
-        AND    STATUS               = 'GENERATED';
+        AND    TFM_STATUS               = 'GENERATED';
         l_not_recon := SQL%ROWCOUNT;
 
         -- ====================================================
         -- Echo outcomes back to STG
         -- ====================================================
         UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -643,7 +643,7 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 

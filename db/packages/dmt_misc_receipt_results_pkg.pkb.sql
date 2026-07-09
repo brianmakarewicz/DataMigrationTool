@@ -256,13 +256,13 @@ AS
 
         -- Echo to STG
         UPDATE DMT_OWNER.DMT_INV_TRX_STG_TBL stg
-        SET    stg.STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
+        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
 
         UPDATE DMT_OWNER.DMT_INV_TRX_STG_TBL stg
-        SET    stg.STATUS     = 'FAILED',
+        SET    stg.STG_STATUS     = 'FAILED',
                stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID

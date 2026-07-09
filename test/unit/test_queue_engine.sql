@@ -2,7 +2,7 @@
 -- test_queue_engine.sql -- Stage C engine tests (DMT_DESIGN.html
 -- section 2: heartbeat, work-queue states, catalog-driven dispatch,
 -- one-active-run-per-object, halt-vs-continue, failure handling,
--- the accounting gate, the run-status rollup, and the offline
+-- the accounting gate, the run-tfm_status rollup, and the offline
 -- poll-timeout path).
 --
 -- Uses the Mock engine-test objects (test/unit/setup_mock_objects.sql
@@ -16,8 +16,8 @@
 -- MOCK_RECON_OUTCOME / MOCK_ROW_COUNT steer reconcile outcomes.
 --
 -- SPEC-CITED ASSERTIONS (proposed rule "Engine assertions quote the
--- spec status tables", 2026-07-08): every status assertion carries a
--- comment citing the DMT_DESIGN.html status-table row that makes the
+-- spec tfm_status tables", 2026-07-08): every tfm_status assertion carries a
+-- comment citing the DMT_DESIGN.html tfm_status-table row that makes the
 -- expected value correct.
 --
 -- Self-contained SQLcl/SQL*Plus script (NOT a database object).
@@ -437,7 +437,7 @@ begin
     select count(*) into l_cnt
       from dmt_mock_tfm_tbl
      where run_id = l_run_f and cemli_code = 'MockObject'
-       and status = 'FAILED'
+       and tfm_status = 'FAILED'
        and dbms_lob.instr(error_text, '[FUSION_ERROR]') > 0;
     -- Section 5 tag table, [FUSION_ERROR] row: "Row rejected by the
     -- Fusion import -- interface-table error text."
@@ -533,7 +533,7 @@ begin
         (l_run_i, 'TEST', 'MockObject', 1, 'AWAITING_LOAD',
          '999999', 5, systimestamp)
     returning queue_id into l_queue_i;
-    insert into dmt_mock_tfm_tbl (run_id, cemli_code, record_key, status)
+    insert into dmt_mock_tfm_tbl (run_id, cemli_code, record_key, tfm_status)
         select l_run_i, 'MockObject', 'MockObject-'||level, 'GENERATED'
           from dual connect by level <= 2;
     commit;
@@ -547,7 +547,7 @@ begin
 
     select count(*) into l_cnt
       from dmt_mock_tfm_tbl
-     where run_id = l_run_i and status = 'FAILED'
+     where run_id = l_run_i and tfm_status = 'FAILED'
        and dbms_lob.instr(error_text, '[LOAD_ERROR]') > 0;
     -- Section 2 Timeouts: "when it expires, every GENERATED row of the
     -- file is marked FAILED with a [LOAD_ERROR]-tagged timeout message

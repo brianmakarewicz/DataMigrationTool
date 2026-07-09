@@ -115,6 +115,19 @@ exception when others then
 end;
 /
 
+-- 2026-07-08 conformance tranche: rename must precede the index DDL below
+-- (a pre-existing database still has the old column when the index runs).
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PO_LINES_INT_STG_TBL' and column_name = 'STATUS';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_PO_LINES_INT_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
+  end if;
+end;
+/
+
 COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_PO_LINES_INT_STG_SEQ';
 COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."INTERFACE_LINE_KEY" IS 'Unique key for this PO line â€” links line locations back to this line';
 COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."INTERFACE_HEADER_KEY" IS 'FK to header â€” must match DMT_PO_HEADERS_INT_STG_TBL.INTERFACE_HEADER_KEY';
@@ -126,16 +139,6 @@ COMMENT ON TABLE "DMT_PO_LINES_INT_STG_TBL"  IS 'Purchase Order lines staging. R
 -- dictionary + contract-index dictionary): converges a pre-existing database.
 -- Fresh installs already get the final shape from the CREATE above.
 -- ---------------------------------------------------------------------------
-declare
-  l_n pls_integer;
-begin
-  select count(*) into l_n from user_tab_columns
-  where  table_name = 'DMT_PO_LINES_INT_STG_TBL' and column_name = 'STATUS';
-  if l_n = 1 then
-    execute immediate 'ALTER TABLE "DMT_PO_LINES_INT_STG_TBL" RENAME COLUMN "STATUS" TO "STG_STATUS"';
-  end if;
-end;
-/
 begin
   execute immediate 'CREATE INDEX "DMT_PO_LINES_INT_STG_N1" ON "DMT_PO_LINES_INT_STG_TBL" ("STG_STATUS")';
 exception when others then

@@ -43,7 +43,7 @@
             ATTRIBUTE21, ATTRIBUTE22, ATTRIBUTE23, ATTRIBUTE24, ATTRIBUTE25,
             ATTRIBUTE26, ATTRIBUTE27, ATTRIBUTE28, ATTRIBUTE29, ATTRIBUTE30,
             PLAN_VERSION_NUMBER, PROCESSING_MODE,
-            STATUS
+            TFM_STATUS
         )
         SELECT
             s.STG_SEQUENCE_ID, p_run_id,
@@ -70,9 +70,9 @@
             'STAGED'
         FROM   DMT_OWNER.DMT_PRJ_BUDGET_STG_TBL s
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND s.STATUS IN ('NEW', 'RETRY'))
+            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND s.STG_STATUS IN ('NEW', 'RETRY'))
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -81,11 +81,11 @@
         l_ok := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PRJ_BUDGET_STG_TBL
-        SET    STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
+        SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STATUS IN ('NEW', 'RETRY'))
+            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id

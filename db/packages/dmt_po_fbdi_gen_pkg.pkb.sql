@@ -177,7 +177,7 @@ AS
                 || '"' || REPLACE(NVL(BUYER_MANAGED_TRANSPORT_FLAG,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             AND    (p_prc_bu_name IS NULL OR t.PRC_BU_NAME = p_prc_bu_name)
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
@@ -303,12 +303,12 @@ AS
                 || '"' || NVL(TO_CHAR(SOURCE_AGREEMENT_LINE), '') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
-            AND    l.STATUS = 'STAGED'
+            AND    l.TFM_STATUS = 'STAGED'
             AND    (p_prc_bu_name IS NULL OR l.INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
             FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
-            AND    h.STATUS IN ('STAGED','GENERATED')
+            AND    h.TFM_STATUS IN ('STAGED','GENERATED')
             AND    h.PRC_BU_NAME = p_prc_bu_name))
             ORDER BY l.TFM_SEQUENCE_ID
         ) LOOP
@@ -428,17 +428,17 @@ AS
                 || '"' || NVL(TO_CHAR(PROMISED_DELIVERY_DATE, 'YYYY/MM/DD'), '') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL ll
             WHERE  ll.RUN_ID = p_run_id
-            AND    ll.STATUS = 'STAGED'
+            AND    ll.TFM_STATUS = 'STAGED'
             AND    (p_prc_bu_name IS NULL OR ll.INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
             FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
-            AND    l.STATUS IN ('STAGED','GENERATED')
+            AND    l.TFM_STATUS IN ('STAGED','GENERATED')
             AND    l.INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
             FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
-            AND    h.STATUS IN ('STAGED','GENERATED')
+            AND    h.TFM_STATUS IN ('STAGED','GENERATED')
             AND    h.PRC_BU_NAME = p_prc_bu_name)))
             ORDER BY ll.TFM_SEQUENCE_ID
         ) LOOP
@@ -588,22 +588,22 @@ AS
                 || '"' || REPLACE(NVL(PJC_FUNDING_SOURCE,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL d
             WHERE  d.RUN_ID = p_run_id
-            AND    d.STATUS = 'STAGED'
+            AND    d.TFM_STATUS = 'STAGED'
             AND    (p_prc_bu_name IS NULL OR d.INTERFACE_LINE_LOCATION_KEY IN (
             SELECT ll.INTERFACE_LINE_LOCATION_KEY
             FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL ll
             WHERE  ll.RUN_ID = p_run_id
-            AND    ll.STATUS IN ('STAGED','GENERATED')
+            AND    ll.TFM_STATUS IN ('STAGED','GENERATED')
             AND    ll.INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
             FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
-            AND    l.STATUS IN ('STAGED','GENERATED')
+            AND    l.TFM_STATUS IN ('STAGED','GENERATED')
             AND    l.INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
             FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
-            AND    h.STATUS IN ('STAGED','GENERATED')
+            AND    h.TFM_STATUS IN ('STAGED','GENERATED')
             AND    h.PRC_BU_NAME = p_prc_bu_name))))
             ORDER BY d.TFM_SEQUENCE_ID
         ) LOOP
@@ -711,14 +711,14 @@ AS
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
         -- Headers: filter directly by PRC_BU_NAME.
         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
 
         -- Lines: filter via header chain.
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
             FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
@@ -727,8 +727,8 @@ AS
 
         -- Line locations: filter via line -> header chain.
         UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
             FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
@@ -737,8 +737,8 @@ AS
 
         -- Distributions: filter via loc -> line -> header chain.
         UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED'
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR INTERFACE_LINE_LOCATION_KEY IN (
             SELECT ll.INTERFACE_LINE_LOCATION_KEY
             FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL ll

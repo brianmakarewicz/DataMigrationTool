@@ -244,25 +244,25 @@ AS
         ) LOOP
             IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
                 UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-                SET    STATUS               = 'LOADED',
+                SET    TFM_STATUS               = 'LOADED',
                        FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                        FUSION_DOCUMENT_NUM  = r.document_num,
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                AND    STATUS              != 'LOADED';
+                AND    TFM_STATUS              != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
                 UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-                SET    STATUS               = 'FAILED',
+                SET    TFM_STATUS               = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                  '[FUSION_ERROR] ' || r.error_msg),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                AND    STATUS              != 'FAILED';
+                AND    TFM_STATUS              != 'FAILED';
                 l_failed := l_failed + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -271,14 +271,14 @@ AS
 
         -- Echo outcomes back to STG tables (headers only)
         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED'
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED'
             AND    t.STYLE_DISPLAY_NAME = 'Contract Purchase Agreement');
         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -286,7 +286,7 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED'
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED'
             AND    t.STYLE_DISPLAY_NAME = 'Contract Purchase Agreement');
 
         -- NO COMMIT — orchestrator controls transaction boundaries

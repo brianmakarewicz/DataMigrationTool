@@ -13,7 +13,7 @@
 --   - All test rows carry the marker TEST_CSV_INTAKE_MARKER and
 --     are deleted at start and end, so reruns are stable.
 --   - Fixture STG table: DMT_POZ_SUPPLIERS_STG_TBL (has DATE,
---     NUMBER, VARCHAR2 columns, SCENARIO_ID, STATUS default 'NEW').
+--     NUMBER, VARCHAR2 columns, SCENARIO_ID, STG_STATUS default 'NEW').
 --   - Design-doc contract gaps (DMT_DESIGN.html sections 4/6/7)
 --     that are NOT failures are reported as "GAP:" lines — they
 --     feed the Stage B blind review.
@@ -117,7 +117,7 @@ declare
 begin
     -- ----------------------------------------------------------
     -- 1. Well-formed CSV with a scenario loads: landing row ends
-    --    STATUS='LOADED' with ROWS_LOADED = 3
+    --    TFM_STATUS='LOADED' with ROWS_LOADED = 3
     -- ----------------------------------------------------------
     l_good_csv := good_csv;
     l_id := land(c_marker||'_B1', l_good_csv, c_marker||'_S1');
@@ -180,13 +180,13 @@ begin
     assert(l_cnt = 1, 5, 'Quoted field with embedded newline round-trips as one row');
 
     -- ----------------------------------------------------------
-    -- 6. Infra columns left to DB defaults: STATUS='NEW' on every
+    -- 6. Infra columns left to DB defaults: STG_STATUS='NEW' on every
     --    row, STAGE_DATE populated, ERROR_TEXT empty
     -- ----------------------------------------------------------
     select count(*) into l_cnt
     from   dmt_poz_suppliers_stg_tbl
     where  vendor_name like c_marker||' V%'
-    and    status = 'NEW'
+    and    stg_status = 'NEW'
     and    stage_date is not null
     and    error_text is null;
 

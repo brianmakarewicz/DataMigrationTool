@@ -323,41 +323,41 @@ AS
 
                             IF l_src LIKE '%TASK%' THEN
                                 UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-                                SET    STATUS = 'FAILED',
+                                SET    TFM_STATUS = 'FAILED',
                                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
                                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                                WHERE  RUN_ID = p_run_id AND STATUS = 'GENERATED'
+                                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                                 AND    (TASK_NAME = l_ir_errors(i).row_identifier
                                         OR PROJECT_NUMBER || '/' || TASK_NAME = l_ir_errors(i).row_identifier);
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
                             ELSIF l_src LIKE '%TEAM%' OR l_src LIKE '%PART%' OR l_src LIKE '%MEMBER%' THEN
                                 UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                                SET    STATUS = 'FAILED',
+                                SET    TFM_STATUS = 'FAILED',
                                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
                                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                                WHERE  RUN_ID = p_run_id AND STATUS = 'GENERATED'
+                                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                                 AND    (TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier
                                         OR PROJECT_NAME || '/' || TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier);
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
                             ELSIF l_src LIKE '%TXN%' OR l_src LIKE '%CONTROL%' THEN
                                 UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-                                SET    STATUS = 'FAILED',
+                                SET    TFM_STATUS = 'FAILED',
                                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
                                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                                WHERE  RUN_ID = p_run_id AND STATUS = 'GENERATED'
+                                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                                 AND    (TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier
                                         OR PROJECT_NUMBER || '/' || TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier);
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
                             ELSE
                                 UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                                SET    STATUS = 'FAILED',
+                                SET    TFM_STATUS = 'FAILED',
                                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
                                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                                WHERE  RUN_ID = p_run_id AND STATUS = 'GENERATED'
+                                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                                 AND    PROJECT_NUMBER = l_ir_errors(i).row_identifier;
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
                             END IF;
@@ -379,32 +379,32 @@ AS
 
             -- Mark remaining GENERATED rows as FAILED across ALL 4 TFM tables
             UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-            SET    STATUS = 'FAILED',
+            SET    TFM_STATUS = 'FAILED',
                    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                        '[RECONCILE_ERROR] BIP returned 0 rows. Cannot verify Fusion outcome.'),
                    RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND STATUS = 'GENERATED';
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             l_not_recon := SQL%ROWCOUNT;
             UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-            SET    STATUS = 'FAILED',
+            SET    TFM_STATUS = 'FAILED',
                    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                        '[RECONCILE_ERROR] BIP returned 0 rows. Cannot verify Fusion outcome.'),
                    RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND STATUS = 'GENERATED';
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             l_not_recon := l_not_recon + SQL%ROWCOUNT;
             UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-            SET    STATUS = 'FAILED',
+            SET    TFM_STATUS = 'FAILED',
                    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                        '[RECONCILE_ERROR] BIP returned 0 rows. Cannot verify Fusion outcome.'),
                    RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND STATUS = 'GENERATED';
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             l_not_recon := l_not_recon + SQL%ROWCOUNT;
             UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-            SET    STATUS = 'FAILED',
+            SET    TFM_STATUS = 'FAILED',
                    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                        '[RECONCILE_ERROR] BIP returned 0 rows. Cannot verify Fusion outcome.'),
                    RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND STATUS = 'GENERATED';
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             l_not_recon := l_not_recon + SQL%ROWCOUNT;
 
             DMT_UTIL_PKG.LOG(
@@ -460,48 +460,48 @@ AS
                 IF r.source_type = 'BASE' THEN
                     -- Tier 2: Found in base table = positively LOADED
                     UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                    SET    STATUS               = 'LOADED',
+                    SET    TFM_STATUS               = 'LOADED',
                            FUSION_PROJECT_ID    = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    PROJECT_NUMBER       = r.project_number
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_prj_loaded := l_prj_loaded + SQL%ROWCOUNT;
 
                 ELSIF r.source_type = 'INTERFACE' THEN
                     IF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
                         UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                        SET    STATUS               = 'LOADED',
+                        SET    TFM_STATUS               = 'LOADED',
                                FUSION_PROJECT_ID    = r.fusion_id,
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID       = p_run_id
                         AND    PROJECT_NUMBER       = r.project_number
-                        AND    STATUS              NOT IN ('LOADED','FAILED');
+                        AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                         l_prj_loaded := l_prj_loaded + SQL%ROWCOUNT;
                     ELSIF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
                         -- SUBMITTED = loaded but not processed (e.g. parent missing)
                         UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                        SET    STATUS               = 'FAILED',
+                        SET    TFM_STATUS               = 'FAILED',
                                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                    '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.import_status)),
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID       = p_run_id
                         AND    PROJECT_NUMBER       = r.project_number
-                        AND    STATUS              NOT IN ('LOADED','FAILED');
+                        AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                         l_prj_failed := l_prj_failed + SQL%ROWCOUNT;
                     ELSE
                         UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                        SET    STATUS               = 'FAILED',
+                        SET    TFM_STATUS               = 'FAILED',
                                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                    '[FUSION_ERROR] Unrecognized interface status: ' || NVL(r.import_status, 'NULL')),
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID       = p_run_id
                         AND    PROJECT_NUMBER       = r.project_number
-                        AND    STATUS              NOT IN ('LOADED','FAILED');
+                        AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                         l_prj_failed := l_prj_failed + SQL%ROWCOUNT;
                     END IF;
                 END IF;
@@ -512,7 +512,7 @@ AS
                 -- SUBMITTED = loaded but not imported (parent project missing or rejected)
                 IF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
                     UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[FUSION_ERROR] Task rejected by Fusion. Project: ' || r.project_number ||
                                '. Interface status: ' || r.import_status),
@@ -521,21 +521,21 @@ AS
                     WHERE  RUN_ID       = p_run_id
                     AND    TASK_NAME            = r.task_name
                     AND    PROJECT_NUMBER       = r.project_number
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_tsk_failed := l_tsk_failed + SQL%ROWCOUNT;
                 ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
                     UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-                    SET    STATUS               = 'LOADED',
+                    SET    TFM_STATUS               = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    TASK_NAME            = r.task_name
                     AND    PROJECT_NUMBER       = r.project_number
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_tsk_loaded := l_tsk_loaded + SQL%ROWCOUNT;
                 ELSE
                     UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[FUSION_ERROR] Task unrecognized status: ' || NVL(r.import_status, 'NULL')),
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -543,7 +543,7 @@ AS
                     WHERE  RUN_ID       = p_run_id
                     AND    TASK_NAME            = r.task_name
                     AND    PROJECT_NUMBER       = r.project_number
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_tsk_failed := l_tsk_failed + SQL%ROWCOUNT;
                 END IF;
 
@@ -551,7 +551,7 @@ AS
             ELSIF r.object_type = 'TEAMMEMBERS' THEN
                 IF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
                     UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[FUSION_ERROR] Team member rejected by Fusion. Project: ' || r.project_name ||
                                '. Interface status: ' || r.import_status),
@@ -560,21 +560,21 @@ AS
                     WHERE  RUN_ID       = p_run_id
                     AND    TEAM_MEMBER_NAME     = r.team_member_name
                     AND    PROJECT_NAME         = r.project_name
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_tm_failed := l_tm_failed + SQL%ROWCOUNT;
                 ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
                     UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                    SET    STATUS               = 'LOADED',
+                    SET    TFM_STATUS               = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    TEAM_MEMBER_NAME     = r.team_member_name
                     AND    PROJECT_NAME         = r.project_name
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_tm_loaded := l_tm_loaded + SQL%ROWCOUNT;
                 ELSE
                     UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[FUSION_ERROR] Team member unrecognized status: ' || NVL(r.import_status, 'NULL')),
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -582,7 +582,7 @@ AS
                     WHERE  RUN_ID       = p_run_id
                     AND    TEAM_MEMBER_NAME     = r.team_member_name
                     AND    PROJECT_NAME         = r.project_name
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_tm_failed := l_tm_failed + SQL%ROWCOUNT;
                 END IF;
 
@@ -591,7 +591,7 @@ AS
                 -- PJC_TXN_CONTROLS_STAGE has LOAD_STATUS but no IMPORT_STATUS
                 IF NVL(r.import_status, r.load_status) IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
                     UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[FUSION_ERROR] Txn control rejected by Fusion. Project: ' || r.project_number ||
                                '. Status: ' || NVL(r.import_status, r.load_status)),
@@ -600,21 +600,21 @@ AS
                     WHERE  RUN_ID       = p_run_id
                     AND    TXN_CTRL_REFERENCE   = r.txn_ctrl_reference
                     AND    PROJECT_NUMBER       = r.project_number
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_tc_failed := l_tc_failed + SQL%ROWCOUNT;
                 ELSIF NVL(r.import_status, r.load_status) IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P','COMPLETE') THEN
                     UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-                    SET    STATUS               = 'LOADED',
+                    SET    TFM_STATUS               = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    TXN_CTRL_REFERENCE   = r.txn_ctrl_reference
                     AND    PROJECT_NUMBER       = r.project_number
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_tc_loaded := l_tc_loaded + SQL%ROWCOUNT;
                 ELSE
                     UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-                    SET    STATUS               = 'FAILED',
+                    SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[FUSION_ERROR] Txn control unrecognized status: ' ||
                                NVL(r.import_status, NVL(r.load_status, 'NULL'))),
@@ -623,7 +623,7 @@ AS
                     WHERE  RUN_ID       = p_run_id
                     AND    TXN_CTRL_REFERENCE   = r.txn_ctrl_reference
                     AND    PROJECT_NUMBER       = r.project_number
-                    AND    STATUS              NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_tc_failed := l_tc_failed + SQL%ROWCOUNT;
                 END IF;
 
@@ -653,13 +653,13 @@ AS
                 l_src        VARCHAR2(100);
             BEGIN
                 SELECT (SELECT COUNT(*) FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                        WHERE RUN_ID = p_run_id AND STATUS = 'GENERATED')
+                        WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED')
                      + (SELECT COUNT(*) FROM DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-                        WHERE RUN_ID = p_run_id AND STATUS = 'GENERATED')
+                        WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED')
                      + (SELECT COUNT(*) FROM DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                        WHERE RUN_ID = p_run_id AND STATUS = 'GENERATED')
+                        WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED')
                      + (SELECT COUNT(*) FROM DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-                        WHERE RUN_ID = p_run_id AND STATUS = 'GENERATED')
+                        WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED')
                 INTO l_still_gen FROM DUAL;
 
                 IF l_still_gen > 0 THEN
@@ -698,39 +698,39 @@ AS
                             IF l_src LIKE '%TASK%' THEN
                                 -- Task errors: row_identifier may be PROJECT_NUMBER/TASK_NAME
                                 UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-                                SET    STATUS               = 'FAILED',
+                                SET    TFM_STATUS               = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID       = p_run_id
-                                AND    STATUS               = 'GENERATED'
+                                AND    TFM_STATUS               = 'GENERATED'
                                 AND    (TASK_NAME = l_ir_errors(i).row_identifier
                                         OR PROJECT_NUMBER || '/' || TASK_NAME = l_ir_errors(i).row_identifier);
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
 
                             ELSIF l_src LIKE '%TEAM%' OR l_src LIKE '%PART%' OR l_src LIKE '%MEMBER%' THEN
                                 UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                                SET    STATUS               = 'FAILED',
+                                SET    TFM_STATUS               = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID       = p_run_id
-                                AND    STATUS               = 'GENERATED'
+                                AND    TFM_STATUS               = 'GENERATED'
                                 AND    (TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier
                                         OR PROJECT_NAME || '/' || TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier);
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
 
                             ELSIF l_src LIKE '%TXN%' OR l_src LIKE '%CONTROL%' THEN
                                 UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-                                SET    STATUS               = 'FAILED',
+                                SET    TFM_STATUS               = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID       = p_run_id
-                                AND    STATUS               = 'GENERATED'
+                                AND    TFM_STATUS               = 'GENERATED'
                                 AND    (TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier
                                         OR PROJECT_NUMBER || '/' || TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier);
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
@@ -738,13 +738,13 @@ AS
                             ELSE
                                 -- Default: PROJECT errors or unrecognized source
                                 UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                                SET    STATUS               = 'FAILED',
+                                SET    TFM_STATUS               = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID       = p_run_id
-                                AND    STATUS               = 'GENERATED'
+                                AND    TFM_STATUS               = 'GENERATED'
                                 AND    PROJECT_NUMBER       = l_ir_errors(i).row_identifier;
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
                             END IF;
@@ -773,87 +773,87 @@ AS
         -- ================================================================
         -- Tasks: cascade LOADED from parent project
         UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL tsk
-        SET    tsk.STATUS            = 'LOADED',
+        SET    tsk.TFM_STATUS            = 'LOADED',
                tsk.RESULTS_UPDATED_DATE = SYSDATE,
                tsk.LAST_UPDATED_DATE = SYSDATE
         WHERE  tsk.RUN_ID    = p_run_id
-        AND    tsk.STATUS            = 'GENERATED'
+        AND    tsk.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID = p_run_id
             AND    p.PROJECT_NUMBER  = tsk.PROJECT_NUMBER
-            AND    p.STATUS          = 'LOADED');
+            AND    p.TFM_STATUS          = 'LOADED');
 
         -- Team Members: cascade LOADED from parent project
         UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL tm
-        SET    tm.STATUS            = 'LOADED',
+        SET    tm.TFM_STATUS            = 'LOADED',
                tm.RESULTS_UPDATED_DATE = SYSDATE,
                tm.LAST_UPDATED_DATE = SYSDATE
         WHERE  tm.RUN_ID    = p_run_id
-        AND    tm.STATUS            = 'GENERATED'
+        AND    tm.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID = p_run_id
             AND    p.PROJECT_NAME    = tm.PROJECT_NAME
-            AND    p.STATUS          = 'LOADED');
+            AND    p.TFM_STATUS          = 'LOADED');
 
         -- Txn Controls: cascade LOADED from parent project
         UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL tc
-        SET    tc.STATUS            = 'LOADED',
+        SET    tc.TFM_STATUS            = 'LOADED',
                tc.RESULTS_UPDATED_DATE = SYSDATE,
                tc.LAST_UPDATED_DATE = SYSDATE
         WHERE  tc.RUN_ID    = p_run_id
-        AND    tc.STATUS            = 'GENERATED'
+        AND    tc.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID = p_run_id
             AND    p.PROJECT_NUMBER  = tc.PROJECT_NUMBER
-            AND    p.STATUS          = 'LOADED');
+            AND    p.TFM_STATUS          = 'LOADED');
 
         -- Tasks: cascade FAILED from parent project
         UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL tsk
-        SET    tsk.STATUS            = 'FAILED',
+        SET    tsk.TFM_STATUS            = 'FAILED',
                tsk.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(tsk.ERROR_TEXT,
                    '[FUSION_ERROR] Parent project ' || tsk.PROJECT_NUMBER || ' was rejected by Fusion.'),
                tsk.RESULTS_UPDATED_DATE = SYSDATE,
                tsk.LAST_UPDATED_DATE = SYSDATE
         WHERE  tsk.RUN_ID    = p_run_id
-        AND    tsk.STATUS            = 'GENERATED'
+        AND    tsk.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID = p_run_id
             AND    p.PROJECT_NUMBER  = tsk.PROJECT_NUMBER
-            AND    p.STATUS          = 'FAILED');
+            AND    p.TFM_STATUS          = 'FAILED');
 
         -- Team Members: cascade FAILED from parent project
         UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL tm
-        SET    tm.STATUS            = 'FAILED',
+        SET    tm.TFM_STATUS            = 'FAILED',
                tm.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(tm.ERROR_TEXT,
                    '[FUSION_ERROR] Parent project ' || tm.PROJECT_NAME || ' was rejected by Fusion.'),
                tm.RESULTS_UPDATED_DATE = SYSDATE,
                tm.LAST_UPDATED_DATE = SYSDATE
         WHERE  tm.RUN_ID    = p_run_id
-        AND    tm.STATUS            = 'GENERATED'
+        AND    tm.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID = p_run_id
             AND    p.PROJECT_NAME    = tm.PROJECT_NAME
-            AND    p.STATUS          = 'FAILED');
+            AND    p.TFM_STATUS          = 'FAILED');
 
         -- Txn Controls: cascade FAILED from parent project
         UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL tc
-        SET    tc.STATUS            = 'FAILED',
+        SET    tc.TFM_STATUS            = 'FAILED',
                tc.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(tc.ERROR_TEXT,
                    '[FUSION_ERROR] Parent project ' || tc.PROJECT_NUMBER || ' was rejected by Fusion.'),
                tc.RESULTS_UPDATED_DATE = SYSDATE,
                tc.LAST_UPDATED_DATE = SYSDATE
         WHERE  tc.RUN_ID    = p_run_id
-        AND    tc.STATUS            = 'GENERATED'
+        AND    tc.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID = p_run_id
             AND    p.PROJECT_NUMBER  = tc.PROJECT_NUMBER
-            AND    p.STATUS          = 'FAILED');
+            AND    p.TFM_STATUS          = 'FAILED');
 
         -- ================================================================
         -- Final sweep: mark any remaining GENERATED rows as FAILED
@@ -861,56 +861,56 @@ AS
         -- Import Report, or cascade.
         -- ================================================================
         UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-        SET    STATUS               = 'FAILED',
+        SET    TFM_STATUS               = 'FAILED',
                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                    '[RECONCILE_ERROR] Row not found in Fusion interface table or base application table.'),
                RESULTS_UPDATED_DATE = SYSDATE,
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID       = p_run_id
-        AND    STATUS               = 'GENERATED';
+        AND    TFM_STATUS               = 'GENERATED';
         l_not_recon := SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-        SET    STATUS               = 'FAILED',
+        SET    TFM_STATUS               = 'FAILED',
                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                    '[RECONCILE_ERROR] Task not reconciled. Not found in Fusion interface table and parent project status unknown.'),
                RESULTS_UPDATED_DATE = SYSDATE,
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID       = p_run_id
-        AND    STATUS               = 'GENERATED';
+        AND    TFM_STATUS               = 'GENERATED';
         l_not_recon := l_not_recon + SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-        SET    STATUS               = 'FAILED',
+        SET    TFM_STATUS               = 'FAILED',
                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                    '[RECONCILE_ERROR] Team member not reconciled. Not found in Fusion interface table and parent project status unknown.'),
                RESULTS_UPDATED_DATE = SYSDATE,
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID       = p_run_id
-        AND    STATUS               = 'GENERATED';
+        AND    TFM_STATUS               = 'GENERATED';
         l_not_recon := l_not_recon + SQL%ROWCOUNT;
 
         UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-        SET    STATUS               = 'FAILED',
+        SET    TFM_STATUS               = 'FAILED',
                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                    '[RECONCILE_ERROR] Txn control not reconciled. Not found in Fusion interface table and parent project status unknown.'),
                RESULTS_UPDATED_DATE = SYSDATE,
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID       = p_run_id
-        AND    STATUS               = 'GENERATED';
+        AND    TFM_STATUS               = 'GENERATED';
         l_not_recon := l_not_recon + SQL%ROWCOUNT;
 
         <<echo_to_stg>>
         -- Echo outcomes back to STG tables (all 4 types)
         -- Projects
         UPDATE DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -918,17 +918,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Tasks
         UPDATE DMT_OWNER.DMT_PJF_TASKS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJF_TASKS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_PJF_TASKS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PJF_TASKS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -936,17 +936,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJF_TASKS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Team Members
         UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -954,17 +954,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Txn Controls
         UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -972,7 +972,7 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 

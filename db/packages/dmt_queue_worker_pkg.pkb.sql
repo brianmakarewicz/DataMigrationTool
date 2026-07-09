@@ -151,7 +151,7 @@ AS
         x_unaccounted := 0;
 
         FOR r IN (
-            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'STATUS') AS STATUS_COLUMN, ROW_FILTER
+            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'TFM_STATUS') AS STATUS_COLUMN, ROW_FILTER
             FROM   DMT_OWNER.DMT_CEMLI_CATALOG_TBL
             WHERE  CEMLI_CODE = p_cemli_code
             AND    TFM_TABLE IS NOT NULL
@@ -204,7 +204,7 @@ AS
         l_sql VARCHAR2(4000);
     BEGIN
         FOR r IN (
-            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'STATUS') AS STATUS_COLUMN, ROW_FILTER
+            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'TFM_STATUS') AS STATUS_COLUMN, ROW_FILTER
             FROM   DMT_OWNER.DMT_CEMLI_CATALOG_TBL
             WHERE  CEMLI_CODE = p_cemli_code
             AND    TFM_TABLE IS NOT NULL
@@ -335,7 +335,7 @@ AS
                 FOR brec IN (
                     SELECT DISTINCT BOOK_TYPE_CODE AS bk
                     FROM   DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
-                    WHERE  RUN_ID = l_rec.RUN_ID AND STATUS = 'STAGED' AND BOOK_TYPE_CODE IS NOT NULL
+                    WHERE  RUN_ID = l_rec.RUN_ID AND TFM_STATUS = 'STAGED' AND BOOK_TYPE_CODE IS NOT NULL
                 ) LOOP
                     INSERT INTO DMT_WORK_QUEUE_TBL (
                         RUN_ID, PIPELINE, CEMLI_CODE, PARTITION_KEY, PARTITION_LABEL,

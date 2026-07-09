@@ -375,13 +375,13 @@
     HTP.P('</tr></thead><tbody>');
 
     FOR rec IN (
-      SELECT TFM_SEQUENCE_ID, DISPLAY_KEY, LOOKUP_KEY, STATUS,
+      SELECT TFM_SEQUENCE_ID, DISPLAY_KEY, LOOKUP_KEY, TFM_STATUS,
              RECONCILIATION_STATUS, ERROR_CATEGORY, ERROR_TEXT,
              TO_CHAR(RESULTS_UPDATED_DATE, 'YYYY-MM-DD HH24:MI') UPD
       FROM DMT_OWNER.DMT_RECORD_DETAIL_V
       WHERE INTEGRATION_ID = p_run_id
         AND SUB_OBJECT     = p_sub_object
-        AND (p_status IS NULL OR STATUS = p_status)
+        AND (p_status IS NULL OR TFM_STATUS = p_status)
       ORDER BY TFM_SEQUENCE_ID
     ) LOOP
       l_cnt := l_cnt + 1;
@@ -390,8 +390,8 @@
       HTP.P('<td>' || APEX_ESCAPE.HTML(rec.DISPLAY_KEY) || '</td>');
 
       -- Status with badge
-      HTP.P('<td><span class="dmt-badge dmt-badge-' || LOWER(rec.STATUS) || '">'
-            || APEX_ESCAPE.HTML(rec.STATUS) || '</span></td>');
+      HTP.P('<td><span class="dmt-badge dmt-badge-' || LOWER(rec.TFM_STATUS) || '">'
+            || APEX_ESCAPE.HTML(rec.TFM_STATUS) || '</span></td>');
 
       HTP.P('<td>' || NVL(APEX_ESCAPE.HTML(rec.ERROR_CATEGORY), '&mdash;') || '</td>');
       HTP.P('<td style="max-width:400px;word-wrap:break-word;">'
@@ -399,7 +399,7 @@
       HTP.P('<td style="white-space:nowrap;">' || NVL(rec.UPD, '&mdash;') || '</td>');
 
       -- Verify button (LOADED only)
-      IF rec.STATUS = 'LOADED' THEN
+      IF rec.TFM_STATUS = 'LOADED' THEN
         HTP.P('<td style="text-align:center;"><button type="button" class="dmt-verify-btn" onclick="openRestModal('
               || CHR(39) || APEX_ESCAPE.HTML(p_sub_object) || CHR(39) || ','
               || CHR(39) || APEX_ESCAPE.HTML(rec.DISPLAY_KEY) || CHR(39) || ','

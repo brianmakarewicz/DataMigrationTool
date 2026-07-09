@@ -246,25 +246,25 @@ AS
             -- INTERFACE_STATUS: NULL = pending, '1' or 'C' = Complete, '4' or 'E' = Error
             IF r.interface_status IS NULL OR r.interface_status IN ('1','C','COMPLETED','SUCCESS','PROCESSED') THEN
                 UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
-                SET    STATUS               = 'LOADED',
+                SET    TFM_STATUS               = 'LOADED',
                        FUSION_PARTY_ID      = TO_NUMBER(r.party_id),
                        FUSION_PARTY_NUMBER  = r.party_number,
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID              = p_run_id
                 AND    PARTY_ORIG_SYSTEM_REFERENCE = r.party_orig_system_reference
-                AND    STATUS                     != 'LOADED';
+                AND    TFM_STATUS                     != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSIF r.interface_status IN ('4','E','ERROR','REJECTED','FAILED','FAILURE') THEN
                 UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
-                SET    STATUS               = 'FAILED',
+                SET    TFM_STATUS               = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                  '[FUSION_ERROR] Import failed. Batch ID: ' || NVL(r.batch_id, 'N/A')),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID              = p_run_id
                 AND    PARTY_ORIG_SYSTEM_REFERENCE = r.party_orig_system_reference
-                AND    STATUS                     != 'FAILED';
+                AND    TFM_STATUS                     != 'FAILED';
                 l_failed := l_failed + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -280,77 +280,77 @@ AS
         -- A more precise linkage would require joining through party_sites.
         -- Mark all GENERATED locations as LOADED (they belong to this batch).
         UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL loc
-        SET    loc.STATUS            = 'LOADED',
+        SET    loc.TFM_STATUS            = 'LOADED',
                loc.RESULTS_UPDATED_DATE = SYSDATE,
                loc.LAST_UPDATED_DATE = SYSDATE
         WHERE  loc.RUN_ID    = p_run_id
-        AND    loc.STATUS           != 'LOADED'
-        AND    loc.STATUS            = 'GENERATED';
+        AND    loc.TFM_STATUS           != 'LOADED'
+        AND    loc.TFM_STATUS            = 'GENERATED';
 
         -- Party Sites: match on PARTY_ORIG_SYSTEM_REFERENCE
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL ps
-        SET    ps.STATUS            = 'LOADED',
+        SET    ps.TFM_STATUS            = 'LOADED',
                ps.RESULTS_UPDATED_DATE = SYSDATE,
                ps.LAST_UPDATED_DATE = SYSDATE
         WHERE  ps.RUN_ID    = p_run_id
-        AND    ps.STATUS           != 'LOADED'
+        AND    ps.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL p
             WHERE  p.RUN_ID              = p_run_id
             AND    p.PARTY_ORIG_SYSTEM_REFERENCE = ps.PARTY_ORIG_SYSTEM_REFERENCE
-            AND    p.STATUS                      = 'LOADED');
+            AND    p.TFM_STATUS                      = 'LOADED');
 
         -- Party Site Uses: match via party site's SITE_ORIG_SYSTEM_REFERENCE
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL psu
-        SET    psu.STATUS            = 'LOADED',
+        SET    psu.TFM_STATUS            = 'LOADED',
                psu.RESULTS_UPDATED_DATE = SYSDATE,
                psu.LAST_UPDATED_DATE = SYSDATE
         WHERE  psu.RUN_ID    = p_run_id
-        AND    psu.STATUS           != 'LOADED'
+        AND    psu.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL ps
             WHERE  ps.RUN_ID           = p_run_id
             AND    ps.SITE_ORIG_SYSTEM_REFERENCE = psu.SITE_ORIG_SYSTEM_REFERENCE
-            AND    ps.STATUS                    = 'LOADED');
+            AND    ps.TFM_STATUS                    = 'LOADED');
 
         -- Accounts: match on PARTY_ORIG_SYSTEM_REFERENCE
         UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL a
-        SET    a.STATUS            = 'LOADED',
+        SET    a.TFM_STATUS            = 'LOADED',
                a.RESULTS_UPDATED_DATE = SYSDATE,
                a.LAST_UPDATED_DATE = SYSDATE
         WHERE  a.RUN_ID    = p_run_id
-        AND    a.STATUS           != 'LOADED'
+        AND    a.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL p
             WHERE  p.RUN_ID              = p_run_id
             AND    p.PARTY_ORIG_SYSTEM_REFERENCE = a.PARTY_ORIG_SYSTEM_REFERENCE
-            AND    p.STATUS                      = 'LOADED');
+            AND    p.TFM_STATUS                      = 'LOADED');
 
         -- Account Sites: match via account's CUST_ORIG_SYSTEM_REFERENCE
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL acs
-        SET    acs.STATUS            = 'LOADED',
+        SET    acs.TFM_STATUS            = 'LOADED',
                acs.RESULTS_UPDATED_DATE = SYSDATE,
                acs.LAST_UPDATED_DATE = SYSDATE
         WHERE  acs.RUN_ID    = p_run_id
-        AND    acs.STATUS           != 'LOADED'
+        AND    acs.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL a
             WHERE  a.RUN_ID              = p_run_id
             AND    a.CUST_ORIG_SYSTEM_REFERENCE = acs.CUST_ORIG_SYSTEM_REFERENCE
-            AND    a.STATUS                      = 'LOADED');
+            AND    a.TFM_STATUS                      = 'LOADED');
 
         -- Account Site Uses: match via account site's CUST_SITE_ORIG_SYS_REF
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL asu
-        SET    asu.STATUS            = 'LOADED',
+        SET    asu.TFM_STATUS            = 'LOADED',
                asu.RESULTS_UPDATED_DATE = SYSDATE,
                asu.LAST_UPDATED_DATE = SYSDATE
         WHERE  asu.RUN_ID    = p_run_id
-        AND    asu.STATUS           != 'LOADED'
+        AND    asu.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL acs
             WHERE  acs.RUN_ID          = p_run_id
             AND    acs.CUST_SITE_ORIG_SYS_REF = asu.CUST_SITE_ORIG_SYS_REF
-            AND    acs.STATUS                  = 'LOADED');
+            AND    acs.TFM_STATUS                  = 'LOADED');
 
         -- ============================================================
         -- Cascade FAILED to child TFM tables
@@ -358,95 +358,95 @@ AS
 
         -- Party Sites: parent party FAILED
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL ps
-        SET    ps.STATUS            = 'FAILED',
+        SET    ps.TFM_STATUS            = 'FAILED',
                ps.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ps.ERROR_TEXT,
                    '[FUSION_ERROR] Parent party ''' || ps.PARTY_ORIG_SYSTEM_REFERENCE || ''' was rejected by Fusion.'),
                ps.RESULTS_UPDATED_DATE = SYSDATE,
                ps.LAST_UPDATED_DATE = SYSDATE
         WHERE  ps.RUN_ID    = p_run_id
-        AND    ps.STATUS           != 'FAILED'
+        AND    ps.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL p
             WHERE  p.RUN_ID              = p_run_id
             AND    p.PARTY_ORIG_SYSTEM_REFERENCE = ps.PARTY_ORIG_SYSTEM_REFERENCE
-            AND    p.STATUS                      = 'FAILED');
+            AND    p.TFM_STATUS                      = 'FAILED');
 
         -- Party Site Uses: parent party site FAILED
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL psu
-        SET    psu.STATUS            = 'FAILED',
+        SET    psu.TFM_STATUS            = 'FAILED',
                psu.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(psu.ERROR_TEXT,
                    '[FUSION_ERROR] Parent party site was rejected by Fusion.'),
                psu.RESULTS_UPDATED_DATE = SYSDATE,
                psu.LAST_UPDATED_DATE = SYSDATE
         WHERE  psu.RUN_ID    = p_run_id
-        AND    psu.STATUS           != 'FAILED'
+        AND    psu.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL ps
             WHERE  ps.RUN_ID           = p_run_id
             AND    ps.SITE_ORIG_SYSTEM_REFERENCE = psu.SITE_ORIG_SYSTEM_REFERENCE
-            AND    ps.STATUS                    = 'FAILED');
+            AND    ps.TFM_STATUS                    = 'FAILED');
 
         -- Accounts: parent party FAILED
         UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL a
-        SET    a.STATUS            = 'FAILED',
+        SET    a.TFM_STATUS            = 'FAILED',
                a.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(a.ERROR_TEXT,
                    '[FUSION_ERROR] Parent party ''' || a.PARTY_ORIG_SYSTEM_REFERENCE || ''' was rejected by Fusion.'),
                a.RESULTS_UPDATED_DATE = SYSDATE,
                a.LAST_UPDATED_DATE = SYSDATE
         WHERE  a.RUN_ID    = p_run_id
-        AND    a.STATUS           != 'FAILED'
+        AND    a.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL p
             WHERE  p.RUN_ID              = p_run_id
             AND    p.PARTY_ORIG_SYSTEM_REFERENCE = a.PARTY_ORIG_SYSTEM_REFERENCE
-            AND    p.STATUS                      = 'FAILED');
+            AND    p.TFM_STATUS                      = 'FAILED');
 
         -- Account Sites: parent account FAILED
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL acs
-        SET    acs.STATUS            = 'FAILED',
+        SET    acs.TFM_STATUS            = 'FAILED',
                acs.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(acs.ERROR_TEXT,
                    '[FUSION_ERROR] Parent account was rejected by Fusion.'),
                acs.RESULTS_UPDATED_DATE = SYSDATE,
                acs.LAST_UPDATED_DATE = SYSDATE
         WHERE  acs.RUN_ID    = p_run_id
-        AND    acs.STATUS           != 'FAILED'
+        AND    acs.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL a
             WHERE  a.RUN_ID              = p_run_id
             AND    a.CUST_ORIG_SYSTEM_REFERENCE = acs.CUST_ORIG_SYSTEM_REFERENCE
-            AND    a.STATUS                      = 'FAILED');
+            AND    a.TFM_STATUS                      = 'FAILED');
 
         -- Account Site Uses: parent account site FAILED
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL asu
-        SET    asu.STATUS            = 'FAILED',
+        SET    asu.TFM_STATUS            = 'FAILED',
                asu.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(asu.ERROR_TEXT,
                    '[FUSION_ERROR] Parent account site was rejected by Fusion.'),
                asu.RESULTS_UPDATED_DATE = SYSDATE,
                asu.LAST_UPDATED_DATE = SYSDATE
         WHERE  asu.RUN_ID    = p_run_id
-        AND    asu.STATUS           != 'FAILED'
+        AND    asu.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL acs
             WHERE  acs.RUN_ID          = p_run_id
             AND    acs.CUST_SITE_ORIG_SYS_REF = asu.CUST_SITE_ORIG_SYS_REF
-            AND    acs.STATUS                  = 'FAILED');
+            AND    acs.TFM_STATUS                  = 'FAILED');
 
         -- Locations with failed parties: mark FAILED
         -- (locations linked through party_sites — if all party_sites for a location are FAILED,
         -- the location is effectively FAILED too)
         UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL loc
-        SET    loc.STATUS            = 'FAILED',
+        SET    loc.TFM_STATUS            = 'FAILED',
                loc.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(loc.ERROR_TEXT,
                    '[FUSION_ERROR] Associated party site was rejected by Fusion.'),
                loc.RESULTS_UPDATED_DATE = SYSDATE,
                loc.LAST_UPDATED_DATE = SYSDATE
         WHERE  loc.RUN_ID    = p_run_id
-        AND    loc.STATUS           NOT IN ('LOADED', 'FAILED')
+        AND    loc.TFM_STATUS           NOT IN ('LOADED', 'FAILED')
         AND    NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL ps
             WHERE  ps.RUN_ID              = p_run_id
             AND    ps.LOCATION_ORIG_SYSTEM_REFERENCE = loc.LOCATION_ORIG_SYSTEM_REFERENCE
-            AND    ps.STATUS                      = 'LOADED');
+            AND    ps.TFM_STATUS                      = 'LOADED');
 
         -- ============================================================
         -- Sweep: mark remaining GENERATED rows as FAILED
@@ -468,12 +468,12 @@ AS
             ) LOOP
                 EXECUTE IMMEDIATE
                     'UPDATE DMT_OWNER.' || t.tbl ||
-                    ' SET STATUS = ''FAILED'',' ||
+                    ' SET TFM_STATUS = ''FAILED'',' ||
                     '     ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,' ||
                     '         ''[RECONCILE_ERROR] Row not matched by BIP reconciliation or cascade. Cannot verify import outcome.''),' ||
                     '     RESULTS_UPDATED_DATE = SYSDATE,' ||
                     '     LAST_UPDATED_DATE = SYSDATE' ||
-                    ' WHERE RUN_ID = :iid AND STATUS = ''GENERATED'''
+                    ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
                     USING p_run_id;
                 l_tbl_sweep := SQL%ROWCOUNT;
                 l_sweep := l_sweep + l_tbl_sweep;
@@ -494,13 +494,13 @@ AS
 
         -- Parties
         UPDATE DMT_OWNER.DMT_HZ_PARTIES_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_HZ_PARTIES_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -508,17 +508,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Locations
         UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -526,17 +526,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Party Sites
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -544,17 +544,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Party Site Uses
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -562,17 +562,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Accounts
         UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -580,17 +580,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Account Sites
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -598,17 +598,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Account Site Uses
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -616,7 +616,7 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 

@@ -91,8 +91,8 @@ def page52(code):
 
 def page57(sub):
     """Page-57 list: DMT_RECORD_DETAIL_V keyed on run+sub_object (NOT code)."""
-    cur.execute("""SELECT status, COUNT(*) FROM DMT_RECORD_DETAIL_V
-                   WHERE run_id=:1 AND sub_object=:2 GROUP BY status""", [RUN_ID, sub])
+    cur.execute("""SELECT tfm_status, COUNT(*) FROM DMT_RECORD_DETAIL_V
+                   WHERE run_id=:1 AND sub_object=:2 GROUP BY tfm_status""", [RUN_ID, sub])
     d = {st: n for st, n in cur.fetchall()}
     return {'LOADED': d.get('LOADED', 0), 'FAILED': d.get('FAILED', 0),
             'TOTAL': sum(d.values())}

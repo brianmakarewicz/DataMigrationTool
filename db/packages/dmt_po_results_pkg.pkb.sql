@@ -244,25 +244,25 @@ AS
         ) LOOP
             IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
                 UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-                SET    STATUS               = 'LOADED',
+                SET    TFM_STATUS               = 'LOADED',
                        FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                        FUSION_DOCUMENT_NUM  = r.document_num,
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                AND    STATUS              != 'LOADED';
+                AND    TFM_STATUS              != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
                 UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-                SET    STATUS               = 'FAILED',
+                SET    TFM_STATUS               = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                  '[FUSION_ERROR] ' || r.error_msg),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                AND    STATUS              != 'FAILED';
+                AND    TFM_STATUS              != 'FAILED';
                 l_failed := l_failed + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -270,96 +270,96 @@ AS
         -- Cascade LOADED to child TFM tables (lines/locs/dists)
         -- Lines: match on INTERFACE_HEADER_KEY
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
-        SET    ln.STATUS            = 'LOADED',
+        SET    ln.TFM_STATUS            = 'LOADED',
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.STATUS           != 'LOADED'
+        AND    ln.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID      = p_run_id
             AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
-            AND    h.STATUS              = 'LOADED');
+            AND    h.TFM_STATUS              = 'LOADED');
 
         -- Line locations: match via line's INTERFACE_LINE_KEY
         UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
-        SET    loc.STATUS            = 'LOADED',
+        SET    loc.TFM_STATUS            = 'LOADED',
                loc.RESULTS_UPDATED_DATE = SYSDATE,
                loc.LAST_UPDATED_DATE = SYSDATE
         WHERE  loc.RUN_ID    = p_run_id
-        AND    loc.STATUS           != 'LOADED'
+        AND    loc.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
             WHERE  ln.RUN_ID    = p_run_id
             AND    ln.INTERFACE_LINE_KEY = loc.INTERFACE_LINE_KEY
-            AND    ln.STATUS            = 'LOADED');
+            AND    ln.TFM_STATUS            = 'LOADED');
 
         -- Distributions: match via loc's INTERFACE_LINE_LOCATION_KEY
         UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL d
-        SET    d.STATUS            = 'LOADED',
+        SET    d.TFM_STATUS            = 'LOADED',
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE = SYSDATE
         WHERE  d.RUN_ID    = p_run_id
-        AND    d.STATUS           != 'LOADED'
+        AND    d.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
             WHERE  loc.RUN_ID              = p_run_id
             AND    loc.INTERFACE_LINE_LOCATION_KEY = d.INTERFACE_LINE_LOCATION_KEY
-            AND    loc.STATUS                      = 'LOADED');
+            AND    loc.TFM_STATUS                      = 'LOADED');
 
         -- Cascade FAILED to child TFM tables
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
-        SET    ln.STATUS            = 'FAILED',
+        SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
                    '[FUSION_ERROR] Parent PO header ''' || ln.INTERFACE_HEADER_KEY || ''' was rejected by Fusion.'),
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.STATUS           != 'FAILED'
+        AND    ln.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID      = p_run_id
             AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
-            AND    h.STATUS              = 'FAILED');
+            AND    h.TFM_STATUS              = 'FAILED');
 
         UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
-        SET    loc.STATUS            = 'FAILED',
+        SET    loc.TFM_STATUS            = 'FAILED',
                loc.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(loc.ERROR_TEXT,
                    '[FUSION_ERROR] Parent PO header was rejected by Fusion.'),
                loc.RESULTS_UPDATED_DATE = SYSDATE,
                loc.LAST_UPDATED_DATE = SYSDATE
         WHERE  loc.RUN_ID    = p_run_id
-        AND    loc.STATUS           != 'FAILED'
+        AND    loc.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
             WHERE  ln.RUN_ID    = p_run_id
             AND    ln.INTERFACE_LINE_KEY = loc.INTERFACE_LINE_KEY
-            AND    ln.STATUS            = 'FAILED');
+            AND    ln.TFM_STATUS            = 'FAILED');
 
         UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL d
-        SET    d.STATUS            = 'FAILED',
+        SET    d.TFM_STATUS            = 'FAILED',
                d.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
                    '[FUSION_ERROR] Parent PO header was rejected by Fusion.'),
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE = SYSDATE
         WHERE  d.RUN_ID    = p_run_id
-        AND    d.STATUS           != 'FAILED'
+        AND    d.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
             WHERE  loc.RUN_ID              = p_run_id
             AND    loc.INTERFACE_LINE_LOCATION_KEY = d.INTERFACE_LINE_LOCATION_KEY
-            AND    loc.STATUS                      = 'FAILED');
+            AND    loc.TFM_STATUS                      = 'FAILED');
 
         -- Echo outcomes back to STG tables (all 4 types)
         -- Headers
         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -367,17 +367,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Lines
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -385,17 +385,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Line locations
         UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -403,17 +403,17 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Distributions
         UPDATE DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL stg
-        SET    stg.STATUS            = 'LOADED',
+        SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'LOADED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL stg
-        SET    stg.STATUS            = 'FAILED',
+        SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
@@ -421,7 +421,7 @@ AS
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.STATUS = 'FAILED');
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 

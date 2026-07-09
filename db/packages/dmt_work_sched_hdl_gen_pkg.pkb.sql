@@ -65,7 +65,7 @@ AS
         l_cnt NUMBER;
     BEGIN
         EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM DMT_OWNER.' || p_tbl ||
-            ' WHERE RUN_ID = :1 AND STATUS = ''STAGED'' AND ROWNUM = 1'
+            ' WHERE RUN_ID = :1 AND TFM_STATUS = ''STAGED'' AND ROWNUM = 1'
             INTO l_cnt USING p_iid;
         RETURN l_cnt > 0;
     END has_rows;
@@ -107,7 +107,7 @@ AS
                 SELECT t.*
                 FROM   DMT_OWNER.DMT_WORK_SCHED_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
-                AND    t.STATUS = 'STAGED'
+                AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
                 l_vals := C_SOURCE_SYSTEM                      || '|' ||
@@ -136,7 +136,7 @@ AS
                         AND ROWNUM = 1) AS PARENT_PERSON_NUMBER
                 FROM   DMT_OWNER.DMT_WORK_SCHED_DTL_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
-                AND    t.STATUS = 'STAGED'
+                AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
                 l_vals := C_SOURCE_SYSTEM                      || '|' ||
@@ -186,12 +186,12 @@ AS
         -- Update TFM table(s) to GENERATED and stamp FBDI_CSV_ID
         -- ============================================================
         UPDATE DMT_OWNER.DMT_WORK_SCHED_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         UPDATE DMT_OWNER.DMT_WORK_SCHED_DTL_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
 
         DBMS_LOB.FREETEMPORARY(l_dat);

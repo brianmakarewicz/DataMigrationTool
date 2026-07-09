@@ -232,7 +232,7 @@ AS
                 || '"' || REPLACE(NVL(CASCADE_OPTION,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -378,7 +378,7 @@ AS
                 || '"' || NVL(TO_CHAR(BASELINE_EXPENSE_COST_AMOUNT), '') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_PJF_TASKS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -417,7 +417,7 @@ AS
                 || '"' || REPLACE(NVL(BILLABLE_PERCENT_REASON_CODE,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -460,7 +460,7 @@ AS
                 || '"' || NVL(TO_CHAR(END_DATE_ACTIVE, 'YYYY/MM/DD'), '') || '"' || CHR(10) AS csv_line
             FROM   DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
-            AND    t.STATUS = 'STAGED'
+            AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -573,20 +573,20 @@ AS
 
         -- Update all 4 TFM tables to GENERATED and stamp FBDI_CSV_ID
         UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-        SET    STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         -- Free temporary CLOBs
         DBMS_LOB.FREETEMPORARY(l_projects_csv);
