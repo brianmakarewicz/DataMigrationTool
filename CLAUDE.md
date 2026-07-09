@@ -82,7 +82,7 @@ Rules of the protocol:
    tranche (same thing done two ways), (c) precisely-worded NEW coding-standard rules that
    would have prevented each class of drift found.
 4. Proposed new rules are added to the coding-standards section of that canonical doc
-   **in RED with a PROPOSED marker + date** (`<span class="proposed-rule">`). Red = newly
+   **in RED with a PROPOSED marker + date** (inline red styling inside the PROPOSED RULES block). Red = newly
    added and unverified — only the user promotes a red rule to accepted (normal styling).
 5. Every finding is fixed or explicitly logged before the next tranche begins.
 
