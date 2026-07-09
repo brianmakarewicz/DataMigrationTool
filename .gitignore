@@ -5,3 +5,6 @@ __pycache__/
 wallet/
 *.zip.tmp
 .DS_Store
+
+# requirements-doc change-approval sentinel (dmt_design_guard hook)
+docs/.design_change_approved
