@@ -1,4 +1,10 @@
 -- DMT_CFG_UOM_V
+-- FORCE retained deliberately: this view is one of the tracked-broken
+-- INTEGRATION_ID-drifted summary views (docs/tranche-reviews/2026-07-07-views.md
+-- finding F1(rest): DEFER pending Stage F usage check against the f155 APEX
+-- export - delete or repair then). It cannot compile until that repair, so
+-- without FORCE the install would abort; every other view file has no FORCE
+-- per the accepted no-FORCE rule (design section 7, accepted 2026-07-08).
 CREATE OR REPLACE FORCE EDITIONABLE VIEW "DMT_CFG_UOM_V" ("INTEGRATION_ID", "ORCHESTRATION_CODE", "RUN_DATE", "PREFIX", "STG_SEQUENCE_ID", "TFM_SEQUENCE_ID", "SOURCE_ID", "UOM_CODE", "UNIT_OF_MEASURE", "UOM_CLASS", "DESCRIPTION", "BASE_UOM_FLAG", "STAGE_DATE", "STG_STATUS", "TFM_STATUS", "OVERALL_STATUS", "ERROR_TEXT", "RESULTS_UPDATED_DATE", "SCENARIO_ID")  AS 
   SELECT
     m.INTEGRATION_ID,

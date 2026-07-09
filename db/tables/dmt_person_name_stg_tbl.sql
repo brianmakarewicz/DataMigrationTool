@@ -51,7 +51,7 @@ begin
 	"NAME_INFORMATION30" VARCHAR2(240), 
 	"SOURCE_ID" VARCHAR2(200), 
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
-	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
 	"SCENARIO_ID" NUMBER, 
@@ -102,3 +102,21 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PERSON_NAME_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-09 conformance review F2 (STG/TFM infra-column dictionary, design
+-- section 7 accepted 2026-07-08): STG_STATUS is VARCHAR2(30) DEFAULT 'NEW'
+-- NOT NULL. Backfills any NULL statuses to the default, then converges a
+-- pre-existing database; fresh installs get the shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_nullable varchar2(1);
+begin
+  select nullable into l_nullable from user_tab_columns
+   where table_name = 'DMT_PERSON_NAME_STG_TBL' and column_name = 'STG_STATUS';
+  if l_nullable = 'Y' then
+    execute immediate 'UPDATE "DMT_PERSON_NAME_STG_TBL" SET "STG_STATUS" = ''NEW'' WHERE "STG_STATUS" IS NULL';
+    execute immediate 'ALTER TABLE "DMT_PERSON_NAME_STG_TBL" MODIFY ("STG_STATUS" DEFAULT ''NEW'' NOT NULL)';
+  end if;
+end;
+/

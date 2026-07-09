@@ -53,3 +53,18 @@ exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
 /
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-09 conformance review F2 (contract-index dictionary, design
+-- section 7 accepted 2026-07-08: DMT_WORK_QUEUE_TBL must index RUN_ID,
+-- WORK_STATUS, NEXT_POLL_AFTER). RUN_ID and WORK_STATUS are covered above;
+-- NEXT_POLL_AFTER (the poller's ready-to-poll scan) was missing. Named per
+-- the accepted constraint/index naming pattern ({table-minus-_TBL}_N{n});
+-- the legacy _IX-suffixed names above are left to the tracked naming sweep.
+-- ---------------------------------------------------------------------------
+begin
+  execute immediate 'CREATE INDEX "DMT_WORK_QUEUE_N1" ON "DMT_WORK_QUEUE_TBL" ("NEXT_POLL_AFTER")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/

@@ -12,7 +12,7 @@ begin
 	"MODULE_TYPE" VARCHAR2(30), 
 	"MODULE_KEY" VARCHAR2(30), 
 	"REFERENCE_GROUP_NAME" VARCHAR2(240), 
-	"TFM_STATUS" VARCHAR2(30) DEFAULT ''STAGED'', 
+	"TFM_STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
 	"RESULTS_UPDATED_DATE" DATE, 
 	"LAST_UPDATED_DATE" DATE, 
@@ -86,3 +86,21 @@ end;
 COMMENT ON COLUMN "DMT_FND_LOOKUP_TYPE_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
 COMMENT ON COLUMN "DMT_FND_LOOKUP_TYPE_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
 COMMENT ON COLUMN "DMT_FND_LOOKUP_TYPE_TFM_TBL"."FUSION_LOOKUP_TYPE_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-09 conformance review F2 (STG/TFM infra-column dictionary, design
+-- section 7 accepted 2026-07-08): TFM_STATUS is VARCHAR2(30) DEFAULT 'STAGED'
+-- NOT NULL. Backfills any NULL statuses to the default, then converges a
+-- pre-existing database; fresh installs get the shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_nullable varchar2(1);
+begin
+  select nullable into l_nullable from user_tab_columns
+   where table_name = 'DMT_FND_LOOKUP_TYPE_TFM_TBL' and column_name = 'TFM_STATUS';
+  if l_nullable = 'Y' then
+    execute immediate 'UPDATE "DMT_FND_LOOKUP_TYPE_TFM_TBL" SET "TFM_STATUS" = ''STAGED'' WHERE "TFM_STATUS" IS NULL';
+    execute immediate 'ALTER TABLE "DMT_FND_LOOKUP_TYPE_TFM_TBL" MODIFY ("TFM_STATUS" DEFAULT ''STAGED'' NOT NULL)';
+  end if;
+end;
+/

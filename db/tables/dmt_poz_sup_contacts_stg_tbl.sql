@@ -130,7 +130,7 @@ begin
 	"ROLE10" VARCHAR2(100), 
 	"SOURCE_ID" VARCHAR2(200), 
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
-	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'', 
+	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
 	"SCENARIO_ID" NUMBER, 
@@ -155,12 +155,6 @@ begin
 end;
 /
 
-begin
-  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_STG_TBL_N1" ON "DMT_POZ_SUP_CONTACTS_STG_TBL" ("STG_STATUS")';
-exception when others then
-  if sqlcode not in (-955,-1408) then raise; end if;
-end;
-/
 
 COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user.';
 COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_STG_TBL"."IMPORT_ACTION" IS 'CREATE or UPDATE';
@@ -177,11 +171,56 @@ COMMENT ON TABLE "DMT_POZ_SUP_CONTACTS_STG_TBL"  IS 'Supplier contact staging. R
 -- dictionary + contract-index dictionary): converges a pre-existing database.
 -- Fresh installs already get the final shape from the CREATE above.
 -- ---------------------------------------------------------------------------
+
+COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-09 conformance review F2 (STG/TFM infra-column dictionary, design
+-- section 7 accepted 2026-07-08): STG_STATUS is VARCHAR2(30) DEFAULT 'NEW'
+-- NOT NULL. Backfills any NULL statuses to the default, then converges a
+-- pre-existing database; fresh installs get the shape from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_nullable varchar2(1);
 begin
-  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_STG_N1" ON "DMT_POZ_SUP_CONTACTS_STG_TBL" ("SCENARIO_ID")';
+  select nullable into l_nullable from user_tab_columns
+   where table_name = 'DMT_POZ_SUP_CONTACTS_STG_TBL' and column_name = 'STG_STATUS';
+  if l_nullable = 'Y' then
+    execute immediate 'UPDATE "DMT_POZ_SUP_CONTACTS_STG_TBL" SET "STG_STATUS" = ''NEW'' WHERE "STG_STATUS" IS NULL';
+    execute immediate 'ALTER TABLE "DMT_POZ_SUP_CONTACTS_STG_TBL" MODIFY ("STG_STATUS" DEFAULT ''NEW'' NOT NULL)';
+  end if;
+end;
+/
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-09 conformance review F11: the supplier tables carried two index
+-- numbering schemes (DMT_POZ_SUP_CONTACTS_STG_TBL_N* and DMT_POZ_SUP_CONTACTS_STG_N* both in
+-- flight, colliding at N1). Renumbered to the single clean per-table sequence
+-- used by every other object table; old non-conforming names are dropped by
+-- the guarded block below, then the clean set is (re)created.
+-- ---------------------------------------------------------------------------
+declare
+  l_n    pls_integer;
+  l_cols varchar2(400);
+begin
+  select count(*) into l_n from user_indexes where index_name = 'DMT_POZ_SUP_CONTACTS_STG_TBL_N1';
+  if l_n > 0 then execute immediate 'DROP INDEX "DMT_POZ_SUP_CONTACTS_STG_TBL_N1"'; end if;
+  select listagg(column_name,',') within group (order by column_position) into l_cols
+    from user_ind_columns where index_name = 'DMT_POZ_SUP_CONTACTS_STG_N1';
+  if l_cols = 'SCENARIO_ID' then execute immediate 'DROP INDEX "DMT_POZ_SUP_CONTACTS_STG_N1"'; end if;
+end;
+/
+
+begin
+  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_STG_N1" ON "DMT_POZ_SUP_CONTACTS_STG_TBL" ("STG_STATUS")';
 exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
 /
 
-COMMENT ON COLUMN "DMT_POZ_SUP_CONTACTS_STG_TBL"."STG_STATUS" IS 'Staging lifecycle: NEW > TRANSFORMED / FAILED. Forward-only, never reset; errors accumulate in ERROR_TEXT.';
+begin
+  execute immediate 'CREATE INDEX "DMT_POZ_SUP_CONTACTS_STG_N2" ON "DMT_POZ_SUP_CONTACTS_STG_TBL" ("SCENARIO_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
