@@ -221,7 +221,7 @@ begin
     from   dmt_scenario_tbl where upper(scenario_name) = 'TEST_SUPPLIERS_SCN';
 
     -- 8. INIT_RUN creates the run row with a prefix (tests always run
-    --    with USE_PREFIX=Y; prefix is 4-digit from DMT_RUN_PREFIX_SEQ,
+    --    with USE_PREFIX=Y; prefix is 5-digit from DMT_RUN_PREFIX_SEQ,
     --    section 6 prefix consolidation).
     dmt_pipeline_init_pkg.init_run(
         p_orchestration_code => 'Suppliers',
@@ -230,8 +230,8 @@ begin
         p_instance_id        => 'UNIT_TEST',
         x_integration_id     => :run_id,
         x_prefix             => :prefix);
-    assert(:run_id is not null and :prefix is not null and length(:prefix) = 4,
-           8, 'INIT_RUN returns run id + 4-digit prefix');
+    assert(:run_id is not null and :prefix is not null and length(:prefix) = 5,
+           8, 'INIT_RUN returns run id + 5-digit prefix');
 
     -- Seed prior error text on the ghost address row to prove APPEND
     -- (section 5: "Accumulate, never overwrite").
@@ -358,7 +358,7 @@ begin
     assert(l_vc = :prefix||'TESTSUP Good-1', 22, 'TFM VENDOR_NAME = prefix || STG name');
     assert(l_vc2 = :prefix||'TSUP-G1', 23, 'TFM SEGMENT1 = prefix || STG segment1');
 
-    -- 24. VENDOR_SITE_CODE is PREFIXED(...,15): 4-digit prefix +
+    -- 24. VENDOR_SITE_CODE is PREFIXED(...,15): 5-digit prefix +
     --     12-char code truncates to 15 chars (matches the old-stack
     --     behavior baked into the run-116 golden).
     select vendor_site_code into l_vc

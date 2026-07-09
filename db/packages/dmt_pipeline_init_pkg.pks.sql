@@ -4,8 +4,8 @@
 -- ============================================================
 -- DMT_PIPELINE_INIT_PKG
 -- Single point of entry for creating pipeline runs.
--- Enforces one prefix per run from DMT_RUN_PREFIX_SEQ (4-digit,
--- 1000-9999, design section 6) unless USE_PREFIX='N'.
+-- Enforces one prefix per run from DMT_RUN_PREFIX_SEQ (5-digit,
+-- 10000-99999, design section 6; widened 2026-07-08) unless USE_PREFIX='N'.
 -- ============================================================
 
     -- Creates a CONVERSION_MASTER row and returns the integration_id.
