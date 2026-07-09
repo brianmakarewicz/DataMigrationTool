@@ -2,21 +2,21 @@
   "_comment": [
     "Per-object token-normalization map for the golden-file byte-compare harness",
     "(Stage B4). One entry per object type. For each zip member:",
-    "  tokens           \u2014 run-scoped literals embedded in the golden vs the local",
+    "  tokens           — run-scoped literals embedded in the golden vs the local",
     "                     run. Both sides are rewritten to the same placeholder",
     "                     before the byte compare: the golden value 'golden' and",
     "                     the local value supplied on the compare_fbdi.py command",
     "                     line ('local' = $PREFIX or $RUN_ID) each become",
     "                     'placeholder'. 'match' restricts where a token may hit:",
-    "                     whole_field (default) | startswith | substring \u2014 so short",
+    "                     whole_field (default) | startswith | substring — so short",
     "                     numeric ids cannot collide with unrelated business data.",
     "                     'fields' (optional, 0-based positions) further restricts a",
     "                     token to the named CSV columns.",
-    "  date_mask_fields \u2014 0-based CSV field positions (per the object's CTL",
+    "  date_mask_fields — 0-based CSV field positions (per the object's CTL",
     "                     column order) that carry generation-time dates",
     "                     (e.g. DATE_CREATED = NVL(input, SYSDATE)). Masked on",
     "                     both sides ONLY when both sides match the FBDI date",
-    "                     pattern YYYY/MM/DD \u2014 a non-date difference there is",
+    "                     pattern YYYY/MM/DD — a non-date difference there is",
     "                     still reported as a real diff.",
     "  record_terminator - optional, per member: 'CRLF' when the generator",
     "                     emits CRLF record endings (supplier family); default",
@@ -153,6 +153,245 @@
             "match": "startswith",
             "fields": [
               1
+            ]
+          }
+        ],
+        "date_mask_fields": []
+      }
+    }
+  },
+  "Customers": {
+    "golden_zip": "test/fbdi_zips/Customers_116.zip",
+    "golden_provenance": "Old-stack regression run 116, prefix 9627. Customers is ONE object; its single zip carries seven HZ CSVs (parties, locations, party sites, party site uses, accounts, account sites, account site uses). Rows are insert_regression_test_data.py sections 6-12 (2 GOOD + 1 BAD per record type). Field 0 of every CSV is BATCH_ID = RUN_ID (116 in the golden). The run prefix (9627) is applied by the transform to the ORIG_SYSTEM_REFERENCE and *_NUMBER fields. Generated before the pre-validation ordering fix, so the BAD rows are in the golden by design of that run. Records are LF-terminated (unlike the CRLF supplier-family CSVs).",
+    "members": {
+      "HzImpPartiesT.csv": {
+        "tokens": [
+          {
+            "placeholder": "{RUN_ID}",
+            "golden": "116",
+            "local": "$RUN_ID",
+            "match": "whole_field",
+            "fields": [
+              0
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              2
+            ]
+          }
+        ],
+        "date_mask_fields": []
+      },
+      "HzImpLocationsT.csv": {
+        "tokens": [
+          {
+            "placeholder": "{RUN_ID}",
+            "golden": "116",
+            "local": "$RUN_ID",
+            "match": "whole_field",
+            "fields": [
+              0
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              2
+            ]
+          }
+        ],
+        "date_mask_fields": []
+      },
+      "HzImpPartySitesT.csv": {
+        "tokens": [
+          {
+            "placeholder": "{RUN_ID}",
+            "golden": "116",
+            "local": "$RUN_ID",
+            "match": "whole_field",
+            "fields": [
+              0
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              2
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              4
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              6
+            ]
+          }
+        ],
+        "date_mask_fields": []
+      },
+      "HzImpPartySiteUsesT.csv": {
+        "tokens": [
+          {
+            "placeholder": "{RUN_ID}",
+            "golden": "116",
+            "local": "$RUN_ID",
+            "match": "whole_field",
+            "fields": [
+              0
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              2
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              4
+            ]
+          }
+        ],
+        "date_mask_fields": []
+      },
+      "HzImpAccountsT.csv": {
+        "tokens": [
+          {
+            "placeholder": "{RUN_ID}",
+            "golden": "116",
+            "local": "$RUN_ID",
+            "match": "whole_field",
+            "fields": [
+              0
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              2
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              4
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              5
+            ]
+          }
+        ],
+        "date_mask_fields": []
+      },
+      "HzImpAcctSitesT.csv": {
+        "tokens": [
+          {
+            "placeholder": "{RUN_ID}",
+            "golden": "116",
+            "local": "$RUN_ID",
+            "match": "whole_field",
+            "fields": [
+              0
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              2
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              4
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              6
+            ]
+          }
+        ],
+        "date_mask_fields": []
+      },
+      "HzImpAcctSiteUsesT.csv": {
+        "tokens": [
+          {
+            "placeholder": "{RUN_ID}",
+            "golden": "116",
+            "local": "$RUN_ID",
+            "match": "whole_field",
+            "fields": [
+              0
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              2
+            ]
+          },
+          {
+            "placeholder": "{PREFIX}",
+            "golden": "9627",
+            "local": "$PREFIX",
+            "match": "startswith",
+            "fields": [
+              4
             ]
           }
         ],
