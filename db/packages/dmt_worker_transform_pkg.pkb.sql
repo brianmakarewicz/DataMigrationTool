@@ -63,7 +63,6 @@
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_OWNER.DMT_WORKER_TFM_TBL (
-            TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -86,7 +85,6 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_WORKER_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
@@ -122,7 +120,12 @@
             FROM   DMT_OWNER.DMT_WORKER_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so TFM_SEQUENCE_ID (identity) is assigned in staging order.
+        -- The HDL generator emits sections ORDER BY TFM_SEQUENCE_ID, so this
+        -- makes the .dat line order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -179,7 +182,6 @@
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_OWNER.DMT_PERSON_NAME_TFM_TBL (
-            TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -209,7 +211,6 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_PERSON_NAME_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
@@ -252,7 +253,12 @@
             FROM   DMT_OWNER.DMT_PERSON_NAME_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so TFM_SEQUENCE_ID (identity) is assigned in staging order.
+        -- The HDL generator emits sections ORDER BY TFM_SEQUENCE_ID, so this
+        -- makes the .dat line order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -309,7 +315,6 @@
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_OWNER.DMT_PERSON_EMAIL_TFM_TBL (
-            TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -325,7 +330,6 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_PERSON_EMAIL_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
@@ -354,7 +358,12 @@
             FROM   DMT_OWNER.DMT_PERSON_EMAIL_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so TFM_SEQUENCE_ID (identity) is assigned in staging order.
+        -- The HDL generator emits sections ORDER BY TFM_SEQUENCE_ID, so this
+        -- makes the .dat line order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -411,7 +420,6 @@
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_OWNER.DMT_PERSON_PHONE_TFM_TBL (
-            TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -430,7 +438,6 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_PERSON_PHONE_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
@@ -462,7 +469,12 @@
             FROM   DMT_OWNER.DMT_PERSON_PHONE_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so TFM_SEQUENCE_ID (identity) is assigned in staging order.
+        -- The HDL generator emits sections ORDER BY TFM_SEQUENCE_ID, so this
+        -- makes the .dat line order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -519,7 +531,6 @@
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_OWNER.DMT_PERSON_ADDR_TFM_TBL (
-            TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -549,7 +560,6 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_PERSON_ADDR_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
@@ -592,7 +602,12 @@
             FROM   DMT_OWNER.DMT_PERSON_ADDR_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so TFM_SEQUENCE_ID (identity) is assigned in staging order.
+        -- The HDL generator emits sections ORDER BY TFM_SEQUENCE_ID, so this
+        -- makes the .dat line order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -649,7 +664,6 @@
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_OWNER.DMT_PERSON_NID_TFM_TBL (
-            TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -667,7 +681,6 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_PERSON_NID_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
@@ -698,7 +711,12 @@
             FROM   DMT_OWNER.DMT_PERSON_NID_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so TFM_SEQUENCE_ID (identity) is assigned in staging order.
+        -- The HDL generator emits sections ORDER BY TFM_SEQUENCE_ID, so this
+        -- makes the .dat line order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -755,7 +773,6 @@
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_OWNER.DMT_PERSON_LEGISL_TFM_TBL (
-            TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -780,7 +797,6 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_PERSON_LEGISL_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
@@ -818,7 +834,12 @@
             FROM   DMT_OWNER.DMT_PERSON_LEGISL_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        -- Deterministic identity assignment: order the INSERT..SELECT by the
+        -- STG PK so TFM_SEQUENCE_ID (identity) is assigned in staging order.
+        -- The HDL generator emits sections ORDER BY TFM_SEQUENCE_ID, so this
+        -- makes the .dat line order reproducible (byte-stable golden compare).
+        ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
 
