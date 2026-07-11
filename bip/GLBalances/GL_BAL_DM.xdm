@@ -10,8 +10,12 @@
   <dataSets>
     <dataSet name="gl_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- RECORD_KEY = the per-line RECON_KEY (prefix-stg_sequence_id) written to
+-- GL_INTERFACE.REFERENCE21, carried onto GL_JE_LINES.REFERENCE_1 by Journal Import
+-- (proven 2026-07-11; needs the source's "Import Journal References" flag = ON).
+-- Matching is per LINE on this key, so journals sharing a name never collide.
 SELECT
-    gi.reference1,
+    gi.reference21                       AS record_key,
     gi.status                            AS import_status,
     'INTERFACE'                          AS source_type,
     CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -21,18 +25,11 @@ WHERE  gi.load_request_id = :P_LOAD_REQUEST_ID
 
 UNION ALL
 
--- Tier 2: positively confirm journals in the GL_JE base tables for this run.
--- Isolated by GROUP_ID = run_id (set in transform, dmt_gl_transform_pkg) with the
--- child JournalImport id embedded in the batch name as a secondary match.
--- REFERENCE1 = batch name with Fusion's appended " Spreadsheet ..." suffix stripped.
--- Balance is the discriminator: DR=CR = SUCCESS (postable); DR<>CR = UNBALANCED
--- (imported but will not post -> reconciler marks FAILED).
--- NOTE: GL_JE_HEADERS.REQUEST_ID is NOT exposed on ApplicationDB_FSCM (ORA-00904),
--- so the run is keyed on GROUP_ID / batch-name, never request_id.
+-- Tier 2: one row per GL_JE_LINES line for this run (GROUP_ID = run_id), keyed on
+-- REFERENCE_1. Balance at the header discriminates: DR=CR = SUCCESS (postable);
+-- DR<>CR = UNBALANCED (every line of the journal will not post -> FAILED).
 SELECT
-    CASE WHEN INSTR(jb.name, ' Spreadsheet ') > 0
-         THEN SUBSTR(jb.name, 1, INSTR(jb.name, ' Spreadsheet ') - 1)
-         ELSE jb.name END                AS reference1,
+    jl.reference_1                       AS record_key,
     CASE WHEN jh.running_total_dr = jh.running_total_cr
          THEN 'SUCCESS' ELSE 'UNBALANCED' END  AS import_status,
     'BASE'                               AS source_type,
@@ -44,8 +41,8 @@ SELECT
     END                                  AS error_message
 FROM   gl_je_batches jb
 JOIN   gl_je_headers jh ON jh.je_batch_id = jb.je_batch_id
+JOIN   gl_je_lines   jl ON jl.je_header_id = jh.je_header_id
 WHERE  jb.group_id = :P_RUN_ID
-   OR  (:P_IMPORT_ESS_ID IS NOT NULL AND jb.name LIKE '%' || :P_IMPORT_ESS_ID || '%')
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -53,7 +50,7 @@ WHERE  jb.group_id = :P_RUN_ID
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
         <group name="G_1" label="G_1" source="gl_results">
-          <element name="REFERENCE1" value="REFERENCE1" dataType="xsd:string" tagName="REFERENCE1"/>
+          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
           <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
           <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
           <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>

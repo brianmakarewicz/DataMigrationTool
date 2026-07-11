@@ -57,6 +57,7 @@
             ATTRIBUTE6, ATTRIBUTE7, ATTRIBUTE8, ATTRIBUTE9, ATTRIBUTE10,
             ATTRIBUTE11, ATTRIBUTE12, ATTRIBUTE13, ATTRIBUTE14, ATTRIBUTE15,
             ATTRIBUTE16, ATTRIBUTE17, ATTRIBUTE18, ATTRIBUTE19, ATTRIBUTE20,
+            RECON_KEY,
             TFM_STATUS
         )
         SELECT
@@ -81,6 +82,10 @@
             s.ATTRIBUTE6, s.ATTRIBUTE7, s.ATTRIBUTE8, s.ATTRIBUTE9, s.ATTRIBUTE10,
             s.ATTRIBUTE11, s.ATTRIBUTE12, s.ATTRIBUTE13, s.ATTRIBUTE14, s.ATTRIBUTE15,
             s.ATTRIBUTE16, s.ATTRIBUTE17, s.ATTRIBUTE18, s.ATTRIBUTE19, s.ATTRIBUTE20,
+            -- Per-line reconciliation key, prefix-scoped and unique per source
+            -- line. Written to GL_INTERFACE.REFERENCE21 -> GL_JE_LINES.REFERENCE_1
+            -- by the generator; the reconciler matches base lines back on it.
+            l_prefix || '-' || s.STG_SEQUENCE_ID,
             'STAGED'
         FROM   DMT_OWNER.DMT_GL_INTERFACE_STG_TBL s
         WHERE  (

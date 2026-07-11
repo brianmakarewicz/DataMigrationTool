@@ -1,28 +1,29 @@
 -- ============================================================
--- GLBalances BIP Reconciliation Query (Two-Tier)
+-- GLBalances BIP Reconciliation Query (Two-Tier, per-line key)
 -- Data source: ApplicationDB_FSCM
 -- Parameters (Contract v1 — names must match what DMT_GL_RESULTS_PKG sends):
 --             :P_LOAD_REQUEST_ID = Load ESS request ID (LOAD_REQUEST_ID in GL_INTERFACE)
 --             :P_RUN_ID          = pipeline run id (= GL_JE_BATCHES.GROUP_ID, set in transform)
---             :P_IMPORT_ESS_ID   = Import ESS request ID (secondary base-table match)
+--             :P_IMPORT_ESS_ID   = Import ESS request ID (declared for Contract v1; unused here)
+--             :P_PREFIX          = run prefix (declared for Contract v1; unused here)
 --
--- Tier 1 (INTERFACE): Rows still in GL_INTERFACE after import.
---   GL journal import DELETES successfully imported rows from GL_INTERFACE.
---   Rows remaining here are errors/rejections.
---   No separate GL error table exists; reference10 is the error message column
---   populated by the import process.
+-- RECORD_KEY: the per-line reconciliation key (RECON_KEY = prefix-stg_sequence_id),
+--   written by the generator to GL_INTERFACE.REFERENCE21, which Journal Import
+--   carries onto GL_JE_LINES.REFERENCE_1 (proven empirically 2026-07-11; requires
+--   the journal source's "Import Journal References" flag, confirmed ON). Matching
+--   is per LINE on this key, so two source journals that share a name never
+--   collide (the reason batch-name keying was retired here).
 --
--- Tier 2 (BASE): Journal entries created in GL_JE_HEADERS/GL_JE_LINES.
---   Linked via GL_JE_HEADERS.REQUEST_ID = Import ESS job ID.
---   REFERENCE_1 in GL_JE_LINES maps back to REFERENCE1 in our TFM table.
+-- Tier 1 (INTERFACE): rows still in GL_INTERFACE after import are errors/rejections
+--   (import DELETEs successfully-imported rows). REFERENCE10 is the import error
+--   message; REFERENCE21 carries our per-line key.
 --
--- AD#19 compliance:
---   reference10 IS the real error message — no CAST(NULL) placeholder.
---   No rejection table exists (verified: no GL%ERR% tables in ALL_TABLES).
---   Remaining interface rows after import = FAILED by definition.
+-- Tier 2 (BASE): journal lines created in GL_JE_LINES. One row per line, keyed on
+--   REFERENCE_1. Balance (DR=CR) at the header discriminates postable vs not; every
+--   line of an unbalanced journal fails (the whole journal will not post).
 -- ============================================================
 SELECT
-    gi.reference1,
+    gi.reference21                       AS record_key,
     gi.status                            AS import_status,
     'INTERFACE'                          AS source_type,
     CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -32,14 +33,8 @@ WHERE  gi.load_request_id = :P_LOAD_REQUEST_ID
 
 UNION ALL
 
--- Tier 2 (BASE): positively confirm journals in GL_JE base tables.
--- Keyed on GROUP_ID = run_id (set in transform) — NOT request_id, which is not
--- exposed on ApplicationDB_FSCM. Balance (DR=CR) discriminates postable vs not.
--- gl_je_lines.reference_1 is NULL, so REFERENCE1 is recovered from the batch name.
 SELECT
-    CASE WHEN INSTR(jb.name, ' Spreadsheet ') > 0
-         THEN SUBSTR(jb.name, 1, INSTR(jb.name, ' Spreadsheet ') - 1)
-         ELSE jb.name END                AS reference1,
+    jl.reference_1                       AS record_key,
     CASE WHEN jh.running_total_dr = jh.running_total_cr
          THEN 'SUCCESS' ELSE 'UNBALANCED' END  AS import_status,
     'BASE'                               AS source_type,
@@ -51,5 +46,5 @@ SELECT
     END                                  AS error_message
 FROM   gl_je_batches jb
 JOIN   gl_je_headers jh ON jh.je_batch_id = jb.je_batch_id
+JOIN   gl_je_lines   jl ON jl.je_header_id = jh.je_header_id
 WHERE  jb.group_id = :P_RUN_ID
-   OR  (:P_IMPORT_ESS_ID IS NOT NULL AND jb.name LIKE '%' || :P_IMPORT_ESS_ID || '%')
