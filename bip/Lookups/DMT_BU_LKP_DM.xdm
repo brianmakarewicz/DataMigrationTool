@@ -10,13 +10,17 @@
   <dataSets>
     <dataSet name="bu_lookups" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT 'BU'              AS LOOKUP_TYPE,
-       bu.bu_name        AS LOOKUP_CODE,
-       TO_CHAR(bu.bu_id) AS LOOKUP_VALUE,
-       TO_CHAR(bu.primary_ledger_id) AS LOOKUP_VALUE2
+SELECT 'BU_NAME_TO_BU_ID' AS LOOKUP_TYPE,
+       bu.bu_name         AS LOOKUP_VALUE,
+       TO_CHAR(bu.bu_id)  AS RETURN_VALUE
 FROM   fun_all_business_units_v bu
 WHERE  bu.status = 'A'
-ORDER BY bu.bu_name
+UNION ALL
+SELECT 'BU_NAME_TO_PRIMARY_LEDGER_ID',
+       bu.bu_name,
+       TO_CHAR(bu.primary_ledger_id)
+FROM   fun_all_business_units_v bu
+WHERE  bu.status = 'A'
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -25,9 +29,8 @@ ORDER BY bu.bu_name
       <dataStructure tagName="DATA_DS">
         <group name="G_LKP" label="G_LKP" source="bu_lookups">
           <element name="LOOKUP_TYPE" value="LOOKUP_TYPE" dataType="xsd:string" tagName="LOOKUP_TYPE"/>
-          <element name="LOOKUP_CODE" value="LOOKUP_CODE" dataType="xsd:string" tagName="LOOKUP_CODE"/>
           <element name="LOOKUP_VALUE" value="LOOKUP_VALUE" dataType="xsd:string" tagName="LOOKUP_VALUE"/>
-          <element name="LOOKUP_VALUE2" value="LOOKUP_VALUE2" dataType="xsd:string" tagName="LOOKUP_VALUE2"/>
+          <element name="RETURN_VALUE" value="RETURN_VALUE" dataType="xsd:string" tagName="RETURN_VALUE"/>
         </group>
       </dataStructure>
     </nodeList>

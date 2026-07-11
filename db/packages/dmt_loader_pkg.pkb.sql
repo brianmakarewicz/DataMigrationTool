@@ -1271,16 +1271,16 @@
             -- 4=RequisitioningBuId(req), 5=GroupBy(NONE,req),
             -- 6=NextReqNumber(opt), 7=InitiateApproval(NO,req), 8=ErrorLevel(ALL,req)
             DECLARE
-                l_req_bu_id VARCHAR2(30);
+                l_req_bu_id   VARCHAR2(30);
+                l_req_bu_name VARCHAR2(240);
             BEGIN
-                -- Look up BU ID from the first STG header's REQ_BU_NAME.
+                -- BU name from the first STG header this run will process, then
+                -- resolve its id through the one common lookup accessor.
                 -- In ALL mode, rows may be in any status (no reset -- mode-driven
                 -- selection, Overview run-mode table), so widen the status filter.
                 -- Scenario filter included to match the rows this run will actually process.
-                SELECT lkp.LOOKUP_VALUE INTO l_req_bu_id
+                SELECT h.REQ_BU_NAME INTO l_req_bu_name
                 FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL h
-                JOIN   DMT_OWNER.DMT_LOOKUP_TBL lkp
-                    ON lkp.LOOKUP_TYPE = 'BU' AND lkp.LOOKUP_CODE = h.REQ_BU_NAME
                 WHERE  (
                     (p_run_mode IN ('NEW', 'FAILED') AND h.STG_STATUS IN ('NEW', 'RETRY'))
                     OR (p_run_mode = 'ALL')
@@ -1288,6 +1288,8 @@
                 AND    (p_scenario_id IS NULL
                         OR h.SCENARIO_ID = p_scenario_id)
                 AND    ROWNUM = 1;
+
+                l_req_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', l_req_bu_name);
 
                 l_param_list := '#NULL,'                     -- 1: ImportSource (optional — #NULL = all sources)
                     || TO_CHAR(p_run_id) || ','      -- 2: BatchId
@@ -1579,17 +1581,11 @@
                         CONTINUE;
                     END IF;
 
-                    BEGIN
-                        SELECT LOOKUP_VALUE INTO l_bu_id
-                        FROM   DMT_OWNER.DMT_LOOKUP_TBL
-                        WHERE  LOOKUP_TYPE = 'BU' AND LOOKUP_CODE = bu_rec.PRC_BU_NAME AND ROWNUM = 1;
-                        l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
-                        l_req_bu_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_REQ_BU_ID');
-                    EXCEPTION
-                        WHEN NO_DATA_FOUND THEN
-                            RAISE_APPLICATION_ERROR(-20044,
-                                'No row in DMT_LOOKUP_TBL for BU = ''' || bu_rec.PRC_BU_NAME || '''. Run REFRESH_LOOKUPS before running POs.');
-                    END;
+                    -- BU id via the one common lookup accessor (raises -20040
+                    -- with a clear halt message if the BU is not resolvable).
+                    l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
+                    l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
+                    l_req_bu_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_REQ_BU_ID');
 
                     l_bu_param := l_bu_id || ',' || l_buyer_id || ',' || 'SUBMIT' || ',' ||
                                   l_req_bu_id || ',,' || 'N' || ',,' || 'N' || ',' ||
@@ -1814,14 +1810,8 @@
                         CONTINUE;
                     END IF;
 
-                    BEGIN
-                        SELECT LOOKUP_VALUE INTO l_bu_id FROM DMT_OWNER.DMT_LOOKUP_TBL
-                        WHERE LOOKUP_TYPE='BU' AND LOOKUP_CODE=bu_rec.PRC_BU_NAME AND ROWNUM=1;
-                        l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
-                    EXCEPTION
-                        WHEN NO_DATA_FOUND THEN
-                            RAISE_APPLICATION_ERROR(-20044, 'No BU lookup for ''' || bu_rec.PRC_BU_NAME || '''. Run REFRESH_LOOKUPS.');
-                    END;
+                    l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
+                    l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
 
                     -- ImportBPAJob: 8 args
                     l_bu_param := l_bu_id || ',' || l_buyer_id || ',N,SUBMIT,,,N,' || l_bu_id || '_' || TO_CHAR(p_run_id);
@@ -1900,14 +1890,8 @@
                         CONTINUE;
                     END IF;
 
-                    BEGIN
-                        SELECT LOOKUP_VALUE INTO l_bu_id FROM DMT_OWNER.DMT_LOOKUP_TBL
-                        WHERE LOOKUP_TYPE='BU' AND LOOKUP_CODE=bu_rec.PRC_BU_NAME AND ROWNUM=1;
-                        l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
-                    EXCEPTION
-                        WHEN NO_DATA_FOUND THEN
-                            RAISE_APPLICATION_ERROR(-20044, 'No BU lookup for ''' || bu_rec.PRC_BU_NAME || '''. Run REFRESH_LOOKUPS.');
-                    END;
+                    l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
+                    l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
 
                     -- ImportCPAJob: 7 args
                     l_bu_param := l_bu_id || ',' || l_buyer_id || ',SUBMIT,,,N,' || l_bu_id || '_' || TO_CHAR(p_run_id);
@@ -1987,8 +1971,12 @@
                         l_ap_ledger VARCHAR2(50);
                         l_ap_source VARCHAR2(100);
                     BEGIN
-                        SELECT LOOKUP_VALUE, LOOKUP_VALUE2 INTO l_ap_bu_id, l_ap_ledger
-                        FROM DMT_OWNER.DMT_LOOKUP_TBL WHERE LOOKUP_TYPE='BU' AND LOOKUP_CODE=ou_rec.OPERATING_UNIT AND ROWNUM=1;
+                        -- BU id + its primary ledger via the common lookup. Every active BU
+                        -- has a BU_NAME_TO_PRIMARY_LEDGER_ID row; it resolves to NULL when the
+                        -- BU has no primary ledger, so the NVL(...,'#NULL') below still applies
+                        -- (GET_LOOKUP raises only when the BU itself is unknown).
+                        l_ap_bu_id  := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', ou_rec.OPERATING_UNIT);
+                        l_ap_ledger := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_PRIMARY_LEDGER_ID', ou_rec.OPERATING_UNIT);
                         SELECT SOURCE INTO l_ap_source FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
                         WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT AND TFM_STATUS='GENERATED' AND ROWNUM=1;
                         l_ou_param := ',' || l_ap_bu_id || ',N,' || TO_CHAR(SYSDATE,'YYYY-MM-DD') ||
@@ -2088,8 +2076,10 @@
                         l_1099_ledger VARCHAR2(50);
                         l_1099_source VARCHAR2(100);
                     BEGIN
-                        SELECT LOOKUP_VALUE, LOOKUP_VALUE2 INTO l_1099_bu_id, l_1099_ledger
-                        FROM DMT_OWNER.DMT_LOOKUP_TBL WHERE LOOKUP_TYPE='BU' AND LOOKUP_CODE=ou_rec.OPERATING_UNIT AND ROWNUM=1;
+                        -- See the APInvoices note above: the primary-ledger lookup resolves
+                        -- to NULL for a BU with no primary ledger, so NVL(...,'#NULL') applies.
+                        l_1099_bu_id  := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', ou_rec.OPERATING_UNIT);
+                        l_1099_ledger := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_PRIMARY_LEDGER_ID', ou_rec.OPERATING_UNIT);
                         SELECT SOURCE INTO l_1099_source FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
                         WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT
                         AND TFM_STATUS='GENERATED' AND INVOICE_TYPE_LOOKUP_CODE LIKE '%1099%' AND ROWNUM=1;
@@ -2298,18 +2288,16 @@
                         CONTINUE;
                     END IF;
 
-                    -- Look up Ledger ID + Data Access Set ID from DMT_LOOKUP_TBL
+                    -- Ledger id + data-access-set id via the one common lookup
+                    -- accessor. The canonical LEDGER_NAME_TO_LEDGER_ID return is
+                    -- ledger_id~access_set_id (the reserved ~ separator);
+                    -- GET_LOOKUP raises -20040 with a clear halt if unresolvable.
+                    DECLARE
+                        l_ledger_lkp VARCHAR2(500);
                     BEGIN
-                        SELECT LOOKUP_VALUE, LOOKUP_VALUE2
-                        INTO   l_gl_ledger_id, l_gl_das_id
-                        FROM   DMT_OWNER.DMT_LOOKUP_TBL
-                        WHERE  LOOKUP_TYPE = 'LEDGER' AND LOOKUP_CODE = led_rec.LEDGER_NAME
-                        AND    ROWNUM = 1;
-                    EXCEPTION
-                        WHEN NO_DATA_FOUND THEN
-                            RAISE_APPLICATION_ERROR(-20040,
-                                'GLBalances: No row in DMT_LOOKUP_TBL for LEDGER = ''' ||
-                                led_rec.LEDGER_NAME || '''. Run REFRESH_LOOKUPS.');
+                        l_ledger_lkp   := DMT_UTIL_PKG.GET_LOOKUP('LEDGER_NAME_TO_LEDGER_ID', led_rec.LEDGER_NAME);
+                        l_gl_ledger_id := SUBSTR(l_ledger_lkp, 1, INSTR(l_ledger_lkp, '~') - 1);
+                        l_gl_das_id    := SUBSTR(l_ledger_lkp, INSTR(l_ledger_lkp, '~') + 1);
                     END;
 
                     -- Get source from TFM data — not hardcoded 'Spreadsheet'

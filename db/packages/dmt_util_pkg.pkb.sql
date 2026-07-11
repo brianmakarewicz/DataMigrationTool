@@ -1027,11 +1027,13 @@
     END GET_DEEP_LINK;
 
     -- --------------------------------------------------------
-    -- REFRESH_LOOKUPS (generic)
-    -- Runs all registered lookup BIP DMs via DMT_BIP_DEPLOY_PKG
-    -- and MERGEs results into DMT_LOOKUP_TBL.
-    -- Each DM must return: LOOKUP_TYPE, LOOKUP_CODE,
-    -- LOOKUP_VALUE, LOOKUP_VALUE2 in a G_LKP group.
+    -- REFRESH_LOOKUPS -- full refresh of the canonical lookup types in
+    -- DMT_LOOKUP_TBL from Fusion (design section 7 canonical lookup registry).
+    -- Each DM returns LOOKUP_TYPE / LOOKUP_VALUE / RETURN_VALUE in a G_LKP
+    -- group; the managed types are deleted then re-inserted so a value dropped
+    -- in Fusion never lingers. Types produced: BU_NAME_TO_BU_ID,
+    -- BU_NAME_TO_PRIMARY_LEDGER_ID, LEDGER_NAME_TO_LEDGER_ID
+    -- (RETURN_VALUE = ledger_id~access_set_id).
     -- --------------------------------------------------------
     PROCEDURE REFRESH_LOOKUPS IS
         C_PKG  CONSTANT VARCHAR2(30) := 'DMT_UTIL_PKG';
@@ -1044,49 +1046,60 @@
         TYPE t_dm_list IS TABLE OF t_dm_rec;
         l_dms t_dm_list := t_dm_list();
 
-        l_resp     CLOB;
-        l_xml       XMLTYPE;
-        l_merged    NUMBER;
-        l_total     NUMBER := 0;
+        l_resp   CLOB;
+        l_xml    XMLTYPE;
+        l_loaded NUMBER;
+        l_total  NUMBER := 0;
 
-        -- Standard BU lookup DM
+        -- BU DM: emits BOTH canonical BU types -- one source business unit
+        -- becomes two typed rows so its id and its primary-ledger id are each
+        -- resolvable by name.
         C_BU_XDM CONSTANT CLOB :=
 '<?xml version="1.0" encoding="utf-8"?>'||CHR(10)||
 '<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1" defaultDataSourceRef="ApplicationDB_FSCM">'||CHR(10)||
 '<dataProperties><property name="include_parameters" value="true"/><property name="include_null_Element" value="true"/><property name="include_rowsettag" value="false"/><property name="xml_tag_case" value="upper"/></dataProperties>'||CHR(10)||
 '<dataSets><dataSet name="bu_lookups" type="complex"><sql dataSourceRef="ApplicationDB_FSCM"><![CDATA['||
-'SELECT ''BU'' AS LOOKUP_TYPE, bu.bu_name AS LOOKUP_CODE, TO_CHAR(bu.bu_id) AS LOOKUP_VALUE, TO_CHAR(bu.primary_ledger_id) AS LOOKUP_VALUE2 FROM fun_all_business_units_v bu WHERE bu.status = ''A'' ORDER BY bu.bu_name'||
+'SELECT ''BU_NAME_TO_BU_ID'' AS LOOKUP_TYPE, bu.bu_name AS LOOKUP_VALUE, TO_CHAR(bu.bu_id) AS RETURN_VALUE FROM fun_all_business_units_v bu WHERE bu.status = ''A'' '||
+'UNION ALL '||
+'SELECT ''BU_NAME_TO_PRIMARY_LEDGER_ID'', bu.bu_name, TO_CHAR(bu.primary_ledger_id) FROM fun_all_business_units_v bu WHERE bu.status = ''A'''||
 ']]></sql></dataSet></dataSets>'||CHR(10)||
 '<output rootName="DATA_DS" uniqueRowName="false"><nodeList name="data-structure"><dataStructure tagName="DATA_DS"><group name="G_LKP" label="G_LKP" source="bu_lookups">'||
 '<element name="LOOKUP_TYPE" value="LOOKUP_TYPE" dataType="xsd:string" tagName="LOOKUP_TYPE"/>'||
-'<element name="LOOKUP_CODE" value="LOOKUP_CODE" dataType="xsd:string" tagName="LOOKUP_CODE"/>'||
 '<element name="LOOKUP_VALUE" value="LOOKUP_VALUE" dataType="xsd:string" tagName="LOOKUP_VALUE"/>'||
-'<element name="LOOKUP_VALUE2" value="LOOKUP_VALUE2" dataType="xsd:string" tagName="LOOKUP_VALUE2"/>'||
+'<element name="RETURN_VALUE" value="RETURN_VALUE" dataType="xsd:string" tagName="RETURN_VALUE"/>'||
 '</group></dataStructure></nodeList></output><eventTriggers/><lexicals/><valueSets/><bursting/></dataModel>';
 
-        -- Standard Ledger lookup DM
+        -- Ledger DM: the ledger id and its auto-created data-access-set id
+        -- always travel together, so they share one row joined with ~.
         C_LEDGER_XDM CONSTANT CLOB :=
 '<?xml version="1.0" encoding="utf-8"?>'||CHR(10)||
 '<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1" defaultDataSourceRef="ApplicationDB_FSCM">'||CHR(10)||
 '<dataProperties><property name="include_parameters" value="true"/><property name="include_null_Element" value="true"/><property name="include_rowsettag" value="false"/><property name="xml_tag_case" value="upper"/></dataProperties>'||CHR(10)||
 '<dataSets><dataSet name="ledger_lookups" type="complex"><sql dataSourceRef="ApplicationDB_FSCM"><![CDATA['||
-'SELECT ''LEDGER'' AS LOOKUP_TYPE, gl.name AS LOOKUP_CODE, TO_CHAR(gl.ledger_id) AS LOOKUP_VALUE, '||
-'TO_CHAR((SELECT MIN(gas.access_set_id) FROM gl_access_sets gas WHERE gas.default_ledger_id = gl.ledger_id AND gas.automatically_created_flag = ''Y'')) AS LOOKUP_VALUE2 '||
+'SELECT ''LEDGER_NAME_TO_LEDGER_ID'' AS LOOKUP_TYPE, gl.name AS LOOKUP_VALUE, '||
+'TO_CHAR(gl.ledger_id) || ''~'' || TO_CHAR((SELECT MIN(gas.access_set_id) FROM gl_access_sets gas WHERE gas.default_ledger_id = gl.ledger_id AND gas.automatically_created_flag = ''Y'')) AS RETURN_VALUE '||
 'FROM gl_ledgers gl WHERE gl.object_type_code = ''L'' ORDER BY gl.name'||
 ']]></sql></dataSet></dataSets>'||CHR(10)||
 '<output rootName="DATA_DS" uniqueRowName="false"><nodeList name="data-structure"><dataStructure tagName="DATA_DS"><group name="G_LKP" label="G_LKP" source="ledger_lookups">'||
 '<element name="LOOKUP_TYPE" value="LOOKUP_TYPE" dataType="xsd:string" tagName="LOOKUP_TYPE"/>'||
-'<element name="LOOKUP_CODE" value="LOOKUP_CODE" dataType="xsd:string" tagName="LOOKUP_CODE"/>'||
 '<element name="LOOKUP_VALUE" value="LOOKUP_VALUE" dataType="xsd:string" tagName="LOOKUP_VALUE"/>'||
-'<element name="LOOKUP_VALUE2" value="LOOKUP_VALUE2" dataType="xsd:string" tagName="LOOKUP_VALUE2"/>'||
+'<element name="RETURN_VALUE" value="RETURN_VALUE" dataType="xsd:string" tagName="RETURN_VALUE"/>'||
 '</group></dataStructure></nodeList></output><eventTriggers/><lexicals/><valueSets/><bursting/></dataModel>';
 
     BEGIN
         LOG(p_message => C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
-        -- Register all lookup DMs
+        -- One-time cleanup: remove the retired pre-canonical types. Safe --
+        -- they are never reinserted and nothing reads them, so clearing them
+        -- cannot leave a needed type empty. The canonical types are replaced
+        -- per-DM, atomically, only after that DM returns rows (below) -- an
+        -- upfront delete of the canonical types would leave a type empty and
+        -- committed if its DM later returned nothing.
+        DELETE FROM DMT_OWNER.DMT_LOOKUP_TBL WHERE LOOKUP_TYPE IN ('BU','LEDGER');
+        COMMIT;
+
         l_dms.EXTEND(2);
-        l_dms(1).dm_name := 'DMT_BU_LKP_DM';     l_dms(1).xdm_xml := C_BU_XDM;
+        l_dms(1).dm_name := 'DMT_BU_LKP_DM';      l_dms(1).xdm_xml := C_BU_XDM;
         l_dms(2).dm_name := 'DMT_LEDGER_LKP_DM';  l_dms(2).xdm_xml := C_LEDGER_XDM;
 
         FOR i IN 1..l_dms.COUNT LOOP
@@ -1098,48 +1111,53 @@
                 p_xdm_xml  => l_dms(i).xdm_xml
             );
 
-            -- Extract + decode reportBytes via the shared any-size extractor
-            -- (was another inline whitespace-unsafe 4-aligned chunk decoder —
-            -- the same >32K corruption bug family BASE64_DECODE_CLOB fixes)
+            -- Extract + decode reportBytes via the shared any-size extractor.
             l_xml := BIP_REPORT_XML(l_resp);
+
+            -- Fail closed: an empty/absent response for a lookup DM is NOT a
+            -- valid outcome -- a real Fusion instance always has active business
+            -- units and ledgers. Raise so REFRESH_LOOKUPS (and the preflight that
+            -- calls it) halt, rather than silently leaving a lookup type empty
+            -- and failing later at the first GET_LOOKUP.
             IF l_xml IS NULL THEN
-                LOG(p_message => C_PROC || ': No reportBytes for ' || l_dms(i).dm_name || '. Skipping.',
-                    p_log_type => C_LOG_WARN, p_package => C_PKG, p_procedure => C_PROC);
-                CONTINUE;
+                RAISE_APPLICATION_ERROR(-20041,
+                    'REFRESH_LOOKUPS: lookup data model ' || l_dms(i).dm_name ||
+                    ' returned no rows. Refusing to leave lookups incomplete.');
             END IF;
 
-            -- MERGE into DMT_LOOKUP_TBL (dedup by type+code+value)
-            MERGE INTO DMT_OWNER.DMT_LOOKUP_TBL tgt
-            USING (
-                SELECT lookup_type, lookup_code, lookup_value, lookup_value2
-                FROM (
-                    SELECT x.lookup_type, x.lookup_code, x.lookup_value, x.lookup_value2,
-                           ROW_NUMBER() OVER (PARTITION BY x.lookup_type, x.lookup_code, x.lookup_value
-                                              ORDER BY x.lookup_code) AS rn
-                    FROM XMLTABLE('/DATA_DS/G_LKP' PASSING l_xml
-                        COLUMNS
-                            lookup_type  VARCHAR2(100) PATH 'LOOKUP_TYPE',
-                            lookup_code  VARCHAR2(500) PATH 'LOOKUP_CODE',
-                            lookup_value VARCHAR2(500) PATH 'LOOKUP_VALUE',
-                            lookup_value2 VARCHAR2(500) PATH 'LOOKUP_VALUE2'
-                    ) x
-                    WHERE x.lookup_code IS NOT NULL
-                ) WHERE rn = 1
-            ) src ON (tgt.LOOKUP_TYPE = src.lookup_type
-                  AND tgt.LOOKUP_CODE = src.lookup_code
-                  AND tgt.LOOKUP_VALUE = src.lookup_value)
-            WHEN MATCHED THEN
-                UPDATE SET tgt.LOOKUP_VALUE2 = src.lookup_value2,
-                           tgt.LAST_UPDATED_DATE = SYSDATE
-            WHEN NOT MATCHED THEN
-                INSERT (LOOKUP_TYPE, LOOKUP_CODE, LOOKUP_VALUE, LOOKUP_VALUE2)
-                VALUES (src.lookup_type, src.lookup_code, src.lookup_value, src.lookup_value2);
+            -- Atomic per-DM replace: delete ONLY the types this DM produces, then
+            -- insert this refresh's rows. A failure on one DM can never wipe
+            -- another DM's good rows (which an upfront delete-all could).
+            DELETE FROM DMT_OWNER.DMT_LOOKUP_TBL
+            WHERE LOOKUP_TYPE IN (
+                SELECT DISTINCT x.lookup_type
+                FROM XMLTABLE('/DATA_DS/G_LKP' PASSING l_xml
+                    COLUMNS lookup_type VARCHAR2(100) PATH 'LOOKUP_TYPE') x
+                WHERE x.lookup_type IS NOT NULL);
 
-            l_merged := SQL%ROWCOUNT;
-            l_total := l_total + l_merged;
+            -- Insert the canonical rows. One row per (LOOKUP_TYPE, LOOKUP_VALUE)
+            -- -- ROW_NUMBER de-dups defensively so a repeated source name can
+            -- never violate the unique key.
+            INSERT INTO DMT_OWNER.DMT_LOOKUP_TBL (LOOKUP_TYPE, LOOKUP_VALUE, RETURN_VALUE)
+            SELECT lookup_type, lookup_value, return_value
+            FROM (
+                SELECT x.lookup_type, x.lookup_value, x.return_value,
+                       ROW_NUMBER() OVER (PARTITION BY x.lookup_type, x.lookup_value
+                                          ORDER BY x.return_value) AS rn
+                FROM XMLTABLE('/DATA_DS/G_LKP' PASSING l_xml
+                    COLUMNS
+                        lookup_type  VARCHAR2(100) PATH 'LOOKUP_TYPE',
+                        lookup_value VARCHAR2(500) PATH 'LOOKUP_VALUE',
+                        return_value VARCHAR2(500) PATH 'RETURN_VALUE'
+                ) x
+                WHERE x.lookup_value IS NOT NULL
+            ) WHERE rn = 1;
+
+            l_loaded := SQL%ROWCOUNT;
+            l_total := l_total + l_loaded;
             COMMIT;
 
-            LOG(p_message => C_PROC || ': ' || l_dms(i).dm_name || ' complete. ' || l_merged || ' rows merged.',
+            LOG(p_message => C_PROC || ': ' || l_dms(i).dm_name || ' complete. ' || l_loaded || ' rows loaded.',
                 p_package => C_PKG, p_procedure => C_PROC);
 
             IF l_resp IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_resp) = 1 THEN
@@ -1164,6 +1182,36 @@
     BEGIN
         REFRESH_LOOKUPS;
     END REFRESH_BU_LOOKUPS;
+
+    -- --------------------------------------------------------
+    -- GET_LOOKUP -- resolve one canonical lookup (the ONE accessor).
+    -- Raises -20040 (a single clear halt-the-run error) when the row is
+    -- missing or not unique; signals failure ONLY by raising (section-7
+    -- procedures-only contract, read-function carve-out).
+    -- --------------------------------------------------------
+    FUNCTION GET_LOOKUP (
+        p_type  IN VARCHAR2,
+        p_value IN VARCHAR2
+    ) RETURN VARCHAR2 IS
+        l_return VARCHAR2(500);
+    BEGIN
+        SELECT RETURN_VALUE
+        INTO   l_return
+        FROM   DMT_OWNER.DMT_LOOKUP_TBL
+        WHERE  LOOKUP_TYPE = p_type
+          AND  LOOKUP_VALUE = p_value;
+        RETURN l_return;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20040,
+                'No row in DMT_LOOKUP_TBL for LOOKUP_TYPE=''' || p_type ||
+                ''', LOOKUP_VALUE=''' || p_value || '''. Run halted; refresh lookups '
+                || '(REFRESH_LOOKUPS runs at pipeline preflight) or check the source value.');
+        WHEN TOO_MANY_ROWS THEN
+            RAISE_APPLICATION_ERROR(-20040,
+                'Multiple rows in DMT_LOOKUP_TBL for LOOKUP_TYPE=''' || p_type ||
+                ''', LOOKUP_VALUE=''' || p_value || '''. A lookup must resolve to exactly one value.');
+    END GET_LOOKUP;
 
     -- --------------------------------------------------------
     -- VERIFY_CREDENTIAL -- one authenticated probe, 401 => bad.

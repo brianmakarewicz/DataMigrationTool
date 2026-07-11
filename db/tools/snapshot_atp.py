@@ -17,7 +17,6 @@ SEED_TABLES = [
     "DMT_BIP_REPORT_TBL",
     "DMT_ERP_INTERFACE_OPTIONS_TBL",
     "DMT_REST_LOOKUP_TBL",
-    "DMT_BU_LOOKUP_TBL",
     "DMT_CONFIG_TBL",
 ]
 # DMT_CONFIG_TBL values masked when key matches this
