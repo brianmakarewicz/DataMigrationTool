@@ -1061,7 +1061,7 @@
 '<dataSets><dataSet name="bu_lookups" type="complex"><sql dataSourceRef="ApplicationDB_FSCM"><![CDATA['||
 'SELECT ''BU_NAME_TO_BU_ID'' AS LOOKUP_TYPE, bu.bu_name AS LOOKUP_VALUE, TO_CHAR(bu.bu_id) AS RETURN_VALUE FROM fun_all_business_units_v bu WHERE bu.status = ''A'' '||
 'UNION ALL '||
-'SELECT ''BU_NAME_TO_PRIMARY_LEDGER_ID'', bu.bu_name, TO_CHAR(bu.primary_ledger_id) FROM fun_all_business_units_v bu WHERE bu.status = ''A'' AND bu.primary_ledger_id IS NOT NULL'||
+'SELECT ''BU_NAME_TO_PRIMARY_LEDGER_ID'', bu.bu_name, TO_CHAR(bu.primary_ledger_id) FROM fun_all_business_units_v bu WHERE bu.status = ''A'''||
 ']]></sql></dataSet></dataSets>'||CHR(10)||
 '<output rootName="DATA_DS" uniqueRowName="false"><nodeList name="data-structure"><dataStructure tagName="DATA_DS"><group name="G_LKP" label="G_LKP" source="bu_lookups">'||
 '<element name="LOOKUP_TYPE" value="LOOKUP_TYPE" dataType="xsd:string" tagName="LOOKUP_TYPE"/>'||
@@ -1089,12 +1089,13 @@
     BEGIN
         LOG(p_message => C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
-        -- Full refresh: clear the managed canonical types (and the retired
-        -- legacy 'BU'/'LEDGER' types from the pre-canonical shape) so a value
-        -- dropped in Fusion never lingers here.
-        DELETE FROM DMT_OWNER.DMT_LOOKUP_TBL
-        WHERE LOOKUP_TYPE IN ('BU_NAME_TO_BU_ID','BU_NAME_TO_PRIMARY_LEDGER_ID',
-                              'LEDGER_NAME_TO_LEDGER_ID','BU','LEDGER');
+        -- One-time cleanup: remove the retired pre-canonical types. Safe --
+        -- they are never reinserted and nothing reads them, so clearing them
+        -- cannot leave a needed type empty. The canonical types are replaced
+        -- per-DM, atomically, only after that DM returns rows (below) -- an
+        -- upfront delete of the canonical types would leave a type empty and
+        -- committed if its DM later returned nothing.
+        DELETE FROM DMT_OWNER.DMT_LOOKUP_TBL WHERE LOOKUP_TYPE IN ('BU','LEDGER');
         COMMIT;
 
         l_dms.EXTEND(2);
@@ -1112,11 +1113,27 @@
 
             -- Extract + decode reportBytes via the shared any-size extractor.
             l_xml := BIP_REPORT_XML(l_resp);
+
+            -- Fail closed: an empty/absent response for a lookup DM is NOT a
+            -- valid outcome -- a real Fusion instance always has active business
+            -- units and ledgers. Raise so REFRESH_LOOKUPS (and the preflight that
+            -- calls it) halt, rather than silently leaving a lookup type empty
+            -- and failing later at the first GET_LOOKUP.
             IF l_xml IS NULL THEN
-                LOG(p_message => C_PROC || ': No reportBytes for ' || l_dms(i).dm_name || '. Skipping.',
-                    p_log_type => C_LOG_WARN, p_package => C_PKG, p_procedure => C_PROC);
-                CONTINUE;
+                RAISE_APPLICATION_ERROR(-20041,
+                    'REFRESH_LOOKUPS: lookup data model ' || l_dms(i).dm_name ||
+                    ' returned no rows. Refusing to leave lookups incomplete.');
             END IF;
+
+            -- Atomic per-DM replace: delete ONLY the types this DM produces, then
+            -- insert this refresh's rows. A failure on one DM can never wipe
+            -- another DM's good rows (which an upfront delete-all could).
+            DELETE FROM DMT_OWNER.DMT_LOOKUP_TBL
+            WHERE LOOKUP_TYPE IN (
+                SELECT DISTINCT x.lookup_type
+                FROM XMLTABLE('/DATA_DS/G_LKP' PASSING l_xml
+                    COLUMNS lookup_type VARCHAR2(100) PATH 'LOOKUP_TYPE') x
+                WHERE x.lookup_type IS NOT NULL);
 
             -- Insert the canonical rows. One row per (LOOKUP_TYPE, LOOKUP_VALUE)
             -- -- ROW_NUMBER de-dups defensively so a repeated source name can

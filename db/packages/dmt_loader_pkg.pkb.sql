@@ -1971,6 +1971,10 @@
                         l_ap_ledger VARCHAR2(50);
                         l_ap_source VARCHAR2(100);
                     BEGIN
+                        -- BU id + its primary ledger via the common lookup. Every active BU
+                        -- has a BU_NAME_TO_PRIMARY_LEDGER_ID row; it resolves to NULL when the
+                        -- BU has no primary ledger, so the NVL(...,'#NULL') below still applies
+                        -- (GET_LOOKUP raises only when the BU itself is unknown).
                         l_ap_bu_id  := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', ou_rec.OPERATING_UNIT);
                         l_ap_ledger := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_PRIMARY_LEDGER_ID', ou_rec.OPERATING_UNIT);
                         SELECT SOURCE INTO l_ap_source FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
@@ -2072,6 +2076,8 @@
                         l_1099_ledger VARCHAR2(50);
                         l_1099_source VARCHAR2(100);
                     BEGIN
+                        -- See the APInvoices note above: the primary-ledger lookup resolves
+                        -- to NULL for a BU with no primary ledger, so NVL(...,'#NULL') applies.
                         l_1099_bu_id  := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', ou_rec.OPERATING_UNIT);
                         l_1099_ledger := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_PRIMARY_LEDGER_ID', ou_rec.OPERATING_UNIT);
                         SELECT SOURCE INTO l_1099_source FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
