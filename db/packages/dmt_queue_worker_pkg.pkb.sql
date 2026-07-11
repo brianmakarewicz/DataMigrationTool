@@ -866,5 +866,72 @@ AS
             END;
     END POLL_ONE;
 
+    -- ============================================================
+    -- fail_run_preflight -- halt a run whose preflight did not pass:
+    -- FAIL every not-yet-terminal work item with a clear message and set
+    -- PREFLIGHT_STATUS = 'FAILED'. RUN_STATUS is left to the heartbeat
+    -- rollup (one-writer-per-status-altitude) -- with all items terminal
+    -- FAILED, the rollup settles the run FAILED. Nothing is dispatched.
+    -- ============================================================
+    PROCEDURE fail_run_preflight (p_run_id IN NUMBER) IS
+        C_HALT_MSG CONSTANT VARCHAR2(400) :=
+            'Preflight failed before any load: the Fusion lookup refresh or a run '
+            || 'credential did not pass. Run halted; nothing was submitted. See the '
+            || 'activity log for this run for the specific failure.';
+    BEGIN
+        UPDATE DMT_WORK_QUEUE_TBL
+        SET    WORK_STATUS   = 'FAILED',
+               ERROR_MESSAGE = C_HALT_MSG,
+               COMPLETED_AT  = SYSTIMESTAMP
+        WHERE  RUN_ID = p_run_id
+          AND  WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
+
+        UPDATE DMT_PIPELINE_RUN_TBL
+        SET    PREFLIGHT_STATUS = 'FAILED'
+        WHERE  RUN_ID = p_run_id;
+        COMMIT;
+    END fail_run_preflight;
+
+    -- ============================================================
+    -- PREFLIGHT_ONE -- the async preflight worker (child job). Runs the
+    -- run's preflight OFF the heartbeat tick so its live Fusion calls
+    -- (lookup refresh + credential probes) never stall dispatch/polling.
+    -- Success -> PREFLIGHT_STATUS 'OK' (dispatch_ready then releases the
+    -- run's items). Failure -> the run is halted via fail_run_preflight.
+    -- Always resolves the run out of the 'PREFLIGHTING' claim, so a run
+    -- can never get stuck mid-preflight.
+    -- ============================================================
+    PROCEDURE PREFLIGHT_ONE (p_run_id IN NUMBER) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'PREFLIGHT_ONE';
+        l_step VARCHAR2(200);
+        l_code NUMBER;
+    BEGIN
+        l_step := 'running preflight for run ' || p_run_id;
+        DMT_UTIL_PKG.RUN_PREFLIGHT(p_run_id => p_run_id, x_error_code => l_code);
+
+        IF l_code = DMT_UTIL_PKG.C_SUCCESS THEN
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET    PREFLIGHT_STATUS = 'OK'
+            WHERE  RUN_ID = p_run_id;
+            COMMIT;
+        ELSE
+            fail_run_preflight(p_run_id);
+            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                             p_message   => C_PROC || ': preflight failed -- run halted, nothing loaded.',
+                             p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                             p_package   => C_PKG,
+                             p_procedure => C_PROC);
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            fail_run_preflight(p_run_id);
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
+                                   p_message   => l_step,
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => C_PROC);
+    END PREFLIGHT_ONE;
+
 END DMT_QUEUE_WORKER_PKG;
 /

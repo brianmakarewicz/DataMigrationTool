@@ -27,6 +27,16 @@ AS
     -- (design section 2 "Timeouts (decided 2026-07-07)").
     PROCEDURE POLL_ONE (p_queue_id IN NUMBER);
 
+    -- Run one run's pipeline preflight in a child job (off the heartbeat
+    -- tick, so the live Fusion calls never stall dispatch/polling):
+    -- refresh the Fusion name->id lookups and verify every credential the
+    -- run will use. On success sets DMT_PIPELINE_RUN_TBL.PREFLIGHT_STATUS
+    -- = 'OK' so the run's work items may dispatch; on failure sets 'FAILED'
+    -- and FAILs the run's not-yet-terminal work items (the heartbeat rollup
+    -- then settles the run FAILED). Spawned by DMT_QUEUE_PKG.run_preflights;
+    -- the run is already claimed 'PREFLIGHTING' before this is spawned.
+    PROCEDURE PREFLIGHT_ONE (p_run_id IN NUMBER);
+
     -- ------------------------------------------------------------
     -- Catalog-driven row accounting (design section 5 "Object-status
     -- accounting" + Overview work-item status table, DONE/FAILED rows).

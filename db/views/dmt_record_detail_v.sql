@@ -297,8 +297,13 @@ FROM DMT_OWNER.DMT_RA_DISTS_TFM_TBL
 UNION ALL
 SELECT 'GLBalances', 'GL Journals',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
-       SEGMENT1 || '.' || SEGMENT2 || '.' || SEGMENT3,
-       SEGMENT1 || '.' || SEGMENT2 || '.' || SEGMENT3,
+       -- DISPLAY_KEY: the (run-prefixed) journal name that reconciliation keys
+       -- on, plus this line's account -- so the record identifies its journal
+       -- (accounts repeat across journals; the journal name does not within a run).
+       REFERENCE1 || ' - ' || SEGMENT1 || '.' || SEGMENT2 || '.' || SEGMENT3,
+       -- LOOKUP_KEY: REFERENCE1 is the prefixed batch name written to Fusion and
+       -- the key DMT_GL_RESULTS_PKG matches BIP results back to the TFM row on.
+       REFERENCE1,
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^\]]+)\]', 1, 1, NULL, 1),
        RESULTS_UPDATED_DATE,

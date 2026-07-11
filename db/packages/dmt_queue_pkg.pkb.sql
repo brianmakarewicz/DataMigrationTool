@@ -90,6 +90,79 @@ AS
     END spawn_child;
 
     -- ============================================================
+    -- Phase 0 helper: claim ONE not-yet-checked QUEUED run for preflight
+    -- and spawn its async worker. The preflight itself (a live Fusion
+    -- lookup refresh + credential probes) runs OFF the tick in a child
+    -- job -- DMT_QUEUE_WORKER_PKG.PREFLIGHT_ONE -- exactly as the other
+    -- Fusion-touching phases (dispatch_ready / dispatch_ess_polls /
+    -- dispatch_reconcile) do, so a slow Fusion instance never stalls the
+    -- heartbeat. The claim flips PREFLIGHT_STATUS NULL -> 'PREFLIGHTING'
+    -- so the next tick does not re-pick the run; dispatch stays gated
+    -- until the worker sets 'OK' (see dispatch_ready). On a spawn failure
+    -- the claim is reverted so the next tick retries.
+    -- ============================================================
+    PROCEDURE spawn_preflight (p_run_id IN NUMBER) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'spawn_preflight';
+        l_job  VARCHAR2(30) := 'DMT_PF_' || p_run_id;
+    BEGIN
+        IF child_job_exists(l_job) THEN
+            RETURN;
+        END IF;
+
+        UPDATE DMT_PIPELINE_RUN_TBL
+        SET    PREFLIGHT_STATUS = 'PREFLIGHTING'
+        WHERE  RUN_ID = p_run_id
+          AND  PREFLIGHT_STATUS IS NULL;
+        COMMIT;
+
+        spawn_child(l_job,
+            'BEGIN DMT_OWNER.DMT_QUEUE_WORKER_PKG.PREFLIGHT_ONE(' || p_run_id || '); END;');
+    EXCEPTION
+        WHEN OTHERS THEN
+            -- Could not spawn: revert the claim so the next tick retries.
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET    PREFLIGHT_STATUS = NULL
+            WHERE  RUN_ID = p_run_id
+              AND  PREFLIGHT_STATUS = 'PREFLIGHTING';
+            COMMIT;
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
+                                   p_message   => 'failed to spawn preflight job ' || l_job,
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => C_PROC);
+    END spawn_preflight;
+
+    -- ============================================================
+    -- Phase 0: for every QUEUED run not yet preflighted, claim it and
+    -- spawn its preflight worker (above). Runs BEFORE dispatch so a run
+    -- whose lookups will not refresh, or whose credentials will not
+    -- authenticate, never reaches dispatch -- dispatch_ready only releases
+    -- work items whose run reached PREFLIGHT_STATUS = 'OK'. The tick does
+    -- no Fusion work itself; the worker does, asynchronously.
+    -- ============================================================
+    PROCEDURE run_preflights IS
+        C_PROC CONSTANT VARCHAR2(30) := 'run_preflights';
+    BEGIN
+        FOR run_rec IN (
+            SELECT r.RUN_ID
+            FROM   DMT_PIPELINE_RUN_TBL r
+            WHERE  r.RUN_STATUS = 'QUEUED'
+              AND  r.PREFLIGHT_STATUS IS NULL
+              AND  EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL q
+                           WHERE q.RUN_ID = r.RUN_ID)
+        ) LOOP
+            spawn_preflight(p_run_id => run_rec.RUN_ID);
+        END LOOP;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => NULL,
+                                   p_message   => 'run_preflights phase loop error',
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => C_PROC);
+    END run_preflights;
+
+    -- ============================================================
     -- Phase 1: Promote PENDING -> READY where dependencies met
     -- ============================================================
     PROCEDURE promote_ready IS
@@ -185,9 +258,16 @@ AS
         l_job_name VARCHAR2(30);
     BEGIN
         FOR rec IN (
+            -- Preflight gate (Phase 0): a run's items are only dispatched once
+            -- its preflight has passed (PREFLIGHT_STATUS = 'OK'). A run still
+            -- NULL/'PREFLIGHTING' waits; a 'FAILED' run has its items already
+            -- FAILED (not READY). This makes the gate explicit rather than
+            -- relying on run_preflights running earlier in the same tick.
             SELECT q.QUEUE_ID, q.RUN_ID, q.CEMLI_CODE, q.PARTITION_KEY
             FROM DMT_WORK_QUEUE_TBL q
+            JOIN DMT_PIPELINE_RUN_TBL r ON r.RUN_ID = q.RUN_ID
             WHERE q.WORK_STATUS = 'READY'
+              AND r.PREFLIGHT_STATUS = 'OK'
             ORDER BY q.SORT_ORDER
         )
         LOOP
@@ -452,6 +532,7 @@ AS
     -- ============================================================
     PROCEDURE HEARTBEAT_TICK IS
     BEGIN
+        run_preflights;
         promote_ready;
         dispatch_ess_polls;
         dispatch_ready;

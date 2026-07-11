@@ -1,8 +1,10 @@
 -- ============================================================
 -- GLBalances BIP Reconciliation Query (Two-Tier)
 -- Data source: ApplicationDB_FSCM
--- Parameters: :P_BATCH_ID = Load ESS request ID (LOAD_REQUEST_ID in GL_INTERFACE)
---             :P_IMPORT_ESS_ID = Import ESS request ID (for base table lookup)
+-- Parameters (Contract v1 — names must match what DMT_GL_RESULTS_PKG sends):
+--             :P_LOAD_REQUEST_ID = Load ESS request ID (LOAD_REQUEST_ID in GL_INTERFACE)
+--             :P_RUN_ID          = pipeline run id (= GL_JE_BATCHES.GROUP_ID, set in transform)
+--             :P_IMPORT_ESS_ID   = Import ESS request ID (secondary base-table match)
 --
 -- Tier 1 (INTERFACE): Rows still in GL_INTERFACE after import.
 --   GL journal import DELETES successfully imported rows from GL_INTERFACE.
@@ -26,7 +28,7 @@ SELECT
     CAST(NULL AS NUMBER)                 AS fusion_id,
     gi.reference10                       AS error_message
 FROM   gl_interface gi
-WHERE  gi.load_request_id = :P_BATCH_ID
+WHERE  gi.load_request_id = :P_LOAD_REQUEST_ID
 
 UNION ALL
 
@@ -49,5 +51,5 @@ SELECT
     END                                  AS error_message
 FROM   gl_je_batches jb
 JOIN   gl_je_headers jh ON jh.je_batch_id = jb.je_batch_id
-WHERE  jb.group_id = :P_GROUP_ID
+WHERE  jb.group_id = :P_RUN_ID
    OR  (:P_IMPORT_ESS_ID IS NOT NULL AND jb.name LIKE '%' || :P_IMPORT_ESS_ID || '%')

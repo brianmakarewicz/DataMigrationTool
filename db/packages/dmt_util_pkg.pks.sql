@@ -103,7 +103,8 @@ AS
         p_soap_action    IN  VARCHAR2    DEFAULT NULL,
         p_accept         IN  VARCHAR2    DEFAULT 'application/json',
         p_send_auth      IN  BOOLEAN     DEFAULT TRUE,
-        p_raise_on_error IN  BOOLEAN     DEFAULT TRUE
+        p_raise_on_error IN  BOOLEAN     DEFAULT TRUE,
+        p_auth_header    IN  VARCHAR2    DEFAULT NULL   -- override the Basic header (per-credential probes); NULL => global
     );
 
     -- --------------------------------------------------------
@@ -308,6 +309,44 @@ AS
 
     -- Legacy alias â€” calls REFRESH_LOOKUPS.
     PROCEDURE REFRESH_BU_LOOKUPS;
+
+    -- --------------------------------------------------------
+    -- Pipeline preflight (run-start prerequisites)
+    -- --------------------------------------------------------
+
+    -- Verify one Fusion credential authenticates. Makes exactly ONE
+    -- authenticated GET to the Fusion instance and reads the HTTP status.
+    -- 401 => the credential is bad; any other status (200/403/404/...)
+    -- proves the password signs in -- we care only that it authenticates,
+    -- not what it may access, so this works uniformly for FSCM and HCM
+    -- users. NEVER retries a 401 (project rule: on 401 stop, never retry
+    -- into a lockout). Outcome is the section-7 error-code contract:
+    -- x_error_code = C_SUCCESS if the credential authenticates, C_ERROR if
+    -- it is rejected or cannot be verified; the reason is written to the
+    -- activity log at the point of failure, never returned as text.
+    PROCEDURE VERIFY_CREDENTIAL (
+        p_username   IN  VARCHAR2,
+        p_password   IN  VARCHAR2,
+        x_error_code OUT NUMBER
+    );
+
+    -- Pipeline preflight, run once before a run dispatches any object.
+    -- (1) REFRESH_LOOKUPS -- repopulate the name->id lookups from Fusion
+    --     (this call also proves the global Fusion credential authenticates).
+    -- (2) VERIFY_CREDENTIAL for every DISTINCT credential the run's objects
+    --     use (per-object overrides + the global default).
+    -- Returns x_error_code = C_SUCCESS when the refresh succeeds and every
+    -- credential authenticates; C_ERROR on any failure, so the caller can
+    -- halt the run cleanly before any FBDI is submitted (loads nothing on
+    -- failure). Each failure is logged where it happens. Scope note
+    -- (2026-07-10): the preflight does NOT pre-check that every lookup
+    -- VALUE a run needs is present -- a genuinely missing value halts later
+    -- at first use (GET_LOOKUP), not here. (Pipeline-preflight rationale for
+    -- this PR; the DMT_DESIGN.html section-7 write-up is a pending follow-up.)
+    PROCEDURE RUN_PREFLIGHT (
+        p_run_id     IN  NUMBER,
+        x_error_code OUT NUMBER
+    );
 
 END DMT_UTIL_PKG;
 /
