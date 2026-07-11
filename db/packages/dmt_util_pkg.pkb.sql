@@ -1232,7 +1232,7 @@
     -- Outcome via the section-7 error-code contract; each failure is
     -- logged where it happens. Does NOT pre-check that needed lookup
     -- VALUES exist -- a missing value halts later at GET_LOOKUP
-    -- (2026-07-10 scope decision, see the section-7 preflight rule).
+    -- (2026-07-10 scope decision; DMT_DESIGN.html section-7 write-up pending).
     -- --------------------------------------------------------
     PROCEDURE RUN_PREFLIGHT (
         p_run_id     IN  NUMBER,

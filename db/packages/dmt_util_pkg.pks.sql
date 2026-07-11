@@ -341,7 +341,8 @@ AS
     -- failure). Each failure is logged where it happens. Scope note
     -- (2026-07-10): the preflight does NOT pre-check that every lookup
     -- VALUE a run needs is present -- a genuinely missing value halts later
-    -- at first use (GET_LOOKUP), not here. See the section-7 preflight rule.
+    -- at first use (GET_LOOKUP), not here. (Pipeline-preflight rationale for
+    -- this PR; the DMT_DESIGN.html section-7 write-up is a pending follow-up.)
     PROCEDURE RUN_PREFLIGHT (
         p_run_id     IN  NUMBER,
         x_error_code OUT NUMBER

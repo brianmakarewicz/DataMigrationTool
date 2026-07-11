@@ -74,6 +74,13 @@ WHERE  jb.group_id = :P_RUN_ID
     <parameter name="P_RUN_ID" dataType="character" rowPlacement="3"
                labelID="P_RUN_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- P_PREFIX: sent by DMT_GL_RESULTS_PKG.FETCH_BIP_RESULTS as the fourth
+         Contract v1 parameter. Declared here so the report accepts it and the
+         package/.xdm parameter sets match; the query keys on GROUP_ID = P_RUN_ID
+         and does not currently filter on the prefix (base-table match fallback). -->
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>
   <bursting/>

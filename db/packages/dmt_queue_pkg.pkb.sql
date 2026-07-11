@@ -90,86 +90,58 @@ AS
     END spawn_child;
 
     -- ============================================================
-    -- Phase 0 worker: run one QUEUED run's preflight and record the
-    -- outcome. On success PREFLIGHT_STATUS becomes 'OK' and the run is
-    -- cleared to dispatch. On failure PREFLIGHT_STATUS becomes 'FAILED'
-    -- and every not-yet-terminal work item is FAILED with a clear
-    -- message; RUN_STATUS is left to the heartbeat rollup (the
-    -- one-writer-per-status-altitude rule) -- with all items terminal
-    -- FAILED, the rollup settles the run FAILED later in this same tick.
-    -- Nothing is dispatched. Catches its own errors so a bad run never
-    -- lets an exception reach the phase loop.
+    -- Phase 0 helper: claim ONE not-yet-checked QUEUED run for preflight
+    -- and spawn its async worker. The preflight itself (a live Fusion
+    -- lookup refresh + credential probes) runs OFF the tick in a child
+    -- job -- DMT_QUEUE_WORKER_PKG.PREFLIGHT_ONE -- exactly as the other
+    -- Fusion-touching phases (dispatch_ready / dispatch_ess_polls /
+    -- dispatch_reconcile) do, so a slow Fusion instance never stalls the
+    -- heartbeat. The claim flips PREFLIGHT_STATUS NULL -> 'PREFLIGHTING'
+    -- so the next tick does not re-pick the run; dispatch stays gated
+    -- until the worker sets 'OK' (see dispatch_ready). On a spawn failure
+    -- the claim is reverted so the next tick retries.
     -- ============================================================
-    PROCEDURE run_one_preflight (
-        p_run_id     IN  NUMBER,
-        x_error_code OUT NUMBER
-    ) IS
-        C_PROC     CONSTANT VARCHAR2(30) := 'run_one_preflight';
-        C_HALT_MSG CONSTANT VARCHAR2(400) :=
-            'Preflight failed before any load: the Fusion lookup refresh or a run '
-            || 'credential did not pass. Run halted; nothing was submitted. See the '
-            || 'activity log for this run for the specific failure.';
-        l_step     VARCHAR2(200);
-        l_pre_code NUMBER;
+    PROCEDURE spawn_preflight (p_run_id IN NUMBER) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'spawn_preflight';
+        l_job  VARCHAR2(30) := 'DMT_PF_' || p_run_id;
     BEGIN
-        x_error_code := DMT_UTIL_PKG.C_SUCCESS;
-
-        l_step := 'running preflight for run ' || p_run_id;
-        DMT_UTIL_PKG.RUN_PREFLIGHT(p_run_id => p_run_id, x_error_code => l_pre_code);
-
-        IF l_pre_code = DMT_UTIL_PKG.C_SUCCESS THEN
-            l_step := 'marking run ' || p_run_id || ' preflight OK';
-            UPDATE DMT_PIPELINE_RUN_TBL
-            SET    PREFLIGHT_STATUS = 'OK'
-            WHERE  RUN_ID = p_run_id;
-            COMMIT;
-        ELSE
-            x_error_code := DMT_UTIL_PKG.C_ERROR;
-
-            l_step := 'failing work items for halted run ' || p_run_id;
-            UPDATE DMT_WORK_QUEUE_TBL
-            SET    WORK_STATUS   = 'FAILED',
-                   ERROR_MESSAGE = C_HALT_MSG,
-                   COMPLETED_AT  = SYSTIMESTAMP
-            WHERE  RUN_ID = p_run_id
-              AND  WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
-
-            l_step := 'marking run ' || p_run_id || ' preflight FAILED';
-            UPDATE DMT_PIPELINE_RUN_TBL
-            SET    PREFLIGHT_STATUS = 'FAILED'
-            WHERE  RUN_ID = p_run_id;
-            COMMIT;
-
-            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
-                             p_message   => C_PROC || ': preflight failed -- run halted, nothing loaded.',
-                             p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
-                             p_package   => C_PKG,
-                             p_procedure => C_PROC);
+        IF child_job_exists(l_job) THEN
+            RETURN;
         END IF;
+
+        UPDATE DMT_PIPELINE_RUN_TBL
+        SET    PREFLIGHT_STATUS = 'PREFLIGHTING'
+        WHERE  RUN_ID = p_run_id
+          AND  PREFLIGHT_STATUS IS NULL;
+        COMMIT;
+
+        spawn_child(l_job,
+            'BEGIN DMT_OWNER.DMT_QUEUE_WORKER_PKG.PREFLIGHT_ONE(' || p_run_id || '); END;');
     EXCEPTION
         WHEN OTHERS THEN
-            x_error_code := DMT_UTIL_PKG.C_ERROR;
-            ROLLBACK;
+            -- Could not spawn: revert the claim so the next tick retries.
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET    PREFLIGHT_STATUS = NULL
+            WHERE  RUN_ID = p_run_id
+              AND  PREFLIGHT_STATUS = 'PREFLIGHTING';
+            COMMIT;
             DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
-                                   p_message   => l_step,
+                                   p_message   => 'failed to spawn preflight job ' || l_job,
                                    p_sqlerrm   => SQLERRM,
                                    p_package   => C_PKG,
                                    p_procedure => C_PROC);
-            RETURN;
-    END run_one_preflight;
+    END spawn_preflight;
 
     -- ============================================================
-    -- Phase 0: preflight every QUEUED run not yet checked, BEFORE
-    -- promote_ready/dispatch_ready -- so a run whose Fusion lookups
-    -- will not refresh, or whose credentials will not authenticate, is
-    -- halted before any FBDI is submitted (section-7 preflight rule).
-    -- run_one_preflight isolates each run's outcome; the per-run error
-    -- code is already acted on there, so this loop only needs to visit
-    -- every eligible run.
+    -- Phase 0: for every QUEUED run not yet preflighted, claim it and
+    -- spawn its preflight worker (above). Runs BEFORE dispatch so a run
+    -- whose lookups will not refresh, or whose credentials will not
+    -- authenticate, never reaches dispatch -- dispatch_ready only releases
+    -- work items whose run reached PREFLIGHT_STATUS = 'OK'. The tick does
+    -- no Fusion work itself; the worker does, asynchronously.
     -- ============================================================
     PROCEDURE run_preflights IS
         C_PROC CONSTANT VARCHAR2(30) := 'run_preflights';
-        l_code NUMBER;
     BEGIN
         FOR run_rec IN (
             SELECT r.RUN_ID
@@ -179,7 +151,7 @@ AS
               AND  EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL q
                            WHERE q.RUN_ID = r.RUN_ID)
         ) LOOP
-            run_one_preflight(p_run_id => run_rec.RUN_ID, x_error_code => l_code);
+            spawn_preflight(p_run_id => run_rec.RUN_ID);
         END LOOP;
     EXCEPTION
         WHEN OTHERS THEN
@@ -286,9 +258,16 @@ AS
         l_job_name VARCHAR2(30);
     BEGIN
         FOR rec IN (
+            -- Preflight gate (Phase 0): a run's items are only dispatched once
+            -- its preflight has passed (PREFLIGHT_STATUS = 'OK'). A run still
+            -- NULL/'PREFLIGHTING' waits; a 'FAILED' run has its items already
+            -- FAILED (not READY). This makes the gate explicit rather than
+            -- relying on run_preflights running earlier in the same tick.
             SELECT q.QUEUE_ID, q.RUN_ID, q.CEMLI_CODE, q.PARTITION_KEY
             FROM DMT_WORK_QUEUE_TBL q
+            JOIN DMT_PIPELINE_RUN_TBL r ON r.RUN_ID = q.RUN_ID
             WHERE q.WORK_STATUS = 'READY'
+              AND r.PREFLIGHT_STATUS = 'OK'
             ORDER BY q.SORT_ORDER
         )
         LOOP
