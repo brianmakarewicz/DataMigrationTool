@@ -1,0 +1,34 @@
+#!/bin/sh
+# Pre-push guard: block a push when the branch is far behind origin/main.
+#
+# Why: a branch that drifts many commits behind main is the setup for
+# duplicate-commit merge conflicts (the exact tangle that made
+# fix/gl-recon-param-contract painful to land). Force a rebase-first moment.
+#
+# Enable (once per clone):  git config core.hooksPath scripts/git-hooks
+# Override for one push:     ALLOW_STALE_PUSH=1 git push
+#
+# Args: $1 = remote name, $2 = remote URL. Refs to push arrive on stdin.
+remote="$1"
+THRESHOLD=5
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+[ "$branch" = "main" ] && exit 0                 # never gate main itself
+
+# Refresh our view of main; if offline / fetch fails, don't block.
+git fetch -q "$remote" main 2>/dev/null || exit 0
+behind=$(git rev-list --count HEAD..FETCH_HEAD 2>/dev/null || echo 0)
+
+if [ "${behind:-0}" -gt "$THRESHOLD" ]; then
+  echo "" 1>&2
+  echo "  pre-push BLOCKED: '$branch' is $behind commits behind origin/main (> $THRESHOLD)." 1>&2
+  echo "  Stale branches cause duplicate-commit merge conflicts. Rebase first:" 1>&2
+  echo "      git fetch origin && git rebase origin/main" 1>&2
+  if [ "${ALLOW_STALE_PUSH:-}" = "1" ]; then
+    echo "  ALLOW_STALE_PUSH=1 set -> pushing anyway." 1>&2
+  else
+    echo "  To push anyway (this once):  ALLOW_STALE_PUSH=1 git push" 1>&2
+    exit 1
+  fi
+fi
+exit 0
