@@ -206,7 +206,6 @@ prompt == Tables ==
 @@tables/dmt_ben_partic_stg_tbl.sql
 @@tables/dmt_ben_partic_tfm_tbl.sql
 @@tables/dmt_bip_report_tbl.sql
-@@tables/dmt_bu_lookup_tbl.sql
 @@tables/dmt_cemli_catalog_tbl.sql
 @@tables/dmt_cemli_split_cfg.sql
 @@tables/dmt_ce_bank_acct_stg_tbl.sql
@@ -999,7 +998,6 @@ prompt == Seed data ==
 @@seed/dmt_bip_report_tbl.sql
 @@seed/dmt_erp_interface_options_tbl.sql
 @@seed/dmt_rest_lookup_tbl.sql
-@@seed/dmt_bu_lookup_tbl.sql
 @@seed/dmt_config_tbl.sql
 @@seed/dmt_pipeline_def_tbl.sql
 @@seed/dmt_cemli_catalog_tbl.sql

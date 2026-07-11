@@ -299,16 +299,28 @@ AS
     -- Lookup Refresh
     -- --------------------------------------------------------
 
-    -- Run all lookup BIP data models and MERGE results into
-    -- DMT_LOOKUP_TBL. Each DM returns the standard format:
-    -- LOOKUP_TYPE, LOOKUP_CODE, LOOKUP_VALUE, LOOKUP_VALUE2.
-    -- Currently registered lookups: BU, LEDGER.
-    -- Safe to call at pipeline start to keep instance-specific
-    -- IDs current. Replaces the old REFRESH_BU_LOOKUPS.
+    -- Run all lookup BIP data models and refresh DMT_LOOKUP_TBL with the
+    -- canonical lookup types (design section 7 "canonical lookup registry"):
+    -- BU_NAME_TO_BU_ID, BU_NAME_TO_PRIMARY_LEDGER_ID, and
+    -- LEDGER_NAME_TO_LEDGER_ID (RETURN_VALUE = ledger_id~access_set_id).
+    -- Full refresh of the managed types (delete-then-insert). Safe to call at
+    -- pipeline start to keep instance-specific ids current.
     PROCEDURE REFRESH_LOOKUPS;
 
-    -- Legacy alias â€” calls REFRESH_LOOKUPS.
+    -- Legacy alias -- calls REFRESH_LOOKUPS.
     PROCEDURE REFRESH_BU_LOOKUPS;
+
+    -- Resolve one canonical lookup: return the RETURN_VALUE for
+    -- (LOOKUP_TYPE = p_type, LOOKUP_VALUE = p_value) from DMT_LOOKUP_TBL.
+    -- The one accessor every caller uses instead of a scattered inline SELECT
+    -- (design section 7 "One common lookup table"). Raises -20040 (a single,
+    -- clear halt-the-run error) when the row is missing or not unique -- a
+    -- function that signals failure ONLY by raising, per the section-7
+    -- procedures-only contract's enumerated read-function carve-out.
+    FUNCTION GET_LOOKUP (
+        p_type  IN VARCHAR2,
+        p_value IN VARCHAR2
+    ) RETURN VARCHAR2;
 
     -- --------------------------------------------------------
     -- Pipeline preflight (run-start prerequisites)

@@ -18,7 +18,7 @@ and reviewed, **this folder replaces `db/install.sql` as the deploy path**.
 | `procedures/`, `functions/`, `types/`, `triggers/`, `synonyms/`, `mviews/` | Per-object files (folders may be empty if the schema has none). |
 | `jobs/` | DBMS_SCHEDULER jobs (guarded create-if-missing). |
 | `grants/` | `grants_made.sql` (grants DMT_OWNER makes; errors tolerated — grantees may not exist locally). `grants_received_reference.sql` is documentation of privileges DMT_OWNER needs *granted to it* (run equivalents as the grantor/admin on a new instance). |
-| `seed/` | INSERT scripts for pipeline control tables (`DMT_CEMLI_SPLIT_CFG`, `DMT_BIP_REPORT_TBL`, `DMT_ERP_INTERFACE_OPTIONS_TBL`, `DMT_REST_LOOKUP_TBL`, `DMT_BU_LOOKUP_TBL`, `DMT_CONFIG_TBL`). Idempotent (duplicate keys skipped). **All credential-like values are masked as `***MASKED-SET-ME***`** — set them post-install. |
+| `seed/` | INSERT scripts for pipeline control tables (`DMT_CEMLI_SPLIT_CFG`, `DMT_BIP_REPORT_TBL`, `DMT_ERP_INTERFACE_OPTIONS_TBL`, `DMT_REST_LOOKUP_TBL`, `DMT_CONFIG_TBL`). Idempotent (duplicate keys skipped). **All credential-like values are masked as `***MASKED-SET-ME***`** — set them post-install. |
 | `tools/snapshot_atp.py` | Regenerates this entire folder from the live ATP schema (READ-ONLY against ATP). |
 | `tools/local_db_setup.sql` | One-time local-Docker admin step: creates the `DMT_OWNER` user (run as SYSTEM **locally only, never on ATP**). |
 | `tools/build_local_db.sh` | Stands up the Docker Oracle Free container and runs the full install. |
