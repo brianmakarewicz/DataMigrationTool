@@ -82,10 +82,12 @@
             s.ATTRIBUTE6, s.ATTRIBUTE7, s.ATTRIBUTE8, s.ATTRIBUTE9, s.ATTRIBUTE10,
             s.ATTRIBUTE11, s.ATTRIBUTE12, s.ATTRIBUTE13, s.ATTRIBUTE14, s.ATTRIBUTE15,
             s.ATTRIBUTE16, s.ATTRIBUTE17, s.ATTRIBUTE18, s.ATTRIBUTE19, s.ATTRIBUTE20,
-            -- Per-line reconciliation key, prefix-scoped and unique per source
-            -- line. Written to GL_INTERFACE.REFERENCE21 -> GL_JE_LINES.REFERENCE_1
-            -- by the generator; the reconciler matches base lines back on it.
-            l_prefix || '-' || s.STG_SEQUENCE_ID,
+            -- Per-line reconciliation key -> GL_INTERFACE.REFERENCE21 ->
+            -- GL_JE_LINES.REFERENCE_1 (the generator writes it; the reconciler
+            -- matches base lines on it). Preserve a source-provided REFERENCE21
+            -- if the staging row has one; only when the source leaves it null do
+            -- we generate a prefix-scoped, per-line id.
+            NVL(s.REFERENCE21, l_prefix || '-' || s.STG_SEQUENCE_ID),
             'STAGED'
         FROM   DMT_OWNER.DMT_GL_INTERFACE_STG_TBL s
         WHERE  (
