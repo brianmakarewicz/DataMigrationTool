@@ -20,10 +20,22 @@ Why two tracks: objects differ in how they change.
 After any deploy: run `dmt_db_git_sync.py --pull` and COMMIT.
 """
 import sys, os, re, hashlib
-sys.path.insert(0, r'C:\Users\Monroe\workspace')
-from conn_helper import connect_atp
+import oracledb
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+
+def connect():
+    # DMT2 is Docker-only (CLAUDE.md: no ATP yet). Honor DMT2_CONN
+    # (user/password@host:port/service) like dmt_regression_run.py; fall back
+    # to the local Docker instance. The old connect_atp('queryapp') target is
+    # the frozen stack's ATP and is wrong for DMT2.
+    conn_str = os.environ.get('DMT2_CONN', 'dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1')
+    m = re.match(r'^([^/]+)/(.+)@(?://)?(.+)$', conn_str)
+    if not m:
+        sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
+    user, password, dsn = m.groups()
+    return oracledb.connect(user=user, password=password, dsn=dsn)
 CODE_RE = re.compile(r'^\s*CREATE\s+OR\s+REPLACE\s+'
                      r'(EDITIONABLE\s+|NONEDITIONABLE\s+)?'
                      r'(PACKAGE\s+BODY|PACKAGE|VIEW|PROCEDURE|FUNCTION|TRIGGER|TYPE\s+BODY|TYPE)\b',
@@ -46,7 +58,7 @@ def _strip(ddl):
 
 
 def deploy_code(paths):
-    conn = connect_atp('queryapp', 'DMT_OWNER'); cur = conn.cursor()
+    conn = connect(); cur = conn.cursor()
     for p in paths:
         path, raw = _read(p)
         # drop a leading snapshot comment line, then require CREATE OR REPLACE <object>
@@ -77,7 +89,7 @@ def deploy_code(paths):
 
 
 def deploy_table(create_path, migration_path):
-    conn = connect_atp('queryapp', 'DMT_OWNER'); cur = conn.cursor()
+    conn = connect(); cur = conn.cursor()
     # ensure migration log exists
     cur.execute("""SELECT COUNT(*) FROM user_tables WHERE table_name='DMT_MIGRATION_LOG'""")
     if cur.fetchone()[0] == 0:

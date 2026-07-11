@@ -48,6 +48,8 @@ import time
 
 sys.path.insert(0, r'C:\Users\Monroe\workspace')
 from conn_helper import connect_atp
+import os
+import re as _re_conn
 import oracledb
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace',
@@ -72,7 +74,16 @@ BAD_KEY_REGEX = re.compile(r'-B\d+\b')
 
 
 def connect():
-    return connect_atp('queryapp', 'DMT_OWNER')
+    # DMT2 is Docker-only (CLAUDE.md: no ATP yet). Honor DMT2_CONN
+    # (user/password@host:port/service) like scripts/deploy_supplier_bip_reports.py;
+    # fall back to the local Docker instance. The old connect_atp('queryapp')
+    # target is the frozen stack's ATP and is wrong for DMT2.
+    conn_str = os.environ.get('DMT2_CONN', 'dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1')
+    m = _re_conn.match(r'^([^/]+)/(.+)@(?://)?(.+)$', conn_str)
+    if not m:
+        sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
+    user, password, dsn = m.groups()
+    return oracledb.connect(user=user, password=password, dsn=dsn)
 
 
 def is_bad_key(display_key):

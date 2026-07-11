@@ -273,7 +273,8 @@
         p_soap_action    IN  VARCHAR2    DEFAULT NULL,
         p_accept         IN  VARCHAR2    DEFAULT 'application/json',
         p_send_auth      IN  BOOLEAN     DEFAULT TRUE,
-        p_raise_on_error IN  BOOLEAN     DEFAULT TRUE
+        p_raise_on_error IN  BOOLEAN     DEFAULT TRUE,
+        p_auth_header    IN  VARCHAR2    DEFAULT NULL
     ) IS
         l_req       UTL_HTTP.REQ;
         l_resp      UTL_HTTP.RESP;
@@ -295,7 +296,9 @@
         -- SOAP callers whose credentials travel inside the envelope
         -- (BIP v2 userID/password elements) suppress the Basic header.
         IF p_send_auth THEN
-            UTL_HTTP.SET_HEADER(l_req, 'Authorization', basic_auth_header);
+            -- p_auth_header lets a caller probe a SPECIFIC credential
+            -- (VERIFY_CREDENTIAL); NULL falls back to the global Basic header.
+            UTL_HTTP.SET_HEADER(l_req, 'Authorization', NVL(p_auth_header, basic_auth_header));
         END IF;
         UTL_HTTP.SET_HEADER(l_req, 'Content-Type',   p_content_type);
         UTL_HTTP.SET_HEADER(l_req, 'Accept',         p_accept);
@@ -1161,6 +1164,144 @@
     BEGIN
         REFRESH_LOOKUPS;
     END REFRESH_BU_LOOKUPS;
+
+    -- --------------------------------------------------------
+    -- VERIFY_CREDENTIAL -- one authenticated probe, 401 => bad.
+    -- Outcome via the section-7 error-code contract; the reason is
+    -- logged at the point of failure, never returned as text.
+    -- --------------------------------------------------------
+    PROCEDURE VERIFY_CREDENTIAL (
+        p_username   IN  VARCHAR2,
+        p_password   IN  VARCHAR2,
+        x_error_code OUT NUMBER
+    ) IS
+        C_PKG    CONSTANT VARCHAR2(30) := 'DMT_UTIL_PKG';
+        C_PROC   CONSTANT VARCHAR2(30) := 'VERIFY_CREDENTIAL';
+        l_step   VARCHAR2(200);
+        l_url    VARCHAR2(600);
+        l_resp   CLOB;
+        l_status NUMBER;
+    BEGIN
+        x_error_code := C_ERROR;
+
+        l_step := 'checking the credential is present';
+        IF p_username IS NULL OR p_password IS NULL THEN
+            LOG(p_message   => C_PROC || ': credential resolves to NULL (username or password missing).',
+                p_log_type  => C_LOG_WARN, p_package => C_PKG, p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        -- One authenticated GET to a stable, always-present endpoint. We read
+        -- only the HTTP status: 401 = password rejected; anything else = it
+        -- signs in. No retry on 401 (project rule: on 401 stop, never retry
+        -- into a lockout). p_raise_on_error => FALSE so a non-2xx status comes
+        -- back as a value instead of an exception.
+        l_step := 'authenticating user ' || p_username || ' against Fusion';
+        l_url  := RTRIM(GET_CONFIG(p_key => 'FUSION_URL'), '/')
+                  || '/fscmRestApi/resources/11.13.18.05/';
+
+        HTTP_REQUEST(
+            p_url            => l_url,
+            p_method         => 'GET',
+            x_response       => l_resp,
+            x_status_code    => l_status,
+            p_raise_on_error => FALSE,
+            p_auth_header    => BASIC_AUTH_HEADER(p_username => p_username, p_password => p_password));
+
+        IF l_status = 401 THEN
+            LOG(p_message   => C_PROC || ': HTTP 401 (Fusion rejected the password) for user ' || p_username || '.',
+                p_log_type  => C_LOG_ERROR, p_package => C_PKG, p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        x_error_code := C_SUCCESS;
+        LOG(p_message   => C_PROC || ': authenticated (HTTP ' || l_status || ') for user ' || p_username || '.',
+            p_package => C_PKG, p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            -- Cannot verify (network/URL/wallet) is treated as a failure --
+            -- the preflight must not pass a credential it could not check.
+            x_error_code := C_ERROR;
+            LOG_ERROR(p_message   => l_step || ' -- probe failed for user ' || p_username,
+                      p_sqlerrm   => SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
+            RETURN;
+    END VERIFY_CREDENTIAL;
+
+    -- --------------------------------------------------------
+    -- RUN_PREFLIGHT -- refresh lookups + verify every run credential.
+    -- Outcome via the section-7 error-code contract; each failure is
+    -- logged where it happens. Does NOT pre-check that needed lookup
+    -- VALUES exist -- a missing value halts later at GET_LOOKUP
+    -- (2026-07-10 scope decision, see the section-7 preflight rule).
+    -- --------------------------------------------------------
+    PROCEDURE RUN_PREFLIGHT (
+        p_run_id     IN  NUMBER,
+        x_error_code OUT NUMBER
+    ) IS
+        C_PKG      CONSTANT VARCHAR2(30) := 'DMT_UTIL_PKG';
+        C_PROC     CONSTANT VARCHAR2(30) := 'RUN_PREFLIGHT';
+        l_step     VARCHAR2(200);
+        l_user     VARCHAR2(100);
+        l_pass     VARCHAR2(500);
+        l_cred     NUMBER;
+        l_failures NUMBER := 0;
+    BEGIN
+        x_error_code := C_SUCCESS;
+        LOG(p_run_id => p_run_id, p_message => C_PROC || ' start.',
+            p_package => C_PKG, p_procedure => C_PROC);
+
+        -- (1) Refresh the name->id lookups. This authenticates as the global
+        -- Fusion user, so a bad global password fails here. REFRESH_LOOKUPS
+        -- logs and re-raises on failure; the single handler below reports
+        -- l_step, so no nested block is needed.
+        l_step := 'refreshing Fusion lookups';
+        REFRESH_LOOKUPS;
+
+        -- (2) Verify every DISTINCT credential the run's objects will use --
+        -- the per-object override or the global default. VERIFY_CREDENTIAL
+        -- handles its own errors and returns a code, so the loop body needs
+        -- no exception scope of its own. Accumulate failures and halt if any.
+        FOR c IN (
+            SELECT DISTINCT q.CEMLI_CODE
+            FROM   DMT_OWNER.DMT_WORK_QUEUE_TBL q
+            WHERE  q.RUN_ID = p_run_id
+        ) LOOP
+            l_step := 'resolving credentials for ' || c.CEMLI_CODE;
+            GET_CEMLI_CREDENTIALS(p_cemli_code => c.CEMLI_CODE,
+                                  x_username   => l_user,
+                                  x_password   => l_pass);
+
+            l_step := 'verifying credential for ' || c.CEMLI_CODE;
+            VERIFY_CREDENTIAL(p_username   => l_user,
+                              p_password   => l_pass,
+                              x_error_code => l_cred);
+
+            IF l_cred != C_SUCCESS THEN
+                l_failures := l_failures + 1;
+                LOG(p_run_id    => p_run_id,
+                    p_message   => C_PROC || ': credential check FAILED for ' || c.CEMLI_CODE || '.',
+                    p_log_type  => C_LOG_ERROR, p_package => C_PKG, p_procedure => C_PROC);
+            END IF;
+        END LOOP;
+
+        IF l_failures > 0 THEN
+            x_error_code := C_ERROR;
+            LOG(p_run_id    => p_run_id,
+                p_message   => C_PROC || ': ' || l_failures || ' credential(s) will not authenticate. Run must halt.',
+                p_log_type  => C_LOG_ERROR, p_package => C_PKG, p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        LOG(p_run_id => p_run_id,
+            p_message => C_PROC || ' complete: lookups refreshed, all credentials verified.',
+            p_package => C_PKG, p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_error_code := C_ERROR;
+            LOG_ERROR(p_run_id    => p_run_id, p_message => l_step,
+                      p_sqlerrm   => SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
+            RETURN;
+    END RUN_PREFLIGHT;
 
 END DMT_UTIL_PKG;
 /

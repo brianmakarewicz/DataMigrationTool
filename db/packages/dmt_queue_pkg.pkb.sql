@@ -90,6 +90,107 @@ AS
     END spawn_child;
 
     -- ============================================================
+    -- Phase 0 worker: run one QUEUED run's preflight and record the
+    -- outcome. On success PREFLIGHT_STATUS becomes 'OK' and the run is
+    -- cleared to dispatch. On failure PREFLIGHT_STATUS becomes 'FAILED'
+    -- and every not-yet-terminal work item is FAILED with a clear
+    -- message; RUN_STATUS is left to the heartbeat rollup (the
+    -- one-writer-per-status-altitude rule) -- with all items terminal
+    -- FAILED, the rollup settles the run FAILED later in this same tick.
+    -- Nothing is dispatched. Catches its own errors so a bad run never
+    -- lets an exception reach the phase loop.
+    -- ============================================================
+    PROCEDURE run_one_preflight (
+        p_run_id     IN  NUMBER,
+        x_error_code OUT NUMBER
+    ) IS
+        C_PROC     CONSTANT VARCHAR2(30) := 'run_one_preflight';
+        C_HALT_MSG CONSTANT VARCHAR2(400) :=
+            'Preflight failed before any load: the Fusion lookup refresh or a run '
+            || 'credential did not pass. Run halted; nothing was submitted. See the '
+            || 'activity log for this run for the specific failure.';
+        l_step     VARCHAR2(200);
+        l_pre_code NUMBER;
+    BEGIN
+        x_error_code := DMT_UTIL_PKG.C_SUCCESS;
+
+        l_step := 'running preflight for run ' || p_run_id;
+        DMT_UTIL_PKG.RUN_PREFLIGHT(p_run_id => p_run_id, x_error_code => l_pre_code);
+
+        IF l_pre_code = DMT_UTIL_PKG.C_SUCCESS THEN
+            l_step := 'marking run ' || p_run_id || ' preflight OK';
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET    PREFLIGHT_STATUS = 'OK'
+            WHERE  RUN_ID = p_run_id;
+            COMMIT;
+        ELSE
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+
+            l_step := 'failing work items for halted run ' || p_run_id;
+            UPDATE DMT_WORK_QUEUE_TBL
+            SET    WORK_STATUS   = 'FAILED',
+                   ERROR_MESSAGE = C_HALT_MSG,
+                   COMPLETED_AT  = SYSTIMESTAMP
+            WHERE  RUN_ID = p_run_id
+              AND  WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
+
+            l_step := 'marking run ' || p_run_id || ' preflight FAILED';
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET    PREFLIGHT_STATUS = 'FAILED'
+            WHERE  RUN_ID = p_run_id;
+            COMMIT;
+
+            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                             p_message   => C_PROC || ': preflight failed -- run halted, nothing loaded.',
+                             p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                             p_package   => C_PKG,
+                             p_procedure => C_PROC);
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            ROLLBACK;
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
+                                   p_message   => l_step,
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => C_PROC);
+            RETURN;
+    END run_one_preflight;
+
+    -- ============================================================
+    -- Phase 0: preflight every QUEUED run not yet checked, BEFORE
+    -- promote_ready/dispatch_ready -- so a run whose Fusion lookups
+    -- will not refresh, or whose credentials will not authenticate, is
+    -- halted before any FBDI is submitted (section-7 preflight rule).
+    -- run_one_preflight isolates each run's outcome; the per-run error
+    -- code is already acted on there, so this loop only needs to visit
+    -- every eligible run.
+    -- ============================================================
+    PROCEDURE run_preflights IS
+        C_PROC CONSTANT VARCHAR2(30) := 'run_preflights';
+        l_code NUMBER;
+    BEGIN
+        FOR run_rec IN (
+            SELECT r.RUN_ID
+            FROM   DMT_PIPELINE_RUN_TBL r
+            WHERE  r.RUN_STATUS = 'QUEUED'
+              AND  r.PREFLIGHT_STATUS IS NULL
+              AND  EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL q
+                           WHERE q.RUN_ID = r.RUN_ID)
+        ) LOOP
+            run_one_preflight(p_run_id => run_rec.RUN_ID, x_error_code => l_code);
+        END LOOP;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => NULL,
+                                   p_message   => 'run_preflights phase loop error',
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => C_PROC);
+    END run_preflights;
+
+    -- ============================================================
     -- Phase 1: Promote PENDING -> READY where dependencies met
     -- ============================================================
     PROCEDURE promote_ready IS
@@ -452,6 +553,7 @@ AS
     -- ============================================================
     PROCEDURE HEARTBEAT_TICK IS
     BEGIN
+        run_preflights;
         promote_ready;
         dispatch_ess_polls;
         dispatch_ready;
