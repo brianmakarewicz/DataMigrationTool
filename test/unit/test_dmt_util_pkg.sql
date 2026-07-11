@@ -408,6 +408,42 @@ begin
        and dmt_util_pkg.get_deep_link(c_marker||'_NO_CEMLI', '123') is null,
        27, 'GET_DEEP_LINK returns NULL for NULL id / unregistered CEMLI');
 
+    -- ----------------------------------------------------------
+    -- 40-42. GET_LOOKUP (common-lookup accessor; design section 7,
+    --        proposed): a present row returns its RETURN_VALUE; a
+    --        missing row and a non-unique (type,value) both raise
+    --        -20040 (the single clear halt-the-run error).
+    -- ----------------------------------------------------------
+    delete from dmt_lookup_tbl where lookup_type = c_marker||'_LKT';
+    insert into dmt_lookup_tbl (lookup_type, lookup_value, return_value)
+        values (c_marker||'_LKT', 'K1', 'R1');
+    commit;
+    assert(dmt_util_pkg.get_lookup(c_marker||'_LKT', 'K1') = 'R1',
+       40, 'GET_LOOKUP returns RETURN_VALUE for a present row');
+
+    begin
+        l_vc := dmt_util_pkg.get_lookup(c_marker||'_LKT', 'NO_SUCH_KEY');
+        assert(false, 41, 'GET_LOOKUP missing row should have raised');
+    exception
+        when others then
+            assert(sqlcode = -20040, 41,
+                'GET_LOOKUP missing row raises -20040 (got '||sqlcode||')');
+    end;
+
+    insert into dmt_lookup_tbl (lookup_type, lookup_value, return_value)
+        values (c_marker||'_LKT', 'K1', 'R2');   -- second RETURN_VALUE for the same (type,value)
+    commit;
+    begin
+        l_vc := dmt_util_pkg.get_lookup(c_marker||'_LKT', 'K1');
+        assert(false, 42, 'GET_LOOKUP non-unique should have raised');
+    exception
+        when others then
+            assert(sqlcode = -20040, 42,
+                'GET_LOOKUP non-unique (type,value) raises -20040 (got '||sqlcode||')');
+    end;
+    delete from dmt_lookup_tbl where lookup_type = c_marker||'_LKT';
+    commit;
+
     :passed := :passed + l_passed;
 end;
 /
