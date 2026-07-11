@@ -46,10 +46,7 @@ import re
 import sys
 import time
 
-sys.path.insert(0, r'C:\Users\Monroe\workspace')
-from conn_helper import connect_atp
 import os
-import re as _re_conn
 import oracledb
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace',
@@ -79,7 +76,7 @@ def connect():
     # fall back to the local Docker instance. The old connect_atp('queryapp')
     # target is the frozen stack's ATP and is wrong for DMT2.
     conn_str = os.environ.get('DMT2_CONN', 'dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1')
-    m = _re_conn.match(r'^([^/]+)/(.+)@(?://)?(.+)$', conn_str)
+    m = re.match(r'^([^/]+)/(.+)@(?://)?(.+)$', conn_str)
     if not m:
         sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
     user, password, dsn = m.groups()
