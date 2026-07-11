@@ -152,6 +152,11 @@ using (
            '/Custom/DMT2/SupplierContacts/SUP_CONT_RPT.xdo',
            'POZ_SUP_CONTACTS_INT',
            'Supplier contact import reconciliation' from dual
+    union all select 100000016, 'GLBalances', 'GL Balance',
+           '/Custom/DMT2/GLBalances/GL_BAL_DM.xdm',
+           '/Custom/DMT2/GLBalances/GL_BAL_RPT.xdo',
+           'GL_INTERFACE',
+           'GL journal import reconciliation (Contract v1)' from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set
