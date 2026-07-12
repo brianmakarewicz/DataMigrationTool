@@ -508,7 +508,7 @@ def main():
                 INSERT_UPDATE_FLAG, PARTY_TYPE,
                 ORGANIZATION_NAME, SOURCE_ID
             ) VALUES (
-                'RT_ORIG', :ref, 'I', 'ORGANIZATION',
+                'LEG1', :ref, 'I', 'ORGANIZATION',
                 :oname, :src
             )
         """, {"ref": ref, "oname": org_name, "src": f"RT-PTY-{ref}"},
@@ -520,7 +520,7 @@ def main():
             INSERT_UPDATE_FLAG, PARTY_TYPE,
             ORGANIZATION_NAME, SOURCE_ID
         ) VALUES (
-            'RT_ORIG', 'RT-CUST-BAD1', 'I', 'INVALID_TYPE',
+            'LEG1', 'RT-CUST-BAD1', 'I', 'INVALID_TYPE',
             'RT Customer Bad-1', 'RT-PTY-BAD1'
         )
     """, label="BAD Party: invalid PARTY_TYPE [BAD-LKP]")
@@ -540,7 +540,7 @@ def main():
                 INSERT_UPDATE_FLAG, COUNTRY,
                 ADDRESS1, CITY, STATE, POSTAL_CODE, SOURCE_ID
             ) VALUES (
-                'RT_ORIG', :lref, 'I', 'US',
+                'LEG1', :lref, 'I', 'US',
                 :addr, :city, :st, :zip, :src
             )
         """, {"lref": loc_ref, "addr": addr, "city": city,
@@ -554,7 +554,7 @@ def main():
             INSERT_UPDATE_FLAG, COUNTRY,
             ADDRESS1, CITY, STATE, POSTAL_CODE, SOURCE_ID
         ) VALUES (
-            'RT_ORIG', 'RT-LOC-BAD1', 'I', NULL,
+            'LEG1', 'RT-LOC-BAD1', 'I', NULL,
             '999 Bad Ave', 'Nowhere', 'XX', '00000', 'RT-LOC-BAD1'
         )
     """, label="BAD Location: missing COUNTRY [BAD-REQ]")
@@ -577,9 +577,9 @@ def main():
                 LOCATION_ORIG_SYSTEM, LOCATION_ORIG_SYSTEM_REFERENCE,
                 INSERT_UPDATE_FLAG, PARTY_SITE_NAME, SOURCE_ID
             ) VALUES (
-                'RT_ORIG', :pty_ref,
-                'RT_ORIG', :site_ref,
-                'RT_ORIG', :loc_ref,
+                'LEG1', :pty_ref,
+                'LEG1', :site_ref,
+                'LEG1', :loc_ref,
                 'I', :sname, :src
             )
         """, {"pty_ref": pty_ref, "site_ref": site_ref, "loc_ref": loc_ref,
@@ -594,9 +594,9 @@ def main():
             LOCATION_ORIG_SYSTEM, LOCATION_ORIG_SYSTEM_REFERENCE,
             INSERT_UPDATE_FLAG, PARTY_SITE_NAME, SOURCE_ID
         ) VALUES (
-            'RT_ORIG', 'RT-CUST-NONEXIST',
-            'RT_ORIG', 'RT-PSITE-BAD1',
-            'RT_ORIG', 'RT-LOC-G1',
+            'LEG1', 'RT-CUST-NONEXIST',
+            'LEG1', 'RT-PSITE-BAD1',
+            'LEG1', 'RT-LOC-G1',
             'I', 'RT Bad-1 Office', 'RT-PSITE-BAD1'
         )
     """, label="BAD Party Site: non-existent party [BAD-UPS]")
@@ -619,8 +619,8 @@ def main():
                 SITE_USE_TYPE, PRIMARY_FLAG,
                 INSERT_UPDATE_FLAG, SOURCE_ID
             ) VALUES (
-                'RT_ORIG', :pty_ref,
-                'RT_ORIG', :site_ref,
+                'LEG1', :pty_ref,
+                'LEG1', :site_ref,
                 :use_type, 'Y', 'I', :src
             )
         """, {"pty_ref": pty_ref, "site_ref": site_ref,
@@ -635,8 +635,8 @@ def main():
             SITE_USE_TYPE, PRIMARY_FLAG,
             INSERT_UPDATE_FLAG, SOURCE_ID
         ) VALUES (
-            'RT_ORIG', 'RT-CUST-G1',
-            'RT_ORIG', 'RT-PSITE-G1',
+            'LEG1', 'RT-CUST-G1',
+            'LEG1', 'RT-PSITE-G1',
             'INVALID_USE', 'Y', 'I', 'RT-PSUSE-BAD1'
         )
     """, label="BAD Party Site Use: invalid SITE_USE_TYPE [BAD-LKP]")
@@ -659,8 +659,8 @@ def main():
                 ACCOUNT_NUMBER, INSERT_UPDATE_FLAG,
                 CUSTOMER_TYPE, ACCOUNT_NAME, SOURCE_ID
             ) VALUES (
-                'RT_ORIG', :acct_ref,
-                'RT_ORIG', :pty_ref,
+                'LEG1', :acct_ref,
+                'LEG1', :pty_ref,
                 :anum, 'I', 'R', :aname, :src
             )
         """, {"acct_ref": acct_ref, "pty_ref": pty_ref,
@@ -676,8 +676,8 @@ def main():
             ACCOUNT_NUMBER, INSERT_UPDATE_FLAG,
             CUSTOMER_TYPE, ACCOUNT_NAME, SOURCE_ID
         ) VALUES (
-            'RT_ORIG', 'RT-ACCT-BAD1',
-            'RT_ORIG', 'RT-CUST-NONEXIST',
+            'LEG1', 'RT-ACCT-BAD1',
+            'LEG1', 'RT-CUST-NONEXIST',
             'RTBAD01', 'I', 'R', 'RT Customer Bad-1', 'RT-ACCT-BAD1'
         )
     """, label="BAD Account: non-existent party [BAD-UPS]")
@@ -700,9 +700,9 @@ def main():
                 SITE_ORIG_SYSTEM, SITE_ORIG_SYSTEM_REFERENCE,
                 INSERT_UPDATE_FLAG, SET_CODE, SOURCE_ID
             ) VALUES (
-                'RT_ORIG', :acct_ref,
-                'RT_ORIG', :asite_ref,
-                'RT_ORIG', :site_ref,
+                'LEG1', :acct_ref,
+                'LEG1', :asite_ref,
+                'LEG1', :site_ref,
                 'I', :bu, :src
             )
         """, {"acct_ref": acct_ref, "asite_ref": asite_ref,
@@ -718,9 +718,9 @@ def main():
             SITE_ORIG_SYSTEM, SITE_ORIG_SYSTEM_REFERENCE,
             INSERT_UPDATE_FLAG, SET_CODE, SOURCE_ID
         ) VALUES (
-            'RT_ORIG', 'RT-ACCT-NONEXIST',
-            'RT_ORIG', 'RT-ASITE-BAD1',
-            'RT_ORIG', 'RT-PSITE-G1',
+            'LEG1', 'RT-ACCT-NONEXIST',
+            'LEG1', 'RT-ASITE-BAD1',
+            'LEG1', 'RT-PSITE-G1',
             'I', :bu, 'RT-ASITE-BAD1'
         )
     """, {"bu": BU}, label="BAD Account Site: non-existent account [BAD-UPS]")
@@ -743,8 +743,8 @@ def main():
                 SITE_USE_CODE, PRIMARY_FLAG,
                 INSERT_UPDATE_FLAG, SET_CODE, SOURCE_ID
             ) VALUES (
-                'RT_ORIG', :asite_ref,
-                'RT_ORIG', :use_ref,
+                'LEG1', :asite_ref,
+                'LEG1', :use_ref,
                 :use_code, 'Y', 'I', :bu, :src
             )
         """, {"asite_ref": asite_ref, "use_ref": use_ref,
@@ -760,12 +760,34 @@ def main():
             SITE_USE_CODE, PRIMARY_FLAG,
             INSERT_UPDATE_FLAG, SET_CODE, SOURCE_ID
         ) VALUES (
-            'RT_ORIG', 'RT-ASITE-G1',
-            'RT_ORIG', 'RT-SITEUSE-BAD1',
+            'LEG1', 'RT-ASITE-G1',
+            'LEG1', 'RT-SITEUSE-BAD1',
             'INVALID_USE', 'Y', 'I', :bu, 'RT-SUSE-BAD1'
         )
     """, {"bu": BU}, label="BAD Account Site Use: invalid SITE_USE_CODE [BAD-LKP]")
     tag_scenario(cur, "DMT_HZ_ACCT_SITE_USES_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # Customers: stamp the batch id (partition key).
+    # BulkImportJob auto-creates the import batch from a 4-value ParameterList
+    # whose first value is a Batch ID, so every customer staging row must carry
+    # a BATCH_ID. Stamp one batch id across the 7 customer staging tables for
+    # this scenario. Source system was set to LEG1 above (a source registered in
+    # Fusion Trading Community Source Systems, so the bulk import accepts it).
+    # ====================================================================
+    CUST_BATCH_ID = 5001
+    for _cust_tbl in (
+        "DMT_HZ_PARTIES_STG_TBL", "DMT_HZ_LOCATIONS_STG_TBL",
+        "DMT_HZ_PARTY_SITES_STG_TBL", "DMT_HZ_PARTY_SITE_USES_STG_TBL",
+        "DMT_HZ_ACCOUNTS_STG_TBL", "DMT_HZ_ACCT_SITES_STG_TBL",
+        "DMT_HZ_ACCT_SITE_USES_STG_TBL",
+    ):
+        run_sql(cur, f"""
+            UPDATE DMT_OWNER.{_cust_tbl}
+            SET    BATCH_ID = :bid
+            WHERE  SCENARIO_ID = :sid AND BATCH_ID IS NULL
+        """, {"bid": CUST_BATCH_ID, "sid": scenario_id},
+        label=f"Stamp BATCH_ID {CUST_BATCH_ID} on {_cust_tbl}")
 
     # ====================================================================
     # 13. PO HEADERS (DMT_PO_HEADERS_INT_STG_TBL) — Standard POs
