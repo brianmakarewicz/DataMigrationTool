@@ -69,7 +69,19 @@ ORG_CODE     = "V1"                          # inventory org
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 def connect():
-    return connect_atp('queryapp', 'DMT_OWNER')
+    # DMT2 is Docker-only (no ATP). Target the local instance, honoring
+    # DMT2_CONN like dmt_deploy.py / dmt_regression_run.py so the whole toolchain
+    # points at the same database. (The old connect_atp('queryapp') target was
+    # the FROZEN stack's ATP -- wrong for DMT2, and it silently loaded regression
+    # data to the wrong database.)
+    import os, re
+    conn_str = os.environ.get('DMT2_CONN',
+                              'dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1')
+    m = re.match(r'^([^/]+)/(.+)@(?://)?(.+)$', conn_str)
+    if not m:
+        sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
+    user, password, dsn = m.groups()
+    return oracledb.connect(user=user, password=password, dsn=dsn)
 
 ok_count = 0
 err_count = 0
