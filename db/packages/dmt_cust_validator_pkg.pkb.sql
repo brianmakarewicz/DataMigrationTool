@@ -84,6 +84,20 @@ AS
         AND    p.PARTY_ORIG_SYSTEM_REFERENCE IS NULL;
         l_party_failed := l_party_failed + SQL%ROWCOUNT;
 
+        -- Step 1e: BATCH_ID is required (customer batch / partition key). The
+        -- loader partitions Customers by BATCH_ID and sends it as the first
+        -- value of the BulkImportJob ParameterList; a row with no batch id
+        -- can neither be split nor loaded.
+        UPDATE DMT_OWNER.DMT_HZ_PARTIES_STG_TBL p
+        SET    STG_STATUS        = 'FAILED',
+               ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
+                                       ERROR_TEXT,
+                                       '[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).'),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  p.STG_STATUS IN ('NEW', 'RETRY')
+        AND    p.BATCH_ID IS NULL;
+        l_party_failed := l_party_failed + SQL%ROWCOUNT;
+
         -- Step 2: Cascade failures to locations for any failed party.
         -- Locations link to parties via PARTY_ORIG_SYSTEM_REFERENCE stored
         -- in related party_sites. For simplicity, locations are validated

@@ -1231,30 +1231,10 @@
 
         -- Override ParameterList per CEMLI (MCCS patterns).
         -- Default is 'NEW,N' (suppliers). CEMLIs with different import jobs need different params.
-        IF p_cemli_code = 'Customers' THEN
-            -- BulkImportJob (Trading Community bulk import) takes 3 positional args:
-            --   1 = Import Options   ("New")  -> 'NEW'
-            --   2 = Report Exceptions Only    -> 'N'
-            --   3 = Batch ID  (populates the job's Batch_Id parameter)
-            -- Discovered 2026-07-09 (owner directive, issue: batchId null NPE):
-            -- the child DataImportJob throws java.lang.NullPointerException
-            -- ("this.batchId is null") whenever slot 3 is omitted. The frozen
-            -- stack sent only 'NEW,N' (proven via the frozen ATP loadAndImportData
-            -- envelope log AND ESS request_property: submit.argument1=NEW,
-            -- submit.argument2=N, Batch_Id=''), so no customer import ever reached
-            -- the HZ base tables there (frozen DMT_HZ_PARTIES_TFM: 18 LOADED / 0
-            -- real FUSION_PARTY_ID -- a fail-open false pass).
-            --
-            -- The Batch ID we supply MUST equal the BATCH_ID stamped on every HZ
-            -- interface row by the transformer (DMT_CUST_TRANSFORM_PKG sets
-            -- BATCH_ID = run_id) so the bulk import groups exactly this run's rows
-            -- and the two-tier reconciler's HZ_IMP_ERRORS join (e.batch_id =
-            -- ip.batch_id) lines up. That value is the object-per-run FBDI batch
-            -- id (== run_id at Customers' one-object-per-run granularity) -- a
-            -- stable pipeline id, never random. See the "batch/group id" standard
-            -- in docs/DMT_DESIGN.html section 7.
-            l_param_list := 'NEW,N,' || TO_CHAR(p_run_id);
-        ELSIF p_cemli_code = 'Projects' THEN
+        -- Customers is a grouped object: it partitions by BATCH_ID and builds a
+        -- per-batch 4-value BulkImportJob ParameterList inside its grouped block
+        -- (below), so it sets no ParameterList here -- exactly like ARInvoices.
+        IF p_cemli_code = 'Projects' THEN
             -- MCCS RICE_006: ImportProjectJobDef takes 3 args (,,Y)
             l_param_list := ',,Y';
         ELSIF p_cemli_code = 'Expenditures' THEN
@@ -1778,6 +1758,129 @@
             END;
 
             -- After all groups: check failed rows + update master totals
+            GOTO grouped_finish;
+        END IF;
+
+        -- ============================================================
+        -- Customers: grouped load by BATCH_ID.
+        -- BulkImportJob ("Import Bulk Customer Data") auto-creates the import
+        -- batch from a 4-value positional ParameterList: 1=Batch ID,
+        -- 2=Batch Name, 3=Object ('Customer and Consumer'), 4=Source System.
+        -- ALL FOUR ARE REQUIRED -- proven live 2026-07-11 that an empty Batch
+        -- Name loads 0 rows to the base tables (20/20 to hz_cust_accounts with
+        -- the four values). Batch ID is a per-batch ESS parameter, so we emit
+        -- one FBDI + one load+import per distinct BATCH_ID; Source System is the
+        -- batch's own PARTY_ORIG_SYSTEM (one batch must use exactly one).
+        -- ============================================================
+        IF p_cemli_code = 'Customers' THEN
+            DECLARE
+                l_cu_zip        BLOB;
+                l_cu_filename   VARCHAR2(200);
+                l_cu_csv_id     NUMBER;
+                l_cu_load_id    VARCHAR2(100);
+                l_cu_import_id  VARCHAR2(100);
+                l_cu_param      VARCHAR2(500);
+                l_cu_count      NUMBER := 0;
+                l_cu_ok         BOOLEAN;
+
+                -- Fail every one of the 7 customer sub-object TFM tables'
+                -- GENERATED rows for this batch, with a reportable error.
+                PROCEDURE mark_batch_failed(p_bid IN NUMBER, p_msg IN VARCHAR2) IS
+                BEGIN
+                    UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL         SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL       SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL  SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    COMMIT;
+                END mark_batch_failed;
+            BEGIN
+                FOR grp_rec IN (
+                    SELECT BATCH_ID,
+                           MIN(PARTY_ORIG_SYSTEM)            AS SOURCE_SYSTEM,
+                           COUNT(DISTINCT PARTY_ORIG_SYSTEM) AS SRC_COUNT
+                    FROM   DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
+                    WHERE  RUN_ID = p_run_id
+                    AND    TFM_STATUS = 'STAGED'
+                    AND    BATCH_ID IS NOT NULL
+                    GROUP BY BATCH_ID
+                    ORDER BY BATCH_ID
+                ) LOOP
+                    l_cu_count := l_cu_count + 1;
+
+                    -- One batch = one source system (Source System is a single
+                    -- positional ESS parameter for the whole batch).
+                    IF grp_rec.SRC_COUNT > 1 THEN
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'Customer batch ' || grp_rec.BATCH_ID || ' mixes ' || grp_rec.SRC_COUNT ||
+                            ' source systems -- a batch must use exactly one. Marking FAILED.',
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                        mark_batch_failed(grp_rec.BATCH_ID,
+                            '[PRE_VALIDATION] Batch ' || grp_rec.BATCH_ID ||
+                            ' mixes multiple source systems; one batch must use exactly one source system.');
+                        CONTINUE;
+                    END IF;
+
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Customer batch cycle start: BATCH_ID=' || grp_rec.BATCH_ID ||
+                        ', Source=' || grp_rec.SOURCE_SYSTEM,
+                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+
+                    DMT_CUST_FBDI_GEN_PKG.GENERATE_FBDI(
+                        p_run_id      => p_run_id,
+                        x_fbdi_zip    => l_cu_zip,
+                        x_filename    => l_cu_filename,
+                        x_fbdi_csv_id => l_cu_csv_id,
+                        p_batch_id    => grp_rec.BATCH_ID);
+
+                    IF l_cu_zip IS NULL OR DBMS_LOB.GETLENGTH(l_cu_zip) = 0 THEN
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'No rows for customer batch ' || grp_rec.BATCH_ID || '. Skipping.',
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                        CONTINUE;
+                    END IF;
+
+                    -- 1=Batch ID, 2=Batch Name, 3=Object, 4=Source System. All four required.
+                    l_cu_param := TO_CHAR(grp_rec.BATCH_ID)
+                        || ',DMT Batch ' || TO_CHAR(grp_rec.BATCH_ID)
+                        || ',Customer and Consumer'
+                        || ',' || grp_rec.SOURCE_SYSTEM;
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Customer ParameterList: ' || l_cu_param,
+                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+
+                    submit_and_reconcile_one(
+                        p_fbdi_zip    => l_cu_zip,
+                        p_filename    => l_cu_filename,
+                        p_fbdi_csv_id => l_cu_csv_id,
+                        p_param_list  => l_cu_param,
+                        p_group_label => 'Batch: ' || grp_rec.BATCH_ID,
+                        x_load_ess_id   => l_cu_load_id,
+                        x_import_ess_id => l_cu_import_id,
+                        x_success       => l_cu_ok);
+
+                    IF NOT l_cu_ok THEN
+                        mark_batch_failed(grp_rec.BATCH_ID,
+                            '[LOAD_ERROR] Loading customer batch ' || grp_rec.BATCH_ID ||
+                            ' to the Fusion interface failed. Check ESS job ' || l_cu_load_id || ' logs.');
+                        CONTINUE;
+                    END IF;
+
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Customer batch cycle complete: BATCH_ID=' || grp_rec.BATCH_ID,
+                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+                END LOOP;
+
+                IF l_cu_count = 0 THEN
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'No STAGED Customer rows with a batch id found. Skipping Customers.',
+                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                    RETURN FALSE;
+                END IF;
+            END;
+
             GOTO grouped_finish;
         END IF;
 
@@ -2389,11 +2492,6 @@
             DMT_POZ_SUP_SITE_ASSN_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
         ELSIF p_cemli_code = 'SupplierContacts' THEN
             DMT_POZ_SUP_CONT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
-        ELSIF p_cemli_code = 'Customers' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_CUST_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
         ELSIF p_cemli_code = 'Projects' THEN
             DECLARE l_csv_id NUMBER;
             BEGIN
@@ -2531,8 +2629,6 @@
                     UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'SupplierContacts' THEN
                     UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'Customers' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'Projects' THEN
                     UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'BillingEvents' THEN
@@ -2674,11 +2770,6 @@
                 p_cemli_code     => p_cemli_code,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
                 p_import_ess_id  => TO_NUMBER(l_import_ess_id));
-        ELSIF p_cemli_code = 'Customers' THEN
-            DMT_CUST_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
         ELSIF p_cemli_code = 'Projects' THEN
             DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
@@ -2770,9 +2861,6 @@
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'SupplierContacts' THEN
                 SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_POZ_SUP_CONTACTS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'Customers' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'Projects' THEN
                 SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
