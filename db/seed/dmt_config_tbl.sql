@@ -1,7 +1,21 @@
--- Seed data for DMT_CONFIG_TBL (35 rows, snapshot 2026-07-03)
+-- Seed data for DMT_CONFIG_TBL (37 rows, snapshot 2026-07-03; +2 no-hardcoded-IDs keys 2026-07-12)
 -- Idempotent: duplicate-key inserts are skipped.
 begin
   insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('AP_IMPORT_JOB_NAME','/oracle/apps/ess/financials/payables/invoices/payablesImport,PayablesImportEss',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
+-- No-hardcoded-IDs standard (design section 7): the Expenditures business unit
+-- is named here; its instance-specific id is resolved from the BU lookup at run time.
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('EXPENDITURE_BU_NAME','US1 Business Unit','Business unit name for the Expenditures import; id resolved via BU_NAME_TO_BU_ID lookup.',to_date('2026-07-12 00:00:00','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
+-- No-hardcoded-IDs standard (design section 7): the asset book code is named
+-- config so other book types load without a code change.
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('ASSET_BOOK_TYPE','US CORP','Asset book type code for the Assets PostMassAdditions ESS job.',to_date('2026-07-12 00:00:00','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
 exception when dup_val_on_index then null;
 end;
 /

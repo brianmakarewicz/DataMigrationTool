@@ -1262,9 +1262,20 @@
             -- Pos: 1=BU_NAME, 2=BU_ID, 3=Process, 4=Selection,
             --      5=Batch(empty), 6=TxnSource(empty=all), 7-11=(empty), 12=Date,
             --      13=(empty), 14=ExpenditureTypeClass
-            -- Using #NULL for empty params per Oracle ESS convention
-            l_param_list := 'US1 Business Unit,300000046987012,IMPORT_AND_PROCESS,PREV_NOT_IMPORTED,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,'
-                || TO_CHAR(SYSDATE, 'YYYY-MM-DD') || ',#NULL,ORA_PJC_DETAIL';
+            -- Using #NULL for empty params per Oracle ESS convention.
+            -- No-hardcoded-IDs standard (design section 7): the business unit is
+            -- named in config (EXPENDITURE_BU_NAME) and its instance-specific id
+            -- is resolved from the prepopulated BU lookup, never baked into code.
+            DECLARE
+                l_exp_bu_name VARCHAR2(240);
+                l_exp_bu_id   VARCHAR2(30);
+            BEGIN
+                l_exp_bu_name := DMT_UTIL_PKG.GET_CONFIG('EXPENDITURE_BU_NAME');
+                l_exp_bu_id   := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', l_exp_bu_name);
+                l_param_list := l_exp_bu_name || ',' || l_exp_bu_id
+                    || ',IMPORT_AND_PROCESS,PREV_NOT_IMPORTED,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,'
+                    || TO_CHAR(SYSDATE, 'YYYY-MM-DD') || ',#NULL,ORA_PJC_DETAIL';
+            END;
         ELSIF p_cemli_code = 'Requisitions' THEN
             -- RequisitionImportJob: 8 args.
             -- 1=ImportSource, 2=BatchId(opt), 3=MaxBatchSize(opt),
@@ -1341,8 +1352,10 @@
         ELSIF p_cemli_code = 'Assets' THEN
             -- PostMassAdditions: 3 args (from MCCS RICE_003):
             -- <BookTypeCode>,,NORMAL
-            -- BookTypeCode: US CORP (confirmed from test data and instance config)
-            l_param_list := 'US CORP,,NORMAL';
+            -- No-hardcoded-IDs standard (design section 7): the asset book is
+            -- named config (ASSET_BOOK_TYPE), not a literal, so other book types
+            -- load without a code change.
+            l_param_list := DMT_UTIL_PKG.GET_CONFIG('ASSET_BOOK_TYPE') || ',,NORMAL';
         END IF;
         -- POs/BlanketPOs/Contracts override l_param_list inside their grouped blocks.
         -- AP/AR/1099 override inside their grouped blocks.
