@@ -470,6 +470,7 @@ This is not a restart; it is a <em>re-platform plus targeted refactor</em>. The 
 <table>
   <tr><th style="width:76%">Backlog item (section 12)</th><th style="width:12%">Priority</th><th style="width:12%">Area</th></tr>
   <tr><td>Port the proven customer batch-import fix into DMT2's own customer code (still hardcodes <code>'DMT'</code> / overwrites <code>BATCH_ID</code>) &mdash; spec in <code>docs/P1_customer_batch_fix_port.md</code></td><td>P1</td><td>DB</td></tr>
+  <tr><td>Batch/group-id passthrough + partition for PO / GL / REQ / Items &mdash; each carries a user batch/group id that is both an FBDI CSV column and an ESS parameter, but the transform overwrites it with <code>run_id</code>; carry the user value through and partition by it (the same Customers pattern)</td><td>P1</td><td>DB</td></tr>
   <tr><td>Conform the 25 reconciliation reports to Contract v1 &mdash; build the <em>shared</em> generic parser + registry columns first; the per-object report migrations then ride along in Stage&nbsp;E</td><td>P2</td><td>DB+Fusion</td></tr>
   <tr><td>Add BASE tiers to the 15 interface-only reconciliation reports &mdash; the shared expectation; each object's report is built as that object ports</td><td>P2</td><td>Fusion</td></tr>
   <tr><td>Contract v1 reports for the 14 HDL objects &mdash; the shared HDL reconcile mechanism (per-object reports land with the HDL objects in Wave&nbsp;2)</td><td>P2</td><td>DB+Fusion</td></tr>
@@ -485,7 +486,7 @@ This is not a restart; it is a <em>re-platform plus targeted refactor</em>. The 
 </table>
 </div>
 
-<h3>Tier&nbsp;5 — Cleanups (P3) — done as quick wins or alongside the related object/APEX work</h3>
+<h3>Tier&nbsp;5 — Cleanups (mostly P3; the naming sweep is P2) — done as quick wins or alongside the related object/APEX work</h3>
 <div class="overflow">
 <table>
   <tr><th style="width:76%">Backlog item (section 12)</th><th style="width:12%">Priority</th><th style="width:12%">Area</th></tr>
