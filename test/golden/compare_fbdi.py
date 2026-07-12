@@ -175,9 +175,12 @@ def apply_tokens(records, tokens):
     max_len, local_len). Applied per field. match_mode limits how a token may
     hit, so short numeric values (run ids, prefixes) cannot collide with
     unrelated business data:
-      whole_field — field must equal the literal exactly
-      startswith  — literal replaced only at the start of the field
-      substring   — replace every occurrence (use only for long/unique tokens)
+      whole_field   — field must equal the literal exactly
+      startswith    — literal replaced only at the start of the field
+      prefix_digits — field of the form <literal>-<digits> (a prefix-scoped id
+                      whose trailing digits are a non-reproducible sequence)
+                      collapses whole to the placeholder; validates structure
+      substring     — replace every occurrence (use only for long/unique tokens)
     'fields' (optional list of 0-based positions) restricts the token to those
     CSV columns; None = any column.
 
@@ -213,6 +216,15 @@ def _apply_field(field, col, toks):
                 if max_len is not None:
                     rest = rest[:max(max_len - local_len, 0)]
                 field = ph + rest
+        elif mode == "prefix_digits":
+            # <literal>-<digits>: a prefix-scoped id whose trailing digits are a
+            # non-reproducible global sequence (e.g. STG_SEQUENCE_ID). Validate
+            # the STRUCTURE -- the literal, a dash, then ONLY digits -- and
+            # collapse the whole field to the placeholder. A field that is not
+            # exactly <literal>-<digits> is left unchanged and still diffs, so
+            # this is structural validation, not a mask.
+            if field.startswith(lit + "-") and field[len(lit) + 1:].isdigit():
+                field = ph
         else:  # substring
             if lit in field:
                 field = field.replace(lit, ph)
