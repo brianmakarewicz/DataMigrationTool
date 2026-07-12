@@ -448,6 +448,16 @@
             "fields": [
               66
             ]
+          },
+          {
+            "_note": "Field 52 = REFERENCE21 = the per-line reconciliation key RECON_KEY (prefix-STG_SEQUENCE_ID), added by the GL per-line-key feature. The trailing STG_SEQUENCE_ID is a global identity, not reproducible from the prefix/run-id, so it is normalized structurally: <prefix>-<digits> collapses to {RECON_KEY} on both sides. Golden field 52 was re-cut from blank to 9403-<n> to reflect the new field.",
+            "placeholder": "{RECON_KEY}",
+            "golden": "9403",
+            "local": "$PREFIX",
+            "match": "prefix_digits",
+            "fields": [
+              52
+            ]
           }
         ],
         "date_mask_fields": [

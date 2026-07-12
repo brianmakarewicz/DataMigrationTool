@@ -153,14 +153,14 @@
 
         -- Two-tier reconciliation over the decoded report rows.
         FOR r IN (
-            SELECT x.reference1,
+            SELECT x.record_key,
                    UPPER(x.source_type)    AS source_type,
                    UPPER(x.import_status)  AS import_status,
                    x.fusion_id,
                    x.error_msg
             FROM   XMLTABLE('/DATA_DS/G_1' PASSING p_report_xml
                 COLUMNS
-                    reference1      VARCHAR2(100)  PATH 'REFERENCE1',
+                    record_key      VARCHAR2(100)  PATH 'RECORD_KEY',
                     import_status   VARCHAR2(50)   PATH 'IMPORT_STATUS',
                     source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
                     fusion_id       NUMBER         PATH 'FUSION_ID',
@@ -179,7 +179,7 @@
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID     = p_run_id
-                    AND    REFERENCE1 = r.reference1
+                    AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSE
@@ -192,7 +192,7 @@
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID     = p_run_id
-                    AND    REFERENCE1 = r.reference1
+                    AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;
@@ -209,7 +209,7 @@
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID     = p_run_id
-                    AND    REFERENCE1 = r.reference1
+                    AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSE
@@ -222,7 +222,7 @@
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID     = p_run_id
-                    AND    REFERENCE1 = r.reference1
+                    AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
                 END IF;

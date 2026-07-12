@@ -113,16 +113,18 @@
                 || '"' || REPLACE(NVL(REFERENCE8,''), '"', '""') || '"' || ','
                 || '""' || ','
                 || '"' || REPLACE(NVL(REFERENCE10,''), '"', '""') || '"' || ','
-                || '""' || ','
-                || '""' || ','
-                || '""' || ','
-                || '""' || ','
-                || '""' || ','
-                || '""' || ','
-                || '""' || ','
-                || '""' || ','
-                || '""' || ','
-                || '""' || ','
+                -- Slot 53 = GL_INTERFACE.REFERENCE21 -> GL_JE_LINES.REFERENCE_1
+                -- (proven empirically 2026-07-11): the per-line reconciliation key.
+                || '"' || REPLACE(NVL(RECON_KEY,''), '"', '""') || '"' || ','
+                || '""' || ','   -- REFERENCE22
+                || '""' || ','   -- REFERENCE23
+                || '""' || ','   -- REFERENCE24
+                || '""' || ','   -- REFERENCE25
+                || '""' || ','   -- REFERENCE26
+                || '""' || ','   -- REFERENCE27
+                || '""' || ','   -- REFERENCE28
+                || '""' || ','   -- REFERENCE29
+                || '""' || ','   -- REFERENCE30
                 || '"' || NVL(TO_CHAR(STAT_AMOUNT), '') || '"' || ','
                 || '"' || REPLACE(NVL(USER_CURRENCY_CONVERSION_TYPE,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(CURRENCY_CONVERSION_DATE, 'YYYY/MM/DD'), '') || '"' || ','
