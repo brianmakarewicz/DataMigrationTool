@@ -70,17 +70,23 @@
 <div class="wrap">
 
 <div class="callout good">
-<strong>Execution status (updated 2026-07-08, end of day).</strong> Working folder <code>C:\Users\Monroe\workspace\DMT2\</code>; GitHub repo <strong>github.com/brianmakarewicz/DataMigrationTool</strong> — main is protected (pull request + 1 approval required), and every PR is reviewed automatically by a GitHub Actions workflow the moment it opens (approves as brianmakarewicz with an AUTOMATED banner, merges on approval; proven live). Docker-first posture — all work on <code>dmt2-local</code> (port 1523); the new ATP remains deferred.
+<strong>Execution status (updated 2026-07-12).</strong> Working folder <code>C:\Users\Monroe\workspace\DMT2\</code>; GitHub repo <strong>github.com/brianmakarewicz/DataMigrationTool</strong> — main is protected (pull request + 1 approval required), and every PR is reviewed automatically by a GitHub Actions workflow the moment it opens (approves as brianmakarewicz with an AUTOMATED banner, merges on approval; proven live). Docker-first posture — all work on <code>dmt2-local</code> (port 1523); the new ATP remains deferred.
 <br><br>
-<strong>Stage A — COMPLETE.</strong> Greenfield install proven from committed files; all five DDL tranches blind-reviewed and triaged. After deleting the decided-dead report views and the 22 unreferenced broken summary views, the invalid-object count is <strong>24, every one explained</strong> (15 broken views awaiting scheduled repair, 9 APEX-dependent code objects that compile wherever APEX exists).
+<strong>Stage A (Foundation DDL) — COMPLETE.</strong> Greenfield install proven from committed files; all five DDL tranches blind-reviewed and triaged; every remaining invalid object explained.
 <br>
-<strong>Stage B — FULLY CLOSED.</strong> Common utilities unit-tested (6 suites, ~140 assertions); ~15 real defects found and fixed (among them: a base64 decoder corrupting all large BIP payloads — five copies of the bug family consolidated; the ESS report parser dead on Oracle 26ai; both inherited invalid packages repaired). Golden files captured 15/15 from proven run 116; the GLBalances generator is byte-identical to the frozen stack. Demo password rotated (5 users verified); the live Fusion suite is 6/6 green (HTTP, BIP, fault handling, ESS poll, UCM upload).
+<strong>Stage B (Common utilities) — COMPLETE.</strong> Unit-tested (6 suites, ~140 assertions); ~15 real defects fixed (including a base64 decoder that corrupted all large BIP payloads, and the ESS report parser being dead on Oracle 26ai). Golden files captured 15/15 from proven run 116; the GLBalances generator is byte-identical to the frozen stack. Live Fusion suite 6/6 green (HTTP, BIP, fault handling, ESS poll, UCM upload).
 <br>
-<strong>Stage C — engine COMPLETE (offline + re-reviewed).</strong> Prefix consolidated to one per-run sequence; the three decided control tables built and seeded (45 objects / 86 record types); catalog-driven dispatch live (65 hardcoded branches retired); the queue engine proven end-to-end with a mock object. The blind engine review FAILED on decided-behavior gaps (rollup semantics inverted, DONE reachable without the accounting check, timeout-as-verdict, retired features shipped) — all fixed, and the re-review PASSED with residues closed. Remaining Stage C items: partition/plan support, transport+parser consolidation, live ESS poll-path testing.
+<strong>Stage C (Orchestration engine) — COMPLETE.</strong> Prefix consolidated to one per-run sequence; the three decided control tables built and seeded; catalog-driven dispatch live (65 hardcoded branches retired); queue engine proven end-to-end with a mock object; blind engine review PASSED after fixes.
+<br>
+<strong>Stage D (Suppliers vertical slice) — COMPLETE and CLOSED.</strong> All five supplier objects ran end-to-end through the real queue on the live demo instance (evidence recorded); Suppliers blind re-review PASSED; the six-step recipe is now the template every other object reuses.
+<br>
+<strong>Stage E (remaining Wave-1 objects) — IN PROGRESS.</strong> Offline vertical slices merged for GLBalances, Customers, Workers, and Projects (identity keys, unit suites, golden byte-compare, reconciler conformance). Customers is furthest along: Contract-v1 reconciler, base-table BIP report, and the live customer batch-id fix all merged. GLBalances gained per-line reconciliation keying. A common lookup consolidation (<code>GET_LOOKUP</code>) landed to support the no-hardcoded-IDs standard.
+<br>
+<strong>Stage F (full regression gate, then APEX) — NOT STARTED.</strong>
 <br><br>
-<strong>Process:</strong> the blind tranche-review protocol is mandatory and has run 7 times (5 DDL tranches, utilities, engine + re-review). ~40 proposed rules sit in RED in the canonical requirements doc awaiting user accept/reject; one accepted so far (identity columns for keys). Open user decisions: the three-site dynamic-SQL exception, the utility-layer error-code exception, the drill-label spec self-contradiction.
+<strong>Decision taken 2026-07-12 — upstream-first.</strong> Before driving more Wave-1 objects to live, clear the shared foundation the backlog calls out (the stage&rarr;transform error table and funnel view, the consolidated BIP fetch, the centralized reconcile-error sweep, the hardcoded-value fixes, and the port of the customer batch fix into DMT2's own code). Every object then ports once with the fixes already underneath it. Section&nbsp;3.5 below maps every P1/P2/P3 backlog item to its place in this order and references its home in the requirements doc.
 <br>
-<strong>Next: Stage D — the Suppliers vertical slice</strong>, arriving as the first substantial pull request through the automated review pipeline.
+<strong>Status tracking — one place only.</strong> This plan sequences the work and references each backlog item; the authoritative done/not-done state lives solely in the requirements doc (<code>DMT_DESIGN.html</code>, section 12). An item is checked off there only after it is fixed <em>and</em> regression-tested on the new stack.
 </div>
 
 <div class="toc">
@@ -90,6 +96,7 @@
     <li><a href="#current">Current-State Findings (code + requirements review)</a></li>
     <li><a href="#plan">Detailed Phased Plan (Phases 0–6)</a></li>
     <li><a href="#buildorder">Build Order of Operations &amp; Incremental Test Plan</a></li>
+    <li><a href="#backlog-coverage">Backlog Coverage — every P1/P2/P3 item in upstream-first order</a></li>
     <li><a href="#roadmap">Product Roadmap — Next 5 Quarters (full-time)</a></li>
     <li><a href="#risks">Risk Register</a></li>
     <li><a href="#decisions">Decisions Already Made / Still Open</a></li>
@@ -418,6 +425,105 @@ This is not a restart; it is a <em>re-platform plus targeted refactor</em>. The 
   <li>Wave-2 objects (wired-5, FBL, HDL reports, REST) — Phase 4, after the gate.</li>
   <li>OIC orchestration, Activity Log page, funnel redesign — post-parity polish.</li>
 </ul>
+
+<!-- ============================================================ -->
+<h2 id="backlog-coverage">4.5 Backlog Coverage — every P1/P2/P3 item, in upstream-first order</h2>
+
+<div class="callout">
+<strong>How to read this section.</strong> Every open item in the requirements doc's backlog (<code>DMT_DESIGN.html</code>, section 12 — "Open items / backlog") appears below exactly once, grouped by <em>when</em> it should be done. The rule is upstream-first: anything the objects share is fixed before the objects that depend on it. Each row names the backlog item by its opening words so it can be found in section 12; the full text lives only there. <strong>This plan does not track done/not-done</strong> — that state lives only in section 12, and an item is checked off there after it is fixed <em>and</em> regression-tested on the new stack. Priority labels: P1 = blocks correctness or the rebuild, P2 = important, P3 = worthwhile cleanup.</div>
+
+<h3>Tier&nbsp;1 — Foundational, already addressed during Stages A–C (confirm, then check off in section 12)</h3>
+<div class="overflow">
+<table>
+  <tr><th style="width:66%">Backlog item (section 12)</th><th style="width:10%">Priority</th><th style="width:24%">Where it was done</th></tr>
+  <tr><td>Full install script (<code>db_full/</code>)</td><td>P1</td><td>Seed of the new repo (Stage A)</td></tr>
+  <tr><td>Converge base DDL to the RUN_ID model</td><td>P1</td><td>Seed + Stage A DDL</td></tr>
+  <tr><td>Consolidate the prefix mechanism (single sequence)</td><td>P1</td><td>Stage C engine</td></tr>
+  <tr><td>Catalog-driven queue dispatch</td><td>P2</td><td>Stage C engine (65 branches retired)</td></tr>
+  <tr><td>Fold <code>FETCH_BIP_RESULTS</code> + <code>bip_soap_post</code> into <code>RUN_BIP_REPORT</code></td><td>P2</td><td>Stage B utilities (confirm coverage)</td></tr>
+</table>
+</div>
+
+<h3>Tier&nbsp;2 — Shared engine debt to clear NOW, before any more objects go live (the heart of upstream-first)</h3>
+<p class="small">These sit underneath every object's validator, transformer, generator, or reconciler. Clearing them first means each Wave-1 object is ported and regression-tested once, with the fixes already in place.</p>
+<div class="overflow">
+<table>
+  <tr><th style="width:76%">Backlog item (section 12)</th><th style="width:12%">Priority</th><th style="width:12%">Area</th></tr>
+  <tr><td>Create <code>DMT_PREFIX_HISTORY_V</code> (the one remaining piece of prefix consolidation)</td><td>P1</td><td>DB</td></tr>
+  <tr><td>One <code>DMT_FBDI_CSV_TBL</code> row per physical CSV file (re-model CSV&harr;ZIP; verify against the Suppliers multi-file work)</td><td>P1</td><td>DB</td></tr>
+  <tr><td>Build the stage&rarr;transform error table (<code>DMT_STG_TFM_ERROR_TBL</code>) + wire validators/transformers — prerequisite for the funnel</td><td>P2</td><td>DB</td></tr>
+  <tr><td>Funnel metrics view (the database view only; the Object Detail UI redesign waits for Stage&nbsp;F)</td><td>P2</td><td>DB</td></tr>
+  <tr><td>Centralize the <code>[RECONCILE_ERROR]</code> unmatched-row sweep (shared, invoked after every reconcile)</td><td>P2</td><td>DB</td></tr>
+  <tr><td>Shared <code>DMT_IMPORT_REPORT_PKG.APPLY_ERRORS</code> (extract the copy-pasted row-matching update)</td><td>P2</td><td>DB</td></tr>
+  <tr><td>Fold config objects into the queue + retire <code>packages/runners/</code></td><td>P2</td><td>DB</td></tr>
+  <tr><td>Rename work status <code>VALIDATING &rarr; PROCESSING</code></td><td>P2</td><td>DB+UI</td></tr>
+  <tr><td>Enforce a mandatory scenario on every ingestion path; retire <code>p_include_untagged</code></td><td>P2</td><td>DB+UI</td></tr>
+  <tr><td>Expenditures loader hardcodes a business unit &mdash; resolve from the BU lookup</td><td>P2 <span class="small">(red)</span></td><td>DB</td></tr>
+  <tr><td>Assignment HDL generator hardcodes a business unit &mdash; resolve from the lookup</td><td>P2 <span class="small">(red)</span></td><td>DB</td></tr>
+  <tr><td>Assets loader hardcodes a book type &mdash; make it named config / a lookup</td><td>P2 <span class="small">(red)</span></td><td>DB</td></tr>
+  <tr><td>Config holds instance IDs by number, not name &mdash; store names, resolve at pipeline start</td><td>P2 <span class="small">(red)</span></td><td>DB</td></tr>
+</table>
+</div>
+
+<h3>Tier&nbsp;3 — The customer batch fix and the shared reconciliation-contract machinery (before the per-object rollout)</h3>
+<div class="overflow">
+<table>
+  <tr><th style="width:76%">Backlog item (section 12)</th><th style="width:12%">Priority</th><th style="width:12%">Area</th></tr>
+  <tr><td>Port the proven customer batch-import fix into DMT2's own customer code (still hardcodes <code>'DMT'</code> / overwrites <code>BATCH_ID</code>) &mdash; spec in <code>docs/P1_customer_batch_fix_port.md</code></td><td>P1</td><td>DB</td></tr>
+  <tr><td>Conform the 25 reconciliation reports to Contract v1 &mdash; build the <em>shared</em> generic parser + registry columns first; the per-object report migrations then ride along in Stage&nbsp;E</td><td>P2</td><td>DB+Fusion</td></tr>
+  <tr><td>Add BASE tiers to the 15 interface-only reconciliation reports &mdash; the shared expectation; each object's report is built as that object ports</td><td>P2</td><td>Fusion</td></tr>
+  <tr><td>Contract v1 reports for the 14 HDL objects &mdash; the shared HDL reconcile mechanism (per-object reports land with the HDL objects in Wave&nbsp;2)</td><td>P2</td><td>DB+Fusion</td></tr>
+</table>
+</div>
+
+<h3>Tier&nbsp;4 — Per-object Wave-1 completion (Stage&nbsp;E) — inherits every Tier&nbsp;2/3 fix</h3>
+<p class="small">With the shared layer clean, drive the remaining proven objects to live end-to-end using the Stage&nbsp;D six-step recipe. GLBalances, Workers, and Projects already have offline slices; Customers is nearly live.</p>
+<div class="overflow">
+<table>
+  <tr><th style="width:76%">Backlog item (section 12)</th><th style="width:12%">Priority</th><th style="width:12%">Area</th></tr>
+  <tr><td>Items ORA-01427 reconciler bug (fixed when Items is driven to LOADED)</td><td>P2</td><td>DB</td></tr>
+</table>
+</div>
+
+<h3>Tier&nbsp;5 — Cleanups (P3) — done as quick wins or alongside the related object/APEX work</h3>
+<div class="overflow">
+<table>
+  <tr><th style="width:76%">Backlog item (section 12)</th><th style="width:12%">Priority</th><th style="width:12%">Area</th></tr>
+  <tr><td>Remove cancellation (delete <code>CANCEL_RUN</code> + the CANCELLED status)</td><td>P3</td><td>DB+UI</td></tr>
+  <tr><td>Delete the abandoned adaptor stubs (<code>DMT_EBS_ADAPTOR_PKG</code>, <code>DMT_GENERIC_ADAPTOR_PKG</code>)</td><td>P3</td><td>DB</td></tr>
+  <tr><td>Standardize validator entry points to <code>VALIDATE_PRE/POST_TRANSFORM</code> (all 43)</td><td>P3</td><td>DB</td></tr>
+  <tr><td>Complete validator tag adoption (25 of 43 still append untagged <code>ERROR_TEXT</code>)</td><td>P3</td><td>DB</td></tr>
+  <tr><td>Split the supplier transform/reconciler packages per FBDI object</td><td>P3</td><td>DB</td></tr>
+  <tr><td>Mode-driven selection predicates; retire <code>reset_scenario_status</code> + the RETRY status</td><td>P3</td><td>DB</td></tr>
+  <tr><td>Eliminate runtime <code>EXECUTE IMMEDIATE</code> (static SQL only outside deploy scripts)</td><td>P3</td><td>DB</td></tr>
+  <tr><td>Replace <code>LIKE</code>-matching on known codes with equality (start with the 1099 filter)</td><td>P3</td><td>DB</td></tr>
+  <tr><td>Repair the 2 invalid package bodies (<code>DMT_PIPELINE_INIT_PKG</code>, <code>DMT_REST_LOADER_PKG</code>)</td><td>P3</td><td>DB</td></tr>
+  <tr><td>Naming conformance sweep (conform every registry to the section&nbsp;1 canonical codes; <code>DMT_V_*</code> &rarr; <code>*_V</code>)</td><td>P2</td><td>DB</td></tr>
+  <tr><td>Banks to REST (retire the Banks FBL generator; build banks &rarr; branches &rarr; accounts) &mdash; with the Wave-2 REST objects</td><td>P3</td><td>DB</td></tr>
+  <tr><td>Document the prefixed business key(s) per object (section&nbsp;1 column)</td><td>P3</td><td>Docs</td></tr>
+  <tr><td>Retire the superseded docs (fold DB_REQUIREMENTS / UI_REQUIREMENTS into the design doc)</td><td>P3</td><td>Docs</td></tr>
+</table>
+</div>
+
+<h3>Tier&nbsp;6 — APEX / UI and the final view cleanup (Stage&nbsp;F, after the regression gate)</h3>
+<p class="small">Per the standing rule, no UI work starts until the full regression scenario is green. These are held here deliberately.</p>
+<div class="overflow">
+<table>
+  <tr><th style="width:76%">Backlog item (section 12)</th><th style="width:12%">Priority</th><th style="width:12%">Area</th></tr>
+  <tr><td>Object Detail funnel redesign (the UI half of the funnel item)</td><td>P2</td><td>UI</td></tr>
+  <tr><td>Implement the outcome-based tile palette</td><td>P2</td><td>DB+UI</td></tr>
+  <tr><td>Log attribution + Activity Log browser page</td><td>P2</td><td>DB+UI</td></tr>
+  <tr><td>73 invalid views &mdash; the 37 summary <code>DMT_*_V</code> usage check (fix vs delete); the 36 <code>*_imp_rpt_v</code> already decided for deletion</td><td>P2</td><td>DB</td></tr>
+  <tr><td>Eliminate standalone procedures (fold the 6 render procedures into <code>DMT_APEX_PAGE_PKG</code>; re-point ~11 APEX call sites)</td><td>P3</td><td>DB+UI</td></tr>
+  <tr><td>Verify the Run Pipeline screen against its new spec</td><td>P3</td><td>UI</td></tr>
+  <tr><td>Dashboard redesign (live stats + recent runs)</td><td>P3</td><td>UI</td></tr>
+  <tr><td>CSV upload end-to-end verification (Pages 2–12)</td><td>P3</td><td>UI</td></tr>
+  <tr><td>Delete the superseded pages (13, 15, 50, 51, 55, 56, 70–72, 81, 83)</td><td>P3</td><td>UI</td></tr>
+  <tr><td>Rename APEX <code>*_INTEGRATION_ID</code> page items/columns to <code>*_RUN_ID</code>; retire the compat alias</td><td>P3</td><td>UI</td></tr>
+  <tr><td>Remove the files table from ESS Job Detail (files live only on ESS Output)</td><td>P3</td><td>DB+UI</td></tr>
+  <tr><td>Browser-verify Page 82 tile grid + live REST Verify call</td><td>P3</td><td>UI</td></tr>
+</table>
+</div>
 
 <!-- ============================================================ -->
 <h2 id="roadmap">5. Product Roadmap — Next 5 Quarters (full-time)</h2>
