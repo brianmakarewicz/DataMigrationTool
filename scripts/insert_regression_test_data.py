@@ -510,9 +510,15 @@ def main():
     #    BAD:  1 invalid PARTY_TYPE [BAD-LKP]
     # ====================================================================
     print("\n=== 6. Customer Parties ===")
+    # Synthetic, self-unique organization names. Fusion's duplicate detection
+    # fuzzy-matches on name against ALL existing parties (the demo instance is
+    # full of real-looking names -- e.g. dozens of "*Anderson*"), and holds a
+    # potential match as a warning instead of creating it. Embedding the unique
+    # ORIG_SYSTEM_REFERENCE in the name (plus the run prefix the transform adds)
+    # guarantees it matches nothing and loads cleanly. Distinct per row too.
     for org_name, ref in [
-        ("RT Customer Good-1", "RT-CUST-G1"),
-        ("RT Customer Good-2", "RT-CUST-G2"),
+        ("Blorptech Widgets", "RT-CUST-G1"),
+        ("Fnargle Systems", "RT-CUST-G2"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_HZ_PARTIES_STG_TBL (

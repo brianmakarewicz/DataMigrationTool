@@ -121,10 +121,14 @@
                     s.SALUTATION,
                     s.PARTY_USAGE_CODE,
                     s.JGZZ_FISCAL_CODE,
-                    s.ORGANIZATION_NAME,
+                    -- Party name is a de-facto dedup key: Fusion's duplicate
+                    -- detection rejects a re-loaded name. Prefix it (like the
+                    -- reference/number) so each test run is isolated; production
+                    -- (no prefix) keeps the real name. NULLs stay NULL.
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.ORGANIZATION_NAME),
                     s.DUNS_NUMBER_C,
-                    s.PERSON_FIRST_NAME,
-                    s.PERSON_LAST_NAME,
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_FIRST_NAME),
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_LAST_NAME),
                     s.PERSON_LAST_NAME_PREFIX,
                     s.PERSON_SECOND_LAST_NAME,
                     s.PERSON_MIDDLE_NAME,

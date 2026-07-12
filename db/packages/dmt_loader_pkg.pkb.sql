@@ -1762,15 +1762,17 @@
         END IF;
 
         -- ============================================================
-        -- Customers: grouped load by BATCH_ID.
-        -- BulkImportJob ("Import Bulk Customer Data") auto-creates the import
-        -- batch from a 4-value positional ParameterList: 1=Batch ID,
-        -- 2=Batch Name, 3=Object ('Customer and Consumer'), 4=Source System.
-        -- ALL FOUR ARE REQUIRED -- proven live 2026-07-11 that an empty Batch
-        -- Name loads 0 rows to the base tables (20/20 to hz_cust_accounts with
-        -- the four values). Batch ID is a per-batch ESS parameter, so we emit
-        -- one FBDI + one load+import per distinct BATCH_ID; Source System is the
-        -- batch's own PARTY_ORIG_SYSTEM (one batch must use exactly one).
+        -- Customers: grouped load, partitioned by (BATCH_ID, Source System).
+        -- The load job MUST be "Import Bulk Customer Data" (job def
+        -- CDMAutoBulkImportJob at /oracle/apps/ess/cdm/foundation/bulkImport),
+        -- NOT BulkImportJob ("Import Trading Community Data in Bulk", which needs
+        -- a pre-existing batch and NPEs on a null batchId). CDMAutoBulkImportJob
+        -- CREATES the import batch from a 4-value positional ParameterList
+        -- (Batch ID, Batch Name, Object CODE 'CUSTOMER', Source System) and then
+        -- processes it -- proven by manual ESS run 9731634. The object arg MUST
+        -- be the code 'CUSTOMER' (not 'Customer and Consumer'). We emit one FBDI
+        -- + one load per (BATCH_ID, Source System); the batch id comes from the
+        -- CSV and one batch uses exactly one source system.
         -- ============================================================
         IF p_cemli_code = 'Customers' THEN
             DECLARE
@@ -1842,10 +1844,15 @@
                         CONTINUE;
                     END IF;
 
-                    -- 1=Batch ID, 2=Batch Name, 3=Object, 4=Source System. All four required.
+                    -- ParameterList for "Import Bulk Customer Data"
+                    -- (job def CDMAutoBulkImportJob), which CREATES the import batch
+                    -- from these 4 positional args -- modelled on the proven manual run
+                    -- (ESS 9731634): 1=Batch ID (from the CSV), 2=Batch Name,
+                    -- 3=Object CODE ('CUSTOMER' -- NOT 'Customer and Consumer',
+                    -- which silently fails to create the batch), 4=Source System.
                     l_cu_param := TO_CHAR(grp_rec.BATCH_ID)
-                        || ',DMT Batch ' || TO_CHAR(grp_rec.BATCH_ID)
-                        || ',Customer and Consumer'
+                        || ',Batch ID ' || TO_CHAR(grp_rec.BATCH_ID) || ' ' || grp_rec.SOURCE_SYSTEM
+                        || ',CUSTOMER'
                         || ',' || grp_rec.SOURCE_SYSTEM;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Customer ParameterList: ' || l_cu_param,

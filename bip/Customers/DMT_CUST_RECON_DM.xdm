@@ -15,37 +15,37 @@ FROM (
     -- ---- BASE tier: positive proof, one block per record type ----
     SELECT 'Parties'         AS record_type, r.orig_system_reference, r.owner_table_id AS fusion_id, CAST(NULL AS VARCHAR2(4000)) AS error_message
     FROM   hz_orig_sys_references r
-    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_PARTIES'
+    WHERE  r.owner_table_name = 'HZ_PARTIES'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
     SELECT 'Locations', r.orig_system_reference, r.owner_table_id, NULL
     FROM   hz_orig_sys_references r
-    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_LOCATIONS'
+    WHERE  r.owner_table_name = 'HZ_LOCATIONS'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
     SELECT 'PartySites', r.orig_system_reference, r.owner_table_id, NULL
     FROM   hz_orig_sys_references r
-    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_PARTY_SITES'
+    WHERE  r.owner_table_name = 'HZ_PARTY_SITES'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
     SELECT 'PartySiteUses', r.orig_system_reference, r.owner_table_id, NULL
     FROM   hz_orig_sys_references r
-    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_PARTY_SITE_USES'
+    WHERE  r.owner_table_name = 'HZ_PARTY_SITE_USES'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
     SELECT 'Accounts', r.orig_system_reference, r.owner_table_id, NULL
     FROM   hz_orig_sys_references r
-    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_CUST_ACCOUNTS'
+    WHERE  r.owner_table_name = 'HZ_CUST_ACCOUNTS'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
     SELECT 'AccountSites', r.orig_system_reference, r.owner_table_id, NULL
     FROM   hz_orig_sys_references r
-    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_CUST_ACCT_SITES_ALL'
+    WHERE  r.owner_table_name = 'HZ_CUST_ACCT_SITES_ALL'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
     SELECT 'AccountSiteUses', r.orig_system_reference, r.owner_table_id, NULL
     FROM   hz_orig_sys_references r
-    WHERE  r.orig_system = 'DMT' AND r.owner_table_name = 'HZ_CUST_SITE_USES_ALL'
+    WHERE  r.owner_table_name = 'HZ_CUST_SITE_USES_ALL'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
     -- ---- ERROR tier: reject text for BAD rows, by source ref ----
