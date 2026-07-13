@@ -66,7 +66,8 @@ AS
     -- Private: generate PorReqHeadersInterface.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_headers_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -148,6 +149,7 @@ AS
             FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -160,7 +162,8 @@ AS
     -- Private: generate PorReqLinesInterface.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_lines_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -288,6 +291,11 @@ AS
             FROM   DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR EXISTS (
+                        SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                        WHERE h.RUN_ID = l.RUN_ID
+                          AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
+                          AND h.BATCH_ID = p_batch_id))
             ORDER BY l.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -300,7 +308,8 @@ AS
     -- Private: generate PorReqDistsInterface.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_dists_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -428,6 +437,15 @@ AS
             FROM   DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
             WHERE  d.RUN_ID = p_run_id
             AND    d.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR EXISTS (
+                        SELECT 1
+                        FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
+                        JOIN DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                          ON h.RUN_ID = l.RUN_ID
+                         AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
+                        WHERE l.RUN_ID = d.RUN_ID
+                          AND l.INTERFACE_LINE_KEY = d.INTERFACE_LINE_KEY
+                          AND h.BATCH_ID = p_batch_id))
             ORDER BY d.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -445,7 +463,8 @@ AS
         p_run_id IN  NUMBER,
         x_fbdi_zip       OUT BLOB,
         x_filename       OUT VARCHAR2,
-        x_fbdi_csv_id    OUT NUMBER
+        x_fbdi_csv_id    OUT NUMBER,
+        p_batch_id       IN  VARCHAR2 DEFAULT NULL
     )
     IS
         l_zip         BLOB;
@@ -462,12 +481,14 @@ AS
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        x_filename := 'REQ_' || TO_CHAR(p_run_id) || '.zip';
+        x_filename := 'REQ_' || TO_CHAR(p_run_id)
+                      || CASE WHEN p_batch_id IS NULL THEN '' ELSE '_' || p_batch_id END
+                      || '.zip';
 
-        -- Generate all 3 CSVs
-        l_hdr_csv   := gen_headers_csv(p_run_id);
-        l_lines_csv := gen_lines_csv(p_run_id);
-        l_dists_csv := gen_dists_csv(p_run_id);
+        -- Generate all 3 CSVs (filtered to one batch when p_batch_id is passed)
+        l_hdr_csv   := gen_headers_csv(p_run_id, p_batch_id);
+        l_lines_csv := gen_lines_csv(p_run_id, p_batch_id);
+        l_dists_csv := gen_dists_csv(p_run_id, p_batch_id);
 
         -- AD#20: Skip gracefully if no rows generated
         IF (l_hdr_csv IS NULL OR DBMS_LOB.GETLENGTH(l_hdr_csv) = 0) THEN
@@ -519,20 +540,37 @@ AS
         );
 
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
-        -- Headers
+        -- Scoped to the batch (when passed) so one batch's generate only flips
+        -- its own rows and does not starve later batches in the same run.
+        -- Headers filter by BATCH_ID directly; lines/dists filter through their header.
         UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         -- Lines
-        UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL
+        UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR EXISTS (
+                    SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                    WHERE h.RUN_ID = l.RUN_ID
+                      AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
+                      AND h.BATCH_ID = p_batch_id));
 
         -- Distributions
-        UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL
+        UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR EXISTS (
+                    SELECT 1
+                    FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
+                    JOIN DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                      ON h.RUN_ID = l.RUN_ID
+                     AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
+                    WHERE l.RUN_ID = d.RUN_ID
+                      AND l.INTERFACE_LINE_KEY = d.INTERFACE_LINE_KEY
+                      AND h.BATCH_ID = p_batch_id));
 
         -- Free temporary CLOBs
         DBMS_LOB.FREETEMPORARY(l_hdr_csv);

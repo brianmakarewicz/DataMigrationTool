@@ -1857,31 +1857,40 @@ def main():
     # ====================================================================
     print("\n=== 35. Requisition Headers ===")
     REQ_PREPARER = "CALVIN.ROTH_esew-dev28@oraclepdemos.com"
-    for hkey, req_num, preparer, descr, label in [
-        ("RT-REQ-G1",      "RT-REQ-001", REQ_PREPARER,
-         "GOOD: should load successfully", "GOOD Requisition [LOADED]"),
-        ("RT-REQ-BADHDR",  "RT-REQ-BADHDR", "NONEXISTENT_USER@fake.com",
-         "BAD HDR: invalid preparer email", "BAD Requisition: [HDR] error"),
-        ("RT-REQ-BADLINE", "RT-REQ-BADLINE", REQ_PREPARER,
-         "BAD LINE: valid hdr, bad UOM on line", "BAD Requisition: [LINE] error"),
-        ("RT-REQ-BADDIST", "RT-REQ-BADDIST", REQ_PREPARER,
-         "BAD DIST: valid hdr+line, bad charge acct", "BAD Requisition: [DIST] error"),
+    # Two user-supplied batch ids prove the batch passthrough + partition:
+    # each batch generates its own FBDI and its own Import Requisitions ESS run,
+    # and each batch carries a GOOD requisition that must reach the base tables.
+    REQ_BATCH_A = 7001
+    REQ_BATCH_B = 7002
+    for hkey, batch, req_num, preparer, descr, label in [
+        ("RT-REQ-G1",      REQ_BATCH_A, "RT-REQ-001", REQ_PREPARER,
+         "GOOD: should load successfully", "GOOD Requisition [LOADED] batch 7001"),
+        ("RT-REQ-BADHDR",  REQ_BATCH_A, "RT-REQ-BADHDR", "NONEXISTENT_USER@fake.com",
+         "BAD HDR: invalid preparer email", "BAD Requisition: [HDR] error batch 7001"),
+        ("RT-REQ-G2",      REQ_BATCH_B, "RT-REQ-002", REQ_PREPARER,
+         "GOOD: second batch, should load successfully", "GOOD Requisition [LOADED] batch 7002"),
+        ("RT-REQ-BADLINE", REQ_BATCH_B, "RT-REQ-BADLINE", REQ_PREPARER,
+         "BAD LINE: valid hdr, bad UOM on line", "BAD Requisition: [LINE] error batch 7002"),
+        ("RT-REQ-BADDIST", REQ_BATCH_B, "RT-REQ-BADDIST", REQ_PREPARER,
+         "BAD DIST: valid hdr+line, bad charge acct", "BAD Requisition: [DIST] error batch 7002"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL (
                 INTERFACE_HEADER_KEY, INTERFACE_SOURCE_CODE,
+                BATCH_ID,
                 REQ_BU_NAME, PRC_BU_NAME,
                 REQUISITION_NUMBER, DOCUMENT_STATUS,
                 PREPARER_EMAIL_ADDR,
                 DESCRIPTION, SOURCE_ID
             ) VALUES (
                 :hkey, 'Manual Invoice Entry',
+                :batch,
                 :bu, :bu,
                 :rnum, 'APPROVED',
                 :prep,
                 :descr, :src
             )
-        """, {"hkey": hkey, "bu": BU, "rnum": req_num,
+        """, {"hkey": hkey, "batch": batch, "bu": BU, "rnum": req_num,
               "prep": preparer, "descr": descr, "src": f"RT-{hkey}"},
         label=label)
     tag_scenario(cur, "DMT_POR_REQ_HEADERS_STG_TBL", scenario_id)
@@ -1894,6 +1903,7 @@ def main():
     for lkey, hkey, qty, price, desc, uom in [
         ("RT-REQL-G1",      "RT-REQ-G1",      10, 25.00,  "Office supplies",    "ECH"),
         ("RT-REQL-BADHDR",  "RT-REQ-BADHDR",   5, 50.00,  "Office supplies",    "ECH"),
+        ("RT-REQL-G2",      "RT-REQ-G2",       8, 30.00,  "Office supplies",    "ECH"),
         ("RT-REQL-BADLINE", "RT-REQ-BADLINE",   3, 100.00, "Bad UOM item",       "ZZZ"),
         ("RT-REQL-BADDIST", "RT-REQ-BADDIST",   2, 75.00,  "Good line bad dist", "ECH"),
     ]:
@@ -1930,6 +1940,7 @@ def main():
     for dkey, lkey, seg1, seg2, seg3, seg4, seg5, seg6 in [
         ("RT-REQD-G1",      "RT-REQL-G1",      "101", "10", "68010", "120", "000", "000"),
         ("RT-REQD-BADHDR",  "RT-REQL-BADHDR",  "101", "10", "68010", "120", "000", "000"),
+        ("RT-REQD-G2",      "RT-REQL-G2",      "101", "10", "68010", "120", "000", "000"),
         ("RT-REQD-BADLINE", "RT-REQL-BADLINE", "101", "10", "68010", "120", "000", "000"),
         ("RT-REQD-BADDIST", "RT-REQL-BADDIST", "999", "99", "99999", "999", "999", "999"),
     ]:

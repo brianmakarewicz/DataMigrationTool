@@ -23,7 +23,8 @@ AS
         p_run_id IN  NUMBER,
         x_fbdi_zip       OUT BLOB,
         x_filename       OUT VARCHAR2,
-        x_fbdi_csv_id    OUT NUMBER
+        x_fbdi_csv_id    OUT NUMBER,
+        p_batch_id       IN  VARCHAR2 DEFAULT NULL   -- filters to one batch; NULL = all
     );
 
 END DMT_REQ_FBDI_GEN_PKG;
