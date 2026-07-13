@@ -34,7 +34,7 @@
         RETURN TO_CHAR(p_num);
     END fmt_num;
 
-    FUNCTION gen_item_csv (p_run_id IN NUMBER) RETURN CLOB IS
+    FUNCTION gen_item_csv (p_run_id IN NUMBER, p_batch_id IN VARCHAR2 DEFAULT NULL) RETURN CLOB IS
         l_csv CLOB;
     BEGIN
         DBMS_LOB.CREATETEMPORARY(l_csv, TRUE);
@@ -46,6 +46,7 @@
             FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
+            AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id))
             ORDER BY TFM_SEQUENCE_ID
         ) LOOP
             -- 1. TRANSACTION_TYPE (Identity)
@@ -887,7 +888,8 @@
         p_run_id  IN  NUMBER,
         x_fbdi_zip        OUT BLOB,
         x_filename        OUT VARCHAR2,
-        x_fbdi_csv_id     OUT NUMBER
+        x_fbdi_csv_id     OUT NUMBER,
+        p_batch_id        IN  VARCHAR2 DEFAULT NULL
     ) IS
         C_PROC          CONSTANT VARCHAR2(30) := 'GENERATE_FBDI';
         l_zip           BLOB;
@@ -904,17 +906,21 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        x_filename := 'EgpItem_' || TO_CHAR(p_run_id) || '.zip';
+        x_filename := 'EgpItem_' || TO_CHAR(p_run_id)
+                      || CASE WHEN p_batch_id IS NULL THEN '' ELSE '_' || p_batch_id END
+                      || '.zip';
 
-        -- Count items rows
+        -- Count items rows (scoped to the batch when p_batch_id is passed)
         SELECT COUNT(*) INTO l_item_count
         FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));
 
         -- Count categories rows (may be 0 if no categories data)
         SELECT COUNT(*) INTO l_cat_count
         FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));
 
         IF l_item_count = 0 AND l_cat_count = 0 THEN
             DMT_UTIL_PKG.LOG(
@@ -930,12 +936,12 @@
 
         -- Generate items CSV
         IF l_item_count > 0 THEN
-            l_item_csv := gen_item_csv(p_run_id);
+            l_item_csv := gen_item_csv(p_run_id, p_batch_id);
         END IF;
 
         -- Generate categories CSV via the categories package
         IF l_cat_count > 0 THEN
-            l_cat_csv := DMT_EGP_ITEM_CAT_FBDI_GEN_PKG.GENERATE_CSV(p_run_id);
+            l_cat_csv := DMT_EGP_ITEM_CAT_FBDI_GEN_PKG.GENERATE_CSV(p_run_id, p_batch_id);
         END IF;
 
         -- Register items CSV in tracking table
@@ -980,22 +986,24 @@
             'Items', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
 
-        -- Mark items TFM rows as GENERATED
+        -- Mark items TFM rows as GENERATED (only this batch's rows)
         IF l_item_count > 0 THEN
             UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_csv_id,
                    LAST_UPDATED_DATE = l_now
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));
         END IF;
 
-        -- Mark categories TFM rows as GENERATED
+        -- Mark categories TFM rows as GENERATED (only this batch's rows)
         IF l_cat_count > 0 THEN
             UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_csv_id,
                    LAST_UPDATED_DATE = l_now
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));
         END IF;
 
         -- Free temporary CLOBs

@@ -14,7 +14,8 @@
         p_run_id  IN  NUMBER,
         x_fbdi_zip        OUT BLOB,
         x_filename        OUT VARCHAR2,
-        x_fbdi_csv_id     OUT NUMBER
+        x_fbdi_csv_id     OUT NUMBER,
+        p_batch_id        IN  VARCHAR2 DEFAULT NULL
     );
 
 END DMT_EGP_ITEM_FBDI_GEN_PKG;

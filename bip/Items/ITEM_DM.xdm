@@ -18,8 +18,7 @@ SELECT
     i.transaction_type,
     NULL AS error_message
 FROM   egp_system_items_interface i
-WHERE  i.batch_id = :P_BATCH_ID
-AND    i.load_request_id = :P_LOAD_REQUEST_ID
+WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
 AND    i.organization_code IS NOT NULL
       ]]></sql>
     </dataSet>

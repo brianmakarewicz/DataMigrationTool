@@ -42,7 +42,7 @@
         ELSE DBMS_LOB.WRITEAPPEND(p_clob, 1, CHR(10)); END IF;
     END af;
 
-    FUNCTION gen_item_cat_csv (p_run_id IN NUMBER) RETURN CLOB IS
+    FUNCTION gen_item_cat_csv (p_run_id IN NUMBER, p_batch_id IN VARCHAR2 DEFAULT NULL) RETURN CLOB IS
         l_csv CLOB;
     BEGIN
         DBMS_LOB.CREATETEMPORARY(l_csv, TRUE);
@@ -56,6 +56,7 @@
             FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
+            AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id))
             ORDER BY TFM_SEQUENCE_ID
         ) LOOP
             -- Column order per EgpItemCategoriesInterface.ctl (14 data columns)
@@ -80,10 +81,11 @@
 
     -- Public wrapper around the private CSV generator
     FUNCTION GENERATE_CSV (
-        p_run_id  IN  NUMBER
+        p_run_id  IN  NUMBER,
+        p_batch_id IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB IS
     BEGIN
-        RETURN gen_item_cat_csv(p_run_id);
+        RETURN gen_item_cat_csv(p_run_id, p_batch_id);
     END GENERATE_CSV;
 
     PROCEDURE GENERATE_FBDI (

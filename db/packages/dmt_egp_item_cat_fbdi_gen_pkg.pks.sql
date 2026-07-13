@@ -12,7 +12,8 @@
     -- Generate the categories CSV CLOB only (no ZIP, no submit).
     -- Called by DMT_EGP_ITEM_FBDI_GEN_PKG to bundle into the Items ZIP.
     FUNCTION GENERATE_CSV (
-        p_run_id  IN  NUMBER
+        p_run_id  IN  NUMBER,
+        p_batch_id IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB;
 
     -- Standalone FBDI generation (legacy — not used in pipeline since
