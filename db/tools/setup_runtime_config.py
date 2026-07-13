@@ -72,16 +72,29 @@ def main():
     conn = db_connect()
     cur = conn.cursor()
 
-    # (1) Global Fusion password = the FUSION_USERNAME config user's password.
-    cur.execute("SELECT config_value FROM DMT_CONFIG_TBL WHERE config_key='FUSION_USERNAME'")
-    row = cur.fetchone()
-    global_user = (row[0] if row else "fin_impl").lower()
-    global_pw = pw_by_user.get(global_user)
-    if not global_pw:
-        sys.exit(f"No password in connections.json for global user {global_user!r}")
-    cur.execute("UPDATE DMT_CONFIG_TBL SET config_value=:p WHERE config_key='FUSION_PASSWORD'",
-                p=global_pw)
-    print(f"[1] global FUSION_PASSWORD set for user {global_user} ({cur.rowcount} row)")
+    # (1) Global credential config keys. Each *_PASSWORD is set from its own
+    #     *_USERNAME user's password. FUSION_* is the pipeline/ESS credential;
+    #     BIP_* is what the shared RUN_BIP_REPORT (Contract-v1 reconcilers) uses
+    #     -- it falls back to FUSION_* only when BIP_* is null, so a masked
+    #     BIP_PASSWORD makes every Contract-v1 reconcile fail with HTTP 500 even
+    #     when FUSION_PASSWORD is correct. Both must be set.
+    for pw_key, user_key, default_user in (
+        ("FUSION_PASSWORD", "FUSION_USERNAME", "fin_impl"),
+        ("BIP_PASSWORD",    "BIP_USERNAME",    "fin_impl"),
+    ):
+        # Only touch the password key if it exists (BIP_* may be absent on some installs).
+        cur.execute("SELECT COUNT(*) FROM DMT_CONFIG_TBL WHERE config_key=:k", k=pw_key)
+        if cur.fetchone()[0] == 0:
+            print(f"[1] {pw_key} not present -- skipped")
+            continue
+        cur.execute("SELECT config_value FROM DMT_CONFIG_TBL WHERE config_key=:k", k=user_key)
+        row = cur.fetchone()
+        guser = (row[0] if row and row[0] else default_user).lower()
+        gpw = pw_by_user.get(guser)
+        if not gpw:
+            sys.exit(f"No password in connections.json for {user_key} user {guser!r}")
+        cur.execute("UPDATE DMT_CONFIG_TBL SET config_value=:p WHERE config_key=:k", p=gpw, k=pw_key)
+        print(f"[1] {pw_key} set for user {guser} ({cur.rowcount} row)")
 
     # (2) Per-object credential overrides, matched by each row's FUSION_USERNAME.
     cur.execute("SELECT cemli_code, fusion_username FROM DMT_ERP_INTERFACE_OPTIONS_TBL "
