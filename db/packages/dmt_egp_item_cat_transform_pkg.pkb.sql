@@ -70,7 +70,7 @@
                     p_run_id,
 
                     s.TRANSACTION_TYPE,
-                    p_run_id,  -- BATCH_ID = run_id (aligns with Items ESS ParameterList arg1)
+                    NVL(s.BATCH_ID, p_run_id),  -- carry the user's BATCH_ID (same fallback as items so a batch's items+categories group together)
                     s.BATCH_NUMBER,
                     s.ORGANIZATION_CODE,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.ITEM_NUMBER),

@@ -1666,15 +1666,18 @@ def main():
     MASTER_ORG = "000"  # Operations master org (items must be created here first)
     INV_ORG = "001"    # Seattle inventory org (used by MiscReceipts below)
     print("\n=== 32a. Items ===")
-    for item_num, descr, org, uom, lot_code, serial_code, label in [
-        ("DMT-RT-PLAIN-001",  "DMT Regression Plain Item",   MASTER_ORG, "Each", 1, 1, "GOOD: plain item (no lot/serial)"),
-        ("DMT-RT-SERIAL-001", "DMT Regression Serial Item",  MASTER_ORG, "Each", 1, 5, "GOOD: serial-controlled item"),
-        ("DMT-RT-LOT-001",    "DMT Regression Lot Item",     MASTER_ORG, "Each", 2, 1, "GOOD: lot-controlled item"),
-        ("DMT-RT-BAD-001",    "DMT Bad Item Invalid Org",    "ZZZ",      "Each", 1, 1, "BAD: invalid org code [BAD-LKP]"),
+    # Two user batch ids (8101, 8102) prove the batch passthrough + partition:
+    # each batch generates its own FBDI zip and its own Item Import ESS run, and
+    # each batch carries a GOOD item that must reach the base tables.
+    for item_num, descr, org, uom, lot_code, serial_code, batch, label in [
+        ("DMT-RT-PLAIN-001",  "DMT Regression Plain Item",   MASTER_ORG, "Each", 1, 1, 8101, "GOOD: plain item (no lot/serial) batch 8101"),
+        ("DMT-RT-SERIAL-001", "DMT Regression Serial Item",  MASTER_ORG, "Each", 1, 5, 8102, "GOOD: serial-controlled item batch 8102"),
+        ("DMT-RT-LOT-001",    "DMT Regression Lot Item",     MASTER_ORG, "Each", 2, 1, 8102, "GOOD: lot-controlled item batch 8102"),
+        ("DMT-RT-BAD-001",    "DMT Bad Item Invalid Org",    "ZZZ",      "Each", 1, 1, 8101, "BAD: invalid org code [BAD-LKP] batch 8101"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_EGP_ITEM_STG_TBL (
-                TRANSACTION_TYPE, ORGANIZATION_CODE, ITEM_NUMBER,
+                TRANSACTION_TYPE, ORGANIZATION_CODE, ITEM_NUMBER, BATCH_ID,
                 DESCRIPTION, PRIMARY_UOM_CODE, ITEM_CLASS_NAME,
                 INVENTORY_ITEM_STATUS_CODE, CURRENT_PHASE_CODE, ITEM_TYPE,
                 INVENTORY_ITEM_FLAG, STOCK_ENABLED_FLAG,
@@ -1688,7 +1691,7 @@ def main():
                 SOURCE_SYSTEM_CODE, SOURCE_SYSTEM_REFERENCE,
                 SOURCE_ID
             ) VALUES (
-                'CREATE', :org, :item,
+                'CREATE', :org, :item, :batch,
                 :descr, :uom, 'Root Item Class',
                 'Active', 'Production', 'FG',
                 'Y', 'Y',
@@ -1702,7 +1705,7 @@ def main():
                 'DMT', :item || '_' || :org,
                 :src
             )
-        """, {"org": org, "item": item_num, "descr": descr, "uom": uom,
+        """, {"org": org, "item": item_num, "batch": batch, "descr": descr, "uom": uom,
               "lot_code": lot_code, "serial_code": serial_code,
               "src": f"RT-ITEM-{item_num}"},
         label=f"{label}: {item_num}")
@@ -1716,29 +1719,31 @@ def main():
     #      Category set "Purchasing" (ID 10000), code "999.99" verified on demo instance.
     # ====================================================================
     print("\n=== 32b. Item Categories ===")
-    for item_num, org, cat_set, cat_code, cat_name, label in [
-        ("DMT-RT-PLAIN-001",  MASTER_ORG, "Purchasing", "999.99",    "999.99 Miscellaneous",
+    # Category BATCH_ID matches its item's batch so an item and its category land
+    # in the same batch group (both transforms use NVL(s.BATCH_ID, run_id)).
+    for item_num, org, cat_set, cat_code, cat_name, batch, label in [
+        ("DMT-RT-PLAIN-001",  MASTER_ORG, "Purchasing", "999.99",    "999.99 Miscellaneous", 8101,
          "GOOD: Purchasing category for plain item"),
-        ("DMT-RT-SERIAL-001", MASTER_ORG, "Purchasing", "204.54",    "204.54 Laptops",
+        ("DMT-RT-SERIAL-001", MASTER_ORG, "Purchasing", "204.54",    "204.54 Laptops", 8102,
          "GOOD: Purchasing category for serial item"),
-        ("DMT-RT-LOT-001",    MASTER_ORG, "Purchasing", "206.61",    "206.61 Monitors",
+        ("DMT-RT-LOT-001",    MASTER_ORG, "Purchasing", "206.61",    "206.61 Monitors", 8102,
          "GOOD: Purchasing category for lot item"),
-        ("NONEXISTENT-DMT-ITEM", MASTER_ORG, "FAKE_SET", "ZZZ", "BAD Category",
+        ("NONEXISTENT-DMT-ITEM", MASTER_ORG, "FAKE_SET", "ZZZ", "BAD Category", 8101,
          "BAD: nonexistent item + fake category set [BAD-UPS]"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_EGP_ITEM_CAT_STG_TBL (
-                TRANSACTION_TYPE, ORGANIZATION_CODE, ITEM_NUMBER,
+                TRANSACTION_TYPE, ORGANIZATION_CODE, ITEM_NUMBER, BATCH_ID,
                 CATEGORY_SET_NAME, CATEGORY_CODE, CATEGORY_NAME,
                 SOURCE_SYSTEM_CODE, SOURCE_SYSTEM_REFERENCE,
                 SOURCE_ID
             ) VALUES (
-                'CREATE', :org, :item,
+                'CREATE', :org, :item, :batch,
                 :cat_set, :cat_code, :cat_name,
                 'DMT', :item || '_' || :org || '_' || :cat_set,
                 :src
             )
-        """, {"org": org, "item": item_num, "cat_set": cat_set,
+        """, {"org": org, "item": item_num, "batch": batch, "cat_set": cat_set,
               "cat_code": cat_code, "cat_name": cat_name,
               "src": f"RT-ITEMCAT-{item_num}"},
         label=f"{label}")

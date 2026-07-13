@@ -1259,22 +1259,9 @@
         -- Requisitions: the ParameterList is built per batch inside the
         -- grouped-by-BATCH_ID block below (position 2 = the batch id,
         -- position 4 = that batch's requisitioning BU id), not here.
-        ELSIF p_cemli_code = 'Items' THEN
-            -- ItemImportJobDef: 7 args discovered via ESS param discovery (Request 9542220, 2026-05-21)
-            -- arg1=BatchID, arg2=Organization(null=all), arg3=ProcessOnly, arg4=ProcessAllOrgs,
-            -- arg5=DeleteProcessedRows, arg6=ReprocessError, arg7=ProcessSequentially
-            -- NOTE: BatchID=#NULL lets the import process all pending rows from the load step.
-            -- The FBDI loader assigns its own BATCH_ID on the interface table — passing our
-            -- run_id caused WAIT timeout because it didn't match.
-            -- ItemImportJobDef: 7 args. Matches MCCS RICE_009 pattern.
-            -- MCCS: pv_batch_id || ',null,CREATE,null,null,N,Y'
-            l_param_list := TO_CHAR(p_run_id)  -- 1: Batch ID (matches TFM BATCH_ID)
-                || ',null'                             -- 2: Organization (null = per MCCS)
-                || ',CREATE'                           -- 3: Process Only
-                || ',null'                             -- 4: Process All Organizations (null = per MCCS)
-                || ',null'                             -- 5: Delete Processed Rows (null = per MCCS)
-                || ',N'                                -- 6: Reprocess Error
-                || ',Y';                               -- 7: Process Sequentially
+        -- Items: the ParameterList is built per batch inside the grouped-by-BATCH_ID
+        -- block below (arg 1 = the batch id, matching that batch's interface rows),
+        -- not here.
         ELSIF p_cemli_code = 'MiscReceipts' THEN
             -- MCCS RICE_011/012: PollTMEssJob, no parameters
             l_param_list := '#NULL';
@@ -2026,6 +2013,125 @@
         END IF;
 
         -- ============================================================
+        -- Items: grouped load by BATCH_ID.
+        -- One batch = one FBDI zip (items + bundled categories) =
+        -- one Item Import (ItemImportJobDef) ESS run. Both the item TFM
+        -- table and the bundled category TFM table carry their own
+        -- BATCH_ID column, so each is filtered directly (no join).
+        -- ============================================================
+        IF p_cemli_code = 'Items' THEN
+            DECLARE
+                l_it_zip        BLOB;
+                l_it_filename   VARCHAR2(200);
+                l_it_csv_id     NUMBER;
+                l_it_load_id    VARCHAR2(100);
+                l_it_import_id  VARCHAR2(100);
+                l_it_param      VARCHAR2(500);
+                l_it_count      NUMBER := 0;
+                l_it_ok         BOOLEAN;
+                l_it_user       VARCHAR2(100);
+                l_it_pass       VARCHAR2(100);
+
+                -- Fail this batch's GENERATED rows in BOTH bundled TFM tables.
+                -- Each has its own BATCH_ID column, so filter directly (no join).
+                PROCEDURE mark_batch_failed(p_bid IN VARCHAR2, p_msg IN VARCHAR2) IS
+                BEGIN
+                    UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+                    SET TFM_STATUS='FAILED',
+                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg),
+                        LAST_UPDATED_DATE=SYSDATE
+                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=TO_NUMBER(p_bid);
+
+                    UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+                    SET TFM_STATUS='FAILED',
+                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg),
+                        LAST_UPDATED_DATE=SYSDATE
+                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=TO_NUMBER(p_bid);
+                    COMMIT;
+                END mark_batch_failed;
+            BEGIN
+                -- Items submits under its own configured ESS user (SCM_IMPL per the
+                -- ItemImportJobDef interface-options row) -- same credential the
+                -- single-submit path used to load online.
+                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('Items', l_it_user, l_it_pass);
+
+                -- A batch may have item rows, category rows, or both -- union both
+                -- TFM tables for the complete set of distinct batch ids.
+                FOR grp_rec IN (
+                    SELECT TO_CHAR(BATCH_ID) AS BATCH_ID
+                    FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
+                    UNION
+                    SELECT TO_CHAR(BATCH_ID)
+                    FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
+                    ORDER BY 1
+                ) LOOP
+                    l_it_count := l_it_count + 1;
+
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Item batch cycle start: BATCH_ID=' || grp_rec.BATCH_ID,
+                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+
+                    DMT_EGP_ITEM_FBDI_GEN_PKG.GENERATE_FBDI(
+                        p_run_id      => p_run_id,
+                        x_fbdi_zip    => l_it_zip,
+                        x_filename    => l_it_filename,
+                        x_fbdi_csv_id => l_it_csv_id,
+                        p_batch_id    => grp_rec.BATCH_ID);
+
+                    IF l_it_zip IS NULL OR DBMS_LOB.GETLENGTH(l_it_zip) = 0 THEN
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'No rows for item batch ' || grp_rec.BATCH_ID || '. Skipping.',
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                        CONTINUE;
+                    END IF;
+
+                    -- ItemImportJobDef, 7 positional args (MCCS RICE_009 pattern).
+                    -- 1=BatchID (this batch), 2=Organization(null), 3=ProcessOnly=CREATE,
+                    -- 4=ProcessAllOrgs(null), 5=DeleteProcessedRows(null),
+                    -- 6=ReprocessError=N, 7=ProcessSequentially=Y.
+                    l_it_param := grp_rec.BATCH_ID || ',null,CREATE,null,null,N,Y';
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Item ParameterList: ' || l_it_param,
+                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+
+                    submit_and_reconcile_one(
+                        p_fbdi_zip    => l_it_zip,
+                        p_filename    => l_it_filename,
+                        p_fbdi_csv_id => l_it_csv_id,
+                        p_param_list  => l_it_param,
+                        p_group_label => 'Batch: ' || grp_rec.BATCH_ID,
+                        p_username    => l_it_user,
+                        p_password    => l_it_pass,
+                        x_load_ess_id   => l_it_load_id,
+                        x_import_ess_id => l_it_import_id,
+                        x_success       => l_it_ok);
+
+                    IF NOT l_it_ok THEN
+                        mark_batch_failed(grp_rec.BATCH_ID,
+                            '[LOAD_ERROR] Loading item batch ' || grp_rec.BATCH_ID ||
+                            ' to the Fusion interface failed. Check ESS job ' || l_it_load_id || ' logs.');
+                        CONTINUE;
+                    END IF;
+
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Item batch cycle complete: BATCH_ID=' || grp_rec.BATCH_ID,
+                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+                END LOOP;
+
+                IF l_it_count = 0 THEN
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'No STAGED Item rows with a batch id found. Skipping Items.',
+                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                    RETURN FALSE;
+                END IF;
+            END;
+
+            GOTO grouped_finish;
+        END IF;
+
+        -- ============================================================
         -- BlanketPOs: grouped load by PRC_BU_NAME (same as standard POs)
         -- ============================================================
         IF p_cemli_code = 'BlanketPOs' THEN
@@ -2653,11 +2759,7 @@
             BEGIN
                 DMT_GRANTS_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
             END;
-        ELSIF p_cemli_code = 'Items' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_EGP_ITEM_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
+        -- Items: handled in grouped loop above.
         ELSIF p_cemli_code = 'ItemCategories' THEN
             DECLARE l_csv_id NUMBER;
             BEGIN
@@ -2774,10 +2876,7 @@
                     UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'Grants' THEN
                     UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'Items' THEN
-                    UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                    -- Also fail bundled categories
-                    UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                -- Items: handled in grouped loop above.
                 ELSIF p_cemli_code = 'MiscReceipts' THEN
                     UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 -- Requisitions: handled in grouped loop above.
@@ -2924,24 +3023,7 @@
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
                 p_import_ess_id  => TO_NUMBER(l_import_ess_id));
-        ELSIF p_cemli_code = 'Items' THEN
-            -- Reconcile items first
-            DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
-            -- Reconcile bundled categories only if there are GENERATED rows
-            DECLARE l_cat_gen NUMBER;
-            BEGIN
-                SELECT COUNT(*) INTO l_cat_gen FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-                IF l_cat_gen > 0 THEN
-                    DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(
-                        p_run_id => p_run_id,
-                        p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                        p_import_ess_id  => TO_NUMBER(l_import_ess_id));
-                END IF;
-            END;
+        -- Items: handled in grouped loop above.
         ELSIF p_cemli_code = 'MiscReceipts' THEN
             DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
@@ -3004,12 +3086,7 @@
             ELSIF p_cemli_code = 'Grants' THEN
                 SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'Items' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-                -- Also check bundled categories
-                SELECT l_still_generated + COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+            -- Items: handled in grouped loop above.
             ELSIF p_cemli_code = 'MiscReceipts' THEN
                 SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';

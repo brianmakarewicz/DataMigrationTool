@@ -244,7 +244,7 @@
                     p_run_id,
                     -- Identity
                     s.TRANSACTION_TYPE,
-                    p_run_id,  -- BATCH_ID = run_id (aligns with ESS ParameterList arg1)
+                    NVL(s.BATCH_ID, p_run_id),  -- carry the user's BATCH_ID (ESS arg1 + partition key); run_id only as fallback
                     s.BATCH_NUMBER,
                     s.ORGANIZATION_CODE,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.ITEM_NUMBER),
