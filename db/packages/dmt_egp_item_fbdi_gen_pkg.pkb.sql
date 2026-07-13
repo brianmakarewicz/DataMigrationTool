@@ -895,7 +895,10 @@
         l_zip           BLOB;
         l_item_csv      CLOB;
         l_cat_csv       CLOB;
-        l_csv_id        NUMBER;
+        l_csv_id        NUMBER;   -- items csv id, returned to the loader
+        l_cat_csv_id    NUMBER;
+        l_zip_id        NUMBER;
+        l_bytes         NUMBER;
         l_now           DATE := SYSDATE;
         l_item_count    NUMBER;
         l_cat_count     NUMBER;
@@ -944,47 +947,19 @@
             l_cat_csv := DMT_EGP_ITEM_CAT_FBDI_GEN_PKG.GENERATE_CSV(p_run_id, p_batch_id);
         END IF;
 
-        -- Register items CSV in tracking table
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-            FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
-            CSV_CONTENT, CREATED_DATE
-        ) VALUES (
-            l_csv_id, p_run_id, 'Items',
-            'EgpSystemItemsInterface.csv', l_item_count, l_item_csv, l_now
-        );
-
-        -- Register categories CSV if present
-        IF l_cat_count > 0 THEN
-            INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-                FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
-                CSV_CONTENT, CREATED_DATE
-            ) VALUES (
-                DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL, p_run_id, 'ItemCategories',
-                'EgpItemCategoriesInterface.csv', l_cat_count, l_cat_csv, l_now
-            );
-        END IF;
-
-        -- Build combined ZIP (standard pattern — no manifest file)
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
+        -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
+        -- build the zip from those persisted rows. One zip owns the items CSV (seq 1)
+        -- and, when present, the categories CSV (seq 2). Each record type's TFM rows
+        -- are stamped with THAT file's own FBDI_CSV_ID. Scoping to p_batch_id is
+        -- preserved on the generators, counts, and TFM updates.
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         IF l_item_count > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'EgpSystemItemsInterface.csv',
-                DMT_UTIL_PKG.CLOB_TO_BLOB(l_item_csv));
+            l_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Items', 'EgpSystemItemsInterface.csv', l_item_count, l_item_csv);
         END IF;
         IF l_cat_count > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'EgpItemCategoriesInterface.csv',
-                DMT_UTIL_PKG.CLOB_TO_BLOB(l_cat_csv));
+            l_cat_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'ItemCategories', 'EgpItemCategoriesInterface.csv', l_cat_count, l_cat_csv);
         END IF;
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
-
-        -- Register ZIP
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
-            ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-        ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_csv_id, p_run_id,
-            'Items', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
-        );
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Items', x_filename, l_zip, l_bytes);
 
         -- Mark items TFM rows as GENERATED (only this batch's rows)
         IF l_item_count > 0 THEN
@@ -1000,7 +975,7 @@
         IF l_cat_count > 0 THEN
             UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
-                   FBDI_CSV_ID       = l_csv_id,
+                   FBDI_CSV_ID       = l_cat_csv_id,
                    LAST_UPDATED_DATE = l_now
             WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));

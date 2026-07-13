@@ -632,7 +632,12 @@ AS
         l_lines_csv   CLOB;
         l_locs_csv    CLOB;
         l_dists_csv   CLOB;
-        l_fbdi_csv_id NUMBER;
+        l_fbdi_csv_id NUMBER;   -- primary (headers) csv id, returned to the loader
+        l_lines_csv_id NUMBER;
+        l_locs_csv_id  NUMBER;
+        l_dists_csv_id NUMBER;
+        l_zip_id      NUMBER;
+        l_bytes       NUMBER;
         l_bu_suffix   VARCHAR2(50);
         l_now         DATE := SYSDATE;
         C_PROC CONSTANT VARCHAR2(30) := 'GENERATE_FBDI';
@@ -674,50 +679,25 @@ AS
             RETURN;
         END IF;
 
-        -- Build zip using Anton Scheffer UTL_ZIP
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PoHeadersInterfaceOrder.csv',
-            clob_to_blob(l_hdr_csv));
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PoLinesInterfaceOrder.csv',
-            clob_to_blob(l_lines_csv));
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PoLineLocationsInterfaceOrder.csv',
-            clob_to_blob(l_locs_csv));
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PoDistributionsInterfaceOrder.csv',
-            clob_to_blob(l_dists_csv));
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
+        -- build the zip from those persisted rows. One zip owns four CSVs.
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        l_fbdi_csv_id  := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'PurchaseOrders', 'PoHeadersInterfaceOrder.csv',       0, l_hdr_csv);
+        l_lines_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'PurchaseOrders', 'PoLinesInterfaceOrder.csv',         0, l_lines_csv);
+        l_locs_csv_id  := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'PurchaseOrders', 'PoLineLocationsInterfaceOrder.csv', 0, l_locs_csv);
+        l_dists_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'PurchaseOrders', 'PoDistributionsInterfaceOrder.csv', 0, l_dists_csv);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'PurchaseOrders', x_filename, l_zip, l_bytes);
 
-        -- Register in DMT_FBDI_CSV_TBL
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_fbdi_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-            FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
-            CSV_CONTENT, CREATED_DATE
-        ) VALUES (
-            l_fbdi_csv_id, p_run_id,
-            'PurchaseOrders',
-            x_filename, 0, l_hdr_csv, l_now
-        );
-
-        -- Register in DMT_FBDI_ZIP_TBL
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
-            ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-        ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id,
-            'PurchaseOrders',
-            x_filename,
-            DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
-        );
-
-        -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
+        -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
         -- Headers: filter directly by PRC_BU_NAME.
         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
 
-        -- Lines: filter via header chain.
+        -- Lines -> lines csv id; join predicate scopes on the PARENT (headers) csv id.
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
@@ -725,25 +705,25 @@ AS
             WHERE  h.RUN_ID = p_run_id
             AND    h.FBDI_CSV_ID = l_fbdi_csv_id));
 
-        -- Line locations: filter via line -> header chain.
+        -- Line locations -> locs csv id; join predicate scopes on the PARENT (lines) csv id.
         UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_locs_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
             FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
-            AND    l.FBDI_CSV_ID = l_fbdi_csv_id));
+            AND    l.FBDI_CSV_ID = l_lines_csv_id));
 
-        -- Distributions: filter via loc -> line -> header chain.
+        -- Distributions -> dists csv id; join predicate scopes on the PARENT (locs) csv id.
         UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR INTERFACE_LINE_LOCATION_KEY IN (
             SELECT ll.INTERFACE_LINE_LOCATION_KEY
             FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL ll
             WHERE  ll.RUN_ID = p_run_id
-            AND    ll.FBDI_CSV_ID = l_fbdi_csv_id));
+            AND    ll.FBDI_CSV_ID = l_locs_csv_id));
 
         -- Free temporary CLOBs (accumulate across multi-BU loop if not freed)
         DBMS_LOB.FREETEMPORARY(l_hdr_csv);

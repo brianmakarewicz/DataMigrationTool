@@ -65,6 +65,7 @@
         p_run_id IN NUMBER, x_fbdi_zip OUT BLOB, x_filename OUT VARCHAR2, x_fbdi_csv_id OUT NUMBER
     ) IS
         l_zip BLOB; l_csv CLOB; l_fbdi_csv_id NUMBER; l_now DATE := SYSDATE;
+        l_zip_id NUMBER; l_bytes NUMBER;
         C_PROC CONSTANT VARCHAR2(30) := 'GENERATE_FBDI';
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -91,16 +92,11 @@
             RETURN;
         END IF;
 
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'EpbcsDataImport.csv',
-            clob_to_blob(l_csv));
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
-
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_fbdi_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT, CSV_CONTENT, CREATED_DATE)
-        VALUES (l_fbdi_csv_id, p_run_id, 'PlanningBudgets', x_filename, 0, l_csv, l_now);
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE)
-        VALUES (DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id, 'PlanningBudgets', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now);
+        -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
+        -- build the zip from that persisted row.
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        l_fbdi_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'PlanningBudgets', 'EpbcsDataImport.csv', 0, l_csv);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'PlanningBudgets', x_filename, l_zip, l_bytes);
 
         UPDATE DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now

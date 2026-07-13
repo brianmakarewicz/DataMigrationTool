@@ -177,6 +177,8 @@ AS
         l_zip              BLOB;
         l_events_csv       CLOB;
         l_fbdi_csv_id      NUMBER;
+        l_zip_id           NUMBER;
+        l_bytes            NUMBER;
         l_now              DATE := SYSDATE;
         C_PROC CONSTANT VARCHAR2(30) := 'GENERATE_FBDI';
     BEGIN
@@ -207,33 +209,11 @@ AS
             RETURN;
         END IF;
 
-        -- Build zip using Anton Scheffer UTL_ZIP
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PjbBillingEventsXface.csv',
-            clob_to_blob(l_events_csv));
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
-
-        -- Register in DMT_FBDI_CSV_TBL
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_fbdi_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-            FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
-            CSV_CONTENT, CREATED_DATE
-        ) VALUES (
-            l_fbdi_csv_id, p_run_id,
-            'BillingEvents',
-            x_filename, 0, l_events_csv, l_now
-        );
-
-        -- Register in DMT_FBDI_ZIP_TBL
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
-            ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-        ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id,
-            'BillingEvents',
-            x_filename,
-            DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
-        );
+        -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
+        -- build the zip from that persisted row.
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        l_fbdi_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'BillingEvents', 'PjbBillingEventsXface.csv', 0, l_events_csv);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'BillingEvents', x_filename, l_zip, l_bytes);
 
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID
         UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
