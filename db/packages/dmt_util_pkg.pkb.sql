@@ -637,6 +637,80 @@
     END CLOB_TO_BLOB;
 
     -- --------------------------------------------------------
+    -- REGISTER_CSV: persist one physical CSV as a child of a zip.
+    -- --------------------------------------------------------
+    PROCEDURE REGISTER_CSV (
+        p_run_id      IN NUMBER,
+        p_fbdi_zip_id IN NUMBER,
+        p_file_seq    IN NUMBER,
+        p_object_type IN VARCHAR2,
+        p_filename    IN VARCHAR2,
+        p_row_count   IN NUMBER,
+        p_csv         IN CLOB,
+        x_fbdi_csv_id OUT NUMBER
+    ) IS
+    BEGIN
+        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO x_fbdi_csv_id FROM DUAL;
+        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+            FBDI_CSV_ID, FBDI_ZIP_ID, FILE_SEQ, RUN_ID, OBJECT_TYPE,
+            FILENAME, ROW_COUNT, CSV_CONTENT, CREATED_DATE
+        ) VALUES (
+            x_fbdi_csv_id, p_fbdi_zip_id, p_file_seq, p_run_id, p_object_type,
+            p_filename, p_row_count, p_csv, SYSDATE
+        );
+    END REGISTER_CSV;
+
+    -- --------------------------------------------------------
+    -- BUILD_ZIP_FROM_CSVS: zip the persisted CSV rows for a zip id
+    -- (in FILE_SEQ order), insert the DMT_FBDI_ZIP_TBL row, return the BLOB.
+    -- The zip bytes come from DMT_FBDI_CSV_TBL.CSV_CONTENT -- so the archive
+    -- is provably what is persisted, not a separate in-memory copy.
+    -- --------------------------------------------------------
+    PROCEDURE BUILD_ZIP_FROM_CSVS (
+        p_run_id       IN  NUMBER,
+        p_fbdi_zip_id  IN  NUMBER,
+        p_object_type  IN  VARCHAR2,
+        p_zip_filename IN  VARCHAR2,
+        x_fbdi_zip     OUT BLOB,
+        x_zip_bytes    OUT NUMBER
+    ) IS
+        l_zip         BLOB;
+        l_primary_csv NUMBER;
+    BEGIN
+        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
+        FOR r IN (
+            SELECT FILENAME, CSV_CONTENT
+            FROM   DMT_OWNER.DMT_FBDI_CSV_TBL
+            WHERE  FBDI_ZIP_ID = p_fbdi_zip_id
+            ORDER BY FILE_SEQ
+        ) LOOP
+            DMT_OWNER.UTL_ZIP.add1file(l_zip, r.FILENAME, CLOB_TO_BLOB(r.CSV_CONTENT));
+        END LOOP;
+        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+
+        -- Transitional bridge: the zip keeps a FBDI_CSV_ID pointer at its first
+        -- (lowest-id) registered CSV so the shared loader PARAMETER_LIST stamp
+        -- (WHERE FBDI_CSV_ID = ...) keeps working while generators are converted one
+        -- at a time. Keyed on the MIN over ALL of the zip's CSV rows (not just
+        -- FILE_SEQ=1) so a zip whose first physical file was skipped (e.g. an
+        -- Items batch with only categories) still gets a non-NULL pointer.
+        -- Removed in the final increment when the loader keys on FBDI_ZIP_ID.
+        SELECT MIN(FBDI_CSV_ID) INTO l_primary_csv
+        FROM   DMT_OWNER.DMT_FBDI_CSV_TBL
+        WHERE  FBDI_ZIP_ID = p_fbdi_zip_id;
+
+        x_zip_bytes := DBMS_LOB.GETLENGTH(l_zip);
+        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
+            ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
+        ) VALUES (
+            p_fbdi_zip_id, l_primary_csv, p_run_id, p_object_type, p_zip_filename,
+            x_zip_bytes, l_zip, SYSDATE
+        );
+        x_fbdi_zip := l_zip;
+    END BUILD_ZIP_FROM_CSVS;
+
+    -- --------------------------------------------------------
     -- BASE64_ENCODE
     -- --------------------------------------------------------
     FUNCTION BASE64_ENCODE (p_blob IN BLOB) RETURN CLOB IS

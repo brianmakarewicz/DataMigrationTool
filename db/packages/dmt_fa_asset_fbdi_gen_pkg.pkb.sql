@@ -620,7 +620,10 @@
         p_book IN VARCHAR2 DEFAULT NULL  -- multi-book: generate FBDI for ONE book only
     ) IS
         l_zip BLOB; l_ma_csv CLOB; l_dist_csv CLOB;
-        l_fbdi_csv_id NUMBER; l_now DATE := SYSDATE;
+        l_fbdi_csv_id NUMBER;   -- primary (mass-additions) csv id, returned to the loader
+        l_dist_csv_id NUMBER;
+        l_zip_id NUMBER; l_bytes NUMBER;
+        l_now DATE := SYSDATE;
     BEGIN
         x_filename := 'Assets_' || TO_CHAR(p_run_id)
                       || CASE WHEN p_book IS NOT NULL
@@ -645,23 +648,22 @@
             RETURN;
         END IF;
 
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'FaMassAdditions.csv',
-            clob_to_blob(l_ma_csv));
+        -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
+        -- build the zip from those persisted rows. One zip owns two CSVs:
+        --   1 FaMassAdditions.csv  = header TFM + book TFM rows (both stamped csv 1)
+        --   2 FaMassaddDistributions.csv = assignment TFM rows (stamped csv 2)
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Assets', 'FaMassAdditions.csv',          0, l_ma_csv, l_fbdi_csv_id);
+        -- Distributions are optional: only register (and thus zip) the file when it has rows.
         IF l_dist_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_dist_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'FaMassaddDistributions.csv',
-                clob_to_blob(l_dist_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Assets', 'FaMassaddDistributions.csv',   0, l_dist_csv, l_dist_csv_id);
         END IF;
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
-
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_fbdi_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT, CSV_CONTENT, CREATED_DATE)
-        VALUES (l_fbdi_csv_id, p_run_id, 'Assets', x_filename, 0, EMPTY_CLOB(), l_now);
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE)
-        VALUES (DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id, 'Assets', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Assets', x_filename, l_zip, l_bytes);
 
         -- Mark only THIS book's rows GENERATED (one book per asset → HDR/ASSIGN scoped by
         -- the asset's book). p_book NULL = all books (single-FBDI / legacy path).
+        -- BOOK + HDR ride in FaMassAdditions.csv (csv 1); ASSIGN rides in
+        -- FaMassaddDistributions.csv (csv 2). Book guard preserved exactly.
         UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
         WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED' AND (p_book IS NULL OR BOOK_TYPE_CODE=p_book);
         UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
@@ -669,7 +671,7 @@
         AND (p_book IS NULL OR ASSET_NUMBER IN (
               SELECT ASSET_NUMBER FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
               WHERE RUN_ID=p_run_id AND BOOK_TYPE_CODE=p_book));
-        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
+        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_dist_csv_id, LAST_UPDATED_DATE=l_now
         WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
         AND (p_book IS NULL OR ASSET_NUMBER IN (
               SELECT ASSET_NUMBER FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL

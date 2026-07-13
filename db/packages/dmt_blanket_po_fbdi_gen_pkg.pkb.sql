@@ -555,7 +555,10 @@ AS
         l_zip         BLOB;
         l_hdr_csv     CLOB;
         l_lines_csv   CLOB;
-        l_fbdi_csv_id NUMBER;
+        l_fbdi_csv_id NUMBER;   -- primary (headers) csv id, returned to the loader
+        l_lines_csv_id NUMBER;
+        l_zip_id      NUMBER;
+        l_bytes       NUMBER;
         l_bu_suffix   VARCHAR2(50);
         l_now         DATE := SYSDATE;
         C_PROC CONSTANT VARCHAR2(30) := 'GENERATE_FBDI';
@@ -592,44 +595,17 @@ AS
             RETURN;
         END IF;
 
-        -- Build zip using Anton Scheffer UTL_ZIP
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PoHeadersInterfaceBlanket.csv',
-            clob_to_blob(l_hdr_csv));
+        -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
+        -- build the zip from those persisted rows. One zip owns two CSVs.
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'BlanketPOs', 'PoHeadersInterfaceBlanket.csv', 0, l_hdr_csv, l_fbdi_csv_id);
+        -- Lines are optional: only register (and thus zip) the file when it has rows.
         IF l_lines_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_lines_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PoLinesInterfaceBlanket.csv',
-                clob_to_blob(l_lines_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'BlanketPOs', 'PoLinesInterfaceBlanket.csv',   0, l_lines_csv, l_lines_csv_id);
         END IF;
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'BlanketPOs', x_filename, l_zip, l_bytes);
 
-        -- Register in DMT_FBDI_CSV_TBL
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_fbdi_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-            FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
-            CSV_CONTENT, CREATED_DATE
-        ) VALUES (
-            l_fbdi_csv_id, p_run_id,
-            'BlanketPOs',
-            x_filename,
-            (SELECT COUNT(*) FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-             WHERE RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
-             AND STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
-             AND (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name)),
-            l_hdr_csv, l_now
-        );
-
-        -- Register in DMT_FBDI_ZIP_TBL
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
-            ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-        ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id,
-            'BlanketPOs',
-            x_filename,
-            DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
-        );
-
-        -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
+        -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
         -- Headers: filter by STYLE_DISPLAY_NAME and PRC_BU_NAME.
         UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
@@ -637,9 +613,10 @@ AS
         AND    STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
         AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
 
-        -- Lines: filter via header chain (only lines belonging to blanket headers).
+        -- Lines -> lines csv id; join predicate scopes on the PARENT (headers) csv id
+        -- (only lines belonging to blanket headers just stamped above).
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY

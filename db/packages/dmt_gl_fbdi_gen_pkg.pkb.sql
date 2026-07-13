@@ -233,6 +233,8 @@
         l_zip         BLOB;
         l_csv         CLOB;
         l_fbdi_csv_id NUMBER;
+        l_zip_id      NUMBER;
+        l_bytes       NUMBER;
         l_now         DATE := SYSDATE;
         l_row_count   NUMBER;
     BEGIN
@@ -275,24 +277,11 @@
             'CSV payload pre-zip (' || l_row_count || ' rows): ' || DBMS_LOB.SUBSTR(l_csv, 32767, 1),
             'INFO', C_PKG, C_PROC);
 
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        IF DBMS_LOB.GETLENGTH(l_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GlInterface.csv',
-                clob_to_blob(l_csv));
-        END IF;
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
-
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_fbdi_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-            FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT, CSV_CONTENT, CREATED_DATE
-        ) VALUES (l_fbdi_csv_id, p_run_id, 'GLBalances', x_filename, l_row_count, l_csv, l_now);
-
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
-            ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-        ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id,
-            'GLBalances', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now);
+        -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
+        -- build the zip from that persisted row.
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'GLBalances', 'GlInterface.csv', 0, l_csv, l_fbdi_csv_id);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'GLBalances', x_filename, l_zip, l_bytes);
 
         UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now

@@ -658,7 +658,10 @@ AS
         l_zip         BLOB;
         l_lines_csv   CLOB;
         l_dists_csv   CLOB;
-        l_fbdi_csv_id NUMBER;
+        l_fbdi_csv_id NUMBER;   -- primary (lines) csv id, returned to the loader
+        l_dists_csv_id NUMBER;
+        l_zip_id      NUMBER;
+        l_bytes       NUMBER;
         l_group_suffix VARCHAR2(100);
         l_now         DATE := SYSDATE;
         C_PROC CONSTANT VARCHAR2(30) := 'GENERATE_FBDI';
@@ -698,52 +701,26 @@ AS
             RETURN;
         END IF;
 
-        -- Build zip using Anton Scheffer UTL_ZIP
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'RaInterfaceLinesAll.csv',
-            clob_to_blob(l_lines_csv));
-        -- Only add distributions CSV if it has content (distributions are optional in AR FBDI)
+        -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
+        -- build the zip from those persisted rows. One zip owns two CSVs.
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'ARInvoices', 'RaInterfaceLinesAll.csv',         0, l_lines_csv, l_fbdi_csv_id);
+        -- Distributions are optional in AR FBDI: only register (and thus zip) the file when it has rows.
         IF l_dists_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_dists_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'RaInterfaceDistributionsAll.csv',
-                clob_to_blob(l_dists_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'ARInvoices', 'RaInterfaceDistributionsAll.csv', 0, l_dists_csv, l_dists_csv_id);
         END IF;
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'ARInvoices', x_filename, l_zip, l_bytes);
 
-        DECLARE
-            l_obj_type VARCHAR2(200) := 'ARInvoices';
-        BEGIN
-
-            -- Register in DMT_FBDI_CSV_TBL
-            SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_fbdi_csv_id FROM DUAL;
-            INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-                FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
-                CSV_CONTENT, CREATED_DATE
-            ) VALUES (
-                l_fbdi_csv_id, p_run_id, l_obj_type,
-                x_filename, 0, l_lines_csv, l_now
-            );
-
-            -- Register in DMT_FBDI_ZIP_TBL
-            INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-                FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
-                ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-            ) VALUES (
-                DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id,
-                l_obj_type, x_filename,
-                DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
-            );
-        END;
-
-        -- Update lines TFM rows to GENERATED and stamp FBDI_CSV_ID.
+        -- Update lines TFM rows to GENERATED and stamp the LINES file's FBDI_CSV_ID.
         UPDATE DMT_OWNER.DMT_RA_LINES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_bu_name IS NULL OR BU_NAME = p_bu_name)
         AND    (p_batch_source_name IS NULL OR BATCH_SOURCE_NAME = p_batch_source_name);
 
-        -- Update dists TFM rows to GENERATED and stamp FBDI_CSV_ID.
+        -- Update dists TFM rows to GENERATED and stamp the DISTS file's FBDI_CSV_ID.
         UPDATE DMT_OWNER.DMT_RA_DISTS_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_bu_name IS NULL OR BU_NAME = p_bu_name)
         AND    (p_batch_source_name IS NULL OR EXISTS (

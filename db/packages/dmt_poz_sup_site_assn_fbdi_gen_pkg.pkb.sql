@@ -52,6 +52,9 @@
         l_csv_blob BLOB;
         l_row_count NUMBER := 0;
         l_crlf     CONSTANT VARCHAR2(2) := CHR(13) || CHR(10);
+        l_zip_id   NUMBER;
+        l_csv_id   NUMBER;
+        l_bytes    NUMBER;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -106,39 +109,18 @@
             'CSV payload pre-zip (' || l_row_count || ' rows): ' || DBMS_LOB.SUBSTR(l_csv, 32767, 1),
             'INFO', C_PKG, C_PROC);
 
-        l_csv_blob := clob_to_blob(l_csv);
-
-        -- Persist CSV for traceability
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-            FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT, CSV_CONTENT, CREATED_DATE
-        ) VALUES (
-            DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL, p_run_id,
-            'SupplierSiteAssignments', C_CSV_FILE, l_row_count, l_csv, SYSDATE
-        );
-        DBMS_LOB.FREETEMPORARY(l_csv);
-
-        DBMS_LOB.CREATETEMPORARY(x_fbdi_zip, TRUE);
-        UTL_ZIP.add1file(x_fbdi_zip, C_CSV_FILE, l_csv_blob);
-        UTL_ZIP.finish_zip(x_fbdi_zip);
-        DBMS_LOB.FREETEMPORARY(l_csv_blob);
-
         x_filename := 'SupplierSiteAssignments_' || p_run_id || '.zip';
 
-        -- Persist ZIP for traceability
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-        ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL,
-            (SELECT MAX(FBDI_CSV_ID) FROM DMT_OWNER.DMT_FBDI_CSV_TBL
-             WHERE RUN_ID = p_run_id AND OBJECT_TYPE = 'SupplierSiteAssignments'),
-            p_run_id, 'SupplierSiteAssignments', x_filename,
-            DBMS_LOB.GETLENGTH(x_fbdi_zip), x_fbdi_zip, SYSDATE
-        );
+        -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
+        -- build the zip from that persisted row via the shared helper pair.
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'SupplierSiteAssignments', C_CSV_FILE, l_row_count, l_csv, l_csv_id);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'SupplierSiteAssignments', x_filename, x_fbdi_zip, l_bytes);
+        DBMS_LOB.FREETEMPORARY(l_csv);
 
         UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL
         SET    TFM_STATUS             = 'GENERATED',
-               FBDI_CSV_ID       = (SELECT MAX(FBDI_CSV_ID) FROM DMT_OWNER.DMT_FBDI_CSV_TBL
-                                    WHERE RUN_ID = p_run_id AND OBJECT_TYPE = 'SupplierSiteAssignments'),
+               FBDI_CSV_ID       = l_csv_id,
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID    = p_run_id
         AND    TFM_STATUS             = 'STAGED';

@@ -633,7 +633,23 @@ AS
     )
     IS
         l_zip           BLOB;
-        l_fbdi_csv_id   NUMBER;
+        l_fbdi_csv_id   NUMBER;   -- primary (headers) csv id, returned to the loader
+        l_zip_id        NUMBER;
+        l_bytes         NUMBER;
+        l_fund_csv_id   NUMBER;
+        l_proj_csv_id   NUMBER;
+        l_pers_csv_id   NUMBER;
+        l_fsrc_csv_id   NUMBER;
+        l_pfsrc_csv_id  NUMBER;
+        l_kw_csv_id     NUMBER;
+        l_bdgt_csv_id   NUMBER;
+        l_cert_csv_id   NUMBER;
+        l_cfda_csv_id   NUMBER;
+        l_falloc_csv_id NUMBER;
+        l_orgcr_csv_id  NUMBER;
+        l_ptbrd_csv_id  NUMBER;
+        l_ref_csv_id    NUMBER;
+        l_term_csv_id   NUMBER;
         l_now           DATE := SYSDATE;
 
         l_hdr_csv       CLOB;
@@ -707,103 +723,73 @@ AS
             RETURN;
         END IF;
 
-        -- Build zip
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        IF DBMS_LOB.GETLENGTH(l_hdr_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardHeadersInterface.csv',
-                clob_to_blob(l_hdr_csv));
-        END IF;
+        -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
+        -- build the zip from those persisted rows. One zip owns fifteen CSVs, and
+        -- EACH record type's TFM rows are stamped with THAT file's own FBDI_CSV_ID
+        -- (previously all 15 shared the headers csv id). Empty child CSVs are not
+        -- registered (nothing to zip, no STAGED rows to stamp).
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Grants', 'GmsAwardHeadersInterface.csv', 0, l_hdr_csv, l_fbdi_csv_id);
         IF DBMS_LOB.GETLENGTH(l_fund_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardFundingInterface.csv',
-                clob_to_blob(l_fund_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Grants', 'GmsAwardFundingInterface.csv', 0, l_fund_csv, l_fund_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_proj_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardProjectsInterface.csv',
-                clob_to_blob(l_proj_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'Grants', 'GmsAwardProjectsInterface.csv', 0, l_proj_csv, l_proj_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_pers_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardPersonnelInterface.csv',
-                clob_to_blob(l_pers_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'Grants', 'GmsAwardPersonnelInterface.csv', 0, l_pers_csv, l_pers_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_fsrc_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardFundSrcInterface.csv',
-                clob_to_blob(l_fsrc_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 5, 'Grants', 'GmsAwardFundSrcInterface.csv', 0, l_fsrc_csv, l_fsrc_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_pfsrc_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardPrjFundSrcInterface.csv',
-                clob_to_blob(l_pfsrc_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 6, 'Grants', 'GmsAwardPrjFundSrcInterface.csv', 0, l_pfsrc_csv, l_pfsrc_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_kw_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardKeywordsInterface.csv',
-                clob_to_blob(l_kw_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 7, 'Grants', 'GmsAwardKeywordsInterface.csv', 0, l_kw_csv, l_kw_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_bdgt_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardBudgetPeriodsInterface.csv',
-                clob_to_blob(l_bdgt_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 8, 'Grants', 'GmsAwardBudgetPeriodsInterface.csv', 0, l_bdgt_csv, l_bdgt_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_cert_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardCertsInterface.csv',
-                clob_to_blob(l_cert_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 9, 'Grants', 'GmsAwardCertsInterface.csv', 0, l_cert_csv, l_cert_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_cfda_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardCfdasInterface.csv',
-                clob_to_blob(l_cfda_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 10, 'Grants', 'GmsAwardCfdasInterface.csv', 0, l_cfda_csv, l_cfda_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_falloc_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardFundAllocInterface.csv',
-                clob_to_blob(l_falloc_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 11, 'Grants', 'GmsAwardFundAllocInterface.csv', 0, l_falloc_csv, l_falloc_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_orgcr_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardOrgCreditsInterface.csv',
-                clob_to_blob(l_orgcr_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 12, 'Grants', 'GmsAwardOrgCreditsInterface.csv', 0, l_orgcr_csv, l_orgcr_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_ptbrd_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardPrjTaskBurdenInterface.csv',
-                clob_to_blob(l_ptbrd_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 13, 'Grants', 'GmsAwardPrjTaskBurdenInterface.csv', 0, l_ptbrd_csv, l_ptbrd_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_ref_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardReferencesInterface.csv',
-                clob_to_blob(l_ref_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 14, 'Grants', 'GmsAwardReferencesInterface.csv', 0, l_ref_csv, l_ref_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_term_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GmsAwardTermsInterface.csv',
-                clob_to_blob(l_term_csv));
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 15, 'Grants', 'GmsAwardTermsInterface.csv', 0, l_term_csv, l_term_csv_id);
         END IF;
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Grants', x_filename, l_zip, l_bytes);
 
-        -- Register in DMT_FBDI_CSV_TBL
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_fbdi_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-            FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT, CSV_CONTENT, CREATED_DATE
-        ) VALUES (
-            l_fbdi_csv_id, p_run_id, 'Grants', x_filename, 0, l_hdr_csv, l_now
-        );
-
-        -- Register in DMT_FBDI_ZIP_TBL
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
-            ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-        ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id,
-            'Grants', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
-        );
-
-        -- Update all 15 TFM tables to GENERATED and stamp FBDI_CSV_ID
-        UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_FUNDING_TFM_TBL       SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PROJECTS_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PERSONNEL_TFM_TBL     SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_SRC_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL  SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_KEYWORDS_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_TFM_TBL     SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_CERTS_TFM_TBL         SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_CFDAS_TFM_TBL         SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_TFM_TBL    SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_TFM_TBL   SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL   SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_REFERENCES_TFM_TBL    SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
-        UPDATE DMT_OWNER.DMT_GMS_AWD_TERMS_TFM_TBL         SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        -- Update all 15 TFM tables to GENERATED and stamp EACH file's own FBDI_CSV_ID
+        UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id,   LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_FUNDING_TFM_TBL       SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fund_csv_id,   LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_PROJECTS_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_proj_csv_id,   LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_PERSONNEL_TFM_TBL     SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_pers_csv_id,   LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_SRC_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fsrc_csv_id,   LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL  SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_pfsrc_csv_id,  LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_KEYWORDS_TFM_TBL      SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_kw_csv_id,     LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_TFM_TBL     SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_bdgt_csv_id,   LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_CERTS_TFM_TBL         SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_cert_csv_id,   LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_CFDAS_TFM_TBL         SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_cfda_csv_id,   LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_TFM_TBL    SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_falloc_csv_id, LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_TFM_TBL   SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_orgcr_csv_id,  LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL   SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_ptbrd_csv_id,  LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_REFERENCES_TFM_TBL    SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_ref_csv_id,    LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
+        UPDATE DMT_OWNER.DMT_GMS_AWD_TERMS_TFM_TBL         SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_term_csv_id,   LAST_UPDATED_DATE=l_now WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED';
 
         -- Free temporary CLOBs
         DBMS_LOB.FREETEMPORARY(l_hdr_csv);   DBMS_LOB.FREETEMPORARY(l_fund_csv);

@@ -471,7 +471,11 @@ AS
         l_hdr_csv     CLOB;
         l_lines_csv   CLOB;
         l_dists_csv   CLOB;
-        l_fbdi_csv_id NUMBER;
+        l_fbdi_csv_id NUMBER;   -- primary (headers) csv id, returned to the loader
+        l_zip_id      NUMBER;
+        l_lines_csv_id NUMBER;
+        l_dists_csv_id NUMBER;
+        l_bytes       NUMBER;
         l_now         DATE := SYSDATE;
         C_PROC CONSTANT VARCHAR2(30) := 'GENERATE_FBDI';
     BEGIN
@@ -507,39 +511,15 @@ AS
             RETURN;
         END IF;
 
-        -- Build zip using Anton Scheffer UTL_ZIP
-        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PorReqHeadersInterfaceAll.csv',
-            clob_to_blob(l_hdr_csv));
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PorReqLinesInterfaceAll.csv',
-            clob_to_blob(l_lines_csv));
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PorReqDistsInterfaceAll.csv',
-            clob_to_blob(l_dists_csv));
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
+        -- build the zip from those persisted rows. One zip owns three CSVs.
+        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Requisitions', 'PorReqHeadersInterfaceAll.csv', 0, l_hdr_csv, l_fbdi_csv_id);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Requisitions', 'PorReqLinesInterfaceAll.csv',   0, l_lines_csv, l_lines_csv_id);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'Requisitions', 'PorReqDistsInterfaceAll.csv',   0, l_dists_csv, l_dists_csv_id);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Requisitions', x_filename, l_zip, l_bytes);
 
-        -- Register in DMT_FBDI_CSV_TBL
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_fbdi_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
-            FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
-            CSV_CONTENT, CREATED_DATE
-        ) VALUES (
-            l_fbdi_csv_id, p_run_id,
-            'Requisitions',
-            x_filename, 0, l_hdr_csv, l_now
-        );
-
-        -- Register in DMT_FBDI_ZIP_TBL
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
-            ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-        ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_fbdi_csv_id, p_run_id,
-            'Requisitions',
-            x_filename,
-            DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
-        );
-
-        -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
+        -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
         -- Scoped to the batch (when passed) so one batch's generate only flips
         -- its own rows and does not starve later batches in the same run.
         -- Headers filter by BATCH_ID directly; lines/dists filter through their header.
@@ -548,9 +528,9 @@ AS
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
-        -- Lines
+        -- Lines -> lines csv id
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR EXISTS (
                     SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
@@ -558,9 +538,9 @@ AS
                       AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
                       AND h.BATCH_ID = p_batch_id));
 
-        -- Distributions
+        -- Distributions -> dists csv id
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR EXISTS (
                     SELECT 1
