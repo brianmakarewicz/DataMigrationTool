@@ -704,10 +704,10 @@ AS
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns two CSVs.
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
-        l_fbdi_csv_id  := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'ARInvoices', 'RaInterfaceLinesAll.csv',         0, l_lines_csv);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'ARInvoices', 'RaInterfaceLinesAll.csv',         0, l_lines_csv, l_fbdi_csv_id);
         -- Distributions are optional in AR FBDI: only register (and thus zip) the file when it has rows.
         IF l_dists_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_dists_csv) > 0 THEN
-            l_dists_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'ARInvoices', 'RaInterfaceDistributionsAll.csv', 0, l_dists_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'ARInvoices', 'RaInterfaceDistributionsAll.csv', 0, l_dists_csv, l_dists_csv_id);
         END IF;
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'ARInvoices', x_filename, l_zip, l_bytes);
 

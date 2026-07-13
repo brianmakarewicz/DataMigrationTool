@@ -539,15 +539,15 @@ AS
         -- record type's TFM rows are stamped with THAT file's own FBDI_CSV_ID.
         -- Empty child CSVs are not registered (nothing to zip, no STAGED rows to stamp).
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
-        l_fbdi_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Projects', 'PjfProjectsAllXface.csv', 0, l_projects_csv);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Projects', 'PjfProjectsAllXface.csv', 0, l_projects_csv, l_fbdi_csv_id);
         IF DBMS_LOB.GETLENGTH(l_tasks_csv) > 0 THEN
-            l_tasks_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Projects', 'PjfProjElementsXface.csv', 0, l_tasks_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Projects', 'PjfProjElementsXface.csv', 0, l_tasks_csv, l_tasks_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_team_csv) > 0 THEN
-            l_team_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'Projects', 'PjfProjectPartiesInt.csv', 0, l_team_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'Projects', 'PjfProjectPartiesInt.csv', 0, l_team_csv, l_team_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_txn_csv) > 0 THEN
-            l_txn_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'Projects', 'PjcTxnControlsStage.csv', 0, l_txn_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'Projects', 'PjcTxnControlsStage.csv', 0, l_txn_csv, l_txn_csv_id);
         END IF;
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Projects', x_filename, l_zip, l_bytes);
 

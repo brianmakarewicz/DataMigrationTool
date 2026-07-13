@@ -653,10 +653,10 @@
         --   1 FaMassAdditions.csv  = header TFM + book TFM rows (both stamped csv 1)
         --   2 FaMassaddDistributions.csv = assignment TFM rows (stamped csv 2)
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
-        l_fbdi_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Assets', 'FaMassAdditions.csv',          0, l_ma_csv);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Assets', 'FaMassAdditions.csv',          0, l_ma_csv, l_fbdi_csv_id);
         -- Distributions are optional: only register (and thus zip) the file when it has rows.
         IF l_dist_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_dist_csv) > 0 THEN
-            l_dist_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Assets', 'FaMassaddDistributions.csv',   0, l_dist_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Assets', 'FaMassaddDistributions.csv',   0, l_dist_csv, l_dist_csv_id);
         END IF;
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Assets', x_filename, l_zip, l_bytes);
 

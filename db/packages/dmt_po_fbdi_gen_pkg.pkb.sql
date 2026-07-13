@@ -682,10 +682,10 @@ AS
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns four CSVs.
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
-        l_fbdi_csv_id  := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'PurchaseOrders', 'PoHeadersInterfaceOrder.csv',       0, l_hdr_csv);
-        l_lines_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'PurchaseOrders', 'PoLinesInterfaceOrder.csv',         0, l_lines_csv);
-        l_locs_csv_id  := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'PurchaseOrders', 'PoLineLocationsInterfaceOrder.csv', 0, l_locs_csv);
-        l_dists_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'PurchaseOrders', 'PoDistributionsInterfaceOrder.csv', 0, l_dists_csv);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'PurchaseOrders', 'PoHeadersInterfaceOrder.csv',       0, l_hdr_csv, l_fbdi_csv_id);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'PurchaseOrders', 'PoLinesInterfaceOrder.csv',         0, l_lines_csv, l_lines_csv_id);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'PurchaseOrders', 'PoLineLocationsInterfaceOrder.csv', 0, l_locs_csv, l_locs_csv_id);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'PurchaseOrders', 'PoDistributionsInterfaceOrder.csv', 0, l_dists_csv, l_dists_csv_id);
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'PurchaseOrders', x_filename, l_zip, l_bytes);
 
         -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.

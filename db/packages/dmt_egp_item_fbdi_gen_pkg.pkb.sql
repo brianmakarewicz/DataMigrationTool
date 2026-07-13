@@ -954,10 +954,10 @@
         -- preserved on the generators, counts, and TFM updates.
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         IF l_item_count > 0 THEN
-            l_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Items', 'EgpSystemItemsInterface.csv', l_item_count, l_item_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Items', 'EgpSystemItemsInterface.csv', l_item_count, l_item_csv, l_csv_id);
         END IF;
         IF l_cat_count > 0 THEN
-            l_cat_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'ItemCategories', 'EgpItemCategoriesInterface.csv', l_cat_count, l_cat_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'ItemCategories', 'EgpItemCategoriesInterface.csv', l_cat_count, l_cat_csv, l_cat_csv_id);
         END IF;
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Items', x_filename, l_zip, l_bytes);
 

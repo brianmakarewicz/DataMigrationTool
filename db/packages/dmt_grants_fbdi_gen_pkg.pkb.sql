@@ -729,48 +729,48 @@ AS
         -- (previously all 15 shared the headers csv id). Empty child CSVs are not
         -- registered (nothing to zip, no STAGED rows to stamp).
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
-        l_fbdi_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Grants', 'GmsAwardHeadersInterface.csv', 0, l_hdr_csv);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Grants', 'GmsAwardHeadersInterface.csv', 0, l_hdr_csv, l_fbdi_csv_id);
         IF DBMS_LOB.GETLENGTH(l_fund_csv) > 0 THEN
-            l_fund_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Grants', 'GmsAwardFundingInterface.csv', 0, l_fund_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Grants', 'GmsAwardFundingInterface.csv', 0, l_fund_csv, l_fund_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_proj_csv) > 0 THEN
-            l_proj_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'Grants', 'GmsAwardProjectsInterface.csv', 0, l_proj_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'Grants', 'GmsAwardProjectsInterface.csv', 0, l_proj_csv, l_proj_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_pers_csv) > 0 THEN
-            l_pers_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'Grants', 'GmsAwardPersonnelInterface.csv', 0, l_pers_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'Grants', 'GmsAwardPersonnelInterface.csv', 0, l_pers_csv, l_pers_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_fsrc_csv) > 0 THEN
-            l_fsrc_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 5, 'Grants', 'GmsAwardFundSrcInterface.csv', 0, l_fsrc_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 5, 'Grants', 'GmsAwardFundSrcInterface.csv', 0, l_fsrc_csv, l_fsrc_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_pfsrc_csv) > 0 THEN
-            l_pfsrc_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 6, 'Grants', 'GmsAwardPrjFundSrcInterface.csv', 0, l_pfsrc_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 6, 'Grants', 'GmsAwardPrjFundSrcInterface.csv', 0, l_pfsrc_csv, l_pfsrc_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_kw_csv) > 0 THEN
-            l_kw_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 7, 'Grants', 'GmsAwardKeywordsInterface.csv', 0, l_kw_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 7, 'Grants', 'GmsAwardKeywordsInterface.csv', 0, l_kw_csv, l_kw_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_bdgt_csv) > 0 THEN
-            l_bdgt_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 8, 'Grants', 'GmsAwardBudgetPeriodsInterface.csv', 0, l_bdgt_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 8, 'Grants', 'GmsAwardBudgetPeriodsInterface.csv', 0, l_bdgt_csv, l_bdgt_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_cert_csv) > 0 THEN
-            l_cert_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 9, 'Grants', 'GmsAwardCertsInterface.csv', 0, l_cert_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 9, 'Grants', 'GmsAwardCertsInterface.csv', 0, l_cert_csv, l_cert_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_cfda_csv) > 0 THEN
-            l_cfda_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 10, 'Grants', 'GmsAwardCfdasInterface.csv', 0, l_cfda_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 10, 'Grants', 'GmsAwardCfdasInterface.csv', 0, l_cfda_csv, l_cfda_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_falloc_csv) > 0 THEN
-            l_falloc_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 11, 'Grants', 'GmsAwardFundAllocInterface.csv', 0, l_falloc_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 11, 'Grants', 'GmsAwardFundAllocInterface.csv', 0, l_falloc_csv, l_falloc_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_orgcr_csv) > 0 THEN
-            l_orgcr_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 12, 'Grants', 'GmsAwardOrgCreditsInterface.csv', 0, l_orgcr_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 12, 'Grants', 'GmsAwardOrgCreditsInterface.csv', 0, l_orgcr_csv, l_orgcr_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_ptbrd_csv) > 0 THEN
-            l_ptbrd_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 13, 'Grants', 'GmsAwardPrjTaskBurdenInterface.csv', 0, l_ptbrd_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 13, 'Grants', 'GmsAwardPrjTaskBurdenInterface.csv', 0, l_ptbrd_csv, l_ptbrd_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_ref_csv) > 0 THEN
-            l_ref_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 14, 'Grants', 'GmsAwardReferencesInterface.csv', 0, l_ref_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 14, 'Grants', 'GmsAwardReferencesInterface.csv', 0, l_ref_csv, l_ref_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_term_csv) > 0 THEN
-            l_term_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 15, 'Grants', 'GmsAwardTermsInterface.csv', 0, l_term_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 15, 'Grants', 'GmsAwardTermsInterface.csv', 0, l_term_csv, l_term_csv_id);
         END IF;
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Grants', x_filename, l_zip, l_bytes);
 

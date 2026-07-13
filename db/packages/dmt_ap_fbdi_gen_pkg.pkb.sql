@@ -490,10 +490,10 @@ AS
         -- Each file is registered (and thus zipped) only when it has rows, matching the
         -- pre-remodel per-file guards (the early-return above only bails when BOTH are empty).
         IF l_hdr_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_hdr_csv) > 0 THEN
-            l_fbdi_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'APInvoices', 'ApInvoicesInterface.csv',     0, l_hdr_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'APInvoices', 'ApInvoicesInterface.csv',     0, l_hdr_csv, l_fbdi_csv_id);
         END IF;
         IF l_lines_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_lines_csv) > 0 THEN
-            l_lines_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'APInvoices', 'ApInvoiceLinesInterface.csv', 0, l_lines_csv);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'APInvoices', 'ApInvoiceLinesInterface.csv', 0, l_lines_csv, l_lines_csv_id);
         END IF;
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'APInvoices', x_filename, l_zip, l_bytes);
 

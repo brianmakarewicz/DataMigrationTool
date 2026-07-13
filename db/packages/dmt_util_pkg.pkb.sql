@@ -639,26 +639,25 @@
     -- --------------------------------------------------------
     -- REGISTER_CSV: persist one physical CSV as a child of a zip.
     -- --------------------------------------------------------
-    FUNCTION REGISTER_CSV (
+    PROCEDURE REGISTER_CSV (
         p_run_id      IN NUMBER,
         p_fbdi_zip_id IN NUMBER,
         p_file_seq    IN NUMBER,
         p_object_type IN VARCHAR2,
         p_filename    IN VARCHAR2,
         p_row_count   IN NUMBER,
-        p_csv         IN CLOB
-    ) RETURN NUMBER IS
-        l_csv_id NUMBER;
+        p_csv         IN CLOB,
+        x_fbdi_csv_id OUT NUMBER
+    ) IS
     BEGIN
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_csv_id FROM DUAL;
+        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO x_fbdi_csv_id FROM DUAL;
         INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, FBDI_ZIP_ID, FILE_SEQ, RUN_ID, OBJECT_TYPE,
             FILENAME, ROW_COUNT, CSV_CONTENT, CREATED_DATE
         ) VALUES (
-            l_csv_id, p_fbdi_zip_id, p_file_seq, p_run_id, p_object_type,
+            x_fbdi_csv_id, p_fbdi_zip_id, p_file_seq, p_run_id, p_object_type,
             p_filename, p_row_count, p_csv, SYSDATE
         );
-        RETURN l_csv_id;
     END REGISTER_CSV;
 
     -- --------------------------------------------------------

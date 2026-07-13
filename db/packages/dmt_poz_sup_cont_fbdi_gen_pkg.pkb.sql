@@ -162,7 +162,7 @@
         -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
         -- build the zip from that persisted row via the shared helper pair.
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
-        l_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'SupplierContacts', C_CSV_FILE, l_row_count, l_csv);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'SupplierContacts', C_CSV_FILE, l_row_count, l_csv, l_csv_id);
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'SupplierContacts', x_filename, x_fbdi_zip, l_bytes);
         DBMS_LOB.FREETEMPORARY(l_csv);
 
