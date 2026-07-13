@@ -7,6 +7,12 @@
                q.LOAD_ESS_JOB_ID AS LEID, q.IMPORT_ESS_JOB_ID AS IEID,
                z.CREATED_DATE AS CD
         FROM DMT_FBDI_CSV_TBL c
+        -- KNOWN GAP (fix at APEX port): the multi-CSV objects that go through
+        -- DMT_UTIL_PKG.REGISTER_CSV / BUILD_ZIP_FROM_CSVS stamp FBDI_ZIP_ID on the CSV row,
+        -- so this join resolves. The ~21 single-CSV generators still insert their CSV row
+        -- directly WITHOUT setting FBDI_ZIP_ID, so their ZIP file/size/created columns render
+        -- blank here. Page 53 (the only consumer) is deferred, so this does not surface yet.
+        -- Logged in the design doc open-items list (P3). Fix = stamp FBDI_ZIP_ID on those inserts.
         LEFT JOIN DMT_FBDI_ZIP_TBL z ON z.FBDI_ZIP_ID = c.FBDI_ZIP_ID
         LEFT JOIN (SELECT DISTINCT RUN_ID, CEMLI_CODE, LOAD_ESS_JOB_ID, IMPORT_ESS_JOB_ID
                    FROM DMT_WORK_QUEUE_TBL) q

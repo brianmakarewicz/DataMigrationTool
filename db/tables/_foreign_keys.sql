@@ -233,14 +233,10 @@ exception when others then
 end;
 /
 
--- DMT_FBDI_ZIP_TBL.DMT_FBDI_ZIP_CSV_FK
-begin
-  execute immediate 'ALTER TABLE "DMT_FBDI_ZIP_TBL" ADD CONSTRAINT "DMT_FBDI_ZIP_CSV_FK" FOREIGN KEY ("FBDI_CSV_ID")
-	  REFERENCES "DMT_FBDI_CSV_TBL" ("FBDI_CSV_ID") ENABLE';
-exception when others then
-  if sqlcode not in (-955,-2275,-2264) then raise; end if;
-end;
-/
+-- (removed) DMT_FBDI_ZIP_TBL.DMT_FBDI_ZIP_CSV_FK — the FBDI_CSV_ID bridge column was
+-- dropped in the FBDI CSV<->ZIP remodel (the CSV row now points UP to its zip via
+-- DMT_FBDI_CSV_TBL.FBDI_ZIP_ID). This ADD CONSTRAINT on the now-missing column would
+-- raise ORA-00904 on a fresh install (not in the caught sqlcode list), breaking install.sql.
 
 -- DMT_GL_BUDGET_INT_STG_TBL.SYS_C00127376
 begin
