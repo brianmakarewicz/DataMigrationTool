@@ -1256,45 +1256,9 @@
                     || ',IMPORT_AND_PROCESS,PREV_NOT_IMPORTED,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,'
                     || TO_CHAR(SYSDATE, 'YYYY-MM-DD') || ',#NULL,ORA_PJC_DETAIL';
             END;
-        ELSIF p_cemli_code = 'Requisitions' THEN
-            -- RequisitionImportJob: 8 args.
-            -- 1=ImportSource, 2=BatchId(opt), 3=MaxBatchSize(opt),
-            -- 4=RequisitioningBuId(req), 5=GroupBy(NONE,req),
-            -- 6=NextReqNumber(opt), 7=InitiateApproval(NO,req), 8=ErrorLevel(ALL,req)
-            DECLARE
-                l_req_bu_id   VARCHAR2(30);
-                l_req_bu_name VARCHAR2(240);
-            BEGIN
-                -- BU name from the first STG header this run will process, then
-                -- resolve its id through the one common lookup accessor.
-                -- In ALL mode, rows may be in any status (no reset -- mode-driven
-                -- selection, Overview run-mode table), so widen the status filter.
-                -- Scenario filter included to match the rows this run will actually process.
-                SELECT h.REQ_BU_NAME INTO l_req_bu_name
-                FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL h
-                WHERE  (
-                    (p_run_mode IN ('NEW', 'FAILED') AND h.STG_STATUS IN ('NEW', 'RETRY'))
-                    OR (p_run_mode = 'ALL')
-                  )
-                AND    (p_scenario_id IS NULL
-                        OR h.SCENARIO_ID = p_scenario_id)
-                AND    ROWNUM = 1;
-
-                l_req_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', l_req_bu_name);
-
-                l_param_list := '#NULL,'                     -- 1: ImportSource (optional — #NULL = all sources)
-                    || TO_CHAR(p_run_id) || ','      -- 2: BatchId
-                    || '#NULL,'                               -- 3: MaxBatchSize (optional)
-                    || l_req_bu_id || ','                     -- 4: RequisitioningBuId
-                    || 'NONE,'                                -- 5: GroupBy
-                    || '#NULL,'                               -- 6: NextReqNumber (optional)
-                    || 'NO,'                                  -- 7: InitiateApproval
-                    || 'ALL';                                 -- 8: ErrorLevel
-            EXCEPTION
-                WHEN NO_DATA_FOUND THEN
-                    -- No eligible Requisition rows for this scenario/run_mode — skip
-                    l_param_list := NULL;
-            END;
+        -- Requisitions: the ParameterList is built per batch inside the
+        -- grouped-by-BATCH_ID block below (position 2 = the batch id,
+        -- position 4 = that batch's requisitioning BU id), not here.
         ELSIF p_cemli_code = 'Items' THEN
             -- ItemImportJobDef: 7 args discovered via ESS param discovery (Request 9542220, 2026-05-21)
             -- arg1=BatchID, arg2=Organization(null=all), arg3=ProcessOnly, arg4=ProcessAllOrgs,
@@ -1883,6 +1847,171 @@
                 IF l_cu_count = 0 THEN
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'No STAGED Customer rows with a batch id found. Skipping Customers.',
+                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                    RETURN FALSE;
+                END IF;
+            END;
+
+            GOTO grouped_finish;
+        END IF;
+
+        -- ============================================================
+        -- Requisitions: grouped load by BATCH_ID.
+        -- One batch = one FBDI zip = one Import Requisitions ESS run.
+        -- The batch key lives on the HEADER only; lines and distributions
+        -- belong to a batch through their header link (INTERFACE_HEADER_KEY),
+        -- so the generator filters them by joining back to the header.
+        -- One batch must use exactly one requisitioning business unit
+        -- (RequisitioningBuId is a single positional ESS argument).
+        -- ============================================================
+        IF p_cemli_code = 'Requisitions' THEN
+            DECLARE
+                l_rq_zip        BLOB;
+                l_rq_filename   VARCHAR2(200);
+                l_rq_csv_id     NUMBER;
+                l_rq_load_id    VARCHAR2(100);
+                l_rq_import_id  VARCHAR2(100);
+                l_rq_param      VARCHAR2(500);
+                l_rq_count      NUMBER := 0;
+                l_rq_bu_id      VARCHAR2(30);
+                l_rq_ok         BOOLEAN;
+                l_rq_user       VARCHAR2(100);
+                l_rq_pass       VARCHAR2(100);
+
+                -- Fail this batch's GENERATED rows across all 3 REQ TFM tables.
+                -- Headers filter by BATCH_ID directly; lines/dists filter by
+                -- their header's BATCH_ID (they have no batch column).
+                PROCEDURE mark_batch_failed(p_bid IN VARCHAR2, p_msg IN VARCHAR2) IS
+                BEGIN
+                    UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
+                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
+                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+
+                    UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
+                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
+                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+                      AND EXISTS (SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                                  WHERE h.RUN_ID=l.RUN_ID
+                                    AND h.INTERFACE_HEADER_KEY=l.INTERFACE_HEADER_KEY
+                                    AND h.BATCH_ID=p_bid);
+
+                    UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
+                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
+                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+                      AND EXISTS (SELECT 1
+                                  FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
+                                  JOIN DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                                    ON h.RUN_ID=l.RUN_ID AND h.INTERFACE_HEADER_KEY=l.INTERFACE_HEADER_KEY
+                                  WHERE l.RUN_ID=d.RUN_ID
+                                    AND l.INTERFACE_LINE_KEY=d.INTERFACE_LINE_KEY
+                                    AND h.BATCH_ID=p_bid);
+                    COMMIT;
+                END mark_batch_failed;
+            BEGIN
+                -- Requisitions submits under its own configured ESS user
+                -- (same credential the single-submit path used to load online).
+                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('Requisitions', l_rq_user, l_rq_pass);
+
+                FOR grp_rec IN (
+                    SELECT BATCH_ID,
+                           MIN(REQ_BU_NAME)            AS REQ_BU_NAME,
+                           COUNT(DISTINCT REQ_BU_NAME) AS BU_COUNT
+                    FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
+                    WHERE  RUN_ID = p_run_id
+                    AND    TFM_STATUS = 'STAGED'
+                    AND    BATCH_ID IS NOT NULL
+                    GROUP BY BATCH_ID
+                    ORDER BY BATCH_ID
+                ) LOOP
+                    l_rq_count := l_rq_count + 1;
+
+                    -- One batch = one requisitioning business unit.
+                    IF grp_rec.BU_COUNT > 1 THEN
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'Requisition batch ' || grp_rec.BATCH_ID || ' mixes ' || grp_rec.BU_COUNT ||
+                            ' business units -- a batch must use exactly one. Marking FAILED.',
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                        mark_batch_failed(grp_rec.BATCH_ID,
+                            '[PRE_VALIDATION] Batch ' || grp_rec.BATCH_ID ||
+                            ' mixes multiple requisitioning business units; one batch must use exactly one BU.');
+                        CONTINUE;
+                    END IF;
+
+                    -- Resolve the BU id from its name (no hardcoded ids).
+                    BEGIN
+                        l_rq_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', grp_rec.REQ_BU_NAME);
+                    EXCEPTION WHEN OTHERS THEN
+                        l_rq_bu_id := NULL;
+                    END;
+                    IF l_rq_bu_id IS NULL THEN
+                        mark_batch_failed(grp_rec.BATCH_ID,
+                            '[PRE_VALIDATION] Requisitioning BU "' || grp_rec.REQ_BU_NAME ||
+                            '" for batch ' || grp_rec.BATCH_ID || ' did not resolve to a Fusion BU id.');
+                        CONTINUE;
+                    END IF;
+
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Requisition batch cycle start: BATCH_ID=' || grp_rec.BATCH_ID ||
+                        ', BU=' || grp_rec.REQ_BU_NAME,
+                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+
+                    DMT_REQ_FBDI_GEN_PKG.GENERATE_FBDI(
+                        p_run_id      => p_run_id,
+                        x_fbdi_zip    => l_rq_zip,
+                        x_filename    => l_rq_filename,
+                        x_fbdi_csv_id => l_rq_csv_id,
+                        p_batch_id    => grp_rec.BATCH_ID);
+
+                    IF l_rq_zip IS NULL OR DBMS_LOB.GETLENGTH(l_rq_zip) = 0 THEN
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'No rows for requisition batch ' || grp_rec.BATCH_ID || '. Skipping.',
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                        CONTINUE;
+                    END IF;
+
+                    -- RequisitionImportJob, 8 positional args.
+                    -- 1=ImportSource, 2=BatchId (this batch), 3=MaxBatchSize,
+                    -- 4=RequisitioningBuId (resolved), 5=GroupBy, 6=NextReqNumber,
+                    -- 7=InitiateApproval, 8=ErrorLevel.
+                    l_rq_param := '#NULL,'
+                        || grp_rec.BATCH_ID || ','
+                        || '#NULL,'
+                        || l_rq_bu_id || ','
+                        || 'NONE,'
+                        || '#NULL,'
+                        || 'NO,'
+                        || 'ALL';
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Requisition ParameterList: ' || l_rq_param,
+                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+
+                    submit_and_reconcile_one(
+                        p_fbdi_zip    => l_rq_zip,
+                        p_filename    => l_rq_filename,
+                        p_fbdi_csv_id => l_rq_csv_id,
+                        p_param_list  => l_rq_param,
+                        p_group_label => 'Batch: ' || grp_rec.BATCH_ID,
+                        p_username    => l_rq_user,
+                        p_password    => l_rq_pass,
+                        x_load_ess_id   => l_rq_load_id,
+                        x_import_ess_id => l_rq_import_id,
+                        x_success       => l_rq_ok);
+
+                    IF NOT l_rq_ok THEN
+                        mark_batch_failed(grp_rec.BATCH_ID,
+                            '[LOAD_ERROR] Loading requisition batch ' || grp_rec.BATCH_ID ||
+                            ' to the Fusion interface failed. Check ESS job ' || l_rq_load_id || ' logs.');
+                        CONTINUE;
+                    END IF;
+
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Requisition batch cycle complete: BATCH_ID=' || grp_rec.BATCH_ID,
+                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+                END LOOP;
+
+                IF l_rq_count = 0 THEN
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'No STAGED Requisition rows with a batch id found. Skipping Requisitions.',
                         DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
                     RETURN FALSE;
                 END IF;
@@ -2534,11 +2663,7 @@
             BEGIN
                 DMT_MISC_RECEIPT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
             END;
-        ELSIF p_cemli_code = 'Requisitions' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_REQ_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
+        -- Requisitions: handled in grouped loop above.
         -- GLBalances: handled in grouped loop above.
         ELSIF p_cemli_code = 'GLBudgetBalances' THEN
             DECLARE l_csv_id NUMBER;
@@ -2650,10 +2775,7 @@
                     UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'MiscReceipts' THEN
                     UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'Requisitions' THEN
-                    UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                    UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                    UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                -- Requisitions: handled in grouped loop above.
                 -- GLBalances: handled in grouped loop above.
                 ELSIF p_cemli_code = 'GLBudgetBalances' THEN
                     UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
@@ -2820,11 +2942,7 @@
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
                 p_import_ess_id  => TO_NUMBER(l_import_ess_id));
-        ELSIF p_cemli_code = 'Requisitions' THEN
-            DMT_REQ_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+        -- Requisitions: handled in grouped loop above.
         -- GLBalances: handled in grouped loop above.
         ELSIF p_cemli_code = 'GLBudgetBalances' THEN
             DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
@@ -2890,9 +3008,7 @@
             ELSIF p_cemli_code = 'MiscReceipts' THEN
                 SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'Requisitions' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+            -- Requisitions: handled in grouped loop above.
             -- GLBalances: handled in grouped loop above.
             ELSIF p_cemli_code = 'GLBudgetBalances' THEN
                 SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
