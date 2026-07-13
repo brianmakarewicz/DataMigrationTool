@@ -18,7 +18,7 @@ SELECT
     ic.process_status AS process_flag,
     NULL AS error_message
 FROM   egp_item_categories_interface ic
-WHERE  ic.batch_id = :P_BATCH_ID
+WHERE  ic.load_request_id = :P_LOAD_REQUEST_ID
       ]]></sql>
     </dataSet>
   </dataSets>

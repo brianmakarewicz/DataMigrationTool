@@ -36,6 +36,8 @@ REPORTS = [
     ("SupplierContacts",        "SUP_CONT_DM",      "SUP_CONT_RPT"),
     ("Customers",               "DMT_CUST_RECON_DM", "DMT_CUST_RECON_RPT"),
     ("GLBalances",              "GL_BAL_DM",         "GL_BAL_RPT"),
+    ("Items",                   "ITEM_DM",           "ITEM_RPT"),
+    ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
 ]
 
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"

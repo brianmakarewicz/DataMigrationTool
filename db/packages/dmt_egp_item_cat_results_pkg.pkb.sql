@@ -246,7 +246,10 @@
                     error_message      VARCHAR2(4000) PATH 'ERROR_MESSAGE'
             ) x
         ) LOOP
-            IF r.process_flag IS NULL OR r.process_flag IN ('0', '5') THEN
+            -- process_status 7 = processed OK (the category assignment reached the
+            -- Fusion base table EGP_ITEM_CATEGORIES -- verified live 2026-07-13); 0/5/null
+            -- also success. Only 3 (validation error) is a genuine reject.
+            IF r.process_flag IS NULL OR r.process_flag IN ('0', '5', '7') THEN
                 UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
                 SET    TFM_STATUS              = 'LOADED',
                        RESULTS_UPDATED_DATE    = SYSDATE,
@@ -257,7 +260,7 @@
                 AND    CATEGORY_SET_NAME   = r.category_set_name
                 AND    TFM_STATUS         != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
-            ELSIF r.process_flag IN ('7', '3') THEN
+            ELSIF r.process_flag IN ('3') THEN
                 UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
                 SET    TFM_STATUS              = 'FAILED',
                        ERROR_TEXT              = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
