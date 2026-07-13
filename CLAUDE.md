@@ -107,16 +107,21 @@ Rules of the protocol:
       hcm_impl added for HDL uploads); live Fusion suite 6/6 green (HTTP, BIP, fault,
       ESS poll, UCM upload). Open user decision: error-code-contract exception for the
       utility layer.
-- [~] Stage C — IN PROGRESS (offline core done 2026-07-08): prefix consolidated to one
-      per-run sequence; 3 decided control tables built+seeded (45 objects/86 record types);
-      catalog-driven dispatch live (65 hardcoded branches retired); queue engine proven
-      end-to-end with MockObject/MockChild (25/25) — one-active-run + CONTINUE promotion
-      implemented (were missing), SUBMIT_OBJECTS infinite loop fixed (the historical
-      submit hang), scheduler valid off-APEX. Invalid baseline 46. 6/6 suites + golden green.
-      REMAINING: blind engine review (running), transport/parser consolidation refactor,
-      poll-timeout config wiring + live ESS path (needs demo password), CANCEL_RUN removal,
-      DMT_PREFIX_HISTORY_V. OPEN RULING: single guarded dynamic invocation for registry
-      dispatch (red row in canonical doc).
-- [ ] Stage D — Suppliers vertical slice E2E
-- [ ] Stage E — Remaining Wave-1 objects (3 dependency waves)
+- [x] Stage C — COMPLETE (2026-07-08): prefix consolidated to one per-run sequence;
+      3 decided control tables built+seeded; catalog-driven dispatch live (65 hardcoded
+      branches retired); queue engine proven end-to-end with MockObject/MockChild (25/25);
+      blind engine review PASSED after fixes. (DMT_PREFIX_HISTORY_V still pending — moved
+      to the upstream Tier-2 worklist.)
+- [x] Stage D — Suppliers vertical slice COMPLETE and CLOSED: all five supplier objects
+      ran E2E through the real queue on the live demo instance (evidence, PR #16); blind
+      re-review PASSED (#21). The six-step recipe is the template for every other object.
+- [~] Stage E — Remaining Wave-1 objects IN PROGRESS: offline slices merged for GLBalances
+      (#28), Customers (#29), Workers (#31), Projects (#30). Customers furthest along —
+      Contract-v1 reconciler + base-table BIP report + live batch-id fix (#34-36).
+      GLBalances per-line reconciliation (#41). GET_LOOKUP consolidation landed (#39).
 - [ ] Stage F — Full regression gate → then APEX port
+
+**ACTIVE PLAN (2026-07-12): upstream-first.** Clear the shared engine debt before driving
+more Wave-1 objects live, so each object ports once. Full ordering: docs/DMT_REBUILD_PLAN.html
+section 4.5 ("Backlog Coverage"). Status is tracked ONLY in docs/DMT_DESIGN.html section 12 —
+check an item off there after it is fixed AND regression-tested.
