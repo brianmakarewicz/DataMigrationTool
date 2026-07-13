@@ -99,7 +99,10 @@
                     TO_CHAR(p_run_id) || '_RQHDR_' || TO_CHAR(s.STG_SEQUENCE_ID),
                     'DMT',
                     s.REQ_BU_NAME,
-                    TO_CHAR(p_run_id),
+                    -- Carry the user's batch id through (partition key + ESS
+                    -- BatchId arg); fall back to the run id for isolation when
+                    -- the source supplies none. No hardcode / no overwrite (§7).
+                    NVL(TO_CHAR(s.BATCH_ID), TO_CHAR(p_run_id)),
                     s.INTERFACE_SOURCE_LINE_ID,
                     CASE WHEN s.DOCUMENT_STATUS = 'APPROVED'
                               AND s.APPROVER_EMAIL_ADDR IS NULL
