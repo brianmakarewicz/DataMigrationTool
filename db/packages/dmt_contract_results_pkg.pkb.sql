@@ -269,25 +269,11 @@ AS
 
         -- No child cascade needed — contracts have no lines/locs/dists
 
-        -- Echo outcomes back to STG tables (headers only)
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED'
-            AND    t.STYLE_DISPLAY_NAME = 'Contract Purchase Agreement');
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED'
-            AND    t.STYLE_DISPLAY_NAME = 'Contract Purchase Agreement');
+        -- (Removed 2026-07-13, design section 5.) No STG echo-back: STG carries a
+        -- forward-only status written only by stage->transform; LOADED is TFM-only
+        -- and the TFM row is the sole outcome record. Contracts share the physical
+        -- DMT_PO_HEADERS_INT_STG_TBL with PurchaseOrders/BlanketPOs, so echoing
+        -- LOADED here would reintroduce the same illegal STG write PO just dropped.
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 
