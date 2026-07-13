@@ -499,7 +499,11 @@ AS
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id);
+        -- Forward p_import_ess_id so the BIP report's P_IMPORT_ESS_ID is populated
+        -- and the BASE tier (PO_HEADERS_ALL WHERE request_id = :P_IMPORT_ESS_ID) can
+        -- confirm loaded POs. Without it the BASE tier never fires and every good PO
+        -- whose interface row was purged falls through to the RECONCILE_ERROR catch-all.
+        l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id, p_import_ess_id);
         PARSE_AND_UPDATE(p_run_id, l_xml);
 
         IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
