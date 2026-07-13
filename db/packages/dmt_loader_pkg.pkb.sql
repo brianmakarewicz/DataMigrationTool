@@ -1057,10 +1057,13 @@
                 p_password          => p_password);
             DBMS_LOB.FREETEMPORARY(p_fbdi_zip);
 
-            -- Stamp Load ESS job ID + parameter list
+            -- Stamp the parameter list on the zip row. Keyed on FBDI_ZIP_ID, looked
+            -- up from the primary csv id the generator returned (the ZIP table no
+            -- longer carries FBDI_CSV_ID).
             UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
             SET    PARAMETER_LIST  = p_param_list
-            WHERE  FBDI_CSV_ID     = p_fbdi_csv_id;
+            WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_OWNER.DMT_FBDI_CSV_TBL
+                                  WHERE FBDI_CSV_ID = p_fbdi_csv_id);
             COMMIT;
 
             -- Poll Load job
@@ -1094,9 +1097,6 @@
 
             -- Stamp Import ESS job ID
             IF x_import_ess_id IS NOT NULL THEN
-                UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-                SET    PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-                WHERE  FBDI_CSV_ID       = p_fbdi_csv_id;
                 COMMIT;
 
                 -- Poll Import job
@@ -2544,7 +2544,8 @@
                 DBMS_LOB.FREETEMPORARY(l_gb_zip);
 
                 UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = l_param_list
-                WHERE  FBDI_CSV_ID = l_gb_csv_id;
+                WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_OWNER.DMT_FBDI_CSV_TBL
+                                      WHERE FBDI_CSV_ID = l_gb_csv_id);
                 COMMIT;
 
                 POLL_ESS_JOB(p_run_id, l_gb_load_id, 1800, FALSE, l_obj, p_cemli_code, l_gb_status);
@@ -4019,9 +4020,6 @@
             p_log_context    => 'Workers');
 
         -- Stamp request IDs on ZIP row
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET    PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE  FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         -- Step 7: Poll HCM Data Loader until terminal
@@ -4091,9 +4089,6 @@
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT Assignments ' || TO_CHAR(p_run_id), 'Assignments');
 
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Assignments', l_dataset_status);
@@ -4144,9 +4139,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT Salaries ' || TO_CHAR(p_run_id), 'Salaries');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Salaries', l_dataset_status);
@@ -4196,9 +4188,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT SalaryBases ' || TO_CHAR(p_run_id), 'SalaryBases');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'SalaryBases', l_dataset_status);
@@ -4248,9 +4237,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT Absences ' || TO_CHAR(p_run_id), 'Absences');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Absences', l_dataset_status);
@@ -4300,9 +4286,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT W2Balances ' || TO_CHAR(p_run_id), 'W2Balances');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'W2Balances', l_dataset_status);
@@ -4352,9 +4335,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT BenParticipant ' || TO_CHAR(p_run_id), 'BenParticipant');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenParticipant', l_dataset_status);
@@ -4404,9 +4384,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT BenDependent ' || TO_CHAR(p_run_id), 'BenDependent');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenDependent', l_dataset_status);
@@ -4456,9 +4433,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT BenBeneficiary ' || TO_CHAR(p_run_id), 'BenBeneficiary');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenBeneficiary', l_dataset_status);
@@ -4508,9 +4482,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT PayrollRels ' || TO_CHAR(p_run_id), 'PayrollRels');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'PayrollRels', l_dataset_status);
@@ -4560,9 +4531,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT TaxCards ' || TO_CHAR(p_run_id), 'TaxCards');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'TaxCards', l_dataset_status);
@@ -4612,9 +4580,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT TalentProfiles ' || TO_CHAR(p_run_id), 'TalentProfiles');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'TalentProfiles', l_dataset_status);
@@ -4664,9 +4629,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT PerfEvaluations ' || TO_CHAR(p_run_id), 'PerfEvaluations');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'PerfEvaluations', l_dataset_status);
@@ -4716,9 +4678,6 @@
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
             'DMT WorkSchedules ' || TO_CHAR(p_run_id), 'WorkSchedules');
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
-        SET PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE FBDI_CSV_ID = l_csv_id;
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'WorkSchedules', l_dataset_status);

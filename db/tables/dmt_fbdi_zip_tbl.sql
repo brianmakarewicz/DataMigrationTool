@@ -3,7 +3,6 @@
 begin
   execute immediate 'CREATE TABLE "DMT_FBDI_ZIP_TBL" 
    (	"FBDI_ZIP_ID" NUMBER NOT NULL ENABLE, 
-	"FBDI_CSV_ID" NUMBER,
 	"OBJECT_TYPE" VARCHAR2(100) NOT NULL ENABLE,
 	"FILENAME" VARCHAR2(200) NOT NULL ENABLE, 
 	"ZIP_SIZE_BYTES" NUMBER NOT NULL ENABLE, 
@@ -21,7 +20,6 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."FBDI_ZIP_ID" IS 'PK - from DMT_FBDI_ZIP_ID_SEQ';
-COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL - the CSV this zip was built from';
 COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."OBJECT_TYPE" IS 'Object type label e.g. Suppliers, SupplierAddresses, SupplierSites';
 COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."FILENAME" IS 'Zip filename submitted to UCM e.g. PozSuppliersInt.zip';
 COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."ZIP_SIZE_BYTES" IS 'Size of the zip BLOB in bytes';
@@ -30,18 +28,12 @@ COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."CREATED_DATE" IS 'Timestamp of insert';
 COMMENT ON TABLE "DMT_FBDI_ZIP_TBL"  IS 'Persisted FBDI zip content for each object type per run. One row per object type per integration.';
 
 -- FBDI CSV<->ZIP remodel (design section 1): the ZIP no longer points at a single
--- CSV; CSV rows point UP at the zip via DMT_FBDI_CSV_TBL.FBDI_ZIP_ID.
--- Phase 1 (now): relax FBDI_CSV_ID NOT NULL so a zip row inserts without a csv id.
+-- CSV; CSV rows point UP at the zip via DMT_FBDI_CSV_TBL.FBDI_ZIP_ID. The loader
+-- stamps PARAMETER_LIST by FBDI_ZIP_ID (looked up from the primary csv id), so the
+-- FBDI_CSV_ID column is gone from the final shape above. Guarded DROP converges
+-- existing databases; on a fresh install (column never created) it is a no-op.
 begin
-  execute immediate 'ALTER TABLE "DMT_FBDI_ZIP_TBL" MODIFY ("FBDI_CSV_ID" NULL)';
-exception when others then if sqlcode not in (-1442,-1451) then raise; end if;
+  execute immediate 'ALTER TABLE "DMT_FBDI_ZIP_TBL" DROP COLUMN "FBDI_CSV_ID"';
+exception when others then if sqlcode not in (-904,-957) then raise; end if;
 end;
 /
--- Phase 2 (LATER -- only after every loader stamp site + generator/fbl/hdl INSERT
--- is migrated off FBDI_CSV_ID; see plan): drop the column. Kept guarded so the file
--- stays runnable; uncomment to execute the drop once consumers are converted.
--- begin
---   execute immediate 'ALTER TABLE "DMT_FBDI_ZIP_TBL" DROP COLUMN "FBDI_CSV_ID"';
--- exception when others then if sqlcode not in (-904,-957) then raise; end if;
--- end;
--- /

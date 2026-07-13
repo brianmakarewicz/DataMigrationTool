@@ -110,8 +110,8 @@ AS
         ) VALUES (l_csv_id, p_run_id, 'PayrollRelationships', 'PayrollRelationship.dat', l_row_count, l_dat, l_now);
 
         INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
-        ) VALUES (DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, l_csv_id, p_run_id,
+            FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME, ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
+        ) VALUES (DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
             'PayrollRelationships', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now);
 
         UPDATE DMT_OWNER.DMT_PAY_REL_TFM_TBL

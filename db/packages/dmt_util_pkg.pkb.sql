@@ -675,7 +675,6 @@
         x_zip_bytes    OUT NUMBER
     ) IS
         l_zip         BLOB;
-        l_primary_csv NUMBER;
     BEGIN
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
         FOR r IN (
@@ -688,23 +687,15 @@
         END LOOP;
         DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
 
-        -- Transitional bridge: the zip keeps a FBDI_CSV_ID pointer at its first
-        -- (lowest-id) registered CSV so the shared loader PARAMETER_LIST stamp
-        -- (WHERE FBDI_CSV_ID = ...) keeps working while generators are converted one
-        -- at a time. Keyed on the MIN over ALL of the zip's CSV rows (not just
-        -- FILE_SEQ=1) so a zip whose first physical file was skipped (e.g. an
-        -- Items batch with only categories) still gets a non-NULL pointer.
-        -- Removed in the final increment when the loader keys on FBDI_ZIP_ID.
-        SELECT MIN(FBDI_CSV_ID) INTO l_primary_csv
-        FROM   DMT_OWNER.DMT_FBDI_CSV_TBL
-        WHERE  FBDI_ZIP_ID = p_fbdi_zip_id;
-
+        -- The zip's CSV members live in DMT_FBDI_CSV_TBL keyed by FBDI_ZIP_ID; the
+        -- loader stamps PARAMETER_LIST by FBDI_ZIP_ID (looked up from the primary
+        -- csv id), so the zip row no longer carries a FBDI_CSV_ID pointer.
         x_zip_bytes := DBMS_LOB.GETLENGTH(l_zip);
         INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
-            FBDI_ZIP_ID, FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME,
+            FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
-            p_fbdi_zip_id, l_primary_csv, p_run_id, p_object_type, p_zip_filename,
+            p_fbdi_zip_id, p_run_id, p_object_type, p_zip_filename,
             x_zip_bytes, l_zip, SYSDATE
         );
         x_fbdi_zip := l_zip;
