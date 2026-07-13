@@ -9,12 +9,16 @@
 -- populated even when the chained import job errors),
 -- P_IMPORT_ESS_ID, P_PREFIX. P_BATCH_ID is retired.
 -- ============================================================
+-- BASE-tier confirmation: an address is LOADED only when its party site
+-- positively exists in HZ_PARTY_SITES (joined on the party_site_id the import
+-- stamps on the interface row). STATUS is derived from base-table presence, not
+-- the interface's own import_status; PARTY_SITE_ID is the base-table id. Rule #1.
 SELECT
     i.address_interface_id,
-    i.party_site_id,
+    b.party_site_id,
     i.vendor_name,
     i.party_site_name,
-    i.import_status AS status,
+    CASE WHEN b.party_site_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS status,
     i.load_request_id,
     (
         SELECT LISTAGG(
@@ -29,5 +33,6 @@ SELECT
         AND    r.parent_id    = i.address_interface_id
     ) AS error_message
 FROM   poz_sup_addresses_int i
-WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
+LEFT JOIN hz_party_sites b ON b.party_site_id = i.party_site_id
+WHERE   i.load_request_id = :P_LOAD_REQUEST_ID
       
