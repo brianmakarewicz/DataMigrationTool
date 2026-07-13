@@ -68,7 +68,8 @@ AS
     -- Private: generate HzImpPartiesT.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_parties_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN NUMBER DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -119,6 +120,7 @@ AS
             FROM   DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -131,7 +133,8 @@ AS
     -- Private: generate HzImpLocationsT.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_locations_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN NUMBER DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -193,6 +196,7 @@ AS
             FROM   DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -205,7 +209,8 @@ AS
     -- Private: generate HzImpPartySitesT.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_party_sites_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN NUMBER DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -255,6 +260,7 @@ AS
             FROM   DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -267,7 +273,8 @@ AS
     -- Private: generate HzImpPartySiteUsesT.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_party_site_uses_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN NUMBER DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -312,6 +319,7 @@ AS
             FROM   DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -324,7 +332,8 @@ AS
     -- Private: generate HzImpAccountsT.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_accounts_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN NUMBER DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -369,6 +378,7 @@ AS
             FROM   DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -381,7 +391,8 @@ AS
     -- Private: generate HzImpAcctSitesT.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_acct_sites_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN NUMBER DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -431,6 +442,7 @@ AS
             FROM   DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -443,7 +455,8 @@ AS
     -- Private: generate HzImpAcctSiteUsesT.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_acct_site_uses_csv (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_batch_id IN NUMBER DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -490,6 +503,7 @@ AS
             FROM   DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -507,7 +521,8 @@ AS
         p_run_id IN  NUMBER,
         x_fbdi_zip       OUT BLOB,
         x_filename       OUT VARCHAR2,
-        x_fbdi_csv_id    OUT NUMBER
+        x_fbdi_csv_id    OUT NUMBER,
+        p_batch_id       IN  NUMBER DEFAULT NULL
     )
     IS
         l_zip             BLOB;
@@ -531,13 +546,13 @@ AS
         x_filename := 'Customers_' || TO_CHAR(p_run_id) || '.zip';
 
         -- Generate all 7 CSVs
-        l_parties_csv    := gen_parties_csv(p_run_id);
-        l_locations_csv  := gen_locations_csv(p_run_id);
-        l_psites_csv     := gen_party_sites_csv(p_run_id);
-        l_psite_uses_csv := gen_party_site_uses_csv(p_run_id);
-        l_accounts_csv   := gen_accounts_csv(p_run_id);
-        l_acct_sites_csv := gen_acct_sites_csv(p_run_id);
-        l_acct_suses_csv := gen_acct_site_uses_csv(p_run_id);
+        l_parties_csv    := gen_parties_csv(p_run_id, p_batch_id);
+        l_locations_csv  := gen_locations_csv(p_run_id, p_batch_id);
+        l_psites_csv     := gen_party_sites_csv(p_run_id, p_batch_id);
+        l_psite_uses_csv := gen_party_site_uses_csv(p_run_id, p_batch_id);
+        l_accounts_csv   := gen_accounts_csv(p_run_id, p_batch_id);
+        l_acct_sites_csv := gen_acct_sites_csv(p_run_id, p_batch_id);
+        l_acct_suses_csv := gen_acct_site_uses_csv(p_run_id, p_batch_id);
 
         -- AD#20: Skip gracefully if no rows generated (parties is the primary CSV)
         IF (l_parties_csv IS NULL OR DBMS_LOB.GETLENGTH(l_parties_csv) = 0) THEN
@@ -615,31 +630,38 @@ AS
         -- Update all 7 TFM tables to GENERATED and stamp FBDI_CSV_ID
         UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         -- Free temporary CLOBs
         DBMS_LOB.FREETEMPORARY(l_parties_csv);

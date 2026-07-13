@@ -27,7 +27,10 @@ AS
         p_run_id IN  NUMBER,
         x_fbdi_zip       OUT BLOB,
         x_filename       OUT VARCHAR2,
-        x_fbdi_csv_id    OUT NUMBER
+        x_fbdi_csv_id    OUT NUMBER,
+        -- Partition filter: NULL = whole run (backward compatible); a value emits
+        -- and flips to GENERATED only that batch's rows (Customers-by-BATCH_ID).
+        p_batch_id       IN  NUMBER DEFAULT NULL
     );
 
 END DMT_CUST_FBDI_GEN_PKG;
