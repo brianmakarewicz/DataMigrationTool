@@ -389,78 +389,14 @@ AS
             AND    loc.INTERFACE_LINE_LOCATION_KEY = d.INTERFACE_LINE_LOCATION_KEY
             AND    loc.TFM_STATUS                      = 'FAILED');
 
-        -- Echo outcomes back to STG tables (all 4 types)
-        -- Headers
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-
-        -- Lines
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-
-        -- Line locations
-        UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-
-        -- Distributions
-        UPDATE DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        -- (Removed 2026-07-13, design section 5.) The reconciler no longer echoes
+        -- outcomes back to the STG tables. Per the decided rule, STG carries a
+        -- forward-only status (NEW -> TRANSFORMED/FAILED) written ONLY by the
+        -- stage->transform step; LOADED is a TFM-only status and the TFM row is
+        -- the sole record of the Fusion outcome. This mirrors the supplier
+        -- reconciler (kept TFM-only) and the tranche-review H1 finding. Verified
+        -- nothing downstream reads the PO STG LOADED status (the dependent
+        -- validators read the upstream TFM row, per H2).
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 
