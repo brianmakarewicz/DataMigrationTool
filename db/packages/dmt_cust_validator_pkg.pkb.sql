@@ -98,46 +98,56 @@ AS
         AND    p.BATCH_ID IS NULL;
         l_party_failed := l_party_failed + SQL%ROWCOUNT;
 
-        -- Step 1f: BATCH_ID is required on EVERY customer staging table, not
-        -- just Parties. Each table carries its own BATCH_ID independently to
-        -- TFM, and it is the partition key the loader groups on and the
-        -- generator filters on -- a NULL BATCH_ID would be silently excluded
-        -- from the FBDI and never marked FAILED (a fail-open third outcome that
-        -- violates Rule #1). Fail such rows here with a reportable error.
-        UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL
-        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
-               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
-        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        -- Step 1f: on EVERY non-Parties customer staging table, BATCH_ID must be
+        -- present AND must match a Parties BATCH_ID in the same batch (scenario).
+        -- Each table carries its own BATCH_ID independently to TFM, and the
+        -- loader partitions strictly on the PARTIES BATCH_IDs while the generator
+        -- filters children by BATCH_ID = <that party batch>. A child whose
+        -- BATCH_ID is NULL -- or non-NULL but matching no Parties batch in the
+        -- run -- would be excluded from every FBDI and never marked FAILED: a
+        -- silent third outcome that violates Rule #1. Fail such rows here so the
+        -- batch id can never diverge into an orphan. (Rows whose child ref points
+        -- at the wrong party still reach Fusion and error there -- not silent.)
+        UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL x
+        SET    x.STG_STATUS='FAILED', x.LAST_UPDATED_DATE=SYSDATE,
+               x.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(x.ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.')
+        WHERE  x.STG_STATUS IN ('NEW','RETRY')
+        AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_loc_failed := l_loc_failed + SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL
-        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
-               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
-        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL x
+        SET    x.STG_STATUS='FAILED', x.LAST_UPDATED_DATE=SYSDATE,
+               x.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(x.ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.')
+        WHERE  x.STG_STATUS IN ('NEW','RETRY')
+        AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_ps_failed := l_ps_failed + SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL
-        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
-               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
-        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL x
+        SET    x.STG_STATUS='FAILED', x.LAST_UPDATED_DATE=SYSDATE,
+               x.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(x.ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.')
+        WHERE  x.STG_STATUS IN ('NEW','RETRY')
+        AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_psu_failed := l_psu_failed + SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL
-        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
-               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
-        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL x
+        SET    x.STG_STATUS='FAILED', x.LAST_UPDATED_DATE=SYSDATE,
+               x.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(x.ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.')
+        WHERE  x.STG_STATUS IN ('NEW','RETRY')
+        AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_acct_failed := l_acct_failed + SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL
-        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
-               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
-        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL x
+        SET    x.STG_STATUS='FAILED', x.LAST_UPDATED_DATE=SYSDATE,
+               x.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(x.ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.')
+        WHERE  x.STG_STATUS IN ('NEW','RETRY')
+        AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_as_failed := l_as_failed + SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL
-        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
-               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
-        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL x
+        SET    x.STG_STATUS='FAILED', x.LAST_UPDATED_DATE=SYSDATE,
+               x.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(x.ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.')
+        WHERE  x.STG_STATUS IN ('NEW','RETRY')
+        AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_asu_failed := l_asu_failed + SQL%ROWCOUNT;
 
         -- Step 2: Cascade failures to locations for any failed party.
