@@ -1544,6 +1544,11 @@
                     l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
                     l_req_bu_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_REQ_BU_ID');
 
+                    -- Arg 5 (Batch ID) is left blank on purpose: Import Orders then
+                    -- processes all pending interface rows for this BU, so PO partitions
+                    -- by Procurement BU only. The user's batch id still rides through on
+                    -- the interface BATCH_ID column (transform: NVL(user BATCH_ID, run_id))
+                    -- for traceability -- it is a tracking value here, not a load filter.
                     l_bu_param := l_bu_id || ',' || l_buyer_id || ',' || 'SUBMIT' || ',' ||
                                   l_req_bu_id || ',,' || 'N' || ',,' || 'N' || ',' ||
                                   l_bu_id || '_' || TO_CHAR(p_run_id);
