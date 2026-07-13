@@ -586,13 +586,28 @@ AS
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns seven CSVs.
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        -- Parties (primary) is always present (early-return guards it); each of the other
+        -- six child files is registered/zipped only when it has rows, matching the
+        -- pre-remodel per-file guards (a batch may legitimately have no account sites yet, etc.).
         l_fbdi_csv_id       := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Customers', 'HzImpPartiesT.csv',       0, l_parties_csv);
-        l_locations_csv_id  := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Customers', 'HzImpLocationsT.csv',      0, l_locations_csv);
-        l_psites_csv_id     := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'Customers', 'HzImpPartySitesT.csv',     0, l_psites_csv);
-        l_psite_uses_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'Customers', 'HzImpPartySiteUsesT.csv',  0, l_psite_uses_csv);
-        l_accounts_csv_id   := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 5, 'Customers', 'HzImpAccountsT.csv',       0, l_accounts_csv);
-        l_acct_sites_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 6, 'Customers', 'HzImpAcctSitesT.csv',      0, l_acct_sites_csv);
-        l_acct_suses_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 7, 'Customers', 'HzImpAcctSiteUsesT.csv',   0, l_acct_suses_csv);
+        IF l_locations_csv  IS NOT NULL AND DBMS_LOB.GETLENGTH(l_locations_csv)  > 0 THEN
+            l_locations_csv_id  := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Customers', 'HzImpLocationsT.csv',      0, l_locations_csv);
+        END IF;
+        IF l_psites_csv     IS NOT NULL AND DBMS_LOB.GETLENGTH(l_psites_csv)     > 0 THEN
+            l_psites_csv_id     := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'Customers', 'HzImpPartySitesT.csv',     0, l_psites_csv);
+        END IF;
+        IF l_psite_uses_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_psite_uses_csv) > 0 THEN
+            l_psite_uses_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 4, 'Customers', 'HzImpPartySiteUsesT.csv',  0, l_psite_uses_csv);
+        END IF;
+        IF l_accounts_csv   IS NOT NULL AND DBMS_LOB.GETLENGTH(l_accounts_csv)   > 0 THEN
+            l_accounts_csv_id   := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 5, 'Customers', 'HzImpAccountsT.csv',       0, l_accounts_csv);
+        END IF;
+        IF l_acct_sites_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_acct_sites_csv) > 0 THEN
+            l_acct_sites_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 6, 'Customers', 'HzImpAcctSitesT.csv',      0, l_acct_sites_csv);
+        END IF;
+        IF l_acct_suses_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_acct_suses_csv) > 0 THEN
+            l_acct_suses_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 7, 'Customers', 'HzImpAcctSiteUsesT.csv',   0, l_acct_suses_csv);
+        END IF;
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Customers', x_filename, l_zip, l_bytes);
 
         -- Update all 7 TFM tables to GENERATED and stamp EACH file's own FBDI_CSV_ID
