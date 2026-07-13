@@ -98,6 +98,48 @@ AS
         AND    p.BATCH_ID IS NULL;
         l_party_failed := l_party_failed + SQL%ROWCOUNT;
 
+        -- Step 1f: BATCH_ID is required on EVERY customer staging table, not
+        -- just Parties. Each table carries its own BATCH_ID independently to
+        -- TFM, and it is the partition key the loader groups on and the
+        -- generator filters on -- a NULL BATCH_ID would be silently excluded
+        -- from the FBDI and never marked FAILED (a fail-open third outcome that
+        -- violates Rule #1). Fail such rows here with a reportable error.
+        UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL
+        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
+               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
+        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        l_loc_failed := l_loc_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL
+        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
+               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
+        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        l_ps_failed := l_ps_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL
+        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
+               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
+        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        l_psu_failed := l_psu_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL
+        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
+               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
+        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        l_acct_failed := l_acct_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL
+        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
+               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
+        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        l_as_failed := l_as_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL
+        SET    STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE,
+               ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).')
+        WHERE  STG_STATUS IN ('NEW','RETRY') AND BATCH_ID IS NULL;
+        l_asu_failed := l_asu_failed + SQL%ROWCOUNT;
+
         -- Step 2: Cascade failures to locations for any failed party.
         -- Locations link to parties via PARTY_ORIG_SYSTEM_REFERENCE stored
         -- in related party_sites. For simplicity, locations are validated
@@ -120,7 +162,7 @@ AS
                    AND    p.STG_STATUS = 'FAILED'
                    AND    p.ERROR_TEXT LIKE '%[PRE_VALIDATION]%'
                );
-        l_ps_failed := SQL%ROWCOUNT;
+        l_ps_failed := l_ps_failed + SQL%ROWCOUNT;
 
         -- Step 4: Cascade to party site uses for any failed party site.
         UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL psu
@@ -139,7 +181,7 @@ AS
                    AND    ps.STG_STATUS = 'FAILED'
                    AND    ps.ERROR_TEXT LIKE '%[PRE_VALIDATION]%'
                );
-        l_psu_failed := SQL%ROWCOUNT;
+        l_psu_failed := l_psu_failed + SQL%ROWCOUNT;
 
         -- Step 5: Cascade to accounts for any failed party.
         UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL a
@@ -158,7 +200,7 @@ AS
                    AND    p.STG_STATUS = 'FAILED'
                    AND    p.ERROR_TEXT LIKE '%[PRE_VALIDATION]%'
                );
-        l_acct_failed := SQL%ROWCOUNT;
+        l_acct_failed := l_acct_failed + SQL%ROWCOUNT;
 
         -- Step 6: Cascade to account sites for any failed account.
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL acs
@@ -177,7 +219,7 @@ AS
                    AND    a.STG_STATUS = 'FAILED'
                    AND    a.ERROR_TEXT LIKE '%[PRE_VALIDATION]%'
                );
-        l_as_failed := SQL%ROWCOUNT;
+        l_as_failed := l_as_failed + SQL%ROWCOUNT;
 
         -- Step 7: Cascade to account site uses for any failed account site.
         UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL asu
@@ -196,7 +238,7 @@ AS
                    AND    acs.STG_STATUS = 'FAILED'
                    AND    acs.ERROR_TEXT LIKE '%[PRE_VALIDATION]%'
                );
-        l_asu_failed := SQL%ROWCOUNT;
+        l_asu_failed := l_asu_failed + SQL%ROWCOUNT;
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
