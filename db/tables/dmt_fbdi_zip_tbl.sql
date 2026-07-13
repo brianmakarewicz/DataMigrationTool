@@ -28,3 +28,20 @@ COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."ZIP_SIZE_BYTES" IS 'Size of the zip BLOB i
 COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."ZIP_CONTENT" IS 'Full zip BLOB as submitted to Fusion UCM';
 COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."CREATED_DATE" IS 'Timestamp of insert';
 COMMENT ON TABLE "DMT_FBDI_ZIP_TBL"  IS 'Persisted FBDI zip content for each object type per run. One row per object type per integration.';
+
+-- FBDI CSV<->ZIP remodel (design section 1): the ZIP no longer points at a single
+-- CSV; CSV rows point UP at the zip via DMT_FBDI_CSV_TBL.FBDI_ZIP_ID.
+-- Phase 1 (now): relax FBDI_CSV_ID NOT NULL so a zip row inserts without a csv id.
+begin
+  execute immediate 'ALTER TABLE "DMT_FBDI_ZIP_TBL" MODIFY ("FBDI_CSV_ID" NULL)';
+exception when others then if sqlcode not in (-1442,-1451) then raise; end if;
+end;
+/
+-- Phase 2 (LATER -- only after every loader stamp site + generator/fbl/hdl INSERT
+-- is migrated off FBDI_CSV_ID; see plan): drop the column. Kept guarded so the file
+-- stays runnable; uncomment to execute the drop once consumers are converted.
+-- begin
+--   execute immediate 'ALTER TABLE "DMT_FBDI_ZIP_TBL" DROP COLUMN "FBDI_CSV_ID"';
+-- exception when others then if sqlcode not in (-904,-957) then raise; end if;
+-- end;
+-- /

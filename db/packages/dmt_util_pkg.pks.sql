@@ -188,6 +188,35 @@ AS
     -- maintaining a local copy.
     FUNCTION CLOB_TO_BLOB (p_clob IN CLOB) RETURN BLOB;
 
+    -- ============================================================
+    -- FBDI CSV<->ZIP helpers (one DMT_FBDI_CSV_TBL row per physical CSV).
+    -- Generators call REGISTER_CSV once per file, then BUILD_ZIP_FROM_CSVS
+    -- which zips the persisted CSV_CONTENT rows (not in-memory CLOBs).
+    -- ============================================================
+
+    -- Persist one physical CSV as a child of a pre-allocated zip id.
+    -- Returns the new FBDI_CSV_ID (stamp it on that file's TFM rows).
+    FUNCTION REGISTER_CSV (
+        p_run_id      IN NUMBER,
+        p_fbdi_zip_id IN NUMBER,          -- pre-fetched DMT_FBDI_ZIP_ID_SEQ.NEXTVAL
+        p_file_seq    IN NUMBER,          -- 1..N, preserves zip member order
+        p_object_type IN VARCHAR2,
+        p_filename    IN VARCHAR2,        -- CSV member name inside the zip
+        p_row_count   IN NUMBER,
+        p_csv         IN CLOB
+    ) RETURN NUMBER;
+
+    -- Build the zip BLOB from the persisted CSV rows for p_fbdi_zip_id
+    -- (ordered by FILE_SEQ), insert the DMT_FBDI_ZIP_TBL row, and return the BLOB.
+    PROCEDURE BUILD_ZIP_FROM_CSVS (
+        p_run_id       IN  NUMBER,
+        p_fbdi_zip_id  IN  NUMBER,
+        p_object_type  IN  VARCHAR2,
+        p_zip_filename IN  VARCHAR2,
+        x_fbdi_zip     OUT BLOB,
+        x_zip_bytes    OUT NUMBER
+    );
+
     -- Base64-encode a BLOB and return the result as a CLOB.
     -- Processes in 12000-byte chunks (multiple of 3) to avoid
     -- mid-stream padding artefacts.

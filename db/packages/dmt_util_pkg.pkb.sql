@@ -637,6 +637,69 @@
     END CLOB_TO_BLOB;
 
     -- --------------------------------------------------------
+    -- REGISTER_CSV: persist one physical CSV as a child of a zip.
+    -- --------------------------------------------------------
+    FUNCTION REGISTER_CSV (
+        p_run_id      IN NUMBER,
+        p_fbdi_zip_id IN NUMBER,
+        p_file_seq    IN NUMBER,
+        p_object_type IN VARCHAR2,
+        p_filename    IN VARCHAR2,
+        p_row_count   IN NUMBER,
+        p_csv         IN CLOB
+    ) RETURN NUMBER IS
+        l_csv_id NUMBER;
+    BEGIN
+        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_csv_id FROM DUAL;
+        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+            FBDI_CSV_ID, FBDI_ZIP_ID, FILE_SEQ, RUN_ID, OBJECT_TYPE,
+            FILENAME, ROW_COUNT, CSV_CONTENT, CREATED_DATE
+        ) VALUES (
+            l_csv_id, p_fbdi_zip_id, p_file_seq, p_run_id, p_object_type,
+            p_filename, p_row_count, p_csv, SYSDATE
+        );
+        RETURN l_csv_id;
+    END REGISTER_CSV;
+
+    -- --------------------------------------------------------
+    -- BUILD_ZIP_FROM_CSVS: zip the persisted CSV rows for a zip id
+    -- (in FILE_SEQ order), insert the DMT_FBDI_ZIP_TBL row, return the BLOB.
+    -- The zip bytes come from DMT_FBDI_CSV_TBL.CSV_CONTENT -- so the archive
+    -- is provably what is persisted, not a separate in-memory copy.
+    -- --------------------------------------------------------
+    PROCEDURE BUILD_ZIP_FROM_CSVS (
+        p_run_id       IN  NUMBER,
+        p_fbdi_zip_id  IN  NUMBER,
+        p_object_type  IN  VARCHAR2,
+        p_zip_filename IN  VARCHAR2,
+        x_fbdi_zip     OUT BLOB,
+        x_zip_bytes    OUT NUMBER
+    ) IS
+        l_zip BLOB;
+    BEGIN
+        DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
+        FOR r IN (
+            SELECT FILENAME, CSV_CONTENT
+            FROM   DMT_OWNER.DMT_FBDI_CSV_TBL
+            WHERE  FBDI_ZIP_ID = p_fbdi_zip_id
+            ORDER BY FILE_SEQ
+        ) LOOP
+            DMT_OWNER.UTL_ZIP.add1file(l_zip, r.FILENAME, CLOB_TO_BLOB(r.CSV_CONTENT));
+        END LOOP;
+        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+
+        x_zip_bytes := DBMS_LOB.GETLENGTH(l_zip);
+        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+            FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
+            ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
+        ) VALUES (
+            p_fbdi_zip_id, p_run_id, p_object_type, p_zip_filename,
+            x_zip_bytes, l_zip, SYSDATE
+        );
+        x_fbdi_zip := l_zip;
+    END BUILD_ZIP_FROM_CSVS;
+
+    -- --------------------------------------------------------
     -- BASE64_ENCODE
     -- --------------------------------------------------------
     FUNCTION BASE64_ENCODE (p_blob IN BLOB) RETURN CLOB IS
