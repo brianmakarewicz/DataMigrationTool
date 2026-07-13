@@ -148,7 +148,7 @@
                     NULL,
                     TO_CHAR(p_run_id) || '_HDR_' || TO_CHAR(s.STG_SEQUENCE_ID),
                     s.ACTION,
-                    TO_CHAR(p_run_id),  -- BATCH_ID = run_id (isolates our rows)
+                    NVL(TO_CHAR(s.BATCH_ID), TO_CHAR(p_run_id)),  -- carry the user's BATCH_ID through; run_id only as isolation fallback
                     s.INTERFACE_SOURCE_CODE,
                     s.APPROVAL_ACTION,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.DOCUMENT_NUM, 20),

@@ -813,6 +813,10 @@ def main():
     #     BAD:  1 PO with non-existent supplier [BAD-UPS]
     # ====================================================================
     print("\n=== 13. PO Headers (Standard) ===")
+    # Good POs reference the RT suppliers + sites that the Suppliers -> SupplierSites
+    # chain loads in this SAME run (matching run prefix). PurchaseOrders therefore
+    # only loads to the base tables as part of the P2P pipeline (after suppliers),
+    # never standalone -- no supplier exists yet in a PO-only run.
     for hkey, po_num, vname, vnum, vsite in [
         ("RT-PO-G1", "RT-PO-001", "RT Supplier Good-1", "RT-SUP-G1", "RT-SITE-G1"),
         ("RT-PO-G2", "RT-PO-002", "RT Supplier Good-2", "RT-SUP-G2", "RT-SITE-G2"),
@@ -820,6 +824,7 @@ def main():
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL (
                 INTERFACE_HEADER_KEY, ACTION, DOCUMENT_TYPE_CODE,
+                BATCH_ID,
                 STYLE_DISPLAY_NAME, PRC_BU_NAME, REQ_BU_NAME,
                 SOLDTO_LE_NAME, BILLTO_BU_NAME,
                 AGENT_NAME, CURRENCY_CODE,
@@ -827,6 +832,7 @@ def main():
                 DOCUMENT_NUM, SOURCE_ID
             ) VALUES (
                 :hkey, 'ORIGINAL', 'STANDARD',
+                8001,
                 'Purchase Order', :bu, :bu,
                 'US1 Legal Entity', :bu,
                 'Roth, Calvin', 'USD',
@@ -836,7 +842,7 @@ def main():
         """, {"hkey": hkey, "bu": BU, "vname": vname, "vnum": vnum,
               "vsite": vsite, "po_num": po_num,
               "src": f"RT-{hkey}"},
-        label=f"GOOD PO Header: {po_num}")
+        label=f"GOOD PO Header: {po_num} (user BATCH_ID 8001)")
 
     run_sql(cur, """
         INSERT INTO DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL (
