@@ -11,9 +11,12 @@ AS
 
     -- --------------------------------------------------------
     -- VALIDATE_PRE_TRANSFORM
-    -- Upstream dependency: VENDOR_NUM must match a LOADED supplier.
-    -- For migrated suppliers: NVL(dep_prefix,'') || header.VENDOR_NUM
-    --   must exist in DMT_POZ_SUPPLIERS_STG_TBL with STG_STATUS='LOADED'.
+    -- Upstream dependency: the PO's supplier must have LOADED. Per design
+    --   section 5, LOADED is a TFM-only status (STG never carries it), so the
+    --   check reads the supplier's TFM row: a supplier STG row whose VENDOR_NAME
+    --   matches the PO header, joined to its DMT_POZ_SUPPLIERS_TFM_TBL row with
+    --   TFM_STATUS='LOADED' (linked 1:1 by STG_SEQUENCE_ID). (Was: checking the
+    --   illegal value STG_STATUS='LOADED' on the STG table.)
     -- Failed headers cascade to child lines, locs, and dists
     --   via INTERFACE_HEADER_KEY match.
     -- --------------------------------------------------------
@@ -55,8 +58,8 @@ AS
             l_any_loaded NUMBER;
         BEGIN
             SELECT COUNT(*) INTO l_any_loaded
-            FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL
-            WHERE  STG_STATUS = 'LOADED' AND ROWNUM = 1;
+            FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL
+            WHERE  TFM_STATUS = 'LOADED' AND ROWNUM = 1;
 
             IF l_any_loaded > 0 THEN
                 UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL h
@@ -71,8 +74,10 @@ AS
                 AND    NOT EXISTS (
                            SELECT 1
                            FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
+                           JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
+                                  ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
                            WHERE  s.VENDOR_NAME = h.VENDOR_NAME
-                           AND    s.STG_STATUS   = 'LOADED'
+                           AND    t.TFM_STATUS   = 'LOADED'
                        )
                 AND    (p_doc_type_filter IS NULL OR h.STYLE_DISPLAY_NAME = p_doc_type_filter);
                 l_hdr_failed := SQL%ROWCOUNT;
