@@ -489,8 +489,14 @@ AS
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns two CSVs.
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
-        l_fbdi_csv_id  := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, '1099Invoices', 'ApInvoicesInterface.csv',     0, l_hdr_csv);
-        l_lines_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, '1099Invoices', 'ApInvoiceLinesInterface.csv', 0, l_lines_csv);
+        -- Each file is registered (and thus zipped) only when it has rows, matching the
+        -- pre-remodel per-file guards (the early-return above only bails when BOTH are empty).
+        IF l_hdr_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_hdr_csv) > 0 THEN
+            l_fbdi_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, '1099Invoices', 'ApInvoicesInterface.csv',     0, l_hdr_csv);
+        END IF;
+        IF l_lines_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_lines_csv) > 0 THEN
+            l_lines_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, '1099Invoices', 'ApInvoiceLinesInterface.csv', 0, l_lines_csv);
+        END IF;
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, '1099Invoices', x_filename, l_zip, l_bytes);
 
         -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
@@ -517,7 +523,8 @@ AS
         DBMS_LOB.FREETEMPORARY(l_lines_csv);
 
         x_fbdi_zip    := l_zip;
-        x_fbdi_csv_id := l_fbdi_csv_id;
+        -- First registered CSV id (header if present, else lines) -- matches the zip's bridge pointer.
+        x_fbdi_csv_id := NVL(l_fbdi_csv_id, l_lines_csv_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

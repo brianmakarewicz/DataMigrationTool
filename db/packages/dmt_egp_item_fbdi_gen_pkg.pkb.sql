@@ -986,7 +986,9 @@
         IF l_cat_csv  IS NOT NULL THEN DBMS_LOB.FREETEMPORARY(l_cat_csv);  END IF;
 
         x_fbdi_zip    := l_zip;
-        x_fbdi_csv_id := l_csv_id;
+        -- Return the first registered CSV id (items if present, else categories) so it
+        -- matches the zip's bridge FBDI_CSV_ID even for a categories-only batch.
+        x_fbdi_csv_id := NVL(l_csv_id, l_cat_csv_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

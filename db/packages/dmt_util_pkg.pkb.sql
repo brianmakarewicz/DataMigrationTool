@@ -689,14 +689,16 @@
         END LOOP;
         DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
 
-        -- Transitional bridge: the zip keeps a FBDI_CSV_ID pointer at its primary
-        -- (FILE_SEQ=1) CSV so the shared loader PARAMETER_LIST stamp
+        -- Transitional bridge: the zip keeps a FBDI_CSV_ID pointer at its first
+        -- (lowest-id) registered CSV so the shared loader PARAMETER_LIST stamp
         -- (WHERE FBDI_CSV_ID = ...) keeps working while generators are converted one
-        -- at a time. Removed in the final increment when the loader keys on FBDI_ZIP_ID
-        -- and the column is dropped.
+        -- at a time. Keyed on the MIN over ALL of the zip's CSV rows (not just
+        -- FILE_SEQ=1) so a zip whose first physical file was skipped (e.g. an
+        -- Items batch with only categories) still gets a non-NULL pointer.
+        -- Removed in the final increment when the loader keys on FBDI_ZIP_ID.
         SELECT MIN(FBDI_CSV_ID) INTO l_primary_csv
         FROM   DMT_OWNER.DMT_FBDI_CSV_TBL
-        WHERE  FBDI_ZIP_ID = p_fbdi_zip_id AND FILE_SEQ = 1;
+        WHERE  FBDI_ZIP_ID = p_fbdi_zip_id;
 
         x_zip_bytes := DBMS_LOB.GETLENGTH(l_zip);
         INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (

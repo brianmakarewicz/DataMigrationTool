@@ -599,7 +599,10 @@ AS
         -- build the zip from those persisted rows. One zip owns two CSVs.
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         l_fbdi_csv_id  := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'BlanketPOs', 'PoHeadersInterfaceBlanket.csv', 0, l_hdr_csv);
-        l_lines_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'BlanketPOs', 'PoLinesInterfaceBlanket.csv',   0, l_lines_csv);
+        -- Lines are optional: only register (and thus zip) the file when it has rows.
+        IF l_lines_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_lines_csv) > 0 THEN
+            l_lines_csv_id := DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'BlanketPOs', 'PoLinesInterfaceBlanket.csv',   0, l_lines_csv);
+        END IF;
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'BlanketPOs', x_filename, l_zip, l_bytes);
 
         -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
