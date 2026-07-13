@@ -482,6 +482,7 @@ prompt == Views (dependency order) ==
 @@views/dmt_object_detail_v.sql
 @@views/dmt_v_cemli_status.sql
 @@views/dmt_pipeline_summary_v.sql
+@@views/dmt_prefix_history_v.sql
 @@views/dmt_record_detail_v.sql
 @@views/dmt_run_history_v.sql
 @@views/dmt_run_metrics_v.sql
