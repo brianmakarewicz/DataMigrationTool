@@ -35,6 +35,8 @@ REPORTS = [
     ("SupplierSiteAssignments", "SUP_SITE_ASSN_DM", "SUP_SITE_ASSN_RPT"),
     ("SupplierContacts",        "SUP_CONT_DM",      "SUP_CONT_RPT"),
     ("PurchaseOrders",          "PO_DM",             "PO_RPT"),
+    ("BlanketPOs",              "BLANKET_PO_DM",     "BLANKET_PO_RPT"),
+    ("Contracts",               "CONTRACT_DM",       "CONTRACT_RPT"),
     ("Customers",               "DMT_CUST_RECON_DM", "DMT_CUST_RECON_RPT"),
     ("GLBalances",              "GL_BAL_DM",         "GL_BAL_RPT"),
     ("Items",                   "ITEM_DM",           "ITEM_RPT"),
