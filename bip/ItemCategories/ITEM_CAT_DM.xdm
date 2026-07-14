@@ -16,8 +16,8 @@ SELECT
     ic.category_set_name,
     ic.category_code,
     ic.process_status AS process_flag,
-    b.item_category_id,
-    CASE WHEN b.item_category_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS status,
+    b.item_category_assignment_id AS item_category_id,
+    CASE WHEN b.item_category_assignment_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS status,
     NULL AS error_message
 FROM   egp_item_categories_interface ic
 LEFT JOIN egp_item_categories b
