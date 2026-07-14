@@ -9,13 +9,18 @@
 -- populated even when the chained import job errors),
 -- P_IMPORT_ESS_ID, P_PREFIX. P_BATCH_ID is retired.
 -- ============================================================
+-- BASE-tier confirmation: a contact is LOADED only when its person party
+-- positively exists in HZ_PARTIES (joined on the per_party_id the import stamps
+-- on the interface row; PARTY_TYPE='PERSON'). STATUS is derived from base-table
+-- presence, not the interface's own import_status; CONTACT_ID is the base party
+-- id. Rows still in the interface with no base party are REJECTED. Rule #1.
 SELECT
     i.contact_interface_id,
-    i.per_party_id AS contact_id,
+    b.party_id AS contact_id,
     i.vendor_name,
     i.first_name,
     i.last_name,
-    i.import_status AS status,
+    CASE WHEN b.party_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS status,
     i.load_request_id,
     (
         SELECT LISTAGG(
@@ -30,5 +35,6 @@ SELECT
         AND    r.parent_id    = i.contact_interface_id
     ) AS error_message
 FROM   poz_sup_contacts_int i
-WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
+LEFT JOIN hz_parties b ON b.party_id = i.per_party_id AND b.party_type = 'PERSON'
+WHERE   i.load_request_id = :P_LOAD_REQUEST_ID
       
