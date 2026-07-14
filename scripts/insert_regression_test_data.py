@@ -162,6 +162,16 @@ def main():
         # RCV
         "DMT_RCV_TRANSACTIONS_TFM_TBL",
         "DMT_RCV_HEADERS_TFM_TBL",
+        # MiscReceipts (INV_TRX -- the pipeline's REAL tables; the RCV pair above are
+        #  orphans). Were missing here, so INV_TRX STG accumulated across reloads
+        #  (92 rows / 0 distinct source_ids observed), causing stale-duplicate
+        #  failures on MiscReceipts runs -- same bug class as the Items 15x accumulation.
+        "DMT_INV_TRX_SERIALS_TFM_TBL",
+        "DMT_INV_TRX_LOTS_TFM_TBL",
+        "DMT_INV_TRX_TFM_TBL",
+        "DMT_INV_TRX_SERIALS_STG_TBL",
+        "DMT_INV_TRX_LOTS_STG_TBL",
+        "DMT_INV_TRX_STG_TBL",
         # Assets
         "DMT_FA_ASSET_ASSIGN_TFM_TBL",
         "DMT_FA_ASSET_BOOK_TFM_TBL",
