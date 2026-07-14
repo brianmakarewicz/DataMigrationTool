@@ -90,8 +90,8 @@ FROM (
                           WHEN 'E' THEN ' (rejected by import)'
                           ELSE '' END
                      || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
-                             ' -- batch messages: ' || SUBSTR((SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
-                                                              FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'), 1, 3900),
+                             ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+                                                        FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
                              '')
            END
     FROM   hz_imp_parties_t ip
@@ -105,8 +105,8 @@ FROM (
                           WHEN 'E' THEN ' (rejected by import)'
                           ELSE '' END
                      || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
-                             ' -- batch messages: ' || SUBSTR((SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
-                                                              FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'), 1, 3900),
+                             ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+                                                        FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
                              '')
            END
     FROM   hz_imp_accounts_t ia
