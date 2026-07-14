@@ -40,6 +40,7 @@ REPORTS = [
     ("APInvoices",              "AP_DM",             "AP_RPT"),
     ("1099Invoices",            "AP_1099_DM",        "AP_1099_RPT"),
     ("Customers",               "DMT_CUST_RECON_DM", "DMT_CUST_RECON_RPT"),
+    ("ARInvoices",              "AR_DM",             "AR_RPT"),
     ("GLBalances",              "GL_BAL_DM",         "GL_BAL_RPT"),
     ("Items",                   "ITEM_DM",           "ITEM_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),

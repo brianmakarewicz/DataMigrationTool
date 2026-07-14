@@ -16,8 +16,8 @@ SELECT
     l.interface_line_attribute2,
     l.interface_line_attribute3,
     l.trx_number,
-    TO_CHAR(l.customer_trx_id) AS customer_trx_id,
-    l.interface_status,
+    TO_CHAR(b.customer_trx_id) AS customer_trx_id,
+    CASE WHEN b.customer_trx_id IS NOT NULL THEN 'P' ELSE l.interface_status END AS interface_status,
     l.batch_source_name,
     l.line_type,
     TO_CHAR(l.amount) AS amount,
@@ -33,6 +33,7 @@ SELECT
         WHERE  e.interface_line_id = l.interface_line_id
     ) AS error_message
 FROM   ra_interface_lines_all l
+LEFT JOIN ra_customer_trx_all b ON b.customer_trx_id = l.customer_trx_id
 WHERE  l.load_request_id = :P_BATCH_ID
 AND    l.line_type = 'LINE'
       ]]></sql>
