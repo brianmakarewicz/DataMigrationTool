@@ -14,6 +14,7 @@ SELECT
     h.interface_header_key,
     h.document_num,
     h.po_header_id,
+    'INTERFACE'                         AS source_type,
     h.process_code,
     h.vendor_name,
     h.vendor_num,
@@ -25,6 +26,22 @@ SELECT
     ) AS error_message
 FROM   po_headers_interface h
 WHERE  h.load_request_id = :P_BATCH_ID
+
+UNION ALL
+
+SELECT
+    CAST(NULL AS VARCHAR2(50))          AS interface_header_key,
+    b.segment1                          AS document_num,
+    b.po_header_id,
+    'BASE'                              AS source_type,
+    'SUCCESS'                           AS process_code,
+    CAST(NULL AS VARCHAR2(240))         AS vendor_name,
+    CAST(NULL AS VARCHAR2(30))          AS vendor_num,
+    CAST(NULL AS VARCHAR2(4000))        AS error_message
+FROM   po_headers_all b
+WHERE  b.request_id = :P_IMPORT_ESS_ID
+AND    :P_IMPORT_ESS_ID IS NOT NULL
+AND    b.type_lookup_code = 'BLANKET'
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -35,6 +52,7 @@ WHERE  h.load_request_id = :P_BATCH_ID
           <element name="INTERFACE_HEADER_KEY" value="INTERFACE_HEADER_KEY" dataType="xsd:string" tagName="INTERFACE_HEADER_KEY"/>
           <element name="DOCUMENT_NUM" value="DOCUMENT_NUM" dataType="xsd:string" tagName="DOCUMENT_NUM"/>
           <element name="PO_HEADER_ID" value="PO_HEADER_ID" dataType="xsd:string" tagName="PO_HEADER_ID"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
           <element name="PROCESS_CODE" value="PROCESS_CODE" dataType="xsd:string" tagName="PROCESS_CODE"/>
           <element name="VENDOR_NAME" value="VENDOR_NAME" dataType="xsd:string" tagName="VENDOR_NAME"/>
           <element name="VENDOR_NUM" value="VENDOR_NUM" dataType="xsd:string" tagName="VENDOR_NUM"/>
@@ -48,6 +66,9 @@ WHERE  h.load_request_id = :P_BATCH_ID
   <parameters>
     <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
                labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="2"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>

@@ -146,6 +146,10 @@ AS
             '              <v2:name>P_BATCH_ID</v2:name>' ||
             '              <v2:values><v2:item>' || TO_CHAR(p_load_ess_id) || '</v2:item></v2:values>' ||
             '            </v2:item>' ||
+            '            <v2:item>' ||
+            '              <v2:name>P_IMPORT_ESS_ID</v2:name>' ||
+            '              <v2:values><v2:item>' || NVL(TO_CHAR(p_import_ess_id), '') || '</v2:item></v2:values>' ||
+            '            </v2:item>' ||
             '          </v2:listOfParamNameValues>' ||
             '        </v2:parameterNameValues>' ||
             '        <v2:sizeOfDataChunkDownload>-1</v2:sizeOfDataChunkDownload>' ||
@@ -225,12 +229,18 @@ AS
             RETURN;
         END IF;
 
-        -- Process header rows from BIP XML
-        -- PO_HEADERS_INTERFACE PROCESS_CODE: 'ACCEPTED' = success, 'REJECTED' = failed
+        -- Process header rows from BIP XML — two-tier reconciliation.
+        --   BASE  rows (from PO_HEADERS_ALL, TYPE_LOOKUP_CODE = 'CONTRACT') positively
+        --         confirm a load; match the TFM record on its prefixed DOCUMENT_NUM
+        --         (= base SEGMENT1).
+        --   INTERFACE rows are left in PO_HEADERS_INTERFACE: PROCESS_CODE
+        --         ACCEPTED = success (match on INTERFACE_HEADER_KEY),
+        --         REJECTED/ERROR = failed (write the error text).
         FOR r IN (
             SELECT x.interface_header_key,
                    x.document_num,
                    x.po_header_id,
+                   UPPER(x.source_type)  AS source_type,
                    UPPER(x.process_code) AS process_code,
                    x.error_msg
             FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
@@ -238,11 +248,14 @@ AS
                     interface_header_key VARCHAR2(50)   PATH 'INTERFACE_HEADER_KEY',
                     document_num         VARCHAR2(20)   PATH 'DOCUMENT_NUM',
                     po_header_id         VARCHAR2(20)   PATH 'PO_HEADER_ID',
+                    source_type          VARCHAR2(20)   PATH 'SOURCE_TYPE',
                     process_code         VARCHAR2(50)   PATH 'PROCESS_CODE',
                     error_msg            VARCHAR2(4000) PATH 'ERROR_MESSAGE'
             ) x
         ) LOOP
-            IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
+            IF r.source_type = 'BASE' THEN
+                -- Positive base-table confirmation. Key on the prefixed document
+                -- number the loader wrote, which equals the base SEGMENT1.
                 UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
@@ -250,22 +263,49 @@ AS
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                AND    TFM_STATUS              != 'LOADED';
+                AND    DOCUMENT_NUM          = r.document_num
+                AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                 l_loaded := l_loaded + SQL%ROWCOUNT;
-            ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-                SET    TFM_STATUS               = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                 '[FUSION_ERROR] ' || r.error_msg),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                AND    TFM_STATUS              != 'FAILED';
-                l_failed := l_failed + SQL%ROWCOUNT;
+
+            ELSIF r.source_type = 'INTERFACE' THEN
+                IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
+                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    SET    TFM_STATUS               = 'LOADED',
+                           FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
+                           FUSION_DOCUMENT_NUM  = r.document_num,
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID       = p_run_id
+                    AND    INTERFACE_HEADER_KEY  = r.interface_header_key
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
+                ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
+                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    SET    TFM_STATUS               = 'FAILED',
+                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                     '[FUSION_ERROR] ' || r.error_msg),
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID       = p_run_id
+                    AND    INTERFACE_HEADER_KEY  = r.interface_header_key
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
+                    l_failed := l_failed + SQL%ROWCOUNT;
+                END IF;
             END IF;
         END LOOP;
+
+        -- Absence != LOADED: any header still GENERATED reached neither the base
+        -- table nor the interface, so its outcome cannot be verified. Fail it with
+        -- a reportable reconciliation error (Rule #1 -- no silent pass).
+        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+        SET    TFM_STATUS               = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                   '[RECONCILE_ERROR] Contract not found in Fusion base table (PO_HEADERS_ALL) or interface. Cannot verify import outcome.'),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID       = p_run_id
+        AND    TFM_STATUS               = 'GENERATED';
+        l_failed := l_failed + SQL%ROWCOUNT;
 
         -- No child cascade needed — contracts have no lines/locs/dists
 
@@ -312,7 +352,12 @@ AS
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id);
+        -- Forward p_import_ess_id so the BIP report's P_IMPORT_ESS_ID is populated
+        -- and the BASE tier (PO_HEADERS_ALL WHERE request_id = :P_IMPORT_ESS_ID AND
+        -- type_lookup_code = 'CONTRACT') can confirm loaded contracts. Without it the
+        -- BASE tier never fires and every good contract whose interface row was purged
+        -- falls through to the RECONCILE_ERROR catch-all.
+        l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id, p_import_ess_id);
         PARSE_AND_UPDATE(p_run_id, l_xml);
 
         IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
