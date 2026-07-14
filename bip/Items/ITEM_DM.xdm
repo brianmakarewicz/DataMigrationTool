@@ -13,11 +13,15 @@
 SELECT
     i.item_number,
     i.organization_code,
-    i.inventory_item_id,
+    b.inventory_item_id,
     i.process_status AS process_flag,
     i.transaction_type,
+    CASE WHEN b.inventory_item_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS status,
     NULL AS error_message
 FROM   egp_system_items_interface i
+LEFT JOIN egp_system_items_b b
+       ON b.inventory_item_id = i.inventory_item_id
+      AND b.organization_id   = i.organization_id
 WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
 AND    i.organization_code IS NOT NULL
       ]]></sql>
@@ -32,6 +36,7 @@ AND    i.organization_code IS NOT NULL
           <element name="INVENTORY_ITEM_ID" value="INVENTORY_ITEM_ID" dataType="xsd:string" tagName="INVENTORY_ITEM_ID"/>
           <element name="PROCESS_FLAG" value="PROCESS_FLAG" dataType="xsd:string" tagName="PROCESS_FLAG"/>
           <element name="TRANSACTION_TYPE" value="TRANSACTION_TYPE" dataType="xsd:string" tagName="TRANSACTION_TYPE"/>
+          <element name="STATUS" value="STATUS" dataType="xsd:string" tagName="STATUS"/>
           <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
         </group>
       </dataStructure>

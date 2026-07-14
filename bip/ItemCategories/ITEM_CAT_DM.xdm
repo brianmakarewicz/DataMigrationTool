@@ -16,8 +16,15 @@ SELECT
     ic.category_set_name,
     ic.category_code,
     ic.process_status AS process_flag,
+    b.item_category_id,
+    CASE WHEN b.item_category_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS status,
     NULL AS error_message
 FROM   egp_item_categories_interface ic
+LEFT JOIN egp_item_categories b
+       ON b.inventory_item_id = ic.inventory_item_id
+      AND b.organization_id   = ic.organization_id
+      AND b.category_id       = ic.category_id
+      AND b.category_set_id   = ic.category_set_id
 WHERE  ic.load_request_id = :P_LOAD_REQUEST_ID
       ]]></sql>
     </dataSet>
@@ -31,6 +38,8 @@ WHERE  ic.load_request_id = :P_LOAD_REQUEST_ID
           <element name="CATEGORY_SET_NAME" value="CATEGORY_SET_NAME" dataType="xsd:string" tagName="CATEGORY_SET_NAME"/>
           <element name="CATEGORY_CODE" value="CATEGORY_CODE" dataType="xsd:string" tagName="CATEGORY_CODE"/>
           <element name="PROCESS_FLAG" value="PROCESS_FLAG" dataType="xsd:string" tagName="PROCESS_FLAG"/>
+          <element name="ITEM_CATEGORY_ID" value="ITEM_CATEGORY_ID" dataType="xsd:string" tagName="ITEM_CATEGORY_ID"/>
+          <element name="STATUS" value="STATUS" dataType="xsd:string" tagName="STATUS"/>
           <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
         </group>
       </dataStructure>
