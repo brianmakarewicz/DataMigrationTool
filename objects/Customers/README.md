@@ -3,12 +3,11 @@
 ## Status
 DMT2 offline slice proven 2026-07-09 (unit suite 27/27, golden byte-identical to
 run 116). Reconciler rebuilt fail-CLOSED / two-tier 2026-07-09 (obj/customers-rule1)
-— no more fail-open. Live Rule #1 gate STILL BLOCKED upstream: the customer bulk
-import job fails with `batchId is null`, so GOOD rows cannot reach the Fusion base
-tables yet (see Known Issues). The ParameterList now carries a batch id
-(`NEW,N,<run_id>` — the fix on branch fix/paramlist-batch-id), but the bulk import
-does NOT consume positional slot 3 as its Batch Id, so the crash persists — a
-deeper, now-pinpointed root cause. Frozen predecessor stack claimed "E2E LOADED"
+— no more fail-open. Live Rule #1 gate PROVEN 2026-07-11: 20/20 customers reached the Fusion base
+tables (`hz_cust_accounts`). The earlier `batchId is null` crash — the positional
+`NEW,N,<run_id>` ParameterList was never mapped to the bulk import's internal
+Batch_Id — is RESOLVED by passing `BulkImportJob` a four-value ParameterList that
+auto-creates the HZ import batch (see "RESOLVED 2026-07-11" in Known Issues). Frozen predecessor stack claimed "E2E LOADED"
 but that was a FALSE PASS: the frozen DMT_HZ_PARTIES_TFM held 18 LOADED / 0 real
 FUSION_PARTY_ID — its fail-open reconciler masked the same batchId-null crash.
 
@@ -28,13 +27,14 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 - FBDI CSV members: HzImpPartiesT, HzImpLocationsT, HzImpPartySitesT, HzImpPartySiteUsesT, HzImpAccountsT, HzImpAcctSitesT, HzImpAcctSiteUsesT (LF-terminated)
 - UCM Account: ar/customerImport/import
 - ESS Job: /oracle/apps/ess/cdm/foundation/bulkImport;BulkImportJob
-- ParameterList: `NEW,N,<run_id>` (slot 1 = Import Options "New", slot 2 = Report
-  Exceptions Only "N", slot 3 = Batch Id = run_id). NOTE (2026-07-09): slot 3 is
-  supplied per the batch-id standard and IS accepted by the job (recorded as
-  `submit.argument3`), but the bulk import does NOT map it to its internal
-  `Batch_Id` parameter — the child DataImportJob still submits with batch id null.
-  Supplying the batch id via the ParameterList is necessary but NOT sufficient;
-  see Known Issues for the real remaining blocker.
+- ParameterList (RESOLVED 2026-07-11): four values —
+  `<Batch ID>,<Batch Name>,Customer and Consumer,<Source System>` — which
+  auto-creates the `HZ_IMP_BATCH_SUMMARY` import batch the bulk import then consumes.
+  The Batch ID is the user's uploaded `BATCH_ID` (run id only as NVL fallback); the
+  Source System comes from the user's data, never hard-coded `'DMT'`. An empty Batch
+  Name loads 0 rows. The earlier positional `NEW,N,<run_id>` form did NOT work — the
+  bulk import never mapped slot 3 to its internal `Batch_Id`. Proven live 2026-07-11:
+  20/20 customers to `hz_cust_accounts`.
 - Loader Type: SQLLOADER
 - Auth User: fin_impl
 
@@ -64,6 +64,21 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 None in this folder.
 
 ## Known Issues
+- **RESOLVED 2026-07-11 — `batchId is null` is fixed; 20/20 customers reached the
+  HZ base tables (`hz_cust_accounts`).** The customer bulk import needs an
+  `HZ_IMP_BATCH_SUMMARY` batch to consume; the positional `NEW,N,<run_id>` form
+  never created one (the bulk import ignored slot 3). The fix is to pass
+  `BulkImportJob` a **four-value ParameterList** — `<Batch ID>,<Batch Name>,Customer
+  and Consumer,<Source System>` — which **auto-creates** the import batch. No
+  separate batch-summary mechanism is needed. Source refinement: the Batch ID is the
+  user's uploaded `BATCH_ID` (they pre-create the batch in Fusion), carried through
+  the transform — the run id is only an NVL fallback when the user supplies none; the
+  Source System likewise comes from the user's data, never hard-coded `'DMT'`. An
+  **empty Batch Name loads 0 rows.** Proven live 2026-07-11: 20/20 to
+  `hz_cust_accounts`. Frozen-stack proof of the id source: ConversionTool commit
+  `6c8e38c`. (Moved here from the coding-standards section of `docs/DMT_DESIGN.html`,
+  2026-07-14 — it is a Customers resolved issue, not a general standard; the general
+  rule "always supply a traceable batch id" stays in the design doc.)
 - **FIXED 2026-07-09 (obj/customers-rule1): the fail-open reconciler is gone.**
   The old reconciler read only the interface table `HZ_IMP_PARTIES_T` and marked
   a party LOADED when `INTERFACE_STATUS` was NULL. On this demo instance the
@@ -77,8 +92,10 @@ None in this folder.
   FAILED when Fusion error text is present; otherwise left un-LOADED and swept to
   FAILED. There is no interface-status path and no parent→child LOADED cascade —
   each record type is confirmed by its own base id. Absence is never LOADED.
-- **OPEN, upstream of the reconciler — the customer bulk import STILL fails with
-  batch id null, now with a deeper, pinpointed root cause (2026-07-09 re-gate,
+- **RESOLVED 2026-07-11 (was OPEN) — the diagnosis below pinned the root cause; the
+  fix is the four-value ParameterList in the RESOLVED item above. Retained as the
+  investigation record. The customer bulk import previously failed with
+  batch id null (2026-07-09 re-gate,
   run 160 / scenario CUSTOMERS_R1B_0709 / prefix 10043, branch
   fix/paramlist-batch-id).** The ParameterList fix now sends `NEW,N,160` (slot 3
   = the run-id batch id) — CONFIRMED in the live loadAndImportData envelope
@@ -116,6 +133,16 @@ None in this folder.
   separately.
 
 ## History
+- 2026-07-11 (batch-id RESOLVED — live Rule #1 GOOD half proven): replaced the
+  positional `NEW,N,<run_id>` ParameterList with the four-value
+  `<Batch ID>,<Batch Name>,Customer and Consumer,<Source System>` form, which
+  auto-creates the `HZ_IMP_BATCH_SUMMARY` batch the customer bulk import consumes.
+  Batch ID sourced from the user's uploaded `BATCH_ID` (run id NVL fallback), Source
+  System from the user's data. Proven live: 20/20 customers reached
+  `hz_cust_accounts`; an empty Batch Name loads 0. Frozen-stack id-source proof:
+  ConversionTool commit `6c8e38c`. The general "always supply a traceable batch id"
+  rule stays in `docs/DMT_DESIGN.html`; this Customers-specific resolution moved here
+  from that doc's coding-standards section on 2026-07-14.
 - 2026-07-09 (fix/paramlist-batch-id — batch-id ParameterList standard):
   investigated the batchId-null crash per the ESS-param-discovery rule. Frozen
   stack finding: the frozen ATP loadAndImportData envelope log and ESS
