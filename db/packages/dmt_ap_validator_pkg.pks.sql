@@ -8,21 +8,23 @@ AS
 -- Validation for APInvoices staging data.
 --
 -- Two phases:
---   PRE_TRANSFORM: upstream dependency checks on STG rows
---     - Supplier (VENDOR_NUM with PREFIX) must be LOADED
---       in DMT_POZ_SUPPLIERS_STG_TBL
---     - If header invalid, cascade to all child lines via INVOICE_ID
+--   PRE_TRANSFORM: NO supplier-dependency check (see the package body header).
+--     AP invoices reference PRE-EXISTING Fusion suppliers, not suppliers migrated
+--     in this run, so there is nothing upstream to pre-check — Fusion validates the
+--     supplier at load and the reconciler reports any rejection. The procedure now
+--     only logs; the old "supplier must be LOADED / cascade to child lines" check
+--     was removed (proven live in run 130). The durable replacement is the
+--     parameterized upstream-validation standard tracked in the design doc.
 --   POST_TRANSFORM: data quality checks on TFM rows (after prefix applied)
 --
 -- Validation always runs even if empty — prevents OIC orchestration changes.
 -- ============================================================
 
-    -- Pre-transform validation: check upstream dependencies on STG rows.
-    -- Marks headers FAILED + cascades to child lines if supplier not found.
-    -- When p_inv_type_filter is non-NULL, only validates headers with
-    -- matching INVOICE_TYPE_LOOKUP_CODE (uses LIKE, e.g. '%1099%').
-    -- This allows 1099Invoices and APInvoices to share the same tables
-    -- but validate independently.
+    -- Pre-transform validation: no-op for AP beyond logging (no supplier check —
+    -- see the package body header for the full rationale). p_inv_type_filter is
+    -- retained in the signature (echoed to the log) so 1099Invoices and APInvoices
+    -- can keep sharing these tables and calling independently without a signature
+    -- change; it no longer drives any row-failing logic.
     PROCEDURE VALIDATE_PRE_TRANSFORM (
         p_run_id    IN NUMBER,
         p_dependent_prefix  IN VARCHAR2 DEFAULT NULL,
