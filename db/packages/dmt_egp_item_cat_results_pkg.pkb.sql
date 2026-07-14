@@ -198,8 +198,9 @@
     -- Parses BIP XML response (base64 reportBytes), updates
     -- TFM rows, then echoes back to STG table.
     --
-    -- EGP_ITEM_CATEGORIES_INTERFACE status:
-    --   PROCESS_FLAG 7 = error, null/0 = success
+    -- The report's STATUS element is derived from positive presence in the base
+    -- table EGP_ITEM_CATEGORIES ('PROCESSED' = present, 'REJECTED' = absent), not
+    -- from the interface PROCESS_FLAG. PROCESS_FLAG is still carried for display.
     -- Match key: ITEM_NUMBER + ORGANIZATION_CODE + CATEGORY_SET_NAME
     -- --------------------------------------------------------
     PROCEDURE PARSE_AND_UPDATE (
@@ -230,26 +231,30 @@
             RETURN;
         END IF;
 
-        -- Process category rows from BIP XML
+        -- Process category rows from BIP XML.
+        -- STATUS comes from the report's base-table join (positive presence in
+        -- EGP_ITEM_CATEGORIES on inventory_item_id + organization_id + category_id
+        -- + category_set_id): 'PROCESSED' = the category assignment genuinely
+        -- reached the base table, 'REJECTED' = it did not. We no longer infer
+        -- loaded/failed from the interface PROCESS_FLAG -- Rule #1: base
+        -- confirmation, not interface inference. (Validated live 2026-07-14: a
+        -- PROCESS_FLAG=3 "validation error" row was found present in the base table.)
         FOR r IN (
             SELECT x.item_number,
                    x.organization_code,
                    x.category_set_name,
-                   UPPER(x.process_flag) AS process_flag,
+                   UPPER(x.status)        AS status,
                    x.error_message
             FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
                 COLUMNS
                     item_number        VARCHAR2(300)  PATH 'ITEM_NUMBER',
                     organization_code  VARCHAR2(30)   PATH 'ORGANIZATION_CODE',
                     category_set_name  VARCHAR2(100)  PATH 'CATEGORY_SET_NAME',
-                    process_flag       VARCHAR2(10)   PATH 'PROCESS_FLAG',
+                    status             VARCHAR2(15)   PATH 'STATUS',
                     error_message      VARCHAR2(4000) PATH 'ERROR_MESSAGE'
             ) x
         ) LOOP
-            -- process_status 7 = processed OK (the category assignment reached the
-            -- Fusion base table EGP_ITEM_CATEGORIES -- verified live 2026-07-13); 0/5/null
-            -- also success. Only 3 (validation error) is a genuine reject.
-            IF r.process_flag IS NULL OR r.process_flag IN ('0', '5', '7') THEN
+            IF r.status = 'PROCESSED' THEN
                 UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
                 SET    TFM_STATUS              = 'LOADED',
                        RESULTS_UPDATED_DATE    = SYSDATE,
@@ -260,7 +265,7 @@
                 AND    CATEGORY_SET_NAME   = r.category_set_name
                 AND    TFM_STATUS         != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
-            ELSIF r.process_flag IN ('3') THEN
+            ELSE
                 UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
                 SET    TFM_STATUS              = 'FAILED',
                        ERROR_TEXT              = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,

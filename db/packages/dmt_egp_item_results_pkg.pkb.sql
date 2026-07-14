@@ -198,9 +198,9 @@
     -- Parses BIP XML response (base64 reportBytes), updates
     -- TFM rows, then echoes back to STG table.
     --
-    -- EGP_SYSTEM_ITEMS_INTERFACE status:
-    --   PROCESS_FLAG 7 = error, 1 = pending, NULL/0 = success
-    --   INTERFACE_STATUS values: 1=pending, 7=error, null=success
+    -- The report's STATUS element is derived from positive presence in the base
+    -- table EGP_SYSTEM_ITEMS_B ('PROCESSED' = present, 'REJECTED' = absent), not
+    -- from the interface PROCESS_FLAG. PROCESS_FLAG is still carried for display.
     -- Match key: ITEM_NUMBER + ORGANIZATION_CODE
     -- --------------------------------------------------------
     PROCEDURE PARSE_AND_UPDATE (
@@ -231,28 +231,30 @@
             RETURN;
         END IF;
 
-        -- Process item rows from BIP XML
-        -- EGP_SYSTEM_ITEMS_INTERFACE: PROCESS_FLAG 7=error, null/0=success
+        -- Process item rows from BIP XML.
+        -- STATUS comes from the report's base-table join (positive presence in
+        -- EGP_SYSTEM_ITEMS_B): 'PROCESSED' = the item genuinely reached the base
+        -- table, 'REJECTED' = it did not. We no longer infer loaded/failed from
+        -- the interface PROCESS_FLAG -- Rule #1: base confirmation, not interface
+        -- inference. (Validated live 2026-07-14: some PROCESS_FLAG=7 rows never
+        -- reached the base table, and some PROCESS_FLAG=3 rows did.)
         FOR r IN (
             SELECT x.item_number,
                    x.organization_code,
                    x.inventory_item_id,
-                   UPPER(x.process_flag) AS process_flag,
+                   UPPER(x.status)        AS status,
                    x.error_message
             FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
                 COLUMNS
                     item_number        VARCHAR2(300)  PATH 'ITEM_NUMBER',
                     organization_code  VARCHAR2(30)   PATH 'ORGANIZATION_CODE',
                     inventory_item_id  NUMBER         PATH 'INVENTORY_ITEM_ID',
-                    process_flag       VARCHAR2(10)   PATH 'PROCESS_FLAG',
+                    status             VARCHAR2(15)   PATH 'STATUS',
                     error_message      VARCHAR2(4000) PATH 'ERROR_MESSAGE'
             ) x
         ) LOOP
-            IF r.process_flag IS NULL OR r.process_flag IN ('0', '5')
-               OR (r.process_flag = '7' AND r.inventory_item_id IS NOT NULL) THEN
-                -- Success: item imported to base table
-                -- Note: process_status=7 WITH inventory_item_id means item was created
-                -- but had post-processing warnings (e.g. child entity issues)
+            IF r.status = 'PROCESSED' THEN
+                -- Success: item positively present in EGP_SYSTEM_ITEMS_B.
                 UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
                 SET    TFM_STATUS              = 'LOADED',
                        RESULTS_UPDATED_DATE    = SYSDATE,
@@ -262,8 +264,8 @@
                 AND    ORGANIZATION_CODE   = r.organization_code
                 AND    TFM_STATUS         != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
-            ELSIF r.process_flag IN ('7', '3') THEN
-                -- Error: rejected by import (process_status=7 without item_id, or validation error=3)
+            ELSE
+                -- Rejected: no row in the base table for this item.
                 UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
                 SET    TFM_STATUS              = 'FAILED',
                        ERROR_TEXT              = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
