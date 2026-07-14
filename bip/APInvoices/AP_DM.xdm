@@ -12,10 +12,10 @@
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
 SELECT
     h.invoice_num,
-    h.invoice_id,
-    NVL(h.status, 'NEW') AS import_status,
+    b.invoice_id,
     h.vendor_name,
     h.vendor_num,
+    CASE WHEN b.invoice_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS import_status,
     NVL(
         (SELECT LISTAGG(NVL(r.rejection_message, r.reject_lookup_code), '; ')
                 WITHIN GROUP (ORDER BY r.reject_lookup_code)
@@ -31,6 +31,7 @@ SELECT
          WHERE  l.invoice_id = h.invoice_id)
     ) AS error_message
 FROM   ap_invoices_interface h
+LEFT JOIN ap_invoices_all b ON b.invoice_num = h.invoice_num
 WHERE  h.load_request_id = :P_BATCH_ID
       ]]></sql>
     </dataSet>

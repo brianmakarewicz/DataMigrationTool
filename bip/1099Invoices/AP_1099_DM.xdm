@@ -12,10 +12,10 @@
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
 SELECT
     h.invoice_num,
-    h.invoice_id,
-    h.import_status,
+    b.invoice_id,
     h.vendor_name,
     h.vendor_num,
+    CASE WHEN b.invoice_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS import_status,
     (
         SELECT LISTAGG(e.reject_lookup_code || ': ' || e.parent_table || '.' || e.column_name, '; ')
                WITHIN GROUP (ORDER BY e.reject_lookup_code)
@@ -24,6 +24,7 @@ SELECT
         AND    e.parent_table = 'AP_INVOICES_INTERFACE'
     ) AS error_message
 FROM   ap_invoices_interface h
+LEFT JOIN ap_invoices_all b ON b.invoice_num = h.invoice_num
 WHERE  h.load_request_id = :P_BATCH_ID
       ]]></sql>
     </dataSet>
