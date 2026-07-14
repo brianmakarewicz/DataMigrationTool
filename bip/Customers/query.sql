@@ -74,24 +74,43 @@ FROM (
     WHERE  r.owner_table_name = 'HZ_CUST_SITE_USES_ALL'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
-    -- ---- ERROR tier: reject text for BAD rows, by source ref ----
-    -- Parties interface table -> HZ_IMP_ERRORS via BATCH_ID.
+    -- ---- NOT-LOADED tier: EVERY interface row not created in the base table is
+    -- surfaced as REJECTED, keyed ROW-PRECISE on its own IMPORT_STATUS_CODE
+    -- (the interface table is per-row; HZ_IMP_ERRORS is only batch-level and its
+    -- resolved text is empty, so we report the row's own status, not the batch).
+    -- S = created (handled by BASE tier, NULL here); anything else = not good =
+    -- BAD and MUST be reportable: W = held/warning (e.g. potential-duplicate
+    -- review), E = rejected by import. No row is silently dropped.
+    -- HZ_IMP_ERRORS.MESSAGE_NAME (batch-level, best-effort) is appended as context.
     SELECT 'Parties', ip.party_orig_system_reference, CAST(NULL AS NUMBER),
-           (SELECT LISTAGG(e.error_msg_text, '; ') WITHIN GROUP (ORDER BY e.error_seq_id)
-            FROM   hz_imp_errors e
-            WHERE  e.batch_id = ip.batch_id
-            AND    e.interface_table_name = 'HZ_IMP_PARTIES_T'
-            AND    ROWNUM <= 10)
+           CASE WHEN ip.import_status_code = 'S' THEN NULL
+                ELSE 'Not created in base -- interface status ''' || ip.import_status_code || ''''
+                     || CASE ip.import_status_code
+                          WHEN 'W' THEN ' (held/warning -- e.g. Fusion CDM potential-duplicate review)'
+                          WHEN 'E' THEN ' (rejected by import)'
+                          ELSE '' END
+                     || NVL2((SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
+                              FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
+                             ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
+                                                        FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
+                             '')
+           END
     FROM   hz_imp_parties_t ip
     WHERE  ip.load_request_id = :P_LOAD_REQUEST_ID
     UNION ALL
-    -- Accounts interface table -> HZ_IMP_ERRORS via BATCH_ID.
     SELECT 'Accounts', ia.cust_orig_system_reference, CAST(NULL AS NUMBER),
-           (SELECT LISTAGG(e.error_msg_text, '; ') WITHIN GROUP (ORDER BY e.error_seq_id)
-            FROM   hz_imp_errors e
-            WHERE  e.batch_id = ia.batch_id
-            AND    e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'
-            AND    ROWNUM <= 10)
+           CASE WHEN ia.import_status_code = 'S' THEN NULL
+                ELSE 'Not created in base -- interface status ''' || ia.import_status_code || ''''
+                     || CASE ia.import_status_code
+                          WHEN 'W' THEN ' (held/warning)'
+                          WHEN 'E' THEN ' (rejected by import)'
+                          ELSE '' END
+                     || NVL2((SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
+                              FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
+                             ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
+                                                        FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
+                             '')
+           END
     FROM   hz_imp_accounts_t ia
     WHERE  ia.load_request_id = :P_LOAD_REQUEST_ID
 )
