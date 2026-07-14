@@ -112,7 +112,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    s.BATCH_ID,
+                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
@@ -277,7 +277,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    s.BATCH_ID,
+                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
                     s.LOCATION_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.LOCATION_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
@@ -437,7 +437,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    s.BATCH_ID,
+                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.SITE_ORIG_SYSTEM,
@@ -580,7 +580,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    s.BATCH_ID,
+                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.SITE_ORIG_SYSTEM,
@@ -718,7 +718,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    s.BATCH_ID,
+                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
                     s.CUST_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_ORIG_SYSTEM_REFERENCE),
                     s.PARTY_ORIG_SYSTEM,
@@ -861,7 +861,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    s.BATCH_ID,
+                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
                     s.CUST_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_ORIG_SYSTEM_REFERENCE),
                     s.CUST_SITE_ORIG_SYSTEM,
@@ -1006,7 +1006,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    s.BATCH_ID,
+                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
                     s.CUST_SITE_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_SITE_ORIG_SYS_REF),
                     s.CUST_SITEUSE_ORIG_SYSTEM,
