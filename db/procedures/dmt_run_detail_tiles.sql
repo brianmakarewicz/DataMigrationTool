@@ -6,18 +6,101 @@
     l_app  VARCHAR2(10) := V('APP_ID');
     l_ses  VARCHAR2(30) := V('APP_SESSION');
     l_has_queue NUMBER;
+
+    -- ------------------------------------------------------------------
+    -- Outcome-based tile palette (DMT_DESIGN.html section 9, decided
+    -- 2026-07-06). ONE decision, called by both render paths below, so
+    -- the queue path and the sync path can never diverge again.
+    --
+    -- p_phase is the object's lifecycle state, normalised by each caller:
+    --   PENDING  queued, not started         -> White
+    --   RUNNING  in progress                 -> Blue
+    --   SKIPPED  no rows / dependency-skipped -> Grey
+    --   ERRORED  did NOT finish (uncaught exception, API error, dead
+    --            loader, BIP failure, DB error - any unexpected failure)
+    --                                         -> Red
+    --   DONE     finished normally -> colour by rolled-up record counts.
+    --
+    -- Counts are the rolled-up per-object outcome numbers:
+    --   p_loaded     records confirmed in Fusion base tables (LOADED)
+    --   p_failed_err records FAILED with a reportable error
+    --   p_unacc      records unaccounted (FAILED, no Fusion id, no error)
+    --   p_total      = loaded + failed_err + unacc
+    -- Among finished objects the counts decide the colour; every-row-
+    -- unaccounted is treated as Red (the doc's systemic-failure signature).
+    -- ------------------------------------------------------------------
+    FUNCTION tile_bg(p_phase VARCHAR2, p_total NUMBER, p_loaded NUMBER,
+                     p_failed_err NUMBER, p_unacc NUMBER) RETURN VARCHAR2 IS
+    BEGIN
+      IF p_phase = 'PENDING' THEN RETURN '#ffffff'; END IF;   -- White: queued
+      IF p_phase = 'RUNNING' THEN RETURN '#dbe9fb'; END IF;   -- Blue: in progress
+      IF p_phase = 'ERRORED' THEN RETURN '#f4b6b0'; END IF;   -- Red: did not finish
+      IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '#eeeeee'; END IF; -- Grey
+      IF NVL(p_unacc,0)  >= p_total THEN RETURN '#f4b6b0'; END IF;  -- Red: all unaccounted
+      IF NVL(p_loaded,0) >= p_total THEN RETURN '#cfeed7'; END IF;  -- Green: 100% loaded
+      IF NVL(p_unacc,0) > 0 OR NVL(p_loaded,0) = 0 THEN RETURN '#fbdedb'; END IF; -- Light red
+      RETURN '#eaf6de';                                       -- Light green: some failed, all accounted
+    END tile_bg;
+
+    -- Status line HTML, consistent with the colour the palette chose.
+    FUNCTION tile_status(p_phase VARCHAR2, p_total NUMBER, p_loaded NUMBER,
+                         p_failed_err NUMBER, p_unacc NUMBER) RETURN VARCHAR2 IS
+    BEGIN
+      IF p_phase = 'PENDING' THEN RETURN '<span style="color:#888">Queued</span>'; END IF;
+      IF p_phase = 'RUNNING' THEN RETURN '<span style="color:#0b5cc0">In progress</span>'; END IF;
+      IF p_phase = 'ERRORED' THEN RETURN '<span style="color:#b3261e">&#10007; Failed</span>'; END IF;
+      IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '<span style="color:#888">No rows</span>'; END IF;
+      IF NVL(p_unacc,0) >= p_total THEN
+        RETURN '<span style="color:#b3261e">' || p_unacc || ' unaccounted</span>';
+      END IF;
+      IF NVL(p_loaded,0) >= p_total THEN
+        RETURN '<span style="color:#1a7d33">&#10003; ' || p_loaded || ' loaded</span>';
+      END IF;
+      IF NVL(p_loaded,0) = 0 AND NVL(p_unacc,0) = 0 THEN
+        RETURN '<span style="color:#b3261e">&#10007; ' || p_failed_err || ' failed</span>';
+      END IF;
+      -- mixed: show every non-zero bucket
+      RETURN '<span style="color:#1a7d33">' || p_loaded || ' loaded</span>'
+          || CASE WHEN NVL(p_failed_err,0) > 0 THEN ' &middot; <span style="color:#b3261e">' || p_failed_err || ' failed</span>' END
+          || CASE WHEN NVL(p_unacc,0) > 0 THEN ' &middot; <span style="color:#c47a00">' || p_unacc || ' unaccounted</span>' END;
+    END tile_status;
+
+    -- Normalise the async work-queue status into a palette phase.
+    FUNCTION phase_from_work(p_work_status VARCHAR2) RETURN VARCHAR2 IS
+    BEGIN
+      RETURN CASE p_work_status
+               WHEN 'DONE'    THEN 'DONE'      -- finished + fully accounted -> counts decide
+               WHEN 'FAILED'  THEN 'ERRORED'   -- work item broke -> Red
+               WHEN 'SKIPPED' THEN 'SKIPPED'
+               WHEN 'PENDING' THEN 'PENDING'
+               ELSE 'RUNNING'
+             END;
+    END phase_from_work;
+
+    -- Normalise the sync summary object status into a palette phase.
+    FUNCTION phase_from_object(p_object_status VARCHAR2) RETURN VARCHAR2 IS
+    BEGIN
+      RETURN CASE p_object_status
+               WHEN 'FAILED'      THEN 'ERRORED'
+               WHEN 'SKIPPED'     THEN 'SKIPPED'
+               WHEN 'IN_PROGRESS' THEN 'RUNNING'
+               ELSE 'DONE'   -- COMPLETED / COMPLETED_ERRORS / UNRECONCILED -> counts decide
+             END;
+    END phase_from_object;
 BEGIN
     -- Check if work queue has rows for this run
     SELECT COUNT(*) INTO l_has_queue
     FROM DMT_WORK_QUEUE_TBL WHERE RUN_ID = p_run_id AND ROWNUM = 1;
 
     IF l_has_queue > 0 THEN
-        -- Async path: render from work queue (original logic)
+        -- Async path: render from work queue.
+        -- NOTE (partition limitation): the queue renders one tile per work
+        -- item (per partition), but DMT_V_CEMLI_STATUS aggregates counts per
+        -- object, so a partitioned object shows object-level counts on each
+        -- partition tile. Per-partition counts are a separate backlog item
+        -- (DMT_DESIGN section 9 partition tiles) needing a partition-aware view.
         FOR rec IN (
             SELECT QUEUE_ID, PIPELINE, CEMLI_CODE, WORK_STATUS, PARTITION_LABEL,
-                   -- Grouped/sync CEMLIs (GL, GL Budgets, MiscReceipts, HDL) never write ESS
-                   -- ids back to the queue row; fall back to DMT_ESS_JOB_TBL where they are
-                   -- captured (Load = depth-0 InterfaceLoaderController, Import = depth-0 launcher).
                    COALESCE(q.LOAD_ESS_JOB_ID,
                        TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_OWNER.DMT_ESS_JOB_TBL ej
                                 WHERE ej.RUN_ID = q.RUN_ID AND ej.CEMLI_CODE = q.CEMLI_CODE
@@ -29,11 +112,17 @@ BEGIN
                                   AND ej.DEPTH_LEVEL = 0
                                   AND ej.JOB_SHORT_NAME <> 'InterfaceLoaderController'))) AS IMPORT_ESS_JOB_ID,
                    ERROR_MESSAGE, RUN_ID,
-                   -- C6: record count for this object; 0 => grey card, no drill link.
-                   -- Keyed on DMT_RECORD_DETAIL_V (what the drill actually shows), so a
-                   -- greyed card means "drilling would be empty" by construction.
-                   (SELECT COUNT(*) FROM DMT_OWNER.DMT_RECORD_DETAIL_V r
-                     WHERE r.RUN_ID = q.RUN_ID AND r.CEMLI_CODE = q.CEMLI_CODE) AS REC_COUNT,
+                   -- Rolled-up outcome counts for the palette (loaded / failed / unaccounted).
+                   (SELECT NVL(SUM(cs.ROW_COUNT),0) FROM DMT_OWNER.DMT_V_CEMLI_STATUS cs
+                     WHERE cs.RUN_ID = q.RUN_ID AND cs.CEMLI_CODE = q.CEMLI_CODE) AS TOT_ROWS,
+                   (SELECT NVL(SUM(CASE WHEN cs.TFM_STATUS = 'LOADED' THEN cs.ROW_COUNT END),0)
+                      FROM DMT_OWNER.DMT_V_CEMLI_STATUS cs
+                     WHERE cs.RUN_ID = q.RUN_ID AND cs.CEMLI_CODE = q.CEMLI_CODE) AS LOADED_ROWS,
+                   (SELECT NVL(SUM(CASE WHEN cs.TFM_STATUS = 'FAILED' THEN cs.ROW_COUNT END),0)
+                      FROM DMT_OWNER.DMT_V_CEMLI_STATUS cs
+                     WHERE cs.RUN_ID = q.RUN_ID AND cs.CEMLI_CODE = q.CEMLI_CODE) AS FAILED_ROWS,
+                   (SELECT NVL(SUM(cs.UNRECONCILED_COUNT),0) FROM DMT_OWNER.DMT_V_CEMLI_STATUS cs
+                     WHERE cs.RUN_ID = q.RUN_ID AND cs.CEMLI_CODE = q.CEMLI_CODE) AS UNACC_ROWS,
                    TO_CHAR(STARTED_AT, 'HH24:MI:SS') STARTED,
                    TO_CHAR(COMPLETED_AT, 'HH24:MI:SS') COMPLETED
             FROM DMT_WORK_QUEUE_TBL q WHERE RUN_ID = p_run_id
@@ -45,29 +134,25 @@ BEGIN
                     || rec.PIPELINE || '</h3><div style="display:flex;flex-wrap:wrap;gap:12px">');
                 l_pp := rec.PIPELINE;
             END IF;
-            l_bg := CASE rec.WORK_STATUS
-                WHEN 'DONE' THEN '#e6f4ea' WHEN 'FAILED' THEN '#fce8e6'
-                WHEN 'SKIPPED' THEN '#f0f0f0' WHEN 'PENDING' THEN '#fff' ELSE '#e8f0fe' END;
-            IF rec.REC_COUNT = 0 THEN l_bg := '#f0f0f0'; END IF;  -- C6: grey empty (0-record) objects
-            HTP.P('<div style="background:' || l_bg || ';border:1px solid #ddd;border-radius:8px;padding:14px;min-width:200px;max-width:280px;flex:1">');
-            HTP.P('<div style="font-weight:bold;font-size:14px;margin-bottom:4px">');
-            IF rec.REC_COUNT = 0 THEN
-                -- C6: no records -> muted label, no drill link (drill would be empty)
-                HTP.P('<span style="color:#999">' || rec.CEMLI_CODE || '</span>');
-            ELSE
-                HTP.P('<a href="f?p=' || l_app || ':52:' || l_ses || '::NO::P52_INTEGRATION_ID,P52_CEMLI_CODE:'
-                    || rec.RUN_ID || ',' || rec.CEMLI_CODE
-                    || '" style="color:inherit;text-decoration:none;border-bottom:1px dashed #999">'
-                    || rec.CEMLI_CODE || '</a>');
-            END IF;
-            HTP.P('</div><div style="font-size:12px;color:#555">');
-            CASE rec.WORK_STATUS
-                WHEN 'DONE' THEN HTP.P('<span style="color:#1a9c3e">&#10003; Done</span>');
-                WHEN 'FAILED' THEN HTP.P('<span style="color:#c42b1c">&#10007; Failed</span>');
-                WHEN 'SKIPPED' THEN HTP.P('<span style="color:#888">Skipped</span>');
-                WHEN 'PENDING' THEN HTP.P('<span style="color:#888">Pending</span>');
-                ELSE HTP.P('<span style="color:#0070d2">' || rec.WORK_STATUS || '</span>');
-            END CASE;
+
+            DECLARE
+              l_phase   VARCHAR2(10) := phase_from_work(rec.WORK_STATUS);
+              l_failerr NUMBER := GREATEST(NVL(rec.FAILED_ROWS,0) - NVL(rec.UNACC_ROWS,0), 0);
+            BEGIN
+              l_bg := tile_bg(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS);
+              HTP.P('<div style="background:' || l_bg || ';border:1px solid #ddd;border-radius:8px;padding:14px;min-width:200px;max-width:280px;flex:1">');
+              HTP.P('<div style="font-weight:bold;font-size:14px;margin-bottom:4px">');
+              IF NVL(rec.TOT_ROWS,0) = 0 THEN
+                  HTP.P('<span style="color:#999">' || rec.CEMLI_CODE || '</span>');
+              ELSE
+                  HTP.P('<a href="f?p=' || l_app || ':52:' || l_ses || '::NO::P52_INTEGRATION_ID,P52_CEMLI_CODE:'
+                      || rec.RUN_ID || ',' || rec.CEMLI_CODE
+                      || '" style="color:inherit;text-decoration:none;border-bottom:1px dashed #999">'
+                      || rec.CEMLI_CODE || '</a>');
+              END IF;
+              HTP.P('</div><div style="font-size:12px;color:#555">');
+              HTP.P(tile_status(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS));
+            END;
             IF rec.PARTITION_LABEL IS NOT NULL THEN HTP.P(' &middot; ' || rec.PARTITION_LABEL); END IF;
             IF rec.STARTED IS NOT NULL THEN
                 HTP.P('<br>' || rec.STARTED || CASE WHEN rec.COMPLETED IS NOT NULL THEN ' &rarr; ' || rec.COMPLETED END);
@@ -99,7 +184,7 @@ BEGIN
                    v.TOTAL_ROWS,
                    v.LOADED_ROWS,
                    v.FAILED_ROWS,
-                   v.CARD_SUMMARY,
+                   v.UNRECONCILED_ROWS,
                    v.LOAD_ESS_JOB_ID,
                    v.IMPORT_ESS_JOB_ID,
                    v.SORT_ORDER
@@ -122,37 +207,24 @@ BEGIN
                 l_pp := rec.PIPELINE;
             END IF;
 
-            l_bg := CASE rec.OBJECT_STATUS
-                WHEN 'COMPLETED'        THEN '#e6f4ea'
-                WHEN 'COMPLETED_ERRORS' THEN '#fff3e0'
-                WHEN 'FAILED'           THEN '#fce8e6'
-                WHEN 'SKIPPED'          THEN '#f0f0f0'
-                WHEN 'IN_PROGRESS'      THEN '#e8f0fe'
-                ELSE '#f0f0f0'
+            DECLARE
+              l_phase   VARCHAR2(10) := phase_from_object(rec.OBJECT_STATUS);
+              l_failerr NUMBER := GREATEST(NVL(rec.FAILED_ROWS,0) - NVL(rec.UNRECONCILED_ROWS,0), 0);
+            BEGIN
+              l_bg := tile_bg(l_phase, rec.TOTAL_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNRECONCILED_ROWS);
+              HTP.P('<div style="background:' || l_bg || ';border:1px solid #ddd;border-radius:8px;padding:14px;min-width:200px;max-width:280px;flex:1">');
+              HTP.P('<div style="font-weight:bold;font-size:14px;margin-bottom:4px">');
+              IF NVL(rec.TOTAL_ROWS, 0) = 0 THEN
+                  HTP.P('<span style="color:#999">' || rec.CEMLI_CODE || '</span>');
+              ELSE
+                  HTP.P('<a href="f?p=' || l_app || ':52:' || l_ses || '::NO::P52_INTEGRATION_ID,P52_CEMLI_CODE:'
+                      || p_run_id || ',' || rec.CEMLI_CODE
+                      || '" style="color:inherit;text-decoration:none;border-bottom:1px dashed #999">'
+                      || rec.CEMLI_CODE || '</a>');
+              END IF;
+              HTP.P('</div><div style="font-size:12px;color:#555">');
+              HTP.P(tile_status(l_phase, rec.TOTAL_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNRECONCILED_ROWS));
             END;
-            IF NVL(rec.TOTAL_ROWS, 0) = 0 THEN l_bg := '#f0f0f0'; END IF;  -- C6: grey empty objects
-
-            HTP.P('<div style="background:' || l_bg || ';border:1px solid #ddd;border-radius:8px;padding:14px;min-width:200px;max-width:280px;flex:1">');
-            HTP.P('<div style="font-weight:bold;font-size:14px;margin-bottom:4px">');
-            IF NVL(rec.TOTAL_ROWS, 0) = 0 THEN
-                -- C6: no records -> muted label, no drill link
-                HTP.P('<span style="color:#999">' || rec.CEMLI_CODE || '</span>');
-            ELSE
-                HTP.P('<a href="f?p=' || l_app || ':52:' || l_ses || '::NO::P52_INTEGRATION_ID,P52_CEMLI_CODE:'
-                    || p_run_id || ',' || rec.CEMLI_CODE
-                    || '" style="color:inherit;text-decoration:none;border-bottom:1px dashed #999">'
-                    || rec.CEMLI_CODE || '</a>');
-            END IF;
-            HTP.P('</div><div style="font-size:12px;color:#555">');
-
-            CASE rec.OBJECT_STATUS
-                WHEN 'COMPLETED'        THEN HTP.P('<span style="color:#1a9c3e">&#10003; ' || rec.LOADED_ROWS || ' loaded</span>');
-                WHEN 'COMPLETED_ERRORS' THEN HTP.P('<span style="color:#e65100">' || rec.LOADED_ROWS || ' loaded, ' || rec.FAILED_ROWS || ' failed</span>');
-                WHEN 'FAILED'           THEN HTP.P('<span style="color:#c42b1c">&#10007; ' || rec.FAILED_ROWS || ' failed</span>');
-                WHEN 'SKIPPED'          THEN HTP.P('<span style="color:#888">No rows</span>');
-                WHEN 'IN_PROGRESS'      THEN HTP.P('<span style="color:#0070d2">In progress</span>');
-                ELSE HTP.P('<span style="color:#888">' || rec.CARD_SUMMARY || '</span>');
-            END CASE;
 
             IF rec.LOAD_ESS_JOB_ID IS NOT NULL THEN
                 HTP.P('<br>Load: <a href="f?p=' || l_app || ':53:' || l_ses
