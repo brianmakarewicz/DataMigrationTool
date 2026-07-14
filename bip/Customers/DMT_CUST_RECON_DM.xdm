@@ -61,10 +61,9 @@ FROM (
                           WHEN 'W' THEN ' (held/warning -- e.g. Fusion CDM potential-duplicate review)'
                           WHEN 'E' THEN ' (rejected by import)'
                           ELSE '' END
-                     || NVL2((SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
-                              FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
-                             ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
-                                                        FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
+                     || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
+                             ' -- batch messages: ' || SUBSTR((SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
+                                                              FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'), 1, 3900),
                              '')
            END
     FROM   hz_imp_parties_t ip
@@ -77,10 +76,9 @@ FROM (
                           WHEN 'W' THEN ' (held/warning)'
                           WHEN 'E' THEN ' (rejected by import)'
                           ELSE '' END
-                     || NVL2((SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
-                              FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
-                             ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
-                                                        FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
+                     || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
+                             ' -- batch messages: ' || SUBSTR((SELECT LISTAGG(DISTINCT e.message_name, '; ') WITHIN GROUP (ORDER BY e.message_name)
+                                                              FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'), 1, 3900),
                              '')
            END
     FROM   hz_imp_accounts_t ia
