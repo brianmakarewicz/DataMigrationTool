@@ -8,7 +8,10 @@
 -- exists in the base table EGP_ITEM_CATEGORIES (joined on the four resolved ids the
 -- import stamps on the interface row: inventory_item_id + organization_id +
 -- category_id + category_set_id). STATUS is derived from base-table presence, not
--- from the interface's own process_status, and ITEM_CATEGORY_ID is the base id.
+-- from the interface's own process_status. The base id is EGP_ITEM_CATEGORIES.
+-- ITEM_CATEGORY_ASSIGNMENT_ID (the assignment table's surrogate key — there is no
+-- ITEM_CATEGORY_ID column on that table; using it 500'd the report); it is aliased
+-- back to ITEM_CATEGORY_ID so the report's output element/contract is unchanged.
 -- Rows still in the interface with no base row are REJECTED -- Rule #1: positive
 -- base confirmation, not interface inference. Validated live 2026-07-14: a
 -- process_status=3 ("validation error") interface row was found present in
@@ -20,8 +23,8 @@ SELECT
     ic.category_set_name,
     ic.category_code,
     ic.process_status AS process_flag,
-    b.item_category_id,
-    CASE WHEN b.item_category_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS status,
+    b.item_category_assignment_id AS item_category_id,
+    CASE WHEN b.item_category_assignment_id IS NOT NULL THEN 'PROCESSED' ELSE 'REJECTED' END AS status,
     NULL AS error_message
 FROM   egp_item_categories_interface ic
 LEFT JOIN egp_item_categories b
