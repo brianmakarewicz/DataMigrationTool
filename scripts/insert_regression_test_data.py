@@ -146,6 +146,12 @@ def main():
     # Then delete STG rows.
     cleanup_tables = [
         # --- TFM tables first (FK children of STG) ---
+        # Items (were missing from this list -- caused 15x STG-row accumulation
+        #  across reloads because they were inserted+tagged but never cleaned)
+        "DMT_EGP_ITEM_CAT_TFM_TBL",
+        "DMT_EGP_ITEM_TFM_TBL",
+        "DMT_EGP_ITEM_CAT_STG_TBL",
+        "DMT_EGP_ITEM_STG_TBL",
         # Grants
         "DMT_GMS_AWD_PERSONNEL_TFM_TBL",
         "DMT_GMS_AWD_HDR_TFM_TBL",
