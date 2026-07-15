@@ -39,7 +39,7 @@ SELECT
     l.interface_line_attribute3,
     l.trx_number,
     TO_CHAR(b.customer_trx_id) AS customer_trx_id,
-    CASE WHEN b.customer_trx_id IS NOT NULL THEN 'P' ELSE l.interface_status END AS interface_status,
+    CASE WHEN b.customer_trx_id IS NOT NULL THEN 'P' ELSE NULL END AS interface_status,
     l.batch_source_name,
     l.line_type,
     TO_CHAR(l.amount) AS amount,
