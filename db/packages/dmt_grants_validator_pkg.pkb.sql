@@ -33,11 +33,16 @@ AS
             FROM   DMT_OWNER.DMT_GMS_AWD_PROJECTS_STG_TBL s
             WHERE  s.STG_STATUS IN ('NEW', 'RETRY')
             AND    s.PROJECT_NUMBER IS NOT NULL
+            -- LOADED is a TFM-only status (STG never carries it, design §5): the source
+            -- project must have a projects TFM row marked LOADED (joined 1:1 by
+            -- STG_SEQUENCE_ID). Match the raw source PROJECT_NUMBER on the STG side.
             AND    NOT EXISTS (
                 SELECT 1
                 FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL p
-                WHERE  p.PROJECT_NUMBER = NVL(p_dependent_prefix, '') || s.PROJECT_NUMBER
-                AND    p.STG_STATUS = 'LOADED')
+                JOIN   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL pt
+                       ON pt.STG_SEQUENCE_ID = p.STG_SEQUENCE_ID
+                WHERE  p.PROJECT_NUMBER = s.PROJECT_NUMBER
+                AND    pt.TFM_STATUS = 'LOADED')
         ) LOOP
             UPDATE DMT_OWNER.DMT_GMS_AWD_PROJECTS_STG_TBL
             SET    STG_STATUS    = 'FAILED',
