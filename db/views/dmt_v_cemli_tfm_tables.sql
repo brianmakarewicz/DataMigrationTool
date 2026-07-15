@@ -32,7 +32,7 @@ UNION ALL SELECT 'Projects',             'DMT_PJC_TXN_CONTROLS_TFM_TBL',   'Tran
 UNION ALL SELECT 'BillingEvents',        'DMT_PJB_BILL_EVENTS_TFM_TBL',    'Billing Events',           1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Expenditures',         'DMT_PJC_EXPENDITURES_TFM_TBL',   'Project Expenditures',     1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_HEADERS_TFM_TBL',    'Award Headers',            1, 'TFM_STATUS', NULL FROM DUAL
-UNION ALL SELECT 'ProjectBudgets',       'DMT_PRJ_BUDGET_TFM_TBL',         'Project Budgets',          1, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'ProjectBudgets',       'DMT_PRJ_BUDGET_TFM_TBL',         'Project Budget Lines',     1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'GLBalances',           'DMT_GL_INTERFACE_TFM_TBL',       'GL Journals',              1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'GLBudgets',            'DMT_GL_BUDGET_INT_TFM_TBL',      'GL Budget Balances',       1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'PlanningBudgets',      'DMT_PLAN_BUDGET_TFM_TBL',        'Planning Budgets',         1, 'TFM_STATUS', NULL FROM DUAL
