@@ -37,6 +37,7 @@ AS
         l_labels_str       VARCHAR2(1000);
         l_pos              NUMBER;
         l_sep              VARCHAR2(1) := ',';
+        l_resolved_type    DMT_REST_LOOKUP_TBL.OBJECT_TYPE%TYPE;
         l_first_field      BOOLEAN := TRUE;
     BEGIN
         -- Validate inputs
@@ -44,18 +45,39 @@ AS
             RETURN '{"error":"Object type and key value are required."}';
         END IF;
 
-        -- Look up config
+        -- Resolve the object type. The page-57 "Verify in Fusion" button passes
+        -- the sub-object DISPLAY LABEL (e.g. 'Parties', 'PO Lines'). The registry
+        -- (DMT_REST_LOOKUP_TBL) is keyed either by that same display label OR by
+        -- the object code (e.g. 'Customers'). Try a direct match first; if none,
+        -- map the display label to its object code via the display catalog and
+        -- fall back to the object-level lookup — so every sub-object of an object
+        -- resolves to at least that object's REST verification.
         BEGIN
-            SELECT REST_ENDPOINT, QUERY_FILTER, DISPLAY_FIELDS, DISPLAY_LABELS, AUTH_TYPE
-            INTO   l_cfg_endpoint, l_cfg_filter, l_cfg_fields, l_cfg_labels, l_cfg_auth
+            SELECT OBJECT_TYPE INTO l_resolved_type
             FROM   DMT_OWNER.DMT_REST_LOOKUP_TBL
-            WHERE  OBJECT_TYPE = p_object_type
-            AND    ENABLED = 'Y';
+            WHERE  OBJECT_TYPE = p_object_type AND ENABLED = 'Y';
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
-                RETURN '{"error":"No REST lookup configured for object type: ' ||
-                       REPLACE(p_object_type, '"', '\"') || '"}';
+                BEGIN
+                    SELECT rl.OBJECT_TYPE INTO l_resolved_type
+                    FROM   DMT_OWNER.DMT_REST_LOOKUP_TBL rl
+                    WHERE  rl.ENABLED = 'Y'
+                    AND    rl.OBJECT_TYPE = (
+                               SELECT MIN(c.CEMLI_CODE)
+                               FROM   DMT_OWNER.DMT_V_CEMLI_TFM_TABLES c
+                               WHERE  c.DISPLAY_NAME = p_object_type);
+                EXCEPTION
+                    WHEN NO_DATA_FOUND THEN
+                        RETURN '{"error":"No REST lookup configured for object type: ' ||
+                               REPLACE(p_object_type, '"', '\"') || '"}';
+                END;
         END;
+
+        SELECT REST_ENDPOINT, QUERY_FILTER, DISPLAY_FIELDS, DISPLAY_LABELS, AUTH_TYPE
+        INTO   l_cfg_endpoint, l_cfg_filter, l_cfg_fields, l_cfg_labels, l_cfg_auth
+        FROM   DMT_OWNER.DMT_REST_LOOKUP_TBL
+        WHERE  OBJECT_TYPE = l_resolved_type
+        AND    ENABLED = 'Y';
 
         -- Get Fusion URL and credentials
         l_base_url := DMT_UTIL_PKG.GET_CONFIG('FUSION_URL');
