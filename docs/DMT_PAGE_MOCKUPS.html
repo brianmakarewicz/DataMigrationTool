@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DMT — APEX Page Mock-ups</title>
+<style>
+  :root{--muted:#5f6b7a;--line:#d4dae2;--blue:#0b5cc0;--green:#1a7a33;--red:#a8271a;--orange:#b45f00}
+  body{font:14px/1.55 system-ui,Segoe UI,Arial;margin:0;background:#f3f6fa;color:#1d2733}
+  .wrap{max-width:980px;margin:0 auto;padding:24px 20px 80px}
+  h1{font-size:22px} h2{font-size:17px;margin:44px 0 6px;border-top:3px solid var(--line);padding-top:22px}
+  .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px}
+  .mock{border:1px solid var(--line);border-radius:10px;background:#fff;padding:16px 18px;box-shadow:0 1px 3px rgba(20,40,70,.06)}
+  .crumb{color:var(--muted);font-size:12px;margin-bottom:10px}
+  .crumb a{color:var(--blue);text-decoration:none}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th{background:#f3f6fa;color:#39485c;text-align:left;padding:6px 10px}
+  td{padding:6px 10px;border-top:1px solid #e4e9f0}
+  .pill{border-radius:10px;padding:1px 9px;color:#fff;font-weight:600;cursor:pointer}
+  .b-g{background:var(--green)} .b-b{background:var(--blue)} .b-r{background:var(--red)} .b-o{background:#e8890c}
+  .badge{border-radius:10px;padding:1px 8px;font-size:11.5px;font-weight:600;border:1px solid}
+  .s-ok{background:#e6f4ea;color:var(--green);border-color:#b6e0c2}
+  .s-err{background:#fff3e0;color:var(--orange);border-color:#f3d199}
+  .s-fail{background:#fce8e6;color:var(--red);border-color:#f3c2bc}
+  .s-skip{background:#f0f0f0;color:#666;border-color:#ddd}
+  .s-run{background:#e8f0fe;color:var(--blue);border-color:#bcd6f5}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px}
+  .tile{border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer}
+  .tile b{display:block;font-size:13px} .tile small{color:var(--muted)}
+  .t-ok{background:#b7e1c0}.t-lg{background:#e6f4ea}.t-lr{background:#fce8e6}.t-red{background:#f5b8b1}.t-skip{background:#f0f0f0}.t-run{background:#e8f0fe}.t-new{background:#fff}
+  .chip{display:inline-block;background:#eef3fb;border:1px solid #bcd6f5;color:var(--blue);border-radius:14px;padding:3px 12px;font-size:12px;margin-right:8px;cursor:pointer}
+  .btn{display:inline-block;background:var(--blue);color:#fff;border-radius:6px;padding:6px 14px;font-size:12.5px;cursor:pointer}
+  .btn2{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:6px 14px;font-size:12.5px;cursor:pointer;color:#39485c}
+  .note{font-size:12px;color:var(--muted);margin-top:10px}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:4px 14px;font-size:12.5px;margin:8px 0}
+  .kv div:nth-child(odd){color:var(--muted)}
+  .modal{border:1px solid #333;background:#1d2733;color:#e8eef6;border-radius:10px;padding:14px 16px;font-size:12.5px;max-width:520px;margin-top:12px}
+  .back{position:fixed;top:14px;right:18px;font-size:12px}
+  a{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<p class="back"><a href="DMT_DESIGN.html#drill">&larr; back to design doc §9 (drill-through chain)</a></p>
+<h1>DMT — APEX Page Mock-ups</h1>
+<p class="sub">One mock per screen in the drill-through chain. These show the intended end state; where a screen is mid-redesign the mock shows the redesign (Object Detail shows the section 10 funnel). Every mock is illustrative — real data, colors, and drill behavior are specified in DMT_DESIGN.html.</p>
+
+
+
+<h2 id="dashboard">Dashboard — the landing page</h2>
+<p class="sub">Same shape as today&#39;s page (welcome cards, stat tiles, recent runs) with the numbers repointed at the run/work-queue model. <b>Click an area card &rarr; that Conversion Data page. Click a recent run &rarr; Run Detail.</b> No Activity Log here — errors are reached from the run screens.</p>
+<div class="mock">
+  <div style="font-size:16px;font-weight:700">Data Migration Console</div>
+  <div style="color:#5f6b7a;font-size:12.5px;margin-bottom:12px">EBS to Fusion Cloud — monitor, validate, and troubleshoot your data migrations.</div>
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px">
+    <div class="tile"><b>Procure to Pay</b></div><div class="tile"><b>Financials</b></div><div class="tile"><b>Order to Cash</b></div>
+    <div class="tile"><b>Projects</b></div><div class="tile"><b>HCM Core</b></div><div class="tile"><b>HCM Employment</b></div>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+    <div class="tile" style="min-width:110px"><b>116</b><small>Total runs</small></div>
+    <div class="tile t-ok" style="min-width:110px"><b>92</b><small>Completed</small></div>
+    <div class="tile t-lr" style="min-width:110px"><b>19</b><small>Failed</small></div>
+    <div class="tile t-run" style="min-width:110px"><b>1</b><small>In progress</small></div>
+    <div class="tile" style="min-width:110px"><b>48,210</b><small>Total records</small></div>
+    <div class="tile t-ok" style="min-width:110px"><b>44,873</b><small>Loaded to Fusion</small></div>
+  </div>
+  <b style="font-size:13px">Recent runs</b>
+  <table style="margin-top:6px">
+    <tr><th>Run</th><th>Pipelines</th><th>Mode</th><th>Prefix</th><th>Status</th><th>Submitted</th></tr>
+    <tr><td><a>116</a></td><td>P2P, O2C, FINANCIALS, PROJECTS</td><td>NEW</td><td>9627</td><td><span class="badge s-run">IN_PROGRESS</span></td><td>07-05 09:12</td></tr>
+    <tr><td><a>115</a></td><td>P2P, O2C, FINANCIALS, PROJECTS</td><td>ALL</td><td>9626</td><td><span class="badge s-err">COMPLETED_ERRORS</span></td><td>07-03 14:02</td></tr>
+    <tr><td><a>114</a></td><td>P2P, O2C, FINANCIALS, PROJECTS</td><td>ALL</td><td>9625</td><td><span class="badge s-ok">COMPLETED</span></td><td>07-01 10:18</td></tr>
+  </table>
+  <p class="note">Stat tiles computed from the run and work-queue tables; "Loaded to Fusion" counts base-table-confirmed records. Today&#39;s page computes these from the retired pre-queue model — that repointing is the redesign.</p>
+</div>
+
+<h2 id="run-pipeline">Run Pipeline — submitting a run (the front door)</h2>
+<p class="sub">Baseline: the legacy "Submit Pipeline Run" screen with a hierarchical pipeline tree. <b>Click Plan &rarr; the actual work queue renders below, nothing committed. Click Confirm Submit &rarr; exactly what&#39;s shown is created; you land on the new run&#39;s Run Detail.</b></p>
+<div class="mock" style="max-width:780px">
+  <div style="border:1px solid #e4e9f0;border-radius:8px;padding:10px 14px;margin-bottom:12px">
+    <b style="font-size:13px">Run Configuration</b>
+    <div style="display:grid;grid-template-columns:130px 1fr;gap:8px 10px;font-size:12.5px;margin-top:8px;align-items:center">
+      <div>Scenario</div><div><select><option>RegressionTest</option><option>(all scenarios)</option></select></div>
+      <div>Run Mode</div><div><label><input type="radio" checked> New - process new/unprocessed rows</label><br><label><input type="radio"> Failed - retry errors only</label><br><label><input type="radio" disabled> All - reprocess everything (needs scenario)</label></div>
+      <div>On Failure</div><div><label><input type="radio" checked> Halt - skip a failed object&#39;s dependents</label><br><label><input type="radio"> Continue - run dependents anyway (per-row validation still applies)</label></div>
+      <div>Dependent run</div><div><select><option selected>Automatic (most recent loaded parent)</option><option>Run 42 — Suppliers · prefix 1042 · 06-12</option></select> <small style="color:#5f6b7a">override only — pin a specific earlier run</small></div>
+      <div>Dependencies</div><div><label><input type="checkbox" checked> Validate upstream dependencies</label> <small style="color:#5f6b7a">turn off for failed-items re-runs whose parents loaded in earlier runs</small></div>
+      <div>Prefix</div><div>Assigned automatically <small style="color:#5f6b7a">(no choice here — unprefixed cutover runs are an administrator configuration change)</small></div>
+    </div>
+  </div>
+  <div style="border:1px solid #e4e9f0;border-radius:8px;padding:10px 14px">
+    <b style="font-size:13px">Pipeline Selection — every object, under its pipeline</b>
+    <div style="font-size:12.5px;margin-top:8px;column-count:3;column-gap:24px">
+      <div style="break-inside:avoid;margin-bottom:10px">
+        <label style="font-weight:600"><input type="checkbox" checked> P2P - Procure to Pay (13)</label>
+        <div style="margin-left:20px;color:#9aa6b5;line-height:1.7"><label><input type="checkbox" checked disabled> Items</label><br><label><input type="checkbox" checked disabled> Suppliers</label><br><label><input type="checkbox" checked disabled> SupplierAddresses</label><br><label><input type="checkbox" checked disabled> SupplierSites</label><br><label><input type="checkbox" checked disabled> SupplierSiteAssignments</label><br><label><input type="checkbox" checked disabled> SupplierContacts</label><br><label><input type="checkbox" checked disabled> PurchaseOrders</label><br><label><input type="checkbox" checked disabled> BlanketPOs</label><br><label><input type="checkbox" checked disabled> Contracts</label><br><label><input type="checkbox" checked disabled> APInvoices</label><br><label><input type="checkbox" checked disabled> 1099Invoices</label><br><label><input type="checkbox" checked disabled> Requisitions</label><br><label><input type="checkbox" checked disabled> MiscReceipts</label><br><small>pipeline checked &mdash; all included, greyed</small></div>
+      </div>
+      <div style="break-inside:avoid;margin-bottom:10px">
+        <label style="font-weight:600;color:#9aa6b5"><input type="checkbox" disabled> O2C - Order to Cash (3)</label>
+        <div style="margin-left:20px;line-height:1.7"><label><input type="checkbox" checked> Customers</label><br><label><input type="checkbox"> ARInvoices</label><br><label><input type="checkbox" disabled> ARReceipts <small>(future — not built)</small></label><br><small style="color:#5f6b7a">object checked &mdash; pipeline greys</small></div>
+      </div>
+      <div style="break-inside:avoid;margin-bottom:10px">
+        <label style="font-weight:600"><input type="checkbox"> Financials (3)</label>
+        <div style="margin-left:20px;line-height:1.7"><label><input type="checkbox"> GLBalances</label><br><label><input type="checkbox"> GLBudgets</label><br><label><input type="checkbox"> Assets</label></div>
+      </div>
+      <div style="break-inside:avoid;margin-bottom:10px">
+        <label style="font-weight:600"><input type="checkbox"> Projects (5)</label>
+        <div style="margin-left:20px;line-height:1.7"><label><input type="checkbox"> Projects</label><br><label><input type="checkbox"> BillingEvents</label><br><label><input type="checkbox"> Expenditures</label><br><label><input type="checkbox"> Grants</label><br><label><input type="checkbox"> ProjectBudgets</label></div>
+      </div>
+      <div style="break-inside:avoid;margin-bottom:10px">
+        <label style="font-weight:600"><input type="checkbox"> HCM (14)</label>
+        <div style="margin-left:20px;line-height:1.7"><label><input type="checkbox"> Workers</label><br><label><input type="checkbox"> Assignments</label><br><label><input type="checkbox"> Salaries</label><br><label><input type="checkbox"> SalaryBases</label><br><label><input type="checkbox"> PayrollRelationships</label><br><label><input type="checkbox"> TaxCards</label><br><label><input type="checkbox"> W2Balances</label><br><label><input type="checkbox"> BenParticipant</label><br><label><input type="checkbox"> BenDependent</label><br><label><input type="checkbox"> BenBeneficiary</label><br><label><input type="checkbox"> Absences</label><br><label><input type="checkbox"> TalentProfiles</label><br><label><input type="checkbox"> PerfEvaluations</label><br><label><input type="checkbox"> WorkSchedules</label></div>
+      </div>
+      <div style="break-inside:avoid;margin-bottom:10px">
+        <label style="font-weight:600"><input type="checkbox"> Configuration (7)</label>
+        <div style="margin-left:20px;line-height:1.7"><label><input type="checkbox"> GLCalendar</label><br><label><input type="checkbox"> ValueSets</label><br><label><input type="checkbox"> Lookups</label><br><label><input type="checkbox"> UnitsOfMeasure</label><br><label><input type="checkbox"> PaymentTerms</label><br><label><input type="checkbox"> TaxConfig</label><br><label><input type="checkbox"> Banks</label></div>
+      </div>
+    </div>
+    <div style="color:#5f6b7a;margin-top:6px;font-size:12px">The run is the union of everything checked — here: all of P2P, plus Customers. Membership comes from the pipeline definition table; this tree shows the decided end state — every in-scope object has a pipeline home (MiscReceipts &rarr; P2P, ARReceipts &rarr; O2C, three FBL objects plus REST-loaded Banks &rarr; Configuration; decided 2026-07-07). PlanningBudgets is out of scope and does not appear.</div>
+  </div>
+  <p style="margin:14px 0 8px"><span class="btn">Plan</span> <small style="color:#5f6b7a">— Generate Plan Preview; commits nothing</small></p>
+  <div style="border:1px solid #bcd6f5;border-radius:8px;padding:10px 14px;background:#f4f8fd">
+    <b style="font-size:13px">This is the pipeline that will be created — review, then submit</b>
+    <table style="margin-top:8px">
+      <tr><th>#</th><th>Work item</th><th>Partition</th><th>Waits for</th><th>Rows selected</th></tr>
+      <tr><td>1</td><td>Items</td><td>—</td><td>—</td><td>3</td></tr>
+      <tr><td>2</td><td>Suppliers</td><td>—</td><td>—</td><td>3</td></tr>
+      <tr><td>3</td><td>SupplierAddresses</td><td>—</td><td>Suppliers</td><td>3</td></tr>
+      <tr><td>4</td><td>SupplierSites</td><td>—</td><td>Suppliers, SupplierAddresses</td><td>3</td></tr>
+      <tr><td>5</td><td>SupplierSiteAssignments</td><td>—</td><td>SupplierSites</td><td>3</td></tr>
+      <tr><td>6</td><td>SupplierContacts</td><td>—</td><td>Suppliers</td><td>2</td></tr>
+      <tr><td>7</td><td>Requisitions</td><td>—</td><td>Items, SupplierSiteAssignments</td><td>2</td></tr>
+      <tr><td>8</td><td>PurchaseOrders</td><td>US1 BU</td><td>Items, Requisitions, SupplierSiteAssignments, SupplierContacts</td><td>4</td></tr>
+      <tr><td>9</td><td>PurchaseOrders</td><td>US2 BU</td><td>Items, Requisitions, SupplierSiteAssignments, SupplierContacts</td><td>3</td></tr>
+      <tr><td>10</td><td>BlanketPOs</td><td>—</td><td>Items, SupplierSiteAssignments</td><td>2</td></tr>
+      <tr><td>11</td><td>Contracts</td><td>—</td><td>SupplierSiteAssignments</td><td>2</td></tr>
+      <tr><td>12</td><td>APInvoices</td><td>US1 OU</td><td>SupplierSiteAssignments</td><td>5</td></tr>
+      <tr><td>13</td><td>1099Invoices</td><td>—</td><td>SupplierSiteAssignments</td><td>1</td></tr>
+      <tr><td>14</td><td>MiscReceipts</td><td>—</td><td>Items</td><td>2</td></tr>
+      <tr><td>15</td><td>Customers</td><td>—</td><td>—</td><td>7</td></tr>
+    </table>
+    <p style="margin:10px 0 2px"><span class="btn">Confirm Submit</span> &nbsp; <span class="btn2">Back</span></p>
+  </div>
+  <p class="note">Plan always renders or errors with a message — never spins. Confirm Submit creates precisely what is shown. Submission is rejected with a clear message if a selected object is already in an active run.</p>
+</div>
+
+
+<h2 id="run-history">Run History — the entry point</h2>
+<p class="sub">Sortable, filterable list of every pipeline run, newest first. <b>Click the run id &rarr; Run Detail.</b> Clicking anywhere else in the row does nothing.</p>
+<div class="mock">
+  <table>
+    <tr><th>Run</th><th>Pipelines</th><th>Mode</th><th>Scenario</th><th>Prefix</th><th>Status</th><th>Submitted</th><th>Completed</th></tr>
+    <tr><td><a>116</a></td><td>P2P, O2C, FINANCIALS, PROJECTS</td><td>NEW</td><td>RegressionTest</td><td>9627</td><td><span class="badge s-run">IN_PROGRESS</span></td><td>07-05 09:12</td><td>—</td></tr>
+    <tr><td><a>115</a></td><td>P2P, O2C, FINANCIALS, PROJECTS</td><td>ALL</td><td>RegressionTest</td><td>9626</td><td><span class="badge s-err">COMPLETED_ERRORS</span></td><td>07-03 14:02</td><td>07-03 14:33</td></tr>
+    <tr><td><a>114</a></td><td>P2P, O2C, FINANCIALS, PROJECTS</td><td>ALL</td><td>RegressionTest</td><td>9625</td><td><span class="badge s-ok">COMPLETED</span></td><td>07-01 10:18</td><td>07-01 10:55</td></tr>
+    <tr><td><a>113</a></td><td>O2C</td><td>NEW</td><td>SmokeMin</td><td>9624</td><td><span class="badge s-fail">FAILED</span></td><td>06-30 16:40</td><td>06-30 16:52</td></tr>
+  </table>
+</div>
+
+<h2 id="run-detail">Run Detail — one run, one tile per object</h2>
+<p class="sub">Run header and the per-object tile grid. <b>Click a tile &rarr; Object Detail. Click View Activity Log &rarr; Activity Log browser, filtered to this run.</b></p>
+<div class="mock">
+  <div class="kv">
+    <div>Run</div><div><b>116</b> &middot; P2P, O2C, FINANCIALS, PROJECTS &middot; scenario RegressionTest &middot; prefix 9627 &middot; mode NEW</div>
+    <div>Status</div><div><span class="badge s-run">IN_PROGRESS</span> &nbsp; <span class="chip">View Activity Log</span> <small>(end state — link added here so the log stays reachable)</small></div>
+  </div>
+  <div class="tiles">
+    <div class="tile t-ok"><b>Suppliers</b><small>12 loaded / 0 failed — 100% loaded</small></div>
+    <div class="tile t-lr"><b>PurchaseOrders &middot; US1 BU</b><small>14 of 17 orders loaded / 2 failed / 1 unaccounted</small></div>
+    <div class="tile t-lg"><b>PurchaseOrders &middot; US2 BU</b><small>10 of 13 orders loaded / 3 failed — all accounted</small></div>
+    <div class="tile t-lg"><b>Customers</b><small>57 loaded / 3 failed — all accounted</small></div>
+    <div class="tile t-lr"><b>BlanketPOs</b><small>0 loaded / 2 failed</small></div>
+    <div class="tile t-lr"><b>Expenditures</b><small>38 loaded / 1 unaccounted</small></div>
+    <div class="tile t-red"><b>GLBudgets</b><small>BIP report failure — outcomes unknown</small></div>
+    <div class="tile t-ok"><b>GLBalances &middot; US Primary Ledger</b><small>210 of 210 loaded — one tile per partition</small></div>
+    <div class="tile t-run"><b>APInvoices</b><small>reconciling&hellip;</small></div>
+    <div class="tile t-skip"><b>1099Invoices</b><small>skipped — dependency failed</small></div>
+    <div class="tile t-new"><b>Requisitions</b><small>queued</small></div>
+  </div>
+  <p class="note">Palette definition — one source of truth: <a href="DMT_DESIGN.html#drill">design doc §9, "Tile colors on Run Detail"</a>.</p>
+</div>
+
+<h2 id="object-detail">Object Detail — record breakdown (funnel redesign)</h2>
+<p class="sub">One object in one run: breadcrumb back up the chain, job chips, log link, and the record breakdown (funnel). <b>Click any count &rarr; Record List filtered to those rows. Click a job chip &rarr; ESS Job Detail. Click View Log &rarr; Activity Log browser, filtered to this work item.</b></p>
+<p>Drilling from a run tile (Page 82) into an object lands here. <strong>Everything stays on one page — no extra drill level.</strong> The record breakdown becomes a horizontal funnel table: one row per record type in the FBDI, stages as columns reading left→right, the drop at each stage as a small red count between stages. Every number is a clickable pill filtering Page 57 to exactly those rows.</p>
+
+  <div style="border:1px solid #d4dae2;border-radius:10px;padding:18px 20px;margin:14px 0;background:#fff;max-width:960px;font-size:13px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+      <div><strong style="font-size:15px">PurchaseOrders &middot; US1 BU</strong> <span style="color:#5f6b7a">· Run 116 · prefix 9627</span></div>
+      <span style="background:#fce8e6;color:#a8271a;border:1px solid #f3c2bc;border-radius:12px;padding:2px 10px;font-size:11.5px;font-weight:600">WORK ITEM: FAILED — 1 unaccounted</span>
+    </div>
+    <div style="color:#5f6b7a;font-size:12px;margin-bottom:12px">Record breakdown — pipeline funnel per record type</div>
+    <table style="border-collapse:collapse;width:100%;font-size:12.5px">
+      <tr style="background:#f3f6fa;color:#39485c">
+        <th style="text-align:left;padding:6px 10px">Record type</th>
+        <th style="padding:6px 8px">Staged</th><th style="padding:6px 4px;color:#a8271a;font-weight:500">xform ✖</th>
+        <th style="padding:6px 8px">Transformed</th><th style="padding:6px 4px;color:#a8271a;font-weight:500">post-val ✖</th>
+        <th style="padding:6px 8px">Generated</th><th style="padding:6px 4px;color:#a8271a;font-weight:500" title="all-or-nothing per file — populated only when the whole file failed to load">load ✖</th>
+        <th style="padding:6px 8px">Interfaced</th><th style="padding:6px 4px;color:#a8271a;font-weight:500">Fusion ✖</th>
+        <th style="padding:6px 8px">Loaded</th>
+        <th style="padding:6px 8px;color:#a8271a">Unacct.</th>
+      </tr>
+      <tr style="border-top:1px solid #e4e9f0;text-align:center">
+        <td style="text-align:left;padding:6px 10px">▸ PO Headers</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">30</span></td><td style="color:#a8271a">1</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">29</span></td><td style="color:#a8271a">–</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">29</span></td><td style="color:#a8271a">–</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">29</span></td><td style="color:#a8271a">1</td>
+        <td><span style="background:#1a7a33;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">28</span></td>
+        <td style="color:#5f6b7a">0</td>
+      </tr>
+      <tr style="border-top:1px solid #e4e9f0;text-align:center;background:#fbfcfe">
+        <td style="text-align:left;padding:6px 10px">▾ PO Lines</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">120</span></td><td style="color:#a8271a">8</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">112</span></td><td style="color:#a8271a">2</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">110</span></td><td style="color:#a8271a">–</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">110</span></td><td style="color:#a8271a">5</td>
+        <td><span style="background:#1a7a33;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">104</span></td>
+        <td><span style="background:#a8271a;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer;font-weight:700">1</span></td>
+      </tr>
+      <tr><td colspan="11" style="padding:0 10px 10px 26px;background:#fbfcfe">
+        <!-- expanded row = the vertical funnel card, inline -->
+        <div style="border:1px solid #e4e9f0;border-radius:8px;padding:10px 14px;margin-top:4px;background:#fff;font-size:12px;color:#39485c">
+          <em>Expanded row — same data as the bars below: click a row's ▾ to see its funnel and drop-out details inline.</em>
+        </div>
+      </td></tr>
+      <tr style="border-top:1px solid #e4e9f0;text-align:center">
+        <td style="text-align:left;padding:6px 10px">▸ PO Line Locations</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">118</span></td><td style="color:#a8271a">6</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">112</span></td><td style="color:#a8271a">–</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">112</span></td><td style="color:#a8271a">–</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">112</span></td><td style="color:#a8271a">–</td>
+        <td><span style="background:#1a7a33;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">110</span></td>
+        <td style="color:#5f6b7a">0</td>
+      </tr>
+      <tr style="border-top:1px solid #e4e9f0;text-align:center">
+        <td style="text-align:left;padding:6px 10px">▸ PO Distributions</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">140</span></td><td style="color:#a8271a">9</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">131</span></td><td style="color:#a8271a">–</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">131</span></td><td style="color:#a8271a">–</td>
+        <td><span style="background:#0b5cc0;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">131</span></td><td style="color:#a8271a">4</td>
+        <td><span style="background:#1a7a33;color:#fff;border-radius:10px;padding:1px 9px;cursor:pointer">127</span></td>
+        <td style="color:#5f6b7a">0</td>
+      </tr>
+    </table>
+    <div style="margin-top:12px;background:#fce8e6;border:1px solid #f3c2bc;border-radius:8px;padding:8px 14px;color:#a8271a;font-weight:600">
+      ⚠ 1 record unaccounted for (PO Lines) — no Fusion ID and no error returned. The object&#39;s work item cannot be marked DONE (the accounting rule, Overview): its status stays FAILED until every record is accounted for.
+    </div>
+  </div>
+  <p>Cascade failures read naturally in this layout: the 1 failed PO Header cascades — its lines/locations/distributions fail pre-validation, showing up in each child row's transform-error (✖) column with <code>[PRE_VALIDATION]</code> text. Clicking any ▾ expands that record type's row into the vertical funnel card below (same data, visual form) — progressive disclosure on one page rather than a further drill-through. Objects whose FBDI has a single record type (Suppliers, GL Balances, …) show a one-row table.</p>
+
+  <div style="border:1px solid #d4dae2;border-radius:10px;padding:18px 20px;margin:14px 0;background:#fff;max-width:860px;font-size:13px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+      <div><strong style="font-size:15px">PO Lines</strong> <span style="color:#5f6b7a">· expanded from the PurchaseOrders &middot; US1 BU breakdown row above</span></div>
+      <span style="background:#fce8e6;color:#a8271a;border:1px solid #f3c2bc;border-radius:12px;padding:2px 10px;font-size:11.5px;font-weight:600">1 UNACCOUNTED</span>
+    </div>
+    <div style="color:#5f6b7a;font-size:12px;margin-bottom:14px">Row expansion — the same funnel numbers, visual form, with drop-out reasons</div>
+
+    <!-- funnel rows: label | bar | count pill | drop note -->
+    <div style="display:grid;grid-template-columns:110px 1fr 64px 260px;gap:6px 12px;align-items:center">
+      <div>Staged</div>
+      <div style="background:#e7f0fb;border-radius:4px;height:22px;width:100%"></div>
+      <div><span style="background:#0b5cc0;color:#fff;border-radius:11px;padding:2px 10px;font-weight:600;cursor:pointer">120</span></div>
+      <div></div>
+
+      <div>Transformed</div>
+      <div style="background:#e7f0fb;border-radius:4px;height:22px;width:93%"></div>
+      <div><span style="background:#0b5cc0;color:#fff;border-radius:11px;padding:2px 10px;font-weight:600;cursor:pointer">112</span></div>
+      <div style="color:#a8271a;font-size:12px">▾ 8 transform errors <span style="background:#fce8e6;color:#a8271a;border:1px solid #f3c2bc;border-radius:10px;padding:1px 8px;cursor:pointer">view</span></div>
+
+      <div>Generated</div>
+      <div style="background:#e7f0fb;border-radius:4px;height:22px;width:92%"></div>
+      <div><span style="background:#0b5cc0;color:#fff;border-radius:11px;padding:2px 10px;font-weight:600;cursor:pointer">110</span></div>
+      <div style="color:#a8271a;font-size:12px">▾ 2 post-validation <span style="background:#fce8e6;color:#a8271a;border:1px solid #f3c2bc;border-radius:10px;padding:1px 8px;cursor:pointer">view</span></div>
+
+      <div>Interfaced</div>
+      <div style="background:#e7f0fb;border-radius:4px;height:22px;width:90%"></div>
+      <div><span style="background:#0b5cc0;color:#fff;border-radius:11px;padding:2px 10px;font-weight:600;cursor:pointer">110</span></div>
+      <div style="color:#5f6b7a;font-size:12px">load is all-or-nothing per file — no per-row drop here</div>
+
+      <div>Loaded</div>
+      <div style="background:#e6f4ea;border-radius:4px;height:22px;width:87%"></div>
+      <div><span style="background:#1a7a33;color:#fff;border-radius:11px;padding:2px 10px;font-weight:600;cursor:pointer">104</span></div>
+      <div style="color:#a8271a;font-size:12px">▾ 5 Fusion errors <span style="background:#fce8e6;color:#a8271a;border:1px solid #f3c2bc;border-radius:10px;padding:1px 8px;cursor:pointer">view</span></div>
+    </div>
+
+    <!-- unaccounted banner -->
+    <div style="margin-top:14px;background:#fce8e6;border:1px solid #f3c2bc;border-radius:8px;padding:8px 14px;color:#a8271a;font-weight:600">
+      ⚠ 1 record unaccounted for — no Fusion ID and no error returned. <span style="text-decoration:underline;cursor:pointer">Investigate</span> — the work item&#39;s status stays FAILED (never DONE) until every record is accounted for.
+    </div>
+
+    <!-- footer strip -->
+    <div style="margin-top:12px;display:flex;gap:18px;color:#5f6b7a;font-size:12px">
+      <span>Total errors: <strong style="color:#a8271a">15</strong> (8 transform · 2 post-validation · 5 Fusion)</span>
+      <span>Loaded: <strong style="color:#1a7a33">104 / 120</strong></span>
+      <span>Unaccounted: <strong style="color:#a8271a">1</strong></span>
+    </div>
+  </div>
+
+  <p><small class="k">Every pill and "view" chip — in both the table and the expansion — drills to Page 57 pre-filtered to those rows (e.g. the 8 transform errors come from <code>DMT_STG_TFM_ERROR_TBL</code> for this RUN_ID (design doc §5); the 104 Loaded from TFM <code>STATUS='LOADED'</code>). Bar widths are proportional to counts. This replaces today's misleading Staged/Generated residual columns (design doc §10).</small></p>
+
+<h2 id="record-list">Record List — individual rows</h2>
+<p class="sub">The records behind whichever count you clicked on Object Detail. <b>Click Verify on a LOADED row &rarr; REST Verify modal (in-page, no navigation).</b></p>
+<div class="mock">
+  <div class="crumb"><a>Run History</a> &rsaquo; <a>Run 116</a> &rsaquo; <a>PurchaseOrders</a> &rsaquo; <b>PO Lines — all 120 records</b></div>
+  <table>
+    <tr><th>Key</th><th>Status</th><th>Error</th><th></th></tr>
+    <tr><td>9627PO-1002 / line 3</td><td><span class="badge s-fail">FAILED</span></td><td>[FUSION_ERROR] Supplier site not valid for BU "US1"</td><td></td></tr>
+    <tr><td>PO-1006 / line 1 <small style="color:#5f6b7a">(unprefixed — never reached transform)</small></td><td><span class="badge s-fail">FAILED</span></td><td>[PRE_VALIDATION] Supplier 'ACME WEST' not LOADED</td><td></td></tr>
+    <tr><td>9627PO-1001 / line 2</td><td><span class="badge s-ok">LOADED</span></td><td></td><td><span class="btn2">Verify in Fusion</span></td></tr>
+  </table>
+  <div class="modal"><b>Verify — 9627PO-1001 line 2</b><br>GET /fscmRestApi/…/purchaseOrderLines?q=… → <span style="color:#7ee2a0">200 OK</span><br>PO_LINE_ID 300000512345678 &middot; qty 40 &middot; amount 1,820.00 — matches TFM row.</div>
+</div>
+
+<h2 id="ess-job">ESS Job Detail — the Fusion job behind a load</h2>
+<p class="sub">The submitted Fusion job and its child-job hierarchy, with status per node. <b>Click a job id &rarr; ESS Output, listing that job's files.</b> Nothing else here navigates.</p>
+<div class="mock">
+  <div class="crumb"><a>Run 116</a> &rsaquo; <a>PurchaseOrders</a> &rsaquo; <b>ESS Job 88232</b></div>
+  <table>
+    <tr><th>Job</th><th>Name</th><th>State</th></tr>
+    <tr><td><a>88232</a></td><td>Import Orders</td><td><span class="badge s-ok">SUCCEEDED</span></td></tr>
+    <tr><td>&nbsp;&nbsp;<a>88233</a></td><td>&nbsp;&nbsp;└ Validate</td><td><span class="badge s-ok">SUCCEEDED</span></td></tr>
+    <tr><td>&nbsp;&nbsp;<a>88234</a></td><td>&nbsp;&nbsp;└ Import</td><td><span class="badge s-err">WARNING</span></td></tr>
+  </table>
+  <p class="note">Hierarchy only — each job id links to that job's output files (ESS Output). Files are never listed here (decided 2026-07-06).</p>
+</div>
+
+<h2 id="ess-output">ESS Output — file download dialog</h2>
+<p class="sub">The single place files are listed and downloaded, reached only by clicking a job id on ESS Job Detail. <b>Click Download &rarr; the file (text and binary both supported).</b></p>
+<div class="mock" style="max-width:560px">
+  <b>Files — ESS Job 88234</b>
+  <table style="margin-top:8px">
+    <tr><th>File</th><th>Size</th><th></th></tr>
+    <tr><td>ImportOrders_88234.txt</td><td>14 KB</td><td><span class="btn">Download</span></td></tr>
+    <tr><td>ImportOrders_88234.log</td><td>6 KB</td><td><span class="btn">Download</span></td></tr>
+    <tr><td>ImportOrders_88234.xlsx</td><td>21 KB</td><td><span class="btn">Download</span></td></tr>
+  </table>
+</div>
+
+<h2 id="log-browser">Activity Log browser — search everything</h2>
+<p class="sub">One searchable list over the activity log — the only log screen. Reached pre-filtered from Run Detail (this run), Object Detail (this work item), <b>Click a message &rarr; the row expands in place (full message + SQLERRM). Nothing in this screen navigates anywhere else.</b></p>
+<div class="mock">
+  <div style="margin-bottom:10px;font-size:12.5px">
+    Run <input value="116" style="width:60px"> &nbsp; Work item <input value="" style="width:60px"> &nbsp;
+    Object <input value="" style="width:110px" placeholder="any"> &nbsp; Type <select><option>All</option><option>ERROR</option><option>WARN</option></select> &nbsp; From <input value="07-05" style="width:52px"> To <input value="" style="width:52px" placeholder="now"> &nbsp;
+    Text <input placeholder="message contains…" style="width:180px"> &nbsp; <span class="btn">Search</span>
+  </div>
+  <table>
+    <tr><th>When</th><th>Type</th><th>Run</th><th>Work item</th><th>Package.Procedure</th><th>Message</th></tr>
+    <tr><td>09:31:04</td><td><span class="badge s-fail">ERROR</span></td><td>116</td><td>2041 (PurchaseOrders)</td><td>DMT_PO_RESULTS_PKG.RECONCILE_BATCH</td><td><a>BIP returned 0 rows for load 88231 — attempting Import Report fallback… ▾</a></td></tr>
+    <tr><td colspan="6" style="background:#fbfcfe"><div style="border:1px solid #e4e9f0;border-radius:6px;padding:8px 10px;font-size:12px;max-height:90px;overflow-y:auto"><b>expanded:</b> BIP returned 0 rows for load 88231 — attempting Import Report fallback. Request payload: reportAbsolutePath=/Custom/DMT/PurchaseOrders/PO_VALIDATION_RPT.xdo, LOAD_REQUEST_ID=88231 … <br><b>SQLERRM:</b> —</div></td></tr>
+    <tr><td>09:30:12</td><td><span class="badge s-err">WARN</span></td><td>116</td><td>2041 (PurchaseOrders)</td><td>DMT_PO_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM</td><td><a>2 rows failed post-validation…</a></td></tr>
+    <tr><td>09:28:55</td><td><span class="badge s-ok">INFO</span></td><td>116</td><td>—</td><td>DMT_QUEUE_PKG.HEARTBEAT_TICK</td><td><a>Promoted 3 work items PENDING → READY</a></td></tr>
+  </table>
+  <p class="note">Work item is NULL (—) for entries with no run/work-item context, e.g. heartbeat ticks.</p>
+</div>
+
+
+</div>
+</body>
+</html>
