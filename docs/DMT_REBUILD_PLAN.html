@@ -442,6 +442,90 @@ This is not a restart; it is a <em>re-platform plus targeted refactor</em>. The 
 </ul>
 
 <!-- ============================================================ -->
+<h3 id="apex-port-progress">Stage&nbsp;F Progress — APEX Port on Local Docker (2026-07-15)</h3>
+
+<div class="callout">
+<strong>Sequencing note / deviation.</strong> The owner reprioritized standing up the APEX
+app on the local Docker stack <em>ahead of</em> the full regression gate (the gate in Stage&nbsp;F
+step&nbsp;1 above). This subsection records the port work done under that reprioritization. The
+gate is still the rule for declaring the port <em>verified against real run data</em> — the
+work below proves the app installs, compiles, and every page renders, but not yet that the
+drill numbers are correct, because there is no completed regression run on <code>dmt2-local</code> yet.
+</div>
+
+<p><strong>Milestone: APEX app 155 is live on the local Docker stack.</strong>
+ORDS&nbsp;26.1.2 (container <code>dmt2-ords</code>, host port <strong>8182</strong> → container 8080)
+serves APEX&nbsp;24.2 against <code>dmt2-local</code> (<code>host.docker.internal:1523/FREEPDB1</code>).
+Workspace <code>DMT</code> maps to <code>DMT_OWNER</code>; app 155 (Data Migration Console) imported
+and its login page renders over HTTP. A scripted login-and-sweep of every application page
+(<code>scratchpad/local_smoke.py</code>, reusing the login/error-marker logic from
+<code>scripts/dmt_apex_smoke.py</code>) is the render check used below.</p>
+
+<p><strong>Compile-check (port step E5): PASS.</strong> All 18 packages, procedures, and views
+the UI calls (<code>DMT_APEX_PAGE_PKG</code>, <code>DMT_SCHEDULER_PKG</code>, <code>DMT_CSV_UPLOAD_PKG</code>,
+<code>DMT_ESS_UTIL_PKG</code>, <code>DMT_REST_QUERY_PKG</code>, <code>DMT_QUEUE_PKG</code>,
+<code>DMT_QUEUE_WORKER_PKG</code>, <code>DMT_REPORT_PKG</code>, <code>DMT_UTIL_PKG</code>,
+<code>DMT_RUN_DETAIL_HEADER</code>/<code>_TILES</code>, <code>DMT_PLAN_PREVIEW_HTML</code>, and the
+drill/summary views) exist and are VALID on <code>dmt2-local</code>. The only invalid schema object
+is <code>DMT_REST_LOADER_PKG</code> (an unrelated 26ai JSON-path incompatibility, not a UI dependency).</p>
+
+<p><strong>Decision (port step E6 / open question F1) — carry the newer drill chain, retire the legacy trio.</strong>
+The export ships two of everything. We keep the newer path — Run History <code>p80</code> → Run Detail
+<code>p82</code> (procedure-backed tiles) → Object Detail <code>p52</code> → Record Detail <code>p57</code>,
+plus submit <code>p81</code> and the restyled run-pipeline <code>p83/p84</code> — and treat the legacy
+path (<code>p15</code>, <code>p26</code>, <code>p70</code>, <code>p71</code>, <code>p72</code>, and the
+deprecated Object&nbsp;Detail&nbsp;v2 backed by <code>DMT_OBJECT_DETAIL_V</code>) as deprecated. Physically
+dropping those pages from the app is an APEX-side change (copy-app-before-modify) tracked as a
+follow-up; this decision fixes which pages get verification effort.</p>
+
+<p><strong>Correction — a compatibility-alias attempt was tried and rejected; the fix belongs on the APEX side.</strong>
+The base tables were renamed <code>INTEGRATION_ID</code>→<code>RUN_ID</code> in the rebuild, but the imported
+app still references the old names (and <code>STATUS</code> where the view exposes <code>TFM_STATUS</code>).
+A first attempt re-added the old names to the views as additive aliases
+(<code>RUN_ID AS INTEGRATION_ID</code>, <code>TFM_STATUS AS STATUS</code>). <strong>That was wrong and was
+reverted.</strong> It violates the accepted, binding standard in <code>DMT_DESIGN.html</code> §7 —
+"no compatibility aliases anywhere," whose ✗ example is verbatim "a view carries <code>RUN_ID AS INTEGRATION_ID</code>
+for an old consumer" — and it reverses the deliberate 2026-07-09 conformance cleanup (finding F3), which stripped
+that alias from all 79 detail views and stated that "the Stage F APEX port must bind its interactive reports to
+<code>RUN_ID</code>." <strong>The correct remediation is APEX-side:</strong> rewire the interactive-report
+saved-report references and the page-57 region source to select <code>RUN_ID</code> / <code>TFM_STATUS</code>,
+done under copy-app-before-modify. The detail views are left alone. (PR&nbsp;#106 closed; PR&nbsp;#107 reverted by PR&nbsp;#109.)</p>
+
+<div class="overflow">
+<table>
+  <tr><th style="width:34%">Fix landed (one PR each)</th><th style="width:10%">Item</th><th style="width:56%">What &amp; result</th></tr>
+  <tr><td>Repair 15 config/master-data views</td><td>E2 / F7</td><td>They were INVALID FORCE-stubs joining master to each object's TFM table on the renamed run-id column. Fixed the join to <code>tfm.RUN_ID</code>, dropped FORCE; all 15 VALID. Decision: repair, not delete (the app's pages 21–24 use them). <em>Merged (PR&nbsp;#97).</em></td></tr>
+  <tr><td>ProjectBudgets drill label</td><td>F2</td><td>Page-52 funnel said <code>Project Budgets</code>, page-57 record list said <code>Project Budget Lines</code> — the drill landed empty. Conformed the catalog label to the record label. <em>Merged (PR&nbsp;#99).</em></td></tr>
+  <tr><td>ARInvoices interface-status fallback</td><td>F4</td><td>The reconciliation query leaked the interface flag when no base row existed. Changed the fallback to <code>NULL</code> so success can only come from base-row presence (section&nbsp;5). No reconciliation outcome changes. Needs a Fusion BIP redeploy before the next AR run. <em>Merged (PR&nbsp;#101).</em></td></tr>
+  <tr><td><s>Compat alias on 66 detail views</s> — REJECTED</td><td>E7</td><td>The landing-page interactive reports reference <code>INTEGRATION_ID</code>; the views expose only <code>RUN_ID</code>, so 8 pages die with ORA-00904. A view alias was tried but <strong>violates §7</strong> and was <strong>closed (PR&nbsp;#106)</strong>. Correct fix: rewire the IRs to <code>RUN_ID</code> (APEX-side).</td></tr>
+  <tr><td><s>Record Detail view exposes STATUS</s> — REVERTED</td><td>E7 / D</td><td>Page 57 selects/filters on <code>STATUS</code>; the view exposes <code>TFM_STATUS</code>. A <code>TFM_STATUS AS STATUS</code> alias was merged (#107) then <strong>reverted (PR&nbsp;#109)</strong> — same §7 violation. Correct fix: change the page-57 region source to select <code>TFM_STATUS</code> / <code>RUN_ID</code>.</td></tr>
+</table>
+</div>
+
+<p><strong>Render bugs diagnosed; the standard-compliant fix is pending (APEX-side).</strong> With the
+(now-reverted) view aliases in place, a live sweep showed 36 of 37 pages rendering — proving the diagnosis:
+8 landing pages fail on the <code>INTEGRATION_ID</code>→<code>RUN_ID</code> reference drift, page 57 on the
+<code>STATUS</code>/<code>TFM_STATUS</code> drift. The compliant remedy is to rewire those APEX references to
+the real column names (copy-app-before-modify), not to alias the views. A separate, genuinely APEX-side issue
+remains on page&nbsp;2 (Procure&nbsp;to&nbsp;Pay): <code>ORA-06502 — character string buffer too small</code>,
+because the Suppliers interactive report displays a ~166-column <code>SELECT *</code> over
+<code>DMT_V_SUPPLIERS_DETAIL</code> and APEX's generated column list exceeds an internal buffer; the remedy
+there is to narrow that report's displayed columns.</p>
+
+<div class="overflow">
+<table>
+  <tr><th style="width:60%">Remaining APEX-port work</th><th style="width:12%">Gated on</th><th style="width:28%">Notes</th></tr>
+  <tr><td><strong>Rewire the APEX references from <code>INTEGRATION_ID</code>/<code>STATUS</code> to <code>RUN_ID</code>/<code>TFM_STATUS</code></strong> — the 66 landing-page interactive reports and the page-57 region source (the §7-compliant replacement for the rejected view aliases)</td><td>APEX copy-before-modify</td><td>This is the real fix for the 8 landing pages + page 57. It is the Tier-6 naming sweep applied to the app.</td></tr>
+  <tr><td>Full drill verification against real run data (E7 step 3, section&nbsp;C base-tier counts, F5 render-proc output)</td><td>a completed regression run on <code>dmt2-local</code></td><td>Pages render; the numbers behind them are unverified until a run exists.</td></tr>
+  <tr><td>Fusion REST-verify + ESS-download retarget (E8 / F6)</td><td>runtime config + a run</td><td>Repoint credentials/URL at the demo instance; confirm binary streaming.</td></tr>
+  <tr><td>Narrow the page-2 Suppliers interactive report (ORA-06502)</td><td>APEX copy-before-modify</td><td>Reduce displayed columns below the buffer limit.</td></tr>
+  <tr><td>Drop the deprecated legacy pages (E6 decision)</td><td>APEX copy-before-modify</td><td><code>p15/p26/p70/p71/p72</code> + Object Detail v2.</td></tr>
+  <tr><td>Retire the pre-existing legacy-surface aliases still on the non-detail views (<code>DMT_RECORD_DETAIL_V</code>, <code>DMT_PIPELINE_SUMMARY_V</code>, <code>DMT_ESS_JOB_DETAIL_V</code>, <code>DMT_V_CEMLI_STATUS</code>) once the APEX rewire lands</td><td>Tier&nbsp;6 (P3)</td><td>Per the 2026-07-09 F3 note — legacy-surface sweep, out of scope of the detail-view cleanup.</td></tr>
+  <tr><td>Retire dead <code>PlanningBudgets</code> arms (label mismatch left in place)</td><td>—</td><td>Dead object; relabeling a to-be-deleted arm is churn.</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
 <h2 id="backlog-coverage">4.5 Backlog Coverage — every P1/P2/P3 item, in upstream-first order</h2>
 
 <div class="callout">
