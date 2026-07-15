@@ -1198,6 +1198,16 @@
                 DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
             ELSIF p_cemli_code = 'Assets' THEN
                 DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+            ELSE
+                -- Fail-open guard (Rule #1): no reconcile arm matched this CEMLI code, so
+                -- NOTHING was confirmed against the Fusion base tables. Never report success
+                -- here — a missing arm is a registration bug, not a load that quietly worked.
+                -- Raise loudly so the object goes to ERROR instead of a false pass.
+                RAISE_APPLICATION_ERROR(-20044,
+                    'No reconcile arm matched CEMLI_CODE ''' || p_cemli_code ||
+                    ''' in submit_and_reconcile_one. Refusing to report success without ' ||
+                    'base-table confirmation. Add the object''s reconcile dispatch (or its ' ||
+                    'RECON_PROC) before it can load.');
             END IF;
 
             x_success := TRUE;
