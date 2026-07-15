@@ -16,7 +16,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Customers','/fscmRestApi/resources/11.13.18.05/hubOrganizations','PartyName={KEY}','PARTY_ORIG_SYSTEM_REFERENCE','PartyId,PartyName,PartyNumber,Status,CreationDate','Party ID,Name,Number,Status,Created','ERP','Y',NULL);
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Customers','/crmRestApi/resources/11.13.18.05/hubOrganizations','OrganizationName={KEY}','PARTY_NAME','PartyId,OrganizationName,PartyNumber,OrigSystemReference,CreationDate','Party ID,Name,Number,Source Ref,Created','ERP','Y','crmRestApi hubOrganizations; query by OrganizationName = the migrated party name (the record-detail display key). The fscmRestApi path 404s on this instance and OrigSystemReference is not a queryable finder; QUERY_FUSION_RECORD falls back from the lookup key to the display key so the name match is found. Verified live 2026-07-15.');
 exception when dup_val_on_index then null;
 end;
 /
