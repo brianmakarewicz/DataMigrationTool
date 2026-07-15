@@ -892,6 +892,23 @@
             RAISE_APPLICATION_ERROR(-20033, C_PROC || ': REPORT_CATALOG_PATH NULL for ' || p_cemli_code);
         END IF;
 
+        -- Deploy-drift guard: DMT2 reports live under /Custom/DMT2/. A resolved
+        -- /Custom/DMT/... path means the local BIP registry still points at the
+        -- frozen stack's folder (a seed change was pulled but the DB seed was not
+        -- re-run), so the reconciler would silently run the old interface-only
+        -- report. Warn loudly rather than fail — the run can still proceed.
+        IF l_path LIKE '/Custom/DMT/%' THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id => p_run_id,
+                p_message => C_PROC || ': WARNING — BIP report path for ' || p_cemli_code ||
+                    ' resolved to the frozen-stack folder ''' || l_path ||
+                    '''. DMT2 reports belong under /Custom/DMT2/. Re-run the BIP registry seed ' ||
+                    '(db/seed/dmt_bip_report_tbl.sql) to converge this DB.',
+                p_log_type => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package => 'DMT_UTIL_PKG',
+                p_procedure => C_PROC);
+        END IF;
+
         -- Build parameterNameValues items from 'NAME|VAL~NAME2|VAL2'
         l_step := 'building runReport parameter list';
         DBMS_LOB.CREATETEMPORARY(l_items, TRUE);
