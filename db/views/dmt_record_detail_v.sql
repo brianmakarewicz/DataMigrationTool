@@ -270,7 +270,7 @@ SELECT 'ARInvoices', 'AR Distributions',
 FROM DMT_OWNER.DMT_RA_DISTS_TFM_TBL
 -- ---- GL ----
 UNION ALL
-SELECT 'GLBalances', 'GL Journals',
+SELECT 'GLBalances', 'GL Journal Lines',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        -- DISPLAY_KEY: the (run-prefixed) journal name that reconciliation keys
        -- on, plus this line's account -- so the record identifies its journal
@@ -285,7 +285,7 @@ SELECT 'GLBalances', 'GL Journals',
        CASE WHEN TFM_STATUS = 'LOADED' THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' AND ERROR_TEXT IS NOT NULL THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' THEN 'UNRECONCILED' ELSE 'IN_PROGRESS' END
 FROM DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
 UNION ALL
-SELECT 'GLBudgets', 'GL Budget Balances',
+SELECT 'GLBudgets', 'GL Budget Lines',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        BUDGET_NAME || ' - ' || SEGMENT1 || '.' || SEGMENT2 || '.' || SEGMENT3,
        BUDGET_NAME,
@@ -347,7 +347,7 @@ SELECT 'Projects', 'Projects',
        CASE WHEN TFM_STATUS = 'LOADED' THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' AND ERROR_TEXT IS NOT NULL THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' THEN 'UNRECONCILED' ELSE 'IN_PROGRESS' END
 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
 UNION ALL
-SELECT 'Projects', 'Project Tasks',
+SELECT 'Projects', 'Tasks',
        t.TFM_SEQUENCE_ID, t.STG_SEQUENCE_ID, t.RUN_ID,
        t.TASK_NAME,
        t.PROJECT_NUMBER,
@@ -367,7 +367,7 @@ SELECT 'Projects', 'Team Members',
        CASE WHEN TFM_STATUS = 'LOADED' THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' AND ERROR_TEXT IS NOT NULL THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' THEN 'UNRECONCILED' ELSE 'IN_PROGRESS' END
 FROM DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
 UNION ALL
-SELECT 'Projects', 'Transaction Controls',
+SELECT 'Projects', 'Txn Controls',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PROJECT_NAME || ' - ' || EXPENDITURE_TYPE,
        PROJECT_NUMBER,
@@ -388,7 +388,7 @@ SELECT 'ProjectBudgets', 'Project Budget Lines',
 FROM DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
 -- ---- Expenditures ----
 UNION ALL
-SELECT 'Expenditures', 'Project Expenditures',
+SELECT 'Expenditures', 'Expenditure Items',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        ORIG_TRANSACTION_REFERENCE,
        ORIG_TRANSACTION_REFERENCE,
@@ -595,7 +595,7 @@ SELECT 'SalaryBases', 'Salary Bases',
 FROM DMT_OWNER.DMT_SAL_BASIS_TFM_TBL
 -- ---- Payroll Relationships ----
 UNION ALL
-SELECT 'PayrollRels', 'Payroll Relationships',
+SELECT 'PayrollRelationships', 'Payroll Relationships',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PERSON_NUMBER || ' - ' || PAYROLL_NAME,
        PERSON_NUMBER,
@@ -711,7 +711,7 @@ SELECT 'TalentProfiles', 'Profile Items',
 FROM DMT_OWNER.DMT_TALENT_PROF_ITEM_TFM_TBL
 -- ---- Performance Evaluations ----
 UNION ALL
-SELECT 'PerfEvaluations', 'Performance Evaluations',
+SELECT 'PerfEvaluations', 'Performance Docs',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PERSON_NUMBER || ' - ' || DOCUMENT_NAME,
        PERSON_NUMBER,
@@ -866,7 +866,7 @@ SELECT 'Items', 'Item Master',
        CASE WHEN TFM_STATUS = 'LOADED' THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' AND ERROR_TEXT IS NOT NULL THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' THEN 'UNRECONCILED' ELSE 'IN_PROGRESS' END
 FROM DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
 UNION ALL
-SELECT 'ItemCategories', 'Item Categories',
+SELECT 'Items', 'Item Categories',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        ITEM_NUMBER || ' - ' || CATEGORY_SET_NAME,
        ITEM_NUMBER,
