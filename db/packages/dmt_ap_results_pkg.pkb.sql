@@ -385,6 +385,57 @@ AS
             RAISE;
     END PARSE_AND_UPDATE;
 
+    -- ============================================================
+    -- SWEEP_UNACCOUNTED — STANDARD RECONCILE-ERROR SWEEP (design §7).
+    -- Marks every TFM row still NOT IN ('LOADED','FAILED') as FAILED with a
+    -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
+    -- across packages except the tagged EDIT regions. Does NOT commit.
+    -- ============================================================
+    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
+    BEGIN
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] AP invoice header not confirmed in Fusion '
+                   || '(neither the AP_INVOICES_ALL base table nor the AP import '
+                   || 'interface) after reconciliation; import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_AP_INVOICES_INT_TFM_TBL is not shared.)
+        ;
+
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] AP invoice line not confirmed loaded in Fusion '
+                   || 'after reconciliation (its header was not confirmed, or the line '
+                   || 'itself was not accounted); import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_AP_INVOICE_LINES_INT_TFM_TBL is not shared.)
+        ;
+    END SWEEP_UNACCOUNTED;
+
     -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- --------------------------------------------------------
@@ -554,6 +605,9 @@ AS
                     p_procedure      => C_PROC);
             END IF;
         END;
+
+        -- Standard final step: fail any row still unaccounted (absence != LOADED).
+        SWEEP_UNACCOUNTED(p_run_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
