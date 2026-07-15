@@ -572,6 +572,45 @@ live app. A full per-screen gap analysis was produced. Items executed and verifi
 <p><strong>Live HTTP render verification — done against the running app (2026-07-15).</strong> The local ORDS container (<code>dmt2-ords</code>, port&nbsp;8182) and APEX 24.2 are up, with the current app copy (application&nbsp;166) imported into the DMT workspace. The whole app was swept over real HTTP — logged in as an end-user account and requested every page — and <strong>all 38 sweepable pages rendered clean: zero render failures, zero region errors, no <code>ORA-</code> markers</strong>. That is port step&nbsp;5 (confirm no page process is invalid) proven live rather than by compile-check alone, and it confirms the sub-object label and Blanket-PO changes above broke nothing. The drill chain was then crawled with real data: Run History (80) &rarr; Run Detail tiles (82) &rarr; Object Detail funnel (52) &rarr; Record Detail (57) for run&nbsp;153 (Customers). Every hop returned HTTP&nbsp;200 with no render error, the funnel rendered, the drill links carried the renamed <code>P52_RUN_ID</code>/<code>P57_RUN_ID</code> items, the "View Activity Log" entry point was present, and Record Detail returned the expected status rows for a sub-object with data (Customers / Parties). The dashboard stat tiles also rendered with the correct run count.</p>
 <p>Net: every port-analysis item that can be settled by reading, querying, or rendering the current stack over local HTTP has been settled — including the page-render and drill-navigation half of the verification pass. What genuinely remains needs the live demo Fusion instance and cannot be produced headlessly here: the per-record Fusion REST verify on Record Detail (57), the ESS binary file download on ESS Job Output (58), the CSV-upload-through-to-base-tables path on the area pages (2–12), and the Run Pipeline submit that actually loads to Fusion (84). The screens for all of these render clean; only their round-trips to a real Fusion instance are unproven. Beyond that sits the Stage&nbsp;F regression gate and the single-transaction production app import.</p>
 
+<h3 id="port-open-decisions">Port plan — the four open owner-decisions, resolved (2026-07-15)</h3>
+<p>The APEX port analysis flagged four decisions for the owner. Rather than leave them open, each is decided below with its rationale, so the port has no unresolved decision gates. Any of these can be revisited, but the port can proceed on them as recorded.</p>
+<div class="overflow">
+<table>
+  <tr><th style="width:22%">Decision</th><th style="width:20%">Resolution</th><th>Rationale</th></tr>
+  <tr>
+    <td>Retire or keep the duplicate submit / history / run-detail / run-pipeline page trios</td>
+    <td><strong>Retire the legacy trio; keep the newer chain</strong> — already done in the current app</td>
+    <td>The current app export is 40 pages and the legacy pages are gone (no 13, 15, 50, 51, 55, 56, 70, 71, 72, 81, 83). The kept path is Run History (80) &rarr; Run Detail with the tile grid (82) &rarr; Run Pipeline (84), plus the shared drill leaves (Object Detail 52, ESS Job Detail 53, Activity Log 54, Record Detail 57, ESS Job Output 58). The newer chain is procedure-backed (the tile palette) and is the one the design's drill-through section documents. Carrying both would double the verification surface and let two code paths drift.</td>
+  </tr>
+  <tr>
+    <td>Move the page-inline render PL/SQL into <code>DMT_APEX_PAGE_PKG</code></td>
+    <td><strong>Keep the standalone render procedures for now; do not fold them</strong></td>
+    <td>The render procedures (<code>DMT_RUN_DETAIL_HEADER</code>, <code>DMT_RUN_DETAIL_TILES</code>, <code>DMT_PLAN_PREVIEW_HTML</code>) are deployed, valid, and render clean over live HTTP. Folding them into a package means re-pointing about eleven app region sources for no functional gain and with real re-point risk. The consolidation stays a non-urgent clean-up tracked with the catalog-driven-dispatch backlog item; it is not a port blocker. Decision: port the app as-is against the standalone procedures.</td>
+  </tr>
+  <tr>
+    <td>The ARInvoices interface-status fallback</td>
+    <td><strong>Already resolved — no action</strong></td>
+    <td>Verified during this session: <code>bip/ARInvoices/query.sql</code> derives status only from Fusion base-row presence (<code>CASE WHEN b.customer_trx_id IS NOT NULL THEN 'P' ELSE NULL END</code> against <code>ra_customer_trx_all</code>), never from the interface flag. Conforms to the design's error-handling rule. The reconciler cannot mark a row loaded off an interface status.</td>
+  </tr>
+  <tr>
+    <td>Target APEX app id and workspace on the new stack</td>
+    <td><strong>Workspace DMT; import at the next id above the highest existing copy (copy-before-modify)</strong></td>
+    <td>The standing rule is never to modify the highest-numbered app in place — always copy it to a new id and work on the copy. On the local Docker stack the working copies live in workspace DMT (currently up to application 166). The production import, when the Always-Free ATP exists, lands in the same DMT workspace at the next free id above the highest present there. No fixed id is reserved; the import reads the current maximum and adds one, exactly as the copy-apex-app workflow already does.</td>
+  </tr>
+</table>
+</div>
+<h3 id="port-live-fusion-checklist">Port plan — the live-Fusion verification checklist (blocked here; runs on the demo instance)</h3>
+<p>These are the only port-analysis items that cannot be produced from this machine: each is a network round-trip to a real Fusion SaaS instance, which cannot be reached or simulated headlessly. For every one the screen already renders clean and the non-Fusion backend is proven; what is listed is the exact remaining step and how to know it passed. Faking any of these would be a false green (the project rule is that nothing passes unless rows actually reach Fusion base tables), so they are tracked here rather than closed.</p>
+<div class="overflow">
+<table>
+  <tr><th style="width:20%">Item</th><th style="width:26%">Preconditions</th><th style="width:27%">Step</th><th>Passes when</th></tr>
+  <tr><td>CSV upload end-to-end (area pages 2&ndash;12)</td><td>Demo instance reachable; the object's ERP options + BIP registry seeded; a valid source CSV</td><td>Upload a CSV on the area page, submit the run, let the queue load and reconcile</td><td>Good rows reach the Fusion base table (loaded via the reconciler) and bad rows are failed with a reportable error</td></tr>
+  <tr><td>Per-record Fusion REST verify (Record Detail 57)</td><td><code>DMT_REST_QUERY_PKG</code> credentials/URL pointed at the demo instance</td><td>On a loaded record, click the per-row &ldquo;View&rdquo; button</td><td>The modal returns the live Fusion record JSON for that key</td></tr>
+  <tr><td>ESS binary file download (ESS Job Output 58)</td><td>A real ESS job with an output file on the demo instance</td><td>Open ESS Job Output for a run and download a log/output file</td><td>The browser streams the correct non-empty binary (the <code>stop_apex_engine</code> + re-raise fix already in place)</td></tr>
+  <tr><td>Run Pipeline submit-to-load (Run Pipeline 84)</td><td>Demo instance reachable; a scenario or object selection</td><td>Preview the plan, confirm, and submit</td><td>A run is created and its objects load to Fusion; the plan-preview render is already proven headlessly</td></tr>
+</table>
+</div>
+
 <!-- ============================================================ -->
 <h2 id="backlog-coverage">4.5 Backlog Coverage — every P1/P2/P3 item, in upstream-first order</h2>
 
