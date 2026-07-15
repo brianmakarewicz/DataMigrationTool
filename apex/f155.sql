@@ -56085,7 +56085,7 @@ wwv_flow_imp_page.create_worksheet(
 );
 wwv_flow_imp_page.create_worksheet_column(
  p_id=>wwv_flow_imp.id(1008635974318631450)
-,p_db_column_name=>'RUN_ID'
+,p_db_column_name=>'INTEGRATION_ID'
 ,p_display_order=>10
 ,p_column_identifier=>'A'
 ,p_column_label=>'Run ID'
@@ -56174,7 +56174,7 @@ wwv_flow_imp_page.create_worksheet_rpt(
 ,p_report_alias=>'RH122DEF'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'RUN_ID:ORCHESTRATION_CODE:STATUS:START_DATE:PREFIX:TOTAL_RECORDS:SUCCESSFUL_RECORDS:ERRORED_RECORDS'
+,p_report_columns=>'INTEGRATION_ID:ORCHESTRATION_CODE:STATUS:START_DATE:PREFIX:TOTAL_RECORDS:SUCCESSFUL_RECORDS:ERRORED_RECORDS'
 );
 wwv_flow_imp_page.create_page_button(
  p_id=>wwv_flow_imp.id(1008635974318631318)
