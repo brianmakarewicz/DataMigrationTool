@@ -1,11 +1,7 @@
 -- DMT_MST_BANKS_V
--- FORCE retained deliberately: this view is one of the tracked-broken
--- INTEGRATION_ID-drifted summary views (docs/tranche-reviews/2026-07-07-views.md
--- finding F1(rest): DEFER pending Stage F usage check against the f155 APEX
--- export - delete or repair then). It cannot compile until that repair, so
--- without FORCE the install would abort; every other view file has no FORCE
--- per the accepted no-FORCE rule (design section 7, accepted 2026-07-08).
-CREATE OR REPLACE FORCE EDITIONABLE VIEW "DMT_MST_BANKS_V" ("INTEGRATION_ID", "ORCHESTRATION_CODE", "RUN_DATE", "PREFIX", "STG_SEQUENCE_ID", "TFM_SEQUENCE_ID", "SOURCE_ID", "BANK_NAME", "BANK_NUMBER", "COUNTRY_CODE", "SHORT_BANK_NAME", "DESCRIPTION", "STAGE_DATE", "STG_STATUS", "TFM_STATUS", "OVERALL_STATUS", "ERROR_TEXT", "RESULTS_UPDATED_DATE", "SCENARIO_ID")  AS 
+-- Repaired 2026-07-15 (Stage F / APEX port): master joined to TFM on RUN_ID
+-- (was INTEGRATION_ID, renamed in the rebuild); FORCE dropped now that it compiles.
+CREATE OR REPLACE EDITIONABLE VIEW "DMT_MST_BANKS_V" ("INTEGRATION_ID", "ORCHESTRATION_CODE", "RUN_DATE", "PREFIX", "STG_SEQUENCE_ID", "TFM_SEQUENCE_ID", "SOURCE_ID", "BANK_NAME", "BANK_NUMBER", "COUNTRY_CODE", "SHORT_BANK_NAME", "DESCRIPTION", "STAGE_DATE", "STG_STATUS", "TFM_STATUS", "OVERALL_STATUS", "ERROR_TEXT", "RESULTS_UPDATED_DATE", "SCENARIO_ID")  AS 
   SELECT
     m.INTEGRATION_ID,
     m.ORCHESTRATION_CODE,
@@ -31,4 +27,4 @@ FROM
     LEFT JOIN DMT_OWNER.DMT_CE_BANK_TFM_TBL ht
         ON ht.STG_SEQUENCE_ID = h.STG_SEQUENCE_ID
     LEFT JOIN DMT_OWNER.DMT_CONVERSION_MASTER_TBL m
-        ON m.INTEGRATION_ID = ht.INTEGRATION_ID;
+        ON m.INTEGRATION_ID = ht.RUN_ID;
