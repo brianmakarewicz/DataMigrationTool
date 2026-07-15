@@ -50092,6 +50092,7 @@ wwv_flow_imp_page.create_page_plug(
 '  -- real funnel. Transformed = rows in TFM; Generated = rows written to FBDI;',
 '  -- Loaded = base-confirmed; Unacct = transformed rows with no terminal outcome;',
 '  -- the red drop on Staged is the pre-transform reject count.',
+'  htp.p(''<div style="margin-bottom:10px"><a href="'' || APEX_PAGE.GET_URL(p_page=>54, p_items=>''P54_INTEGRATION_ID'', p_values=>TO_CHAR(v_int_id)) || ''" style="color:#0070d2;text-decoration:none;font-weight:600">View Activity Log for this run &rarr;</a></div>'');',
 '  htp.p(''<table style="width:100%;border-collapse:collapse;font-size:13px;">'');',
 '  htp.p(''<thead><tr style="background:#f1f3f5;border-bottom:2px solid #dee2e6;">'');',
 '  htp.p(''<th style="text-align:left;padding:8px 12px">Record type</th>'');',
