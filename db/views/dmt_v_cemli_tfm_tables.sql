@@ -26,7 +26,7 @@ UNION ALL SELECT 'ARInvoices',           'DMT_RA_DISTS_TFM_TBL',           'AR D
 UNION ALL SELECT 'Projects',             'DMT_PJF_PROJECTS_TFM_TBL',       'Projects',                 1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Projects',             'DMT_PJF_TASKS_TFM_TBL',          'Project Tasks',            2, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Projects',             'DMT_PJF_TEAM_MEMBERS_TFM_TBL',   'Team Members',             3, 'TFM_STATUS', NULL FROM DUAL
-UNION ALL SELECT 'Projects',             'DMT_PJC_TXN_CONTROLS_TFM_TBL',   'Transaction Controls',     4, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Projects',             'DMT_PJC_TXN_CONTROLS_TFM_TBL',   'Txn Controls',            4, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'BillingEvents',        'DMT_PJB_BILL_EVENTS_TFM_TBL',    'Billing Events',           1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Expenditures',         'DMT_PJC_EXPENDITURES_TFM_TBL',   'Project Expenditures',     1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_HEADERS_TFM_TBL',    'Award Headers',            1, 'TFM_STATUS', NULL FROM DUAL
@@ -68,7 +68,7 @@ UNION ALL SELECT 'BenBeneficiary',       'DMT_BEN_BENFY_TFM_TBL',          'Bene
 UNION ALL SELECT 'Absences',             'DMT_ABSENCE_TFM_TBL',            'Absences',                 1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'TalentProfiles',       'DMT_TALENT_PROF_TFM_TBL',        'Talent Profiles',          1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'TalentProfiles',       'DMT_TALENT_PROF_ITEM_TFM_TBL',   'Profile Items',            2, 'TFM_STATUS', NULL FROM DUAL
-UNION ALL SELECT 'PerfEvaluations',      'DMT_PERF_EVAL_TFM_TBL',          'Performance Evaluations',  1, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'PerfEvaluations',      'DMT_PERF_EVAL_TFM_TBL',          'Performance Docs',         1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'PerfEvaluations',      'DMT_PERF_EVAL_RATING_TFM_TBL',   'Performance Ratings',      2, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'WorkSchedules',        'DMT_WORK_SCHED_TFM_TBL',         'Work Schedules',           1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'WorkSchedules',        'DMT_WORK_SCHED_DTL_TFM_TBL',     'Schedule Details',         2, 'TFM_STATUS', NULL FROM DUAL;
