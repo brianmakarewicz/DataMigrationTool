@@ -367,12 +367,7 @@
             END IF;
         END LOOP;
 
-        -- Unaccounted sweep: any TFM row still GENERATED got neither a base
-        -- id nor an error from the report. Positive proof is impossible, so
-        -- mark FAILED with a reconciliation error (absence is never LOADED,
-        -- Rule #1). This is exactly the flag ACCOUNT_ROWS relies on.
-        l_sweep := fail_all_generated(
-            '[RECONCILE_ERROR] Row not found in BIP base-table reconciliation for this run. Cannot verify import outcome.');
+        -- (Absence != LOADED catch-all moved to the standard SWEEP_UNACCOUNTED — §7.)
 
         -- No write-back to staging: the TFM row is the sole record of the
         -- Fusion outcome (design section 2). NO COMMIT -- the orchestrator
@@ -396,6 +391,162 @@
                 p_procedure => C_PROC);
             RAISE;
     END PARSE_AND_UPDATE;
+
+    -- ============================================================
+    -- SWEEP_UNACCOUNTED — STANDARD RECONCILE-ERROR SWEEP (design §7).
+    -- Marks every TFM row still NOT IN ('LOADED','FAILED') as FAILED with a
+    -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
+    -- across packages except the tagged EDIT regions. Does NOT commit.
+    -- ============================================================
+    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
+    BEGIN
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Customer party record not confirmed in Fusion '
+                   || '(no base id in HZ_PARTIES for its ORIG_SYSTEM_REFERENCE) after '
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_HZ_PARTIES_TFM_TBL is not shared.)
+        ;
+
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Customer location record not confirmed in Fusion '
+                   || '(no base id in HZ_LOCATIONS for its ORIG_SYSTEM_REFERENCE) after '
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_HZ_LOCATIONS_TFM_TBL is not shared.)
+        ;
+
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Customer party site record not confirmed in Fusion '
+                   || '(no base id in HZ_PARTY_SITES for its ORIG_SYSTEM_REFERENCE) after '
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_HZ_PARTY_SITES_TFM_TBL is not shared.)
+        ;
+
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Customer party site use record not confirmed in Fusion '
+                   || '(no base id in HZ_PARTY_SITE_USES for its ORIG_SYSTEM_REFERENCE) after '
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_HZ_PARTY_SITE_USES_TFM_TBL is not shared.)
+        ;
+
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Customer account record not confirmed in Fusion '
+                   || '(no base id in HZ_CUST_ACCOUNTS for its ORIG_SYSTEM_REFERENCE) after '
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_HZ_ACCOUNTS_TFM_TBL is not shared.)
+        ;
+
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Customer account site record not confirmed in Fusion '
+                   || '(no base id in HZ_CUST_ACCT_SITES_ALL for its ORIG_SYSTEM_REFERENCE) after '
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_HZ_ACCT_SITES_TFM_TBL is not shared.)
+        ;
+
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Customer account site use record not confirmed in Fusion '
+                   || '(no base id in HZ_CUST_SITE_USES_ALL for its ORIG_SYSTEM_REFERENCE) after '
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_HZ_ACCT_SITE_USES_TFM_TBL is not shared.)
+        ;
+    END SWEEP_UNACCOUNTED;
 
     -- --------------------------------------------------------
     -- RECONCILE_BATCH - orchestrates FETCH then PARSE.
@@ -435,6 +586,9 @@
         END IF;
 
         PARSE_AND_UPDATE(p_run_id, l_xml);
+
+        -- Standard final step: fail any row still unaccounted (absence != LOADED).
+        SWEEP_UNACCOUNTED(p_run_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
