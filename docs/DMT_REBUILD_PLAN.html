@@ -95,6 +95,15 @@ The upstream-first order is now refined into three explicit phases: <strong>(1) 
 <strong>ARInvoices base-tier work is PARKED (2026-07-13).</strong> A two-tier base+error reconciliation for ARInvoices was drafted and coded on branch <code>fix/arinvoices-base-tier</code> (rewrote <code>bip/ARInvoices/query.sql</code> + <code>AR_DM.xdm</code> to positively confirm <code>RA_CUSTOMER_TRX_ALL</code> keyed on the prefixed <code>TRX_NUMBER</code>, and added the <code>P_PREFIX</code> bind to <code>DMT_AR_RESULTS_PKG</code>); the reconciler package compiles and is deployed to the local DB, but the Fusion data-model deploy and the O2C proof were NOT done and no PR was opened. Under the refined strategy this was premature &mdash; ARInvoices is only <em>ported</em>, not confirmed &mdash; so the branch is left parked, to be finished and proven when ARInvoices is ported in phase&nbsp;(3). The base-tier drafts for the other interface-only objects (Suppliers, AP, 1099, PO, BlanketPOs, Contracts, MiscReceipts) are saved for the same moment.
 </div>
 
+<div class="callout" style="border-left-color:#6b4fbb;background:#f3f0fb">
+<strong>Autonomous backlog run — 2026-07-15 (post-crash resume).</strong> Docker Desktop was restarted and <code>dmt2-local</code> (port 1523) verified reachable after the pre-crash outage. Working through the section-12 open items one PR at a time; each item is first re-verified against the current tree (several were fixed pre-crash but left marked open), then fixed, compiled on Docker, and merged individually by the automated reviewer. Status stays in <code>DMT_DESIGN.html</code> §12 (proposed-red per the doc convention); design decisions are logged here.
+<ul style="margin:6px 0 0 0">
+  <li><strong>Reconcile fail-open guard (P1) — PR #95, merged.</strong> <code>submit_and_reconcile_one</code> could match no reconcile arm yet still set <code>x_success:=TRUE</code>, reporting success with zero base-table confirmation. Added an <code>ELSE</code> that raises <code>-20044</code>. <em>Decision:</em> minimal guard now; the fuller single-dispatch-from-<code>RECON_PROC</code> consolidation stays with the catalog-driven-dispatch item.</li>
+  <li><strong>Validator upstream-dependency fix (P2, blocked 7 objects) — PR #96, merged.</strong> Four validators (Expenditures, BillingEvents, ProjectBudgets, Grants) gated on the illegal <code>STG_STATUS='LOADED'</code>; now join the projects STG row to its TFM row by <code>STG_SEQUENCE_ID</code> and require <code>TFM_STATUS='LOADED'</code>. AP/AR/PO were already fixed pre-crash; Worker not affected.</li>
+  <li><strong>PlanningBudgets dead arms (P3).</strong> <em>Decision: keep dormant, do not delete.</em> Owner intent (§12) is that PlanningBudgets stays dormant unless EPBCS access appears; deleting its cohesive stack (4 packages, 2 tables/sequences, a view, a BIP row) would destroy revivable work. Resolved the drift concern by adding an explicit DORMANT / OUT OF SCOPE marker on <code>RUN_PLAN_BUDGETS</code> instead of removing the arms.</li>
+</ul>
+</div>
+
 <div class="toc">
   <strong>Contents</strong>
   <ol>

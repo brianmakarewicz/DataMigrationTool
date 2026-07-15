@@ -4746,6 +4746,12 @@
 
     -- --------------------------------------------------------
     -- RUN_PLAN_BUDGETS (public) — FBDI pattern
+    -- DORMANT / OUT OF SCOPE (owner decision 2026-07-07). PlanningBudgets has no
+    --   row in DMT_PIPELINE_DEF_TBL and none in the accounting catalog, so the
+    --   queue can never dispatch it — this runner and the per-CEMLI PlanningBudgets
+    --   arms below are intentionally kept, not dead-by-accident, so the object can
+    --   be revived if EPBCS access appears. Do NOT wire it into a pipeline or the
+    --   dispatch registry without an owner decision. Design doc §12 tracks this.
     -- --------------------------------------------------------
     PROCEDURE RUN_PLAN_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_PLAN_BUDGETS';
