@@ -1,5 +1,5 @@
 -- ============================================================
--- GLBudgetBalances BIP Reconciliation Query  (rewritten 2026-06-30)
+-- GLBudgets BIP Reconciliation Query  (rewritten 2026-06-30)
 -- Data source: ApplicationDB_FSCM
 --
 -- Budgets are CELLS, not transactions. GL_BUDGET_BALANCES holds one row per

@@ -193,12 +193,12 @@ Key findings from Fusion instance investigation:
 ## Fixes Applied (2026-04-01)
 
 1. **LEDGER_ID**: Queried Fusion via BIP -- "US Primary Ledger" = `300000046975971`. Updated STG test data.
-2. **BIP report deployed**: `GL_BUDGET_DM.xdm` and `GL_BUDGET_RPT.xdo` deployed to `/Custom/DMT/GLBudgetBalances/` via FBT_BIP_PKG.
+2. **BIP report deployed**: `GL_BUDGET_DM.xdm` and `GL_BUDGET_RPT.xdo` deployed to `/Custom/DMT/GLBudgets/` via FBT_BIP_PKG.
 3. **BIP query fixed**: Changed from `request_id = :P_BATCH_ID` to `run_name = 'DMT_' || :P_BATCH_ID`. The `request_id` column is NULL when the import ESS job errors before processing rows. `run_name` is set by the transform to `DMT_{integration_id}` and is always populated.
 4. **PARSE_AND_UPDATE fixed**: Added `period_name` to the XMLTABLE and UPDATE join to uniquely match rows (budget_name alone is not unique across periods).
 5. **FETCH_BIP_RESULTS fixed**: Now passes `p_integration_id` as `P_BATCH_ID` (not `p_load_ess_id`), matching the BIP query's `run_name` pattern.
 6. **update_master_totals fixed**: Dynamic SQL now detects whether each TFM table uses `STATUS` or `TFM_STATUS` column name, fixing `ORA-00904` for GL Budget and GL Balance TFM tables.
-7. **deploy_bip_reports.py updated**: Added GLBudgetBalances entry to the deployment list.
+7. **deploy_bip_reports.py updated**: Added GLBudgets entry to the deployment list.
 
 ## Fusion Instance Reference
 
@@ -209,7 +209,7 @@ Key findings from Fusion instance investigation:
 - **Valid Budget Name:** "Budget" (only budget found in GL_BUDGET_INTERFACE)
 - **UCM Account:** fin/budgetBalance/import
 - **ESS Job:** /oracle/apps/ess/financials/generalLedger/ledgers/ledgerDefinitions,ValidateAndLoadBudgets
-- **BIP catalog path:** /Custom/DMT/GLBudgetBalances/GL_BUDGET_RPT.xdo
+- **BIP catalog path:** /Custom/DMT/GLBudgets/GL_BUDGET_RPT.xdo
 - **Instance limitation:** ValidateAndLoadBudgets ESS job always returns ERROR on this demo instance (budget config incomplete)
 
 ### GL Ledgers Available
@@ -384,7 +384,7 @@ logon, executeSQLQuery, describeSubjectArea. Pipeline itself must be PL/SQL (`UT
 
 Built to match the standard per-object package pattern, with the cell-grain specifics:
 
-1. **BIP report** — `bip/GLBudgetBalances/GL_BUDGET_DM.xdm` + `query.sql`. Params `P_RUN_START`,
+1. **BIP report** — `bip/GLBudgets/GL_BUDGET_DM.xdm` + `query.sql`. Params `P_RUN_START`,
    `P_LEDGER_ID`. Returns `BAL` rows (GL_BUDGET_BALANCES cells since run start, DR/CR) UNION
    `IFACE` rows (GL_BUDGET_INTERFACE errors since run start), keyed by a normalised 30-segment
    `ACCOUNT_KEY`. **Deployed + verified** against the known-good run: 4 BAL @ 1000 (LOADED) +
@@ -393,7 +393,7 @@ Built to match the standard per-object package pattern, with the cell-grain spec
    gains optional `p_run_start`/`p_ledger_id`; `PARSE_AND_UPDATE` builds cell keys, marks LOADED
    (BAL match + DR/CR loose confirmation, warns on amount drift), FAILED (interface error), and
    leaves unmatched cells non-terminal (accounting rule). **Compiles VALID.**
-3. **Loader** — new custom `GLBudgetBalances` block: load once (loadAndImportData; chained
+3. **Loader** — new custom `GLBudgets` block: load once (loadAndImportData; chained
    validate is a throwaway), then `SUBMIT_IMPORT_JOB(ValidateAndLoadBudgets, <Run Name>)`
    **per distinct Run Name**, capture run-start, then `RECONCILE_BATCH`. **Compiles VALID.**
 

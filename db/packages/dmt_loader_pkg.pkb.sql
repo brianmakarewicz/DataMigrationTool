@@ -1190,7 +1190,7 @@
                 DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
             ELSIF p_cemli_code = 'Requisitions' THEN
                 DMT_REQ_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
-            ELSIF p_cemli_code = 'GLBudgetBalances' THEN
+            ELSIF p_cemli_code = 'GLBudgets' THEN
                 DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
             ELSIF p_cemli_code = 'PlanningBudgets' THEN
                 DMT_PLAN_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
@@ -1284,7 +1284,7 @@
             -- Prior 'NEW,N' caused ESS WAIT timeout (wrong param count)
             l_param_list := '#NULL,#NULL,#NULL';
         -- GLBalances: param_list built per-ledger inside grouped loop below.
-        ELSIF p_cemli_code = 'GLBudgetBalances' THEN
+        ELSIF p_cemli_code = 'GLBudgets' THEN
             l_param_list := '#NULL';
         ELSIF p_cemli_code = 'PlanningBudgets' THEN
             l_param_list := '#NULL';
@@ -1372,7 +1372,7 @@
             DMT_REQ_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'GLBalances' THEN
             DMT_GL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'GLBudgetBalances' THEN
+        ELSIF p_cemli_code = 'GLBudgets' THEN
             DMT_GL_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'PlanningBudgets' THEN
             DMT_PLAN_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
@@ -1470,7 +1470,7 @@
             DMT_REQ_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'GLBalances' THEN
             DMT_GL_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'GLBudgetBalances' THEN
+        ELSIF p_cemli_code = 'GLBudgets' THEN
             DMT_GL_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'PlanningBudgets' THEN
             DMT_PLAN_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
@@ -2499,7 +2499,7 @@
         END IF;
 
         -- ============================================================
-        -- GLBudgetBalances: load once, then run "Validate and Load Budgets"
+        -- GLBudgets: load once, then run "Validate and Load Budgets"
         -- STANDALONE once per distinct Run Name (Column A). The chained import
         -- that loadAndImportData triggers gets no run name and is a throwaway;
         -- the real cube load happens in the per-run-name ValidateAndLoadBudgets
@@ -2507,7 +2507,7 @@
         -- GL_BUDGET_BALANCES scoped to a run-start window (budgets carry no
         -- source-line identity). See DMT_GL_BUDGET_RESULTS_PKG.
         -- ============================================================
-        IF p_cemli_code = 'GLBudgetBalances' THEN
+        IF p_cemli_code = 'GLBudgets' THEN
             DECLARE
                 l_gb_zip        BLOB;
                 l_gb_filename   VARCHAR2(200);
@@ -2534,7 +2534,7 @@
 
                 IF l_gb_zip IS NULL OR DBMS_LOB.GETLENGTH(l_gb_zip) = 0 OR l_gb_rows = 0 THEN
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'No STAGED GL budget rows found. Skipping GLBudgetBalances.',
+                        'No STAGED GL budget rows found. Skipping GLBudgets.',
                         DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
                     RETURN FALSE;
                 END IF;
@@ -2783,7 +2783,7 @@
             END;
         -- Requisitions: handled in grouped loop above.
         -- GLBalances: handled in grouped loop above.
-        ELSIF p_cemli_code = 'GLBudgetBalances' THEN
+        ELSIF p_cemli_code = 'GLBudgets' THEN
             DECLARE l_csv_id NUMBER;
             BEGIN
                 DMT_GL_BUDGET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
@@ -2892,7 +2892,7 @@
                     UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 -- Requisitions: handled in grouped loop above.
                 -- GLBalances: handled in grouped loop above.
-                ELSIF p_cemli_code = 'GLBudgetBalances' THEN
+                ELSIF p_cemli_code = 'GLBudgets' THEN
                     UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'PlanningBudgets' THEN
                     UPDATE DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
@@ -3042,7 +3042,7 @@
                 p_import_ess_id  => TO_NUMBER(l_import_ess_id));
         -- Requisitions: handled in grouped loop above.
         -- GLBalances: handled in grouped loop above.
-        ELSIF p_cemli_code = 'GLBudgetBalances' THEN
+        ELSIF p_cemli_code = 'GLBudgets' THEN
             DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
@@ -3103,7 +3103,7 @@
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             -- Requisitions: handled in grouped loop above.
             -- GLBalances: handled in grouped loop above.
-            ELSIF p_cemli_code = 'GLBudgetBalances' THEN
+            ELSIF p_cemli_code = 'GLBudgets' THEN
                 SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'PlanningBudgets' THEN
@@ -3219,7 +3219,7 @@
                 SELECT COUNT(*) INTO l_failed_count
                 FROM DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'GLBudgetBalances' THEN
+            ELSIF p_cemli_code = 'GLBudgets' THEN
                 SELECT COUNT(*) INTO l_failed_count
                 FROM DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
@@ -4733,7 +4733,7 @@
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'GLBudgetBalances', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+        l_dummy := run_one_object_type(p_run_id, 'GLBudgets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BUDGETS complete.', 'INFO', C_PKG, C_PROC);

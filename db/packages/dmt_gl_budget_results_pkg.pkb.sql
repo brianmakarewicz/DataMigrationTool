@@ -6,7 +6,7 @@
 -- See package spec for the reconciliation model.
 -- ============================================================
     C_PKG        CONSTANT VARCHAR2(50) := 'DMT_GL_BUDGET_RESULTS_PKG';
-    C_CEMLI      CONSTANT VARCHAR2(30) := 'GLBudgetBalances';
+    C_CEMLI      CONSTANT VARCHAR2(30) := 'GLBudgets';
     -- Clock-skew buffer applied to run-start so a small ATP<->Fusion time
     -- offset never excludes cells our own run just wrote. Pre-existing budget
     -- data is months old, so a few hours is safe.

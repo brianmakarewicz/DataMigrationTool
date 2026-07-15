@@ -108,7 +108,7 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'GL Budget Balances FBDI generation start.',
             'INFO', C_PKG, C_PROC);
 
-        x_filename := 'GLBudgetBalances_' || TO_CHAR(p_run_id) || '.zip';
+        x_filename := 'GLBudgets_' || TO_CHAR(p_run_id) || '.zip';
         l_csv := gen_budget_csv(p_run_id);
 
         SELECT COUNT(*) INTO l_row_count
@@ -131,8 +131,8 @@
         -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
         -- build the zip from that persisted row.
         SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
-        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'GLBudgetBalances', 'GlBudgetInterface.csv', 0, l_csv, l_fbdi_csv_id);
-        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'GLBudgetBalances', x_filename, l_zip, l_bytes);
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'GLBudgets', 'GlBudgetInterface.csv', 0, l_csv, l_fbdi_csv_id);
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'GLBudgets', x_filename, l_zip, l_bytes);
 
         UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
