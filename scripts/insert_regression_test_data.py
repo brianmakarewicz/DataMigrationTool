@@ -535,6 +535,7 @@ def main():
     for org_name, ref in [
         ("Blorptech Widgets", "RT-CUST-G1"),
         ("Fnargle Systems", "RT-CUST-G2"),
+        ("Zorptell Dynamics", "RT-CUST-G3"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_HZ_PARTIES_STG_TBL (
@@ -567,6 +568,7 @@ def main():
     for loc_ref, addr, city, state, zipcode in [
         ("RT-LOC-G1", "100 Good Blvd",  "New York",    "NY", "10001"),
         ("RT-LOC-G2", "200 Good Lane",  "Los Angeles", "CA", "90001"),
+        ("RT-LOC-G3", "300 Good Street","Chicago",     "IL", "60601"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL (
@@ -603,6 +605,7 @@ def main():
     for pty_ref, site_ref, loc_ref, site_name in [
         ("RT-CUST-G1", "RT-PSITE-G1", "RT-LOC-G1", "RT Good-1 Office"),
         ("RT-CUST-G2", "RT-PSITE-G2", "RT-LOC-G2", "RT Good-2 Office"),
+        ("RT-CUST-G3", "RT-PSITE-G3", "RT-LOC-G3", "RT Good-3 Office"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL (
@@ -645,6 +648,7 @@ def main():
     for pty_ref, site_ref, use_type in [
         ("RT-CUST-G1", "RT-PSITE-G1", "BILL_TO"),
         ("RT-CUST-G2", "RT-PSITE-G2", "BILL_TO"),
+        ("RT-CUST-G3", "RT-PSITE-G3", "BILL_TO"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL (
@@ -685,6 +689,7 @@ def main():
     for acct_ref, pty_ref, acct_num, acct_name in [
         ("RT-ACCT-G1", "RT-CUST-G1", "RTG001", "RT Customer Good-1"),
         ("RT-ACCT-G2", "RT-CUST-G2", "RTG002", "RT Customer Good-2"),
+        ("RT-ACCT-G3", "RT-CUST-G3", "RTG003", "RT Customer Good-3"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL (
@@ -726,6 +731,7 @@ def main():
     for asite_ref, acct_ref, site_ref in [
         ("RT-ASITE-G1", "RT-ACCT-G1", "RT-PSITE-G1"),
         ("RT-ASITE-G2", "RT-ACCT-G2", "RT-PSITE-G2"),
+        ("RT-ASITE-G3", "RT-ACCT-G3", "RT-PSITE-G3"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL (
@@ -769,6 +775,7 @@ def main():
     for use_ref, asite_ref, use_code in [
         ("RT-SITEUSE-G1", "RT-ASITE-G1", "BILL_TO"),
         ("RT-SITEUSE-G2", "RT-ASITE-G2", "BILL_TO"),
+        ("RT-SITEUSE-G3", "RT-ASITE-G3", "BILL_TO"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL (
@@ -1398,14 +1405,13 @@ def main():
             ORIG_TRANSACTION_REFERENCE, SOURCE_ID
         ) VALUES (
             'LABOR', :bu,
-            'NOPROJ999', 'NOPROJ999.1',
-            'Administrative', DATE '2025-06-15',
+            'RTPRJ001', 'RTPRJ001.1',
+            'BadValue', DATE '2025-06-15',
             :bu, '7', 8,
             'USD', 999.99,
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
-    """, {"bu": BU},
-    label="BAD Expenditure: non-existent project [BAD-UPS] -- NOTE: PjC import is lenient and still loads this; a genuinely-rejected value is needed for the bad path (open)")
+    """, {"bu": BU}, label="BAD Expenditure: invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
     tag_scenario(cur, "DMT_PJC_EXPENDITURES_STG_TBL", scenario_id)
 
     # ====================================================================
