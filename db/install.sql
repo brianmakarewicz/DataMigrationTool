@@ -777,10 +777,8 @@ prompt == Package specs (dependency order) ==
 
 prompt == Procedures ==
 @@procedures/dmt_ess_job_detail.sql
-@@procedures/dmt_fbdi_file_chain.sql
 @@procedures/dmt_object_detail_breadcrumb.sql
 @@procedures/dmt_plan_preview_html.sql
-@@procedures/dmt_plan_run_gtt.sql
 @@procedures/dmt_render_view.sql
 @@procedures/dmt_run_detail_header.sql
 @@procedures/dmt_run_detail_tiles.sql
