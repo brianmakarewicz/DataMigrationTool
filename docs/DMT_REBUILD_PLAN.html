@@ -502,23 +502,31 @@ done under copy-app-before-modify. The detail views are left alone. (PR&nbsp;#10
 </table>
 </div>
 
-<p><strong>Render bugs diagnosed; the standard-compliant fix is pending (APEX-side).</strong> With the
-(now-reverted) view aliases in place, a live sweep showed 36 of 37 pages rendering — proving the diagnosis:
-8 landing pages fail on the <code>INTEGRATION_ID</code>→<code>RUN_ID</code> reference drift, page 57 on the
-<code>STATUS</code>/<code>TFM_STATUS</code> drift. The compliant remedy is to rewire those APEX references to
-the real column names (copy-app-before-modify), not to alias the views. A separate, genuinely APEX-side issue
-remains on page&nbsp;2 (Procure&nbsp;to&nbsp;Pay): <code>ORA-06502 — character string buffer too small</code>,
-because the Suppliers interactive report displays a ~166-column <code>SELECT *</code> over
-<code>DMT_V_SUPPLIERS_DETAIL</code> and APEX's generated column list exceeds an internal buffer; the remedy
-there is to narrow that report's displayed columns.</p>
+<p><strong>Standard-compliant fix landed (PR&nbsp;#111).</strong> The render failures are fixed the way §7
+and the 2026-07-09 F3 note require — by binding the app to the real column names, not aliasing the views.
+In <code>apex/f155.sql</code>: all 76 interactive-report columns that sourced <code>INTEGRATION_ID</code> now
+source <code>RUN_ID</code> (with the 25 saved-report column lists updated), and the page-57 region selects and
+filters <code>TFM_STATUS</code> instead of the missing <code>STATUS</code>. Page-item names are untouched and
+the diff introduces no compatibility alias. Verified by importing the identical edits as app&nbsp;156 on
+<code>dmt2-local</code> and sweeping every page over ORDS: the canonical drill chain
+(<code>p80→p82→p52→p57</code>) and all functional-area landing pages render clean.</p>
+
+<p><strong>Two render failures remain, both out of scope of that fix.</strong> Page&nbsp;2
+(Procure&nbsp;to&nbsp;Pay): <code>ORA-06502 — character string buffer too small</code>, because the Suppliers
+interactive report displays a ~166-column <code>SELECT *</code> over <code>DMT_V_SUPPLIERS_DETAIL</code> and
+APEX's generated column list exceeds an internal buffer — the remedy is to narrow that report's displayed
+columns. Pages <code>p26</code>/<code>p51</code>/<code>p55</code>: legacy-chain pages that still reference the
+old names in their PL/SQL regions — these are the pages the E6 decision retires, so they are dropped rather
+than rewired.</p>
 
 <div class="overflow">
 <table>
   <tr><th style="width:60%">Remaining APEX-port work</th><th style="width:12%">Gated on</th><th style="width:28%">Notes</th></tr>
-  <tr><td><strong>Rewire the APEX references from <code>INTEGRATION_ID</code>/<code>STATUS</code> to <code>RUN_ID</code>/<code>TFM_STATUS</code></strong> — the 66 landing-page interactive reports and the page-57 region source (the §7-compliant replacement for the rejected view aliases)</td><td>APEX copy-before-modify</td><td>This is the real fix for the 8 landing pages + page 57. It is the Tier-6 naming sweep applied to the app.</td></tr>
+  <tr><td><s>Rewire the APEX references from <code>INTEGRATION_ID</code>/<code>STATUS</code> to <code>RUN_ID</code>/<code>TFM_STATUS</code></s> — <strong>DONE (PR&nbsp;#111)</strong>: 76 IR columns + 25 report lists + the page-57 region rebound; verified on app 156.</td><td>—</td><td>The §7-compliant replacement for the rejected view aliases; the Tier-6 naming sweep applied to the app.</td></tr>
+  <tr><td>Retire the legacy pages (E6 decision) — <code>p15/p26/p50/p51/p55/p70/p71/p72</code> + Object Detail v2 — and audit navigation links after the drop</td><td>APEX copy-before-modify</td><td>Also removes the remaining <code>p26/p51/p55</code> render failures. Needs a link audit so no kept page points at a dropped one.</td></tr>
+  <tr><td>Narrow the page-2 Suppliers interactive report (ORA-06502)</td><td>APEX copy-before-modify</td><td>Reduce displayed columns below the buffer limit.</td></tr>
   <tr><td>Full drill verification against real run data (E7 step 3, section&nbsp;C base-tier counts, F5 render-proc output)</td><td>a completed regression run on <code>dmt2-local</code></td><td>Pages render; the numbers behind them are unverified until a run exists.</td></tr>
   <tr><td>Fusion REST-verify + ESS-download retarget (E8 / F6)</td><td>runtime config + a run</td><td>Repoint credentials/URL at the demo instance; confirm binary streaming.</td></tr>
-  <tr><td>Narrow the page-2 Suppliers interactive report (ORA-06502)</td><td>APEX copy-before-modify</td><td>Reduce displayed columns below the buffer limit.</td></tr>
   <tr><td>Drop the deprecated legacy pages (E6 decision)</td><td>APEX copy-before-modify</td><td><code>p15/p26/p70/p71/p72</code> + Object Detail v2.</td></tr>
   <tr><td>Retire the pre-existing legacy-surface aliases still on the non-detail views (<code>DMT_RECORD_DETAIL_V</code>, <code>DMT_PIPELINE_SUMMARY_V</code>, <code>DMT_ESS_JOB_DETAIL_V</code>, <code>DMT_V_CEMLI_STATUS</code>) once the APEX rewire lands</td><td>Tier&nbsp;6 (P3)</td><td>Per the 2026-07-09 F3 note — legacy-surface sweep, out of scope of the detail-view cleanup.</td></tr>
   <tr><td>Retire dead <code>PlanningBudgets</code> arms (label mismatch left in place)</td><td>—</td><td>Dead object; relabeling a to-be-deleted arm is churn.</td></tr>
