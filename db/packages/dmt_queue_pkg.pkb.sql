@@ -244,8 +244,9 @@ AS
 
     -- ============================================================
     -- Phase 4: Spawn child jobs for READY rows.
-    -- Marks them VALIDATING (the PROCESSING work status — rename is
-    -- P2 §12) so next tick doesn't re-pick them.
+    -- Marks them PROCESSING (the status covering the whole data phase:
+    -- pre-validate -> transform -> post-validate -> generate -> submit)
+    -- so next tick doesn't re-pick them.
     -- (2026-07-08: the split-config predicate is gone with
     -- split_multi_fbdi — every READY row is dispatchable: split
     -- objects arrive with PARTITION_KEY = 'ALL' from submission,
@@ -280,7 +281,7 @@ AS
 
             -- Claim the row so next tick doesn't re-pick it
             UPDATE DMT_WORK_QUEUE_TBL
-            SET WORK_STATUS = 'VALIDATING', STARTED_AT = SYSTIMESTAMP
+            SET WORK_STATUS = 'PROCESSING', STARTED_AT = SYSTIMESTAMP
             WHERE QUEUE_ID = rec.QUEUE_ID;
             COMMIT;
 

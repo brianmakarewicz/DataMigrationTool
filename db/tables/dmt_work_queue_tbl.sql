@@ -24,12 +24,47 @@ begin
 	 CONSTRAINT "DMT_WORK_QUEUE_PK" PRIMARY KEY ("QUEUE_ID")
   USING INDEX  ENABLE, 
 	 CONSTRAINT "DMT_WORK_QUEUE_STATUS_CK" CHECK (
-        WORK_STATUS IN (''PENDING'',''READY'',''SPLITTING'',''VALIDATING'',''GENERATING'',
+        WORK_STATUS IN (''PENDING'',''READY'',''SPLITTING'',''PROCESSING'',''GENERATING'',
                         ''LOADING'',''AWAITING_LOAD'',''AWAITING_IMPORT'',''AWAITING_POSTRUN'',''RECONCILING'',
                         ''DONE'',''FAILED'',''SKIPPED'')) ENABLE
    ) ';
 exception when others then
   if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+-- ---------------------------------------------------------------------------
+-- Status rename VALIDATING -> PROCESSING (DMT_DESIGN section 12, P2). The
+-- claimed data-phase status covers pre-validate -> transform -> post-validate
+-- -> generate -> submit, so PROCESSING is the accurate name. Guarded +
+-- idempotent so it converges an existing DB (the inline constraint above
+-- already carries PROCESSING for fresh installs): migrate any lingering rows,
+-- then swap the CHECK constraint. Re-running is a no-op.
+-- ---------------------------------------------------------------------------
+begin
+  execute immediate q'[UPDATE DMT_WORK_QUEUE_TBL SET WORK_STATUS = 'PROCESSING' WHERE WORK_STATUS = 'VALIDATING']';
+  commit;
+exception when others then
+  if sqlcode not in (-942) then raise; end if;  -- -942: table not yet present on first fresh pass
+end;
+/
+
+declare
+  l_bad number;
+begin
+  -- Only swap the constraint if it still allows VALIDATING (i.e. an old DB).
+  select count(*) into l_bad from user_constraints
+   where constraint_name = 'DMT_WORK_QUEUE_STATUS_CK'
+     and search_condition_vc like '%VALIDATING%';
+  if l_bad > 0 then
+    execute immediate 'ALTER TABLE DMT_WORK_QUEUE_TBL DROP CONSTRAINT DMT_WORK_QUEUE_STATUS_CK';
+    execute immediate 'ALTER TABLE DMT_WORK_QUEUE_TBL ADD CONSTRAINT DMT_WORK_QUEUE_STATUS_CK CHECK (
+        WORK_STATUS IN (''PENDING'',''READY'',''SPLITTING'',''PROCESSING'',''GENERATING'',
+                        ''LOADING'',''AWAITING_LOAD'',''AWAITING_IMPORT'',''AWAITING_POSTRUN'',''RECONCILING'',
+                        ''DONE'',''FAILED'',''SKIPPED'')) ENABLE';
+  end if;
+exception when others then
+  if sqlcode not in (-942) then raise; end if;
 end;
 /
 
