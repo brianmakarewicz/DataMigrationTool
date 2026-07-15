@@ -325,6 +325,9 @@ AS
                     fusion_id                  NUMBER         PATH 'FUSION_ID',
                     error_msg                  VARCHAR2(4000) PATH 'ERROR_MESSAGE'
             ) x
+            -- Process BASE rows first so a genuinely-posted row is marked LOADED
+            -- before its (possibly still-present) INTERFACE row is seen.
+            ORDER BY CASE WHEN UPPER(x.source_type) = 'BASE' THEN 0 ELSE 1 END
         ) LOOP
             IF r.source_type = 'BASE' THEN
                 -- Tier 2: Found in base table = positively LOADED
@@ -338,40 +341,25 @@ AS
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'INTERFACE' THEN
-                -- Tier 1: Interface table row — check tfm_status
-                IF r.fusion_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','A','P') THEN
-                    UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
-                    SET    TFM_STATUS               = 'LOADED',
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID            = p_run_id
-                    AND    ORIG_TRANSACTION_REFERENCE = r.orig_transaction_reference
-                    AND    TFM_STATUS                    NOT IN ('LOADED','FAILED');
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R') THEN
-                    UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.fusion_status)),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID            = p_run_id
-                    AND    ORIG_TRANSACTION_REFERENCE = r.orig_transaction_reference
-                    AND    TFM_STATUS                    NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
-                ELSE
-                    -- Unknown tfm_status from interface table — treat as failure
-                    UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] Unrecognized interface status: ' || NVL(r.fusion_status, 'NULL')),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID            = p_run_id
-                    AND    ORIG_TRANSACTION_REFERENCE = r.orig_transaction_reference
-                    AND    TFM_STATUS                    NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
-                END IF;
+                -- Tier 1: interface row. The BASE tier is the ONLY source of LOADED
+                -- (a genuinely-posted row is in PJC_EXP_ITEMS_ALL and was marked LOADED
+                -- above; BASE rows are processed first via the ORDER BY). A row reaching
+                -- here that is not already LOADED is NOT in the base table -> it is NOT
+                -- good and MUST be FAILED. An interface "success" status (e.g. 'P') is
+                -- NOT proof of a base row: the import can error after staging (verified
+                -- run 151 -- import ORA-06502, 0 base rows, yet interface rows were 'P').
+                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                SET    TFM_STATUS               = 'FAILED',
+                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                 CASE WHEN r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R')
+                                                      THEN '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.fusion_status)
+                                                      ELSE '[FUSION_ERROR] In interface but not created in base (status ' || NVL(r.fusion_status, 'NULL') || ') -- import did not post it' END),
+                       RESULTS_UPDATED_DATE = SYSDATE,
+                       LAST_UPDATED_DATE    = SYSDATE
+                WHERE  RUN_ID            = p_run_id
+                AND    ORIG_TRANSACTION_REFERENCE = r.orig_transaction_reference
+                AND    TFM_STATUS                    NOT IN ('LOADED','FAILED');
+                l_failed := l_failed + SQL%ROWCOUNT;
             END IF;
         END LOOP;
 
