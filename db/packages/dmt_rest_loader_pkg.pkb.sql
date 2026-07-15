@@ -248,6 +248,7 @@ AS
         x_fusion_id      OUT NUMBER,
         x_error_message  OUT VARCHAR2
     ) IS
+        l_json JSON_OBJECT_T;
     BEGIN
         x_success       := FALSE;
         x_fusion_id     := NULL;
@@ -261,10 +262,14 @@ AS
 
             IF p_response IS NOT NULL AND DBMS_LOB.GETLENGTH(p_response) > 0 THEN
                 BEGIN
-                    SELECT JSON_VALUE(p_response, '$.' || p_id_field
-                                      RETURNING NUMBER)
-                    INTO   x_fusion_id
-                    FROM   DUAL;
+                    -- p_id_field is a runtime value, so the JSON path cannot be a
+                    -- literal for JSON_VALUE (26ai rejects a concatenated path at
+                    -- compile time). Use the PL/SQL JSON API, which takes a dynamic
+                    -- key, instead.
+                    l_json := JSON_OBJECT_T.parse(p_response);
+                    IF l_json.has(p_id_field) THEN
+                        x_fusion_id := l_json.get_Number(p_id_field);
+                    END IF;
                 EXCEPTION
                     WHEN OTHERS THEN
                         -- The ID field might not exist or might not be numeric.
@@ -301,7 +306,7 @@ AS
                     -- If still empty, try the first nested error detail
                     IF x_error_message IS NULL THEN
                         SELECT JSON_VALUE(p_response,
-                                   '$.o:errorDetails[0].detail'
+                                   '$."o:errorDetails"[0].detail'
                                    RETURNING VARCHAR2(4000))
                         INTO   x_error_message
                         FROM   DUAL;
