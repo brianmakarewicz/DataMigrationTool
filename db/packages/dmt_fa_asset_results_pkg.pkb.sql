@@ -322,15 +322,21 @@
             END IF;
         END LOOP;
 
-        -- Any GENERATED rows not matched by either tier = not reconciled
+        -- Header absence pass — must run HERE, before the cascade + STG echo-back
+        -- below, because both require the header's TFM_STATUS to be terminal
+        -- (LOADED/FAILED) first. The standard SWEEP_UNACCOUNTED at the end of
+        -- RECONCILE_BATCH is still the catch-all for the child tables and any
+        -- residual rows; it skips rows already FAILED here, so there is no
+        -- double-marking.
         UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
-        SET    TFM_STATUS               = 'FAILED',
+        SET    TFM_STATUS           = 'FAILED',
                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                   '[RECONCILE_ERROR] Row not found in Fusion interface table or base application table. Cannot verify import outcome.'),
+                   '[RECONCILE_ERROR] Asset not confirmed in Fusion (not found in the '
+                   || 'FA_MASS_ADDITIONS / FA_ADDITIONS_B base tables for this run) after '
+                   || 'reconciliation; its import outcome could not be verified.'),
                RESULTS_UPDATED_DATE = SYSDATE,
                LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID       = p_run_id
-        AND    TFM_STATUS               = 'GENERATED';
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
         l_not_recon := SQL%ROWCOUNT;
 
         <<cascade_and_echo>>
@@ -423,6 +429,78 @@
             RAISE;
     END PARSE_AND_UPDATE;
 
+    -- ============================================================
+    -- SWEEP_UNACCOUNTED — STANDARD RECONCILE-ERROR SWEEP (design §7).
+    -- Marks every TFM row still NOT IN ('LOADED','FAILED') as FAILED with a
+    -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
+    -- across packages except the tagged EDIT regions. Does NOT commit.
+    -- ============================================================
+    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
+    BEGIN
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Asset not confirmed in Fusion (not found in the '
+                   || 'FA_ADDITIONS_B base table via FA_MASS_ADDITIONS for this run) after '
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_FA_ASSET_HDR_TFM_TBL is not shared.)
+        ;
+
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Asset book not confirmed in Fusion (not found in '
+                   || 'the FA_BOOKS base table for this run) after reconciliation; its '
+                   || 'import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_FA_ASSET_BOOK_TFM_TBL is not shared.)
+        ;
+
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
+        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
+                   '[RECONCILE_ERROR] Asset assignment not confirmed in Fusion (not found '
+                   || 'in the FA_DISTRIBUTION_HISTORY base table for this run) after '
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_FA_ASSET_ASSIGN_TFM_TBL is not shared.)
+        ;
+    END SWEEP_UNACCOUNTED;
+
     -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- --------------------------------------------------------
@@ -447,6 +525,9 @@
         IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
             DBMS_LOB.FREETEMPORARY(l_xml);
         END IF;
+
+        -- Standard final step: fail any row still unaccounted (absence != LOADED).
+        SWEEP_UNACCOUNTED(p_run_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
