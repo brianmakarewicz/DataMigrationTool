@@ -322,8 +322,22 @@
             END IF;
         END LOOP;
 
-        -- (Absence != LOADED catch-all moved to the standard SWEEP_UNACCOUNTED — §7.)
-        l_not_recon := 0;
+        -- Header absence pass — must run HERE, before the cascade + STG echo-back
+        -- below, because both require the header's TFM_STATUS to be terminal
+        -- (LOADED/FAILED) first. The standard SWEEP_UNACCOUNTED at the end of
+        -- RECONCILE_BATCH is still the catch-all for the child tables and any
+        -- residual rows; it skips rows already FAILED here, so there is no
+        -- double-marking.
+        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
+        SET    TFM_STATUS           = 'FAILED',
+               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                   '[RECONCILE_ERROR] Asset not confirmed in Fusion (not found in the '
+                   || 'FA_MASS_ADDITIONS / FA_ADDITIONS_B base tables for this run) after '
+                   || 'reconciliation; its import outcome could not be verified.'),
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+        l_not_recon := SQL%ROWCOUNT;
 
         <<cascade_and_echo>>
         -- Cascade to book TFM — match header tfm_status
