@@ -312,47 +312,16 @@ AS
         -- (EDIT-SCOPE deleted — DMT_INV_TRX_TFM_TBL is not shared.)
         ;
 
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_INV_TRX_LOTS_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Transaction lot not confirmed in Fusion (not found '
-                   || 'in the MTL_TRANSACTION_LOT_NUMBERS base table for this run) after '
-                   || 'reconciliation; its import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_INV_TRX_LOTS_TFM_TBL is not shared.)
-        ;
-
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_INV_TRX_SERIALS_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Transaction serial not confirmed in Fusion (not '
-                   || 'found in the MTL_SERIAL_NUMBERS base table for this run) after '
-                   || 'reconciliation; its import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_INV_TRX_SERIALS_TFM_TBL is not shared.)
-        ;
+        -- NOTE: MiscReceipts owns three TFM tables, but only the transaction header
+        -- (DMT_INV_TRX_TFM_TBL) is reconciled / base-confirmed. Lots
+        -- (DMT_INV_TRX_LOTS_TFM_TBL) and serials (DMT_INV_TRX_SERIALS_TFM_TBL) are
+        -- FBDI sub-detail that load atomically with their parent transaction and have
+        -- no independent base-table confirmation -- and serials carry no parent key
+        -- in the TFM model -- so they are deliberately NOT swept here: a blanket
+        -- "absence != LOADED" sweep would wrongly FAIL good lot/serial rows on every
+        -- successful load (nothing ever sets them LOADED). Their LOADED/FAILED
+        -- cascade from the parent transaction is added when MiscReceipts is driven
+        -- live and its lots/serials reconciliation is completed.
     END SWEEP_UNACCOUNTED;
 
     -- --------------------------------------------------------
