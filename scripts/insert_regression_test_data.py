@@ -1257,11 +1257,11 @@ def main():
         ) VALUES (
             'RT Project Bad-1', 'RTPRJ-BAD1',
             'PRGUS Sponsored',
-            NULL, 'BAD: missing org name',
+            NULL, 'BAD: invalid project status (Fusion rejects the lookup)',
             DATE '2025-01-01', DATE '2025-12-31',
-            'Active', 'USD', 'RT-PRJ-BAD1'
+            'ZZ_BOGUS_STATUS', 'USD', 'RT-PRJ-BAD1'
         )
-    """, label="BAD Project: missing ORGANIZATION_NAME [BAD-REQ]")
+    """, label="BAD Project: invalid PROJECT_STATUS_NAME [BAD-LKP]")
     tag_scenario(cur, "DMT_PJF_PROJECTS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1404,7 +1404,8 @@ def main():
             'USD', 999.99,
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
-    """, {"bu": BU}, label="BAD Expenditure: non-existent project [BAD-UPS]")
+    """, {"bu": BU},
+    label="BAD Expenditure: non-existent project [BAD-UPS] -- NOTE: PjC import is lenient and still loads this; a genuinely-rejected value is needed for the bad path (open)")
     tag_scenario(cur, "DMT_PJC_EXPENDITURES_STG_TBL", scenario_id)
 
     # ====================================================================
