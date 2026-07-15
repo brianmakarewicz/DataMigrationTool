@@ -320,7 +320,7 @@ AS
 
         -- (The absence != LOADED catch-all now lives in the standard
         -- SWEEP_UNACCOUNTED procedure, called at the end of RECONCILE_BATCH — §7.)
-        l_not_recon := SQL%ROWCOUNT;
+        l_not_recon := 0;
 
         <<echo_to_stg>>
         -- Echo outcomes back to STG

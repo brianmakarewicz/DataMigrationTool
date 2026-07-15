@@ -614,7 +614,7 @@ AS
 
         -- PHASE 3: (The absence != LOADED sweep now lives in the standard
         -- SWEEP_UNACCOUNTED procedure, called at the end of RECONCILE_BATCH — §7.)
-        l_not_recon := SQL%ROWCOUNT;
+        l_not_recon := 0;
 
         -- ====================================================
         -- Echo outcomes back to STG
