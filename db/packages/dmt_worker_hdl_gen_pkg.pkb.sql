@@ -105,7 +105,13 @@ AS
         l_now         DATE := SYSDATE;
         l_row_count   NUMBER := 0;
         l_vals        VARCHAR2(32767);
+        -- No-hardcoded-values standard (design section 7): the assignment business
+        -- unit short code comes from named config, not a literal, so a new instance
+        -- is a config change rather than a code edit. Defaults to 'US1 Business Unit'
+        -- if the key is absent.
+        l_bu_short    VARCHAR2(240);
     BEGIN
+        l_bu_short := NVL(DMT_UTIL_PKG.GET_CONFIG('WORKER_DEFAULT_BU_NAME'), 'US1 Business Unit');
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'GENERATE_HDL start.',
@@ -256,7 +262,7 @@ AS
                       pv(r.PERSON_NUMBER)            || '|' ||  -- AssignmentNumber
                       'ACTIVE_PROCESS'               || '|' ||  -- AssignmentStatusTypeCode
                       'Employee'                     || '|' ||  -- PersonTypeCode
-                      'US1 Business Unit'            || '|' ||  -- BusinessUnitShortCode
+                      pv(l_bu_short)                 || '|' ||  -- BusinessUnitShortCode (named config)
                       'Y';                                       -- PrimaryAssignmentFlag
             DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'Assignment');
             l_row_count := l_row_count + 1;

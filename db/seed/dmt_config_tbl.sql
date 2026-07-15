@@ -12,6 +12,11 @@ begin
 exception when dup_val_on_index then null;
 end;
 /
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('WORKER_DEFAULT_BU_NAME','US1 Business Unit','Business unit short code written to the Assignment HDL line for new-hire workers; named config, not a code literal (design section 7).',to_date('2026-07-15 00:00:00','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
 -- No-hardcoded-IDs standard (design section 7): the asset book code is named
 -- config so other book types load without a code change.
 begin
