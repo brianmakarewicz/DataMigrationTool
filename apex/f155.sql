@@ -1816,9 +1816,9 @@ wwv_flow_imp_page.create_page_plug(
 '  -- Redesign 2026-07-15: stat tiles repointed off the retired master table',
 '  -- onto the run/queue model (design section 8, Dashboard "redesign").',
 '  SELECT NVL(COUNT(*),0),',
-'         NVL(SUM(CASE WHEN run_status LIKE ''COMPLETED%'' THEN 1 ELSE 0 END),0),',
+'         NVL(SUM(CASE WHEN run_status IN (''COMPLETED'',''COMPLETED_ERRORS'') THEN 1 ELSE 0 END),0),',
 '         NVL(SUM(CASE WHEN run_status = ''FAILED'' THEN 1 ELSE 0 END),0),',
-'         NVL(SUM(CASE WHEN run_status IN (''IN_PROGRESS'',''SUBMITTED'',''RUNNING'',''QUEUED'',''READY'') THEN 1 ELSE 0 END),0)',
+'         NVL(SUM(CASE WHEN run_status IN (''IN_PROGRESS'',''QUEUED'') THEN 1 ELSE 0 END),0)',
 '    INTO l_total, l_completed, l_failed, l_in_prog',
 '    FROM dmt_pipeline_run_tbl;',
 '  BEGIN',
@@ -1872,10 +1872,10 @@ wwv_flow_imp_page.create_page_plug(
 '    htp.p(''<td style="padding:8px 12px;">'' || NVL(r.run_mode,''-'') || ''</td>'');',
 '    htp.p(''<td style="padding:8px 12px;">'' || NVL(TO_CHAR(r.prefix),''-'') || ''</td>'');',
 '    htp.p(''<td style="padding:8px 12px;"><span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:''',
-'      || CASE WHEN r.run_status LIKE ''COMPLETED%'' AND r.run_status <> ''COMPLETED_ERRORS'' THEN ''#28a745''',
+'      || CASE WHEN r.run_status = ''COMPLETED'' THEN ''#28a745''',
 '              WHEN r.run_status = ''COMPLETED_ERRORS'' THEN ''#8bc34a''',
 '              WHEN r.run_status = ''FAILED'' THEN ''#dc3545''',
-'              WHEN r.run_status IN (''IN_PROGRESS'',''SUBMITTED'',''RUNNING'',''QUEUED'',''READY'') THEN ''#ffc107''',
+'              WHEN r.run_status IN (''IN_PROGRESS'',''QUEUED'') THEN ''#ffc107''',
 '              ELSE ''#6c757d'' END',
 '      || '';">'' || r.run_status || ''</span></td>'');',
 '    htp.p(''<td style="padding:8px 12px;">'' || TO_CHAR(r.submitted_date,''MM/DD/YYYY HH:MI AM'') || ''</td>'');',
@@ -50374,7 +50374,7 @@ begin
 wwv_flow_imp_page.create_page(
  p_id=>54
 ,p_name=>'Activity Log'
-,p_alias=>'LOG-ENTRY-DETAIL'
+,p_alias=>'ACTIVITY-LOG'
 ,p_step_title=>'Activity Log'
 ,p_autocomplete_on_off=>'OFF'
 ,p_page_template_options=>'#DEFAULT#'
