@@ -515,9 +515,10 @@ the diff introduces no compatibility alias. Verified by importing the identical 
 (Procure&nbsp;to&nbsp;Pay): <code>ORA-06502 — character string buffer too small</code>, because the Suppliers
 interactive report displays a ~166-column <code>SELECT *</code> over <code>DMT_V_SUPPLIERS_DETAIL</code> and
 APEX's generated column list exceeds an internal buffer — the remedy is to narrow that report's displayed
-columns. Pages <code>p26</code>/<code>p51</code>/<code>p55</code>: legacy-chain pages that still reference the
+columns. Pages <code>p51</code>/<code>p55</code>: legacy-chain pages that still reference the
 old names in their PL/SQL regions — these are the pages the E6 decision retires, so they are dropped rather
-than rewired.</p>
+than rewired. (Page&nbsp;26 briefly regressed during the rewire and was fixed in the same PR, so it is not
+in this set.)</p>
 
 <div class="overflow">
 <table>
