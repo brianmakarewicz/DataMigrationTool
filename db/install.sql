@@ -570,8 +570,6 @@ prompt == Views (dependency order) ==
 @@views/dmt_v_work_sched_dtl_detail.sql
 
 prompt == Package specs (dependency order) ==
-@@packages/dmt_1099_fbdi_gen_pkg.pks.sql
-@@packages/dmt_1099_results_pkg.pks.sql
 @@packages/dmt_absence_hdl_gen_pkg.pks.sql
 @@packages/dmt_absence_results_pkg.pks.sql
 @@packages/dmt_absence_transform_pkg.pks.sql
@@ -783,8 +781,6 @@ prompt == Procedures ==
 @@procedures/dmt_submit_run_v2.sql
 
 prompt == Package bodies ==
-@@packages/dmt_1099_fbdi_gen_pkg.pkb.sql
-@@packages/dmt_1099_results_pkg.pkb.sql
 @@packages/dmt_absence_hdl_gen_pkg.pkb.sql
 @@packages/dmt_absence_results_pkg.pkb.sql
 @@packages/dmt_absence_transform_pkg.pkb.sql

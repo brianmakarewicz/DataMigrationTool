@@ -1159,8 +1159,6 @@
                 DMT_CONTRACT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
             ELSIF p_cemli_code = 'APInvoices' THEN
                 DMT_AP_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
-            ELSIF p_cemli_code = '1099Invoices' THEN
-                DMT_1099_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
             ELSIF p_cemli_code = 'GLBalances' THEN
                 DMT_GL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
             ELSIF p_cemli_code LIKE 'Supplier%' THEN
@@ -1355,8 +1353,6 @@
             DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'Grants' THEN
             DMT_GRANTS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = '1099Invoices' THEN
-            DMT_AP_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_inv_type_filter => '%1099%');
         ELSIF p_cemli_code = 'Items' THEN
             DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
             -- ItemCategories bundle into the Items FBDI ZIP, so they are validated under the
@@ -1450,9 +1446,6 @@
             DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_TASK_BURDEN(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
             DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_REFERENCES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
             DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_TERMS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = '1099Invoices' THEN
-            DMT_AP_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_inv_type_filter => '%1099%', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_AP_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_inv_type_filter => '%1099%', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Items' THEN
             DMT_EGP_ITEM_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
             -- Transform bundled categories before the Items FBDI generator picks them up
@@ -2407,98 +2400,6 @@
         END IF;
 
         -- ============================================================
-        -- 1099Invoices: grouped load by OPERATING_UNIT (shares AP tables)
-        -- ============================================================
-        IF p_cemli_code = '1099Invoices' THEN
-            DECLARE
-                l_ou_zip       BLOB;
-                l_ou_filename  VARCHAR2(200);
-                l_ou_csv_id    NUMBER;
-                l_ou_load_id   VARCHAR2(100);
-                l_ou_import_id VARCHAR2(100);
-                l_ou_param     VARCHAR2(500);
-                l_ou_count     NUMBER := 0;
-                l_any_staged   NUMBER := 0;
-                l_ou_ok        BOOLEAN;
-            BEGIN
-                FOR ou_rec IN (
-                    SELECT DISTINCT OPERATING_UNIT
-                    FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
-                    AND    INVOICE_TYPE_LOOKUP_CODE LIKE '%1099%'
-                    ORDER BY OPERATING_UNIT
-                ) LOOP
-                    l_ou_count := l_ou_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        '1099 OU cycle start: ' || ou_rec.OPERATING_UNIT,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    DMT_1099_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id => p_run_id, p_operating_unit => ou_rec.OPERATING_UNIT,
-                        x_fbdi_zip => l_ou_zip, x_filename => l_ou_filename, x_fbdi_csv_id => l_ou_csv_id);
-
-                    IF l_ou_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ou_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id, 'No 1099 rows for OU ' || ou_rec.OPERATING_UNIT || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    -- 1099 shares AP APXIIMPT — same 14-arg ParameterList
-                    DECLARE
-                        l_1099_bu_id  VARCHAR2(50);
-                        l_1099_ledger VARCHAR2(50);
-                        l_1099_source VARCHAR2(100);
-                    BEGIN
-                        -- See the APInvoices note above: the primary-ledger lookup resolves
-                        -- to NULL for a BU with no primary ledger, so NVL(...,'#NULL') applies.
-                        l_1099_bu_id  := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', ou_rec.OPERATING_UNIT);
-                        l_1099_ledger := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_PRIMARY_LEDGER_ID', ou_rec.OPERATING_UNIT);
-                        SELECT SOURCE INTO l_1099_source FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                        WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT
-                        AND TFM_STATUS='GENERATED' AND INVOICE_TYPE_LOOKUP_CODE LIKE '%1099%' AND ROWNUM=1;
-                        l_ou_param := ',' || l_1099_bu_id || ',N,' || TO_CHAR(SYSDATE,'YYYY-MM-DD') ||
-                            ',#NULL,#NULL,1000,' || l_1099_source || ',' || TO_CHAR(p_run_id) ||
-                            ',N,Y,' || NVL(l_1099_ledger,'#NULL') || ',#NULL,1';
-                    END;
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip => l_ou_zip, p_filename => l_ou_filename, p_fbdi_csv_id => l_ou_csv_id,
-                        p_param_list => l_ou_param, p_group_label => 'OU: ' || ou_rec.OPERATING_UNIT,
-                        x_load_ess_id => l_ou_load_id, x_import_ess_id => l_ou_import_id, x_success => l_ou_ok);
-
-                    IF NOT l_ou_ok THEN
-                        DECLARE
-                            l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ou_load_id || ' logs for details.';
-                        BEGIN
-                            UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND OPERATING_UNIT=ou_rec.OPERATING_UNIT
-                            AND INVOICE_TYPE_LOOKUP_CODE LIKE '%1099%';
-                            UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND INVOICE_ID IN (SELECT INVOICE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT AND INVOICE_TYPE_LOOKUP_CODE LIKE '%1099%');
-                            COMMIT;
-                        END;
-                        CONTINUE;
-                    END IF;
-                END LOOP;
-
-                IF l_ou_count = 0 THEN
-                    SELECT COUNT(*) INTO l_any_staged FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
-                    AND INVOICE_TYPE_LOOKUP_CODE LIKE '%1099%' AND ROWNUM=1;
-                    IF l_any_staged = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id, 'No STAGED 1099 invoice headers. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        RETURN FALSE;
-                    END IF;
-                END IF;
-            END;
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
         -- GLBudgets: load once, then run "Validate and Load Budgets"
         -- STANDALONE once per distinct Run Name (Column A). The chained import
         -- that loadAndImportData triggers gets no run name and is a throwaway;
@@ -3194,11 +3095,6 @@
                 SELECT COUNT(*) INTO l_failed_count
                 FROM DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = '1099Invoices' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
-                AND INVOICE_TYPE_LOOKUP_CODE LIKE '%1099%';
             ELSIF p_cemli_code = 'Items' THEN
                 SELECT COUNT(*) INTO l_failed_count
                 FROM DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
@@ -3534,7 +3430,7 @@
         ) VALUES (
             l_run_id, l_run_id, 'ProcureToPay', 'PIPELINE',
             'MANUAL', 'IN_PROGRESS', l_prefix,
-            'Suppliers,SupplierAddresses,SupplierSites,SupplierSiteAssignments,SupplierContacts,PurchaseOrders,BlanketPOs,ContractPOs,APInvoices,1099Invoices,Requisitions',
+            'Suppliers,SupplierAddresses,SupplierSites,SupplierSiteAssignments,SupplierContacts,PurchaseOrders,BlanketPOs,ContractPOs,APInvoices,Requisitions',
             p_scenario_name, p_run_mode
         );
         COMMIT;
@@ -3560,11 +3456,11 @@
         -- Contract Purchase Agreements
         RUN_CONTRACTS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
-        -- AP Invoices (headers + lines, grouped by operating unit)
+        -- AP Invoices (headers + lines, grouped by operating unit).
+        -- 1099 invoices are a filtered subset of AP (invoice type LIKE '%1099%'),
+        -- not a separate object, so RUN_AP_INVOICES covers them — there is no
+        -- separate 1099 run.
         RUN_AP_INVOICES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
-
-        -- 1099 Invoices (shares AP tables, filtered by invoice type)
-        RUN_1099_INVOICES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Requisitions (headers + lines + distributions)
         RUN_REQUISITIONS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
@@ -3696,28 +3592,6 @@
                 'RUN_GRANTS failed.', SQLERRM, C_PKG, C_PROC);
             RAISE;
     END RUN_GRANTS;
-
-    -- --------------------------------------------------------
-    -- RUN_1099_INVOICES (public)
-    -- --------------------------------------------------------
-    PROCEDURE RUN_1099_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_1099_INVOICES';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
-    BEGIN
-        resolve_scenario(p_scenario_name, v_scenario_id);
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_1099_INVOICES start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, '1099Invoices', v_scenario_id, p_run_mode, p_skip_bu_refresh);
-        COMMIT;
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_1099_INVOICES complete.', 'INFO', C_PKG, C_PROC);
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                'RUN_1099_INVOICES failed.', SQLERRM, C_PKG, C_PROC);
-            RAISE;
-    END RUN_1099_INVOICES;
 
     -- --------------------------------------------------------
     -- RUN_REQUISITIONS (public)

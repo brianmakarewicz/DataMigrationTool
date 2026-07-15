@@ -32,7 +32,6 @@ using (
     union all select 'P2P', 90, 'BlanketPOs', 'Items,SupplierSiteAssignments', null from dual
     union all select 'P2P', 100, 'Contracts', 'SupplierSiteAssignments', null from dual
     union all select 'P2P', 110, 'APInvoices', 'SupplierSiteAssignments', null from dual
-    union all select 'P2P', 120, '1099Invoices', 'SupplierSiteAssignments', null from dual
     union all select 'P2P', 130, 'MiscReceipts', 'Items', null from dual
     union all select 'O2C', 10, 'Customers', null, null from dual
     union all select 'O2C', 20, 'ARInvoices', 'Customers', null from dual
@@ -118,7 +117,6 @@ using (
     union all select 'BlanketPOs', 'DMT_LOADER_PKG.RUN_BLANKET_POS', 'ASYNC', 'DMT_BLANKET_PO_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
     union all select 'Contracts', 'DMT_LOADER_PKG.RUN_CONTRACTS', 'ASYNC', 'DMT_CONTRACT_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
     union all select 'APInvoices', 'DMT_LOADER_PKG.RUN_AP_INVOICES', 'ASYNC', 'DMT_AP_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select '1099Invoices', 'DMT_LOADER_PKG.RUN_1099_INVOICES', 'ASYNC', 'DMT_1099_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
     union all select 'MiscReceipts', 'DMT_LOADER_PKG.RUN_MISC_RECEIPTS', 'SYNC', 'DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
     union all select 'Customers', 'DMT_LOADER_PKG.RUN_CUSTOMERS', 'ASYNC', 'DMT_CUST_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
     union all select 'ARInvoices', 'DMT_LOADER_PKG.RUN_AR_INVOICES', 'ASYNC', 'DMT_AR_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual

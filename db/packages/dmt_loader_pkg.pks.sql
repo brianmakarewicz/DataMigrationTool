@@ -130,9 +130,6 @@ AS
     -- Grants: 15 CSVs in one zip. Upstream: projects.
     PROCEDURE RUN_GRANTS                (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
-    -- 1099Invoices: shares AP tables, filters by INVOICE_TYPE_LOOKUP_CODE.
-    PROCEDURE RUN_1099_INVOICES         (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
-
     -- Items: single CSV (EgpSystemItemsInterface). No upstream dependency.
     PROCEDURE RUN_ITEMS                 (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 

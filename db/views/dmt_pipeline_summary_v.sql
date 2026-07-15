@@ -13,7 +13,6 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_PIPELINE_SUMMARY_V" ("RUN_ID", "INTEGRAT
     SELECT 'Contracts',                            'P2P',           8            FROM DUAL UNION ALL
     SELECT 'ContractPOs',                          'P2P',           8            FROM DUAL UNION ALL
     SELECT 'APInvoices',                           'P2P',           9            FROM DUAL UNION ALL
-    SELECT '1099Invoices',                         'P2P',          10            FROM DUAL UNION ALL
     SELECT 'Requisitions',                         'Standalone',    1            FROM DUAL UNION ALL
     SELECT 'MiscReceipts',                         'Standalone',    2            FROM DUAL UNION ALL
     SELECT 'Customers',                            'O2C',           1            FROM DUAL UNION ALL
