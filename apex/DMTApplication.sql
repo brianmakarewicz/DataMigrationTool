@@ -50035,7 +50035,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_location=>null
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'DECLARE',
-'  l_run  NUMBER := :P52_INTEGRATION_ID;',
+'  l_run  NUMBER := :P52_RUN_ID;',
 '  l_cem  VARCHAR2(100) := :P52_CEMLI_CODE;',
 '  l_csv  VARCHAR2(200);',
 '  l_zip  VARCHAR2(200);',
@@ -50060,13 +50060,13 @@ wwv_flow_imp_page.create_page_plug(
 '  HTP.P(''<div><div style="color:#888;text-transform:uppercase;font-size:11px;letter-spacing:.04em;">ZIP File</div>''||''<div style="font-weight:600;color:#16191f;margin-top:2px;">''||APEX_ESCAPE.HTML(NVL(l_zip,''-''))||''</div></div>'');',
 '  HTP.P(''<div><div style="color:#888;text-transform:uppercase;font-size:11px;letter-spacing:.04em;">Load ESS Job</div><div style="font-weight:600;margin-top:2px;">'');',
 '  IF l_load IS NOT NULL THEN',
-'    l_url := APEX_PAGE.GET_URL(p_page=>53, p_items=>''P53_ESS_JOB_ID,P53_INTEGRATION_ID,P53_CEMLI_CODE'', p_values=>l_load||'',''||l_run||'',''||l_cem);',
+'    l_url := APEX_PAGE.GET_URL(p_page=>53, p_items=>''P53_ESS_JOB_ID,P53_RUN_ID,P53_CEMLI_CODE'', p_values=>l_load||'',''||l_run||'',''||l_cem);',
 '    HTP.P(''<a href="''||l_url||''" style="color:#0072c6;text-decoration:none;">''||APEX_ESCAPE.HTML(l_load)||''</a>'');',
 '  ELSE HTP.P(''-''); END IF;',
 '  HTP.P(''</div></div>'');',
 '  HTP.P(''<div><div style="color:#888;text-transform:uppercase;font-size:11px;letter-spacing:.04em;">Import ESS Job</div><div style="font-weight:600;margin-top:2px;">'');',
 '  IF l_imp IS NOT NULL THEN',
-'    l_url := APEX_PAGE.GET_URL(p_page=>53, p_items=>''P53_ESS_JOB_ID,P53_INTEGRATION_ID,P53_CEMLI_CODE'', p_values=>l_imp||'',''||l_run||'',''||l_cem);',
+'    l_url := APEX_PAGE.GET_URL(p_page=>53, p_items=>''P53_ESS_JOB_ID,P53_RUN_ID,P53_CEMLI_CODE'', p_values=>l_imp||'',''||l_run||'',''||l_cem);',
 '    HTP.P(''<a href="''||l_url||''" style="color:#0072c6;text-decoration:none;">''||APEX_ESCAPE.HTML(l_imp)||''</a>'');',
 '  ELSE HTP.P(''-''); END IF;',
 '  HTP.P(''</div></div>'');',
@@ -50082,7 +50082,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_location=>null
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'DECLARE',
-'  v_int_id  NUMBER := NVL(:P52_INTEGRATION_ID, 0);',
+'  v_int_id  NUMBER := NVL(:P52_RUN_ID, 0);',
 '  v_cemli   VARCHAR2(100) := :P52_CEMLI_CODE;',
 '  v_trans   NUMBER; v_gen NUMBER; v_loaded NUMBER; v_failed NUMBER; v_unacct NUMBER;',
 '  v_xerr    NUMBER; v_staged NUMBER; v_has_fbdi NUMBER; v_sql VARCHAR2(4000);',
@@ -50092,7 +50092,7 @@ wwv_flow_imp_page.create_page_plug(
 '  -- real funnel. Transformed = rows in TFM; Generated = rows written to FBDI;',
 '  -- Loaded = base-confirmed; Unacct = transformed rows with no terminal outcome;',
 '  -- the red drop on Staged is the pre-transform reject count.',
-'  htp.p(''<div style="margin-bottom:10px"><a href="'' || APEX_PAGE.GET_URL(p_page=>54, p_items=>''P54_INTEGRATION_ID'', p_values=>TO_CHAR(v_int_id)) || ''" style="color:#0070d2;text-decoration:none;font-weight:600">View Activity Log for this run &rarr;</a></div>'');',
+'  htp.p(''<div style="margin-bottom:10px"><a href="'' || APEX_PAGE.GET_URL(p_page=>54, p_items=>''P54_RUN_ID'', p_values=>TO_CHAR(v_int_id)) || ''" style="color:#0070d2;text-decoration:none;font-weight:600">View Activity Log for this run &rarr;</a></div>'');',
 '  htp.p(''<table style="width:100%;border-collapse:collapse;font-size:13px;">'');',
 '  htp.p(''<thead><tr style="background:#f1f3f5;border-bottom:2px solid #dee2e6;">'');',
 '  htp.p(''<th style="text-align:left;padding:8px 12px">Record type</th>'');',
@@ -50132,9 +50132,9 @@ wwv_flow_imp_page.create_page_plug(
 '    htp.p(''<td style="text-align:right;padding:6px 12px">''||v_trans||''</td>'');',
 '    htp.p(''<td style="text-align:right;padding:6px 12px">''||v_gen||''</td>'');',
 '    htp.p(''<td style="text-align:right;padding:6px 12px">''',
-'      || CASE WHEN v_loaded>0 THEN ''<a href="''||APEX_PAGE.GET_URL(p_page=>57,p_items=>''P57_INTEGRATION_ID,P57_SUB_OBJECT,P57_STATUS'',p_values=>v_int_id||'',''||rec.display_name||'',LOADED'')||''" style="color:#1a7d33;font-weight:600;text-decoration:underline">''||v_loaded||''</a>'' ELSE ''0'' END||''</td>'');',
+'      || CASE WHEN v_loaded>0 THEN ''<a href="''||APEX_PAGE.GET_URL(p_page=>57,p_items=>''P57_RUN_ID,P57_SUB_OBJECT,P57_STATUS'',p_values=>v_int_id||'',''||rec.display_name||'',LOADED'')||''" style="color:#1a7d33;font-weight:600;text-decoration:underline">''||v_loaded||''</a>'' ELSE ''0'' END||''</td>'');',
 '    htp.p(''<td style="text-align:right;padding:6px 12px">''',
-'      || CASE WHEN v_failed>0 THEN ''<a href="''||APEX_PAGE.GET_URL(p_page=>57,p_items=>''P57_INTEGRATION_ID,P57_SUB_OBJECT,P57_STATUS'',p_values=>v_int_id||'',''||rec.display_name||'',FAILED'')||''" style="color:#b3261e;font-weight:600;text-decoration:underline">''||v_failed||''</a>'' ELSE ''0'' END||''</td>'');',
+'      || CASE WHEN v_failed>0 THEN ''<a href="''||APEX_PAGE.GET_URL(p_page=>57,p_items=>''P57_RUN_ID,P57_SUB_OBJECT,P57_STATUS'',p_values=>v_int_id||'',''||rec.display_name||'',FAILED'')||''" style="color:#b3261e;font-weight:600;text-decoration:underline">''||v_failed||''</a>'' ELSE ''0'' END||''</td>'');',
 '    htp.p(''<td style="text-align:right;padding:6px 12px''||CASE WHEN v_unacct>0 THEN '';color:#c47a00;font-weight:700'' ELSE '''' END||''">''||v_unacct||''</td>'');',
 '    htp.p(''</tr>'');',
 '  END LOOP;',
@@ -50152,7 +50152,7 @@ wwv_flow_imp_page.create_page_plug(
 'DECLARE',
 '  v_sql       VARCHAR2(4000);',
 '  v_cnt       NUMBER;',
-'  v_int_id    NUMBER := NVL(:P52_INTEGRATION_ID, 0);',
+'  v_int_id    NUMBER := NVL(:P52_RUN_ID, 0);',
 '  v_cemli     VARCHAR2(100) := :P52_CEMLI_CODE;',
 '  v_has_fails BOOLEAN := FALSE;',
 '  TYPE rc_type IS REF CURSOR;',
@@ -50240,13 +50240,13 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_name=>'Breadcrumb'
 ,p_region_name=>'breadcrumb_52'
 ,p_plug_display_sequence=>1
-,p_plug_source=>'BEGIN DMT_OBJECT_DETAIL_BREADCRUMB(:P52_INTEGRATION_ID, :P52_CEMLI_CODE); END;'
+,p_plug_source=>'BEGIN DMT_OBJECT_DETAIL_BREADCRUMB(:P52_RUN_ID, :P52_CEMLI_CODE); END;'
 ,p_plug_source_type=>'NATIVE_PLSQL'
 ,p_plug_query_options=>'DERIVED_REPORT_COLUMNS'
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(1533157407977036863)
-,p_name=>'P52_INTEGRATION_ID'
+,p_name=>'P52_RUN_ID'
 ,p_item_sequence=>20
 ,p_display_as=>'NATIVE_HIDDEN'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
@@ -50279,7 +50279,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_name=>'Breadcrumb'
 ,p_plug_display_sequence=>1
 ,p_location=>null
-,p_plug_source=>'BEGIN DMT_OBJECT_DETAIL_BREADCRUMB(:P53_INTEGRATION_ID, :P53_CEMLI_CODE); END;'
+,p_plug_source=>'BEGIN DMT_OBJECT_DETAIL_BREADCRUMB(:P53_RUN_ID, :P53_CEMLI_CODE); END;'
 ,p_plug_source_type=>'NATIVE_PLSQL'
 );
 wwv_flow_imp_page.create_page_plug(
@@ -50338,7 +50338,7 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_template_id=>wwv_flow_imp.id(349549856515135471)
 ,p_button_image_alt=>'Back'
 ,p_button_position=>'PREVIOUS'
-,p_button_redirect_url=>'f?p=&APP_ID.:52:&SESSION.::&DEBUG.::P52_INTEGRATION_ID,P52_CEMLI_CODE:&P53_INTEGRATION_ID.,&P53_CEMLI_CODE.'
+,p_button_redirect_url=>'f?p=&APP_ID.:52:&SESSION.::&DEBUG.::P52_RUN_ID,P52_CEMLI_CODE:&P53_RUN_ID.,&P53_CEMLI_CODE.'
 ,p_icon_css_classes=>'fa-chevron-left'
 );
 wwv_flow_imp_page.create_page_item(
@@ -50352,7 +50352,7 @@ wwv_flow_imp_page.create_page_item(
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(456073498293509030)
-,p_name=>'P53_INTEGRATION_ID'
+,p_name=>'P53_RUN_ID'
 ,p_item_sequence=>20
 ,p_display_as=>'NATIVE_HIDDEN'
 ,p_protection_level=>'S'
@@ -50405,7 +50405,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'DECLARE',
 '  v_log_id  NUMBER := NVL(:P54_LOG_ID, 0);',
-'  v_int_id  NUMBER := NVL(:P54_INTEGRATION_ID, 0);',
+'  v_int_id  NUMBER := NVL(:P54_RUN_ID, 0);',
 '  v_prev_id NUMBER;',
 '  v_next_id NUMBER;',
 '  v_app_id  VARCHAR2(20) := V(''APP_ID'');',
@@ -50433,7 +50433,7 @@ wwv_flow_imp_page.create_page_plug(
 '',
 '  -- Prev button',
 '  IF v_prev_id IS NOT NULL THEN',
-'    htp.p(''<a href="'' || APEX_PAGE.GET_URL(p_page => 54, p_items => ''P54_LOG_ID,P54_INTEGRATION_ID'', p_values => v_prev_id || '','' || v_int_id) || ''" class="dmt-link" style="padding:8px 16px;border:1px solid #555;border-radius:4px;text-decoration:none'
+'    htp.p(''<a href="'' || APEX_PAGE.GET_URL(p_page => 54, p_items => ''P54_LOG_ID,P54_RUN_ID'', p_values => v_prev_id || '','' || v_int_id) || ''" class="dmt-link" style="padding:8px 16px;border:1px solid #555;border-radius:4px;text-decoration:none'
 ||';">&larr; Previous Entry (#'' || v_prev_id || '')</a>'');',
 '  ELSE',
 '    htp.p(''<span style="padding:8px 16px;border:1px solid #333;border-radius:4px;color:#666;">&larr; No Previous</span>'');',
@@ -50444,7 +50444,7 @@ wwv_flow_imp_page.create_page_plug(
 '',
 '  -- Next button',
 '  IF v_next_id IS NOT NULL THEN',
-'    htp.p(''<a href="'' || APEX_PAGE.GET_URL(p_page => 54, p_items => ''P54_LOG_ID,P54_INTEGRATION_ID'', p_values => v_next_id || '','' || v_int_id) || ''" class="dmt-link" style="padding:8px 16px;border:1px solid #555;border-radius:4px;text-decoration:none'
+'    htp.p(''<a href="'' || APEX_PAGE.GET_URL(p_page => 54, p_items => ''P54_LOG_ID,P54_RUN_ID'', p_values => v_next_id || '','' || v_int_id) || ''" class="dmt-link" style="padding:8px 16px;border:1px solid #555;border-radius:4px;text-decoration:none'
 ||';">Next Entry (#'' || v_next_id || '') &rarr;</a>'');',
 '  ELSE',
 '    htp.p(''<span style="padding:8px 16px;border:1px solid #333;border-radius:4px;color:#666;">No Next &rarr;</span>'');',
@@ -50454,7 +50454,7 @@ wwv_flow_imp_page.create_page_plug(
 '',
 '  -- Back to Run Detail link',
 '  htp.p(''<div style="margin-bottom:12px;">'');',
-'  htp.p(''<a href="'' || APEX_PAGE.GET_URL(p_page => 53, p_items => ''P53_INTEGRATION_ID'', p_values => TO_CHAR(v_int_id)) || ''" class="dmt-link" style="font-size:13px;">&laquo; Back to Run Detail</a>'');',
+'  htp.p(''<a href="'' || APEX_PAGE.GET_URL(p_page => 53, p_items => ''P53_RUN_ID'', p_values => TO_CHAR(v_int_id)) || ''" class="dmt-link" style="font-size:13px;">&laquo; Back to Run Detail</a>'');',
 '  htp.p(''</div>'');',
 'END;'))
 ,p_plug_source_type=>'NATIVE_PLSQL'
@@ -50467,7 +50467,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>1
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'DECLARE',
-'  v_int_id NUMBER := NVL(:P54_INTEGRATION_ID, 0);',
+'  v_int_id NUMBER := NVL(:P54_RUN_ID, 0);',
 '  v_log_id NUMBER := NVL(:P54_LOG_ID, 0);',
 '  v_cemli  VARCHAR2(200);',
 'BEGIN',
@@ -50483,7 +50483,7 @@ wwv_flow_imp_page.create_page_plug(
 '  htp.p('' &rsaquo; '');',
 '  htp.p(''<a href="'' || APEX_PAGE.GET_URL(p_page => 51, p_items => ''P51_CEMLI_CODE'', p_values => v_cemli) || ''" class="dmt-link">'' || HTF.ESCAPE_SC(v_cemli) || ''</a>'');',
 '  htp.p('' &rsaquo; '');',
-'  htp.p(''<a href="'' || APEX_PAGE.GET_URL(p_page => 52, p_items => ''P52_INTEGRATION_ID'', p_values => TO_CHAR(v_int_id)) || ''" class="dmt-link">Run #'' || v_int_id || ''</a>'');',
+'  htp.p(''<a href="'' || APEX_PAGE.GET_URL(p_page => 52, p_items => ''P52_RUN_ID'', p_values => TO_CHAR(v_int_id)) || ''" class="dmt-link">Run #'' || v_int_id || ''</a>'');',
 '  htp.p('' &rsaquo; '');',
 '  htp.p(''<span style="color:#ccc;">Log #'' || v_log_id || ''</span>'');',
 '  htp.p(''</nav>'');',
@@ -50507,10 +50507,10 @@ wwv_flow_imp_page.create_page_plug(
 '       SUBSTR(l.MESSAGE, 1, 300) AS MESSAGE,',
 '       l.SQLERRM_TEXT AS ERROR',
 'FROM DMT_LOG_TBL l',
-'WHERE (:P54_INTEGRATION_ID IS NULL OR l.INTEGRATION_ID = :P54_INTEGRATION_ID)',
+'WHERE (:P54_RUN_ID IS NULL OR l.INTEGRATION_ID = :P54_RUN_ID)',
 'ORDER BY l.LOG_DATE DESC'))
 ,p_plug_source_type=>'NATIVE_IR'
-,p_ajax_items_to_submit=>'P54_INTEGRATION_ID'
+,p_ajax_items_to_submit=>'P54_RUN_ID'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'
 ,p_prn_paper_size=>'LETTER'
@@ -50634,7 +50634,7 @@ wwv_flow_imp_page.create_page_item(
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(1533157876923036912)
-,p_name=>'P54_INTEGRATION_ID'
+,p_name=>'P54_RUN_ID'
 ,p_item_sequence=>25
 ,p_display_as=>'NATIVE_HIDDEN'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
@@ -50698,7 +50698,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_location=>null
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'DECLARE',
-'                                  l_int  NUMBER := :P57_INTEGRATION_ID;',
+'                                  l_int  NUMBER := :P57_RUN_ID;',
 '                                    l_sub  VARCHAR2(200) := :P57_SUB_OBJECT;',
 '                                      l_stat VARCHAR2(50) := :P57_STATUS;',
 '                                        l_app  VARCHAR2(10) := V(''APP_ID'');',
@@ -50708,7 +50708,7 @@ wwv_flow_imp_page.create_page_plug(
 '                                                HTP.P(''<div style="padding:24px;color:#888;">No parameters specified.</div>'');',
 '                                                    RETURN;',
 '                                                      END IF;',
-'                                                        HTP.P(''<div style="margin-bottom:12px;"><a href="f?p='' || l_app || '':55:'' || l_sess || ''::NO::P55_INTEGRATION_ID:'' || l_int || ''" style="font-size:13px;color:#666;">&larr; Back to Object Detail<'
+'                                                        HTP.P(''<div style="margin-bottom:12px;"><a href="f?p='' || l_app || '':55:'' || l_sess || ''::NO::P55_RUN_ID:'' || l_int || ''" style="font-size:13px;color:#666;">&larr; Back to Object Detail<'
 ||'/a></div>'');',
 '                                                          HTP.P(''<div style="display:flex;gap:24px;padding:12px 0;border-bottom:1px solid #444;margin-bottom:16px;">'');',
 '                                                            HTP.P(''<div><span style="color:#888;font-size:11px;text-transform:uppercase;">Sub-Object</span><br><strong style="font-size:15px;">'' || APEX_ESCAPE.HTML(l_sub) || ''</strong></div>'');',
@@ -50772,7 +50772,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_location=>null
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'DECLARE',
-'  l_int  NUMBER := :P57_INTEGRATION_ID;',
+'  l_int  NUMBER := :P57_RUN_ID;',
 '  l_sub  VARCHAR2(200) := :P57_SUB_OBJECT;',
 '  l_stat VARCHAR2(50) := :P57_STATUS;',
 '  l_cnt  PLS_INTEGER := 0;',
@@ -50828,7 +50828,7 @@ wwv_flow_imp_page.create_page_plug(
 );
 wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(1492182238557442435)
-,p_name=>'P57_INTEGRATION_ID'
+,p_name=>'P57_RUN_ID'
 ,p_item_sequence=>10
 ,p_item_plug_id=>wwv_flow_imp.id(1492182238557441435)
 ,p_display_as=>'NATIVE_HIDDEN'
