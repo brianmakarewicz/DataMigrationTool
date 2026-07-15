@@ -1250,6 +1250,19 @@ l_obj               VARCHAR2(60);             -- short object stem, SUBSTR after
     <tr><td>Browser-verify Page 82 tile grid + live REST Verify call</td><td>UI</td><td><span class="b b-todo">P3 — partial</span></td></tr>
   </table>
   <p class="src">Generated from docs/ + repo cross-check. DMT_OWNER @ queryapp ATP. The highest-numbered APEX app is always the current version — never modify it in place; copy it to a new app ID and work on the copy.</p>
+
+  <div class="note prop" style="color:#b42318;border-color:#b42318">
+    <strong>[PROPOSED 2026-07-14 — APEX port session status &amp; decision points]</strong> The APEX environment was stood up locally (APEX 24.2 + a dedicated ORDS container on dmt2-local; app 155 imported into workspace DMT) and the drill chain (Run History&nbsp;80 &rarr; Run Detail&nbsp;82 &rarr; Object Detail&nbsp;52 &rarr; Record&nbsp;57) verified against real run data.
+    <br><br><strong>Shipped this session (PRs, pending regression + owner accept):</strong>
+    outcome-based tile palette (PR&nbsp;#86) · VALIDATING&rarr;PROCESSING rename (PR&nbsp;#87) · ESS download apex_installed ccflag fix (PR&nbsp;#89) · Run Pipeline&nbsp;84 backend verified, no hang (PR&nbsp;#90) · dropped the 2 remaining dead standalone procs (PR&nbsp;#91).
+    <strong>Already done during the port:</strong> the "Delete superseded pages (13,15,50,51,54,55,56,70–72,81,83) via Builder" item — all deprecated pages were deleted during the import (39 pages remain = the keep-list).
+    <br><br><strong>TABLED — need a decision before proceeding (recorded per session goal):</strong>
+    <br>&bull; <strong>APEX app-metadata edit workflow (blocks several UI items).</strong> Folding the 6 live render procs + DMT_SUBMIT_RUN_V2 into packages (re-point ~11 app-155 region sources), renaming *_INTEGRATION_ID page items &rarr; *_RUN_ID, removing the files table from ESS Job Detail, and the Dashboard redesign all require editing app-155 page metadata and re-exporting to git. <em>Decision:</em> approve the approach — copy app 155&rarr;156, edit via the builder API, and adopt <code>apex export -split</code> so per-component diffs are reviewable (the single 2&nbsp;MB f155.sql export is not).
+    <br>&bull; <strong>Structural DB changes (need go-ahead — session goal reserves these).</strong> The stage&rarr;transform error table (<code>DMT_STG_TFM_ERROR_TBL</code>) and the <code>QUEUE_ID</code> column on <code>DMT_LOG_TBL</code> are new structures that the Object Detail funnel redesign and the Activity Log browser depend on. <em>Decision:</em> approve creating them (+ their validator/transformer and log-context wiring).
+    <br>&bull; <strong>Missing mock-ups file.</strong> <code>DMT_PAGE_MOCKUPS.html</code> is referenced throughout but absent from the repo, blocking pixel-faithful Dashboard and Object-Detail-funnel redesigns. <em>Decision:</em> recover the file, or approve implementing from the section&nbsp;8/10 text with recorded UI assumptions.
+    <br>&bull; <strong>Browser / live-instance verification.</strong> CSV upload E2E (pages 2–12) and the live Fusion REST&nbsp;Verify on page&nbsp;57 need a real browser session, test CSVs, and demo-instance credentials/URL pointed at dmt2-local — not drivable headless here.
+    <br>&bull; <strong>Engine-scope (not APEX UI).</strong> "Fold config objects into the queue + retire packages/runners" and "eliminate runtime EXECUTE IMMEDIATE in DMT_LOADER_PKG" are engine changes carrying real risk; deferred to the engine track.
+  </div>
 </section>
 
 
