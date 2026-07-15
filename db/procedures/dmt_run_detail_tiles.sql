@@ -55,7 +55,7 @@ BEGIN
                 -- C6: no records -> muted label, no drill link (drill would be empty)
                 HTP.P('<span style="color:#999">' || rec.CEMLI_CODE || '</span>');
             ELSE
-                HTP.P('<a href="f?p=' || l_app || ':52:' || l_ses || '::NO::P52_INTEGRATION_ID,P52_CEMLI_CODE:'
+                HTP.P('<a href="f?p=' || l_app || ':52:' || l_ses || '::NO::P52_RUN_ID,P52_CEMLI_CODE:'
                     || rec.RUN_ID || ',' || rec.CEMLI_CODE
                     || '" style="color:inherit;text-decoration:none;border-bottom:1px dashed #999">'
                     || rec.CEMLI_CODE || '</a>');
@@ -74,13 +74,13 @@ BEGIN
             END IF;
             IF rec.LOAD_ESS_JOB_ID IS NOT NULL THEN
                 HTP.P('<br>Load: <a href="f?p=' || l_app || ':53:' || l_ses
-                    || '::NO::P53_ESS_JOB_ID,P53_INTEGRATION_ID,P53_CEMLI_CODE:'
+                    || '::NO::P53_ESS_JOB_ID,P53_RUN_ID,P53_CEMLI_CODE:'
                     || rec.LOAD_ESS_JOB_ID || ',' || rec.RUN_ID || ',' || rec.CEMLI_CODE
                     || '" style="color:#0070d2">' || rec.LOAD_ESS_JOB_ID || '</a>');
             END IF;
             IF rec.IMPORT_ESS_JOB_ID IS NOT NULL THEN
                 HTP.P(' &middot; Import: <a href="f?p=' || l_app || ':53:' || l_ses
-                    || '::NO::P53_ESS_JOB_ID,P53_INTEGRATION_ID,P53_CEMLI_CODE:'
+                    || '::NO::P53_ESS_JOB_ID,P53_RUN_ID,P53_CEMLI_CODE:'
                     || rec.IMPORT_ESS_JOB_ID || ',' || rec.RUN_ID || ',' || rec.CEMLI_CODE
                     || '" style="color:#0070d2">' || rec.IMPORT_ESS_JOB_ID || '</a>');
             END IF;
@@ -138,7 +138,7 @@ BEGIN
                 -- C6: no records -> muted label, no drill link
                 HTP.P('<span style="color:#999">' || rec.CEMLI_CODE || '</span>');
             ELSE
-                HTP.P('<a href="f?p=' || l_app || ':52:' || l_ses || '::NO::P52_INTEGRATION_ID,P52_CEMLI_CODE:'
+                HTP.P('<a href="f?p=' || l_app || ':52:' || l_ses || '::NO::P52_RUN_ID,P52_CEMLI_CODE:'
                     || p_run_id || ',' || rec.CEMLI_CODE
                     || '" style="color:inherit;text-decoration:none;border-bottom:1px dashed #999">'
                     || rec.CEMLI_CODE || '</a>');
@@ -156,13 +156,13 @@ BEGIN
 
             IF rec.LOAD_ESS_JOB_ID IS NOT NULL THEN
                 HTP.P('<br>Load: <a href="f?p=' || l_app || ':53:' || l_ses
-                    || '::NO::P53_ESS_JOB_ID,P53_INTEGRATION_ID,P53_CEMLI_CODE:'
+                    || '::NO::P53_ESS_JOB_ID,P53_RUN_ID,P53_CEMLI_CODE:'
                     || rec.LOAD_ESS_JOB_ID || ',' || p_run_id || ',' || rec.CEMLI_CODE
                     || '" style="color:#0070d2">' || rec.LOAD_ESS_JOB_ID || '</a>');
             END IF;
             IF rec.IMPORT_ESS_JOB_ID IS NOT NULL THEN
                 HTP.P(' &middot; Import: <a href="f?p=' || l_app || ':53:' || l_ses
-                    || '::NO::P53_ESS_JOB_ID,P53_INTEGRATION_ID,P53_CEMLI_CODE:'
+                    || '::NO::P53_ESS_JOB_ID,P53_RUN_ID,P53_CEMLI_CODE:'
                     || rec.IMPORT_ESS_JOB_ID || ',' || p_run_id || ',' || rec.CEMLI_CODE
                     || '" style="color:#0070d2">' || rec.IMPORT_ESS_JOB_ID || '</a>');
             END IF;

@@ -18,7 +18,7 @@ BEGIN
     HTP.P('<span>' || l_rec.PIPELINE_CODES || '</span> <span>Prefix: ' || l_rec.PREFIX || '</span>');
     HTP.P('<span>' || NVL(l_rec.SCENARIO_NAME, 'All rows') || '</span> <span>' || l_rec.RUN_MODE || '</span>');
     HTP.P('<span>' || l_d || '/' || l_t || CASE WHEN l_f > 0 THEN ' (' || l_f || ' failed)' END || '</span>');
-    HTP.P('<a href="' || APEX_PAGE.GET_URL(p_page=>54, p_items=>'P54_INTEGRATION_ID', p_values=>TO_CHAR(p_run_id))
+    HTP.P('<a href="' || APEX_PAGE.GET_URL(p_page=>54, p_items=>'P54_RUN_ID', p_values=>TO_CHAR(p_run_id))
         || '" style="color:#0070d2;text-decoration:none;font-weight:600">View Activity Log &rarr;</a></div>');
 EXCEPTION WHEN NO_DATA_FOUND THEN HTP.P('<p>Run not found.</p>');
 END;

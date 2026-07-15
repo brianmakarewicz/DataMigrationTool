@@ -169,27 +169,27 @@
       HTP.P('<td>' || APEX_ESCAPE.HTML(rec.SUB_OBJECT) || '</td>');
 
       -- Staged
-      v_href := drill_url(57, 'P57_INTEGRATION_ID,P57_SUB_OBJECT,P57_STATUS',
+      v_href := drill_url(57, 'P57_RUN_ID,P57_SUB_OBJECT,P57_STATUS',
                            p_run_id || ',' || rec.SUB_OBJECT || ',STAGED');
       HTP.P('<td class="num">' || count_cell(rec.STAGED_ROWS, 'staged', v_href) || '</td>');
 
       -- Generated
-      v_href := drill_url(57, 'P57_INTEGRATION_ID,P57_SUB_OBJECT,P57_STATUS',
+      v_href := drill_url(57, 'P57_RUN_ID,P57_SUB_OBJECT,P57_STATUS',
                            p_run_id || ',' || rec.SUB_OBJECT || ',GENERATED');
       HTP.P('<td class="num">' || count_cell(rec.GENERATED_ROWS, 'generated', v_href) || '</td>');
 
       -- Loaded
-      v_href := drill_url(57, 'P57_INTEGRATION_ID,P57_SUB_OBJECT,P57_STATUS',
+      v_href := drill_url(57, 'P57_RUN_ID,P57_SUB_OBJECT,P57_STATUS',
                            p_run_id || ',' || rec.SUB_OBJECT || ',LOADED');
       HTP.P('<td class="num">' || count_cell(rec.LOADED_ROWS, 'loaded', v_href) || '</td>');
 
       -- Failed
-      v_href := drill_url(57, 'P57_INTEGRATION_ID,P57_SUB_OBJECT,P57_STATUS',
+      v_href := drill_url(57, 'P57_RUN_ID,P57_SUB_OBJECT,P57_STATUS',
                            p_run_id || ',' || rec.SUB_OBJECT || ',FAILED');
       HTP.P('<td class="num">' || count_cell(rec.FAILED_ROWS, 'failed', v_href) || '</td>');
 
       -- Total (links to all records, no status filter)
-      v_href := drill_url(57, 'P57_INTEGRATION_ID,P57_SUB_OBJECT',
+      v_href := drill_url(57, 'P57_RUN_ID,P57_SUB_OBJECT',
                            p_run_id || ',' || rec.SUB_OBJECT);
       HTP.P('<td class="num"><a href="' || v_href || '" style="font-weight:700;color:#333;text-decoration:none;">' || rec.TOTAL_ROWS || '</a></td>');
 
@@ -220,7 +220,7 @@
       v_href VARCHAR2(500);
     BEGIN
       IF p_ess_id IS NOT NULL THEN
-        v_href := drill_url(53, 'P53_ESS_JOB_ID,P53_INTEGRATION_ID,P53_CEMLI_CODE',
+        v_href := drill_url(53, 'P53_ESS_JOB_ID,P53_RUN_ID,P53_CEMLI_CODE',
                              p_ess_id || ',' || p_run_id || ',' || p_cemli_code);
         HTP.P('<a href="' || v_href || '" class="dmt-ess-chip">');
         HTP.P('<span class="ess-label">' || p_label || '</span>');
@@ -307,7 +307,7 @@
     HTP.P('<a href="' || drill_url(82, 'P82_RUN_ID', TO_CHAR(p_run_id)) || '">Run #' || p_run_id || '</a>');
     HTP.P('<span class="sep">&rsaquo;</span>');
     IF v_cemli IS NOT NULL THEN
-      HTP.P('<a href="' || drill_url(52, 'P52_INTEGRATION_ID,P52_CEMLI_CODE',
+      HTP.P('<a href="' || drill_url(52, 'P52_RUN_ID,P52_CEMLI_CODE',
                                       p_run_id || ',' || v_cemli) || '">'
              || APEX_ESCAPE.HTML(v_cemli) || '</a>');
       HTP.P('<span class="sep">&rsaquo;</span>');
