@@ -627,7 +627,6 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_cust_results_pkg.pks.sql
 @@packages/dmt_cust_transform_pkg.pks.sql
 @@packages/dmt_cust_validator_pkg.pks.sql
-@@packages/dmt_ebs_adaptor_pkg.pks.sql
 @@packages/dmt_egp_item_cat_fbdi_gen_pkg.pks.sql
 @@packages/dmt_egp_item_cat_results_pkg.pks.sql
 @@packages/dmt_egp_item_cat_runner_pkg.pks.sql
@@ -657,7 +656,6 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_fnd_vs_runner_pkg.pks.sql
 @@packages/dmt_fnd_vs_transform_pkg.pks.sql
 @@packages/dmt_fnd_vs_validator_pkg.pks.sql
-@@packages/dmt_generic_adaptor_pkg.pks.sql
 @@packages/dmt_gl_budget_fbdi_gen_pkg.pks.sql
 @@packages/dmt_gl_budget_results_pkg.pks.sql
 @@packages/dmt_gl_budget_transform_pkg.pks.sql
@@ -842,7 +840,6 @@ prompt == Package bodies ==
 @@packages/dmt_cust_results_pkg.pkb.sql
 @@packages/dmt_cust_transform_pkg.pkb.sql
 @@packages/dmt_cust_validator_pkg.pkb.sql
-@@packages/dmt_ebs_adaptor_pkg.pkb.sql
 @@packages/dmt_egp_item_cat_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_egp_item_cat_results_pkg.pkb.sql
 @@packages/dmt_egp_item_cat_runner_pkg.pkb.sql
@@ -872,7 +869,6 @@ prompt == Package bodies ==
 @@packages/dmt_fnd_vs_runner_pkg.pkb.sql
 @@packages/dmt_fnd_vs_transform_pkg.pkb.sql
 @@packages/dmt_fnd_vs_validator_pkg.pkb.sql
-@@packages/dmt_generic_adaptor_pkg.pkb.sql
 @@packages/dmt_gl_budget_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_gl_budget_results_pkg.pkb.sql
 @@packages/dmt_gl_budget_transform_pkg.pkb.sql
