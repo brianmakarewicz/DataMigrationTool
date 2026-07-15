@@ -12,7 +12,7 @@ BEGIN
     -- ============================================================
     -- Thin compatibility wrapper (engine re-review, 2026-07-08).
     -- This procedure is the submission entry point the archived
-    -- APEX export (apex/f155.sql) calls, so its external signature
+    -- APEX export (apex/DMTApplication.sql) calls, so its external signature
     -- must not change. Its old body duplicated run/queue creation
     -- and bypassed every submission guard the scheduler now
     -- enforces: the USE_PREFIX config-row serialization lock, the

@@ -4,7 +4,7 @@
 -- Engine re-review residue (2026-07-08, docs/tranche-reviews/
 -- 2026-07-08-engine-review.md ITEM 1): the design document names
 -- three standalone submit procedures as dead code — nothing calls
--- them (the archived APEX export apex/f155.sql calls only
+-- them (the archived APEX export apex/DMTApplication.sql calls only
 -- DMT_SUBMIT_RUN_V2, which is now a thin wrapper over
 -- DMT_SCHEDULER_PKG.SUBMIT_PIPELINE). Their files and install.sql
 -- enrollment lines were removed in the same change; this script

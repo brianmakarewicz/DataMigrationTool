@@ -4,7 +4,7 @@
 -- APEX port cleanup (DMT_DESIGN.html section 12, P3 "eliminate
 -- standalone procedures"): two standalone procedures are named as
 -- dead code — nothing calls them (no DB dependency, and the archived
--- APEX export apex/f155.sql references neither):
+-- APEX export apex/DMTApplication.sql references neither):
 --   DMT_FBDI_FILE_CHAIN, DMT_PLAN_RUN_GTT
 -- (The other three named-dead submit procedures were already retired
 -- by drop_retired_submit_procs.sql.) Their object files and install.sql
