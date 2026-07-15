@@ -4,7 +4,7 @@
 -- ============================================================
 -- DMT_GL_BUDGET_RESULTS_PKG
 -- Post-load reconciliation for GL Budget Balances.
--- CEMLI_CODE: 'GLBudgetBalances'
+-- CEMLI_CODE: 'GLBudgets'
 --
 -- Budgets are CELLS, not transactions: GL_BUDGET_BALANCES has one row per
 -- (ledger + budget_name + period + account segments + currency + currency_type)

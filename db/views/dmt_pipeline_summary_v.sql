@@ -24,7 +24,7 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_PIPELINE_SUMMARY_V" ("RUN_ID", "INTEGRAT
     SELECT 'Grants',                               'Projects',      4            FROM DUAL UNION ALL
     SELECT 'ProjectBudgets',                       'Projects',      5            FROM DUAL UNION ALL
     SELECT 'GLBalances',                           'Financials',    1            FROM DUAL UNION ALL
-    SELECT 'GLBudgetBalances',                     'Financials',    2            FROM DUAL UNION ALL
+    SELECT 'GLBudgets',                     'Financials',    2            FROM DUAL UNION ALL
     SELECT 'PlanningBudgets',                      'Financials',    3            FROM DUAL UNION ALL
     SELECT 'Assets',                               'Financials',    4            FROM DUAL UNION ALL
     SELECT 'Workers',                              'HCM',           1            FROM DUAL UNION ALL

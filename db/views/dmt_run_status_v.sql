@@ -123,7 +123,7 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_RUN_STATUS_V" ("RUN_ID", "INTEGRATION_ID
     GROUP  BY RUN_ID
     UNION ALL
     -- ---- GL Budget Balances — uses TFM_STATUS ----
-    SELECT RUN_ID, 'GLBudgetBalances', COUNT(*),
+    SELECT RUN_ID, 'GLBudgets', COUNT(*),
            SUM(CASE WHEN TFM_STATUS = 'LOADED'    THEN 1 ELSE 0 END),
            SUM(CASE WHEN TFM_STATUS = 'FAILED'    THEN 1 ELSE 0 END),
            SUM(CASE WHEN TFM_STATUS = 'GENERATED' THEN 1 ELSE 0 END),
@@ -398,7 +398,7 @@ ORDER BY
         WHEN t.OBJECT_TYPE LIKE 'ARInvoices%'          THEN 21
         WHEN t.OBJECT_TYPE = 'MiscReceipts'            THEN 22
         WHEN t.OBJECT_TYPE = 'GLBalances'              THEN 30
-        WHEN t.OBJECT_TYPE = 'GLBudgetBalances'        THEN 31
+        WHEN t.OBJECT_TYPE = 'GLBudgets'        THEN 31
         WHEN t.OBJECT_TYPE = 'PlanningBudgets'         THEN 32
         WHEN t.OBJECT_TYPE = 'Assets'                  THEN 33
         WHEN t.OBJECT_TYPE = 'Projects'                THEN 40

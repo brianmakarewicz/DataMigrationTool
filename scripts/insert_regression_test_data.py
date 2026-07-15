@@ -27,7 +27,7 @@ Proven runs (source of truth for GOOD data):
   BillingEvents:  int=100000044, prefix=9188 —  3 LOADED, Contract=C10028/C10001
   Requisitions:   int=100000024, prefix=9169 —  6 LOADED (objects/Requisitions/README.md)
 
-  GLBudgetBalances: run 112, prefix 9623 — 4 LOADED / 1 FAILED (objects/GLBudget/README.md)
+  GLBudgets: run 112, prefix 9623 — 4 LOADED / 1 FAILED (objects/GLBudget/README.md)
   ProjectBudgets:  int=100000027, prefix=9123 — 3 LOADED (objects/ProjectBudgets/README.md;
                    regression rows target the RT projects, prefixed at transform)
 

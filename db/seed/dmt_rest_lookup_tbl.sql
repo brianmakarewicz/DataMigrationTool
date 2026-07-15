@@ -126,7 +126,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('GLBudgetBalances','/fscmRestApi/resources/11.13.18.05/generalLedgerJournals','JournalHeaderId={KEY}','FUSION_JE_HEADER_ID','JournalHeaderId,JournalBatchName,JournalName,LedgerName,Period,Status','Header ID,Batch,Journal,Ledger,Period,Status','ERP','Y','GL Budget Balances — same journal endpoint as GL Balances');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('GLBudgets','/fscmRestApi/resources/11.13.18.05/generalLedgerJournals','JournalHeaderId={KEY}','FUSION_JE_HEADER_ID','JournalHeaderId,JournalBatchName,JournalName,LedgerName,Period,Status','Header ID,Batch,Journal,Ledger,Period,Status','ERP','Y','GL Budget Balances — same journal endpoint as GL Balances');
 exception when dup_val_on_index then null;
 end;
 /
