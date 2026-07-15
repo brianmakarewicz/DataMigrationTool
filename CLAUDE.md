@@ -39,7 +39,7 @@ Ports in use elsewhere: 1521 (rt-oracle-free), 1522 (old dmt-local). DMT2 = **15
 | `docs/` | THE requirements doc (DMT_DESIGN.html — the one and only copy; moved here 2026-07-08) + the rebuild plan (DMT_REBUILD_PLAN.html) + object catalog, coding-standards mirror, tranche-reviews/ |
 | `objects/` | Per-CEMLI README.md (read before touching any object) |
 | `bip/` | BIP data models + reports per CEMLI (deploy target `/Custom/DMT2/`) |
-| `apex/` | f155.sql — latest APEX export from the old stack (port DEFERRED until regression gate passes) |
+| `apex/` | DMTApplication.sql — the APEX app export (Data Migration Console); imported under a new app id per copy-before-modify |
 | `test/` | Regression bundle + FBDI fixtures |
 | `scripts/` | Core harness only: dmt_regression_run.py, dmt_run_assert.py, dmt_deploy.py, dmt_db_git_sync.py, insert_regression_test_data.py, hooks/dmt_db_guard.py |
 | `cicd/` | GitHub Actions workflows + CI docker assets (to be built — Phase 1D) |
