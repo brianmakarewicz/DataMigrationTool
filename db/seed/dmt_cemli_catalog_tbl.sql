@@ -44,10 +44,8 @@ using (
     union all select 'BlanketPOs', 'Blanket PO Headers', 'DMT_PO_HEADERS_INT_TFM_TBL', 'TFM_STATUS', 'STYLE_DISPLAY_NAME = ''Blanket Purchase Agreement''', 1 from dual
     union all select 'BlanketPOs', 'Blanket PO Lines', 'DMT_PO_LINES_INT_TFM_TBL', 'TFM_STATUS', 'INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = ''Blanket Purchase Agreement'')', 2 from dual
     union all select 'Contracts', 'Contract Headers', 'DMT_PO_HEADERS_INT_TFM_TBL', 'TFM_STATUS', 'STYLE_DISPLAY_NAME = ''Contract Purchase Agreement''', 1 from dual
-    union all select 'APInvoices', 'AP Invoice Headers', 'DMT_AP_INVOICES_INT_TFM_TBL', 'TFM_STATUS', 'INVOICE_TYPE_LOOKUP_CODE NOT LIKE ''%1099%''', 1 from dual
-    union all select 'APInvoices', 'AP Invoice Lines', 'DMT_AP_INVOICE_LINES_INT_TFM_TBL', 'TFM_STATUS', 'INVOICE_ID IN (SELECT INVOICE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL WHERE INVOICE_TYPE_LOOKUP_CODE NOT LIKE ''%1099%'' OR INVOICE_TYPE_LOOKUP_CODE IS NULL)', 2 from dual
-    union all select '1099Invoices', '1099 Invoice Headers', 'DMT_AP_INVOICES_INT_TFM_TBL', 'TFM_STATUS', 'INVOICE_TYPE_LOOKUP_CODE LIKE ''%1099%''', 1 from dual
-    union all select '1099Invoices', '1099 Invoice Lines', 'DMT_AP_INVOICE_LINES_INT_TFM_TBL', 'TFM_STATUS', 'INVOICE_ID IN (SELECT INVOICE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL WHERE INVOICE_TYPE_LOOKUP_CODE LIKE ''%1099%'')', 2 from dual
+    union all select 'APInvoices', 'AP Invoice Headers', 'DMT_AP_INVOICES_INT_TFM_TBL', 'TFM_STATUS', null, 1 from dual
+    union all select 'APInvoices', 'AP Invoice Lines', 'DMT_AP_INVOICE_LINES_INT_TFM_TBL', 'TFM_STATUS', null, 2 from dual
     union all select 'ARInvoices', 'AR Lines', 'DMT_RA_LINES_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'ARInvoices', 'AR Distributions', 'DMT_RA_DISTS_TFM_TBL', 'TFM_STATUS', null, 2 from dual
     union all select 'Requisitions', 'Req Headers', 'DMT_POR_REQ_HEADERS_TFM_TBL', 'TFM_STATUS', null, 1 from dual

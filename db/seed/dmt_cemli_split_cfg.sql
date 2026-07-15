@@ -14,8 +14,7 @@
 -- (fixed 2026-07-09, blind conformance-tranche review F1).
 merge into "DMT_CEMLI_SPLIT_CFG" t
 using (
-    select '1099Invoices' cemli_code, 'DMT_AP_INVOICES_INT_TFM_TBL' tfm_table, 'ORG_ID' partition_columns, 'ORG_ID' label_expression, 'ORG_ID = :partition_key' where_template, 'TFM_STATUS' status_column from dual
-    union all select 'APInvoices', 'DMT_AP_INVOICES_INT_TFM_TBL', 'ORG_ID', 'ORG_ID', 'ORG_ID = :partition_key', 'TFM_STATUS' from dual
+    select 'APInvoices' cemli_code, 'DMT_AP_INVOICES_INT_TFM_TBL' tfm_table, 'ORG_ID' partition_columns, 'ORG_ID' label_expression, 'ORG_ID = :partition_key' where_template, 'TFM_STATUS' status_column from dual
     union all select 'ARInvoices', 'DMT_RA_LINES_TFM_TBL', 'BU_NAME', 'BU_NAME', 'BU_NAME = :partition_key', 'TFM_STATUS' from dual
     union all select 'BlanketPOs', 'DMT_PO_HEADERS_INT_TFM_TBL', 'PROCUREMENT_BU', 'PROCUREMENT_BU', 'PROCUREMENT_BU = :partition_key', 'TFM_STATUS' from dual
     union all select 'Contracts', 'DMT_PO_HEADERS_INT_TFM_TBL', 'PROCUREMENT_BU', 'PROCUREMENT_BU', 'PROCUREMENT_BU = :partition_key', 'TFM_STATUS' from dual

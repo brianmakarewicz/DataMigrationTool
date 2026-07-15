@@ -393,7 +393,6 @@ ORDER BY
         WHEN t.OBJECT_TYPE LIKE 'BlanketPOs%'          THEN 11
         WHEN t.OBJECT_TYPE LIKE 'Contracts%'           THEN 12
         WHEN t.OBJECT_TYPE LIKE 'APInvoices%'          THEN 13
-        WHEN t.OBJECT_TYPE LIKE '1099Invoices%'        THEN 14
         WHEN t.OBJECT_TYPE = 'Customers'               THEN 20
         WHEN t.OBJECT_TYPE LIKE 'ARInvoices%'          THEN 21
         WHEN t.OBJECT_TYPE = 'MiscReceipts'            THEN 22

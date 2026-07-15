@@ -85,7 +85,6 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000022,'1099Invoices','1099 Invoice','/Custom/DMT2/1099Invoices/AP_1099_DM.xdm','/Custom/DMT2/1099Invoices/AP_1099_RPT.xdo','AP_INVOICES_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'1099 invoice import reconciliation (shares AP tables)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
