@@ -270,7 +270,7 @@ SELECT 'ARInvoices', 'AR Distributions',
 FROM DMT_OWNER.DMT_RA_DISTS_TFM_TBL
 -- ---- GL ----
 UNION ALL
-SELECT 'GLBalances', 'GL Journal Lines',
+SELECT 'GLBalances', 'GL Journals',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        -- DISPLAY_KEY: the (run-prefixed) journal name that reconciliation keys
        -- on, plus this line's account -- so the record identifies its journal
@@ -347,7 +347,7 @@ SELECT 'Projects', 'Projects',
        CASE WHEN TFM_STATUS = 'LOADED' THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' AND ERROR_TEXT IS NOT NULL THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' THEN 'UNRECONCILED' ELSE 'IN_PROGRESS' END
 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
 UNION ALL
-SELECT 'Projects', 'Tasks',
+SELECT 'Projects', 'Project Tasks',
        t.TFM_SEQUENCE_ID, t.STG_SEQUENCE_ID, t.RUN_ID,
        t.TASK_NAME,
        t.PROJECT_NUMBER,
@@ -388,7 +388,7 @@ SELECT 'ProjectBudgets', 'Project Budget Lines',
 FROM DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
 -- ---- Expenditures ----
 UNION ALL
-SELECT 'Expenditures', 'Expenditure Items',
+SELECT 'Expenditures', 'Project Expenditures',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        ORIG_TRANSACTION_REFERENCE,
        ORIG_TRANSACTION_REFERENCE,
@@ -709,7 +709,7 @@ SELECT 'TalentProfiles', 'Profile Items',
        RESULTS_UPDATED_DATE,
        CASE WHEN TFM_STATUS = 'LOADED' THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' AND ERROR_TEXT IS NOT NULL THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' THEN 'UNRECONCILED' ELSE 'IN_PROGRESS' END
 FROM DMT_OWNER.DMT_TALENT_PROF_ITEM_TFM_TBL
--- ---- Performance Evaluations ----
+-- ---- Performance Docs ----
 UNION ALL
 SELECT 'PerfEvaluations', 'Performance Docs',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
