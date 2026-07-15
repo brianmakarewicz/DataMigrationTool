@@ -556,8 +556,7 @@ live app. A full per-screen gap analysis was produced. Items executed and verifi
   <tr><td>ESS Job Detail files table (p53)</td><td><strong>Verified</strong></td><td>Already satisfied — p53 renders the job hierarchy only, no files table (files live on p58 ESS Output).</td></tr>
 </table>
 </div>
-<p>Still open (the plan's suggested order): <strong>Activity Log browser</strong> (a genuinely new page over
-<code>DMT_LOG_TBL</code> — unblocks the "View Activity Log" links and the retirement of p54); browser-verification
+<p>The <strong>Activity Log browser</strong> is now built by repurposing the orphaned deprecated page p54 (it already carried an interactive report over <code>DMT_LOG_TBL</code> and had no inbound links): the run filter was made optional so it shows all 38 runs searchable via the IR's native controls, and the page was renamed "Activity Log" (so p54 is repurposed, not deleted). Still open (the plan's suggested order): wiring the "View Activity Log" pre-filter links from Run Detail / Object Detail and an explicit filter bar; browser-verification
 of the Run Pipeline Plan→Confirm click-through (p84) and ESS binary download (p58); and the P3
 <code>*_INTEGRATION_ID</code>→<code>*_RUN_ID</code> page-item naming sweep. None are blocked — every data source
 exists on <code>dmt2-local</code>.</p>

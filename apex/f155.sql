@@ -50373,9 +50373,9 @@ prompt --application/pages/page_00054
 begin
 wwv_flow_imp_page.create_page(
  p_id=>54
-,p_name=>'Log Entry Detail'
+,p_name=>'Activity Log'
 ,p_alias=>'LOG-ENTRY-DETAIL'
-,p_step_title=>'Log Entry Detail'
+,p_step_title=>'Activity Log'
 ,p_autocomplete_on_off=>'OFF'
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
@@ -50506,7 +50506,7 @@ wwv_flow_imp_page.create_page_plug(
 '       SUBSTR(l.MESSAGE, 1, 300) AS MESSAGE,',
 '       l.SQLERRM_TEXT AS ERROR',
 'FROM DMT_LOG_TBL l',
-'WHERE l.INTEGRATION_ID = :P54_INTEGRATION_ID',
+'WHERE (:P54_INTEGRATION_ID IS NULL OR l.INTEGRATION_ID = :P54_INTEGRATION_ID)',
 'ORDER BY l.LOG_DATE DESC'))
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_ajax_items_to_submit=>'P54_INTEGRATION_ID'
