@@ -6,6 +6,8 @@
     l_app  VARCHAR2(10) := V('APP_ID');
     l_ses  VARCHAR2(30) := V('APP_SESSION');
     l_has_queue NUMBER;
+    l_phase   VARCHAR2(10);
+    l_failerr NUMBER;
 
     -- ------------------------------------------------------------------
     -- Outcome-based tile palette (DMT_DESIGN.html section 9, decided
@@ -33,13 +35,13 @@
                      p_failed_err NUMBER, p_unacc NUMBER) RETURN VARCHAR2 IS
     BEGIN
       IF p_phase = 'PENDING' THEN RETURN '#ffffff'; END IF;   -- White: queued
-      IF p_phase = 'RUNNING' THEN RETURN '#dbe9fb'; END IF;   -- Blue: in progress
-      IF p_phase = 'ERRORED' AND NVL(p_total,0) = 0 THEN RETURN '#f4b6b0'; END IF;   -- Red: true infra break, no rows processed (finished-with-counts ERRORED falls through to the outcome logic below)
-      IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '#eeeeee'; END IF; -- Grey
-      IF NVL(p_unacc,0)  >= p_total THEN RETURN '#f4b6b0'; END IF;  -- Red: all unaccounted
-      IF NVL(p_loaded,0) >= p_total THEN RETURN '#cfeed7'; END IF;  -- Green: 100% loaded
-      IF NVL(p_unacc,0) > 0 OR NVL(p_loaded,0) = 0 THEN RETURN '#fbdedb'; END IF; -- Light red
-      RETURN '#eaf6de';                                       -- Light green: some failed, all accounted
+      IF p_phase = 'RUNNING' THEN RETURN '#e8f0fe'; END IF;   -- Blue: in progress
+      IF p_phase = 'ERRORED' AND NVL(p_total,0) = 0 THEN RETURN '#f5b8b1'; END IF;   -- Red: true infra break, no rows processed (finished-with-counts ERRORED falls through to the outcome logic below)
+      IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '#f0f0f0'; END IF; -- Grey
+      IF NVL(p_unacc,0)  >= p_total THEN RETURN '#f5b8b1'; END IF;  -- Red: all unaccounted
+      IF NVL(p_loaded,0) >= p_total THEN RETURN '#b7e1c0'; END IF;  -- Green: 100% loaded
+      IF NVL(p_unacc,0) > 0 OR NVL(p_loaded,0) = 0 THEN RETURN '#fce8e6'; END IF; -- Light red
+      RETURN '#e6f4ea';                                       -- Light green: some failed, all accounted
     END tile_bg;
 
     -- Status line HTML, consistent with the colour the palette chose.
@@ -135,11 +137,9 @@ BEGIN
                 l_pp := rec.PIPELINE;
             END IF;
 
-            DECLARE
-              l_phase   VARCHAR2(10) := phase_from_work(rec.WORK_STATUS);
-              l_failerr NUMBER := GREATEST(NVL(rec.FAILED_ROWS,0) - NVL(rec.UNACC_ROWS,0), 0);
-            BEGIN
-              l_bg := tile_bg(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS);
+            l_phase   := phase_from_work(rec.WORK_STATUS);
+            l_failerr := GREATEST(NVL(rec.FAILED_ROWS,0) - NVL(rec.UNACC_ROWS,0), 0);
+            l_bg := tile_bg(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS);
               HTP.P('<div style="background:' || l_bg || ';border:1px solid #ddd;border-radius:8px;padding:14px;min-width:200px;max-width:280px;flex:1">');
               HTP.P('<div style="font-weight:bold;font-size:14px;margin-bottom:4px">');
               IF NVL(rec.TOT_ROWS,0) = 0 THEN
@@ -151,8 +151,7 @@ BEGIN
                       || rec.CEMLI_CODE || '</a>');
               END IF;
               HTP.P('</div><div style="font-size:12px;color:#555">');
-              HTP.P(tile_status(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS));
-            END;
+            HTP.P(tile_status(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS));
             IF rec.PARTITION_LABEL IS NOT NULL THEN HTP.P(' &middot; ' || rec.PARTITION_LABEL); END IF;
             IF rec.STARTED IS NOT NULL THEN
                 HTP.P('<br>' || rec.STARTED || CASE WHEN rec.COMPLETED IS NOT NULL THEN ' &rarr; ' || rec.COMPLETED END);
@@ -207,11 +206,9 @@ BEGIN
                 l_pp := rec.PIPELINE;
             END IF;
 
-            DECLARE
-              l_phase   VARCHAR2(10) := phase_from_object(rec.OBJECT_STATUS);
-              l_failerr NUMBER := GREATEST(NVL(rec.FAILED_ROWS,0) - NVL(rec.UNRECONCILED_ROWS,0), 0);
-            BEGIN
-              l_bg := tile_bg(l_phase, rec.TOTAL_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNRECONCILED_ROWS);
+            l_phase   := phase_from_object(rec.OBJECT_STATUS);
+            l_failerr := GREATEST(NVL(rec.FAILED_ROWS,0) - NVL(rec.UNRECONCILED_ROWS,0), 0);
+            l_bg := tile_bg(l_phase, rec.TOTAL_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNRECONCILED_ROWS);
               HTP.P('<div style="background:' || l_bg || ';border:1px solid #ddd;border-radius:8px;padding:14px;min-width:200px;max-width:280px;flex:1">');
               HTP.P('<div style="font-weight:bold;font-size:14px;margin-bottom:4px">');
               IF NVL(rec.TOTAL_ROWS, 0) = 0 THEN
@@ -223,8 +220,7 @@ BEGIN
                       || rec.CEMLI_CODE || '</a>');
               END IF;
               HTP.P('</div><div style="font-size:12px;color:#555">');
-              HTP.P(tile_status(l_phase, rec.TOTAL_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNRECONCILED_ROWS));
-            END;
+            HTP.P(tile_status(l_phase, rec.TOTAL_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNRECONCILED_ROWS));
 
             IF rec.LOAD_ESS_JOB_ID IS NOT NULL THEN
                 HTP.P('<br>Load: <a href="f?p=' || l_app || ':53:' || l_ses
