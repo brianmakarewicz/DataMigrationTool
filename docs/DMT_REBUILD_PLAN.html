@@ -519,11 +519,11 @@ done under copy-app-before-modify. The detail views are left alone. (PR&nbsp;#10
 </table>
 </div>
 
-<p><strong>Render bugs diagnosed; the standard-compliant fix is pending (APEX-side).</strong> With the
-(now-reverted) view aliases in place, a live sweep showed 36 of 37 pages rendering — proving the diagnosis:
-8 landing pages fail on the <code>INTEGRATION_ID</code>→<code>RUN_ID</code> reference drift, page 57 on the
-<code>STATUS</code>/<code>TFM_STATUS</code> drift. The compliant remedy is to rewire those APEX references to
-the real column names (copy-app-before-modify), not to alias the views. A separate, genuinely APEX-side issue
+<p><strong>Render bugs diagnosed and fixed the compliant way (PR&nbsp;#111, merged).</strong> The
+8 landing pages failed on the <code>INTEGRATION_ID</code>→<code>RUN_ID</code> reference drift and page 57 on the
+<code>STATUS</code>/<code>TFM_STATUS</code> drift. The fix rewires those APEX references to the real column
+names (76 IR columns + 25 report lists + the page-57 region), not aliasing the views — verified on app&nbsp;156.
+A separate, genuinely APEX-side issue
 remains on page&nbsp;2 (Procure&nbsp;to&nbsp;Pay): <code>ORA-06502 — character string buffer too small</code>,
 because the Suppliers interactive report displays a ~166-column <code>SELECT *</code> over
 <code>DMT_V_SUPPLIERS_DETAIL</code> and APEX's generated column list exceeds an internal buffer; the remedy
@@ -532,7 +532,7 @@ there is to narrow that report's displayed columns.</p>
 <div class="overflow">
 <table>
   <tr><th style="width:60%">Remaining APEX-port work</th><th style="width:12%">Gated on</th><th style="width:28%">Notes</th></tr>
-  <tr><td><strong>Rewire the APEX references from <code>INTEGRATION_ID</code>/<code>STATUS</code> to <code>RUN_ID</code>/<code>TFM_STATUS</code></strong> — the 66 landing-page interactive reports and the page-57 region source (the §7-compliant replacement for the rejected view aliases)</td><td>APEX copy-before-modify</td><td>This is the real fix for the 8 landing pages + page 57. It is the Tier-6 naming sweep applied to the app.</td></tr>
+  <tr><td><s>Rewire the APEX references from <code>INTEGRATION_ID</code>/<code>STATUS</code> to <code>RUN_ID</code>/<code>TFM_STATUS</code></s> — <strong>DONE (PR&nbsp;#111, merged)</strong>: 76 IR columns + 25 report lists + the page-57 region rebound; verified on app 156.</td><td>—</td><td>The §7-compliant replacement for the rejected view aliases; the Tier-6 naming sweep applied to the app.</td></tr>
   <tr><td><s>Full drill verification against real run data (E7 step 3, section&nbsp;C base-tier counts, F5 render-proc output)</s> — <strong>VERIFIED 2026-07-15</strong></td><td>—</td><td>Verified against 38 pre-existing runs on <code>dmt2-local</code> (no new load needed). The full drill chain was walked over HTTP for run 153 (Customers): Run History → Run Detail (tiles render — F5) → Object Detail (funnel shows real base-tier LOADED/FAILED counts, e.g. Parties 2 loaded / 2 failed — section&nbsp;C) → Record Detail (both LOADED and FAILED lists resolve with rows and the "Verify in Fusion" button). All pages HTTP&nbsp;200, no region errors.</td></tr>
   <tr><td>Fusion REST-verify path (E8 / F6) — <strong>verified working 2026-07-15</strong></td><td>—</td><td>A live call to <code>DMT_REST_QUERY_PKG.QUERY_FUSION_RECORD</code> from <code>dmt2-local</code> reached the demo instance and returned authenticated JSON (network ACL for the demo host, wallet/TLS, credentials, and the <code>/fscmRestApi/.../suppliers</code> endpoint all function). Only exercising it from the page-57 "Verify" button (needs a LOADED record) and the ESS binary-download stream remain run-data-gated.</td></tr>
   <tr><td>Narrow the page-2 wide interactive reports (ORA-06502) — the only remaining render failure after the E6 page retirement landed (PR #116, verified: app 157, 44 pages, all other pages render)</td><td>APEX builder</td><td>APEX builds a <code>SELECT</code> over <em>every defined worksheet column</em> (166+ on the Suppliers / PO detail IRs), overflowing an internal buffer. The fix is to delete the non-displayed worksheet columns in the builder (not just trim the region query — that re-triggers ORA-00904 for the orphaned column definitions). Builder-grade surgery, deliberately not done by blind export-editing.</td></tr>
