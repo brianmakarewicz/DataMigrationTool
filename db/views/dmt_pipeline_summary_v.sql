@@ -44,18 +44,12 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_PIPELINE_SUMMARY_V" ("RUN_ID", "INTEGRAT
     -- (see DMT_V_CEMLI_STATUS) — no separate lookup row.
     SELECT 'Items',                                'MasterData',    1            FROM DUAL UNION ALL
     SELECT 'Banks',                                'MasterData',    3            FROM DUAL UNION ALL
-    SELECT 'BankBranches',                         'MasterData',    4            FROM DUAL UNION ALL
-    SELECT 'BankAccounts',                         'MasterData',    5            FROM DUAL UNION ALL
     SELECT 'GLCalendar',                           'Configuration', 1            FROM DUAL UNION ALL
     SELECT 'ValueSets',                            'Configuration', 2            FROM DUAL UNION ALL
-    SELECT 'ValueSetValues',                       'Configuration', 3            FROM DUAL UNION ALL
-    SELECT 'LookupTypes',                          'Configuration', 4            FROM DUAL UNION ALL
-    SELECT 'LookupValues',                         'Configuration', 5            FROM DUAL UNION ALL
-    SELECT 'UOM',                                  'Configuration', 6            FROM DUAL UNION ALL
+    SELECT 'Lookups',                              'Configuration', 4            FROM DUAL UNION ALL
+    SELECT 'UnitsOfMeasure',                       'Configuration', 6            FROM DUAL UNION ALL
     SELECT 'PaymentTerms',                         'Configuration', 7            FROM DUAL UNION ALL
-    SELECT 'PaymentTermLines',                     'Configuration', 8            FROM DUAL UNION ALL
-    SELECT 'TaxRegimes',                           'Configuration', 9            FROM DUAL UNION ALL
-    SELECT 'TaxRates',                             'Configuration',10            FROM DUAL
+    SELECT 'TaxConfig',                            'Configuration', 9            FROM DUAL
 ),
 -- Parse CEMLI_SEQUENCE CSV into individual rows per run
 run_cemlis AS (
