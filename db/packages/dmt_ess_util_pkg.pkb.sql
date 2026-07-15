@@ -1205,3 +1205,26 @@
 
 END DMT_ESS_UTIL_PKG;
 /
+
+-- ---------------------------------------------------------------------------
+-- APEX stop-signal branch selection for the ESS file-download procedures.
+-- This body compiles on a non-APEX DB via the $$apex_installed conditional-
+-- compilation flag (default FALSE -> DOWNLOAD_* raise a raw ORA-20876). On a DB
+-- that HAS APEX, the download must instead call APEX_APPLICATION.STOP_APEX_ENGINE
+-- (APEX's real halt signal); a raw ORA-20876 is not recognised by the APEX
+-- engine and surfaces as a broken download / HTTP 400. So: if APEX is present
+-- (the PUBLIC synonym APEX_APPLICATION exists), recompile this body with
+-- apex_installed:TRUE. Guarded + idempotent; a no-op on a non-APEX DB.
+-- (The local dmt2-local DB gained APEX with the Stage-F APEX port; the DB build
+-- itself sets no ccflags, so this self-selects the correct branch on deploy.)
+-- ---------------------------------------------------------------------------
+declare
+  l_apex number;
+begin
+  select count(*) into l_apex from all_synonyms
+   where synonym_name = 'APEX_APPLICATION' and owner = 'PUBLIC';
+  if l_apex > 0 then
+    execute immediate q'[ALTER PACKAGE DMT_ESS_UTIL_PKG COMPILE BODY PLSQL_CCFLAGS='apex_installed:TRUE' REUSE SETTINGS]';
+  end if;
+end;
+/
