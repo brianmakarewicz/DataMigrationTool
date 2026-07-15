@@ -270,16 +270,26 @@
     -- ============================================================
     PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
     BEGIN
+        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
+        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
+        --   the object owns.>>
         UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
         SET    TFM_STATUS           = 'FAILED',
                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
+        --   literal '[RECONCILE_ERROR] ' tag.>>
                    '[RECONCILE_ERROR] GL journal line not confirmed in Fusion '
                    || '(not found in GL_JE_HEADERS / GL_JE_LINES for this run) after '
-                   || 'reconciliation; its import outcome could not be verified.'),
+                   || 'reconciliation; its import outcome could not be verified.'
+        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
+               ),
                RESULTS_UPDATED_DATE = SYSDATE,
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        -- (EDIT-SCOPE deleted — DMT_GL_INTERFACE_TFM_TBL is not shared.)
+        ;
     END SWEEP_UNACCOUNTED;
 
     -- --------------------------------------------------------

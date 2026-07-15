@@ -38,9 +38,9 @@ using (
     union all select 'SupplierSiteAssignments', 'Site Assignments', 'DMT_POZ_SUP_SITE_ASSN_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'SupplierContacts', 'Supplier Contacts', 'DMT_POZ_SUP_CONTACTS_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'PurchaseOrders', 'PO Headers', 'DMT_PO_HEADERS_INT_TFM_TBL', 'TFM_STATUS', 'STYLE_DISPLAY_NAME = ''Purchase Order''', 1 from dual
-    union all select 'PurchaseOrders', 'PO Lines', 'DMT_PO_LINES_INT_TFM_TBL', 'TFM_STATUS', null, 2 from dual
-    union all select 'PurchaseOrders', 'PO Line Locations', 'DMT_PO_LINE_LOCS_INT_TFM_TBL', 'TFM_STATUS', null, 3 from dual
-    union all select 'PurchaseOrders', 'PO Distributions', 'DMT_PO_DISTS_INT_TFM_TBL', 'TFM_STATUS', null, 4 from dual
+    union all select 'PurchaseOrders', 'PO Lines', 'DMT_PO_LINES_INT_TFM_TBL', 'TFM_STATUS', 'INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = ''Purchase Order'')', 2 from dual
+    union all select 'PurchaseOrders', 'PO Line Locations', 'DMT_PO_LINE_LOCS_INT_TFM_TBL', 'TFM_STATUS', 'INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL WHERE INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = ''Purchase Order''))', 3 from dual
+    union all select 'PurchaseOrders', 'PO Distributions', 'DMT_PO_DISTS_INT_TFM_TBL', 'TFM_STATUS', 'INTERFACE_LINE_LOCATION_KEY IN (SELECT INTERFACE_LINE_LOCATION_KEY FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL WHERE INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL WHERE INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = ''Purchase Order'')))', 4 from dual
     union all select 'BlanketPOs', 'Blanket PO Headers', 'DMT_PO_HEADERS_INT_TFM_TBL', 'TFM_STATUS', 'STYLE_DISPLAY_NAME = ''Blanket Purchase Agreement''', 1 from dual
     union all select 'BlanketPOs', 'Blanket PO Lines', 'DMT_PO_LINES_INT_TFM_TBL', 'TFM_STATUS', 'INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = ''Blanket Purchase Agreement'')', 2 from dual
     union all select 'Contracts', 'Contract Headers', 'DMT_PO_HEADERS_INT_TFM_TBL', 'TFM_STATUS', 'STYLE_DISPLAY_NAME = ''Contract Purchase Agreement''', 1 from dual
