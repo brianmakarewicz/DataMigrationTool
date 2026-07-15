@@ -284,53 +284,56 @@ begin
     where  scenario_id = l_scn and stg_status = 'NEW';
     assert(l_cnt = 3, 11, 'VALIDATE_SUPPLIERS is a no-op: all 3 supplier rows stay NEW');
 
-    -- 12-15. Addresses: parent supplier must have a LOADED TFM row from
-    -- any run (Overview pre-validate decision 2026-07-07); failures are
-    -- tagged [PRE_VALIDATION] (section 5 tag table) and never proceed
-    -- to transform.
-    dmt_poz_sup_validator_pkg.validate_addresses(:run_id);
+    -- 12-21. Run the full pre-validation orchestrator. New contract (section 7,
+    -- 2026-07-15): each check RECORDS the rejection in the run-stamped
+    -- DMT_STG_TFM_ERROR_TBL with the [PRE_VALIDATION] tag and never writes to the
+    -- STG row; FLAG_STG_FAILED (called by VALIDATE_UPSTREAM) then flags the STG
+    -- row FAILED — STATUS ONLY, no message. So GOOD rows stay NEW, and a BAD row
+    -- must (a) have an error-table row with the [PRE_VALIDATION] tag, (b) end
+    -- FAILED on STG, and (c) carry NO ERROR_TEXT on the STG row.
+    dmt_poz_sup_validator_pkg.validate_upstream(:run_id);
+
+    -- Addresses
     select stg_status into l_status from dmt_poz_sup_addr_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP LoadedSup';
     assert(l_status = 'NEW', 12, 'GOOD address (parent has LOADED TFM row) passes: stays NEW');
+    select count(*) into l_cnt from dmt_owner.dmt_stg_tfm_error_tbl
+    where  run_id = :run_id and sub_object = 'Supplier Addresses'
+    and    error_text like '[PRE_VALIDATION]%TESTSUP Ghost%';
+    assert(l_cnt >= 1, 13, 'BAD address (ghost supplier) recorded in DMT_STG_TFM_ERROR_TBL with the [PRE_VALIDATION] tag');
     select stg_status, error_text into l_status, l_err from dmt_poz_sup_addr_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP Ghost';
-    assert(l_status = 'FAILED', 13, 'BAD address (ghost supplier — no TFM row anywhere) marked FAILED');
-    assert(l_err like '%[PRE_VALIDATION]%', 14, 'BAD address ERROR_TEXT carries the [PRE_VALIDATION] tag');
-    assert(l_err like '[SEED] prior error%[PRE_VALIDATION]%', 15,
-           'ERROR_TEXT appended after the seeded text, never overwritten (section 5)');
+    assert(l_status = 'FAILED', 14, 'BAD address STG row flagged FAILED (status only) by FLAG_STG_FAILED');
+    assert(l_err not like '%[PRE_VALIDATION]%', 15, 'BAD address STG row carries NO [PRE_VALIDATION] message — the error lives in the error table (section 7)');
 
-    -- 16-17. Sites: parent supplier must have a LOADED TFM row.
-    dmt_poz_sup_validator_pkg.validate_sites(:run_id);
+    -- Sites
     select stg_status into l_status from dmt_poz_sup_site_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP LoadedSup' and vendor_site_code = 'TSUP-SITE-G1';
     assert(l_status = 'NEW', 16, 'GOOD site (parent has LOADED TFM row) passes: stays NEW');
-    select stg_status, error_text into l_status, l_err from dmt_poz_sup_site_stg_tbl
-    where  scenario_id = l_scn and vendor_name = 'TESTSUP Ghost';
-    assert(l_status = 'FAILED' and l_err like '%[PRE_VALIDATION]%', 17,
-           'BAD site (ghost supplier) FAILED with [PRE_VALIDATION] tag');
+    select count(*) into l_cnt from dmt_owner.dmt_stg_tfm_error_tbl
+    where  run_id = :run_id and sub_object = 'Supplier Sites'
+    and    error_text like '[PRE_VALIDATION]%TESTSUP Ghost%';
+    assert(l_cnt >= 1, 17, 'BAD site (ghost supplier) recorded in the error table with the [PRE_VALIDATION] tag');
 
-    -- 18-19. Site assignments: parent SITE must have a LOADED TFM row.
-    -- The BAD row references TSUP-SITE-G1, whose STG row exists (NEW)
-    -- but has no LOADED TFM row — proving the check reads the TFM
-    -- tier, not STG status.
-    dmt_poz_sup_validator_pkg.validate_site_assignments(:run_id);
+    -- Site assignments: parent SITE must have a LOADED TFM row. The BAD row
+    -- references TSUP-SITE-G1, whose STG row exists (NEW) but has no LOADED TFM
+    -- row — proving the check reads the TFM tier, not STG status.
     select stg_status into l_status from dmt_poz_sup_site_assn_stg_tbl
     where  scenario_id = l_scn and vendor_site_code = 'TSUP-SITE-L1';
     assert(l_status = 'NEW', 18, 'GOOD assignment (parent site has LOADED TFM row) passes: stays NEW');
-    select stg_status, error_text into l_status, l_err from dmt_poz_sup_site_assn_stg_tbl
-    where  scenario_id = l_scn and vendor_site_code = 'TSUP-SITE-G1' and source_id = 'TESTSUP-ASSN-BAD1';
-    assert(l_status = 'FAILED' and l_err like '%[PRE_VALIDATION]%', 19,
-           'BAD assignment (site STG row present but no LOADED TFM row) FAILED with [PRE_VALIDATION] tag');
+    select count(*) into l_cnt from dmt_owner.dmt_stg_tfm_error_tbl
+    where  run_id = :run_id and sub_object = 'Site Assignments'
+    and    error_text like '[PRE_VALIDATION]%TSUP-SITE-G1%';
+    assert(l_cnt >= 1, 19, 'BAD assignment (site present but no LOADED TFM row) recorded in the error table with the [PRE_VALIDATION] tag');
 
-    -- 20-21. Contacts: parent supplier must have a LOADED TFM row.
-    dmt_poz_sup_validator_pkg.validate_contacts(:run_id);
+    -- Contacts
     select stg_status into l_status from dmt_poz_sup_contacts_stg_tbl
     where  scenario_id = l_scn and vendor_name = 'TESTSUP LoadedSup';
     assert(l_status = 'NEW', 20, 'GOOD contact (parent has LOADED TFM row) passes: stays NEW');
-    select stg_status, error_text into l_status, l_err from dmt_poz_sup_contacts_stg_tbl
-    where  scenario_id = l_scn and vendor_name = 'TESTSUP Ghost';
-    assert(l_status = 'FAILED' and l_err like '%[PRE_VALIDATION]%', 21,
-           'BAD contact (ghost supplier) FAILED with [PRE_VALIDATION] tag');
+    select count(*) into l_cnt from dmt_owner.dmt_stg_tfm_error_tbl
+    where  run_id = :run_id and sub_object = 'Supplier Contacts'
+    and    error_text like '[PRE_VALIDATION]%TESTSUP Ghost%';
+    assert(l_cnt >= 1, 21, 'BAD contact (ghost supplier) recorded in the error table with the [PRE_VALIDATION] tag');
     commit;
 
     :passed := :passed + l_passed;
