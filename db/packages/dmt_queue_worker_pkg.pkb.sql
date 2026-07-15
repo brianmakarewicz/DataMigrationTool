@@ -280,8 +280,8 @@ AS
     -- EXECUTE_ONE — called by one-shot child job DMT_WQ_{queue_id}
     -- Runs in its own DB session. Does the full validate -> transform
     -- -> generate -> SUBMIT_LOAD cycle for one queue row. The item
-    -- keeps the processing status it was claimed with (VALIDATING —
-    -- the Overview's PROCESSING end-state name, rename is P2 §12)
+    -- keeps the processing status it was claimed with (PROCESSING —
+    -- the status covering the whole data phase)
     -- for the WHOLE data phase; it leaves it only when the load is
     -- submitted (→ AWAITING_LOAD) or the phase settles (Overview
     -- work-item status table, PROCESSING row: "the item leaves
@@ -313,7 +313,7 @@ AS
         -- used to sit here is removed — LOADING before validate/transform/
         -- generate contradicted the Overview status table (LOADING = "Load
         -- submission in progress"). The row stays in its claimed processing
-        -- status (VALIDATING) until the load submission completes.
+        -- status (PROCESSING) until the load submission completes.
 
         -- Set async mode: run_one_object_type returns after SUBMIT_LOAD.
         -- SYNC (MiscReceipts) and LOCAL (mocks) run inline.
