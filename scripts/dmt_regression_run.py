@@ -232,6 +232,97 @@ def wait_for_run(run_id, timeout_min, stall_min):
 # Evaluate
 # ---------------------------------------------------------------------------
 
+def rest_spot_check(cur, run_id, result):
+    """Step 6 — replicate the page-57 "Verify in Fusion" button, once per object.
+
+    Mirrors exactly what the UI does when a user clicks Verify on a Record
+    Detail row (app process QUERY_FUSION_REST):
+
+        1. Take the object display catalog (DMT_V_CEMLI_TFM_TABLES) — the list
+           of objects and the TFM table behind each sub-object.
+        2. For each, take the most recent successful (LOADED) row in this run.
+        3. Call the SAME API the button calls —
+           DMT_REST_QUERY_PKG.QUERY_FUSION_RECORD(sub_object, display_key,
+           tfm_seq_id, lookup_key||display_key) — which makes a live REST call
+           to the demo Fusion instance and returns the record.
+
+    This is one live read-back per object/TFM-table, not per-row reconciliation:
+    bulk per-row confirmation that every migrated row reached a Fusion base
+    table is the BIP reconciler's job (it sets each TFM row LOADED/FAILED). A
+    non-FOUND here is recorded as a REVIEW item, not a hard failure, because it
+    can mean the REST lookup for that object is unconfigured or misconfigured
+    (e.g. the button passes the sub-object label while DMT_REST_LOOKUP_TBL is
+    keyed by object code) rather than a migration defect — surfacing exactly
+    that is the point."""
+    print("\n[6] REST verify spot-check — same call as the page-57 button, one per object/TFM table")
+    cur.execute("""
+        WITH latest AS (
+            SELECT rd.CEMLI_CODE, rd.SUB_OBJECT, rd.DISPLAY_KEY, rd.LOOKUP_KEY,
+                   rd.TFM_SEQUENCE_ID,
+                   ROW_NUMBER() OVER (PARTITION BY rd.CEMLI_CODE, rd.SUB_OBJECT
+                                      ORDER BY rd.TFM_SEQUENCE_ID DESC) rn
+            FROM   DMT_RECORD_DETAIL_V rd
+            WHERE  rd.RUN_ID = :rid
+              AND  rd.TFM_STATUS = 'LOADED'
+        )
+        SELECT c.CEMLI_CODE, c.DISPLAY_NAME AS sub_object, c.TFM_TABLE,
+               l.DISPLAY_KEY, l.LOOKUP_KEY, l.TFM_SEQUENCE_ID
+        FROM   DMT_V_CEMLI_TFM_TABLES c
+        JOIN   latest l
+               ON  l.CEMLI_CODE = c.CEMLI_CODE
+               AND l.SUB_OBJECT = c.DISPLAY_NAME
+               AND l.rn = 1
+        ORDER BY c.CEMLI_CODE, c.SORT_ORDER
+    """, rid=run_id)
+    targets = cur.fetchall()
+    spot = []
+    result['rest_spotcheck'] = spot
+    if not targets:
+        print("    (no object/TFM table has a LOADED row in this run to verify)")
+        return
+    for cemli, sub_object, tfm_table, display_key, lookup_key, tfm_seq in targets:
+        x04 = lookup_key or display_key          # button: x04 = lookupKey || dispKey
+        status, detail = 'ERROR', None
+        try:
+            cur.execute(
+                "SELECT DMT_REST_QUERY_PKG.QUERY_FUSION_RECORD(:1, :2, :3, :4) FROM DUAL",
+                [sub_object, display_key, int(tfm_seq) if tfm_seq is not None else None, x04])
+            raw = cur.fetchone()[0]
+            doc_str = raw.read() if hasattr(raw, 'read') else raw
+            try:
+                doc = json.loads(doc_str) if doc_str else {}
+            except Exception:
+                doc = {}
+            if doc.get('status') == 'ok' and doc.get('rows'):
+                status, detail = 'FOUND', f"{len(doc['rows'])} field(s) from Fusion"
+            elif doc.get('status') == 'ok':
+                status, detail = 'NO_DATA', 'Fusion returned no matching record'
+            else:
+                msg = str(doc.get('message') or doc_str or '')
+                low = msg.lower()
+                if 'no rest lookup' in low:
+                    status = 'NOT_CONFIGURED'
+                elif '404' in low or 'not found' in low or 'no rows' in low or 'no record' in low:
+                    status = 'NOT_FOUND'
+                else:
+                    status = 'ERROR'
+                detail = msg[:180]
+        except Exception as e:
+            status, detail = 'ERROR', str(e)[:180]
+        spot.append({'cemli_code': cemli, 'sub_object': sub_object, 'tfm_table': tfm_table,
+                     'key': x04, 'tfm_seq_id': int(tfm_seq) if tfm_seq is not None else None,
+                     'status': status, 'detail': detail})
+        flag = 'ok  ' if status == 'FOUND' else 'MISS'
+        print(f"    {flag} {cemli:<16} {sub_object:<22} {status:<14} key={x04}"
+              + (f"  - {detail}" if detail else ''))
+        if status != 'FOUND':
+            result['review'].append(
+                f"REST verify {cemli}/{sub_object}: {status}"
+                + (f" ({detail})" if detail else ''))
+    n_found = sum(1 for s in spot if s['status'] == 'FOUND')
+    print(f"    {n_found}/{len(spot)} object/TFM table(s) read back from Fusion via the button's REST call")
+
+
 def evaluate(run_id, baseline_arg):
     conn = connect()
     conn.call_timeout = 120_000
@@ -452,6 +543,13 @@ def evaluate(run_id, baseline_arg):
         result['baseline_regressions'] = regressions
     else:
         print("\n[5] Baseline diff skipped (no comparable prior run)")
+
+    # ---- 6. REST spot-check: one live Fusion lookup per object type -------
+    try:
+        rest_spot_check(cur, run_id, result)
+    except Exception as e:
+        result['review'].append(f"REST spot-check could not run: {str(e)[:180]}")
+        print(f"\n[6] REST spot-check skipped: {str(e)[:180]}")
 
     conn.close()
     return result
