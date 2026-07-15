@@ -542,6 +542,25 @@ there is to narrow that report's displayed columns.</p>
 </table>
 </div>
 
+<h3 id="ui-redesign-progress">UI Redesign Progress — mock-ups vs. the app (2026-07-15)</h3>
+<p>After the port rendered clean, the page mock-ups (<code>docs/DMT_PAGE_MOCKUPS.html</code>, restored from the
+original workspace — it had been missed in the migration) were reviewed against design sections 8–10 and the
+live app. A full per-screen gap analysis was produced. Items executed and verified on <code>dmt2-local</code>:</p>
+<div class="overflow">
+<table>
+  <tr><th style="width:22%">Screen</th><th style="width:14%">Status</th><th>What changed / found</th></tr>
+  <tr><td>Object Detail funnel (p52)</td><td><strong>Rebuilt</strong></td><td>The §10 redesign. The old breakdown counted by the mutable status column (Staged/Generated read 0 on a finished run). Rebuilt over durable sources — Transformed = <code>COUNT(TFM)</code>, Generated = <code>FBDI_CSV_ID</code>, Staged = Transformed + per-record-type pre-transform rejects (<code>DMT_STG_TFM_ERROR_TBL</code>), Loaded = base-confirmed, Unacct = remainder. Verified against run 153 (matches <code>DMT_OBJECT_DETAIL_V</code> exactly; Transformed now reads real counts on finished runs). Loaded/Failed pills drill to p57.</td></tr>
+  <tr><td>Dashboard (p1)</td><td><strong>Repointed</strong></td><td>Stat tiles + recent-runs moved off the retired master table onto the run/queue model (<code>DMT_PIPELINE_RUN_TBL</code>, <code>DMT_OBJECT_DETAIL_V</code>, <code>DMT_RUN_HISTORY_V</code>); tiles match the DB exactly.</td></tr>
+  <tr><td>Deprecated pages 13/56/81/83</td><td><strong>Deleted</strong></td><td>Finished the §8 deletion set the E6 pass started; p54 kept until the log browser exists.</td></tr>
+  <tr><td>Run Detail palette (p82)</td><td><strong>Verified</strong></td><td>The §9 "palette not implemented" gap note is stale — <code>DMT_RUN_DETAIL_TILES</code> already emits the full 7-colour palette and distinguishes data-failure (light-red / light-green) from infrastructure-failure (red), with unaccounted influencing colour.</td></tr>
+  <tr><td>ESS Job Detail files table (p53)</td><td><strong>Verified</strong></td><td>Already satisfied — p53 renders the job hierarchy only, no files table (files live on p58 ESS Output).</td></tr>
+</table>
+</div>
+<p>The <strong>Activity Log browser</strong> is now built by repurposing the orphaned deprecated page p54 (it already carried an interactive report over <code>DMT_LOG_TBL</code> and had no inbound links): the run filter was made optional so it shows all 38 runs searchable via the IR's native controls, and the page was renamed "Activity Log" (so p54 is repurposed, not deleted). Still open (the plan's suggested order): wiring the "View Activity Log" pre-filter links from Run Detail / Object Detail and an explicit filter bar; browser-verification
+of the Run Pipeline Plan→Confirm click-through (p84) and ESS binary download (p58); and the P3
+<code>*_INTEGRATION_ID</code>→<code>*_RUN_ID</code> page-item naming sweep. None are blocked — every data source
+exists on <code>dmt2-local</code>.</p>
+
 <!-- ============================================================ -->
 <h2 id="backlog-coverage">4.5 Backlog Coverage — every P1/P2/P3 item, in upstream-first order</h2>
 
