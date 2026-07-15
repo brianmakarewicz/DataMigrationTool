@@ -49,9 +49,11 @@ AS
         DECLARE
             l_any_loaded NUMBER;
         BEGIN
+            -- LOADED is a TFM-only status (STG never carries it, design §5), so the
+            -- "have projects migrated?" gate reads the projects TFM table.
             SELECT COUNT(*) INTO l_any_loaded
-            FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL
-            WHERE  STG_STATUS = 'LOADED' AND ROWNUM = 1;
+            FROM   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+            WHERE  TFM_STATUS = 'LOADED' AND ROWNUM = 1;
 
             IF l_any_loaded > 0 THEN
                 UPDATE DMT_OWNER.DMT_PRJ_BUDGET_STG_TBL e
@@ -67,8 +69,10 @@ AS
                 AND    NOT EXISTS (
                            SELECT 1
                            FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL p
+                           JOIN   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL pt
+                                  ON pt.STG_SEQUENCE_ID = p.STG_SEQUENCE_ID
                            WHERE  p.PROJECT_NAME = e.PROJECT_NAME
-                           AND    p.STG_STATUS       = 'LOADED'
+                           AND    pt.TFM_STATUS  = 'LOADED'
                        );
                 l_failed := SQL%ROWCOUNT;
             END IF;
