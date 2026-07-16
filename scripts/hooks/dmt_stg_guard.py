@@ -9,13 +9,14 @@ or hand-resetting row status. See docs/DMT_DESIGN.html section 7, the canonical
 per-object flow + run-mode rules.
 
 This hook BLOCKS (exit 2) a Bash/PowerShell command that:
-  * INSERTs into a DMT_*_STG_TBL / DMT_*_TFM_TBL   (re-loading test data ad-hoc), or
+  * INSERTs into a DMT_*_STG_TBL / DMT_*_TFM_TBL   (re-loading test data), or
   * UPDATEs a *_STG_STATUS / TFM_STATUS column      (hand-resetting row status), or
   * DELETEs from a DMT_*_STG_TBL / DMT_*_TFM_TBL
 
-...unless the command runs the sanctioned scenario-setup script
-(insert_regression_test_data.py) — the ONE place test data is (re)loaded, as part
-of setting up or resetting a scenario, not on every test run.
+There is NO exemption — not even the seed script. Test data is inserted into STG
+ONCE (the source inventory), and from then on every test re-runs IN PLACE under a
+new prefix. Nothing is ever re-inserted, status-reset, or deleted, because doing so
+destroys run history and defeats the whole prefix/run-mode design.
 
 To re-run existing scenario data instead of reloading it:
     DMT_SUBMIT_RUN_V2('P2P', p_scenario_name=>'RegressionTest', p_run_mode=>'ALL')
@@ -29,14 +30,17 @@ reads is invisible — the real enforcement there is discipline. Guardrail, not 
 """
 import sys, json, re
 
-# INSERT/DELETE against a staging or transform table, or UPDATE of a row-status column.
+# Any INSERT/DELETE/TRUNCATE/MERGE against a staging or transform table, or an
+# UPDATE of a row-status column.
 STG_WRITE = re.compile(
-    r'\b(INSERT\s+INTO|DELETE\s+FROM)\s+("?DMT_OWNER"?\.)?"?DMT_[A-Z0-9_]+_(STG|TFM)_TBL'
+    r'\b(INSERT\s+INTO|DELETE\s+FROM|TRUNCATE\s+TABLE|MERGE\s+INTO)\s+("?DMT_OWNER"?\.)?"?DMT_[A-Z0-9_]+_(STG|TFM)_TBL'
     r'|\bUPDATE\s+("?DMT_OWNER"?\.)?"?DMT_[A-Z0-9_]+_(STG|TFM)_TBL[\s\S]{0,400}?\bSET\b[\s\S]{0,200}?\b(STG_STATUS|TFM_STATUS)\s*=',
     re.I)
 DB = re.compile(r'connect_atp|oracledb|sqlcl|sqlplus|sql\s+/nolog|/c/Users/Monroe/tools/sqlcl', re.I)
-# The one sanctioned place test data is (re)loaded / a scenario is (re)set up.
-SANCTIONED = re.compile(r'insert_regression_test_data\.py', re.I)
+# Scripts that write STG/TFM internally (the hook can't see SQL inside a file, so
+# block them by name). Match only EXECUTION (python <script>), never reading it
+# (grep/cat/sed/head of the file is fine).
+STG_WRITER_SCRIPT = re.compile(r'\b(python[0-9.]*|py)\s+\S*insert_regression_test_data\.py', re.I)
 
 
 def main():
@@ -48,15 +52,14 @@ def main():
     cmd = ti.get('command', '') or ''
     if not cmd:
         sys.exit(0)
-    if STG_WRITE.search(cmd) and DB.search(cmd) and not SANCTIONED.search(cmd):
+    if (STG_WRITE.search(cmd) and DB.search(cmd)) or STG_WRITER_SCRIPT.search(cmd):
         sys.stderr.write(
-            "BLOCKED (regression-scenario policy): don't insert/delete test data into the\n"
-            "STG/TFM tables or hand-reset STG_STATUS/TFM_STATUS ad-hoc. Test data is loaded\n"
-            "ONCE as a scenario and re-run in place with the run-mode flags:\n"
+            "BLOCKED (regression-scenario policy): NO inserts/deletes into STG/TFM tables and\n"
+            "NO hand-reset of STG_STATUS/TFM_STATUS — there is no exemption, not even the seed\n"
+            "script. Test data is inserted into STG ONCE (the source inventory); from then on\n"
+            "every test re-runs IN PLACE under a new prefix. Nothing is re-inserted or deleted.\n"
             "  DMT_SUBMIT_RUN_V2('<PIPELINE>', p_scenario_name=>'RegressionTest', p_run_mode=>'ALL')\n"
             "    ALL = re-run every scenario row (new prefix) | FAILED = retry errors | NEW = new rows\n"
-            "To (re)load or set up scenario data, use the one sanctioned script:\n"
-            "  python scripts/insert_regression_test_data.py\n"
             "(SELECT-only queries are fine; this only blocks staging writes.)\n")
         sys.exit(2)  # exit 2 = block the tool call, stderr shown to the model
     sys.exit(0)
