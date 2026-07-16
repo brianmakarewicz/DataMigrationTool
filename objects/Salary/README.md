@@ -63,3 +63,55 @@ See `v2_audit.md` for full attribute audit details.
 
 ## History
 - 2026-04-04: E2E LOADED confirmed. 2/2 good records loaded, 1 bad record correctly rejected (nonexistent salary basis).
+
+## Minimal test-data plan (2026-07-15)
+
+Goal: one GOOD salary for the good worker `RT-WKR-G1` reaches `CMP_SALARY`, and one BAD
+salary reaches FAILED with a reportable Fusion error. All HCM objects in a regression run
+share one numeric prefix, so the `AssignmentId(SourceSystemId)` FK
+(`RT-WKR-G1_ASG`) resolves to the assignment loaded earlier in the same run.
+
+### Required STG table/columns (from `dmt_salary_hdl_gen_pkg`)
+Single table: **`DMT_SALARY_STG_TBL`**. Salary is standalone — no parent chain — but it
+DEPENDS on Workers/Assignments having loaded first so the assignment SSID exists. Columns
+the generator actually emits (SSID is `PERSON_NUMBER || '_SAL'`, FK is `PERSON_NUMBER || '_ASG'`):
+`PERSON_NUMBER`, `DATE_FROM` (YYYY/MM/DD), `SALARY_AMOUNT`, `SALARY_BASIS_NAME`,
+`SALARY_APPROVED`, `ACTION_CODE`, `NEXT_SAL_REVIEW_DATE` (optional), `DATE_TO` (optional),
+plus infra `SOURCE_ID`, `STG_STATUS='NEW'`.
+
+### Real reference values (queried live via BIP, hcm_impl)
+| Field | Real value | Query source |
+|-------|-----------|--------------|
+| Salary basis name | `US1 Annual Salary` | `CMP_SALARY_BASES_TL` (code `US1_Annual_Salary`, status A) — CONFIRMED active |
+| Currency / frequency | derived from the basis (do NOT supply — V2-invalid) | basis is annual, USD |
+| Action code | `HIRE` (first salary for a worker) | proven 2026-04-04 |
+
+### Proposed GOOD seed row (references RT-WKR-G1)
+`DMT_SALARY_STG_TBL` (one GOOD row):
+
+| Column | Value |
+|--------|-------|
+| PERSON_NUMBER | `RT-WKR-G1` |
+| ASSIGNMENT_NUMBER | `ET-RT-WKR-G1` (informational; FK uses PERSON_NUMBER_ASG) |
+| SALARY_AMOUNT | `75000` |
+| SALARY_BASIS_NAME | `US1 Annual Salary` |
+| ACTION_CODE | `HIRE` |
+| DATE_FROM | `2026/01/01` |
+| SALARY_APPROVED | `Y` |
+| SOURCE_ID | `RT-WKR-G1-SAL` |
+| STG_STATUS | `NEW` |
+
+### Proposed BAD seed row (validation failure at Fusion)
+Salary validator is a stub, so failure comes from Fusion. Proven mode: a salary basis that
+does not exist.
+
+`DMT_SALARY_STG_TBL` (one BAD row) — same as GOOD but:
+- PERSON_NUMBER `RT-WKR-G1`, SOURCE_ID `RT-WKR-G1-SAL-BAD`,
+  **SALARY_BASIS_NAME = `NONEXISTENT_BASIS`**.
+- Expected: Fusion rejects the invalid salary basis; row lands FAILED with reportable
+  ERROR_TEXT (exactly as the 2026-04-04 run).
+
+### Prerequisite reference data (confirmed present)
+- Salary basis `US1 Annual Salary` — CONFIRMED live and active on the demo instance.
+- The worker's assignment (`RT-WKR-G1_ASG`) must load first in the same prefixed run —
+  this is the only ordering dependency. No standalone blocker; GOOD row should reach `CMP_SALARY`.

@@ -153,6 +153,18 @@ def main():
         "DMT_PERSON_NAME_TFM_TBL",
         "DMT_WORKER_STG_TBL",
         "DMT_PERSON_NAME_STG_TBL",
+        "DMT_ASSIGNMENT_TFM_TBL",
+        "DMT_WORK_REL_TFM_TBL",
+        "DMT_ASSIGNMENT_STG_TBL",
+        "DMT_WORK_REL_STG_TBL",
+        "DMT_SALARY_TFM_TBL",
+        "DMT_SALARY_STG_TBL",
+        "DMT_PAY_REL_TFM_TBL",
+        "DMT_PAY_REL_STG_TBL",
+        "DMT_TALENT_PROF_ITEM_TFM_TBL",
+        "DMT_TALENT_PROF_TFM_TBL",
+        "DMT_TALENT_PROF_ITEM_STG_TBL",
+        "DMT_TALENT_PROF_STG_TBL",
         # Items (were missing from this list -- caused 15x STG-row accumulation
         #  across reloads because they were inserted+tagged but never cleaned)
         "DMT_EGP_ITEM_CAT_TFM_TBL",
@@ -2222,6 +2234,146 @@ def main():
     """, label="GOOD Worker name: Regina Tester")
     tag_scenario(cur, "DMT_WORKER_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_PERSON_NAME_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 42. ASSIGNMENTS (HCM HDL) — needs a WorkRelationship row too, because the
+    #     generator restates the parent chain from DMT_WORK_REL_TFM_TBL.
+    #     References the good worker RT-WKR-G1 (same prefix within a run).
+    #     Reference values mimic real worker person 10 (BU US1, JOB071, Sales).
+    #     (objects/Assignments/README.md, 2026-07-15.)
+    # ====================================================================
+    print("\n=== 42. Assignments (HCM) ===")
+    run_sql(cur, """
+        INSERT INTO DMT_OWNER.DMT_WORK_REL_STG_TBL (
+            PERSON_NUMBER, DATE_START, EFFECTIVE_START_DATE,
+            LEGAL_EMPLOYER_NAME, ACTION_CODE, WORKER_TYPE, PRIMARY_FLAG,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-G1', '2026/01/01', '2026/01/01',
+            'US1 Legal Entity', 'HIRE', 'E', 'Y',
+            'RT-WKR-G1-WR', 'NEW'
+        )
+    """, label="Work relationship for RT-WKR-G1")
+    # Good and bad must be DISTINCT records. The generator keys the Assignment
+    # SourceSystemId off PERSON_NUMBER (|| '_ASG'), NOT the assignment number, so
+    # the bad row uses a distinct person or HDL rejects both as duplicate lines.
+    for pnum, anum, status, bu, label in [
+        ("RT-WKR-G1",   "ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "GOOD Assignment: RT-WKR-G1"),
+        ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_ASSIGNMENT_STG_TBL (
+                PERSON_NUMBER, ASSIGNMENT_NAME, ASSIGNMENT_NUMBER,
+                EFFECTIVE_START_DATE, ASSIGNMENT_STATUS_TYPE_CODE,
+                BUSINESS_UNIT_NAME, ACTION_CODE, JOB_CODE, DEPARTMENT_NAME,
+                NORMAL_HOURS, FREQUENCY, ASSIGNMENT_CATEGORY,
+                PRIMARY_ASSIGNMENT_FLAG, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                :pnum, :anum, :anum,
+                '2026/01/01', :status,
+                :bu, 'HIRE', 'JOB071', 'Sales',
+                '40', 'W', 'FR',
+                'Y', :src, 'NEW'
+            )
+        """, {"pnum": pnum, "anum": anum, "status": status, "bu": bu, "src": f"RT-{anum}"},
+        label=label)
+    tag_scenario(cur, "DMT_WORK_REL_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_ASSIGNMENT_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 43. SALARIES (HCM HDL) → CMP_SALARY. One row, references the assignment
+    #     ET-RT-WKR-G1. Basis 'US1 Annual Salary' confirmed live. Currency/
+    #     frequency omitted (derived from the basis). (objects/Salary/README.md.)
+    # ====================================================================
+    # Good and bad salary must be DISTINCT records (different person+assignment,
+    # the HDL Salary discriminator), or HDL rejects them as "multiple data lines
+    # for the same record". Good targets the real worker's assignment; bad targets
+    # a nonexistent person so it is a separate record that fails cleanly.
+    print("\n=== 43. Salaries (HCM) ===")
+    for pnum, anum, basis, amt, label in [
+        ("RT-WKR-G1",  "ET-RT-WKR-G1",  "US1 Annual Salary", "75000", "GOOD Salary: RT-WKR-G1"),
+        ("RT-WKR-BSAL","ET-RT-WKR-BSAL","NONEXISTENT_BASIS", "80000", "BAD Salary: invalid basis + person [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_SALARY_STG_TBL (
+                PERSON_NUMBER, ASSIGNMENT_NUMBER, EFFECTIVE_START_DATE,
+                SALARY_AMOUNT, SALARY_BASIS_NAME, ACTION_CODE,
+                DATE_FROM, SALARY_APPROVED, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                :pnum, :anum, '2026/01/01',
+                :amt, :basis, 'HIRE',
+                '2026/01/01', 'Y', :src, 'NEW'
+            )
+        """, {"pnum": pnum, "anum": anum, "amt": amt, "basis": basis,
+              "src": f"RT-SAL-{pnum}"},
+        label=label)
+    tag_scenario(cur, "DMT_SALARY_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 44. PAYROLL RELATIONSHIPS (HCM HDL) → PAY_PAY_RELATIONSHIPS_F. One row.
+    #     LDG 'US Legislative Data Group' + payroll 'Biweekly' confirmed live.
+    #     (objects/PayrollRelationship/README.md, 2026-07-15.)
+    # ====================================================================
+    # The generator keys the PayrollRelationship SourceSystemId off PERSON_NUMBER
+    # (|| '_PAYREL'), so the bad row uses a distinct person to stay a separate
+    # record; otherwise HDL rejects both as duplicate data lines.
+    print("\n=== 44. Payroll Relationships (HCM) ===")
+    for pnum, ldg, label in [
+        ("RT-WKR-G1",   "US Legislative Data Group", "GOOD Payroll Relationship: RT-WKR-G1"),
+        ("RT-WKR-BPAY", "NONEXISTENT LDG",           "BAD Payroll Relationship: invalid LDG + distinct person [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_PAY_REL_STG_TBL (
+                PERSON_NUMBER, EFFECTIVE_START_DATE, LEGAL_EMPLOYER_NAME,
+                PAYROLL_NAME, PAYROLL_STATUS_CODE, LEGISLATIVE_DATA_GROUP_NAME,
+                SOURCE_ID, STG_STATUS
+            ) VALUES (
+                :pnum, '2026/01/01', 'US1 Legal Entity',
+                'Biweekly', 'A', :ldg,
+                :src, 'NEW'
+            )
+        """, {"pnum": pnum, "ldg": ldg, "src": f"RT-PAYREL-{pnum}"},
+        label=label)
+    tag_scenario(cur, "DMT_PAY_REL_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 45. TALENT PROFILES (HCM HDL) → HRT_PROFILE_ITEMS. Attaches a Person
+    #     profile + one competency item to the worker; no plan/unit prerequisite.
+    #     GOOD profile RT-WKR-G1_PROF (COMPETENCY 'Oral Communication', confirmed
+    #     live); BAD uses a distinct profile code with an invalid status.
+    #     (objects/TalentProfiles/README.md, 2026-07-15.)
+    # ====================================================================
+    # The generator keys the TalentProfile SourceSystemId off PERSON_NUMBER
+    # (|| '_TPROF'), NOT the profile code, so the bad row uses a distinct person
+    # to stay a separate record; otherwise HDL rejects both as duplicate lines.
+    print("\n=== 45. Talent Profiles (HCM) ===")
+    for pnum, pcode, status, label in [
+        ("RT-WKR-G1",    "RT-WKR-G1_PROF",    "A",       "GOOD Talent Profile: RT-WKR-G1"),
+        ("RT-WKR-BPROF", "RT-WKR-BPROF_PROF", "INVALID", "BAD Talent Profile: invalid status + distinct person [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_TALENT_PROF_STG_TBL (
+                PERSON_NUMBER, PROFILE_CODE, PROFILE_TYPE_CODE,
+                PROFILE_STATUS_CODE, PROFILE_USAGE_CODE, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                :pnum, :pcode, 'PERSON',
+                :status, 'P', :src, 'NEW'
+            )
+        """, {"pnum": pnum, "pcode": pcode, "status": status, "src": f"RT-{pcode}"},
+        label=label)
+
+    # One competency item for the GOOD profile
+    run_sql(cur, """
+        INSERT INTO DMT_OWNER.DMT_TALENT_PROF_ITEM_STG_TBL (
+            PERSON_NUMBER, CONTENT_TYPE_NAME, CONTENT_ITEM_NAME,
+            DATE_FROM, PROFILE_CODE, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-G1', 'COMPETENCY', 'Oral Communication',
+            '2026/01/01', 'RT-WKR-G1_PROF', 'RT-WKR-G1_PROF-IT', 'NEW'
+        )
+    """, label="GOOD Talent Profile item: Oral Communication")
+    tag_scenario(cur, "DMT_TALENT_PROF_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_TALENT_PROF_ITEM_STG_TBL", scenario_id)
 
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()

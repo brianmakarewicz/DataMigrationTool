@@ -63,3 +63,53 @@ None verified — cannot distinguish data quality failures from the status block
 
 ## History
 - 2026-04-04: All AbsenceStatus values tested. Every combination produces "conflicting processing and approval statuses" error. Object marked BLOCKED pending Fusion configuration investigation.
+
+## Minimal test-data plan (2026-07-15)
+
+Goal: add an absence entry to the existing proven worker `RT-WKR-G1` so it loads to the
+absence base table (`ANC_PER_ABS_ENTRIES`). NOTE: this object is still BLOCKED — see
+prerequisites below. The plan is written so it is ready the moment the blocker clears.
+
+### STG table and required columns
+Single table — `DMT_ABSENCE_STG_TBL`. Generator emits (V1 PersonAbsenceEntry discriminator):
+SourceSystemOwner (constant HRC_SQLLOADER), SourceSystemId (`PERSON_NUMBER || '_ABS'`),
+PersonId(SourceSystemId) (= PERSON_NUMBER), Employer (from EMPLOYER_NAME), AbsenceType,
+AbsenceStatus, StartDate, EndDate, StartTime, EndTime, Duration, AbsenceReason, Comments.
+Required columns to seed:
+- PERSON_NUMBER (FK to the worker) — `RT-WKR-G1`
+- EMPLOYER_NAME — `US1 Legal Entity` (the worker's legal employer)
+- ABSENCE_TYPE — a real US absence type name (see below)
+- ABSENCE_STATUS — see BLOCKER; every value tried fails on this instance
+- START_DATE, END_DATE (YYYY/MM/DD strings)
+- SOURCE_ID, STG_STATUS='NEW'
+- DURATION optional; START_TIME/END_TIME optional for a day-level absence
+
+### Real reference values (confirmed live 2026-07-15, hcm_impl)
+- US absence types (`anc_absence_types_vl` WHERE legislation_code='US'): `Vacation`, `Sick`,
+  `Bereavement`, `Short Term Disability`, `Long Term Disability`, and more.
+- Query: `SELECT name, legislation_code FROM anc_absence_types_vl WHERE legislation_code='US'`.
+- Legal employer `US1 Legal Entity` and BU `US1 Business Unit` are the worker's confirmed-live
+  references (carried from Workers/Salaries).
+
+### Proposed seed rows (dates as YYYY/MM/DD strings)
+GOOD — one absence entry keyed to RT-WKR-G1:
+- `DMT_ABSENCE_STG_TBL`: PERSON_NUMBER='RT-WKR-G1', EMPLOYER_NAME='US1 Legal Entity',
+  ABSENCE_TYPE='Vacation', ABSENCE_STATUS=(pending blocker resolution — see below),
+  START_DATE='2026/03/02', END_DATE='2026/03/03', SOURCE_ID='RT-ABS-G1', STG_STATUS='NEW'.
+
+BAD — distinct record; fails on an invalid absence type. The SourceSystemId is
+`PERSON_NUMBER || '_ABS'`, NOT the date range, so the bad row must use a distinct
+PERSON_NUMBER to be a separate record (a different date range alone would still collide):
+- `DMT_ABSENCE_STG_TBL`: PERSON_NUMBER='RT-WKR-BABS', EMPLOYER_NAME='US1 Legal Entity',
+  ABSENCE_TYPE='NONEXISTENT ABSENCE TYPE', ABSENCE_STATUS=(same as GOOD),
+  START_DATE='2026/04/06', END_DATE='2026/04/07', SOURCE_ID='RT-ABS-B1', STG_STATUS='NEW'.
+
+### Prerequisites / blockers
+BLOCKED — this is a Fusion instance configuration blocker, not a data blocker. Every
+AbsenceStatus value (SUBMITTED, APPROVED, COMPLETED, CONFIRMED, their ORA_ variants, and NULL)
+returns "conflicting processing and approval statuses". Until the demo instance's absence
+approval workflow is reconfigured, GOOD rows cannot reach the base table, so Rule #1 cannot be
+met. Do NOT seed/run this object for a live pass yet. The worker itself has no absence-plan
+prerequisite for a plain absence-type entry; the blocker is purely the approval-status config.
+Recommendation: keep BLOCKED; revisit only after the instance absence workflow is fixed, or
+table this object behind TalentProfiles and TaxCards.
