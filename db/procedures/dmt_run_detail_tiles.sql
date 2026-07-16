@@ -47,9 +47,9 @@
       -- run reaches a terminal status; only then do not-loaded rows count as failure.
       IF l_run_active AND NVL(p_failed_err,0) = 0 AND NVL(p_loaded,0) < NVL(p_total,0) THEN RETURN '#e8f0fe'; END IF;
       IF NVL(p_unacc,0)  >= p_total THEN RETURN '#f5b8b1'; END IF;  -- Red: all unaccounted
-      IF NVL(p_loaded,0) >= p_total THEN RETURN '#b7e1c0'; END IF;  -- Green: 100% loaded
+      IF NVL(p_loaded,0) >= p_total THEN RETURN '#5fbf4f'; END IF;  -- Pure green: 100% loaded
       IF NVL(p_unacc,0) > 0 OR NVL(p_loaded,0) = 0 THEN RETURN '#fce8e6'; END IF; -- Light red
-      RETURN '#d8e8a0';                                       -- Yellow-green: some failed but all accounted (distinct from the full-loaded mint green above)
+      RETURN '#c2e58f';                                       -- Light green (Option B): some failed but all accounted (distinct from the pure full-loaded green above)
     END tile_bg;
 
     -- Status line HTML, consistent with the colour the palette chose.
@@ -72,7 +72,7 @@
         RETURN '<span style="color:#b3261e">' || p_unacc || ' unaccounted</span>';
       END IF;
       IF NVL(p_loaded,0) >= p_total THEN
-        RETURN '<span style="color:#1a7d33">&#10003; ' || p_loaded || ' loaded</span>';
+        RETURN '<span style="color:#000">&#10003; ' || p_loaded || ' loaded</span>';  -- black: reads on the deeper full-loaded green
       END IF;
       -- only a genuine failure (rows FAILED with a reportable error) shows a red X;
       -- never render "0 failed" as a failure (e.g. a terminal run with rows stuck
