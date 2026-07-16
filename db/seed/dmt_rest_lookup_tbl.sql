@@ -1,6 +1,11 @@
 -- Seed data for DMT_REST_LOOKUP_TBL (68 rows, snapshot 2026-07-03)
 -- Idempotent: duplicate-key inserts are skipped.
 begin
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Items','/fscmRestApi/resources/11.13.18.05/itemsV2','ItemNumber={KEY}','SEGMENT1','ItemId,ItemNumber,ItemDescription,ItemStatusValue,ItemClass','Item ID,Number,Description,Status,Class','ERP','Y','itemsV2 resource; query by ItemNumber. Sub-object labels (Item Master, Item Categories) resolve to Items via the catalog. Verified live 2026-07-15.');
+exception when dup_val_on_index then null;
+end;
+/
+begin
   insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Suppliers','/fscmRestApi/resources/11.13.18.05/suppliers','Supplier={KEY}','SEGMENT1','SupplierId,Supplier,SupplierNumber,Status,CreationDate','Supplier ID,Name,Number,Status,Created','ERP','Y',NULL);
 exception when dup_val_on_index then null;
 end;
@@ -111,12 +116,12 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('BlanketPOs','/fscmRestApi/resources/11.13.18.05/purchaseOrders','OrderNumber={KEY}','DOCUMENT_NUM','POHeaderId,OrderNumber,ProcurementBUId,Supplier,Status,TotalAmount,CurrencyCode','PO ID,Order #,BU ID,Supplier,Status,Total,Currency','ERP','Y','purchaseOrders REST only returns Standard POs. Blanket/Contract agreements not accessible via this endpoint.');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('BlanketPOs','/fscmRestApi/resources/11.13.18.05/purchaseAgreements','AgreementNumber={KEY}','SEGMENT1','AgreementHeaderId,AgreementNumber,Supplier,Status,Amount,CurrencyCode','Agreement ID,Number,Supplier,Status,Amount,Currency','ERP','Y','purchaseAgreements resource; query by AgreementNumber = the migrated agreement number. Verified live 2026-07-15.');
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Contracts','/fscmRestApi/resources/11.13.18.05/purchaseOrders','OrderNumber={KEY}','DOCUMENT_NUM','POHeaderId,OrderNumber,ProcurementBUId,Supplier,Status,TotalAmount,CurrencyCode','PO ID,Order #,BU ID,Supplier,Status,Total,Currency','ERP','Y','purchaseOrders REST only returns Standard POs. Blanket/Contract agreements not accessible via this endpoint.');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Contracts','/fscmRestApi/resources/11.13.18.05/purchaseAgreements','AgreementNumber={KEY}','SEGMENT1','AgreementHeaderId,AgreementNumber,Supplier,Status,Amount,CurrencyCode','Agreement ID,Number,Supplier,Status,Amount,Currency','ERP','Y','purchaseAgreements resource; query by AgreementNumber = the migrated agreement number. Verified live 2026-07-15.');
 exception when dup_val_on_index then null;
 end;
 /
@@ -156,12 +161,12 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Blanket PO Headers','/fscmRestApi/resources/11.13.18.05/purchaseOrders','OrderNumber={KEY}','DOCUMENT_NUM','POHeaderId,OrderNumber,ProcurementBUId,Supplier,Status,TotalAmount,CurrencyCode','PO ID,Order #,BU ID,Supplier,Status,Total,Currency','ERP','Y','purchaseOrders REST only returns Standard POs. Blanket/Contract agreements not accessible via this endpoint.');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Blanket PO Headers','/fscmRestApi/resources/11.13.18.05/purchaseAgreements','AgreementNumber={KEY}','SEGMENT1','AgreementHeaderId,AgreementNumber,Supplier,Status,Amount,CurrencyCode','Agreement ID,Number,Supplier,Status,Amount,Currency','ERP','Y','purchaseAgreements resource; query by AgreementNumber. Verified live 2026-07-15.');
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Contract Headers','/fscmRestApi/resources/11.13.18.05/purchaseOrders','OrderNumber={KEY}','DOCUMENT_NUM','POHeaderId,OrderNumber,ProcurementBUId,Supplier,Status,TotalAmount,CurrencyCode','PO ID,Order #,BU ID,Supplier,Status,Total,Currency','ERP','Y','purchaseOrders REST only returns Standard POs. Blanket/Contract agreements not accessible via this endpoint.');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Contract Headers','/fscmRestApi/resources/11.13.18.05/purchaseAgreements','AgreementNumber={KEY}','SEGMENT1','AgreementHeaderId,AgreementNumber,Supplier,Status,Amount,CurrencyCode','Agreement ID,Number,Supplier,Status,Amount,Currency','ERP','Y','purchaseAgreements resource; query by AgreementNumber. Verified live 2026-07-15.');
 exception when dup_val_on_index then null;
 end;
 /
