@@ -156,9 +156,74 @@ Added <code>scripts/fusion_bip_query.py</code> (read-only ad-hoc Fusion BIP quer
 <strong>Owner direction (2026-07-15):</strong> work these by <em>mimicking real Fusion records</em> — query an existing good record per object (lot/serial items, an expenditure, a billing event, a req/PO, an AutoInvoiced AR invoice), copy its exact settings under new key values, and test the FBDI directly (via subagents) without a full pipeline run. Record every known-good record, query, and FBDI note under <code>objects/{object}/</code> so it persists. Grants and Project Budgets are tabled; if an item still won't progress after mimicking a real record, table it and move on.
 </div>
 
+<section id="objstatus">
+<h2>0 · Object Status Matrix &mdash; single source of truth for per-object live status</h2>
+<p style="margin:4px 0 10px">One row per object (same list as the canonical object catalog in <code>DMT_DESIGN.html</code> section&nbsp;1 / <code>DMT_PIPELINE_DEF_TBL</code>). This is a <strong>status table, not a log</strong> &mdash; update a cell when an object's live result changes; do not append dated entries. <strong>Good/Bad example</strong> = the specific record and the RUN_ID it was last verified on. <strong>Verify</strong> = checked once the GOOD record is confirmed in the Fusion <em>base</em> table (Rule&nbsp;#1) and the BAD record failed with a reportable error. <strong>Blocker</strong> = why it is not done, in detail. Verified live as of 2026-07-16 (runs 155&ndash;163).</p>
+<div style="overflow-x:auto">
+<table style="border-collapse:collapse;font:13px system-ui,Arial;width:100%">
+<thead><tr style="background:#1f3350;color:#fff;text-align:left">
+<th style="padding:5px 8px">Object</th><th style="padding:5px 8px">Good example (record / RUN_ID)</th><th style="padding:5px 8px">Bad example (record / RUN_ID)</th><th style="padding:5px 8px;text-align:center">Verify</th><th style="padding:5px 8px">Blocker (why not done)</th>
+</tr></thead>
+<tbody>
+<tr style="background:#eef4ee"><td colspan="5" style="padding:4px 8px;font-weight:700">P2P</td></tr>
+<tr><td>Suppliers</td><td>RT Supplier Good-1 &rarr; base / 157</td><td>RT-SUP-BAD1 (ghost supplier) / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live.</td></tr>
+<tr><td>SupplierAddresses</td><td>RT Good-1 HQ / 157</td><td>bad address / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live.</td></tr>
+<tr><td>SupplierSites</td><td>RT-SITE-G1 / 157</td><td>bad site / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live.</td></tr>
+<tr><td>SupplierSiteAssignments</td><td>Good-1 / RT-SITE-G1 / US1 BU / 157</td><td>NONEXISTENT BU / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live (display key now includes BU).</td></tr>
+<tr><td>SupplierContacts</td><td>Alice Good / 157</td><td>bad contact / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live.</td></tr>
+<tr><td>Requisitions</td><td>157_RQHDR_100000254 &rarr; POR_REQUISITION_HEADERS_ALL / 157</td><td>RT-REQ-BADHDR (bad preparer email) / 157</td><td style="text-align:center">&#9744;</td><td>Good headers reach the base table but as <code>DOCUMENT_STATUS=INCOMPLETE</code>; self-approval does not clear the approval workflow, so 3 of 4 good headers are "not confirmed". Fix: either accept base-table presence as LOADED regardless of approval, or supply an approver that auto-approves. Approver-email fix applied.</td></tr>
+<tr><td>PurchaseOrders</td><td>157_HDR_100000363 (4 headers LOADED) / 157</td><td>bad PO / 157</td><td style="text-align:center">&#9744;</td><td>SHIP_TO_LOCATION was NULL (fixed &rarr; 'Seattle'); 4 headers now load. Remaining failures are EBS-extracted headers rejected as "supplier not spend-authorized" &mdash; a supplier-setup/data issue.</td></tr>
+<tr><td>BlanketPOs</td><td>10041RT-BPA-001 (FOUND) / 157</td><td>bad BPA / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live.</td></tr>
+<tr><td>Contracts</td><td>Contract header (1 LOADED) / 157</td><td>bad contract / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live.</td></tr>
+<tr><td>APInvoices</td><td>RT-APINV-G1 (JGA supplier) / 157</td><td>RT-APINV-BAD1 (zero amt + bad vendor) / 157</td><td style="text-align:center">&#9745;</td><td>Main AP proven. 1099 good row referenced a same-run prefixed supplier &rarr; repointed to JGA (PR&nbsp;#153, awaiting merge).</td></tr>
+<tr><td>MiscReceipts</td><td>&mdash;</td><td>&mdash; / 157</td><td style="text-align:center">&#9744;</td><td>Serial VALUE now prefixed per run (re-runnable). Still 2 records unaccounted &mdash; a separate remaining cause (lot/serial receipt); needs the ESS/reconcile detail.</td></tr>
+<tr style="background:#eef4ee"><td colspan="5" style="padding:4px 8px;font-weight:700">O2C</td></tr>
+<tr><td>Customers</td><td>10039RTG001 (party + account) &rarr; HZ base / 157</td><td>RT-CUST-BAD1 / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live. Root cause was PARTY_ORIG_SYSTEM='DMT' (unregistered); seed uses LEG1.</td></tr>
+<tr><td>ARInvoices</td><td>10041RT-AR-G1 (interface only) / 157</td><td>RT-AR-BAD1 / 157</td><td style="text-align:center">&#9744;</td><td>Batch source corrected to 'External Source' and confirmed sent, but AutoInvoice still leaves lines at NULL status &mdash; an AutoInvoice/transaction-source SETUP issue on the instance. Interface rows never post to base.</td></tr>
+<tr><td>ARReceipts</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Not built &mdash; web-service load, scoped last (added 2026-03-25).</td></tr>
+<tr style="background:#eef4ee"><td colspan="5" style="padding:4px 8px;font-weight:700">PROJECTS</td></tr>
+<tr><td>Projects</td><td>Projects + Tasks + Team (2 LOADED) / 157</td><td>bad project / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live (Project Tasks has 1 residual good-row edge case).</td></tr>
+<tr><td>BillingEvents</td><td>&mdash;</td><td>RT-BE-BAD1 (missing contract) / 157</td><td style="text-align:center">&#9744;</td><td><code>PJB_TASK_NOT_LINKED</code>: the project/task is not associated to the contract line for our reference, even on contracts C10001/C10013 that have real accepted events. Needs the exact contract-line&harr;project&harr;task association FBDI import accepts.</td></tr>
+<tr><td>Expenditures</td><td>&mdash;</td><td>RT-EXP-BAD1 (bad type) / 157</td><td style="text-align:center">&#9744;</td><td>Import Project Costs ESS job ERRORs (all-or-nothing rollback) on the NONLABOR + 'Miscellaneous' document combo. Needs the ESS job log to pinpoint the invalid field.</td></tr>
+<tr><td>Grants</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Grants module not configured on the demo instance ("the award contract can't be created because requisite setup steps haven't been completed"). Instance config &mdash; tabled by owner.</td></tr>
+<tr><td>ProjectBudgets</td><td>&mdash;</td><td>&mdash; / 155</td><td style="text-align:center">&#9744;</td><td>Budget lines not confirmed in the project-budget base tables after reconciliation. Tabled by owner.</td></tr>
+<tr style="background:#eef4ee"><td colspan="5" style="padding:4px 8px;font-weight:700">FINANCIALS</td></tr>
+<tr><td>GLBalances</td><td>GL Journals (2 LOADED) / 157</td><td>bad line / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live.</td></tr>
+<tr><td>GLBudgets</td><td>&mdash;</td><td>&mdash; / 155</td><td style="text-align:center">&#9744;</td><td>BIP reconciliation report not deployed to <code>/Custom/DMT2/GLBudgets/</code> &rarr; report call returns HTTP 500. Deploy the report, then re-run.</td></tr>
+<tr><td>Assets</td><td>Asset Headers/Books/Assignments (2 LOADED) / 157</td><td>bad asset / 157</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live.</td></tr>
+<tr style="background:#eef4ee"><td colspan="5" style="padding:4px 8px;font-weight:700">HCM</td></tr>
+<tr><td>Workers</td><td>10046RT-WKR-G1 &rarr; PER_ALL_PEOPLE_F (person_id 300000331436388) / 162</td><td>RT-WKR-B1 (LastName required) / 162</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live. Hire also auto-creates work relationship + work terms + assignment.</td></tr>
+<tr><td>Assignments</td><td>&mdash;</td><td>ET-RT-WKR-B2 (bad BU) / 160</td><td style="text-align:center">&#9744;</td><td>The Worker hire already auto-creates the primary assignment, so a separate Assignment for a fresh hire conflicts ("invalid BusinessUnitId"). Needs an EXISTING-worker target, not the new hire &mdash; design decision.</td></tr>
+<tr><td>Salaries</td><td>10046RT-WKR-G1 &rarr; CMP_SALARY (75000) / 162</td><td>RT-WKR-BSAL (invalid basis + FK) / 162</td><td style="text-align:center">&#9745;</td><td>&mdash; proven live. Good/bad must be distinct person+assignment (HDL rejects duplicate lines otherwise).</td></tr>
+<tr><td>SalaryBases</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Not seeded yet (config-style object; depends on Salaries).</td></tr>
+<tr><td>PayrollRelationships</td><td>&mdash;</td><td>bad LDG / 160</td><td style="text-align:center">&#9744;</td><td>Hire tends to auto-create a payroll relationship, so a separate one collides; HDL returns a generic dataset error and the <code>GET_HDL_ERRORS</code> parser can't surface the row reason. Fix the parser first, then decide existing-worker target.</td></tr>
+<tr><td>TaxCards</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>CalculationCard generator can't supply <code>SourceType</code> on the DIRCardDEO child (all V2 discriminators marked INVALID) and the worker needs a Tax Reporting Unit association. Generator + prereq gap.</td></tr>
+<tr><td>W2Balances</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Not seeded yet (standalone payroll balance init).</td></tr>
+<tr><td>BenParticipant</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Not seeded yet (benefits enrollment).</td></tr>
+<tr><td>BenDependent</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Not seeded yet (benefits dependents).</td></tr>
+<tr><td>BenBeneficiary</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Not seeded yet (benefits beneficiaries).</td></tr>
+<tr><td>Absences</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Instance absence-approval config: every AbsenceStatus returns "conflicting processing and approval statuses"; good rows cannot reach ANC_PER_ABS_ENTRIES. Instance config.</td></tr>
+<tr><td>TalentProfiles</td><td>&mdash;</td><td>RT-WKR-G1_PROFB (bad status) / 163</td><td style="text-align:center">&#9744;</td><td>DAT imports (3 records) but the LOAD errors (ORA_IN_ERROR, 0 loaded); <code>GET_HDL_ERRORS</code> returns an ~11KB response the reconciler can't parse into per-record messages. Fix the parser to see the real reason.</td></tr>
+<tr><td>PerfEvaluations</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Not seeded yet.</td></tr>
+<tr><td>WorkSchedules</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Not seeded yet (standalone).</td></tr>
+<tr style="background:#eef4ee"><td colspan="5" style="padding:4px 8px;font-weight:700">CONFIGURATION &mdash; deferred per owner ("skip configuration items for now")</td></tr>
+<tr><td>GLCalendar</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Configuration item &mdash; deferred.</td></tr>
+<tr><td>ValueSets</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Configuration item &mdash; deferred.</td></tr>
+<tr><td>Lookups</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Configuration item &mdash; deferred.</td></tr>
+<tr><td>UnitsOfMeasure</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Configuration item &mdash; deferred.</td></tr>
+<tr><td>PaymentTerms</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Configuration item &mdash; deferred.</td></tr>
+<tr><td>TaxConfig</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Configuration item (FBL) &mdash; deferred; FBL file-delivery decision open.</td></tr>
+<tr><td>Banks</td><td>&mdash;</td><td>&mdash;</td><td style="text-align:center">&#9744;</td><td>Configuration item (REST-loaded) &mdash; deferred.</td></tr>
+</tbody>
+</table>
+</div>
+<p style="margin:8px 0 0"><strong>Proven live (Rule&nbsp;#1):</strong> Suppliers&nbsp;&times;5, Blanket POs, Contracts, AP Invoices, Customers, Projects, GL Balances, Assets, HCM Workers, HCM Salaries. <strong>Everything else</strong> is blocked as detailed above (Fusion instance setup, a generator/parser gap, or not yet seeded).</p>
+</section>
+
 <div class="toc">
   <strong>Contents</strong>
   <ol>
+    <li><a href="#objstatus">Object Status Matrix (per-object live status)</a></li>
     <li><a href="#feedback">Feedback &amp; Recommendation</a></li>
     <li><a href="#current">Current-State Findings (code + requirements review)</a></li>
     <li><a href="#plan">Detailed Phased Plan (Phases 0–6)</a></li>
