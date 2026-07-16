@@ -64,14 +64,12 @@ using (
 on (t."OBJECT_CODE" = s.object_code)
 when matched then update set t."FBDI_CSV_FILENAME" = s.fbdi_csv_filename;
 
--- 2) FBDI positions on the column dictionary. NULL first (idempotent reset of
---    the FBDI objects only), then set from the generated map.
+-- 2) FBDI positions on the column dictionary. Reset the FBDI objects first
+--    (idempotent), then set from the generated map.
 update "DMT_UPLOAD_DICT_TBL"
 set    "FBDI_POSITION" = null
 where  "OBJECT_CODE" in ('AP_INVOICES_INT','AP_INVOICE_LINES_INT','EGP_ITEM','EGP_ITEM_CAT','GL_BUDGET_INT','GL_INTERFACE','GMS_AWD_HEADERS','GMS_AWD_PERSONNEL','HZ_ACCOUNTS','HZ_ACCT_SITES','HZ_ACCT_SITE_USES','HZ_LOCATIONS','HZ_PARTIES','HZ_PARTY_SITES','HZ_PARTY_SITE_USES','PJB_BILL_EVENTS','PJC_EXPENDITURES','PJC_TXN_CONTROLS','PJF_PROJECTS','PJF_TASKS','PJF_TEAM_MEMBERS','POR_REQ_DISTS','POR_REQ_HEADERS','POR_REQ_LINES','POZ_SUPPLIERS','POZ_SUP_ADDR','POZ_SUP_CONTACTS','POZ_SUP_SITE','POZ_SUP_SITE_ASSN','PO_DISTS_INT','PO_HEADERS_INT','PO_LINES_INT','PO_LINE_LOCS_INT','PRJ_BUDGET','RA_LINES');
 
-merge into "DMT_UPLOAD_DICT_TBL" t
-using (
 merge into "DMT_UPLOAD_DICT_TBL" t
 using (
     select 'AP_INVOICES_INT' object_code, 'OPERATING_UNIT' column_name, 2 fbdi_position from dual

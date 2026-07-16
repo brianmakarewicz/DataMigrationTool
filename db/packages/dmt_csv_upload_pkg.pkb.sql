@@ -191,9 +191,12 @@ AS
         l_header_count PLS_INTEGER;
         l_hdr_error    VARCHAR2(4000);
 
-        -- Valid (non-admin, non-LOB) columns for this object
-        TYPE t_valid_cols IS TABLE OF VARCHAR2(128) INDEX BY VARCHAR2(128);
+        -- Valid (non-admin, non-LOB) columns for this object, keyed by column
+        -- name, value = the column's Oracle data type (so DATE/TIMESTAMP columns
+        -- can be converted explicitly rather than relying on session NLS).
+        TYPE t_valid_cols IS TABLE OF VARCHAR2(30) INDEX BY VARCHAR2(128);
         l_valid_cols   t_valid_cols;
+        l_col_type     VARCHAR2(30);
 
         l_col_list     VARCHAR2(32767);
         l_select_list  VARCHAR2(32767);
@@ -213,7 +216,7 @@ AS
         -- is honoured when a CSV supplies it (mirrors the regression seed, which
         -- populates SOURCE_ID on every staging row).
         FOR c IN (
-            SELECT UPPER(d.COLUMN_NAME) AS COLUMN_NAME
+            SELECT UPPER(d.COLUMN_NAME) AS COLUMN_NAME, tc.data_type
             FROM   DMT_UPLOAD_DICT_TBL d
             JOIN   user_tab_columns tc
                    ON tc.table_name  = p_staging_table
@@ -222,7 +225,7 @@ AS
             AND    (d.IS_ADMIN_COLUMN = 'N' OR UPPER(d.COLUMN_NAME) = 'SOURCE_ID')
             AND    tc.data_type NOT IN ('CLOB', 'BLOB', 'NCLOB', 'LONG')
         ) LOOP
-            l_valid_cols(c.COLUMN_NAME) := c.COLUMN_NAME;
+            l_valid_cols(c.COLUMN_NAME) := c.DATA_TYPE;
         END LOOP;
 
         -- Read headers from first row of CSV
@@ -238,13 +241,35 @@ AS
 
             IF l_col_key IS NOT NULL AND l_valid_cols.EXISTS(l_col_key) THEN
                 l_map_count := l_map_count + 1;
+                l_col_type  := l_valid_cols(l_col_key);
 
                 IF l_col_list IS NOT NULL THEN
                     l_col_list    := l_col_list    || ', ';
                     l_select_list := l_select_list || ', ';
                 END IF;
                 l_col_list    := l_col_list    || DBMS_ASSERT.SIMPLE_SQL_NAME(l_col_key);
-                l_select_list := l_select_list || 'COL' || LPAD(i, 3, '0');
+                -- DATE/TIMESTAMP columns are converted explicitly so the load does
+                -- not depend on the session NLS date format. Both the FBDI
+                -- generators and this package's proprietary CSV writer emit dates
+                -- as YYYY/MM/DD[ HH24:MI:SS], so parse that first and fall back to
+                -- the ISO form; a bad value still lands in the DML error log.
+                IF l_col_type = 'DATE' THEN
+                    l_select_list := l_select_list
+                        || 'COALESCE('
+                        || 'TO_DATE(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD HH24:MI:SS''), '
+                        || 'TO_DATE(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY-MM-DD HH24:MI:SS''), '
+                        || 'TO_DATE(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD''), '
+                        || 'TO_DATE(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY-MM-DD''))';
+                ELSIF l_col_type LIKE 'TIMESTAMP%' THEN
+                    l_select_list := l_select_list
+                        || 'COALESCE('
+                        || 'TO_TIMESTAMP(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD HH24:MI:SS.FF''), '
+                        || 'TO_TIMESTAMP(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD HH24:MI:SS''), '
+                        || 'TO_TIMESTAMP(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY-MM-DD HH24:MI:SS''), '
+                        || 'TO_TIMESTAMP(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD''))';
+                ELSE
+                    l_select_list := l_select_list || 'COL' || LPAD(i, 3, '0');
+                END IF;
             ELSIF l_col_key IS NOT NULL THEN
                 l_warnings := l_warnings || 'Column "' || l_col_key || '" skipped. ';
             END IF;
@@ -1077,6 +1102,10 @@ AS
         l_select_list  VARCHAR2(32767);
         l_col_count    PLS_INTEGER := 0;
         l_sql          VARCHAR2(32767);
+        l_over_limit   VARCHAR2(4000);   -- columns past the APEX_DATA_PARSER COL300 cap
+        -- APEX_DATA_PARSER exposes at most COL001..COL300, so a column the FBDI
+        -- generator writes past slot 300 cannot be pulled by the fast parser.
+        C_MAX_PARSER_COL CONSTANT PLS_INTEGER := 300;
     BEGIN
         p_rows_loaded  := 0;
         p_rows_errored := 0;
@@ -1117,6 +1146,14 @@ AS
                     AND    FBDI_POSITION IS NOT NULL
                     ORDER BY FBDI_POSITION
                 ) LOOP
+                    -- Slots past 300 are unreachable via APEX_DATA_PARSER; record
+                    -- them and load the rest so a wide file (only Items today)
+                    -- still loads its first-300-slot columns instead of failing.
+                    IF c.FBDI_POSITION > C_MAX_PARSER_COL THEN
+                        l_over_limit := l_over_limit || c.COLUMN_NAME || ' (pos '
+                                     || c.FBDI_POSITION || '); ';
+                        CONTINUE;
+                    END IF;
                     l_col_count := l_col_count + 1;
                     IF l_col_list IS NOT NULL THEN
                         l_col_list    := l_col_list    || ', ';
@@ -1135,6 +1172,14 @@ AS
                     ORDER BY COLUMN_ORDER
                 ) LOOP
                     l_col_count := l_col_count + 1;
+                    -- Same COL300 parser cap as the position-driven branch:
+                    -- stop mapping once we would reference a slot the parser
+                    -- cannot expose, and record the skipped columns.
+                    IF l_col_count > C_MAX_PARSER_COL THEN
+                        l_over_limit := l_over_limit || c.COLUMN_NAME || ' (pos '
+                                     || l_col_count || '); ';
+                        CONTINUE;
+                    END IF;
                     IF l_col_list IS NOT NULL THEN
                         l_col_list    := l_col_list    || ', ';
                         l_select_list := l_select_list || ', ';
@@ -1176,8 +1221,17 @@ AS
         p_rows_loaded := SQL%ROWCOUNT;
         COMMIT;
 
+        IF l_over_limit IS NOT NULL THEN
+            p_error_msg := 'Loaded; columns past CSV slot ' || C_MAX_PARSER_COL
+                        || ' not supported by the parser and skipped: ' || l_over_limit;
+        END IF;
+
         DMT_UTIL_PKG.LOG(
-            p_message   => 'FBDI loader complete: ' || p_rows_loaded || ' rows inserted for ' || p_object_code,
+            p_message   => 'FBDI loader complete: ' || p_rows_loaded || ' rows inserted for '
+                           || p_object_code
+                           || CASE WHEN l_over_limit IS NOT NULL
+                                   THEN '; skipped >slot' || C_MAX_PARSER_COL || ': ' || l_over_limit
+                                   ELSE '' END,
             p_package   => C_PKG,
             p_procedure => 'fbdi_load_from_blob'
         );
@@ -1597,52 +1651,78 @@ AS
                 -- FBDI positional load. Mirror UPLOAD_FBDI_ZIP_FROM_BLOB's
                 -- per-file bookkeeping (log entry, scenario tag) around the
                 -- shared positional loader so behaviour matches the FBDI-only
-                -- entry point exactly.
-                l_staging_table := DBMS_ASSERT.SIMPLE_SQL_NAME(l_plan(i).staging_table);
+                -- entry point exactly. The whole per-file block is guarded so a
+                -- failure in one FBDI file (e.g. the dynamic scenario-tag update)
+                -- does not abort the rest of the bundle — the proprietary branch
+                -- gets this isolation for free via UPLOAD_CSV_FROM_BLOB.
+                BEGIN
+                    l_staging_table := DBMS_ASSERT.SIMPLE_SQL_NAME(l_plan(i).staging_table);
 
-                INSERT INTO DMT_UPLOAD_LOG_TBL (BATCH_ID, OBJECT_CODE, FILE_NAME, STATUS)
-                VALUES (l_batch_id, l_object_code, l_file_name, 'PROCESSING')
-                RETURNING LOG_ID INTO l_log_id;
-                COMMIT;
-
-                IF l_scenario_id IS NOT NULL THEN
-                    EXECUTE IMMEDIATE
-                        'SELECT NVL(MAX(STG_SEQUENCE_ID), 0) FROM ' || l_staging_table
-                        INTO l_max_seq_before;
-                END IF;
-
-                fbdi_load_from_blob(
-                    p_blob          => l_file_blob,
-                    p_file_label    => l_file_name,
-                    p_object_code   => l_object_code,
-                    p_staging_table => l_staging_table,
-                    p_batch_id      => l_batch_id,
-                    p_log_id        => l_log_id,
-                    p_rows_loaded   => l_rows_loaded,
-                    p_rows_errored  => l_rows_errored,
-                    p_error_msg     => l_file_error
-                );
-
-                IF l_scenario_id IS NOT NULL AND l_rows_loaded > 0 THEN
-                    EXECUTE IMMEDIATE
-                        'UPDATE ' || l_staging_table ||
-                        ' SET SCENARIO_ID = :sid WHERE STG_SEQUENCE_ID > :max_seq'
-                        USING l_scenario_id, l_max_seq_before;
+                    INSERT INTO DMT_UPLOAD_LOG_TBL (BATCH_ID, OBJECT_CODE, FILE_NAME, STATUS)
+                    VALUES (l_batch_id, l_object_code, l_file_name, 'PROCESSING')
+                    RETURNING LOG_ID INTO l_log_id;
                     COMMIT;
-                END IF;
 
-                UPDATE DMT_UPLOAD_LOG_TBL
-                SET    ROWS_IN_FILE  = l_rows_loaded + l_rows_errored,
-                       ROWS_LOADED   = l_rows_loaded,
-                       ROWS_ERRORED  = l_rows_errored,
-                       STATUS        = CASE
-                                           WHEN l_file_error IS NOT NULL AND l_rows_loaded = 0 THEN 'FAILED'
-                                           WHEN l_rows_errored > 0 THEN 'COMPLETED_WITH_ERRORS'
-                                           ELSE 'COMPLETED'
-                                       END,
-                       ERROR_MSG     = l_file_error
-                WHERE  LOG_ID = l_log_id;
-                COMMIT;
+                    IF l_scenario_id IS NOT NULL THEN
+                        EXECUTE IMMEDIATE
+                            'SELECT NVL(MAX(STG_SEQUENCE_ID), 0) FROM ' || l_staging_table
+                            INTO l_max_seq_before;
+                    END IF;
+
+                    fbdi_load_from_blob(
+                        p_blob          => l_file_blob,
+                        p_file_label    => l_file_name,
+                        p_object_code   => l_object_code,
+                        p_staging_table => l_staging_table,
+                        p_batch_id      => l_batch_id,
+                        p_log_id        => l_log_id,
+                        p_rows_loaded   => l_rows_loaded,
+                        p_rows_errored  => l_rows_errored,
+                        p_error_msg     => l_file_error
+                    );
+
+                    IF l_scenario_id IS NOT NULL AND l_rows_loaded > 0 THEN
+                        EXECUTE IMMEDIATE
+                            'UPDATE ' || l_staging_table ||
+                            ' SET SCENARIO_ID = :sid WHERE STG_SEQUENCE_ID > :max_seq'
+                            USING l_scenario_id, l_max_seq_before;
+                        COMMIT;
+                    END IF;
+
+                    UPDATE DMT_UPLOAD_LOG_TBL
+                    SET    ROWS_IN_FILE  = l_rows_loaded + l_rows_errored,
+                           ROWS_LOADED   = l_rows_loaded,
+                           ROWS_ERRORED  = l_rows_errored,
+                           -- A non-null loader message with rows still loaded
+                           -- (e.g. columns skipped past the CSV parser cap) is a
+                           -- partial success, not a clean COMPLETED.
+                           STATUS        = CASE
+                                               WHEN l_file_error IS NOT NULL AND l_rows_loaded = 0 THEN 'FAILED'
+                                               WHEN l_rows_errored > 0 THEN 'COMPLETED_WITH_ERRORS'
+                                               WHEN l_file_error IS NOT NULL THEN 'COMPLETED_WITH_ERRORS'
+                                               ELSE 'COMPLETED'
+                                           END,
+                           ERROR_MSG     = l_file_error
+                    WHERE  LOG_ID = l_log_id;
+                    COMMIT;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_file_error := 'FBDI file failed: ' || SQLERRM;
+                        BEGIN
+                            UPDATE DMT_UPLOAD_LOG_TBL
+                            SET    STATUS = 'FAILED', ERROR_MSG = SUBSTR(l_file_error, 1, 4000)
+                            WHERE  LOG_ID = l_log_id;
+                            COMMIT;
+                        EXCEPTION WHEN OTHERS THEN NULL;
+                        END;
+                        IF NVL(l_rows_errored, 0) = 0 THEN
+                            l_rows_errored := 1;
+                        END IF;
+                        DMT_UTIL_PKG.LOG_ERROR(
+                            p_message => 'Auto-detect FBDI file failed: ' || l_file_name,
+                            p_sqlerrm => SQLERRM, p_package => C_PKG,
+                            p_procedure => 'UPLOAD_ZIP_AUTO_FROM_BLOB');
+                END;
             END IF;
 
             l_total_loaded  := l_total_loaded  + NVL(l_rows_loaded, 0);
@@ -1653,7 +1733,16 @@ AS
                 l_msg VARCHAR2(4000) := l_plan(i).format || '  ' || l_object_code || ': '
                     || NVL(l_rows_loaded, 0) || ' loaded, ' || NVL(l_rows_errored, 0) || ' errors';
             BEGIN
-                IF l_file_error IS NOT NULL THEN l_msg := l_msg || ' — ' || l_file_error; END IF;
+                -- A message with rows still loaded is a warning (e.g. columns
+                -- past the parser cap), not a failure — label it as such.
+                IF l_file_error IS NOT NULL THEN
+                    l_msg := l_msg
+                          || CASE WHEN NVL(l_rows_loaded, 0) > 0 AND NVL(l_rows_errored, 0) = 0
+                                  THEN ' (warning: ' ELSE ' — ' END
+                          || l_file_error
+                          || CASE WHEN NVL(l_rows_loaded, 0) > 0 AND NVL(l_rows_errored, 0) = 0
+                                  THEN ')' ELSE '' END;
+                END IF;
                 append_summary(l_msg || CHR(10));
             END;
         END LOOP;
