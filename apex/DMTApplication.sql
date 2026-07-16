@@ -50703,12 +50703,14 @@ wwv_flow_imp_page.create_page_plug(
 '                                      l_stat VARCHAR2(50) := :P57_STATUS;',
 '                                        l_app  VARCHAR2(10) := V(''APP_ID'');',
 '                                          l_sess VARCHAR2(50) := V(''APP_SESSION'');',
+'                                          l_cemli VARCHAR2(100);',
 '                                          BEGIN',
 '                                            IF l_int IS NULL THEN',
 '                                                HTP.P(''<div style="padding:24px;color:#888;">No parameters specified.</div>'');',
 '                                                    RETURN;',
 '                                                      END IF;',
-'                                                        HTP.P(''<div style="margin-bottom:12px;"><a href="f?p='' || l_app || '':55:'' || l_sess || ''::NO::P55_RUN_ID:'' || l_int || ''" style="font-size:13px;color:#666;">&larr; Back to Object Detail<'
+'  BEGIN SELECT MIN(CEMLI_CODE) INTO l_cemli FROM DMT_OWNER.DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = l_sub; EXCEPTION WHEN OTHERS THEN l_cemli := NULL; END; l_cemli := NVL(l_cemli, l_sub);',
+'                                                        HTP.P(''<div style="margin-bottom:12px;"><a href="f?p='' || l_app || '':52:'' || l_sess || ''::NO::P52_RUN_ID,P52_CEMLI_CODE:'' || l_int || '','' || l_cemli || ''" style="font-size:13px;color:#666;">&larr; Back to Object Detail<'
 ||'/a></div>'');',
 '                                                          HTP.P(''<div style="display:flex;gap:24px;padding:12px 0;border-bottom:1px solid #444;margin-bottom:16px;">'');',
 '                                                            HTP.P(''<div><span style="color:#888;font-size:11px;text-transform:uppercase;">Sub-Object</span><br><strong style="font-size:15px;">'' || APEX_ESCAPE.HTML(l_sub) || ''</strong></div>'');',
