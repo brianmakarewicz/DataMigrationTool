@@ -8,23 +8,10 @@
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_BILLING_EVENT_TRANSFORM_PKG';
 
-    -- --------------------------------------------------------
-    -- Private: read dependent prefix from CONVERSION_MASTER
-    -- --------------------------------------------------------
-    FUNCTION get_dep_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
-        l_dep_prefix VARCHAR2(30);
-    BEGIN
-        SELECT PREFIX
-        INTO   l_dep_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
-        WHERE  RUN_ID = p_run_id;
-        RETURN l_dep_prefix;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20001,
-                'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
-    END get_dep_prefix;
-
+    -- The project reference (PROJECT_NUMBER) is no longer prefixed manually;
+    -- it is resolved through DMT_XREF_PKG.PROJECT_NUMBER, which returns the
+    -- most-recent LOADED Fusion value for migrated projects and the raw
+    -- source value for projects that pre-exist in Fusion (section 7 rule).
 
     -- ============================================================
     -- TRANSFORM_EVENTS
@@ -35,7 +22,6 @@
         p_scenario_id      IN NUMBER DEFAULT NULL,
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
-        l_dep_prefix    VARCHAR2(30);
         l_prefix        VARCHAR2(30);
         l_ok_count      NUMBER := 0;
     BEGIN
@@ -44,8 +30,6 @@
             p_message        => 'TRANSFORM_EVENTS start.',
             p_package        => C_PKG,
             p_procedure      => 'TRANSFORM_EVENTS');
-
-        l_dep_prefix := get_dep_prefix(p_run_id);
 
         -- Read main prefix for SOURCEREF (business key for reconciliation)
         BEGIN
@@ -115,7 +99,7 @@
             s.COMPLETION_DATE,
             s.BILL_TRNS_CURRENCY_CODE,
             s.BILL_TRNS_AMOUNT,
-            DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25),
+            DMT_XREF_PKG.PROJECT_NUMBER(s.PROJECT_NUMBER),
             s.TASK_NUMBER,
             s.BILL_HOLD_FLAG,
             s.REVENUE_HOLD_FLAG,

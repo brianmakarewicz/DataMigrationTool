@@ -1465,7 +1465,7 @@ def main():
     # Amount $1 per owner direction (duplicate a real event small). Task NULL like
     # every real event. (objects/BillingEvents/README.md, 2026-07-15.)
     for src_ref, contract_num, contract_line, proj_num, task_num, evt_type, amount in [
-        ("RT-BE-G1", "C10013", "1", "PCS10013", None, "Percent Complete Billing", 1.00),
+        ("RT-BE-G1", "C10013", "1", "PCS10013", None, "Percent Spent Billing", 1.00),
         ("RT-BE-G2", "C10001", "1", "PCS10001", None, "Percent Spent Billing", 1.00),
     ]:
         run_sql(cur, """
