@@ -917,25 +917,29 @@ def main():
     # 15. PO LINE LOCATIONS (DMT_PO_LINE_LOCS_INT_STG_TBL)
     # ====================================================================
     print("\n=== 15. PO Line Locations ===")
-    for llkey, lkey, ship_num, qty in [
-        ("RT-POLL-G1", "RT-POL-G1", 1, 10),
-        ("RT-POLL-G2", "RT-POL-G2", 1, 5),
-        ("RT-POLL-BAD1", "RT-POL-BAD1", 1, 1),
+    # SHIP_TO_LOCATION was left NULL; a real good PO carries a valid ship-to
+    # ("Seattle"). An expense PO shipment with no valid ship-to is rejected and
+    # cascades to the whole document. Give the GOOD rows 'Seattle', leave the BAD
+    # row NULL so it still fails. (objects/PurchaseOrders/README.md, 2026-07-15.)
+    for llkey, lkey, ship_num, qty, ship_loc in [
+        ("RT-POLL-G1", "RT-POL-G1", 1, 10, "Seattle"),
+        ("RT-POLL-G2", "RT-POL-G2", 1, 5, "Seattle"),
+        ("RT-POLL-BAD1", "RT-POL-BAD1", 1, 1, None),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL (
                 INTERFACE_LINE_LOCATION_KEY, INTERFACE_LINE_KEY,
                 SHIPMENT_NUM, QUANTITY,
-                DESTINATION_TYPE_CODE,
+                DESTINATION_TYPE_CODE, SHIP_TO_LOCATION,
                 NEED_BY_DATE, SOURCE_ID
             ) VALUES (
                 :llkey, :lkey,
                 :snum, :qty,
-                'EXPENSE',
+                'EXPENSE', :ship_loc,
                 DATE '2025-12-31', :src
             )
         """, {"llkey": llkey, "lkey": lkey, "snum": ship_num,
-              "qty": qty, "src": f"RT-{llkey}"},
+              "qty": qty, "ship_loc": ship_loc, "src": f"RT-{llkey}"},
         label=f"{'GOOD' if 'BAD' not in llkey else 'BAD'} PO LL: {llkey}")
     tag_scenario(cur, "DMT_PO_LINE_LOCS_INT_STG_TBL", scenario_id)
 
@@ -1370,28 +1374,36 @@ def main():
     #     BAD:  1 for non-existent project [BAD-UPS]
     # ====================================================================
     print("\n=== 27. Expenditures ===")
-    for proj_num, task_num, person_num, qty, amount in [
-        ("RTPRJ001", "RTPRJ001.1", "7",  8,  1500.00),
-        ("RTPRJ002", "RTPRJ002.1", "10", 16, 2500.00),
+    # Import Project Costs requires each row to name a valid costing DOCUMENT +
+    # DOCUMENT ENTRY; without them Fusion leaves the row in PJC_TXN_XFACE_STAGE_ALL
+    # at status 'P' (pending, NOT success) and it never posts to PJC_EXP_ITEMS_ALL.
+    # Mimic the canonical always-import-enabled third-party non-labor source:
+    # DOCUMENT 'Miscellaneous' / ENTRY 'Miscellaneous', NONLABOR, no person.
+    # (objects/Expenditures/README.md, 2026-07-15.)
+    for proj_num, task_num, qty, amount in [
+        ("RTPRJ001", "RTPRJ001.1", 8,  1500.00),
+        ("RTPRJ002", "RTPRJ002.1", 16, 2500.00),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL (
                 TRANSACTION_TYPE, BUSINESS_UNIT,
                 PROJECT_NUMBER, TASK_NUMBER,
                 EXPENDITURE_TYPE, EXPENDITURE_ITEM_DATE,
-                ORGANIZATION_NAME, PERSON_NUMBER, QUANTITY,
+                ORGANIZATION_NAME, QUANTITY,
                 DENOM_CURRENCY_CODE, DENOM_RAW_COST,
+                DOCUMENT_NAME, DOC_ENTRY_NAME,
                 ORIG_TRANSACTION_REFERENCE, SOURCE_ID
             ) VALUES (
-                'LABOR', :bu,
+                'NONLABOR', :bu,
                 :pnum, :tnum,
-                'Administrative', DATE '2025-06-15',
-                :bu, :pnum2, :qty,
+                'Miscellaneous', DATE '2025-06-15',
+                :bu, :qty,
                 'USD', :amt,
+                'Miscellaneous', 'Miscellaneous',
                 :ref, :src
             )
         """, {"bu": BU, "pnum": proj_num, "tnum": task_num,
-              "pnum2": person_num, "qty": qty, "amt": amount,
+              "qty": qty, "amt": amount,
               "ref": f"RT-EXP-{proj_num}", "src": f"RT-EXP-{proj_num}"},
         label=f"GOOD Expenditure: {proj_num}/{task_num}")
 
@@ -1400,15 +1412,17 @@ def main():
             TRANSACTION_TYPE, BUSINESS_UNIT,
             PROJECT_NUMBER, TASK_NUMBER,
             EXPENDITURE_TYPE, EXPENDITURE_ITEM_DATE,
-            ORGANIZATION_NAME, PERSON_NUMBER, QUANTITY,
+            ORGANIZATION_NAME, QUANTITY,
             DENOM_CURRENCY_CODE, DENOM_RAW_COST,
+            DOCUMENT_NAME, DOC_ENTRY_NAME,
             ORIG_TRANSACTION_REFERENCE, SOURCE_ID
         ) VALUES (
-            'LABOR', :bu,
+            'NONLABOR', :bu,
             'RTPRJ001', 'RTPRJ001.1',
             'BadValue', DATE '2025-06-15',
-            :bu, '7', 8,
+            :bu, 8,
             'USD', 999.99,
+            'Miscellaneous', 'Miscellaneous',
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
     """, {"bu": BU}, label="BAD Expenditure: invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
@@ -1426,9 +1440,14 @@ def main():
     # Valid values (from REST projectBillingEvents): 'Percent Complete Billing', 'Percent Spent Billing'
     # 'Manual' does NOT exist on this instance — causes PJB_EVT_INVALID_TYPE.
     # TaskNumber is NULL on all existing billing events — omit or pass NULL.
+    # Both GOOD rows point at contracts with REAL accepted billing events proving
+    # the project<->contract-line link is valid: C10001/line 1/PCS10001 (7 accepted
+    # events live) and C10013/line 1/PCS10013. C10028 was unverified and dropped.
+    # Amount $1 per owner direction (duplicate a real event small). Task NULL like
+    # every real event. (objects/BillingEvents/README.md, 2026-07-15.)
     for src_ref, contract_num, contract_line, proj_num, task_num, evt_type, amount in [
-        ("RT-BE-G1", "C10028", "1", "PCS10028", None, "Percent Complete Billing", 5000.00),
-        ("RT-BE-G2", "C10001", "1", "PCS10001", None, "Percent Spent Billing", 7500.00),
+        ("RT-BE-G1", "C10013", "1", "PCS10013", None, "Percent Complete Billing", 1.00),
+        ("RT-BE-G2", "C10001", "1", "PCS10001", None, "Percent Spent Billing", 1.00),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL (
@@ -1461,7 +1480,7 @@ def main():
             'Sell: Project Lines Soft Limit', NULL, '1',
             'Percent Complete Billing', 'BAD: missing contract number',
             DATE '2025-06-15', 'USD', 1000.00,
-            'PCS10028', '2', 'RT-BE-BAD1'
+            'PCS10001', NULL, 'RT-BE-BAD1'
         )
     """, {"bu": BU}, label="BAD Billing Event: missing CONTRACT_NUMBER [BAD-REQ]")
     tag_scenario(cur, "DMT_PJB_BILL_EVENTS_STG_TBL", scenario_id)
@@ -1914,14 +1933,14 @@ def main():
                 BATCH_ID,
                 REQ_BU_NAME, PRC_BU_NAME,
                 REQUISITION_NUMBER, DOCUMENT_STATUS,
-                PREPARER_EMAIL_ADDR,
+                PREPARER_EMAIL_ADDR, APPROVER_EMAIL_ADDR,
                 DESCRIPTION, SOURCE_ID
             ) VALUES (
                 :hkey, 'Manual Invoice Entry',
                 :batch,
                 :bu, :bu,
                 :rnum, 'APPROVED',
-                :prep,
+                :prep, :prep,
                 :descr, :src
             )
         """, {"hkey": hkey, "batch": batch, "bu": BU, "rnum": req_num,

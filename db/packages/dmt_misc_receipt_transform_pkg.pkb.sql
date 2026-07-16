@@ -266,7 +266,12 @@
         )
         SELECT
             s.STG_SEQUENCE_ID, p_run_id,
-            s.FM_SERIAL_NUMBER, s.TO_SERIAL_NUMBER,
+            -- Prefix the serial VALUE so each test run sends globally-unique serials
+            -- (a serial number is unique across Fusion; re-sending the same value is
+            -- rejected as a duplicate, which is the MiscReceipts re-run failure). In
+            -- production USE_PREFIX=N makes l_prefix NULL, so real serials pass through
+            -- unchanged. (objects/MiscReceipts/README.md, 2026-07-15.)
+            l_prefix || s.FM_SERIAL_NUMBER, l_prefix || s.TO_SERIAL_NUMBER,
             s.VENDOR_SERIAL_NUMBER, s.VENDOR_LOT_NUMBER, s.PARENT_SERIAL_NUMBER,
             s.STATUS_NAME, s.STATUS_CODE, s.ORIGINATION_DATE,
             'STAGED', SYSDATE

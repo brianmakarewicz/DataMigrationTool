@@ -63,6 +63,99 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 ## Reference Files
 None in this folder.
 
+## Duplicate-hold root cause & mapping (2026-07-15)
+
+Investigated why regression Customer GOOD rows never reach the HZ base tables.
+Read-only Fusion queries via `scripts/fusion_bip_query.py --cred fin_impl`. Findings:
+
+### The real hold reason — the source system, not the party name
+The party rows that sat un-created were stamped with `PARTY_ORIG_SYSTEM = 'DMT'`.
+`DMT` is **NOT a registered Trading Community source system** in Fusion. The customer
+bulk import therefore rejects every one of those parties with import error
+**`HZ_INVALID_ORIG_SYSTEM`** on token `PARTY_ORIG_SYSTEM` (found in `HZ_IMP_ERRORS`
+for the Fusion surrogate batch `300000048330164`, whose batch name `300000048330160`
+maps to our run 160). With no party created in `HZ_PARTIES`, the accounts then fail
+with the invalid-party-reference cascade the run log shows (`HZ_IMP_INVAL_PARTY_REF`).
+
+Evidence that `DMT` is unregistered while `LEG1` is valid:
+```
+-- HZ_ORIG_SYSTEMS_B: DMT returns NO ROW; LEG1 and CSV are active + TCA-enabled
+SELECT orig_system, status, enable_for_tca_flag, orig_system_type
+FROM   HZ_ORIG_SYSTEMS_B WHERE orig_system IN ('DMT','LEG1','CSV');
+-- LEG1 -> A, Y, SPOKE      CSV -> A, Y, SPOKE      DMT -> (no row)
+```
+This is a **data/mapping issue, not a DQM match-rule config we cannot change.** The
+source system must be one Fusion has registered and enabled for TCA. `LEG1` already is.
+
+### The proven good-customer pattern (LEG1)
+Earlier regression runs that used `PARTY_ORIG_SYSTEM = 'LEG1'` created cleanly and
+reached the BASE tables. Captured driving values:
+```
+-- HZ_ORIG_SYS_REFERENCES: LEG1 parties + accounts DID create (status 'A')
+OREF 10015RT-CUST-G2 -> HZ_PARTIES        party_id 100002539164902
+OREF 10015RT-ACCT-G2 -> HZ_CUST_ACCOUNTS  cust_account_id 100002539164981
+-- HZ_PARTIES: party_name '10015Fnargle Systems', party_type ORGANIZATION, status A
+-- HZ_CUST_ACCOUNTS: account_number '10015RTG002', status A
+```
+Pattern that creates cleanly: `PARTY_ORIG_SYSTEM='LEG1'`, `PARTY_TYPE='ORGANIZATION'`,
+the run prefix prepended to both the org name and the account number
+(`10015Fnargle Systems` / `10015RTG002`) so the name matches nothing and escapes any
+duplicate hold. `RT-CUST-G2` (Fnargle) and `RT-CUST-G3` (Zorptell) both created this
+way; there is NO un-prefixed exact-name party in `HZ_PARTIES`, so the prefix-in-name
+already guarantees uniqueness — no DQM duplicate is lurking.
+
+### Note on `RT-CUST-G1` / "Blorptech Widgets"
+`RT-CUST-G1` has never created under ANY prefix, and NO existing `%BLORPTECH%` /
+`%WIDGET%` party exists in `HZ_PARTIES`. So G1 is **not** blocked by a name-duplicate
+match. Its absence is because "Blorptech Widgets" is a recently changed seed name and
+every recent run used the broken `DMT` source system — G1 simply has not had a good
+`LEG1` run yet. Nothing suggests a name change is required.
+
+### The current seed already uses LEG1 — verify at run time, not in code
+`scripts/insert_regression_test_data.py` (party insert ~line 546) already sets
+`PARTY_ORIG_SYSTEM = 'LEG1'`. The `'DMT'`-stamped interface rows are from OLDER runs
+(batches 147-160). The transformer (`DMT_CUST_TRANSFORM_PKG`) and FBDI generator
+(`DMT_CUST_FBDI_GEN_PKG`) both carry `*_ORIG_SYSTEM` through unchanged — no `'DMT'`
+hardcode. So the code path is already correct for LEG1.
+
+**Proposed change: none to code or seed for the orig-system.** The fix is to run the
+current LEG1 seed live end-to-end and confirm all GOOD parties/accounts reach the base
+tables. If any future data uses a source system other than one of the TCA-registered
+values, add a pipeline pre-check (or a `DMT_LOOKUP` list) that validates
+`*_ORIG_SYSTEM` against `HZ_ORIG_SYSTEMS_B` (status='A', enable_for_tca_flag='Y')
+before generation, so an unregistered source system fails fast with a clear error
+instead of silently holding at the interface.
+
+### Reusable discovery queries (read-only, fin_impl)
+```sql
+-- Is a source system registered + usable for customer import?
+SELECT orig_system, status, enable_for_tca_flag, orig_system_type
+FROM   HZ_ORIG_SYSTEMS_B WHERE orig_system = :sys;
+
+-- Did our parties/accounts reach the BASE tables?
+SELECT orig_system_reference, owner_table_name, owner_table_id
+FROM   HZ_ORIG_SYS_REFERENCES
+WHERE  orig_system = 'LEG1' AND status = 'A'
+AND    orig_system_reference LIKE '%RT-CUST%';
+
+-- Real import errors for a batch (surrogate batch id from HZ_IMP_BATCH_SUMMARY):
+SELECT interface_table_name, message_name, token1_value
+FROM   HZ_IMP_ERRORS WHERE batch_id = :fusion_batch_id;
+
+-- Map our run id to the Fusion surrogate batch it produced:
+SELECT batch_id, batch_name, batch_object, batch_status, original_system
+FROM   HZ_IMP_BATCH_SUMMARY WHERE batch_name LIKE '%'||:run_id||'%';
+```
+
+### Uncertainty
+The `HZ_INVALID_ORIG_SYSTEM` evidence comes from batch `300000048330164`, which
+also carries unrelated leftover rows (RELSHIPS/CONTACTS/CLASSIFICS tables our pipeline
+never loads), so that batch is not a clean isolation of our run. The isolation that
+IS clean: `DMT` returns no row in `HZ_ORIG_SYSTEMS_B` while `LEG1` does, and LEG1-
+stamped `RT-CUST` refs demonstrably created in the base while DMT-stamped ones did
+not. Confidence in "unregistered source system = the hold cause" is high; the live
+LEG1 re-run is the confirming test still to do.
+
 ## Known Issues
 - **RESOLVED 2026-07-11 — `batchId is null` is fixed; 20/20 customers reached the
   HZ base tables (`hz_cust_accounts`).** The customer bulk import needs an
