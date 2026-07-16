@@ -105,6 +105,17 @@ AS
                 || '"' || NVL(TO_CHAR(EXPENDITURE_TYPE_ID), '') || '"' || ','
                 || '"' || REPLACE(NVL(ORGANIZATION_NAME,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(ORGANIZATION_ID), '') || '"' || ','
+                -- NONLABOR rows carry 4 extra resource columns here per the FBDI
+                -- CTL (the layout is keyed off the LABOR/NONLABOR discriminator);
+                -- LABOR rows have none, so emit them only for NONLABOR or every
+                -- field from QUANTITY on shifts left by 4 and SQL*Loader rejects
+                -- the row (ORA-01400).
+                || CASE WHEN UPPER(TRANSACTION_TYPE) = 'NONLABOR' THEN
+                       '"' || REPLACE(NVL(NON_LABOR_RESOURCE,''), '"', '""') || '"' || ','
+                    || '"' || NVL(TO_CHAR(NON_LABOR_RESOURCE_ID), '') || '"' || ','
+                    || '"' || REPLACE(NVL(NON_LABOR_RESOURCE_ORG,''), '"', '""') || '"' || ','
+                    || '"' || NVL(TO_CHAR(NON_LABOR_RESOURCE_ORG_ID), '') || '"' || ','
+                   ELSE '' END
                 || '"' || NVL(TO_CHAR(QUANTITY), '') || '"' || ','
                 || '"' || REPLACE(NVL(UNIT_OF_MEASURE_NAME,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(UNIT_OF_MEASURE,''), '"', '""') || '"' || ','
