@@ -31,7 +31,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('GLBalances','/fscmRestApi/resources/11.13.18.05/generalLedgerJournals','JournalHeaderId={KEY}','FUSION_JE_HEADER_ID','JournalHeaderId,JournalBatchName,JournalName,LedgerName,Period,Status','Header ID,Batch,Journal,Ledger,Period,Status','ERP','Y',NULL);
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('GLBalances','/fscmRestApi/resources/11.13.18.05/journalBatches','BatchName LIKE ''{KEY}%''','BATCH_NAME','JournalBatchId,BatchName,BatchStatus,PostingStatus,AccountingPeriodName','Batch ID,Name,Status,Posting,Period','ERP','Y','journalBatches; Fusion appends a suffix to the batch name so query BatchName LIKE key%. Verified live 2026-07-15.');
 exception when dup_val_on_index then null;
 end;
 /
@@ -41,12 +41,12 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Assets','/fscmRestApi/resources/11.13.18.05/fixedAssets','AssetNumber={KEY}','ASSET_NUMBER','AssetId,AssetNumber,Description,AssetType,CurrentCost,DatePlacedInService','Asset ID,Number,Description,Type,Cost,In-Service Date','ERP','Y',NULL);
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Assets','/fscmRestApi/resources/11.13.18.05/fixedAssets','AssetNumber={KEY}','ASSET_NUMBER','AssetId,AssetNumber,Description,AssetType,CurrentCost,DatePlacedInService','Asset ID,Number,Description,Type,Cost,In-Service Date','ERP','Y','LIMITATION 2026-07-15: no fixedAssets/assets REST resource is accessible to fin_impl on this demo instance (404); records exist in FA base tables and reconcile via BIP. REST verify not available until an accessible asset resource/role is provided.');
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','Requisition={KEY}','REQUISITION_NUMBER','RequisitionHeaderId,RequisitionNumber,PreparerName,Status,TotalAmount,CreationDate','Req ID,Number,Preparer,Status,Amount,Created','ERP','Y',NULL);
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','RequisitionNumber={KEY}','REQUISITION_NUMBER','RequisitionHeaderId,RequisitionNumber,PreparerName,DocumentStatus,TotalAmount,CreationDate','Req ID,Number,Preparer,Status,Amount,Created','ERP','Y','LIMITATION 2026-07-15: migrated requisitions load as INCOMPLETE drafts; the purchaseRequisitions REST resource does not return incomplete drafts, so REST verify returns not-found until the requisition is completed/approved. Reconciliation is via BIP.');
 exception when dup_val_on_index then null;
 end;
 /
