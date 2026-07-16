@@ -8,14 +8,41 @@ AS
 --
 -- Accepted architecture (design section 7):
 --   - Validation runs on STG rows (pre) / TFM rows (post).
---   - A failing row is tagged with STG_STATUS/TFM_STATUS = 'FAILED'
---     and its ERROR_TEXT gets an appended, prefixed message via
---     DMT_UTIL_PKG.APPEND_ERROR (accumulate, never overwrite).
+--   - A pre-validation rejection is recorded in the run-stamped error
+--     table DMT_OWNER.DMT_STG_TFM_ERROR_TBL; the STG row keeps its status
+--     only (no message) and is flagged FAILED by FLAG_STG_FAILED. No
+--     validator writes ERROR_TEXT on a *_STG_TBL row.
+--   - A failing TFM row is tagged with TFM_STATUS = 'FAILED' and its
+--     ERROR_TEXT gets an appended, prefixed message.
 --   - Never writes a staging status of 'LOADED'; never reads
 --     STG_STATUS = 'LOADED'; no INSTR/SUBSTR parsing; no network.
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_WORKER_VALIDATOR_PKG';
+
+    -- ============================================================
+    -- FLAG_STG_FAILED — STANDARD helper (design §7). Marks every STG row FAILED
+    -- (status only, no message) that has a DMT_STG_TFM_ERROR_TBL row for this run.
+    -- The pre-validation checks record WHY in the error table; this sets the STG
+    -- status so FAILED-mode reruns select on it. Byte-identical across validator
+    -- packages except the STG table name(s) and the SUB_OBJECT filter (tagged EDIT
+    -- regions), like SWEEP_UNACCOUNTED. Does NOT commit — the caller owns the txn.
+    -- ============================================================
+    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
+    BEGIN
+        -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
+        --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
+        UPDATE DMT_OWNER.DMT_WORKER_STG_TBL
+        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_STATUS IN ('NEW','RETRY')
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id
+        -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
+                                   AND SUB_OBJECT = 'Workers'
+        -- <<END EDIT-SCOPE — nothing below this changes>>
+                                  );
+    END FLAG_STG_FAILED;
 
     -- --------------------------------------------------------
     -- VALIDATE_PRE_TRANSFORM
@@ -41,21 +68,26 @@ AS
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
-        UPDATE DMT_OWNER.DMT_WORKER_STG_TBL w
-        SET    w.STG_STATUS        = 'FAILED',
-               w.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                   w.ERROR_TEXT,
-                   '[PRE_VALIDATION] ' ||
-                   CASE WHEN w.PERSON_NUMBER IS NULL
-                        THEN 'PERSON_NUMBER is required.'
-                        ELSE 'ACTION_CODE ' || w.ACTION_CODE ||
-                             ' is not a supported worker action (HIRE, ADD_CWK).'
-                   END),
-               w.LAST_UPDATED_DATE = SYSDATE
+        -- Record the rejection in the run-stamped error table; the STG row keeps
+        -- its status only (no message), flagged FAILED later by FLAG_STG_FAILED (§7).
+        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'Workers', 'Workers', w.STG_SEQUENCE_ID,
+               '[PRE_VALIDATION] ' ||
+               CASE WHEN w.PERSON_NUMBER IS NULL
+                    THEN 'PERSON_NUMBER is required.'
+                    ELSE 'ACTION_CODE ' || w.ACTION_CODE ||
+                         ' is not a supported worker action (HIRE, ADD_CWK).'
+               END
+        FROM   DMT_OWNER.DMT_WORKER_STG_TBL w
         WHERE  w.STG_STATUS = 'NEW'
         AND (  w.PERSON_NUMBER IS NULL
             OR NVL(w.ACTION_CODE, 'X') NOT IN ('HIRE', 'ADD_CWK') );
         l_bad := SQL%ROWCOUNT;
+
+        -- Standard final step: flag the STG rows FAILED from the recorded error
+        -- rows (status only, no message) so FAILED-mode reruns select on them (§7).
+        FLAG_STG_FAILED(p_run_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,
