@@ -121,6 +121,26 @@ The upstream-first order is now refined into three explicit phases: <strong>(1) 
 </ul>
 </div>
 
+<div class="callout" style="border-left-color:#b42318;background:#fdf3f2">
+<strong>Full live-regression validation — 2026-07-15 (runs 155 &amp; 156).</strong> The complete RegressionTest scenario was driven end-to-end through the real queue on <code>dmt2-local</code> against the live demo instance: run 155 = all FBDI pipelines (P2P, O2C, Financials, Projects) plus HCM; run 156 = HCM only after a credential fix. Both reached terminal status. <strong>This is the first honest full-regression read since the reconciliation-sweep and staging-error work landed — and it corrects an over-optimistic earlier claim.</strong> Objects reach <em>DONE</em> (every row accounted as LOADED or FAILED-with-reason — no silent passes), but at the <em>record</em> level only a subset land every GOOD row in the Fusion base tables.
+<ul style="margin:6px 0 0 0">
+  <li><strong>Genuinely proven (all GOOD rows in base tables, BAD rows failed with a reportable error):</strong> Suppliers&nbsp;&times;5, Assets, Blanket POs, Contracts, GL Balances. That is the whole proven core; the earlier &ldquo;Suppliers&nbsp;+&nbsp;Customers&rdquo; line was optimistic — Customers is <em>not</em> clean.</li>
+  <li><strong>Fixes shipped this session (test-data / scorer correctness, all verifiable):</strong> AP 1099 invoice referenced a same-run prefixed supplier &rarr; repointed to the stable <code>JGA</code> supplier (<strong>PR&nbsp;#153</strong>); Supplier Site Assignment scorer keyed on vendor+site only so the intentional bad row (<code>NONEXISTENT&nbsp;BU</code>) mis-scored as a good-row failure &rarr; added the client BU to the display key (<strong>PR&nbsp;#154</strong>, verified by re-scoring run 155); AR test invoices used batch source <code>Manual-Other</code>, which <em>does not exist</em> as a Fusion transaction source &rarr; repointed to the real imported source <code>External Source</code> (<strong>branch <code>fix/ar-batch-source-external</code></strong>, pending live re-proof).</li>
+  <li><strong>Root causes found via live Fusion queries (BIP ephemeral data model, <code>fin_impl</code>):</strong>
+    <ul>
+      <li><strong>AR Invoices</strong> — interface lines sit in <code>RA_INTERFACE_LINES_ALL</code> with NULL status and no rows in <code>RA_INTERFACE_ERRORS_ALL</code>, across many prior runs. AutoInvoice never selected them because the batch source <code>Manual-Other</code> does not exist (a <code>MANUAL</code>/<code>INV</code> source would be ignored anyway; AutoInvoice needs a <code>FOREIGN</code>/imported source). Earlier &ldquo;AR loaded&rdquo; was a false positive. Fix in the branch above.</li>
+      <li><strong>Items</strong> — the plain item LOADs and reconciles correctly; only the lot-controlled and serial-controlled items fail to reach <code>EGP_SYSTEM_ITEMS_B</code>. Same lots/serials theme as MiscReceipts. The pipeline is sound; the controlled variants need item/org lot-serial setup that exists on real Fusion items — per owner direction, mimic a real lot/serial item's exact settings under new item names.</li>
+      <li><strong>Grants</strong> — instance config block (module not set up: &ldquo;requisite setup steps haven't been completed&rdquo;). <strong>Tabled by owner (2026-07-15).</strong></li>
+      <li><strong>Customers</strong> — Accounts/Parties held by Fusion data-quality (potential-duplicate) on re-runs; downstream sites/uses cascade.</li>
+      <li><strong>Purchase Orders / Requisitions</strong> — one EBS-extracted parent header rejected, cascading to its lines/locations/distributions; owner reads these as &ldquo;something we're doing wrong&rdquo; &mdash; approach: query a real req/PO, mimic it, change only the number.</li>
+      <li><strong>Billing Events</strong> (<code>PJB_TASK_NOT_LINKED</code>) and <strong>Project Expenditures</strong> (interface status P) — mimic a real event/expenditure (owner: duplicate a real billing event at ~$1). Project Budgets tabled.</li>
+    </ul>
+  </li>
+  <li><strong>HCM (14 objects)</strong> — the 401 was a stale saved <code>hcm_impl</code> password (synced from <code>connections.json</code>); run 156 uploads now succeed. But HCM has no staged test data and no working base-tier reconciliation (a 404 on the HDL dataset status), so it is <strong>unblocked but unproven</strong> — the Contract-v1 HDL reconciliation build remains.</li>
+</ul>
+<strong>Owner direction (2026-07-15):</strong> work these by <em>mimicking real Fusion records</em> — query an existing good record per object (lot/serial items, an expenditure, a billing event, a req/PO, an AutoInvoiced AR invoice), copy its exact settings under new key values, and test the FBDI directly (via subagents) without a full pipeline run. Record every known-good record, query, and FBDI note under <code>objects/{object}/</code> so it persists. Grants and Project Budgets are tabled; if an item still won't progress after mimicking a real record, table it and move on.
+</div>
+
 <div class="toc">
   <strong>Contents</strong>
   <ol>
