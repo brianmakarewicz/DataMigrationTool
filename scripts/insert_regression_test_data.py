@@ -2248,9 +2248,12 @@ def main():
             'RT-WKR-G1-WR', 'NEW'
         )
     """, label="Work relationship for RT-WKR-G1")
-    for anum, status, bu, label in [
-        ("ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "GOOD Assignment: RT-WKR-G1"),
-        ("ET-RT-WKR-B2", "ACTIVE_PROCESS", "NONEXISTENT BU",   "BAD Assignment: invalid BU [BAD-LKP]"),
+    # Good and bad must be DISTINCT records. The generator keys the Assignment
+    # SourceSystemId off PERSON_NUMBER (|| '_ASG'), NOT the assignment number, so
+    # the bad row uses a distinct person or HDL rejects both as duplicate lines.
+    for pnum, anum, status, bu, label in [
+        ("RT-WKR-G1",   "ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "GOOD Assignment: RT-WKR-G1"),
+        ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_ASSIGNMENT_STG_TBL (
@@ -2260,13 +2263,13 @@ def main():
                 NORMAL_HOURS, FREQUENCY, ASSIGNMENT_CATEGORY,
                 PRIMARY_ASSIGNMENT_FLAG, SOURCE_ID, STG_STATUS
             ) VALUES (
-                'RT-WKR-G1', :anum, :anum,
+                :pnum, :anum, :anum,
                 '2026/01/01', :status,
                 :bu, 'HIRE', 'JOB071', 'Sales',
                 '40', 'W', 'FR',
                 'Y', :src, 'NEW'
             )
-        """, {"anum": anum, "status": status, "bu": bu, "src": f"RT-{anum}"},
+        """, {"pnum": pnum, "anum": anum, "status": status, "bu": bu, "src": f"RT-{anum}"},
         label=label)
     tag_scenario(cur, "DMT_WORK_REL_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_ASSIGNMENT_STG_TBL", scenario_id)
@@ -2305,10 +2308,13 @@ def main():
     #     LDG 'US Legislative Data Group' + payroll 'Biweekly' confirmed live.
     #     (objects/PayrollRelationship/README.md, 2026-07-15.)
     # ====================================================================
+    # The generator keys the PayrollRelationship SourceSystemId off PERSON_NUMBER
+    # (|| '_PAYREL'), so the bad row uses a distinct person to stay a separate
+    # record; otherwise HDL rejects both as duplicate data lines.
     print("\n=== 44. Payroll Relationships (HCM) ===")
-    for ldg, label in [
-        ("US Legislative Data Group", "GOOD Payroll Relationship: RT-WKR-G1"),
-        ("NONEXISTENT LDG",           "BAD Payroll Relationship: invalid LDG [BAD-LKP]"),
+    for pnum, ldg, label in [
+        ("RT-WKR-G1",   "US Legislative Data Group", "GOOD Payroll Relationship: RT-WKR-G1"),
+        ("RT-WKR-BPAY", "NONEXISTENT LDG",           "BAD Payroll Relationship: invalid LDG + distinct person [BAD-LKP]"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_PAY_REL_STG_TBL (
@@ -2316,11 +2322,11 @@ def main():
                 PAYROLL_NAME, PAYROLL_STATUS_CODE, LEGISLATIVE_DATA_GROUP_NAME,
                 SOURCE_ID, STG_STATUS
             ) VALUES (
-                'RT-WKR-G1', '2026/01/01', 'US1 Legal Entity',
+                :pnum, '2026/01/01', 'US1 Legal Entity',
                 'Biweekly', 'A', :ldg,
                 :src, 'NEW'
             )
-        """, {"ldg": ldg, "src": f"RT-PAYREL-{ldg[:8]}"},
+        """, {"pnum": pnum, "ldg": ldg, "src": f"RT-PAYREL-{pnum}"},
         label=label)
     tag_scenario(cur, "DMT_PAY_REL_STG_TBL", scenario_id)
 
@@ -2331,20 +2337,23 @@ def main():
     #     live); BAD uses a distinct profile code with an invalid status.
     #     (objects/TalentProfiles/README.md, 2026-07-15.)
     # ====================================================================
+    # The generator keys the TalentProfile SourceSystemId off PERSON_NUMBER
+    # (|| '_TPROF'), NOT the profile code, so the bad row uses a distinct person
+    # to stay a separate record; otherwise HDL rejects both as duplicate lines.
     print("\n=== 45. Talent Profiles (HCM) ===")
-    for pcode, status, label in [
-        ("RT-WKR-G1_PROF",  "A",       "GOOD Talent Profile: RT-WKR-G1"),
-        ("RT-WKR-G1_PROFB", "INVALID", "BAD Talent Profile: invalid status [BAD-LKP]"),
+    for pnum, pcode, status, label in [
+        ("RT-WKR-G1",    "RT-WKR-G1_PROF",    "A",       "GOOD Talent Profile: RT-WKR-G1"),
+        ("RT-WKR-BPROF", "RT-WKR-BPROF_PROF", "INVALID", "BAD Talent Profile: invalid status + distinct person [BAD-LKP]"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_TALENT_PROF_STG_TBL (
                 PERSON_NUMBER, PROFILE_CODE, PROFILE_TYPE_CODE,
                 PROFILE_STATUS_CODE, PROFILE_USAGE_CODE, SOURCE_ID, STG_STATUS
             ) VALUES (
-                'RT-WKR-G1', :pcode, 'PERSON',
+                :pnum, :pcode, 'PERSON',
                 :status, 'P', :src, 'NEW'
             )
-        """, {"pcode": pcode, "status": status, "src": f"RT-{pcode}"},
+        """, {"pnum": pnum, "pcode": pcode, "status": status, "src": f"RT-{pcode}"},
         label=label)
 
     # One competency item for the GOOD profile

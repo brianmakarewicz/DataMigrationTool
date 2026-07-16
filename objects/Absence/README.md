@@ -97,9 +97,10 @@ GOOD — one absence entry keyed to RT-WKR-G1:
   ABSENCE_TYPE='Vacation', ABSENCE_STATUS=(pending blocker resolution — see below),
   START_DATE='2026/03/02', END_DATE='2026/03/03', SOURCE_ID='RT-ABS-G1', STG_STATUS='NEW'.
 
-BAD — distinct record (different date range = different discriminator so no duplicate-line
-error); fails on an invalid absence type:
-- `DMT_ABSENCE_STG_TBL`: PERSON_NUMBER='RT-WKR-G1', EMPLOYER_NAME='US1 Legal Entity',
+BAD — distinct record; fails on an invalid absence type. The SourceSystemId is
+`PERSON_NUMBER || '_ABS'`, NOT the date range, so the bad row must use a distinct
+PERSON_NUMBER to be a separate record (a different date range alone would still collide):
+- `DMT_ABSENCE_STG_TBL`: PERSON_NUMBER='RT-WKR-BABS', EMPLOYER_NAME='US1 Legal Entity',
   ABSENCE_TYPE='NONEXISTENT ABSENCE TYPE', ABSENCE_STATUS=(same as GOOD),
   START_DATE='2026/04/06', END_DATE='2026/04/07', SOURCE_ID='RT-ABS-B1', STG_STATUS='NEW'.
 

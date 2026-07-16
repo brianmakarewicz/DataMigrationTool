@@ -104,9 +104,11 @@ GOOD — parent + one item, both keyed to RT-WKR-G1:
 
 BAD — distinct parent record so no duplicate-line error; fails on invalid status code (proven
 failure mode):
-- Parent `DMT_TALENT_PROF_STG_TBL`: PERSON_NUMBER='RT-WKR-G1', PROFILE_CODE='RT-WKR-G1_PROFB',
+- Parent `DMT_TALENT_PROF_STG_TBL`: PERSON_NUMBER='RT-WKR-BPROF', PROFILE_CODE='RT-WKR-BPROF_PROF',
   PROFILE_TYPE_CODE='PERSON', PROFILE_STATUS_CODE='INVALID', PROFILE_USAGE_CODE='P',
-  SOURCE_ID='RT-TPROF-B1', STG_STATUS='NEW'. (Distinct PROFILE_CODE = distinct discriminator.)
+  SOURCE_ID='RT-TPROF-B1', STG_STATUS='NEW'. (The SourceSystemId is `PERSON_NUMBER || '_TPROF'`,
+  NOT the profile code, so the bad row must use a distinct PERSON_NUMBER to be a separate
+  record — a distinct PROFILE_CODE alone would still collide.)
 
 ### Prerequisites / blockers
 None. Person profile attaches directly to the worker person; no plan/unit assignment needed.
