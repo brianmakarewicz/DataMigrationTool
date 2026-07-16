@@ -992,6 +992,13 @@ prompt == Seed data ==
 @@seed/dmt_config_tbl.sql
 @@seed/dmt_pipeline_def_tbl.sql
 @@seed/dmt_cemli_catalog_tbl.sql
+-- Upload object registry + auto-generated column dictionary. Runs AFTER the
+-- staging tables exist and AFTER DMT_UPLOAD_DICT_PKG is compiled: the seed
+-- registers every object and child staging table, then calls
+-- DMT_UPLOAD_DICT_PKG.SEED_DICTIONARY to (re)build DMT_UPLOAD_DICT_TBL from
+-- USER_TAB_COLUMNS so the existing CSV upload can route a full-fidelity
+-- multi-CSV scenario zip to every DMT_*_STG_TBL.
+@@seed/dmt_upload_object_tbl.sql
 -- E1 (2026-07-08): the Mock engine-test registrations are TEST-SETUP only —
 -- test/unit/setup_mock_objects.sql, run by test/unit/test_queue_engine.sql.
 -- A production install carries no dispatchable mock objects and no MOCK_*

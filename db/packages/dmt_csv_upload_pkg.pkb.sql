@@ -207,7 +207,11 @@ AS
         p_rows_loaded  := 0;
         p_rows_errored := 0;
 
-        -- Load valid columns: non-admin AND non-LOB (LOG ERRORS INTO can't handle CLOBs)
+        -- Load valid columns: non-admin AND non-LOB (LOG ERRORS INTO can't handle CLOBs).
+        -- SOURCE_ID is marked admin in the dictionary (it defaults to NULL and is
+        -- otherwise pipeline-managed) but it is a real source natural key, so it
+        -- is honoured when a CSV supplies it (mirrors the regression seed, which
+        -- populates SOURCE_ID on every staging row).
         FOR c IN (
             SELECT UPPER(d.COLUMN_NAME) AS COLUMN_NAME
             FROM   DMT_UPLOAD_DICT_TBL d
@@ -215,7 +219,7 @@ AS
                    ON tc.table_name  = p_staging_table
                    AND tc.column_name = UPPER(d.COLUMN_NAME)
             WHERE  d.OBJECT_CODE    = p_object_code
-            AND    d.IS_ADMIN_COLUMN = 'N'
+            AND    (d.IS_ADMIN_COLUMN = 'N' OR UPPER(d.COLUMN_NAME) = 'SOURCE_ID')
             AND    tc.data_type NOT IN ('CLOB', 'BLOB', 'NCLOB', 'LONG')
         ) LOOP
             l_valid_cols(c.COLUMN_NAME) := c.COLUMN_NAME;
@@ -485,10 +489,13 @@ AS
             RETURN;
         END IF;
 
+        -- SOURCE_ID is admin in the dictionary but is a real source key: honour
+        -- it when the CSV supplies it (same rule as the fast loader above).
         FOR c IN (
             SELECT UPPER(COLUMN_NAME) AS COLUMN_NAME
             FROM   DMT_UPLOAD_DICT_TBL
-            WHERE  OBJECT_CODE = p_object_code AND IS_ADMIN_COLUMN = 'N'
+            WHERE  OBJECT_CODE = p_object_code
+            AND    (IS_ADMIN_COLUMN = 'N' OR UPPER(COLUMN_NAME) = 'SOURCE_ID')
         ) LOOP
             l_valid_cols(c.COLUMN_NAME) := c.COLUMN_NAME;
         END LOOP;
@@ -900,6 +907,24 @@ AS
         l_total_errored NUMBER := 0;
         l_total_files   NUMBER := 0;
         l_batch_tag     VARCHAR2(200);
+
+        -- Parent-before-child routing plan. Each matched CSV in the zip is
+        -- resolved to its object and its registry DISPLAY_ORDER, then the whole
+        -- bundle is loaded in DISPLAY_ORDER so a parent staging table (e.g.
+        -- DMT_PO_HEADERS_INT_STG_TBL, DMT_HZ_PARTIES_STG_TBL) is always loaded
+        -- before its child tables — regardless of the file order inside the zip.
+        TYPE t_plan_rec IS RECORD (
+            display_order NUMBER,
+            zip_index     PLS_INTEGER,
+            file_label    VARCHAR2(500),
+            object_code   VARCHAR2(50)
+        );
+        TYPE t_plan_tab IS TABLE OF t_plan_rec INDEX BY PLS_INTEGER;
+        l_plan       t_plan_tab;
+        l_plan_count PLS_INTEGER := 0;
+        l_disp_order NUMBER;
+        -- simple insertion sort keys (small N: one zip of at most ~96 CSVs)
+        l_tmp        t_plan_rec;
     BEGIN
         p_error_msg := NULL;
 
@@ -928,6 +953,7 @@ AS
                     || TO_CHAR(SYSTIMESTAMP, 'YYMMDDHH24MISS') || '~'
                     || SUBSTR(p_file_name, GREATEST(INSTR(p_file_name, '/', -1), INSTR(p_file_name, '\', -1)) + 1);
 
+        -- Pass 1: resolve each zip file to its object + DISPLAY_ORDER.
         FOR i IN 1 .. l_files.COUNT LOOP
             l_file_name := l_files(i);
             IF l_file_name LIKE '%/' OR l_file_name LIKE '.%' THEN CONTINUE; END IF;
@@ -937,7 +963,8 @@ AS
 
             l_matched := FALSE;
             BEGIN
-                SELECT OBJECT_CODE INTO l_object_code
+                SELECT OBJECT_CODE, NVL(DISPLAY_ORDER, 0)
+                INTO   l_object_code, l_disp_order
                 FROM   DMT_UPLOAD_OBJECT_TBL
                 WHERE  UPPER(CSV_FILENAME) = UPPER(l_file_name)
                 AND    IS_ACTIVE = 'Y';
@@ -948,26 +975,52 @@ AS
             END;
 
             IF l_matched THEN
-                l_file_blob := APEX_ZIP.GET_FILE_CONTENT(
-                    p_zipped_blob => l_zip_blob, p_file_name => l_files(i));
-
-                UPLOAD_CSV_FROM_BLOB(
-                    p_blob            => l_file_blob,
-                    p_file_label      => l_file_name,
-                    p_object_code     => l_object_code,
-                    p_batch_id        => l_batch_id,
-                    p_rows_loaded     => l_rows_loaded,
-                    p_rows_errored    => l_rows_errored,
-                    p_batch_id_out    => l_batch_out,
-                    p_error_msg       => l_file_error,
-                    p_use_fast_loader => p_use_fast_loader,
-                    p_scenario_name   => p_scenario_name
-                );
-
-                l_total_loaded  := l_total_loaded  + NVL(l_rows_loaded, 0);
-                l_total_errored := l_total_errored + NVL(l_rows_errored, 0);
-                l_total_files   := l_total_files + 1;
+                l_plan_count := l_plan_count + 1;
+                l_plan(l_plan_count).display_order := l_disp_order;
+                l_plan(l_plan_count).zip_index     := i;
+                l_plan(l_plan_count).file_label     := l_file_name;
+                l_plan(l_plan_count).object_code    := l_object_code;
             END IF;
+        END LOOP;
+
+        -- Sort the plan by DISPLAY_ORDER (ascending). Insertion sort — the plan
+        -- is small (one zip), and this keeps a stable parent-before-child order.
+        FOR i IN 2 .. l_plan_count LOOP
+            l_tmp := l_plan(i);
+            DECLARE j PLS_INTEGER := i - 1;
+            BEGIN
+                WHILE j >= 1 AND l_plan(j).display_order > l_tmp.display_order LOOP
+                    l_plan(j + 1) := l_plan(j);
+                    j := j - 1;
+                END LOOP;
+                l_plan(j + 1) := l_tmp;
+            END;
+        END LOOP;
+
+        -- Pass 2: load in DISPLAY_ORDER (parents before children).
+        FOR i IN 1 .. l_plan_count LOOP
+            l_file_name   := l_plan(i).file_label;
+            l_object_code := l_plan(i).object_code;
+
+            l_file_blob := APEX_ZIP.GET_FILE_CONTENT(
+                p_zipped_blob => l_zip_blob, p_file_name => l_files(l_plan(i).zip_index));
+
+            UPLOAD_CSV_FROM_BLOB(
+                p_blob            => l_file_blob,
+                p_file_label      => l_file_name,
+                p_object_code     => l_object_code,
+                p_batch_id        => l_batch_id,
+                p_rows_loaded     => l_rows_loaded,
+                p_rows_errored    => l_rows_errored,
+                p_batch_id_out    => l_batch_out,
+                p_error_msg       => l_file_error,
+                p_use_fast_loader => p_use_fast_loader,
+                p_scenario_name   => p_scenario_name
+            );
+
+            l_total_loaded  := l_total_loaded  + NVL(l_rows_loaded, 0);
+            l_total_errored := l_total_errored + NVL(l_rows_errored, 0);
+            l_total_files   := l_total_files + 1;
         END LOOP;
 
         -- Build compact summary for APEX notification
