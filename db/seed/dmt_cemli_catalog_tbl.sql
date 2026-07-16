@@ -73,8 +73,11 @@ using (
     union all select 'Expenditures', 'Project Expenditures', 'DMT_PJC_EXPENDITURES_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'ProjectBudgets', 'Project Budgets', 'DMT_PRJ_BUDGET_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'BillingEvents', 'Billing Events', 'DMT_PJB_BILL_EVENTS_TFM_TBL', 'TFM_STATUS', null, 1 from dual
-    -- Grants: headers only for now ("children's TFMs not in catalog view yet", section 1 #23)
+    -- Grants: award headers + award projects (the dedicated Award Projects TFM
+    -- table carries its own rows, so no row filter). Other award children remain
+    -- out of the catalog view for now (section 1 #23).
     union all select 'Grants', 'Award Headers', 'DMT_GMS_AWD_HEADERS_TFM_TBL', 'TFM_STATUS', null, 1 from dual
+    union all select 'Grants', 'Award Projects', 'DMT_GMS_AWD_PROJECTS_TFM_TBL', 'TFM_STATUS', null, 2 from dual
     union all select 'Items', 'Item Master', 'DMT_EGP_ITEM_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'Items', 'Item Categories', 'DMT_EGP_ITEM_CAT_TFM_TBL', 'TFM_STATUS', null, 2 from dual
     -- HDL objects --------------------------------------------------------
