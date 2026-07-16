@@ -47,7 +47,11 @@ FROM DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL
 UNION ALL
 SELECT 'SupplierSiteAssignments', 'Site Assignments',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
-       VENDOR_NAME || ' - ' || VENDOR_SITE_CODE,
+       -- Identity of a site assignment is vendor + site + client BU: one site can
+       -- carry several assignments differing only by BUSINESS_UNIT_NAME (the
+       -- reconciler already matches on all three). Include the BU so the display
+       -- key uniquely names the assignment and carries any bad-seed marker.
+       VENDOR_NAME || ' - ' || VENDOR_SITE_CODE || ' - ' || BUSINESS_UNIT_NAME,
        VENDOR_NAME,
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^\]]+)\]', 1, 1, NULL, 1),
