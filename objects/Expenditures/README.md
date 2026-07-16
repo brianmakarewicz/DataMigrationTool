@@ -78,3 +78,137 @@ None in this folder.
   - **PRE-VALIDATION BUG:** BAD row with non-existent project should fail upstream dependency check but loads successfully. Validator VALIDATE_PRE_TRANSFORM is not catching it. Needs investigation.
   - Working GOOD rows: TRANSACTION_TYPE=LABOR, PERSON_NUMBER=7/10, EXPENDITURE_TYPE=Administrative, BU=US1 Business Unit.
 
+## Known-good Fusion record & mapping (2026-07-15)
+
+### The core problem
+Our expenditure rows land in the interface staging table `PJC_TXN_XFACE_STAGE_ALL`
+with `TRANSACTION_STATUS_CODE = 'P'` and then never move to the base table
+`PJC_EXP_ITEMS_ALL`. We had been reading 'P' as "Processed = success". That reading is
+wrong here. For these staging rows 'P' means the SQL*Loader placed the row in staging
+(pending), not that the Import Project Costs process accepted and costed it. A live count
+proves it: **0 rows** with `ORIG_TRANSACTION_REFERENCE LIKE 'RT-EXP-%'` exist in
+`PJC_EXP_ITEMS_ALL`. Every one of our 60 staging rows across all runs has a NULL
+transaction source and never posted.
+
+### Root cause
+The Import Project Costs process needs each row to name a valid **transaction source
+document** and **document entry**. Our staging rows leave all three of these blank:
+`USER_TRANSACTION_SOURCE`, `DOCUMENT_NAME`, `DOC_ENTRY_NAME`. Without a document and
+document entry, the process cannot map the row to a costing document, so it silently
+leaves it in staging. This is the single missing piece — projects, tasks, expenditure
+type, person, quantity, BU, and currency in our test data are otherwise fine.
+
+Proof — our staging rows (live query result):
+
+    OTR=RT-EXP-RTPRJ001  STATUS=P  TXNTYPE=LABOR  USER_TRANSACTION_SOURCE=(blank)
+    DOCUMENT_NAME=(blank)  DOC_ENTRY_NAME=(blank)  EXPENDITURE_TYPE=Administrative
+    PROJECT_NUMBER=9629RTPRJ001  TASK_NUMBER=RTPRJ001.1  PERSON_NUMBER=7
+
+### A real expenditure that DID post to base (PCS10001, project "Hilman HCM Implementation")
+Two flavours exist on that project. The labor flavour is the one to mimic:
+
+| Attribute | Real value (labor / Straight Time) |
+|---|---|
+| Project number / name | PCS10001 / Hilman HCM Implementation |
+| Task number | 1.0 |
+| System linkage function | ST (Straight Time labor) |
+| Expenditure type | "Professional" (expenditure_type_id 300000047429543) |
+| Expenditure item date | 2013-07-07 |
+| Quantity / UOM | 40 / HOURS |
+| Expenditure organization | "Consulting South US" (org id 300000047013640) |
+| Business unit | US1 Business Unit (org_id/bu_id 300000046987012) |
+| Person type / person | EMP / person_number 712 (incurred_by_person_id 300000049471069) |
+| Document | "Timecard" (document_id 300000049854173) |
+| Document entry | "Straight Time" (system_linkage_function ST) |
+| Currency | USD |
+
+The decisive difference from our rows: the real row carries a **document** and a
+**document entry**. Ours carry neither.
+
+### Valid documents / document entries for third-party FBDI import (from setup)
+`PJF_TXN_DOCUMENT_VL` (documents) joined to `PJF_TXN_DOC_ENTRY_VL` (entries) gives the
+allowed combinations. The two that matter:
+
+| Document name | Document entry name | System linkage | Use for |
+|---|---|---|---|
+| Miscellaneous | Miscellaneous | PJ | non-labor / external actual cost (canonical FBDI third-party source) |
+| Time Card | Straight Time | ST | labor with a person |
+
+The `Miscellaneous / Miscellaneous (PJ)` pair is the safest, guaranteed-importable
+third-party source. Its `IMPORT_COST_ACC_FLAG = N`, so the import will cost the row
+(what we want for raw external costs).
+
+### The exact test-data change needed (in `insert_regression_test_data.py`, section 27)
+Add the three document columns to both the GOOD and BAD expenditure INSERTs. Two options:
+
+Option A — keep it labor (mirror the real Timecard row). Add to the column list and
+values:
+
+    ..., DOCUMENT_NAME, DOC_ENTRY_NAME
+    ..., 'Time Card', 'Straight Time'
+
+and keep TRANSACTION_TYPE 'LABOR', PERSON_NUMBER a real EMP, QUANTITY in hours.
+(Note: verify "Time Card"/"Straight Time" is enabled for third-party import on this
+instance before relying on it — labor documents are often native-only.)
+
+Option B — switch to the canonical Miscellaneous third-party path (lowest risk). For
+each GOOD row use:
+
+    TRANSACTION_TYPE   -> 'NONLABOR'   (PJ linkage, non-labor)
+    DOCUMENT_NAME      -> 'Miscellaneous'
+    DOC_ENTRY_NAME     -> 'Miscellaneous'
+    EXPENDITURE_TYPE   -> a non-labor expenditure type valid on the project/task
+    PERSON_NUMBER      -> leave NULL (PJ non-labor does not require a person)
+    QUANTITY / UOM     -> a non-labor quantity + UOM the expenditure type allows
+
+Whichever option: the BAD row should stay BAD by keeping its invalid EXPENDITURE_TYPE
+('BadValue') OR non-existent project, but it too must carry DOCUMENT_NAME / DOC_ENTRY_NAME
+so the failure is attributed to the type/project, not to the still-missing document.
+
+Recommendation: **Option B (Miscellaneous / PJ)** is the more reliable path to reach the
+base table, because the Miscellaneous document is the standard, always-import-enabled
+third-party source. Confirm the chosen non-labor expenditure type is chargeable on
+RTPRJ001/RTPRJ002 tasks before running.
+
+### Reusable discovery queries (read-only, via scripts/fusion_bip_query.py --cred fin_impl)
+Real posted labor expenditure:
+
+    SELECT pv.segment1, pv.name, tv.element_number, ei.expenditure_type_id,
+           ei.expenditure_item_date, ei.quantity, ei.unit_of_measure,
+           ei.expenditure_organization_id, ei.org_id, ei.system_linkage_function,
+           ei.document_id, ei.doc_entry_id, ei.incurred_by_person_id, ei.person_type
+      FROM pjc_exp_items_all ei
+      JOIN pjf_projects_all_vl pv ON pv.project_id=ei.project_id
+      JOIN pjf_proj_elements_vl tv ON tv.proj_element_id=ei.task_id
+     WHERE ei.system_linkage_function='ST' AND ROWNUM<=3
+
+Expenditure type name:  SELECT expenditure_type_name FROM pjf_exp_types_tl
+     WHERE expenditure_type_id=:id AND language='US'
+Expenditure org name:   SELECT name FROM hr_organization_units WHERE organization_id=:id
+Business unit name:      SELECT bu_name FROM fun_all_business_units_v WHERE bu_id=:id
+Person number:          SELECT person_number FROM per_all_people_f WHERE person_id=:id AND ROWNUM<=1
+
+Valid documents:   SELECT document_id, document_name, document_code FROM pjf_txn_document_vl
+Valid doc entries: SELECT document_id, doc_entry_name, doc_entry_code, system_linkage_function
+                     FROM pjf_txn_doc_entry_vl WHERE system_linkage_function IN ('ST','PJ')
+
+Our own staging rows: SELECT orig_transaction_reference, transaction_status_code,
+     transaction_type, user_transaction_source, document_name, doc_entry_name,
+     expenditure_type, project_number, task_number, person_number
+     FROM pjc_txn_xface_stage_all WHERE orig_transaction_reference LIKE 'RT-EXP-%'
+Confirm none reached base: SELECT COUNT(*) FROM pjc_exp_items_all
+     WHERE orig_transaction_reference LIKE 'RT-EXP-%'   -- returns 0
+
+### Uncertainty
+- I could not read an error message from the interface table: `PJC_TXN_XFACE_STAGE_ALL`
+  has no error-text column, and there was no rejection log to pull. The root cause
+  (missing document / document entry) is inferred from (a) our rows carrying NULL source,
+  (b) 0 rows reaching base, and (c) every real posted row carrying a document + entry.
+  It is a strong inference, not a message quoted back from Fusion.
+- Whether the labor "Time Card / Straight Time" document is enabled for third-party FBDI
+  import on THIS instance was not confirmed. That is why Option B (Miscellaneous) is
+  recommended.
+- The generator/transform packages were not inspected here; the fix may also require the
+  FBDI generator and CTL to emit the DOCUMENT_NAME / DOC_ENTRY_NAME columns. Verify the
+  CTL includes those positions before changing only the seed data.
+
