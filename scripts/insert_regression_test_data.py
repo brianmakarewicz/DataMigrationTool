@@ -153,6 +153,14 @@ def main():
         "DMT_PERSON_NAME_TFM_TBL",
         "DMT_WORKER_STG_TBL",
         "DMT_PERSON_NAME_STG_TBL",
+        "DMT_ASSIGNMENT_TFM_TBL",
+        "DMT_WORK_REL_TFM_TBL",
+        "DMT_ASSIGNMENT_STG_TBL",
+        "DMT_WORK_REL_STG_TBL",
+        "DMT_SALARY_TFM_TBL",
+        "DMT_SALARY_STG_TBL",
+        "DMT_PAY_REL_TFM_TBL",
+        "DMT_PAY_REL_STG_TBL",
         # Items (were missing from this list -- caused 15x STG-row accumulation
         #  across reloads because they were inserted+tagged but never cleaned)
         "DMT_EGP_ITEM_CAT_TFM_TBL",
@@ -2216,6 +2224,97 @@ def main():
     """, label="GOOD Worker name: Regina Tester")
     tag_scenario(cur, "DMT_WORKER_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_PERSON_NAME_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 42. ASSIGNMENTS (HCM HDL) — needs a WorkRelationship row too, because the
+    #     generator restates the parent chain from DMT_WORK_REL_TFM_TBL.
+    #     References the good worker RT-WKR-G1 (same prefix within a run).
+    #     Reference values mimic real worker person 10 (BU US1, JOB071, Sales).
+    #     (objects/Assignments/README.md, 2026-07-15.)
+    # ====================================================================
+    print("\n=== 42. Assignments (HCM) ===")
+    run_sql(cur, """
+        INSERT INTO DMT_OWNER.DMT_WORK_REL_STG_TBL (
+            PERSON_NUMBER, DATE_START, EFFECTIVE_START_DATE,
+            LEGAL_EMPLOYER_NAME, ACTION_CODE, WORKER_TYPE, PRIMARY_FLAG,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-G1', '2026/01/01', '2026/01/01',
+            'US1 Legal Entity', 'HIRE', 'E', 'Y',
+            'RT-WKR-G1-WR', 'NEW'
+        )
+    """, label="Work relationship for RT-WKR-G1")
+    for anum, status, bu, label in [
+        ("ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "GOOD Assignment: RT-WKR-G1"),
+        ("ET-RT-WKR-B2", "ACTIVE_PROCESS", "NONEXISTENT BU",   "BAD Assignment: invalid BU [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_ASSIGNMENT_STG_TBL (
+                PERSON_NUMBER, ASSIGNMENT_NAME, ASSIGNMENT_NUMBER,
+                EFFECTIVE_START_DATE, ASSIGNMENT_STATUS_TYPE_CODE,
+                BUSINESS_UNIT_NAME, ACTION_CODE, JOB_CODE, DEPARTMENT_NAME,
+                NORMAL_HOURS, FREQUENCY, ASSIGNMENT_CATEGORY,
+                PRIMARY_ASSIGNMENT_FLAG, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                'RT-WKR-G1', :anum, :anum,
+                '2026/01/01', :status,
+                :bu, 'HIRE', 'JOB071', 'Sales',
+                '40', 'W', 'FR',
+                'Y', :src, 'NEW'
+            )
+        """, {"anum": anum, "status": status, "bu": bu, "src": f"RT-{anum}"},
+        label=label)
+    tag_scenario(cur, "DMT_WORK_REL_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_ASSIGNMENT_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 43. SALARIES (HCM HDL) → CMP_SALARY. One row, references the assignment
+    #     ET-RT-WKR-G1. Basis 'US1 Annual Salary' confirmed live. Currency/
+    #     frequency omitted (derived from the basis). (objects/Salary/README.md.)
+    # ====================================================================
+    print("\n=== 43. Salaries (HCM) ===")
+    for anum, basis, amt, label in [
+        ("ET-RT-WKR-G1", "US1 Annual Salary",  "75000", "GOOD Salary: RT-WKR-G1"),
+        ("ET-RT-WKR-G1", "NONEXISTENT_BASIS",  "75000", "BAD Salary: invalid basis [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_SALARY_STG_TBL (
+                PERSON_NUMBER, ASSIGNMENT_NUMBER, EFFECTIVE_START_DATE,
+                SALARY_AMOUNT, SALARY_BASIS_NAME, ACTION_CODE,
+                DATE_FROM, SALARY_APPROVED, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                'RT-WKR-G1', :anum, '2026/01/01',
+                :amt, :basis, 'HIRE',
+                '2026/01/01', 'Y', :src, 'NEW'
+            )
+        """, {"anum": anum, "amt": amt, "basis": basis,
+              "src": f"RT-SAL-{basis[:8]}"},
+        label=label)
+    tag_scenario(cur, "DMT_SALARY_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 44. PAYROLL RELATIONSHIPS (HCM HDL) → PAY_PAY_RELATIONSHIPS_F. One row.
+    #     LDG 'US Legislative Data Group' + payroll 'Biweekly' confirmed live.
+    #     (objects/PayrollRelationship/README.md, 2026-07-15.)
+    # ====================================================================
+    print("\n=== 44. Payroll Relationships (HCM) ===")
+    for ldg, label in [
+        ("US Legislative Data Group", "GOOD Payroll Relationship: RT-WKR-G1"),
+        ("NONEXISTENT LDG",           "BAD Payroll Relationship: invalid LDG [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_PAY_REL_STG_TBL (
+                PERSON_NUMBER, EFFECTIVE_START_DATE, LEGAL_EMPLOYER_NAME,
+                PAYROLL_NAME, PAYROLL_STATUS_CODE, LEGISLATIVE_DATA_GROUP_NAME,
+                SOURCE_ID, STG_STATUS
+            ) VALUES (
+                'RT-WKR-G1', '2026/01/01', 'US1 Legal Entity',
+                'Biweekly', 'A', :ldg,
+                :src, 'NEW'
+            )
+        """, {"ldg": ldg, "src": f"RT-PAYREL-{ldg[:8]}"},
+        label=label)
+    tag_scenario(cur, "DMT_PAY_REL_STG_TBL", scenario_id)
 
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()
