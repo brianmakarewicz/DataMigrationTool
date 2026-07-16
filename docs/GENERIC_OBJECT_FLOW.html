@@ -177,6 +177,46 @@ l_dummy := run_one_object_type(p_run_id, <span class="s">'PurchaseOrders'</span>
 <p>The three STG source rows are now <code>TRANSFORMED</code>. (Line locations and distributions transform the same way; omitted here to keep the example to the header→line cardinality.)</p>
 </div>
 
+<h4>Step 3.3b — Transform-time error capture <span class="tag t-bad">proposed 2026-07-16</span></h4>
+<p>The CSV→STG bulk loader and Step 3.2 (validate) both isolate bad rows without aborting the batch; the transform insert must do the same, and today it does not. The transform is a single set-based <code>INSERT&hellip;SELECT</code>. If one row can't be built — a garbage date, a value too long, a NOT-NULL miss — the statement raises, <code>WHEN&nbsp;OTHERS</code> re-raises, and the <strong>whole object fails, clean rows included</strong>. That is the last unguarded lane in the pipeline.</p>
+<p>The three-part fix, symmetric with the load lane's <code>LOG ERRORS</code> standard (&sect;7):</p>
+<ol style="margin:4px 0 8px 18px;padding:0">
+  <li><strong>Non-throwing SELECT.</strong> Every typed conversion carries <code>DEFAULT NULL ON CONVERSION ERROR</code>, so a bad value becomes <code>NULL</code> instead of raising — the error then surfaces at the column boundary where it can be caught.</li>
+  <li><strong><code>LOG ERRORS</code> on the insert</strong> into one <em>shared</em> errlog, <code>DMT_TFM_ERRLOG</code> (5 control columns + <code>STG_SEQUENCE_ID</code> — the only data column, common to every TFM table, so one table serves all objects). Bad rows divert; good rows land.</li>
+  <li><strong>Fold + flag.</strong> This run+object's diverted rows are folded into <code>DMT_STG_TFM_ERROR_TBL</code> as <code>[TRANSFORM_ERROR]</code> with the real <code>ORA-</code> text, then <code>FLAG_STG_FAILED(p_run_id)</code> flips their STG rows FAILED — the same helper the validator uses, keyed on "has an error row this run," not on the tag.</li>
+</ol>
+<div class="ex">
+<span class="exh">Example — one header with a bad date: diverted, not fatal</span>
+<p>Two eligible header STG rows this run: <code>H1</code> (clean) and <code>H7</code> (its <code>CREATION_DATE</code> arrived as the text <code>'NOTADATE'</code>; the TFM column is <code>DATE NOT NULL</code>).</p>
+<div class="cap"><code>DMT_PO_HEADERS_INT_STG_TBL</code> — before</div>
+<table><tr><th>STG_SEQUENCE_ID</th><th>INTERFACE_HEADER_KEY</th><th>CREATION_DATE</th><th>STG_STATUS</th></tr>
+<tr><td>7001</td><td>H1</td><td>2026/03/01</td><td>NEW</td></tr>
+<tr><td>7007</td><td>H7</td><td>NOTADATE</td><td>NEW</td></tr></table>
+<pre>INSERT INTO dmt_po_headers_int_tfm_tbl ( STG_SEQUENCE_ID, RUN_ID, ..., CREATION_DATE, ..., TFM_STATUS )
+SELECT s.STG_SEQUENCE_ID, 9007, ...,
+       TO_DATE(s.CREATION_DATE <span class="s">DEFAULT NULL ON CONVERSION ERROR</span>, <span class="s">'YYYY/MM/DD'</span>), ...,
+       <span class="s">'STAGED'</span>
+FROM   dmt_po_headers_int_stg_tbl s WHERE ...eligible...
+LOG ERRORS INTO DMT_OWNER.DMT_TFM_ERRLOG (<span class="s">'R9007:PurchaseOrders'</span>) REJECT LIMIT UNLIMITED;</pre>
+<p>H7's bad date becomes <code>NULL</code> (rule 1), the <code>NOT NULL</code> column rejects it at insert, and <code>LOG ERRORS</code> shunts just that row (rule 2). H1 inserts normally.</p>
+<div class="cap"><code>DMT_PO_HEADERS_INT_TFM_TBL</code> — after (only the good row)</div>
+<table><tr><th>STG_SEQUENCE_ID</th><th>INTERFACE_HEADER_KEY</th><th>CREATION_DATE</th><th>TFM_STATUS</th></tr>
+<tr><td>7001</td><td>H1</td><td>2026-03-01</td><td>STAGED</td></tr></table>
+<div class="cap"><code>DMT_TFM_ERRLOG</code> — the shared scratch table, tagged for this run+object</div>
+<table><tr><th>ORA_ERR_TAG$</th><th>ORA_ERR_MESG$</th><th>STG_SEQUENCE_ID</th></tr>
+<tr><td>R9007:PurchaseOrders</td><td>ORA-01400: cannot insert NULL into (&hellip;CREATION_DATE)</td><td>7007</td></tr></table>
+<p>The fold copies that into the standard ledger and clears the scratch rows; <code>FLAG_STG_FAILED</code> flips the STG row (rule 3):</p>
+<div class="cap"><code>DMT_STG_TFM_ERROR_TBL</code> — after the fold</div>
+<table><tr><th>RUN_ID</th><th>CEMLI_CODE</th><th>SUB_OBJECT</th><th>STG_SEQUENCE_ID</th><th>ERROR_TEXT</th></tr>
+<tr><td>9007</td><td>PurchaseOrders</td><td>PO Headers</td><td>7007</td><td>[TRANSFORM_ERROR] ORA-01400: cannot insert NULL into (&hellip;CREATION_DATE)</td></tr></table>
+<div class="cap"><code>DMT_PO_HEADERS_INT_STG_TBL</code> — after</div>
+<table><tr><th>STG_SEQUENCE_ID</th><th>INTERFACE_HEADER_KEY</th><th>STG_STATUS</th></tr>
+<tr><td>7001</td><td>H1</td><td>TRANSFORMED</td></tr>
+<tr><td>7007</td><td>H7</td><td class="t-bad" style="background:none;color:var(--red)">FAILED</td></tr></table>
+<p><strong>Accounting balances:</strong> staged 2 = transformed 1 + transform-failed 1, unaccounted 0. One rotten row cost one row, not the object.</p>
+</div>
+<p><strong>The residual case — a statement-level throw <code>LOG ERRORS</code> can't trap</strong> (an error raised inside the SELECT projection despite rule 1, e.g. a scalar sub-query returning two rows). The transform's <code>WHEN&nbsp;OTHERS</code> is the fallback: re-process this object's rows one at a time so the true culprit is isolated and the clean rows still load — and if even that can't proceed, mark the whole candidate batch <code>[TRANSFORM_ERROR]</code> with <code>SQLERRM</code> so nothing is left unaccounted. Fast path for the 99%, slow row-by-row only for the poisoned batch.</p>
+
 <h4>Step 3.4 — Generate FBDI + submit load</h4>
 <p>PurchaseOrders is <em>partitioned</em> by <code>PRC_BU_NAME</code>: a <code>FOR bu_rec IN (SELECT DISTINCT PRC_BU_NAME … TFM_STATUS='STAGED')</code> loop (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1485">1485</a></span>) generates one zip per BU and calls the nested helper <code>submit_and_reconcile_one</code> (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1030">1030</a></span>) per value. The generator flips the emitted rows <code>STAGED → GENERATED</code>. <code>SUBMIT_LOAD</code> (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:228">228</a></span>) uploads the zip to UCM and returns the Load ESS id; in ASYNC mode the engine returns with <code>g_load_ess_id</code> set. <span class="tag t-bad">ladder #4 (grouped) + ladder #5 (set-based generate) + ladder #6 (load-fail marking, :<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:2862">2862</a>)</span></p>
 <div class="ex">
