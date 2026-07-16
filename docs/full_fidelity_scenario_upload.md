@@ -170,11 +170,13 @@ filename rule.
 
 ## Unresolved / follow-ups
 
-- **Not deployed or run against the database.** Per the task constraints, the
-  seed and package edits were reviewed statically only; they were not compiled
-  or executed. A normal `db/install.sql` run (or a targeted deploy of the two
-  packages plus the new seed) is needed to confirm compilation and to run a
-  scenario zip end to end.
+- **Deployed and verified on dmt2-local (Docker).** The two package bodies
+  (`DMT_CSV_UPLOAD_PKG`, `DMT_UPLOAD_DICT_PKG`) compile **VALID**, and the seed
+  loaded **94 rows** into `DMT_UPLOAD_OBJECT_TBL` and **5,107 rows** into
+  `DMT_UPLOAD_DICT_TBL`. Compilation and row counts were confirmed by querying
+  `USER_OBJECTS` and the two tables directly. An end-to-end scenario zip upload
+  through the APEX UI has **not** yet been exercised — that is the remaining
+  verification step before this backlog item is checked off in the design doc.
 - **HDL date columns.** Several HCM/HDL objects store "date" values in
   `VARCHAR2` staging columns (the transform carries the string through). Those
   values must already be in the format the generator expects; the dictionary
