@@ -2144,6 +2144,51 @@ def main():
     label="BAD Contract: nonexistent supplier [BAD-UPS]")
     tag_scenario(cur, "DMT_PO_HEADERS_INT_STG_TBL", scenario_id)
 
+    # ====================================================================
+    # 41. WORKERS (HCM HDL) — minimal loadable worker
+    #     A hire needs just two STG rows: the worker + a GLOBAL name. The
+    #     generator builds the WorkRelationship/WorkTerms/Assignment sections
+    #     from the worker row (LegalEmployerName='US1 Legal Entity', a real
+    #     legal entity on this instance; BU default from WORKER_DEFAULT_BU_NAME).
+    #     The run prefix makes PERSON_NUMBER unique, so no collision with real
+    #     persons or frozen DMTW* data. (objects/Workers/README.md, 2026-07-15.)
+    #     GOOD: RT-WKR-G1 (HIRE). BAD: RT-WKR-B1 (ACTION_CODE=TERMINATE, caught
+    #     by the worker validator rule R2 before Fusion).
+    # ====================================================================
+    print("\n=== 41. Workers (HCM) ===")
+    for pnum, action, dob, label in [
+        ("RT-WKR-G1", "HIRE",      "1985-03-15", "GOOD Worker: RT-WKR-G1 (HIRE)"),
+        ("RT-WKR-B1", "TERMINATE", None,         "BAD Worker: TERMINATE action [BAD-REQ]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_WORKER_STG_TBL (
+                PERSON_NUMBER, START_DATE, EFFECTIVE_START_DATE,
+                ACTION_CODE, LEGAL_ENTITY_NAME, DATE_OF_BIRTH,
+                SOURCE_ID, STG_STATUS
+            ) VALUES (
+                :pnum, DATE '2026-01-01', DATE '2026-01-01',
+                :action, 'US1 Legal Entity',
+                CASE WHEN :dob IS NULL THEN NULL ELSE TO_DATE(:dob,'YYYY-MM-DD') END,
+                :src, 'NEW'
+            )
+        """, {"pnum": pnum, "action": action, "dob": dob, "src": f"RT-{pnum}"},
+        label=label)
+
+    # GLOBAL name for the GOOD worker only (bad worker never reaches Fusion)
+    run_sql(cur, """
+        INSERT INTO DMT_OWNER.DMT_PERSON_NAME_STG_TBL (
+            PERSON_NUMBER, EFFECTIVE_START_DATE, NAME_TYPE,
+            LEGISLATION_CODE, LAST_NAME, FIRST_NAME,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-G1', DATE '2026-01-01', 'GLOBAL',
+            'US', 'Tester', 'Regina',
+            'RT-WKR-G1-NME', 'NEW'
+        )
+    """, label="GOOD Worker name: Regina Tester")
+    tag_scenario(cur, "DMT_WORKER_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_PERSON_NAME_STG_TBL", scenario_id)
+
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()
     print("\n" + "=" * 60)
