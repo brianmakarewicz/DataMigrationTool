@@ -161,6 +161,10 @@ def main():
         "DMT_SALARY_STG_TBL",
         "DMT_PAY_REL_TFM_TBL",
         "DMT_PAY_REL_STG_TBL",
+        "DMT_TALENT_PROF_ITEM_TFM_TBL",
+        "DMT_TALENT_PROF_TFM_TBL",
+        "DMT_TALENT_PROF_ITEM_STG_TBL",
+        "DMT_TALENT_PROF_STG_TBL",
         # Items (were missing from this list -- caused 15x STG-row accumulation
         #  across reloads because they were inserted+tagged but never cleaned)
         "DMT_EGP_ITEM_CAT_TFM_TBL",
@@ -2300,6 +2304,42 @@ def main():
         """, {"ldg": ldg, "src": f"RT-PAYREL-{ldg[:8]}"},
         label=label)
     tag_scenario(cur, "DMT_PAY_REL_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 45. TALENT PROFILES (HCM HDL) → HRT_PROFILE_ITEMS. Attaches a Person
+    #     profile + one competency item to the worker; no plan/unit prerequisite.
+    #     GOOD profile RT-WKR-G1_PROF (COMPETENCY 'Oral Communication', confirmed
+    #     live); BAD uses a distinct profile code with an invalid status.
+    #     (objects/TalentProfiles/README.md, 2026-07-15.)
+    # ====================================================================
+    print("\n=== 45. Talent Profiles (HCM) ===")
+    for pcode, status, label in [
+        ("RT-WKR-G1_PROF",  "A",       "GOOD Talent Profile: RT-WKR-G1"),
+        ("RT-WKR-G1_PROFB", "INVALID", "BAD Talent Profile: invalid status [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_TALENT_PROF_STG_TBL (
+                PERSON_NUMBER, PROFILE_CODE, PROFILE_TYPE_CODE,
+                PROFILE_STATUS_CODE, PROFILE_USAGE_CODE, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                'RT-WKR-G1', :pcode, 'PERSON',
+                :status, 'P', :src, 'NEW'
+            )
+        """, {"pcode": pcode, "status": status, "src": f"RT-{pcode}"},
+        label=label)
+
+    # One competency item for the GOOD profile
+    run_sql(cur, """
+        INSERT INTO DMT_OWNER.DMT_TALENT_PROF_ITEM_STG_TBL (
+            PERSON_NUMBER, CONTENT_TYPE_NAME, CONTENT_ITEM_NAME,
+            DATE_FROM, PROFILE_CODE, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-G1', 'COMPETENCY', 'Oral Communication',
+            '2026/01/01', 'RT-WKR-G1_PROF', 'RT-WKR-G1_PROF-IT', 'NEW'
+        )
+    """, label="GOOD Talent Profile item: Oral Communication")
+    tag_scenario(cur, "DMT_TALENT_PROF_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_TALENT_PROF_ITEM_STG_TBL", scenario_id)
 
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()
