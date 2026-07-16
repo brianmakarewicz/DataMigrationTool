@@ -427,8 +427,8 @@ FROM DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL
 UNION ALL
 SELECT 'Requisitions', 'Req Headers',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
-       REQUISITION_NUMBER,
-       REQUISITION_NUMBER,
+       REQUISITION_NUMBER,                          -- DISPLAY_KEY: human-readable requisition number
+       TO_CHAR(FUSION_REQUISITION_HEADER_ID),       -- LOOKUP_KEY: the Fusion header id captured at reconcile; the Verify lookup queries RequisitionHeaderId by it
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^\]]+)\]', 1, 1, NULL, 1),
        RESULTS_UPDATED_DATE,

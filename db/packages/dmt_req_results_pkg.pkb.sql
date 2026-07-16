@@ -293,6 +293,7 @@ AS
             IF r.source_type = 'BASE' THEN
                 UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
+                       FUSION_REQUISITION_HEADER_ID = r.fusion_id,
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
@@ -304,6 +305,7 @@ AS
                 IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
                     UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
+                           FUSION_REQUISITION_HEADER_ID = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
