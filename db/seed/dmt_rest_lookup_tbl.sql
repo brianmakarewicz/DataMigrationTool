@@ -46,7 +46,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','RequisitionNumber={KEY}','REQUISITION_NUMBER','RequisitionHeaderId,RequisitionNumber,PreparerName,DocumentStatus,TotalAmount,CreationDate','Req ID,Number,Preparer,Status,Amount,Created','ERP','Y','LIMITATION 2026-07-15: purchaseRequisitions REST is data-security-scoped to the requisitioning user/BU and returns 0 rows for fin_impl for ALL requisitions (bare query = empty), not just the migrated ones; the migrated reqs are also INCOMPLETE drafts. No REST row is readable back for this user. Reconciliation is via BIP.');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','Requisition={KEY}','REQUISITION_NUMBER','RequisitionHeaderId,Requisition,Preparer,DocumentStatus,RequisitioningBU','Req ID,Number,Preparer,Status,BU','ERP','Y','purchaseRequisitions is data-security-scoped to the requester, so it runs under a per-object credential: DMT_CONFIG Requisitions_USERNAME/PASSWORD = calvin.roth (the migration preparer). fin_impl sees 0 reqs. Query field is Requisition (the number); the Fusion number is system-generated, so mapping the migration source key to it is still open. Verified live as calvin.roth 2026-07-16.');
 exception when dup_val_on_index then null;
 end;
 /
