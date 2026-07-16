@@ -46,7 +46,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','RequisitionNumber={KEY}','REQUISITION_NUMBER','RequisitionHeaderId,RequisitionNumber,PreparerName,DocumentStatus,TotalAmount,CreationDate','Req ID,Number,Preparer,Status,Amount,Created','ERP','Y','LIMITATION 2026-07-15: migrated requisitions load as INCOMPLETE drafts; the purchaseRequisitions REST resource does not return incomplete drafts, so REST verify returns not-found until the requisition is completed/approved. Reconciliation is via BIP.');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','RequisitionNumber={KEY}','REQUISITION_NUMBER','RequisitionHeaderId,RequisitionNumber,PreparerName,DocumentStatus,TotalAmount,CreationDate','Req ID,Number,Preparer,Status,Amount,Created','ERP','Y','LIMITATION 2026-07-15: purchaseRequisitions REST is data-security-scoped to the requisitioning user/BU and returns 0 rows for fin_impl for ALL requisitions (bare query = empty), not just the migrated ones; the migrated reqs are also INCOMPLETE drafts. No REST row is readable back for this user. Reconciliation is via BIP.');
 exception when dup_val_on_index then null;
 end;
 /
