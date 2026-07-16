@@ -8,6 +8,8 @@
     l_has_queue NUMBER;
     l_phase   VARCHAR2(10);
     l_failerr NUMBER;
+    l_run_status VARCHAR2(30);
+    l_run_active BOOLEAN := FALSE;   -- TRUE while the parent run has not reached a terminal status
 
     -- ------------------------------------------------------------------
     -- Outcome-based tile palette (DMT_DESIGN.html section 9, decided
@@ -38,6 +40,11 @@
       IF p_phase = 'RUNNING' THEN RETURN '#e8f0fe'; END IF;   -- Blue: in progress
       IF p_phase = 'ERRORED' AND NVL(p_total,0) = 0 THEN RETURN '#f5b8b1'; END IF;   -- Red: true infra break, no rows processed (finished-with-counts ERRORED falls through to the outcome logic below)
       IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '#f0f0f0'; END IF; -- Grey
+      -- In-flight: while the run is still active, records that are unaccounted but
+      -- not failed (0 failed, N unaccounted) are awaiting reconciliation, not a
+      -- failure. Colour them Blue (in progress) until the run reaches a terminal
+      -- status; only then does an unaccounted record count as a failure.
+      IF l_run_active AND NVL(p_unacc,0) > 0 AND NVL(p_failed_err,0) = 0 THEN RETURN '#e8f0fe'; END IF;
       IF NVL(p_unacc,0)  >= p_total THEN RETURN '#f5b8b1'; END IF;  -- Red: all unaccounted
       IF NVL(p_loaded,0) >= p_total THEN RETURN '#b7e1c0'; END IF;  -- Green: 100% loaded
       IF NVL(p_unacc,0) > 0 OR NVL(p_loaded,0) = 0 THEN RETURN '#fce8e6'; END IF; -- Light red
@@ -52,6 +59,13 @@
       IF p_phase = 'RUNNING' THEN RETURN '<span style="color:#0b5cc0">In progress</span>'; END IF;
       IF p_phase = 'ERRORED' AND NVL(p_total,0) = 0 THEN RETURN '<span style="color:#b3261e">&#10007; Failed</span>'; END IF;
       IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '<span style="color:#888">No rows</span>'; END IF;
+      -- In-flight: unaccounted-but-not-failed records during an active run are
+      -- still reconciling, not a failure. Show a clock, not a red X.
+      IF l_run_active AND NVL(p_unacc,0) > 0 AND NVL(p_failed_err,0) = 0 THEN
+        RETURN '<span style="color:#0b5cc0">&#128337; ' ||
+               CASE WHEN NVL(p_loaded,0) > 0 THEN p_loaded || ' loaded &middot; ' END ||
+               p_unacc || ' reconciling</span>';
+      END IF;
       IF NVL(p_unacc,0) >= p_total THEN
         RETURN '<span style="color:#b3261e">' || p_unacc || ' unaccounted</span>';
       END IF;
@@ -90,6 +104,16 @@
              END;
     END phase_from_object;
 BEGIN
+    -- Parent run status: the tiles branch on whether the run is still active,
+    -- so an object with unaccounted-but-not-failed records shows in progress
+    -- mid-run and only turns to a failure once the run is terminal.
+    BEGIN
+        SELECT RUN_STATUS INTO l_run_status FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = p_run_id;
+    EXCEPTION WHEN NO_DATA_FOUND THEN l_run_status := NULL;
+    END;
+    l_run_active := NVL(l_run_status,'IN_PROGRESS')
+                    NOT IN ('COMPLETED','COMPLETED_ERRORS','FAILED','NO_ROWS_PROCESSED','CANCELLED');
+
     -- Check if work queue has rows for this run
     SELECT COUNT(*) INTO l_has_queue
     FROM DMT_WORK_QUEUE_TBL WHERE RUN_ID = p_run_id AND ROWNUM = 1;
