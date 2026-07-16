@@ -49,7 +49,7 @@
       IF NVL(p_unacc,0)  >= p_total THEN RETURN '#f5b8b1'; END IF;  -- Red: all unaccounted
       IF NVL(p_loaded,0) >= p_total THEN RETURN '#b7e1c0'; END IF;  -- Green: 100% loaded
       IF NVL(p_unacc,0) > 0 OR NVL(p_loaded,0) = 0 THEN RETURN '#fce8e6'; END IF; -- Light red
-      RETURN '#e6f4ea';                                       -- Light green: some failed, all accounted
+      RETURN '#d8e8a0';                                       -- Yellow-green: some failed but all accounted (distinct from the full-loaded mint green above)
     END tile_bg;
 
     -- Status line HTML, consistent with the colour the palette chose.
@@ -117,7 +117,7 @@ BEGIN
     EXCEPTION WHEN NO_DATA_FOUND THEN l_run_status := NULL;
     END;
     l_run_active := NVL(l_run_status,'IN_PROGRESS')
-                    NOT IN ('COMPLETED','COMPLETED_ERRORS','FAILED','NO_ROWS_PROCESSED','CANCELLED');
+                    NOT IN ('COMPLETED','COMPLETED_ERRORS','FAILED','NO_ROWS_PROCESSED');
 
     -- Check if work queue has rows for this run
     SELECT COUNT(*) INTO l_has_queue
