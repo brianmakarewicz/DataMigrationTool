@@ -195,3 +195,160 @@ run concurrently against the same package):
   built for Workers. `LOOKUP_FUSION_IDS` does a per-record REST lookup that the design
   explicitly rejected at conversion volume ("retires"). These are tracked gaps for the
   live (Rule #1) phase, not offline scope.
+
+## Minimal Worker test-data plan (2026-07-15)
+
+Goal: seed the smallest STG row set that loads ONE real Worker to the Fusion HCM base
+tables (PER_ALL_PEOPLE_F / PER_ALL_ASSIGNMENTS_M) via HDL, plus ONE clearly-bad row.
+The HCM regression currently has NO Worker rows in `scripts/insert_regression_test_data.py`,
+so HCM cannot be proven. This section scopes exactly what to add. It is a proposal —
+no code or seed file was changed.
+
+### What the generator actually reads (minimal footprint)
+
+`db/packages/dmt_worker_hdl_gen_pkg.pkb.sql` reads the TFM tables, which the transformer
+(`dmt_worker_transform_pkg`) fills 1:1 from the matching STG tables. Only **two STG tables
+are required** for a loadable hire:
+
+- **DMT_WORKER_STG_TBL** — drives the Worker, WorkRelationship, WorkTerms and Assignment
+  sections. WorkRelationship/WorkTerms/Assignment are auto-generated from each Worker row;
+  there is no separate STG table to populate for them. (DMT_WORK_REL_STG_TBL and
+  DMT_ASSIGNMENT_STG_TBL belong to the separate Assignments object, catalog #26, and are
+  NOT read by the Worker generator.)
+- **DMT_PERSON_NAME_STG_TBL** — drives the PersonName section (GLOBAL name is mandatory
+  for a hire).
+
+The other five person tables (email, phone, address, NID, legislative) are **optional** —
+each section is emitted only if rows exist. The minimal loadable worker omits all five.
+
+Required columns actually consumed by the generator:
+
+| STG table | Column | Used for | Note |
+|---|---|---|---|
+| DMT_WORKER_STG_TBL | PERSON_NUMBER | Worker SourceSystemId + PersonNumber; parent key for every other section | required by validator |
+| DMT_WORKER_STG_TBL | START_DATE | hire date; WorkRelationship DateStart, WorkTerms/Assignment EffectiveStartDate | YYYY/MM/DD |
+| DMT_WORKER_STG_TBL | EFFECTIVE_START_DATE | Worker EffectiveStartDate (falls back to START_DATE if null) | YYYY/MM/DD |
+| DMT_WORKER_STG_TBL | ACTION_CODE | Worker/WorkTerms/Assignment ActionCode | must be HIRE or ADD_CWK (validator R2) |
+| DMT_WORKER_STG_TBL | DATE_OF_BIRTH | Worker DateOfBirth | optional (BAD row can omit) |
+| DMT_WORKER_STG_TBL | LEGAL_ENTITY_NAME | WorkRelationship LegalEmployerName | MUST match a real legal employer name |
+| DMT_PERSON_NAME_STG_TBL | PERSON_NUMBER | joins the name to the worker | must equal the Worker PERSON_NUMBER |
+| DMT_PERSON_NAME_STG_TBL | NAME_TYPE | PersonName NameType | use GLOBAL (defaults to GLOBAL if null) |
+| DMT_PERSON_NAME_STG_TBL | LEGISLATION_CODE | PersonName LegislationCode | US |
+| DMT_PERSON_NAME_STG_TBL | LAST_NAME | PersonName LastName | required |
+| DMT_PERSON_NAME_STG_TBL | FIRST_NAME | PersonName FirstName | required |
+
+Values NOT taken from STG (hardcoded in the generator, so no STG column needed): WorkerType
+`E`, AssignmentStatusTypeCode `ACTIVE_PROCESS`, PersonTypeCode `Employee`, and
+BusinessUnitShortCode from named config `WORKER_DEFAULT_BU_NAME` (seeded value
+`US1 Business Unit`).
+
+### Real reference values to mimic (verified live on the demo instance, hcm_impl)
+
+Confirmed against a real active employee, PersonNumber `10` (Mandy Steward):
+
+| Reference value | Live value | How verified |
+|---|---|---|
+| Legal employer name | **US1 Legal Entity** | assignment legal_entity_id 300000046974965 → HR_ORGANIZATION_UNITS_F_TL |
+| Business unit | **US1 Business Unit** | assignment business_unit_id 300000046987012 → HR_ORGANIZATION_UNITS_F_TL |
+| Assignment status | ACTIVE | PER_ALL_ASSIGNMENTS_M.assignment_status_type |
+| System person type | EMP (Employee) | PER_ALL_ASSIGNMENTS_M.system_person_type |
+| Legislation | US | PersonName/NID convention; instance is a US legislative install |
+| Example job on this LE | Data Steward Manager | job_id 300000047624120 → PER_JOBS_F_TL (not needed for the minimal load) |
+
+The two values that matter for the minimal load are **US1 Legal Entity** (WorkRelationship
+LegalEmployerName) and **US1 Business Unit** (Assignment BU, already the config default).
+Both are live-verified and both already match the frozen-stack known-good data — so no
+config change is needed.
+
+Queries used (read-only, tiny result sets):
+
+```
+-- real workers (person number + name)
+SELECT p.person_number, n.first_name, n.last_name
+FROM per_all_people_f p, per_person_names_f n
+WHERE n.person_id=p.person_id AND n.name_type='GLOBAL'
+AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date
+AND SYSDATE BETWEEN n.effective_start_date AND n.effective_end_date AND ROWNUM<=5;
+-- → 10 Mandy Steward, 13 Marion MarketingMgr, 39 Aakash Sharma, 44 Bala Gupta, 48 Matthew Schnieder
+
+-- assignment reference ids for person 10
+SELECT p.person_number, TO_CHAR(a.effective_start_date,'YYYY/MM/DD'),
+       a.assignment_status_type, a.system_person_type,
+       a.business_unit_id, a.legal_entity_id, a.job_id
+FROM per_all_assignments_m a, per_all_people_f p
+WHERE a.person_id=p.person_id AND p.person_number='10'
+AND a.assignment_type='E' AND a.primary_flag='Y'
+AND SYSDATE BETWEEN a.effective_start_date AND a.effective_end_date
+AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date AND ROWNUM<=3;
+-- → ESD 2007/11/05, ACTIVE, EMP, BU 300000046987012, LE 300000046974965, JOB 300000047624120
+
+-- resolve legal employer name
+SELECT otl.name FROM hr_org_unit_classifications_f c, hr_organization_units_f_tl otl
+WHERE c.organization_id=otl.organization_id AND otl.language='US'
+AND c.classification_code='HCM_LEMP' AND c.organization_id=300000046974965;  -- → US1 Legal Entity
+
+-- resolve business unit name
+SELECT otl.name FROM hr_organization_units_f_tl otl
+WHERE otl.language='US' AND otl.organization_id=300000046987012;             -- → US1 Business Unit
+```
+
+### Proposed seed rows
+
+Person numbers use a distinctive source id (`RT-WKR-G1`, etc.). The regression run applies
+a numeric prefix at transform time, so the loaded PersonNumber will be `<prefix>RT-WKR-G1` —
+no collision with the real `10`/`13`/etc. and no collision with the frozen-stack `DMTW*`
+data. Dates are YYYY/MM/DD. All amounts/codes below are live-verified or generator-hardcoded.
+
+**GOOD worker** — reaches PER_ALL_PEOPLE_F + PER_ALL_ASSIGNMENTS_M:
+
+DMT_WORKER_STG_TBL (1 row):
+- PERSON_NUMBER = `RT-WKR-G1`
+- ACTION_CODE = `HIRE`
+- START_DATE = `2026/01/01`
+- EFFECTIVE_START_DATE = `2026/01/01`
+- DATE_OF_BIRTH = `1985/03/15`
+- LEGAL_ENTITY_NAME = `US1 Legal Entity`
+- SOURCE_ID = `RT-WKR-G1`, SCENARIO_ID = RegressionTest scenario id, STG_STATUS = `NEW`
+
+DMT_PERSON_NAME_STG_TBL (1 row):
+- PERSON_NUMBER = `RT-WKR-G1`
+- NAME_TYPE = `GLOBAL`
+- LEGISLATION_CODE = `US`
+- LAST_NAME = `Tester`
+- FIRST_NAME = `Regina`
+- SOURCE_ID = `RT-WKR-G1`, SCENARIO_ID = scenario id, STG_STATUS = `NEW`
+
+**BAD worker** — fails our validator with a reportable error (does NOT reach Fusion):
+
+DMT_WORKER_STG_TBL (1 row):
+- PERSON_NUMBER = `RT-WKR-B1`
+- ACTION_CODE = `TERMINATE`  ← not in (HIRE, ADD_CWK); validator R2 tags STG_STATUS=FAILED
+  with `ACTION_CODE TERMINATE is not a supported worker action (HIRE, ADD_CWK).`
+- START_DATE = `2026/01/01`, EFFECTIVE_START_DATE = `2026/01/01`
+- LEGAL_ENTITY_NAME = `US1 Legal Entity`
+- SOURCE_ID = `RT-WKR-B1`, SCENARIO_ID = scenario id, STG_STATUS = `NEW`
+- (no PersonName row needed — the row never leaves validation)
+
+This BAD row is caught by OUR validator before any HDL call (a clean, deterministic
+FAILED-with-error). An alternative BAD row that reaches Fusion and fails there would be a
+missing GLOBAL PersonName, but that is less deterministic to report; ACTION_CODE=TERMINATE
+is the recommended bad case. (Note: the frozen stack's `DMTW-BAD` — missing DOB only —
+LOADS successfully because DOB is optional, so it is NOT a valid bad row for Rule #1.)
+
+### Risks / prerequisites
+
+- **Reference data already exists — no prerequisite setup needed.** `US1 Legal Entity` and
+  `US1 Business Unit` are live on the instance and already the seeded config default. A US
+  legislative install is present (real US workers exist). This worker does NOT need any
+  setup we cannot provide from data.
+- **The generator hardcodes the assignment shape** (status ACTIVE_PROCESS, person type
+  Employee, worker type E). These are valid on this instance (person 10 is ACTIVE/EMP), so
+  the GOOD row should hire cleanly. If Fusion later rejects `ACTIVE_PROCESS`, that is a
+  generator concern, not a test-data concern.
+- **Rule #1 proof is a separate gap.** Even after the GOOD worker loads, the Workers object
+  has no base-table BIP reconciliation report yet (tracked above under "Reconciler audit").
+  Confirming the GOOD worker reached PER_ALL_PEOPLE_F / PER_ALL_ASSIGNMENTS_M will, until
+  that report exists, be a manual BIP query on person_number `<prefix>RT-WKR-G1`.
+- **PersonNumber uniqueness across re-runs** is handled by the run prefix; never reuse a
+  prefix (existing rule). The source ids `RT-WKR-G1` / `RT-WKR-B1` are stable; the prefix
+  makes each run's PersonNumber unique.

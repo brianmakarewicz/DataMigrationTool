@@ -146,6 +146,13 @@ def main():
     # Then delete STG rows.
     cleanup_tables = [
         # --- TFM tables first (FK children of STG) ---
+        # HCM Workers (added with the Worker seed section; must be cleaned each
+        #  reload or worker STG rows accumulate as stale duplicates -- same bug
+        #  class as the Items/MiscReceipts accumulation below).
+        "DMT_WORKER_TFM_TBL",
+        "DMT_PERSON_NAME_TFM_TBL",
+        "DMT_WORKER_STG_TBL",
+        "DMT_PERSON_NAME_STG_TBL",
         # Items (were missing from this list -- caused 15x STG-row accumulation
         #  across reloads because they were inserted+tagged but never cleaned)
         "DMT_EGP_ITEM_CAT_TFM_TBL",
@@ -2162,6 +2169,53 @@ def main():
     """, {"bu": BU},
     label="BAD Contract: nonexistent supplier [BAD-UPS]")
     tag_scenario(cur, "DMT_PO_HEADERS_INT_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 41. WORKERS (HCM HDL) — minimal loadable worker
+    #     A hire needs just two STG rows: the worker + a GLOBAL name. The
+    #     generator builds the WorkRelationship/WorkTerms/Assignment sections
+    #     from the worker row (LegalEmployerName='US1 Legal Entity', a real
+    #     legal entity on this instance; BU default from WORKER_DEFAULT_BU_NAME).
+    #     The run prefix makes PERSON_NUMBER unique, so no collision with real
+    #     persons or frozen DMTW* data. (objects/Workers/README.md, 2026-07-15.)
+    #     GOOD: RT-WKR-G1 (HIRE). BAD: RT-WKR-B1 (ACTION_CODE=TERMINATE, caught
+    #     by the worker validator rule R2 before Fusion).
+    # ====================================================================
+    # HDL requires dates as YYYY/MM/DD, and these STG columns are VARCHAR2 that the
+    # transform/generator carry through unchanged — so seed the strings already in
+    # HDL format (a DATE literal would implicitly become DD-MON-YY and be rejected).
+    print("\n=== 41. Workers (HCM) ===")
+    for pnum, action, dob, label in [
+        ("RT-WKR-G1", "HIRE",      "1985/03/15", "GOOD Worker: RT-WKR-G1 (HIRE)"),
+        ("RT-WKR-B1", "TERMINATE", None,         "BAD Worker: TERMINATE action [BAD-REQ]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_OWNER.DMT_WORKER_STG_TBL (
+                PERSON_NUMBER, START_DATE, EFFECTIVE_START_DATE,
+                ACTION_CODE, LEGAL_ENTITY_NAME, DATE_OF_BIRTH,
+                SOURCE_ID, STG_STATUS
+            ) VALUES (
+                :pnum, '2026/01/01', '2026/01/01',
+                :action, 'US1 Legal Entity', :dob,
+                :src, 'NEW'
+            )
+        """, {"pnum": pnum, "action": action, "dob": dob, "src": f"RT-{pnum}"},
+        label=label)
+
+    # GLOBAL name for the GOOD worker only (bad worker never reaches Fusion)
+    run_sql(cur, """
+        INSERT INTO DMT_OWNER.DMT_PERSON_NAME_STG_TBL (
+            PERSON_NUMBER, EFFECTIVE_START_DATE, NAME_TYPE,
+            LEGISLATION_CODE, LAST_NAME, FIRST_NAME,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-G1', '2026/01/01', 'GLOBAL',
+            'US', 'Tester', 'Regina',
+            'RT-WKR-G1-NME', 'NEW'
+        )
+    """, label="GOOD Worker name: Regina Tester")
+    tag_scenario(cur, "DMT_WORKER_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_PERSON_NAME_STG_TBL", scenario_id)
 
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()
