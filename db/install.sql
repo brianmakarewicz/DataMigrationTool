@@ -763,6 +763,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_work_sched_results_pkg.pks.sql
 @@packages/dmt_work_sched_transform_pkg.pks.sql
 @@packages/dmt_work_sched_validator_pkg.pks.sql
+@@packages/dmt_xref_pkg.pks.sql
 @@packages/dmt_zx_fbl_gen_pkg.pks.sql
 @@packages/dmt_zx_results_pkg.pks.sql
 @@packages/dmt_zx_runner_pkg.pks.sql
@@ -973,6 +974,7 @@ prompt == Package bodies ==
 @@packages/dmt_work_sched_results_pkg.pkb.sql
 @@packages/dmt_work_sched_transform_pkg.pkb.sql
 @@packages/dmt_work_sched_validator_pkg.pkb.sql
+@@packages/dmt_xref_pkg.pkb.sql
 @@packages/dmt_zx_fbl_gen_pkg.pkb.sql
 @@packages/dmt_zx_results_pkg.pkb.sql
 @@packages/dmt_zx_runner_pkg.pkb.sql
