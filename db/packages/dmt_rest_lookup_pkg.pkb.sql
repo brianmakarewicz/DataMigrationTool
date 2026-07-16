@@ -23,6 +23,8 @@ AS
         l_base_url         VARCHAR2(500);
         l_username         VARCHAR2(200);
         l_password         VARCHAR2(200);
+        l_auth_header      VARCHAR2(600);
+        l_obj_code         VARCHAR2(100);
         l_full_url         VARCHAR2(4000);
         l_response         CLOB;
         l_status           NUMBER;
@@ -85,15 +87,39 @@ AS
             RETURN '{"error":"FUSION_URL not configured in DMT_CONFIG_TBL."}';
         END IF;
 
-        IF l_cfg_auth = 'HCM' THEN
-            l_username := NVL(DMT_UTIL_PKG.GET_CONFIG('HCM_USERNAME'),
-                              DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME'));
-            l_password := NVL(DMT_UTIL_PKG.GET_CONFIG('HCM_PASSWORD'),
-                              DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'));
-        ELSE
-            l_username := DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
-            l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
-        END IF;
+        -- Credential selection, most specific first:
+        --   1. per-object override keyed by the object code (e.g. 'Requisitions_USERNAME')
+        --      — lets one object read Fusion as a specific data-owner user, for
+        --      resources that are data-security-scoped (Requisitions is only visible
+        --      to its preparer, calvin.roth, not to fin_impl);
+        --   2. the HCM credential set when AUTH_TYPE = 'HCM';
+        --   3. the default ERP user (FUSION_USERNAME / fin_impl).
+        -- Backward compatible: no object code has an HCM_/ERP_ prefix and ERP objects
+        -- have no <code>_USERNAME row, so existing objects resolve exactly as before.
+        -- Per-object credentials are keyed by the OBJECT code, not by whichever
+        -- registry row matched: the button passes a sub-object display label
+        -- (e.g. 'Req Headers') that may have its own row, so map it back to its
+        -- object code ('Requisitions') via the catalog for the credential lookup.
+        BEGIN
+            SELECT MIN(CEMLI_CODE) INTO l_obj_code
+            FROM   DMT_OWNER.DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = p_object_type;
+        EXCEPTION WHEN OTHERS THEN l_obj_code := NULL;
+        END;
+        l_obj_code := NVL(l_obj_code, l_resolved_type);
+
+        l_username := COALESCE(
+            DMT_UTIL_PKG.GET_CONFIG(l_obj_code || '_USERNAME'),
+            CASE WHEN l_cfg_auth = 'HCM' THEN DMT_UTIL_PKG.GET_CONFIG('HCM_USERNAME') END,
+            DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME'));
+        l_password := COALESCE(
+            DMT_UTIL_PKG.GET_CONFIG(l_obj_code || '_PASSWORD'),
+            CASE WHEN l_cfg_auth = 'HCM' THEN DMT_UTIL_PKG.GET_CONFIG('HCM_PASSWORD') END,
+            DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'));
+
+        -- Basic header for the resolved credentials. HTTP_REQUEST uses the GLOBAL
+        -- (fin_impl) auth unless an explicit header is passed, so build it here and
+        -- pass it as p_auth_header — otherwise the per-object override above is inert.
+        l_auth_header := DMT_UTIL_PKG.BASIC_AUTH_HEADER(l_username, l_password);
 
         -- Build the full URL:
         --   {base}{endpoint}?onlyData=true&limit=1&q={filter}
@@ -115,6 +141,7 @@ AS
                 p_url          => l_full_url,
                 p_method       => 'GET',
                 p_content_type => 'application/json',
+                p_auth_header  => l_auth_header,
                 x_response     => l_response,
                 x_status_code  => l_status
             );

@@ -45,10 +45,24 @@ begin
 exception when dup_val_on_index then null;
 end;
 /
-begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','RequisitionNumber={KEY}','REQUISITION_NUMBER','RequisitionHeaderId,RequisitionNumber,PreparerName,DocumentStatus,TotalAmount,CreationDate','Req ID,Number,Preparer,Status,Amount,Created','ERP','Y','LIMITATION 2026-07-15: purchaseRequisitions REST is data-security-scoped to the requisitioning user/BU and returns 0 rows for fin_impl for ALL requisitions (bare query = empty), not just the migrated ones; the migrated reqs are also INCOMPLETE drafts. No REST row is readable back for this user. Reconciliation is via BIP.');
-exception when dup_val_on_index then null;
-end;
+-- Requisitions: MERGE (not insert-and-skip) so the corrected endpoint/filter/notes
+-- converge on any already-seeded DB, per the "registry seeds converge on re-run"
+-- standard (DMT_DESIGN section 7). This row's config was corrected after the
+-- original snapshot, so an insert-only would be silently skipped on dmt2-local.
+merge into "DMT_REST_LOOKUP_TBL" t
+using (select 'Requisitions' as "OBJECT_TYPE" from dual) s
+on (t."OBJECT_TYPE" = s."OBJECT_TYPE")
+when matched then update set
+  t."REST_ENDPOINT"  = '/fscmRestApi/resources/11.13.18.05/purchaseRequisitions',
+  t."QUERY_FILTER"   = 'Requisition={KEY}',
+  t."KEY_COLUMN"     = 'REQUISITION_NUMBER',
+  t."DISPLAY_FIELDS" = 'RequisitionHeaderId,Requisition,Preparer,DocumentStatus,RequisitioningBU',
+  t."DISPLAY_LABELS" = 'Req ID,Number,Preparer,Status,BU',
+  t."AUTH_TYPE"      = 'ERP',
+  t."ENABLED"        = 'Y',
+  t."NOTES"          = 'purchaseRequisitions is data-security-scoped to the requester, so it runs under a per-object credential: DMT_CONFIG Requisitions_USERNAME/PASSWORD = calvin.roth (the migration preparer). fin_impl sees 0 reqs. Query field is Requisition (the number); the Fusion number is system-generated, so mapping the migration source key to it is still open. Verified live as calvin.roth 2026-07-16.'
+when not matched then insert ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES")
+  values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','Requisition={KEY}','REQUISITION_NUMBER','RequisitionHeaderId,Requisition,Preparer,DocumentStatus,RequisitioningBU','Req ID,Number,Preparer,Status,BU','ERP','Y','purchaseRequisitions is data-security-scoped to the requester, so it runs under a per-object credential: DMT_CONFIG Requisitions_USERNAME/PASSWORD = calvin.roth (the migration preparer). fin_impl sees 0 reqs. Query field is Requisition (the number); the Fusion number is system-generated, so mapping the migration source key to it is still open. Verified live as calvin.roth 2026-07-16.');
 /
 begin
   insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Expenditures','/fscmRestApi/resources/11.13.18.05/projectExpenditureItems','ExpenditureItemId={KEY}','FUSION_EXPENDITURE_ITEM_ID','ExpenditureItemId,ProjectNumber,TaskNumber,ExpenditureType,ItemDate,Quantity,Amount','Item ID,Project,Task,Type,Date,Qty,Amount','ERP','Y',NULL);
