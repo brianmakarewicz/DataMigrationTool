@@ -40,11 +40,12 @@
       IF p_phase = 'RUNNING' THEN RETURN '#e8f0fe'; END IF;   -- Blue: in progress
       IF p_phase = 'ERRORED' AND NVL(p_total,0) = 0 THEN RETURN '#f5b8b1'; END IF;   -- Red: true infra break, no rows processed (finished-with-counts ERRORED falls through to the outcome logic below)
       IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '#f0f0f0'; END IF; -- Grey
-      -- In-flight: while the run is still active, records that are unaccounted but
-      -- not failed (0 failed, N unaccounted) are awaiting reconciliation, not a
-      -- failure. Colour them Blue (in progress) until the run reaches a terminal
-      -- status; only then does an unaccounted record count as a failure.
-      IF l_run_active AND NVL(p_unacc,0) > 0 AND NVL(p_failed_err,0) = 0 THEN RETURN '#e8f0fe'; END IF;
+      -- In-flight: while the run is still active, an object with NO real failures
+      -- that is not yet fully loaded is still working -- its records are generated /
+      -- awaiting load / awaiting reconciliation (loaded, failed and unaccounted can
+      -- all still be 0). That is in progress, not a failure. Colour it Blue until the
+      -- run reaches a terminal status; only then do not-loaded rows count as failure.
+      IF l_run_active AND NVL(p_failed_err,0) = 0 AND NVL(p_loaded,0) < NVL(p_total,0) THEN RETURN '#e8f0fe'; END IF;
       IF NVL(p_unacc,0)  >= p_total THEN RETURN '#f5b8b1'; END IF;  -- Red: all unaccounted
       IF NVL(p_loaded,0) >= p_total THEN RETURN '#b7e1c0'; END IF;  -- Green: 100% loaded
       IF NVL(p_unacc,0) > 0 OR NVL(p_loaded,0) = 0 THEN RETURN '#fce8e6'; END IF; -- Light red
@@ -59,12 +60,13 @@
       IF p_phase = 'RUNNING' THEN RETURN '<span style="color:#0b5cc0">In progress</span>'; END IF;
       IF p_phase = 'ERRORED' AND NVL(p_total,0) = 0 THEN RETURN '<span style="color:#b3261e">&#10007; Failed</span>'; END IF;
       IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '<span style="color:#888">No rows</span>'; END IF;
-      -- In-flight: unaccounted-but-not-failed records during an active run are
-      -- still reconciling, not a failure. Show a clock, not a red X.
-      IF l_run_active AND NVL(p_unacc,0) > 0 AND NVL(p_failed_err,0) = 0 THEN
+      -- In-flight: during an active run, an object with no real failures that is not
+      -- yet fully loaded is still working (generating / loading / reconciling), not a
+      -- failure. Show a clock with the in-progress count, not a red X.
+      IF l_run_active AND NVL(p_failed_err,0) = 0 AND NVL(p_loaded,0) < NVL(p_total,0) THEN
         RETURN '<span style="color:#0b5cc0">&#128337; ' ||
                CASE WHEN NVL(p_loaded,0) > 0 THEN p_loaded || ' loaded &middot; ' END ||
-               p_unacc || ' reconciling</span>';
+               (NVL(p_total,0) - NVL(p_loaded,0) - NVL(p_failed_err,0)) || ' in progress</span>';
       END IF;
       IF NVL(p_unacc,0) >= p_total THEN
         RETURN '<span style="color:#b3261e">' || p_unacc || ' unaccounted</span>';
@@ -72,7 +74,10 @@
       IF NVL(p_loaded,0) >= p_total THEN
         RETURN '<span style="color:#1a7d33">&#10003; ' || p_loaded || ' loaded</span>';
       END IF;
-      IF NVL(p_loaded,0) = 0 AND NVL(p_unacc,0) = 0 THEN
+      -- only a genuine failure (rows FAILED with a reportable error) shows a red X;
+      -- never render "0 failed" as a failure (e.g. a terminal run with rows stuck
+      -- un-loaded but not failed falls through to the neutral mixed line below).
+      IF NVL(p_loaded,0) = 0 AND NVL(p_unacc,0) = 0 AND NVL(p_failed_err,0) > 0 THEN
         RETURN '<span style="color:#b3261e">&#10007; ' || p_failed_err || ' failed</span>';
       END IF;
       -- mixed: show every non-zero bucket
