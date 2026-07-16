@@ -1061,7 +1061,7 @@ def main():
                 INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1,
                 INTERFACE_LINE_ATTRIBUTE2, SOURCE_ID
             ) VALUES (
-                :bu, 'Manual-Other', 'Invoice',
+                :bu, 'External Source', 'Invoice',
                 'Net 30', DATE '2025-06-15', DATE '2025-06-15',
                 :trx, :bill_acct,
                 'LINE', :descr,
