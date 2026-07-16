@@ -562,6 +562,31 @@ there is to narrow that report's displayed columns.</p>
 </table>
 </div>
 
+<h3 id="apex-session-closeout">APEX Port — Session Closeout (2026-07-15)</h3>
+<p>This section closes out the APEX port working session: where the port stands, what was learned, and what remains. The detail behind each line is in the subsections that follow and in the merged pull requests.</p>
+
+<p><strong>Where we are.</strong> The APEX port analysis has been worked through end to end. The application renders clean — all 38 pages returned HTTP&nbsp;200 with zero region errors over live HTTP — and the full drill chain works: Run History (80) &rarr; Run Detail tiles (82) &rarr; Object Detail funnel (52) &rarr; Record Detail (57), with the outcome-based tile palette, the durable-source funnel, canonical sub-object labels, and section-1 object codes all in place and verified against real run data. The page-57 &ldquo;Verify in Fusion&rdquo; REST check was corrected and now reads records back live from the demo instance for <strong>13 of the 15 objects that have loaded data</strong>. The current working application is <strong>167</strong> (a fresh copy of the committed export); older copies (through 158) predate the <code>INTEGRATION_ID</code>&rarr;<code>RUN_ID</code> rename and should not be used. Roughly twenty pull requests merged over the session.</p>
+
+<p><strong>Lessons learned.</strong></p>
+<ul>
+<li><strong>The object display catalog seed is the naming source of truth</strong> — not whichever screen happens to render a label. Aligning a drill label to the funnel instead of to <code>DMT_CEMLI_CATALOG_TBL</code> put it backwards once; always reconcile to the seed.</li>
+<li><strong>Always work from the latest committed app export.</strong> Old app copies carry stale page items after a rename — that is exactly the <code>ERR-1002 P52_RUN_ID</code> error on app&nbsp;158 (its page 52 still had <code>P52_INTEGRATION_ID</code>). Copy-before-modify from the highest app id.</li>
+<li><strong>The automated reviewer can merge only the first commit of a multi-commit PR.</strong> It happened twice this session (a REST fix was orphaned and had to be cherry-picked back). Push all commits before the reviewer runs, or squash, and check that later commits actually landed on main.</li>
+<li><strong>Verify against BIP / live before declaring data missing or a feature blocked.</strong> Two assertions this session were wrong on first pass — that the REST verify was untestable, and that a migrated record had been purged. A quick BIP query on the base table was the truth in both cases.</li>
+<li><strong>Fusion REST is intensely per-object.</strong> The right API family (<code>crmRestApi</code> vs <code>fscmRestApi</code>), the right queryable field (<code>OrganizationName</code> not <code>PartyName</code>; <code>AgreementNumber</code> not <code>OrderNumber</code>), Fusion-generated values (a suffix appended to a journal batch name, needing a <code>LIKE</code> query), and data-security scope / resource availability all vary by object. Every object's verify config has to be validated live, not assumed from the template.</li>
+<li><strong>Census the data before claiming completeness.</strong> A run can finish <code>COMPLETED_ERRORS</code> with zero rows loaded. Only objects with actual TFM and base-table data are truly complete; early in the session only Customers had any local data at all.</li>
+</ul>
+
+<p><strong>What is left.</strong></p>
+<ol>
+<li><strong>Stage&nbsp;F full-regression gate — the real remaining blocker.</strong> Many objects run but land zero rows (<code>COMPLETED_ERRORS</code>): the engine is not yet cleanly loading most objects end to end. The production APEX import should wait until the full RegressionTest scenario passes — every GOOD row <code>LOADED</code>, every BAD row <code>FAILED</code>-with-error, no unaccounted rows, re-runnable.</li>
+<li><strong>Two REST-verify gaps, both Fusion-side (not our defects).</strong> <em>Assets</em> — Fusion publishes no queryable Fixed Assets REST resource on this instance (<code>fixedAssets</code>/<code>assetsV2</code> return 404); assets reconcile via BIP only. <em>Requisitions</em> — the <code>purchaseRequisitions</code> REST resource is data-security-scoped and returns zero rows for <code>fin_impl</code> for all requisitions (the migrated ones are also incomplete drafts). Either provide an accessible resource/role, or accept BIP-only reconciliation for these two.</li>
+<li><strong>Live browser verifications still open</strong> (backends proven, click-path unverified): CSV upload end-to-end on the area pages (2&ndash;12), ESS binary file download (58), and the Run Pipeline submit-to-load (84).</li>
+<li><strong>Production import</strong> — single-transaction import under a new app id into workspace DMT on the Always-Free ATP once it exists.</li>
+<li><strong>App-copy cleanup</strong> — the workspace holds a dozen import copies (155&ndash;167); consolidate to the one working application.</li>
+</ol>
+<p>Net: the app itself is in good shape — it renders, drills, and verifies against Fusion for every object that has clean data. The gate to &ldquo;done&rdquo; is upstream of APEX: the engine has to load the objects cleanly (Stage&nbsp;F), after which the import and the remaining browser checks are mechanical.</p>
+
 <h3 id="ui-redesign-progress">UI Redesign Progress — mock-ups vs. the app (2026-07-15)</h3>
 <p>After the port rendered clean, the page mock-ups (<code>docs/DMT_PAGE_MOCKUPS.html</code>, restored from the
 original workspace — it had been missed in the migration) were reviewed against design sections 8–10 and the
