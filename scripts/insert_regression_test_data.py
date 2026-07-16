@@ -2031,6 +2031,12 @@ def main():
     #      invoice with TYPE_1099 set on the line. Adding explicit 1099.)
     # ====================================================================
     print("\n=== 38. 1099 Invoices (AP with TYPE_1099) ===")
+    # Reference the stable pre-existing Fusion supplier (JGA / 1254 / JGA US1),
+    # same as the main AP invoice good rows above. The prior RT-SUP-G1 supplier
+    # is loaded by the Suppliers pipeline in the SAME run under a prefix, so at
+    # 1099-invoice time Fusion holds it as "<prefix>RT-SUP-G1" and the unprefixed
+    # reference fails as INVALID SUPPLIER. The 1099 nature is carried by the
+    # line's TYPE_1099 field, not by the supplier, so the test intent is preserved.
     run_sql(cur, """
         INSERT INTO DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL (
             INVOICE_ID, OPERATING_UNIT, SOURCE,
@@ -2045,8 +2051,8 @@ def main():
             'USD', 'STANDARD',
             DATE '2025-06-15', 'Y', 'RT-1099-G1'
         )
-    """, {"bu": BU, "vname": "RT Supplier Good-1", "vnum": "RT-SUP-G1",
-          "vsite": "RT-SITE-G1"},
+    """, {"bu": BU, "vname": "JGA", "vnum": "1254",
+          "vsite": "JGA US1"},
     label="GOOD 1099 Invoice Header: RT-1099-G1")
 
     run_sql(cur, """
