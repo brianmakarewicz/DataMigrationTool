@@ -2272,10 +2272,13 @@ def main():
     #     ET-RT-WKR-G1. Basis 'US1 Annual Salary' confirmed live. Currency/
     #     frequency omitted (derived from the basis). (objects/Salary/README.md.)
     # ====================================================================
+    # Good and bad salary must be DISTINCT records (different DATE_FROM), or HDL
+    # rejects them as "multiple data lines for the same record". Good = hire-date
+    # salary; bad = a later change with an invalid basis.
     print("\n=== 43. Salaries (HCM) ===")
-    for anum, basis, amt, label in [
-        ("ET-RT-WKR-G1", "US1 Annual Salary",  "75000", "GOOD Salary: RT-WKR-G1"),
-        ("ET-RT-WKR-G1", "NONEXISTENT_BASIS",  "75000", "BAD Salary: invalid basis [BAD-LKP]"),
+    for anum, basis, amt, dfrom, label in [
+        ("ET-RT-WKR-G1", "US1 Annual Salary",  "75000", "2026/01/01", "GOOD Salary: RT-WKR-G1"),
+        ("ET-RT-WKR-G1", "NONEXISTENT_BASIS",  "80000", "2027/01/01", "BAD Salary: invalid basis [BAD-LKP]"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_SALARY_STG_TBL (
@@ -2283,11 +2286,11 @@ def main():
                 SALARY_AMOUNT, SALARY_BASIS_NAME, ACTION_CODE,
                 DATE_FROM, SALARY_APPROVED, SOURCE_ID, STG_STATUS
             ) VALUES (
-                'RT-WKR-G1', :anum, '2026/01/01',
+                'RT-WKR-G1', :anum, :dfrom,
                 :amt, :basis, 'HIRE',
-                '2026/01/01', 'Y', :src, 'NEW'
+                :dfrom, 'Y', :src, 'NEW'
             )
-        """, {"anum": anum, "amt": amt, "basis": basis,
+        """, {"anum": anum, "amt": amt, "basis": basis, "dfrom": dfrom,
               "src": f"RT-SAL-{basis[:8]}"},
         label=label)
     tag_scenario(cur, "DMT_SALARY_STG_TBL", scenario_id)
