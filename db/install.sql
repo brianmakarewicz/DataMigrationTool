@@ -999,6 +999,12 @@ prompt == Seed data ==
 -- USER_TAB_COLUMNS so the existing CSV upload can route a full-fidelity
 -- multi-CSV scenario zip to every DMT_*_STG_TBL.
 @@seed/dmt_upload_object_tbl.sql
+-- FBDI upload metadata: FBDI_CSV_FILENAME on the object registry + FBDI_POSITION
+-- on the column dictionary, so the FBDI upload format can route each headerless,
+-- positional FBDI CSV to its staging table and load it column-by-position. Runs
+-- AFTER dmt_upload_object_tbl.sql (which calls SEED_DICTIONARY and does not set
+-- FBDI_POSITION). Idempotent MERGE.
+@@seed/dmt_upload_fbdi_metadata.sql
 -- E1 (2026-07-08): the Mock engine-test registrations are TEST-SETUP only —
 -- test/unit/setup_mock_objects.sql, run by test/unit/test_queue_engine.sql.
 -- A production install carries no dispatchable mock objects and no MOCK_*

@@ -1082,30 +1082,68 @@ AS
         p_rows_errored := 0;
 
         -- Build positional column mapping from dictionary.
-        -- If FBDI_POSITION is set, use it (handles scattered-column tables like GL).
-        -- Otherwise, use sequential counting (works when STG order = CTL order).
-        FOR c IN (
-            SELECT DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER(COLUMN_NAME)) AS COLUMN_NAME,
-                   FBDI_POSITION
+        --
+        -- An FBDI CSV is headerless and positional. The pipeline's FBDI
+        -- generators write a value at a fixed slot only for SOME of a staging
+        -- table's columns (the rest of the slots are empty or constants). We
+        -- therefore load ONLY the staging columns that carry an explicit
+        -- FBDI_POSITION, and pull each from that exact CSV slot (COLnnn). A
+        -- column with no FBDI_POSITION is a slot the generator never fills, so
+        -- it is left out of the INSERT entirely.
+        --
+        -- The presence of at least one seeded FBDI_POSITION for the object is
+        -- what makes it loadable in FBDI format. If NONE of the object's
+        -- columns has a position (HDL objects, or unseeded objects), we fall
+        -- back to strict sequential mapping so a same-order CSV still loads,
+        -- rather than silently mapping nothing.
+        DECLARE
+            l_has_positions PLS_INTEGER;
+        BEGIN
+            SELECT COUNT(*)
+            INTO   l_has_positions
             FROM   DMT_UPLOAD_DICT_TBL
-            WHERE  OBJECT_CODE    = p_object_code
+            WHERE  OBJECT_CODE     = p_object_code
             AND    IS_ADMIN_COLUMN = 'N'
-            ORDER BY NVL(FBDI_POSITION, COLUMN_ORDER)
-        ) LOOP
-            l_col_count := l_col_count + 1;
+            AND    FBDI_POSITION IS NOT NULL;
 
-            IF l_col_list IS NOT NULL THEN
-                l_col_list    := l_col_list    || ', ';
-                l_select_list := l_select_list || ', ';
-            END IF;
-            l_col_list    := l_col_list    || c.COLUMN_NAME;
-            -- Use explicit FBDI_POSITION if set, otherwise sequential
-            IF c.FBDI_POSITION IS NOT NULL THEN
-                l_select_list := l_select_list || 'COL' || LPAD(c.FBDI_POSITION, 3, '0');
+            IF l_has_positions > 0 THEN
+                -- Position-driven: only the columns the generator writes.
+                FOR c IN (
+                    SELECT DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER(COLUMN_NAME)) AS COLUMN_NAME,
+                           FBDI_POSITION
+                    FROM   DMT_UPLOAD_DICT_TBL
+                    WHERE  OBJECT_CODE     = p_object_code
+                    AND    IS_ADMIN_COLUMN = 'N'
+                    AND    FBDI_POSITION IS NOT NULL
+                    ORDER BY FBDI_POSITION
+                ) LOOP
+                    l_col_count := l_col_count + 1;
+                    IF l_col_list IS NOT NULL THEN
+                        l_col_list    := l_col_list    || ', ';
+                        l_select_list := l_select_list || ', ';
+                    END IF;
+                    l_col_list    := l_col_list    || c.COLUMN_NAME;
+                    l_select_list := l_select_list || 'COL' || LPAD(c.FBDI_POSITION, 3, '0');
+                END LOOP;
             ELSE
-                l_select_list := l_select_list || 'COL' || LPAD(l_col_count, 3, '0');
+                -- Sequential fallback (no positions seeded for this object).
+                FOR c IN (
+                    SELECT DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER(COLUMN_NAME)) AS COLUMN_NAME
+                    FROM   DMT_UPLOAD_DICT_TBL
+                    WHERE  OBJECT_CODE     = p_object_code
+                    AND    IS_ADMIN_COLUMN = 'N'
+                    ORDER BY COLUMN_ORDER
+                ) LOOP
+                    l_col_count := l_col_count + 1;
+                    IF l_col_list IS NOT NULL THEN
+                        l_col_list    := l_col_list    || ', ';
+                        l_select_list := l_select_list || ', ';
+                    END IF;
+                    l_col_list    := l_col_list    || c.COLUMN_NAME;
+                    l_select_list := l_select_list || 'COL' || LPAD(l_col_count, 3, '0');
+                END LOOP;
             END IF;
-        END LOOP;
+        END;
 
         IF l_col_count = 0 THEN
             p_error_msg := 'No uploadable columns found in dictionary for ' || p_object_code;
@@ -1367,6 +1405,334 @@ AS
                 p_message => 'FBDI ZIP upload failed', p_sqlerrm => SQLERRM,
                 p_package => C_PKG, p_procedure => 'UPLOAD_FBDI_ZIP');
     END UPLOAD_FBDI_ZIP;
+
+    -- ============================================================
+    -- UPLOAD_ZIP_AUTO_FROM_BLOB — auto-detect dispatcher
+    -- ============================================================
+    -- One ZIP, mixed formats. Each member CSV is routed by filename:
+    --   * matches CSV_FILENAME      -> proprietary CSV (header-driven) loader
+    --   * matches FBDI_CSV_FILENAME -> FBDI (headerless, positional) loader
+    --   * neither                   -> skipped with a warning line
+    -- The whole bundle is loaded in DISPLAY_ORDER (parents before
+    -- children) regardless of member order in the zip, and regardless
+    -- of which format each file is in. Both loaders already own their
+    -- per-row error handling, logging, and scenario tagging; this
+    -- procedure only routes and orders.
+    -- ============================================================
+    PROCEDURE UPLOAD_ZIP_AUTO_FROM_BLOB (
+        p_zip_blob        IN  BLOB,
+        p_file_label      IN  VARCHAR2,
+        p_batch_id        IN  NUMBER   DEFAULT NULL,
+        p_summary         OUT CLOB,
+        p_batch_id_out    OUT NUMBER,
+        p_error_msg       OUT VARCHAR2,
+        p_use_fast_loader IN  BOOLEAN  DEFAULT TRUE,
+        p_scenario_name   IN  VARCHAR2 DEFAULT NULL
+    )
+    IS
+        l_batch_id       NUMBER;
+        l_files          APEX_ZIP.T_FILES;
+        l_file_blob      BLOB;
+        l_file_name      VARCHAR2(500);
+        l_object_code    VARCHAR2(50);
+        l_staging_table  VARCHAR2(128);
+        l_disp_order     NUMBER;
+        l_format         VARCHAR2(12);
+        l_rows_loaded    NUMBER;
+        l_rows_errored   NUMBER;
+        l_batch_out      NUMBER;
+        l_file_error     VARCHAR2(4000);
+        l_summary        CLOB;
+        l_total_loaded   NUMBER := 0;
+        l_total_errored  NUMBER := 0;
+        l_total_files    NUMBER := 0;
+        l_skipped        NUMBER := 0;
+
+        -- Per-file routing plan: format tells the second pass which loader
+        -- to call; DISPLAY_ORDER sorts the whole mixed bundle parent-first.
+        TYPE t_plan_rec IS RECORD (
+            display_order NUMBER,
+            zip_index     PLS_INTEGER,
+            file_label    VARCHAR2(500),
+            object_code   VARCHAR2(50),
+            staging_table VARCHAR2(128),
+            format        VARCHAR2(12)   -- 'PROPRIETARY' or 'FBDI'
+        );
+        TYPE t_plan_tab IS TABLE OF t_plan_rec INDEX BY PLS_INTEGER;
+        l_plan       t_plan_tab;
+        l_plan_count PLS_INTEGER := 0;
+        l_tmp        t_plan_rec;
+
+        -- Log-entry + scenario-tagging locals for the FBDI branch (the
+        -- proprietary branch does its own via UPLOAD_CSV_FROM_BLOB).
+        l_log_id         NUMBER;
+        l_scenario_id    NUMBER;
+        l_scn_err        NUMBER;
+        l_max_seq_before NUMBER;
+
+        PROCEDURE append_summary (p_text IN VARCHAR2) IS
+        BEGIN
+            DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(p_text), p_text);
+        END append_summary;
+    BEGIN
+        p_error_msg := NULL;
+
+        IF p_batch_id IS NOT NULL THEN
+            l_batch_id := p_batch_id;
+        ELSE
+            SELECT DMT_UPLOAD_BATCH_SEQ.NEXTVAL INTO l_batch_id FROM DUAL;
+        END IF;
+        p_batch_id_out := l_batch_id;
+
+        -- Resolve scenario once for the whole bundle (used by the FBDI branch;
+        -- the proprietary branch passes p_scenario_name straight through).
+        IF p_scenario_name IS NOT NULL THEN
+            DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+                p_scenario_name => p_scenario_name,
+                x_scenario_id   => l_scenario_id,
+                x_error_code    => l_scn_err);
+            IF l_scn_err != DMT_UTIL_PKG.C_SUCCESS THEN
+                RAISE_APPLICATION_ERROR(-20115,
+                    'GET_OR_CREATE_SCENARIO failed for scenario "' ||
+                    p_scenario_name || '" (detail in DMT_LOG_TBL).');
+            END IF;
+        END IF;
+
+        l_files := APEX_ZIP.GET_FILES(p_zipped_blob => p_zip_blob);
+        DBMS_LOB.CREATETEMPORARY(l_summary, TRUE);
+
+        -- Pass 1: classify + resolve each member to object, staging table,
+        -- DISPLAY_ORDER and format.
+        FOR i IN 1 .. l_files.COUNT LOOP
+            l_file_name := l_files(i);
+            IF l_file_name LIKE '%/' OR l_file_name LIKE '.%' THEN CONTINUE; END IF;
+            IF INSTR(l_file_name, '/') > 0 THEN
+                l_file_name := SUBSTR(l_file_name, INSTR(l_file_name, '/', -1) + 1);
+            END IF;
+
+            l_format := NULL;
+
+            -- Try proprietary filename first.
+            BEGIN
+                SELECT OBJECT_CODE, STAGING_TABLE, NVL(DISPLAY_ORDER, 0)
+                INTO   l_object_code, l_staging_table, l_disp_order
+                FROM   DMT_UPLOAD_OBJECT_TBL
+                WHERE  UPPER(CSV_FILENAME) = UPPER(l_file_name)
+                AND    IS_ACTIVE = 'Y';
+                l_format := 'PROPRIETARY';
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN NULL;
+                WHEN TOO_MANY_ROWS THEN NULL;
+            END;
+
+            -- Else try FBDI filename.
+            IF l_format IS NULL THEN
+                BEGIN
+                    SELECT OBJECT_CODE, STAGING_TABLE, NVL(DISPLAY_ORDER, 0)
+                    INTO   l_object_code, l_staging_table, l_disp_order
+                    FROM   DMT_UPLOAD_OBJECT_TBL
+                    WHERE  UPPER(FBDI_CSV_FILENAME) = UPPER(l_file_name)
+                    AND    IS_ACTIVE = 'Y';
+                    l_format := 'FBDI';
+                EXCEPTION
+                    WHEN NO_DATA_FOUND THEN NULL;
+                    WHEN TOO_MANY_ROWS THEN NULL;
+                END;
+            END IF;
+
+            IF l_format IS NULL THEN
+                l_skipped := l_skipped + 1;
+                append_summary('SKIPPED: ' || l_file_name
+                    || ' (unrecognized file — no proprietary or FBDI filename match)' || CHR(10));
+            ELSE
+                l_plan_count := l_plan_count + 1;
+                l_plan(l_plan_count).display_order := l_disp_order;
+                l_plan(l_plan_count).zip_index     := i;
+                l_plan(l_plan_count).file_label    := l_file_name;
+                l_plan(l_plan_count).object_code   := l_object_code;
+                l_plan(l_plan_count).staging_table := l_staging_table;
+                l_plan(l_plan_count).format        := l_format;
+            END IF;
+        END LOOP;
+
+        -- Sort the plan by DISPLAY_ORDER (ascending) — insertion sort, small N.
+        FOR i IN 2 .. l_plan_count LOOP
+            l_tmp := l_plan(i);
+            DECLARE j PLS_INTEGER := i - 1;
+            BEGIN
+                WHILE j >= 1 AND l_plan(j).display_order > l_tmp.display_order LOOP
+                    l_plan(j + 1) := l_plan(j);
+                    j := j - 1;
+                END LOOP;
+                l_plan(j + 1) := l_tmp;
+            END;
+        END LOOP;
+
+        -- Pass 2: load in DISPLAY_ORDER, each file via its format's loader.
+        FOR i IN 1 .. l_plan_count LOOP
+            l_file_name   := l_plan(i).file_label;
+            l_object_code := l_plan(i).object_code;
+            l_file_blob   := APEX_ZIP.GET_FILE_CONTENT(
+                p_zipped_blob => p_zip_blob, p_file_name => l_files(l_plan(i).zip_index));
+            l_file_error  := NULL;
+            l_rows_loaded := 0;
+            l_rows_errored := 0;
+
+            IF l_plan(i).format = 'PROPRIETARY' THEN
+                -- Reuse the header-driven loader end-to-end (it logs, tags
+                -- scenario and per-row errors itself).
+                UPLOAD_CSV_FROM_BLOB(
+                    p_blob            => l_file_blob,
+                    p_file_label      => l_file_name,
+                    p_object_code     => l_object_code,
+                    p_batch_id        => l_batch_id,
+                    p_rows_loaded     => l_rows_loaded,
+                    p_rows_errored    => l_rows_errored,
+                    p_batch_id_out    => l_batch_out,
+                    p_error_msg       => l_file_error,
+                    p_use_fast_loader => p_use_fast_loader,
+                    p_scenario_name   => p_scenario_name
+                );
+            ELSE
+                -- FBDI positional load. Mirror UPLOAD_FBDI_ZIP_FROM_BLOB's
+                -- per-file bookkeeping (log entry, scenario tag) around the
+                -- shared positional loader so behaviour matches the FBDI-only
+                -- entry point exactly.
+                l_staging_table := DBMS_ASSERT.SIMPLE_SQL_NAME(l_plan(i).staging_table);
+
+                INSERT INTO DMT_UPLOAD_LOG_TBL (BATCH_ID, OBJECT_CODE, FILE_NAME, STATUS)
+                VALUES (l_batch_id, l_object_code, l_file_name, 'PROCESSING')
+                RETURNING LOG_ID INTO l_log_id;
+                COMMIT;
+
+                IF l_scenario_id IS NOT NULL THEN
+                    EXECUTE IMMEDIATE
+                        'SELECT NVL(MAX(STG_SEQUENCE_ID), 0) FROM ' || l_staging_table
+                        INTO l_max_seq_before;
+                END IF;
+
+                fbdi_load_from_blob(
+                    p_blob          => l_file_blob,
+                    p_file_label    => l_file_name,
+                    p_object_code   => l_object_code,
+                    p_staging_table => l_staging_table,
+                    p_batch_id      => l_batch_id,
+                    p_log_id        => l_log_id,
+                    p_rows_loaded   => l_rows_loaded,
+                    p_rows_errored  => l_rows_errored,
+                    p_error_msg     => l_file_error
+                );
+
+                IF l_scenario_id IS NOT NULL AND l_rows_loaded > 0 THEN
+                    EXECUTE IMMEDIATE
+                        'UPDATE ' || l_staging_table ||
+                        ' SET SCENARIO_ID = :sid WHERE STG_SEQUENCE_ID > :max_seq'
+                        USING l_scenario_id, l_max_seq_before;
+                    COMMIT;
+                END IF;
+
+                UPDATE DMT_UPLOAD_LOG_TBL
+                SET    ROWS_IN_FILE  = l_rows_loaded + l_rows_errored,
+                       ROWS_LOADED   = l_rows_loaded,
+                       ROWS_ERRORED  = l_rows_errored,
+                       STATUS        = CASE
+                                           WHEN l_file_error IS NOT NULL AND l_rows_loaded = 0 THEN 'FAILED'
+                                           WHEN l_rows_errored > 0 THEN 'COMPLETED_WITH_ERRORS'
+                                           ELSE 'COMPLETED'
+                                       END,
+                       ERROR_MSG     = l_file_error
+                WHERE  LOG_ID = l_log_id;
+                COMMIT;
+            END IF;
+
+            l_total_loaded  := l_total_loaded  + NVL(l_rows_loaded, 0);
+            l_total_errored := l_total_errored + NVL(l_rows_errored, 0);
+            l_total_files   := l_total_files + 1;
+
+            DECLARE
+                l_msg VARCHAR2(4000) := l_plan(i).format || '  ' || l_object_code || ': '
+                    || NVL(l_rows_loaded, 0) || ' loaded, ' || NVL(l_rows_errored, 0) || ' errors';
+            BEGIN
+                IF l_file_error IS NOT NULL THEN l_msg := l_msg || ' — ' || l_file_error; END IF;
+                append_summary(l_msg || CHR(10));
+            END;
+        END LOOP;
+
+        DECLARE
+            l_hdr VARCHAR2(400) := l_total_files || ' file(s) loaded, '
+                || l_total_loaded || ' rows loaded, '
+                || l_total_errored || ' errors, '
+                || l_skipped || ' skipped.' || CHR(10);
+        BEGIN
+            append_summary(l_hdr);
+        END;
+
+        p_summary := l_summary;
+
+        DMT_UTIL_PKG.LOG(
+            p_message   => 'Auto-detect ZIP complete — batch: ' || l_batch_id
+                           || ', matched: ' || l_total_files
+                           || ', skipped: ' || l_skipped
+                           || ', rows: ' || l_total_loaded,
+            p_package   => C_PKG,
+            p_procedure => 'UPLOAD_ZIP_AUTO_FROM_BLOB');
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF l_summary IS NOT NULL THEN
+                BEGIN DBMS_LOB.FREETEMPORARY(l_summary); EXCEPTION WHEN OTHERS THEN NULL; END;
+            END IF;
+            p_error_msg := 'Auto-detect ZIP upload failed: ' || SQLERRM;
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_message => 'Auto-detect ZIP upload failed', p_sqlerrm => SQLERRM,
+                p_package => C_PKG, p_procedure => 'UPLOAD_ZIP_AUTO_FROM_BLOB');
+    END UPLOAD_ZIP_AUTO_FROM_BLOB;
+
+    -- ============================================================
+    -- UPLOAD_ZIP_AUTO — APEX entry point (reads temp file, delegates)
+    -- ============================================================
+    PROCEDURE UPLOAD_ZIP_AUTO (
+        p_file_name       IN  VARCHAR2,
+        p_batch_id        IN  NUMBER   DEFAULT NULL,
+        p_summary         OUT CLOB,
+        p_batch_id_out    OUT NUMBER,
+        p_error_msg       OUT VARCHAR2,
+        p_use_fast_loader IN  BOOLEAN  DEFAULT TRUE,
+        p_scenario_name   IN  VARCHAR2 DEFAULT NULL
+    )
+    IS
+        l_zip_blob BLOB;
+    BEGIN
+        p_error_msg := NULL;
+
+        BEGIN
+            SELECT BLOB_CONTENT INTO l_zip_blob
+            FROM   APEX_APPLICATION_TEMP_FILES
+            WHERE  NAME = p_file_name;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                p_error_msg := 'ZIP file not found: ' || p_file_name;
+                RETURN;
+        END;
+
+        UPLOAD_ZIP_AUTO_FROM_BLOB(
+            p_zip_blob        => l_zip_blob,
+            p_file_label      => p_file_name,
+            p_batch_id        => p_batch_id,
+            p_summary         => p_summary,
+            p_batch_id_out    => p_batch_id_out,
+            p_error_msg       => p_error_msg,
+            p_use_fast_loader => p_use_fast_loader,
+            p_scenario_name   => p_scenario_name
+        );
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            p_error_msg := 'Auto-detect ZIP upload failed: ' || SQLERRM;
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_message => 'Auto-detect ZIP upload failed', p_sqlerrm => SQLERRM,
+                p_package => C_PKG, p_procedure => 'UPLOAD_ZIP_AUTO');
+    END UPLOAD_ZIP_AUTO;
 
 END DMT_CSV_UPLOAD_PKG;
 /
