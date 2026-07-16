@@ -260,9 +260,9 @@ def rest_spot_check(cur, run_id, result):
             SELECT rd.CEMLI_CODE, rd.SUB_OBJECT, rd.DISPLAY_KEY, rd.LOOKUP_KEY,
                    rd.TFM_SEQUENCE_ID,
                    ROW_NUMBER() OVER (PARTITION BY rd.CEMLI_CODE, rd.SUB_OBJECT
-                                      ORDER BY rd.TFM_SEQUENCE_ID DESC) rn
+                                      ORDER BY rd.RUN_ID DESC, rd.TFM_SEQUENCE_ID DESC) rn
             FROM   DMT_RECORD_DETAIL_V rd
-            WHERE  rd.RUN_ID = :rid
+            WHERE  (:rid IS NULL OR rd.RUN_ID = :rid)
               AND  rd.TFM_STATUS = 'LOADED'
         )
         SELECT c.CEMLI_CODE, c.DISPLAY_NAME AS sub_object, c.TFM_TABLE,
@@ -321,6 +321,18 @@ def rest_spot_check(cur, run_id, result):
                 + (f" ({detail})" if detail else ''))
     n_found = sum(1 for s in spot if s['status'] == 'FOUND')
     print(f"    {n_found}/{len(spot)} object/TFM table(s) read back from Fusion via the button's REST call")
+    # Per-object roll-up: an object is "verified" if any of its sub-objects read back.
+    objs = {}
+    for s in spot:
+        objs.setdefault(s['cemli_code'], False)
+        if s['status'] == 'FOUND':
+            objs[s['cemli_code']] = True
+    verified = sorted(o for o, ok in objs.items() if ok)
+    unverified = sorted(o for o, ok in objs.items() if not ok)
+    print(f"    per-object: {len(verified)}/{len(objs)} verified in Fusion"
+          + (f" | not yet: {', '.join(unverified)}" if unverified else ""))
+    result['rest_verified_objects'] = verified
+    result['rest_unverified_objects'] = unverified
 
 
 def evaluate(run_id, baseline_arg):
@@ -583,7 +595,19 @@ def main():
     ap.add_argument('--baseline', default='auto',
                     help="'auto' (default), 'none', or an explicit RUN_ID")
     ap.add_argument('--json', metavar='PATH', help='write machine-readable summary')
+    ap.add_argument('--rest-only', action='store_true',
+                    help='skip submit/evaluate; run only the REST verify spot-check '
+                         '(step 6) against the most recent LOADED record of every object')
     args = ap.parse_args()
+
+    if args.rest_only:
+        conn = connect()
+        conn.call_timeout = 180_000
+        cur = conn.cursor()
+        result = {'failures': [], 'review': []}
+        rest_spot_check(cur, None, result)
+        conn.close()
+        sys.exit(0)
 
     if args.status_only:
         run_id = args.status_only

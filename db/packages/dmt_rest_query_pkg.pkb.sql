@@ -36,6 +36,7 @@ AS
         l_lookup_json  CLOB;
         l_result       CLOB;
         l_error_msg    VARCHAR2(4000);
+        l_primary_key  VARCHAR2(400);
     BEGIN
         -- Log the request (includes TFM seq for traceability)
         DMT_UTIL_PKG.LOG(
@@ -46,19 +47,35 @@ AS
             p_package   => C_PKG,
             p_procedure => 'QUERY_FUSION_RECORD');
 
-        -- Delegate to the existing lookup package
-        -- Use p_lookup_key when available (resolves parent key for child objects)
+        -- Delegate to the existing lookup package. Try the reconciliation key
+        -- (lookup_key) first; if the record is not found by that value, retry
+        -- with the display key. Fusion resources vary in which field is
+        -- queryable — some by the migration's source reference, some only by
+        -- the business name — and the button carries both values, so trying
+        -- both makes the verify robust without per-object key wiring.
+        l_primary_key := NVL(p_lookup_key, p_display_key);
         l_lookup_json := DMT_REST_LOOKUP_PKG.LOOKUP_RECORD(
             p_object_type => p_sub_object,
-            p_key_value   => NVL(p_lookup_key, p_display_key)
+            p_key_value   => l_primary_key
         );
+        l_error_msg := JSON_VALUE(l_lookup_json, '$.error');
+
+        IF l_error_msg IS NOT NULL
+           AND INSTR(LOWER(l_error_msg), 'not found') > 0
+           AND p_display_key IS NOT NULL
+           AND p_display_key <> l_primary_key THEN
+            l_lookup_json := DMT_REST_LOOKUP_PKG.LOOKUP_RECORD(
+                p_object_type => p_sub_object,
+                p_key_value   => p_display_key
+            );
+            l_error_msg := JSON_VALUE(l_lookup_json, '$.error');
+        END IF;
 
         IF l_lookup_json IS NULL THEN
             RETURN error_json('No response from lookup.');
         END IF;
 
-        -- Check if LOOKUP_RECORD returned an error: {"error":"..."}
-        l_error_msg := JSON_VALUE(l_lookup_json, '$.error');
+        -- Still an error after the fallback: report it
         IF l_error_msg IS NOT NULL THEN
             RETURN error_json(l_error_msg);
         END IF;
