@@ -105,5 +105,39 @@ AS
         p_scenario_name   IN  VARCHAR2 DEFAULT NULL
     );
 
+    -- ------------------------------------------------------------
+    -- UPLOAD_ZIP_AUTO — "Auto detect by filename" entry point.
+    -- Unpacks one ZIP that may contain a MIX of proprietary CSVs
+    -- (named DMT_<OBJECT>_STG_TBL.csv, with a header row) and
+    -- Oracle FBDI CSVs (named by the FBDI convention, headerless,
+    -- positional). Each member file is routed by its filename:
+    --   * matches DMT_UPLOAD_OBJECT_TBL.CSV_FILENAME       -> proprietary loader
+    --   * else matches DMT_UPLOAD_OBJECT_TBL.FBDI_CSV_FILENAME -> FBDI loader
+    --   * else                                             -> skipped with a warning
+    -- Parent-before-child order (DISPLAY_ORDER) is honoured across
+    -- the whole mixed bundle. Reuses the proprietary and FBDI
+    -- loaders — no duplicated load logic.
+    PROCEDURE UPLOAD_ZIP_AUTO (
+        p_file_name       IN  VARCHAR2,
+        p_batch_id        IN  NUMBER   DEFAULT NULL,
+        p_summary         OUT CLOB,
+        p_batch_id_out    OUT NUMBER,
+        p_error_msg       OUT VARCHAR2,
+        p_use_fast_loader IN  BOOLEAN  DEFAULT TRUE,
+        p_scenario_name   IN  VARCHAR2 DEFAULT NULL
+    );
+
+    -- BLOB overload for auto-detect (no APEX temp file dependency).
+    PROCEDURE UPLOAD_ZIP_AUTO_FROM_BLOB (
+        p_zip_blob        IN  BLOB,
+        p_file_label      IN  VARCHAR2,
+        p_batch_id        IN  NUMBER   DEFAULT NULL,
+        p_summary         OUT CLOB,
+        p_batch_id_out    OUT NUMBER,
+        p_error_msg       OUT VARCHAR2,
+        p_use_fast_loader IN  BOOLEAN  DEFAULT TRUE,
+        p_scenario_name   IN  VARCHAR2 DEFAULT NULL
+    );
+
 END DMT_CSV_UPLOAD_PKG;
 /
