@@ -146,6 +146,13 @@ def main():
     # Then delete STG rows.
     cleanup_tables = [
         # --- TFM tables first (FK children of STG) ---
+        # HCM Workers (added with the Worker seed section; must be cleaned each
+        #  reload or worker STG rows accumulate as stale duplicates -- same bug
+        #  class as the Items/MiscReceipts accumulation below).
+        "DMT_WORKER_TFM_TBL",
+        "DMT_PERSON_NAME_TFM_TBL",
+        "DMT_WORKER_STG_TBL",
+        "DMT_PERSON_NAME_STG_TBL",
         # Items (were missing from this list -- caused 15x STG-row accumulation
         #  across reloads because they were inserted+tagged but never cleaned)
         "DMT_EGP_ITEM_CAT_TFM_TBL",
@@ -2155,9 +2162,12 @@ def main():
     #     GOOD: RT-WKR-G1 (HIRE). BAD: RT-WKR-B1 (ACTION_CODE=TERMINATE, caught
     #     by the worker validator rule R2 before Fusion).
     # ====================================================================
+    # HDL requires dates as YYYY/MM/DD, and these STG columns are VARCHAR2 that the
+    # transform/generator carry through unchanged — so seed the strings already in
+    # HDL format (a DATE literal would implicitly become DD-MON-YY and be rejected).
     print("\n=== 41. Workers (HCM) ===")
     for pnum, action, dob, label in [
-        ("RT-WKR-G1", "HIRE",      "1985-03-15", "GOOD Worker: RT-WKR-G1 (HIRE)"),
+        ("RT-WKR-G1", "HIRE",      "1985/03/15", "GOOD Worker: RT-WKR-G1 (HIRE)"),
         ("RT-WKR-B1", "TERMINATE", None,         "BAD Worker: TERMINATE action [BAD-REQ]"),
     ]:
         run_sql(cur, """
@@ -2166,9 +2176,8 @@ def main():
                 ACTION_CODE, LEGAL_ENTITY_NAME, DATE_OF_BIRTH,
                 SOURCE_ID, STG_STATUS
             ) VALUES (
-                :pnum, DATE '2026-01-01', DATE '2026-01-01',
-                :action, 'US1 Legal Entity',
-                CASE WHEN :dob IS NULL THEN NULL ELSE TO_DATE(:dob,'YYYY-MM-DD') END,
+                :pnum, '2026/01/01', '2026/01/01',
+                :action, 'US1 Legal Entity', :dob,
                 :src, 'NEW'
             )
         """, {"pnum": pnum, "action": action, "dob": dob, "src": f"RT-{pnum}"},
@@ -2181,7 +2190,7 @@ def main():
             LEGISLATION_CODE, LAST_NAME, FIRST_NAME,
             SOURCE_ID, STG_STATUS
         ) VALUES (
-            'RT-WKR-G1', DATE '2026-01-01', 'GLOBAL',
+            'RT-WKR-G1', '2026/01/01', 'GLOBAL',
             'US', 'Tester', 'Regina',
             'RT-WKR-G1-NME', 'NEW'
         )
