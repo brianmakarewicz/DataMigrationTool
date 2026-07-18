@@ -232,7 +232,7 @@ AS
 
             BEGIN
                 spawn_child(l_job_name,
-                    'BEGIN DMT_OWNER.DMT_QUEUE_WORKER_PKG.POLL_ONE(' || rec.QUEUE_ID || '); END;');
+                    'BEGIN DMT_OWNER.DMT_UTIL_PKG.SET_LOG_CONTEXT(' || rec.RUN_ID || ',' || rec.QUEUE_ID || '); DMT_OWNER.DMT_QUEUE_WORKER_PKG.POLL_ONE(' || rec.QUEUE_ID || '); END;');
             EXCEPTION
                 WHEN OTHERS THEN
                     DMT_UTIL_PKG.LOG_ERROR(rec.RUN_ID,
@@ -288,7 +288,7 @@ AS
             -- Spawn child job
             BEGIN
                 spawn_child(l_job_name,
-                    'BEGIN DMT_OWNER.DMT_QUEUE_WORKER_PKG.EXECUTE_ONE(' || rec.QUEUE_ID || '); END;');
+                    'BEGIN DMT_OWNER.DMT_UTIL_PKG.SET_LOG_CONTEXT(' || rec.RUN_ID || ',' || rec.QUEUE_ID || '); DMT_OWNER.DMT_QUEUE_WORKER_PKG.EXECUTE_ONE(' || rec.QUEUE_ID || '); END;');
 
                 DMT_UTIL_PKG.LOG(rec.RUN_ID,
                     'Spawned child job ' || l_job_name || ' for ' || rec.CEMLI_CODE,
@@ -327,7 +327,7 @@ AS
 
             BEGIN
                 spawn_child(l_job_name,
-                    'BEGIN DMT_OWNER.DMT_QUEUE_WORKER_PKG.RECONCILE_ONE(' || rec.QUEUE_ID || '); END;');
+                    'BEGIN DMT_OWNER.DMT_UTIL_PKG.SET_LOG_CONTEXT(' || rec.RUN_ID || ',' || rec.QUEUE_ID || '); DMT_OWNER.DMT_QUEUE_WORKER_PKG.RECONCILE_ONE(' || rec.QUEUE_ID || '); END;');
 
                 DMT_UTIL_PKG.LOG(rec.RUN_ID,
                     'Spawned reconcile job ' || l_job_name || ' for ' || rec.CEMLI_CODE,
