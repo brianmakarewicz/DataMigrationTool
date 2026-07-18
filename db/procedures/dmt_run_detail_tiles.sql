@@ -8,6 +8,8 @@
     l_has_queue NUMBER;
     l_phase   VARCHAR2(10);
     l_failerr NUMBER;
+    l_run_status VARCHAR2(30);
+    l_run_active BOOLEAN := FALSE;   -- TRUE while the parent run has not reached a terminal status
 
     -- ------------------------------------------------------------------
     -- Outcome-based tile palette (DMT_DESIGN.html section 9, decided
@@ -38,10 +40,19 @@
       IF p_phase = 'RUNNING' THEN RETURN '#e8f0fe'; END IF;   -- Blue: in progress
       IF p_phase = 'ERRORED' AND NVL(p_total,0) = 0 THEN RETURN '#f5b8b1'; END IF;   -- Red: true infra break, no rows processed (finished-with-counts ERRORED falls through to the outcome logic below)
       IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '#f0f0f0'; END IF; -- Grey
+      -- In-flight: while the run is still active, an object that FINISHED NORMALLY
+      -- (phase DONE) with NO real failures but is not yet fully loaded is still
+      -- working -- its records are generated / awaiting load / awaiting reconciliation
+      -- (loaded, failed and unaccounted can all still be 0). That is in progress, not a
+      -- failure. Colour it Blue until the run reaches a terminal status; only then do
+      -- not-loaded rows count as failure. Scoped to DONE so an item whose own work
+      -- status already resolved to FAILED (phase ERRORED) is NOT masked as in-progress
+      -- -- it keeps falling through to the outcome logic and reds out.
+      IF p_phase = 'DONE' AND l_run_active AND NVL(p_failed_err,0) = 0 AND NVL(p_loaded,0) < NVL(p_total,0) THEN RETURN '#e8f0fe'; END IF;
       IF NVL(p_unacc,0)  >= p_total THEN RETURN '#f5b8b1'; END IF;  -- Red: all unaccounted
-      IF NVL(p_loaded,0) >= p_total THEN RETURN '#b7e1c0'; END IF;  -- Green: 100% loaded
+      IF NVL(p_loaded,0) >= p_total THEN RETURN '#5fbf4f'; END IF;  -- Pure green: 100% loaded
       IF NVL(p_unacc,0) > 0 OR NVL(p_loaded,0) = 0 THEN RETURN '#fce8e6'; END IF; -- Light red
-      RETURN '#e6f4ea';                                       -- Light green: some failed, all accounted
+      RETURN '#c2e58f';                                       -- Light green (Option B): some failed but all accounted (distinct from the pure full-loaded green above)
     END tile_bg;
 
     -- Status line HTML, consistent with the colour the palette chose.
@@ -52,13 +63,25 @@
       IF p_phase = 'RUNNING' THEN RETURN '<span style="color:#0b5cc0">In progress</span>'; END IF;
       IF p_phase = 'ERRORED' AND NVL(p_total,0) = 0 THEN RETURN '<span style="color:#b3261e">&#10007; Failed</span>'; END IF;
       IF NVL(p_total,0) = 0 OR p_phase = 'SKIPPED' THEN RETURN '<span style="color:#888">No rows</span>'; END IF;
+      -- In-flight: during an active run, an object that finished normally (phase DONE)
+      -- with no real failures but is not yet fully loaded is still working (generating /
+      -- loading / reconciling), not a failure. Show a clock with the in-progress count,
+      -- not a red X. Scoped to DONE so an ERRORED item is not masked as in-progress.
+      IF p_phase = 'DONE' AND l_run_active AND NVL(p_failed_err,0) = 0 AND NVL(p_loaded,0) < NVL(p_total,0) THEN
+        RETURN '<span style="color:#0b5cc0">&#128337; ' ||
+               CASE WHEN NVL(p_loaded,0) > 0 THEN p_loaded || ' loaded &middot; ' END ||
+               (NVL(p_total,0) - NVL(p_loaded,0) - NVL(p_failed_err,0)) || ' in progress</span>';
+      END IF;
       IF NVL(p_unacc,0) >= p_total THEN
         RETURN '<span style="color:#b3261e">' || p_unacc || ' unaccounted</span>';
       END IF;
       IF NVL(p_loaded,0) >= p_total THEN
-        RETURN '<span style="color:#1a7d33">&#10003; ' || p_loaded || ' loaded</span>';
+        RETURN '<span style="color:#000">&#10003; ' || p_loaded || ' loaded</span>';  -- black: reads on the deeper full-loaded green
       END IF;
-      IF NVL(p_loaded,0) = 0 AND NVL(p_unacc,0) = 0 THEN
+      -- only a genuine failure (rows FAILED with a reportable error) shows a red X;
+      -- never render "0 failed" as a failure (e.g. a terminal run with rows stuck
+      -- un-loaded but not failed falls through to the neutral mixed line below).
+      IF NVL(p_loaded,0) = 0 AND NVL(p_unacc,0) = 0 AND NVL(p_failed_err,0) > 0 THEN
         RETURN '<span style="color:#b3261e">&#10007; ' || p_failed_err || ' failed</span>';
       END IF;
       -- mixed: show every non-zero bucket
@@ -90,6 +113,16 @@
              END;
     END phase_from_object;
 BEGIN
+    -- Parent run status: the tiles branch on whether the run is still active,
+    -- so an object with unaccounted-but-not-failed records shows in progress
+    -- mid-run and only turns to a failure once the run is terminal.
+    BEGIN
+        SELECT RUN_STATUS INTO l_run_status FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = p_run_id;
+    EXCEPTION WHEN NO_DATA_FOUND THEN l_run_status := NULL;
+    END;
+    l_run_active := NVL(l_run_status,'IN_PROGRESS')
+                    NOT IN ('COMPLETED','COMPLETED_ERRORS','FAILED','NO_ROWS_PROCESSED');
+
     -- Check if work queue has rows for this run
     SELECT COUNT(*) INTO l_has_queue
     FROM DMT_WORK_QUEUE_TBL WHERE RUN_ID = p_run_id AND ROWNUM = 1;
