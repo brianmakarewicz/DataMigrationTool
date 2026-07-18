@@ -282,7 +282,16 @@
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.LOCATION_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
                     s.COUNTRY,
-                    s.ADDRESS1,
+                    -- STOPGAP for repeated ALL-mode test loads: the address line is
+                    -- a de-facto dedup key. Fusion's TCA duplicate detection matches
+                    -- a re-loaded address + party-site combination and rejects it with
+                    -- HZ_DUPLICATE_COMBINATION, so run N's customer looked like a
+                    -- duplicate of run N-1's. Prefix ADDRESS1 (like the party name /
+                    -- orig-system reference) so each run's location is a distinct
+                    -- address. Production (no prefix) keeps the real address. NULLs
+                    -- stay NULL. See the durable follow-up in the package header /
+                    -- PR description (run-scoped RECON_KEY + load-once in production).
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.ADDRESS1),
                     s.ADDRESS2,
                     s.ADDRESS3,
                     s.ADDRESS4,
@@ -445,7 +454,14 @@
                     s.LOCATION_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.LOCATION_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
-                    s.PARTY_SITE_NAME,
+                    -- STOPGAP for repeated ALL-mode test loads: the party-site name is
+                    -- part of Fusion's TCA duplicate combination (address + site).
+                    -- Prefix it so each run's party site is distinct and the re-load
+                    -- is not rejected with HZ_DUPLICATE_COMBINATION. Production (no
+                    -- prefix) keeps the real site name. NULLs stay NULL. Durable fix
+                    -- (run-scoped RECON_KEY + load-once in production) is a separate
+                    -- backlog item -- see the PR description.
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_SITE_NAME),
                     s.PARTY_SITE_NUMBER,
                     s.START_DATE_ACTIVE,
                     s.END_DATE_ACTIVE,
