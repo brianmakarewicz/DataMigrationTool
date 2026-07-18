@@ -257,6 +257,7 @@
                 -- Success: item positively present in EGP_SYSTEM_ITEMS_B.
                 UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
                 SET    TFM_STATUS              = 'LOADED',
+                       FUSION_INVENTORY_ITEM_ID = r.inventory_item_id,
                        RESULTS_UPDATED_DATE    = SYSDATE,
                        LAST_UPDATED_DATE       = SYSDATE
                 WHERE  RUN_ID      = p_run_id
