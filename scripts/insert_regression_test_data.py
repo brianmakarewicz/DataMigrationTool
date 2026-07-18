@@ -1393,12 +1393,24 @@ def main():
     #     BAD:  1 for non-existent project [BAD-UPS]
     # ====================================================================
     print("\n=== 27. Expenditures ===")
-    # Import Project Costs requires each row to name a valid costing DOCUMENT +
-    # DOCUMENT ENTRY; without them Fusion leaves the row in PJC_TXN_XFACE_STAGE_ALL
-    # at status 'P' (pending, NOT success) and it never posts to PJC_EXP_ITEMS_ALL.
-    # Mimic the canonical always-import-enabled third-party non-labor source:
-    # DOCUMENT 'Miscellaneous' / ENTRY 'Miscellaneous', NONLABOR, no person.
-    # (objects/Expenditures/README.md, 2026-07-15.)
+    # Import Project Costs (ImportProcessParallelEssJob) resolves the transaction
+    # SOURCE + DOCUMENT + DOCUMENT ENTRY to their internal ids inside a one-stop
+    # PL/SQL routine. If USER_TRANSACTION_SOURCE is null/unmatched that routine
+    # cannot resolve the source and dies with:
+    #   ORA-06502: PL/SQL: numeric or value error: character to number conversion
+    # The row then sits in PJC_TXN_XFACE_STAGE_ALL at status 'P' (pending, NOT
+    # success) and never posts to PJC_EXP_ITEMS_ALL. Confirmed from run 168's
+    # import ESS log (request 9750753) 2026-07-17.
+    #
+    # Correct import-enabled third-party non-labor source on this instance
+    # (verified live 2026-07-17 via pjf_txn_sources_vl / pjf_txn_document_vl /
+    # pjf_txn_doc_entry_vl):
+    #   USER_TRANSACTION_SOURCE = 'External Miscellaneous' (src id 300000049907116)
+    #   DOCUMENT_NAME           = 'Miscellaneous'          (doc id 300000049907117)
+    #   DOC_ENTRY_NAME          = 'Miscellaneous'          (entry id 300000049907118,
+    #                                                        system linkage 'PJ')
+    # System linkage 'PJ' is a miscellaneous cost, so NONLABOR with no person and
+    # no non-labor resource is valid.
     for proj_num, task_num, qty, amount in [
         ("RTPRJ001", "RTPRJ001.1", 8,  1500.00),
         ("RTPRJ002", "RTPRJ002.1", 16, 2500.00),
@@ -1410,7 +1422,7 @@ def main():
                 EXPENDITURE_TYPE, EXPENDITURE_ITEM_DATE,
                 ORGANIZATION_NAME, QUANTITY,
                 DENOM_CURRENCY_CODE, DENOM_RAW_COST,
-                DOCUMENT_NAME, DOC_ENTRY_NAME,
+                USER_TRANSACTION_SOURCE, DOCUMENT_NAME, DOC_ENTRY_NAME,
                 ORIG_TRANSACTION_REFERENCE, SOURCE_ID
             ) VALUES (
                 'NONLABOR', :bu,
@@ -1418,7 +1430,7 @@ def main():
                 'Miscellaneous', DATE '2025-06-15',
                 :bu, :qty,
                 'USD', :amt,
-                'Miscellaneous', 'Miscellaneous',
+                'External Miscellaneous', 'Miscellaneous', 'Miscellaneous',
                 :ref, :src
             )
         """, {"bu": BU, "pnum": proj_num, "tnum": task_num,
@@ -1433,7 +1445,7 @@ def main():
             EXPENDITURE_TYPE, EXPENDITURE_ITEM_DATE,
             ORGANIZATION_NAME, QUANTITY,
             DENOM_CURRENCY_CODE, DENOM_RAW_COST,
-            DOCUMENT_NAME, DOC_ENTRY_NAME,
+            USER_TRANSACTION_SOURCE, DOCUMENT_NAME, DOC_ENTRY_NAME,
             ORIG_TRANSACTION_REFERENCE, SOURCE_ID
         ) VALUES (
             'NONLABOR', :bu,
@@ -1441,7 +1453,7 @@ def main():
             'BadValue', DATE '2025-06-15',
             :bu, 8,
             'USD', 999.99,
-            'Miscellaneous', 'Miscellaneous',
+            'External Miscellaneous', 'Miscellaneous', 'Miscellaneous',
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
     """, {"bu": BU}, label="BAD Expenditure: invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
