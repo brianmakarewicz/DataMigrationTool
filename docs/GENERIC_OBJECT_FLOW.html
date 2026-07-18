@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DMT2 — Generic Object Pipeline: Deep Walkthrough &amp; Generalization Proposal</title>
+<title>DMT2 — Generic Object Pipeline: Standard Flow &amp; Per-Object Contract</title>
 <style>
   :root { --ink:#1a2332; --mut:#5b6b7f; --line:#d8e0ea; --bg:#f6f8fb; --code:#0b3d5c;
           --red:#b42318; --grn:#0a7a43; --amb:#8a5a00; --box:#eef3f9; --exbg:#f3f8ff; --exln:#c7dbf5; }
@@ -30,9 +30,11 @@
   .t-good { background:#e3f6ec; color:var(--grn); }
   .t-bad  { background:#fde8e6; color:var(--red); }
   .t-warn { background:#fbf1dd; color:var(--amb); }
+  .t-req  { background:#e6eefc; color:#1746a2; }
   .callout { border-left:4px solid var(--amb); background:#fffaf0; padding:10px 14px; margin:14px 0; border-radius:0 6px 6px 0; }
   .callout.bad { border-color:var(--red); background:#fff5f4; }
   .callout.good { border-color:var(--grn); background:#f1fbf5; }
+  .callout.info { border-color:#1746a2; background:#f2f6fe; }
   a.src { color:#0a58ca; text-decoration:none; border-bottom:1px dotted #0a58ca; }
   a.src:hover { background:#eaf2ff; }
   .fl { font-family:"SFMono-Regular",Consolas,monospace; font-size:12px; color:var(--mut); }
@@ -51,20 +53,37 @@
   .cap { font-size:12px; color:var(--mut); margin:10px 0 2px; font-weight:650; }
   .cap code { background:#fff; border:1px solid var(--exln); }
   .arrow { color:#0a58ca; font-weight:700; }
+  .must { border-left:4px solid #1746a2; background:#f7faff; padding:10px 14px; margin:14px 0; border-radius:0 6px 6px 0; }
+  .toc { background:var(--box); border:1px solid var(--line); border-radius:8px; padding:10px 18px; margin:14px 0; }
+  .toc a { color:var(--code); text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<h1>Generic Object Pipeline — Deep Walkthrough &amp; Generalization Proposal</h1>
-<p class="lead">Every load, one path — traced through the real code with exact parameters, a worked P2P example showing what lands in each table, the discrepancies that stop it being one path today, and the concrete change that makes it one.</p>
+<h1>Generic Object Pipeline — Standard Flow &amp; Per-Object Contract</h1>
+<p class="lead">One path for every object. This document does two jobs: it teaches how a load travels end to end (with worked examples and real table snapshots), and it states the contract — the exact registry rows, tables, packages, procedures, and parameters that every object must provide.</p>
 
-<p><strong>Scope.</strong> This document is a companion to the accepted <em>Canonical per-object processing recipe</em> (Coding Standards section 7.1 of <code>docs/DMT_DESIGN.html</code>). It goes one level deeper: it names the exact procedure signatures and parameters at every call site, shows the code inside each step with mock data, catalogs where objects diverge from the single pattern, and proposes the specific registry columns and code collapses that would make all objects follow one path. Nothing here has been changed in code — it is analysis and proposal for review.</p>
+<div class="callout info">
+<strong>Who this is for, and how to read it.</strong>
+<ul style="margin:6px 0 2px">
+<li><strong>To understand the pipeline</strong> (a developer or an LLM learning the system): read <strong>Part A</strong>. It follows one real run, step by step, and shows what each table holds before and after each step.</li>
+<li><strong>To build or wire up a new object</strong> (a developer or an LLM writing code to spec): read <strong>Part B</strong> and follow <strong>Part C</strong>. Part B is the contract — every artifact an object must expose, with each procedure's full signature written one parameter per line. Part C is the same contract as an ordered checklist.</li>
+</ul>
+This document describes the <em>standard</em> flow — the single path an object is expected to follow. Where existing code has not yet caught up to the standard, that drift is listed once, in the Appendix, and left for a later revision. Everything else here is normative.
+</div>
 
-<p><strong>Reference object.</strong> Suppliers is named by 7.1 as the proven template (live run 270, prefix 1143), so it defines the structural pattern. The <em>worked example</em> uses <strong>PurchaseOrders</strong> for the step-by-step data, because it has real one-to-many shape (one header → several lines) — a single-table object is too simple to show what "lands in each table." Every file-and-line reference is a clickable link that opens the source in VS Code at that line.</p>
+<div class="toc">
+<strong>Contents</strong> &nbsp;·&nbsp;
+<a href="#partA">Part A — The standard flow</a> &nbsp;·&nbsp;
+<a href="#partB">Part B — The per-object contract</a> &nbsp;·&nbsp;
+<a href="#partC">Part C — New-object checklist</a> &nbsp;·&nbsp;
+<a href="#appendix">Appendix — Known drift (deferred)</a>
+</div>
 
 <div class="callout">
-<strong>The worked example used from Step 1 onward — one P2P run.</strong> Treat the P2P pipeline as exactly two objects: <strong>Suppliers</strong>, then <strong>PurchaseOrders</strong> (the PO depends on the supplier loaded in the same run). One supplier and one PO with two lines flow all the way through. Fixed facts for every table below:
+<strong>The worked run used throughout Part A — one P2P run.</strong> Treat the P2P pipeline, for this walkthrough, as two objects: <strong>Suppliers</strong>, then <strong>PurchaseOrders</strong> (the PO depends on the supplier loaded in the same run). One supplier and one PO with two lines flow all the way through. Fixed facts for every table below:
 <ul style="margin:6px 0 2px">
 <li><code>RUN_ID = 9007</code> · <code>SCENARIO_NAME = 'RegressionTest'</code> · <code>PREFIX = '9007'</code> · <code>RUN_MODE = 'NEW'</code></li>
 <li>Supplier: <code>VENDOR_NAME 'Acme Supplies'</code>, <code>SEGMENT1 'ACME01'</code>.</li>
@@ -83,16 +102,83 @@ Source rows as uploaded (STG tier, before anything runs):
 <tr><td>H1-L2</td><td>H1</td><td>2</td><td>CM16443</td><td>5</td><td>Ea</td><td>40</td><td>NEW</td></tr></table>
 </div>
 
-<h2>Part A · The single path, step by step</h2>
-<p>A load travels: <strong>APEX/caller → submission → run &amp; queue rows → heartbeat → worker → shared engine → Fusion → reconcile → accounting gate</strong>. The shared engine is one function, <code>DMT_LOADER_PKG.run_one_object_type</code> (<span class="fl">db/packages/dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:993">993</a></span>). Every object runner is three lines that call it.</p>
+<h2 id="partA">Part A · The standard flow, step by step</h2>
+<p>A load travels one path: <strong>caller → submission → run &amp; queue rows → heartbeat → worker → shared engine → Fusion → reconcile → accounting gate</strong>. The shared engine is one function, <code>DMT_LOADER_PKG.run_one_object_type</code> (<span class="fl">db/packages/dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:993">993</a></span>). Every object's runner is three lines that call it. Read this part to understand the machine; Part B turns each step into a build requirement.</p>
 
-<h3>Entry &amp; enqueue (before the engine)</h3>
+<h3>Entry — the caller chooses what to run</h3>
+<p>Every run begins with a person choosing <em>which objects</em> to migrate. That choice is a single string of <strong>pipeline codes</strong>, passed as <code>p_pipeline_codes</code>. A pipeline code is either the name of a pipeline that expands to several objects, or one object written as <code>STANDALONE:ObjectName</code>. The same entry point therefore covers every scope the user might want:</p>
 <table>
-<tr><th>Stage</th><th>Procedure &amp; location</th><th>Called with</th><th>What it does</th></tr>
-<tr><td>Submit (compat wrapper)</td><td><code>DMT_SUBMIT_RUN_V2</code><br><span class="fl">db/procedures/dmt_submit_run_v2.sql:3</span></td><td><code>p_pipeline_codes, p_scenario_name, p_run_mode='NEW', p_on_failure='HALT', p_submitted_by, x_run_id OUT</code></td><td>Thin forwarder — delegates to the scheduler's single guarded path. External signature frozen because the archived APEX export calls it.</td></tr>
-<tr><td>Submit (real)</td><td><code>DMT_SCHEDULER_PKG.SUBMIT_PIPELINE</code> → <code>create_run_and_queue</code><br><span class="fl">dmt_scheduler_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_scheduler_pkg.pkb.sql:318">318</a></span> and <span class="fl">dmt_scheduler_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_scheduler_pkg.pkb.sql:139">139</a></span></td><td>same five params</td><td>Inserts <strong>one</strong> <code>DMT_PIPELINE_RUN_TBL</code> row (assigns RUN_ID + prefix), then <strong>one</strong> <code>DMT_WORK_QUEUE_TBL</code> row per object, each <code>WORK_STATUS='READY'</code>, ordered by SORT_ORDER, chained by DEPENDS_ON. Nothing executes yet.</td></tr>
-<tr><td>Heartbeat tick</td><td><code>DMT_QUEUE_PKG.PROCESS_QUEUE</code> → <code>dispatch_ready</code><br><span class="fl">dmt_queue_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_pkg.pkb.sql:563">563</a></span> and <span class="fl">dmt_queue_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_pkg.pkb.sql:257">257</a></span></td><td>—</td><td>Finds <code>READY</code> rows whose run passed preflight, flips each to <code>VALIDATING</code>, spawns a one-shot job: <code>DMT_QUEUE_WORKER_PKG.EXECUTE_ONE(queue_id)</code>.</td></tr>
+<tr><th>What the user wants to run</th><th><code>p_pipeline_codes</code></th><th>Objects that get queued</th></tr>
+<tr><td>Just suppliers</td><td><code>STANDALONE:Suppliers</code></td><td>Suppliers only</td></tr>
+<tr><td>Just purchase orders</td><td><code>STANDALONE:PurchaseOrders</code></td><td>PurchaseOrders only</td></tr>
+<tr><td>Just customers</td><td><code>STANDALONE:Customers</code></td><td>Customers only</td></tr>
+<tr><td>The entire P2P flow</td><td><code>P2P</code></td><td>Every object registered to the P2P pipeline, in <code>SORT_ORDER</code> — Suppliers first, then PurchaseOrders, and so on</td></tr>
 </table>
+
+<p>Everything the engine needs is one static table, <code>DMT_PIPELINE_DEF_TBL</code> — one row per object. It records which pipeline the object belongs to, its order within that pipeline, what it depends on, and which procedures load and reconcile it. A few of its seeded rows (<span class="fl">db/seed/dmt_pipeline_def_tbl.sql</span>):</p>
+<div class="cap"><code>DMT_PIPELINE_DEF_TBL</code> — sample rows</div>
+<table>
+<tr><th>PIPELINE_CODE</th><th>SORT_ORDER</th><th>CEMLI_CODE</th><th>DEPENDS_ON</th><th>EXEC_PROC</th><th>EXEC_MODE</th></tr>
+<tr><td>P2P</td><td>20</td><td>Suppliers</td><td>(null)</td><td>DMT_LOADER_PKG.RUN_SUPPLIERS</td><td>ASYNC</td></tr>
+<tr><td>P2P</td><td>30</td><td>SupplierAddresses</td><td>Suppliers</td><td>DMT_LOADER_PKG.RUN_SUPPLIER_ADDRESSES</td><td>ASYNC</td></tr>
+<tr><td>P2P</td><td>80</td><td>PurchaseOrders</td><td>Items,Requisitions,SupplierSiteAssignments,SupplierContacts</td><td>DMT_LOADER_PKG.RUN_PURCHASE_ORDERS</td><td>ASYNC</td></tr>
+<tr><td>O2C</td><td>10</td><td>Customers</td><td>(null)</td><td>DMT_LOADER_PKG.RUN_CUSTOMERS</td><td>ASYNC</td></tr>
+</table>
+<p class="muted">(This walkthrough collapses P2P to just Suppliers → PurchaseOrders for readability; in the real seed PurchaseOrders reaches Suppliers indirectly, through the supplier-site chain shown above.)</p>
+
+<p>A named code like <code>P2P</code> is expanded into its object list by the function <code>GET_CEMLI_SEQUENCE</code> in package <code>DMT_SCHEDULER_PKG</code> (<span class="fl">dmt_scheduler_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_scheduler_pkg.pkb.sql:16">16</a></span>). It reads the same registry — no object names appear in the code:</p>
+<pre><span class="k">FUNCTION</span> GET_CEMLI_SEQUENCE (
+    p_pipeline_code <span class="k">IN</span> VARCHAR2
+) <span class="k">RETURN</span> VARCHAR2 <span class="k">IS</span>
+    l_seq VARCHAR2(4000);
+<span class="k">BEGIN</span>
+    <span class="k">SELECT</span> LISTAGG(CEMLI_CODE, <span class="s">','</span>) <span class="k">WITHIN GROUP</span> (<span class="k">ORDER BY</span> SORT_ORDER)
+    <span class="k">INTO</span>   l_seq
+    <span class="k">FROM</span>   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+    <span class="k">WHERE</span>  PIPELINE_CODE = UPPER(p_pipeline_code)   <span class="c">-- 'P2P'</span>
+    <span class="k">AND</span>    EXEC_PROC <span class="k">IS NOT NULL</span>;
+    <span class="k">RETURN</span> l_seq;   <span class="c">-- 'Items,Suppliers,SupplierAddresses,...,PurchaseOrders,...'</span>
+<span class="k">END</span> GET_CEMLI_SEQUENCE;</pre>
+<p>That comma-separated list is what the submission procedure walks next, inserting one <code>DMT_WORK_QUEUE_TBL</code> row per object. A <code>STANDALONE:Suppliers</code> code skips this lookup — the object name is taken directly.</p>
+
+<h4>The two submission procedures — a frozen doorway and the real work</h4>
+<p>Submission is written as two procedures. The first is a public doorway kept unchanged for the old APEX app; the second does the actual work. Both are shown because callers reach the engine through the first.</p>
+<table>
+<tr><th>Procedure &amp; location</th><th>What it does</th></tr>
+<tr><td><strong>Doorway:</strong> <code>DMT_SUBMIT_RUN_V2</code><br><span class="fl">db/procedures/dmt_submit_run_v2.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/procedures/dmt_submit_run_v2.sql:3">3</a></span></td><td>A standalone procedure that exists only because the archived APEX app calls it by this exact name, so its signature is frozen. It does no work of its own — it forwards all five parameters straight to <code>SUBMIT_PIPELINE</code>. Keeping it thin means every submission goes through the one guarded path below.</td></tr>
+<tr><td><strong>Real work:</strong> <code>DMT_SCHEDULER_PKG.SUBMIT_PIPELINE</code> → <code>create_run_and_queue</code><br><span class="fl">dmt_scheduler_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_scheduler_pkg.pkb.sql:318">318</a></span> and <span class="fl">dmt_scheduler_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_scheduler_pkg.pkb.sql:139">139</a></span></td><td>Expands the pipeline codes into a flat object list, then does the guarded write: it locks the <code>USE_PREFIX</code> config row so two submissions cannot race, rejects any object already in an active run, draws one prefix for the run, and writes the rows. It <strong>only creates data</strong> — nothing executes here.</td></tr>
+</table>
+<p>The frozen doorway signature (one parameter per line):</p>
+<pre><span class="k">PROCEDURE</span> DMT_SUBMIT_RUN_V2 (
+    p_pipeline_codes  <span class="k">IN</span>  VARCHAR2,
+    p_scenario_name   <span class="k">IN</span>  VARCHAR2 <span class="k">DEFAULT</span> NULL,
+    p_run_mode        <span class="k">IN</span>  VARCHAR2 <span class="k">DEFAULT</span> <span class="s">'NEW'</span>,
+    p_on_failure      <span class="k">IN</span>  VARCHAR2 <span class="k">DEFAULT</span> <span class="s">'HALT'</span>,
+    p_submitted_by    <span class="k">IN</span>  VARCHAR2 <span class="k">DEFAULT</span> NULL,
+    x_run_id          <span class="k">OUT</span> NUMBER
+);</pre>
+
+<p><strong>What submission writes — two tables, and only these two:</strong></p>
+<ul style="margin:6px 0 2px">
+<li><strong>One</strong> row in <code>DMT_PIPELINE_RUN_TBL</code> — the run itself: a new <code>RUN_ID</code>, the scenario, the run mode, the prefix, and the on-failure policy.</li>
+<li><strong>One row per object</strong> in <code>DMT_WORK_QUEUE_TBL</code> — the work list. Each row carries its <code>CEMLI_CODE</code>, its <code>SORT_ORDER</code>, and its <code>DEPENDS_ON</code>. A row with no dependency starts <code>READY</code>; a row that depends on another object starts <code>PENDING</code> and waits (<span class="fl">dmt_scheduler_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_scheduler_pkg.pkb.sql:255">255</a></span>).</li>
+</ul>
+<p>After the commit the run exists on paper and nothing has run. From here on, the heartbeat moves it forward.</p>
+
+<h3>The heartbeat tick — the clock that drives every run</h3>
+<p><strong>Procedure:</strong> <code>DMT_QUEUE_PKG.HEARTBEAT_TICK</code> — <span class="fl">dmt_queue_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_pkg.pkb.sql:534">534</a></span>. It is a background database job that fires every 60 seconds. It is deliberately lightweight: it checks statuses and spawns short child jobs, and it makes no Fusion calls itself. The slow work — talking to Fusion, generating files — always runs inside the child jobs the tick spawns, never on the tick.</p>
+<p>Each tick runs the same seven phases in order. Every run in flight advances by whatever these phases can do in one pass:</p>
+<table>
+<tr><th>#</th><th>Phase</th><th>What it does</th></tr>
+<tr><td>1</td><td><code>run_preflights</code></td><td>Runs a new run's preflight checks (kept off the tick itself by spawning the live Fusion calls).</td></tr>
+<tr><td>2</td><td><code>promote_ready</code></td><td>Flips a <code>PENDING</code> row to <code>READY</code> once every object named in its <code>DEPENDS_ON</code> is done. This is where PurchaseOrders becomes runnable after Suppliers finishes.</td></tr>
+<tr><td>3</td><td><code>dispatch_ess_polls</code></td><td>Checks on Fusion load jobs that are already running and advances the rows waiting on them.</td></tr>
+<tr><td>4</td><td><code>dispatch_ready</code></td><td>Picks up <code>READY</code> rows and starts them — the dispatch step detailed below.</td></tr>
+<tr><td>5</td><td><code>dispatch_reconcile</code></td><td>Starts reconciliation for rows whose load has finished.</td></tr>
+<tr><td>6</td><td><code>handle_failures</code></td><td>Applies the on-failure policy and cascades a SKIP to the dependents of a failed object.</td></tr>
+<tr><td>7</td><td><code>rollup_run_statuses</code></td><td>Recomputes each run's overall status from the state of its work rows.</td></tr>
+</table>
+<p>Nothing pushes a run along except this tick. Submission leaves rows sitting in the queue; the next tick — within 60 seconds — is what actually starts the work.</p>
 
 <div class="ex">
 <span class="exh">Example — after submitting P2P</span>
@@ -103,19 +189,112 @@ Source rows as uploaded (STG tier, before anything runs):
 <div class="cap"><code>DMT_WORK_QUEUE_TBL</code> — two objects, PO waits on Suppliers</div>
 <table><tr><th>QUEUE_ID</th><th>CEMLI_CODE</th><th>SORT_ORDER</th><th>DEPENDS_ON</th><th>WORK_STATUS</th></tr>
 <tr><td>5001</td><td>Suppliers</td><td>20</td><td>(null)</td><td>READY</td></tr>
-<tr><td>5002</td><td>PurchaseOrders</td><td>80</td><td>Suppliers</td><td>READY</td></tr></table>
-<p>The heartbeat runs 5001 first. Suppliers is the simple set-based object — it loads and reaches <code>DONE</code>, leaving <code>Acme Supplies</code> confirmed in Fusion with <code>FUSION_VENDOR_ID = 300000012345</code>. Once 5001 is <code>DONE</code>, 5002 (PurchaseOrders) becomes eligible and the steps below run for it.</p>
+<tr><td>5002</td><td>PurchaseOrders</td><td>80</td><td>Suppliers</td><td>PENDING</td></tr></table>
+<p>Only 5001 starts <code>READY</code>; 5002 starts <code>PENDING</code> because it depends on Suppliers. The heartbeat runs 5001 first. Suppliers is the simple set-based object — it loads and reaches <code>DONE</code>, leaving <code>Acme Supplies</code> confirmed in Fusion with <code>FUSION_VENDOR_ID = 300000012345</code>. Once 5001 is <code>DONE</code>, the next tick's <code>promote_ready</code> flips 5002 (PurchaseOrders) to <code>READY</code> and the steps below run for it.</p>
 </div>
 
 <div class="step">
-<h3><span class="num">1</span>Dispatch — pick the object's procedure <span class="tag t-good">already catalog-driven</span></h3>
-<p><strong>Procedure:</strong> <code>DMT_QUEUE_WORKER_PKG.EXECUTE_ONE(p_queue_id IN NUMBER)</code> — <span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:293">293</a></span></p>
-<p><strong>Code inside:</strong> reads the queue row and its run row, then a single registry SELECT via <code>get_dispatch</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:15">15</a></span>):</p>
-<pre><span class="k">SELECT</span> EXEC_PROC, EXEC_MODE, RECON_PROC, RECON_HAS_CEMLI_ARG
-<span class="k">INTO</span>   ...
-<span class="k">FROM</span>   DMT_PIPELINE_DEF_TBL <span class="k">WHERE</span> CEMLI_CODE = p_cemli_code;</pre>
-<p>It sets <code>DMT_LOADER_PKG.g_async_mode := (EXEC_MODE='ASYNC')</code>, then calls the registered procedure <strong>by name</strong> through <code>invoke_registered</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:62">62</a></span>), which pattern-checks the name and runs one bound <code>EXECUTE IMMEDIATE</code>. There is no per-object branch here.</p>
-<p><strong>After the call:</strong> if the loader left an ESS id in <code>g_load_ess_id</code>, the row goes to <code>AWAITING_LOAD</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:385">385</a></span>) and the heartbeat polls from here; otherwise it routes to <code>RECONCILING</code> or straight to the accounting gate.</p>
+<h3><span class="num">1</span>Dispatch — pick the object and start its procedure</h3>
+<p>Dispatch happens in two procedures. First <code>dispatch_ready</code> (phase 4 of the tick) chooses the next object and hands it to a background job. Then that job runs <code>EXECUTE_ONE</code>, which looks up the object's procedure and calls it.</p>
+
+<p>The one thing to hold onto while reading: <code>dispatch_ready</code> never learns the object's procedure name. It only knows the <strong>queue id</strong>. It carries that id across to a fresh background session, and the name lookup happens over there, inside <code>EXECUTE_ONE</code>. Follow the queue id (<code>5002</code>) through the four blocks below.</p>
+
+<h4>Step 1a · Choose and claim the object — <code>dispatch_ready</code></h4>
+<p><span class="fl">dmt_queue_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_pkg.pkb.sql:258">258</a></span>. This is a cursor <code>FOR</code> loop: the <code>SELECT</code> in the parentheses is the cursor, and <code>rec</code> is the row variable the loop fills on each pass — one <code>READY</code> queue row at a time, lowest <code>SORT_ORDER</code> first.</p>
+<pre><span class="k">FOR</span> rec <span class="k">IN</span> (
+    <span class="k">SELECT</span> q.QUEUE_ID, q.RUN_ID, q.CEMLI_CODE, q.PARTITION_KEY
+    <span class="k">FROM</span>   DMT_WORK_QUEUE_TBL q
+    <span class="k">JOIN</span>   DMT_PIPELINE_RUN_TBL r <span class="k">ON</span> r.RUN_ID = q.RUN_ID
+    <span class="k">WHERE</span>  q.WORK_STATUS = <span class="s">'READY'</span>
+    <span class="k">AND</span>    r.PREFLIGHT_STATUS = <span class="s">'OK'</span>
+    <span class="k">ORDER BY</span> q.SORT_ORDER            <span class="c">-- lowest order first</span>
+) <span class="k">LOOP</span>
+    <span class="c">-- rec is one READY row: rec.QUEUE_ID = 5002, rec.CEMLI_CODE = 'PurchaseOrders', ...</span>
+
+    <span class="k">UPDATE</span> DMT_WORK_QUEUE_TBL           <span class="c">-- claim it so the next tick skips it</span>
+    <span class="k">SET</span>    WORK_STATUS = <span class="s">'PROCESSING'</span>, STARTED_AT = SYSTIMESTAMP
+    <span class="k">WHERE</span>  QUEUE_ID = rec.QUEUE_ID;
+    <span class="k">COMMIT</span>;
+
+    spawn_child(<span class="s">'DMT_WQ_'</span> || rec.QUEUE_ID,                                <span class="c">-- 'DMT_WQ_5002'</span>
+        <span class="s">'BEGIN DMT_OWNER.DMT_QUEUE_WORKER_PKG.EXECUTE_ONE('</span> || rec.QUEUE_ID || <span class="s">'); END;'</span>);
+<span class="k">END LOOP</span>;</pre>
+<p>The row is <strong>claimed</strong> — flipped to <code>PROCESSING</code> and committed so the next 60-second tick will not re-pick it — and then handed to <code>spawn_child</code>. Notice what is passed: the job name <code>DMT_WQ_5002</code> and a string of PL/SQL, <code>BEGIN ... EXECUTE_ONE(5002); END;</code>. Only the queue id <code>5002</code> is baked into that text. No procedure name, no run details — just the id.</p>
+
+<h4>Step 1b · Hand off to a background job — <code>spawn_child</code></h4>
+<p><span class="fl">dmt_queue_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_pkg.pkb.sql:71">71</a></span>. It takes the two strings it was given and creates a one-shot Oracle Scheduler job that runs that PL/SQL text in its own background session:</p>
+<pre><span class="k">PROCEDURE</span> spawn_child (
+    p_job_name <span class="k">IN</span> VARCHAR2,
+    p_plsql    <span class="k">IN</span> VARCHAR2
+) <span class="k">IS</span>
+<span class="k">BEGIN</span>
+    DBMS_SCHEDULER.CREATE_JOB(
+        job_name   =&gt; p_job_name,     <span class="c">-- 'DMT_WQ_5002'</span>
+        job_type   =&gt; <span class="s">'PLSQL_BLOCK'</span>,
+        job_action =&gt; p_plsql,        <span class="c">-- 'BEGIN ... EXECUTE_ONE(5002); END;'</span>
+        enabled    =&gt; TRUE,           <span class="c">-- starts running at once</span>
+        auto_drop  =&gt; TRUE);          <span class="c">-- deletes itself when finished</span>
+<span class="k">END</span> spawn_child;</pre>
+<p>That is the whole handoff. The heartbeat tick is now free — it did not run the load, it only launched a job that will. From here the work runs in that separate session, starting with <code>EXECUTE_ONE(5002)</code>. (This separation is also why the worker lives in its own package: a child job that depended back on the heartbeat's package would risk a library-cache deadlock.)</p>
+
+<h4>Step 1c · Look up the object's procedure — <code>EXECUTE_ONE</code> → <code>get_dispatch</code></h4>
+<p><span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:293">293</a></span>. Now in the background session, <code>EXECUTE_ONE</code> gets only the queue id. It reads the full queue row and run row into record variables, then calls <code>get_dispatch</code> to fill four OUT variables from the registry:</p>
+<pre><span class="k">PROCEDURE</span> EXECUTE_ONE (
+    p_queue_id <span class="k">IN</span> NUMBER
+) <span class="k">IS</span>
+    l_rec         DMT_WORK_QUEUE_TBL%<span class="k">ROWTYPE</span>;     <span class="c">-- the whole queue row</span>
+    l_run_rec     DMT_PIPELINE_RUN_TBL%<span class="k">ROWTYPE</span>;
+    l_exec_proc   VARCHAR2(200);                     <span class="c">-- get_dispatch fills these ↓</span>
+    l_exec_mode   VARCHAR2(10);
+    l_recon_proc  VARCHAR2(200);
+    l_recon_cemli VARCHAR2(1);
+<span class="k">BEGIN</span>
+    <span class="k">SELECT</span> * <span class="k">INTO</span> l_rec     <span class="k">FROM</span> DMT_WORK_QUEUE_TBL   <span class="k">WHERE</span> QUEUE_ID = p_queue_id;
+    <span class="k">SELECT</span> * <span class="k">INTO</span> l_run_rec <span class="k">FROM</span> DMT_PIPELINE_RUN_TBL <span class="k">WHERE</span> RUN_ID   = l_rec.RUN_ID;
+
+    <span class="c">-- registry lookup: reads DMT_PIPELINE_DEF_TBL for this object's CEMLI_CODE</span>
+    get_dispatch(l_rec.CEMLI_CODE, l_exec_proc, l_exec_mode, l_recon_proc, l_recon_cemli);
+    <span class="c">-- l_exec_proc is now 'DMT_LOADER_PKG.RUN_PURCHASE_ORDERS'</span></pre>
+<p>The queue id finally became a <strong>name</strong> here. <code>l_rec.CEMLI_CODE</code> is <code>'PurchaseOrders'</code> (read from the queue row), and <code>get_dispatch</code> uses it as the key. That procedure is the registry SELECT keyed on <code>CEMLI_CODE</code>, writing its answers back through the OUT parameters (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:15">15</a></span>):</p>
+<pre><span class="k">PROCEDURE</span> get_dispatch (
+    p_cemli_code          <span class="k">IN</span>  VARCHAR2,
+    x_exec_proc           <span class="k">OUT</span> VARCHAR2,
+    x_exec_mode           <span class="k">OUT</span> VARCHAR2,
+    x_recon_proc          <span class="k">OUT</span> VARCHAR2,
+    x_recon_has_cemli_arg <span class="k">OUT</span> VARCHAR2
+) <span class="k">IS</span>
+<span class="k">BEGIN</span>
+    <span class="k">SELECT</span> EXEC_PROC, EXEC_MODE, RECON_PROC, RECON_HAS_CEMLI_ARG
+    <span class="k">INTO</span>   x_exec_proc, x_exec_mode, x_recon_proc, x_recon_has_cemli_arg
+    <span class="k">FROM</span>   DMT_PIPELINE_DEF_TBL
+    <span class="k">WHERE</span>  CEMLI_CODE = p_cemli_code;   <span class="c">-- 'PurchaseOrders'</span>
+<span class="k">END</span> get_dispatch;</pre>
+<p>So <code>l_exec_proc</code> now holds the plain string <code>'DMT_LOADER_PKG.RUN_PURCHASE_ORDERS'</code>. If the object had no registry row, <code>get_dispatch</code> returns NULL and <code>EXECUTE_ONE</code> raises a clear error (ORA-20100) instead of guessing.</p>
+
+<h4>Step 1d · Build and run the call — <code>invoke_registered</code></h4>
+<p>Still in <code>EXECUTE_ONE</code>, the looked-up name is passed straight into <code>invoke_registered</code> — this is where <code>p_proc</code> comes from. It <em>is</em> <code>l_exec_proc</code>, the value <code>get_dispatch</code> just read from the table:</p>
+<pre>    DMT_LOADER_PKG.g_async_mode := (l_exec_mode = <span class="s">'ASYNC'</span>);
+
+    invoke_registered(
+        p_proc          =&gt; l_exec_proc,          <span class="c">-- &lt;-- the looked-up name becomes p_proc</span>
+        p_style         =&gt; <span class="s">'EXEC'</span>,
+        p_run_id        =&gt; l_rec.RUN_ID,
+        p_cemli_code    =&gt; l_rec.CEMLI_CODE,
+        p_scenario_name =&gt; l_run_rec.SCENARIO_NAME,
+        p_run_mode      =&gt; l_run_rec.RUN_MODE);</pre>
+<p>Inside <code>invoke_registered</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:62">62</a></span>), <code>p_proc</code> is that name. Because it is only known at run time — the point of the registry — the call is assembled as text and run with <code>EXECUTE IMMEDIATE</code>. The name is first checked against a strict <code>PKG.PROC</code> pattern so no unexpected text can reach the block, and every value is passed as a bind variable:</p>
+<pre><span class="k">IF NOT</span> REGEXP_LIKE(p_proc, <span class="s">'^[A-Z][A-Z0-9_$#]*\.[A-Z][A-Z0-9_$#]*$'</span>) <span class="k">THEN</span>
+    RAISE_APPLICATION_ERROR(-20102, <span class="s">'... not a valid PKG.PROC identifier'</span>);
+<span class="k">END IF</span>;
+
+<span class="k">EXECUTE IMMEDIATE</span>
+    <span class="s">'BEGIN '</span> || p_proc || <span class="s">'(p_run_id => :b1, p_scenario_name => :b2, '</span>
+    || <span class="s">'p_run_mode => :b3, p_skip_bu_refresh => TRUE); END;'</span>
+    <span class="k">USING</span> p_run_id, p_scenario_name, p_run_mode;</pre>
+<p>So for PurchaseOrders the statement that actually runs is <code>BEGIN DMT_LOADER_PKG.RUN_PURCHASE_ORDERS(p_run_id =&gt; :b1, ...); END;</code>. Trace the whole chain: <code>rec.QUEUE_ID</code> (5002) → baked into the job text → <code>EXECUTE_ONE(5002)</code> → <code>l_rec.CEMLI_CODE</code> ('PurchaseOrders') → <code>get_dispatch</code> → <code>l_exec_proc</code> → <code>p_proc</code> → the built <code>EXECUTE IMMEDIATE</code>. The object name came from the table at every step, never from the worker code. There is no per-object branch anywhere in this path.</p>
+
+<p><strong>After the call returns:</strong> if the loader left a Fusion job id in <code>g_load_ess_id</code>, the row moves to <code>AWAITING_LOAD</code> and later ticks poll it (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:385">385</a></span>); otherwise it routes to reconciliation or straight to the accounting gate.</p>
+
 <div class="ex">
 <span class="exh">Example — dispatching queue 5002</span>
 <p><code>EXECUTE_ONE(5002)</code> reads <code>CEMLI_CODE='PurchaseOrders'</code>, then <code>get_dispatch</code> returns the registry row:</p>
@@ -127,19 +306,42 @@ Source rows as uploaded (STG tier, before anything runs):
 </div>
 
 <div class="step">
-<h3><span class="num">2</span>The three-line object runner <span class="tag t-good">uniform</span></h3>
-<p><strong>Procedure:</strong> <code>RUN_PURCHASE_ORDERS(p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE)</code> — <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3421">3421</a></span></p>
+<h3><span class="num">2</span>The three-line object runner</h3>
+<p><strong>Procedure:</strong> <code>DMT_LOADER_PKG.RUN_PURCHASE_ORDERS</code> — <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3421">3421</a></span>. Every object's runner has this one signature (the shared <code>RUN_*</code> shape the registry documents):</p>
+<pre><span class="k">PROCEDURE</span> RUN_PURCHASE_ORDERS (
+    p_run_id          <span class="k">IN</span> NUMBER,
+    p_scenario_name   <span class="k">IN</span> VARCHAR2 <span class="k">DEFAULT</span> NULL,
+    p_run_mode        <span class="k">IN</span> VARCHAR2 <span class="k">DEFAULT</span> <span class="s">'NEW'</span>,
+    p_skip_bu_refresh <span class="k">IN</span> BOOLEAN  <span class="k">DEFAULT</span> FALSE
+);</pre>
+<p>Its whole body is three lines — resolve the scenario name to an id, then call the shared engine with the object's own CEMLI code:</p>
 <pre>resolve_scenario(p_scenario_name, v_scenario_id);      <span class="c">-- 'RegressionTest' -> scenario id</span>
-l_dummy := run_one_object_type(p_run_id, <span class="s">'PurchaseOrders'</span>, v_scenario_id, p_run_mode, p_skip_bu_refresh);</pre>
-<p>Every object's runner is this exact shape; only the literal changes (Suppliers used <code>RUN_SUPPLIERS</code> at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3326">3326</a></span>). <code>resolve_scenario</code> (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:39">39</a></span>) wraps <code>DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO</code>, returning the scenario id used to filter every step below.</p>
+l_dummy := run_one_object_type(
+    p_run_id, <span class="s">'PurchaseOrders'</span>, v_scenario_id, p_run_mode, p_skip_bu_refresh);</pre>
+<p>Only the literal changes per object (Suppliers uses <code>RUN_SUPPLIERS</code> at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3326">3326</a></span>). <code>resolve_scenario</code> (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:39">39</a></span>) wraps <code>DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO</code>, returning the scenario id that filters every step below.</p>
 </div>
 
 <div class="step">
 <h3><span class="num">3</span>The shared engine — five ordered steps</h3>
-<p><strong>Function:</strong> <code>run_one_object_type(p_run_id IN NUMBER, p_cemli_code IN VARCHAR2, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) RETURN BOOLEAN</code> — <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:993">993</a></span>. Standard locals declared at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1001">1001</a></span> (<code>l_zip, l_filename, l_job_name, l_ucm_account, l_interface_details, l_load_ess_id, l_import_ess_id, l_ess_user, l_ess_pass, l_param_list, l_load_status, l_obj</code>).</p>
+<p><strong>Function:</strong> <code>run_one_object_type</code> — <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:993">993</a></span>. This is the one body every object flows through:</p>
+<pre><span class="k">FUNCTION</span> run_one_object_type (
+    p_run_id          <span class="k">IN</span> NUMBER,
+    p_cemli_code      <span class="k">IN</span> VARCHAR2,
+    p_scenario_id     <span class="k">IN</span> NUMBER   <span class="k">DEFAULT</span> NULL,
+    p_run_mode        <span class="k">IN</span> VARCHAR2 <span class="k">DEFAULT</span> <span class="s">'NEW'</span>,
+    p_skip_bu_refresh <span class="k">IN</span> BOOLEAN  <span class="k">DEFAULT</span> FALSE
+) <span class="k">RETURN</span> BOOLEAN;</pre>
+<p>Standard locals are declared at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1001">1001</a></span> (<code>l_zip, l_filename, l_job_name, l_ucm_account, l_interface_details, l_load_ess_id, l_import_ess_id, l_ess_user, l_ess_pass, l_param_list, l_load_status, l_obj</code>). The five steps run in order.</p>
 
-<h4>Step 3.1 — Refresh lookups + ERP options <span class="tag t-good">generic</span></h4>
-<p>If <code>NOT p_skip_bu_refresh</code>: <code>DMT_UTIL_PKG.REFRESH_LOOKUPS</code> (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1216">1216</a></span>). Then <code>get_erp_options(p_cemli_code, x_ucm_account OUT, x_import_job_name OUT, x_interface_details_id OUT)</code> (defined <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:173">173</a></span>, called <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1226">1226</a></span>) fills the job/account/interface locals from <code>DMT_ERP_INTERFACE_OPTIONS_TBL</code> (converts the last <code>;</code> in the job name to <code>,</code>; raises ORA-20040 if unseeded). The per-object <code>ParameterList</code> override ladder follows at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1237">1237</a></span>. <span class="tag t-bad">ladder #1</span></p>
+<h4>Step 3.1 — Refresh lookups + read ERP options</h4>
+<p>If <code>NOT p_skip_bu_refresh</code>: <code>DMT_UTIL_PKG.REFRESH_LOOKUPS</code> (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1216">1216</a></span>). Then the object's row is read from <code>DMT_ERP_INTERFACE_OPTIONS_TBL</code> via:</p>
+<pre><span class="k">PROCEDURE</span> get_erp_options (
+    p_cemli_code           <span class="k">IN</span>  VARCHAR2,
+    x_ucm_account          <span class="k">OUT</span> VARCHAR2,
+    x_import_job_name      <span class="k">OUT</span> VARCHAR2,
+    x_interface_details_id <span class="k">OUT</span> VARCHAR2
+);   <span class="c">-- defined loader:173, called loader:1226</span></pre>
+<p>It fills the job/account/interface locals (converting the last <code>;</code> in the job name to <code>,</code>; raising ORA-20040 if the object is unseeded).</p>
 <div class="ex">
 <span class="exh">Example — ERP options for PurchaseOrders</span>
 <p><code>get_erp_options('PurchaseOrders', …)</code> reads the one seeded row (<code>ERP_INTERFACE_OPTIONS_ID = 21</code>, <span class="fl">db/seed/dmt_erp_interface_options_tbl.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/seed/dmt_erp_interface_options_tbl.sql:484">484</a></span>) and fills the locals with these <strong>real seeded values</strong>:</p>
@@ -148,11 +350,15 @@ l_dummy := run_one_object_type(p_run_id, <span class="s">'PurchaseOrders'</span>
 <tr><td><code>l_ucm_account</code></td><td>prc/purchaseOrder/import</td></tr>
 <tr><td><code>l_job_name</code></td><td>/oracle/apps/ess/prc/po/pdoi,ImportSPOJob <span class="muted">(seed holds <code>…/pdoi;ImportSPOJob</code>; last <code>;</code> → <code>,</code>)</span></td></tr>
 <tr><td><code>l_interface_details</code></td><td>21</td></tr></table>
-<p>The same row also carries the credential override <code>FUSION_USERNAME = 'calvin.roth'</code>, which <code>GET_CEMLI_CREDENTIALS('PurchaseOrders', …)</code> returns in Step 3.4 as <code>l_ess_user</code>. The <code>ParameterList</code> for PO is <em>not</em> set here — it is built per business unit inside the partition loop in Step 3.4, because it must carry that BU's id.</p>
+<p>The same row also carries the credential override <code>FUSION_USERNAME = 'calvin.roth'</code>, returned in Step 3.4 as <code>l_ess_user</code>. The PO <code>ParameterList</code> is <em>not</em> set here — it is built per business unit inside the partition loop in Step 3.4, because it must carry that BU's id.</p>
 </div>
 
-<h4>Step 3.2 — Validate <span class="tag t-bad">ladder #2</span></h4>
-<p>PurchaseOrders: <code>DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter=&gt;'Purchase Order')</code> (dispatched at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1329">1329</a></span>). When upstream checking is on, each header's vendor is joined to the supplier TFM and required to be <code>LOADED</code>. Bad rows are set <code>FAILED</code> with <code>[PRE_VALIDATION]</code> via <code>DMT_UTIL_PKG.APPEND_ERROR</code>. <code>COMMIT</code> at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1378">1378</a></span>.</p>
+<h4>Step 3.2 — Validate</h4>
+<p>PurchaseOrders calls its validator (dispatched at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1329">1329</a></span>):</p>
+<pre>DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(
+    p_run_id          =&gt; p_run_id,
+    p_doc_type_filter =&gt; <span class="s">'Purchase Order'</span>);</pre>
+<p>When upstream checking is on, each header's vendor is joined to the supplier TFM and required to be <code>LOADED</code>. Bad rows are set <code>FAILED</code> with the <code>[PRE_VALIDATION]</code> tag via <code>DMT_UTIL_PKG.APPEND_ERROR</code>. <code>COMMIT</code> at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1378">1378</a></span>.</p>
 <div class="ex">
 <span class="exh">Example — upstream vendor check</span>
 <p>Header <code>H1</code> references <code>Acme Supplies</code>, which reached <code>LOADED</code> when Suppliers ran earlier this run → <strong>passes</strong>, stays <code>NEW</code>. The counterfactual shows the failure path: had the PO named a vendor not loaded this run, the header STG row would be failed in place —</p>
@@ -162,7 +368,7 @@ l_dummy := run_one_object_type(p_run_id, <span class="s">'PurchaseOrders'</span>
 <tr><td><span class="muted">H9 (illustrative)</span></td><td>Ghost Co</td><td class="t-bad" style="background:none;color:var(--red)">FAILED</td><td>[PRE_VALIDATION] Supplier "Ghost Co" not LOADED in this run</td></tr></table>
 </div>
 
-<h4>Step 3.3 — Transform STG → TFM <span class="tag t-bad">ladder #3</span></h4>
+<h4>Step 3.3 — Transform STG → TFM</h4>
 <p>PurchaseOrders runs four sub-transforms in order (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1394">1394</a></span>): <code>TRANSFORM_HEADERS</code>, <code>TRANSFORM_LINES</code>, <code>TRANSFORM_LINE_LOCS</code>, <code>TRANSFORM_DISTS</code>, each with <code>p_doc_type_filter=&gt;'Purchase Order'</code>. They copy STG → TFM as <code>STAGED</code>, apply the run prefix to business keys, link children to their header by <code>INTERFACE_HEADER_KEY</code>, and flip the STG rows to <code>TRANSFORMED</code>. <code>COMMIT</code> at <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1478">1478</a></span>.</p>
 <div class="ex">
 <span class="exh">Example — the one-to-many lands in TFM</span>
@@ -177,48 +383,8 @@ l_dummy := run_one_object_type(p_run_id, <span class="s">'PurchaseOrders'</span>
 <p>The three STG source rows are now <code>TRANSFORMED</code>. (Line locations and distributions transform the same way; omitted here to keep the example to the header→line cardinality.)</p>
 </div>
 
-<h4>Step 3.3b — Transform-time error capture <span class="tag t-bad">proposed 2026-07-16</span></h4>
-<p>The CSV→STG bulk loader and Step 3.2 (validate) both isolate bad rows without aborting the batch; the transform insert must do the same, and today it does not. The transform is a single set-based <code>INSERT&hellip;SELECT</code>. If one row can't be built — a garbage date, a value too long, a NOT-NULL miss — the statement raises, <code>WHEN&nbsp;OTHERS</code> re-raises, and the <strong>whole object fails, clean rows included</strong>. That is the last unguarded lane in the pipeline.</p>
-<p>The three-part fix, symmetric with the load lane's <code>LOG ERRORS</code> standard (&sect;7):</p>
-<ol style="margin:4px 0 8px 18px;padding:0">
-  <li><strong>Non-throwing SELECT.</strong> Every typed conversion carries <code>DEFAULT NULL ON CONVERSION ERROR</code>, so a bad value becomes <code>NULL</code> instead of raising — the error then surfaces at the column boundary where it can be caught.</li>
-  <li><strong><code>LOG ERRORS</code> on the insert</strong> into one <em>shared</em> errlog, <code>DMT_TFM_ERRLOG</code> (5 control columns + <code>STG_SEQUENCE_ID</code> — the only data column, common to every TFM table, so one table serves all objects). Bad rows divert; good rows land.</li>
-  <li><strong>Fold + flag.</strong> This run+object's diverted rows are folded into <code>DMT_STG_TFM_ERROR_TBL</code> as <code>[TRANSFORM_ERROR]</code> with the real <code>ORA-</code> text, then <code>FLAG_STG_FAILED(p_run_id)</code> flips their STG rows FAILED — the same helper the validator uses, keyed on "has an error row this run," not on the tag.</li>
-</ol>
-<div class="ex">
-<span class="exh">Example — one header with a bad date: diverted, not fatal</span>
-<p>Two eligible header STG rows this run: <code>H1</code> (clean) and <code>H7</code> (its <code>CREATION_DATE</code> arrived as the text <code>'NOTADATE'</code>; the TFM column is <code>DATE NOT NULL</code>).</p>
-<div class="cap"><code>DMT_PO_HEADERS_INT_STG_TBL</code> — before</div>
-<table><tr><th>STG_SEQUENCE_ID</th><th>INTERFACE_HEADER_KEY</th><th>CREATION_DATE</th><th>STG_STATUS</th></tr>
-<tr><td>7001</td><td>H1</td><td>2026/03/01</td><td>NEW</td></tr>
-<tr><td>7007</td><td>H7</td><td>NOTADATE</td><td>NEW</td></tr></table>
-<pre>INSERT INTO dmt_po_headers_int_tfm_tbl ( STG_SEQUENCE_ID, RUN_ID, ..., CREATION_DATE, ..., TFM_STATUS )
-SELECT s.STG_SEQUENCE_ID, 9007, ...,
-       TO_DATE(s.CREATION_DATE <span class="s">DEFAULT NULL ON CONVERSION ERROR</span>, <span class="s">'YYYY/MM/DD'</span>), ...,
-       <span class="s">'STAGED'</span>
-FROM   dmt_po_headers_int_stg_tbl s WHERE ...eligible...
-LOG ERRORS INTO DMT_OWNER.DMT_TFM_ERRLOG (<span class="s">'R9007:PurchaseOrders'</span>) REJECT LIMIT UNLIMITED;</pre>
-<p>H7's bad date becomes <code>NULL</code> (rule 1), the <code>NOT NULL</code> column rejects it at insert, and <code>LOG ERRORS</code> shunts just that row (rule 2). H1 inserts normally.</p>
-<div class="cap"><code>DMT_PO_HEADERS_INT_TFM_TBL</code> — after (only the good row)</div>
-<table><tr><th>STG_SEQUENCE_ID</th><th>INTERFACE_HEADER_KEY</th><th>CREATION_DATE</th><th>TFM_STATUS</th></tr>
-<tr><td>7001</td><td>H1</td><td>2026-03-01</td><td>STAGED</td></tr></table>
-<div class="cap"><code>DMT_TFM_ERRLOG</code> — the shared scratch table, tagged for this run+object</div>
-<table><tr><th>ORA_ERR_TAG$</th><th>ORA_ERR_MESG$</th><th>STG_SEQUENCE_ID</th></tr>
-<tr><td>R9007:PurchaseOrders</td><td>ORA-01400: cannot insert NULL into (&hellip;CREATION_DATE)</td><td>7007</td></tr></table>
-<p>The fold copies that into the standard ledger and clears the scratch rows; <code>FLAG_STG_FAILED</code> flips the STG row (rule 3):</p>
-<div class="cap"><code>DMT_STG_TFM_ERROR_TBL</code> — after the fold</div>
-<table><tr><th>RUN_ID</th><th>CEMLI_CODE</th><th>SUB_OBJECT</th><th>STG_SEQUENCE_ID</th><th>ERROR_TEXT</th></tr>
-<tr><td>9007</td><td>PurchaseOrders</td><td>PO Headers</td><td>7007</td><td>[TRANSFORM_ERROR] ORA-01400: cannot insert NULL into (&hellip;CREATION_DATE)</td></tr></table>
-<div class="cap"><code>DMT_PO_HEADERS_INT_STG_TBL</code> — after</div>
-<table><tr><th>STG_SEQUENCE_ID</th><th>INTERFACE_HEADER_KEY</th><th>STG_STATUS</th></tr>
-<tr><td>7001</td><td>H1</td><td>TRANSFORMED</td></tr>
-<tr><td>7007</td><td>H7</td><td class="t-bad" style="background:none;color:var(--red)">FAILED</td></tr></table>
-<p><strong>Accounting balances:</strong> staged 2 = transformed 1 + transform-failed 1, unaccounted 0. One rotten row cost one row, not the object.</p>
-</div>
-<p><strong>The residual case — a statement-level throw <code>LOG ERRORS</code> can't trap</strong> (an error raised inside the SELECT projection despite rule 1, e.g. a scalar sub-query returning two rows). The transform's <code>WHEN&nbsp;OTHERS</code> is the fallback: re-process this object's rows one at a time so the true culprit is isolated and the clean rows still load — and if even that can't proceed, mark the whole candidate batch <code>[TRANSFORM_ERROR]</code> with <code>SQLERRM</code> so nothing is left unaccounted. Fast path for the 99%, slow row-by-row only for the poisoned batch.</p>
-
 <h4>Step 3.4 — Generate FBDI + submit load</h4>
-<p>PurchaseOrders is <em>partitioned</em> by <code>PRC_BU_NAME</code>: a <code>FOR bu_rec IN (SELECT DISTINCT PRC_BU_NAME … TFM_STATUS='STAGED')</code> loop (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1485">1485</a></span>) generates one zip per BU and calls the nested helper <code>submit_and_reconcile_one</code> (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1030">1030</a></span>) per value. The generator flips the emitted rows <code>STAGED → GENERATED</code>. <code>SUBMIT_LOAD</code> (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:228">228</a></span>) uploads the zip to UCM and returns the Load ESS id; in ASYNC mode the engine returns with <code>g_load_ess_id</code> set. <span class="tag t-bad">ladder #4 (grouped) + ladder #5 (set-based generate) + ladder #6 (load-fail marking, :<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:2862">2862</a>)</span></p>
+<p>PurchaseOrders is <em>partitioned</em> by <code>PRC_BU_NAME</code>: a <code>FOR bu_rec IN (SELECT DISTINCT PRC_BU_NAME … TFM_STATUS='STAGED')</code> loop (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1485">1485</a></span>) generates one zip per BU and submits it. The generator flips the emitted rows <code>STAGED → GENERATED</code>. <code>SUBMIT_LOAD</code> (<span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:228">228</a></span>) uploads the zip to UCM and returns the Load ESS id; in ASYNC mode the engine returns with <code>g_load_ess_id</code> set.</p>
 <div class="ex">
 <span class="exh">Example — one BU, one zip, two CSVs</span>
 <p>The distinct-BU cursor yields a single value, <code>US1 Business Unit</code>. Call:</p>
@@ -243,15 +409,18 @@ l_bu_load_id := SUBMIT_LOAD(... p_parameter_list =&gt; l_bu_param ...);         
 </div>
 
 <h4>Step 3.5 — Reconcile + the accounting gate <span class="tag t-good">Rule #1</span></h4>
-<p><strong>Async path (production):</strong> when the ESS jobs finish, the heartbeat calls <code>DMT_QUEUE_WORKER_PKG.RECONCILE_ONE(p_queue_id)</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:438">438</a></span>), which invokes the registered reconciler through <code>invoke_registered</code>, then calls the single terminal <code>apply_accounting_gate(p_queue_id, p_run_id, p_cemli_code)</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:241">241</a></span>) — the only writer of <code>WORK_STATUS='DONE'</code>. The gate's counts come from <code>ACCOUNT_ROWS</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:134">134</a></span>), which builds its SQL from the catalog rows for the object.</p>
-<p><strong>Sync/nested paths</strong> still reconcile through hardcoded ladders: nested helper <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1151">1151</a></span> <span class="tag t-bad">ladder #10</span>, sync path <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3000">3000</a></span> <span class="tag t-bad">ladder #7</span>, still-GENERATED count <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3063">3063</a></span> <span class="tag t-bad">ladder #8</span>, FAILED count <span class="fl">dmt_loader_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3135">3135</a></span> <span class="tag t-bad">ladder #9</span>.</p>
+<p>When the ESS jobs finish, the heartbeat calls <code>DMT_QUEUE_WORKER_PKG.RECONCILE_ONE(p_queue_id)</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:438">438</a></span>), which invokes the registered reconciler through <code>invoke_registered</code>, then calls the single terminal <code>apply_accounting_gate(p_queue_id, p_run_id, p_cemli_code)</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:241">241</a></span>) — the only writer of <code>WORK_STATUS='DONE'</code>. The gate's counts come from <code>ACCOUNT_ROWS</code> (<span class="fl">dmt_queue_worker_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:134">134</a></span>), which builds its SQL from the catalog rows for the object.</p>
 <div class="ex">
 <span class="exh">Example — BIP confirms, gate closes the item</span>
-<p>Polling shows Load <code>445566</code> and Import <code>445567</code> both <code>SUCCEEDED</code>; the queue row moves to <code>RECONCILING</code>. Then <code>DMT_PO_RESULTS_PKG.RECONCILE_BATCH(p_run_id=&gt;9007, p_load_ess_id=&gt;445566, p_import_ess_id=&gt;445567)</code> runs the BIP report and matches header rows on <code>DOCUMENT_NUM</code> (<span class="fl">dmt_po_results_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_po_results_pkg.pkb.sql:259">259</a></span>):</p>
+<p>Polling shows Load <code>445566</code> and Import <code>445567</code> both <code>SUCCEEDED</code>; the queue row moves to <code>RECONCILING</code>. Then the reconciler runs the BIP report and matches header rows on <code>DOCUMENT_NUM</code> (<span class="fl">dmt_po_results_pkg.pkb.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_po_results_pkg.pkb.sql:259">259</a></span>):</p>
+<pre>DMT_PO_RESULTS_PKG.RECONCILE_BATCH(
+    p_run_id        =&gt; 9007,
+    p_load_ess_id   =&gt; 445566,
+    p_import_ess_id =&gt; 445567);</pre>
 <div class="cap">BIP report row → update on <code>DMT_PO_HEADERS_INT_TFM_TBL</code></div>
 <table><tr><th>DOCUMENT_NUM</th><th>PO_HEADER_ID</th><th>PROCESS_CODE</th><th class="arrow">→ TFM_STATUS</th><th>→ FUSION_PO_HEADER_ID</th></tr>
 <tr><td>9007PO-1001</td><td>300100112</td><td>SUCCESS</td><td>LOADED</td><td>300100112</td></tr></table>
-<p>Both lines reconcile to <code>LOADED</code> under header <code>H1</code>. <strong>The reconciler must store the Fusion-assigned id it just matched onto the TFM row</strong> (here the PO header id <code>300100112</code> into the <code>FUSION_*_ID</code> column), not just flip the status &mdash; the BIP result already carries it, so it is one extra column in the LOADED UPDATE, not a second query. That stored id is the durable, user-independent handle to the migrated record: the &quot;Verify in Fusion&quot; REST check queries Fusion by it (an exact key lookup, no data-security scoping and no source-key&rarr;generated-number mapping), and re-runs or downstream objects reference the record by it. Discarding the returned id throws that handle away. (Coding-standards rule, &sect;7 &mdash; &quot;Reconciliation stores the Fusion-assigned unique id/key onto the TFM row&quot;; first wired on Requisitions via <code>FUSION_REQUISITION_HEADER_ID</code>.) Now the gate counts every PO TFM table the catalog lists:</p>
+<p>Both lines reconcile to <code>LOADED</code> under header <code>H1</code>. Now the gate counts every PO TFM table the catalog lists:</p>
 <div class="cap"><code>ACCOUNT_ROWS('PurchaseOrders')</code> reads <code>DMT_CEMLI_CATALOG_TBL</code> and counts</div>
 <table><tr><th>total</th><th>loaded</th><th>failed (with error text)</th><th>unaccounted</th><th class="arrow">→ WORK_STATUS</th></tr>
 <tr><td>3</td><td>3</td><td>0</td><td>0</td><td>DONE</td></tr></table>
@@ -260,106 +429,150 @@ l_bu_load_id := SUBMIT_LOAD(... p_parameter_list =&gt; l_bu_param ...);         
 <table><tr><th>INTERFACE_LINE_KEY</th><th>TFM_STATUS</th><th>ERROR_TEXT</th></tr>
 <tr><td>H1-L1</td><td>LOADED</td><td>(null)</td></tr>
 <tr><td>H1-L2</td><td class="t-bad" style="background:none;color:var(--red)">FAILED</td><td>[FUSION_ERROR] Item CM16443 not valid for US1 Business Unit</td></tr></table>
-<p>Counts become total 3, loaded 2, failed-with-error 1, unaccounted 0 → still <code>DONE</code> (every row is accounted for). But if that failed line had <strong>empty</strong> ERROR_TEXT, unaccounted = 1 → the whole item is <code>FAILED</code>. That is Rule #1 enforced by arithmetic.</p>
+<p>Counts become total 3, loaded 2, failed-with-error 1, unaccounted 0 → still <code>DONE</code> (every row is accounted for). But if that failed line had <strong>empty</strong> ERROR_TEXT, unaccounted = 1 → the whole item is <code>FAILED</code>. That is Rule #1 enforced by arithmetic: a row is "accounted" only if it is <code>LOADED</code>, or <code>FAILED</code> with a non-empty <code>ERROR_TEXT</code>.</p>
 </div>
 </div>
 
-<h2>Part B · The four-package family — actual vs. target signatures</h2>
-<p>Every object ships four packages (plus an optional runner): <code>_VALIDATOR_PKG</code>, <code>_TRANSFORM_PKG</code>, <code>_FBDI_GEN_PKG</code> (<code>_HDL_GEN_PKG</code> / <code>_FBL_GEN_PKG</code> for HCM/config), <code>_RESULTS_PKG</code>. Here is what Suppliers actually exposes, and the single signature every object <em>should</em> expose.</p>
+<h2 id="partB">Part B · The per-object contract</h2>
+<p>This part is normative. To add an object to the pipeline you must provide every artifact below. Nothing here requires editing the engine, the worker, or the scheduler — the object is defined entirely by <strong>registry rows</strong>, <strong>tables</strong>, and <strong>four packages plus a runner</strong> whose signatures match exactly. Each required signature is written one parameter per line; match the parameter names and defaults.</p>
 
-<table>
-<tr><th>Package</th><th>Suppliers — actual entry point(s)</th><th>Proposed uniform signature</th></tr>
-<tr><td>Validator</td><td><code>VALIDATE_SUPPLIERS(p_run_id)</code> (+ VALIDATE_ADDRESSES / _SITES / _SITE_ASSIGNMENTS / _CONTACTS)<br><span class="fl">dmt_poz_sup_validator_pkg.pks.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_validator_pkg.pks.sql:33">33</a></span></td><td><code>VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id DEFAULT NULL, p_run_mode DEFAULT 'NEW', p_validate_upstream DEFAULT 'N')</code></td></tr>
-<tr><td>Transform</td><td><code>TRANSFORM_SUPPLIERS(p_run_id, p_reprocess_errors DEFAULT FALSE, p_scenario_id DEFAULT NULL, p_include_untagged DEFAULT 'N', p_run_mode DEFAULT 'NEW')</code><br><span class="fl">dmt_poz_sup_transform_pkg.pks.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_transform_pkg.pks.sql:25">25</a></span></td><td><code>TRANSFORM(p_run_id, p_scenario_id DEFAULT NULL, p_run_mode DEFAULT 'NEW', p_reprocess_errors DEFAULT FALSE)</code> — drop dead <code>p_include_untagged</code></td></tr>
-<tr><td>Generator</td><td><code>GENERATE_FBDI(p_run_id, x_fbdi_zip OUT BLOB, x_filename OUT VARCHAR2)</code> — <strong>3 args, no csv_id</strong><br><span class="fl">dmt_poz_sup_fbdi_gen_pkg.pks.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_fbdi_gen_pkg.pks.sql:14">14</a></span></td><td><code>GENERATE_FBDI(p_run_id, x_fbdi_zip OUT BLOB, x_filename OUT VARCHAR2, x_fbdi_csv_id OUT NUMBER, p_partition IN VARCHAR2 DEFAULT NULL)</code> — one signature for all</td></tr>
-<tr><td>Results</td><td><code>RECONCILE_BATCH(p_run_id, p_cemli_code, p_load_ess_id, p_import_ess_id DEFAULT NULL)</code> — <strong>has cemli arg</strong><br><span class="fl">dmt_poz_sup_results_pkg.pks.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_results_pkg.pks.sql:32">32</a></span></td><td><code>RECONCILE_BATCH(p_run_id, p_cemli_code, p_load_ess_id, p_import_ess_id DEFAULT NULL)</code> — always carry cemli; retire the <code>RECON_HAS_CEMLI_ARG</code> split</td></tr>
-</table>
-<p class="muted">Note the PO example already shows the drift: its generator is the 4-arg form (<code>…, x_fbdi_csv_id</code>) with an extra <code>p_prc_bu_name</code> partition arg, while Suppliers' is the 3-arg form. Same stage, two shapes — see C4 below.</p>
+<h3>B.1 — Registry rows</h3>
 
-<h2>Part C · Discrepancy register — why it is not one path today</h2>
-<p>Severity: <span class="tag t-bad">high</span> blocks generalization / risks correctness · <span class="tag t-warn">med</span> drift &amp; maintenance cost · <span class="tag t-good">low</span> cosmetic.</p>
-
-<table>
-<tr><th>#</th><th>Discrepancy</th><th>Evidence</th><th>Sev.</th></tr>
-<tr><td>C1</td><td><strong>~10 hardcoded per-CEMLI ladders inside <code>run_one_object_type</code></strong> — param-list, validate, transform, 11 grouped blocks, non-grouped generate, load-fail marking, sync reconcile, still-generated count, failed count; plus a third reconcile ladder in the nested helper. Adding an object means editing every ladder, contradicting "registry insert, not engine edit."</td><td>loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1237">1237</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1318">1318</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1384">1384</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1485">1485</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:2733">2733</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:2862">2862</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3000">3000</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3063">3063</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3135">3135</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1151">1151</a></td><td><span class="tag t-bad">high</span></td></tr>
-<tr><td>C2</td><td><strong>Catalog-driven vs hardcoded, doing the same job twice.</strong> The worker already marks/counts rows generically off <code>DMT_CEMLI_CATALOG_TBL</code> (<code>MARK_GENERATED_ROWS_FAILED</code>, <code>ACCOUNT_ROWS</code> build dynamic SQL from <code>TFM_TABLE/STATUS_COLUMN/ROW_FILTER</code>). Ladders #6/#8/#9 in the loader re-implement exactly this by hand.</td><td>worker:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:134">134</a> and worker:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:199">199</a> (generic) vs loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:2862">2862</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3063">3063</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3135">3135</a> (hardcoded)</td><td><span class="tag t-bad">high</span></td></tr>
-<tr><td>C3</td><td><strong>Reconcile dispatch is registry-driven in one place, hardcoded in two.</strong> <code>RECONCILE_ONE</code> uses <code>invoke_registered</code>; the loader's sync path and nested helper keep full ELSIF chains — three call sites, two conventions.</td><td>worker:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:479">479</a> vs loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1151">1151</a>, loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3000">3000</a></td><td><span class="tag t-bad">high</span></td></tr>
-<tr><td>C4</td><td><strong>Generator signature varies:</strong> Suppliers family = 3-arg (no csv_id); most = 4-arg; Assets/PO add a partition arg. The engine wraps some calls in throwaway <code>DECLARE l_csv_id</code> blocks to absorb the difference — a signature can't be dispatched generically until it is uniform.</td><td>loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:2734">2734</a> vs loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:2746">2746</a> vs loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:2795">2795</a></td><td><span class="tag t-bad">high</span></td></tr>
-<tr><td>C5</td><td><strong>Reconciler signature varies</strong> (cemli arg present/absent), forcing the <code>RECON_HAS_CEMLI_ARG</code> flag and two <code>invoke_registered</code> styles.</td><td>results pks:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_results_pkg.pks.sql:32">32</a> vs the single-object form</td><td><span class="tag t-warn">med</span></td></tr>
-<tr><td>C6</td><td><strong>Validator entry-point naming drift.</strong> Standard says <code>VALIDATE_PRE_TRANSFORM</code> (or <code>VALIDATE_&lt;TYPE&gt;</code>); Suppliers uses five per-type names, PO/most use <code>VALIDATE_PRE_TRANSFORM</code> (some with <code>p_doc_type_filter</code>/<code>p_inv_type_filter</code>). Two conventions coexist.</td><td>validator pks:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_validator_pkg.pks.sql:33">33</a> vs loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1329">1329</a> and loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1349">1349</a></td><td><span class="tag t-warn">med</span></td></tr>
-<tr><td>C7</td><td><strong>Validators are not scenario-scoped, transforms are.</strong> <code>VALIDATE_*</code> take only <code>p_run_id</code>; the upstream orchestrator does not pass <code>p_scenario_id</code>, so pre-validation runs across all scenarios while transform is scenario-filtered.</td><td>validator pks:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_validator_pkg.pks.sql:30">30</a> and orchestrator validator pkb:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_validator_pkg.pkb.sql:185">185</a></td><td><span class="tag t-warn">med</span></td></tr>
-<tr><td>C8</td><td><strong>Dead <code>p_include_untagged</code> parameter</strong> still in all five supplier transform signatures (default <code>'N'</code>), though 7.1 / design section 12 removed the untagged-row switch end-to-end (scenarios are mandatory).</td><td>transform pks:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_transform_pkg.pks.sql:25">25</a></td><td><span class="tag t-warn">med</span></td></tr>
-<tr><td>C9</td><td><strong>Dead <code>l_fail_count</code></strong> declared and logged (always 0) but never incremented in all five supplier transforms — copy-paste residue.</td><td>transform pkb:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_transform_pkg.pkb.sql:39">39</a></td><td><span class="tag t-good">low</span></td></tr>
-<tr><td>C10</td><td><strong>Per-object XMLTABLE branches in the reconciler.</strong> <code>PARSE_AND_UPDATE</code> has one hand-written XMLTABLE + UPDATE per record type; adding a Fusion status value means editing several branches. Not blocking generalization of the <em>engine</em>, but the same drift pattern one level down.</td><td>results pkb:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_results_pkg.pkb.sql:115">115</a></td><td><span class="tag t-good">low</span></td></tr>
-</table>
-
-<div class="callout good">
-<strong>What is already right (keep it):</strong> the worker dispatch (<code>get_dispatch</code> + <code>invoke_registered</code>), the single accounting gate, and the catalog-driven <code>ACCOUNT_ROWS</code>/<code>MARK_GENERATED_ROWS_FAILED</code> are exactly the target pattern — the PO example in Step 3.5 rides entirely on them. Status literals (<code>STAGED/GENERATED/LOADED/FAILED</code>) and the <code>p_run_id</code> name are uniform across all four packages. The generalization is finishing a job that is already half done — not a rewrite.
+<div class="must">
+<strong>Required · one row in <code>DMT_PIPELINE_DEF_TBL</code></strong> — the dispatch row the worker reads (Part A, Step 1c). These are the real columns of the table today.
 </div>
-
-<h2>Part D · The generalization — one path for every object</h2>
-<p>The fix is to move the last per-object facts into the registries the engine already reads, and replace each ladder with the dispatch it already knows how to do. Three moves.</p>
-
-<h3>Move 1 — Add the missing dispatch columns to <code>DMT_PIPELINE_DEF_TBL</code></h3>
-<p>Today it registers the load and reconcile procs (<span class="fl">db/seed/dmt_pipeline_def_tbl.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/seed/dmt_pipeline_def_tbl.sql:14">14</a></span>). Register the other three stage procs and the partition rule too:</p>
 <table>
-<tr><th>New column</th><th>Holds</th><th>PurchaseOrders value</th><th>Retires</th></tr>
-<tr><td><code>VALIDATE_PROC</code></td><td><code>PKG.PROC</code> of the validator entry, or NULL</td><td><code>DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM</code></td><td>ladder #2</td></tr>
-<tr><td><code>TRANSFORM_PROCS</code></td><td>ordered CSV of <code>PKG.PROC</code>, invoked in order</td><td><code>…TRANSFORM_HEADERS, …TRANSFORM_LINES, …TRANSFORM_LINE_LOCS, …TRANSFORM_DISTS</code></td><td>ladder #3</td></tr>
-<tr><td><code>GEN_PROC</code></td><td><code>PKG.PROC</code> of the generator (uniform 5-arg signature)</td><td><code>DMT_PO_FBDI_GEN_PKG.GENERATE_FBDI</code></td><td>ladder #4/#5</td></tr>
-<tr><td><code>PARTITION_KEY_SQL</code></td><td>NULL = set-based; else the distinct-value SELECT that drives the per-partition loop</td><td><code>SELECT DISTINCT PRC_BU_NAME FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=:1 AND TFM_STATUS='STAGED'</code></td><td>the 11 grouped blocks</td></tr>
-<tr><td><code>PARAM_LIST_PROC</code></td><td>optional <code>PKG.PROC</code> returning the ESS ParameterList (per run or per partition value); default <code>'NEW,N'</code></td><td>a PO builder that emits <code>&lt;bu_id&gt;,…,&lt;bu_id&gt;_&lt;run&gt;</code></td><td>ladder #1</td></tr>
+<tr><th>Column</th><th>Meaning / allowed values</th><th>PurchaseOrders value</th></tr>
+<tr><td><code>PIPELINE_CODE</code></td><td>The object's one pipeline home. One of <code>P2P, O2C, PROJECTS, FINANCIALS, HCM, CONFIGURATION, TEST</code>.</td><td><code>P2P</code></td></tr>
+<tr><td><code>CEMLI_CODE</code></td><td>The object's canonical name. Unique across the table — one row per object.</td><td><code>PurchaseOrders</code></td></tr>
+<tr><td><code>SORT_ORDER</code></td><td>Run order within the pipeline (lower runs first).</td><td><code>80</code></td></tr>
+<tr><td><code>DEPENDS_ON</code></td><td>Comma-separated CEMLI codes that must reach DONE first, or NULL. The queue engine strips spaces.</td><td><code>Items,Requisitions,SupplierSiteAssignments,SupplierContacts</code></td></tr>
+<tr><td><code>EXEC_PROC</code></td><td><code>PKG.PROC</code> the worker invokes for the data phase — the object's runner. Must match the shared <code>RUN_*</code> signature. NULL = not dispatchable yet.</td><td><code>DMT_LOADER_PKG.RUN_PURCHASE_ORDERS</code></td></tr>
+<tr><td><code>EXEC_MODE</code></td><td><code>ASYNC</code> (loader returns after submitting the load; work item waits in AWAITING_LOAD — the FBDI/HDL default) · <code>SYNC</code> (loader runs its full inline cycle) · <code>LOCAL</code> (no Fusion load stage — the Mock test objects).</td><td><code>ASYNC</code></td></tr>
+<tr><td><code>RECON_PROC</code></td><td><code>PKG.PROC</code> the worker's <code>RECONCILE_ONE</code> invokes — the object's <code>RECONCILE_BATCH</code>. NULL = no queue-dispatched BIP reconcile (HDL objects reconcile inside their EXEC_PROC).</td><td><code>DMT_PO_RESULTS_PKG.RECONCILE_BATCH</code></td></tr>
+<tr><td><code>RECON_HAS_CEMLI_ARG</code></td><td><code>Y</code> = the reconciler takes <code>p_cemli_code</code> as its second parameter (shared supplier-family reconciler + the mock) · <code>N</code> = the standard three-argument signature.</td><td><code>N</code></td></tr>
+<tr><td><code>POSTRUN_JOB</code></td><td>Optional per-object post-run ESS job. NULL for almost every object (only Assets has one today).</td><td><code>(null)</code></td></tr>
 </table>
-<p><code>TFM_TABLE/STATUS_COLUMN/ROW_FILTER</code> already exist in <code>DMT_CEMLI_CATALOG_TBL</code> (<span class="fl">db/seed/dmt_cemli_catalog_tbl.sql:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/seed/dmt_cemli_catalog_tbl.sql:32">32</a></span>) — PurchaseOrders already has four rows there (headers/lines/locs/dists), which is exactly what the gate used in Step 3.5, and all that ladders #6/#8/#9 need.</p>
 
-<h3>Move 2 — Standardize the four package signatures (Part B, right column)</h3>
-<p>Uniform <code>GENERATE_FBDI</code> (5-arg) and uniform <code>RECONCILE_BATCH</code> (always carry <code>p_cemli_code</code>) are the two that unblock generic dispatch. Multi-record objects keep their internal sub-steps (PO headers/lines/locs/dists) <em>inside</em> their one registered <code>TRANSFORM</code>/<code>GENERATE_FBDI</code>, so the engine still sees one call.</p>
+<div class="must">
+<strong>Required · one row per TFM table in <code>DMT_CEMLI_CATALOG_TBL</code></strong> — the accounting catalog the gate and the failure-marker read (Part A, Step 3.5). A single-table object has one row; PurchaseOrders has four (headers, lines, line locations, distributions).
+</div>
+<table>
+<tr><th>Column</th><th>Meaning</th><th>PurchaseOrders (headers row)</th></tr>
+<tr><td><code>CEMLI_CODE</code></td><td>The object this record type belongs to.</td><td><code>PurchaseOrders</code></td></tr>
+<tr><td><code>DISPLAY_NAME</code></td><td>Human label for the record type. Unique across the table.</td><td><code>Purchase Order Headers</code></td></tr>
+<tr><td><code>TFM_TABLE</code></td><td>The TFM table the gate counts rows in.</td><td><code>DMT_PO_HEADERS_INT_TFM_TBL</code></td></tr>
+<tr><td><code>STATUS_COLUMN</code></td><td>The status column in that table. Defaults to <code>TFM_STATUS</code> when NULL.</td><td><code>TFM_STATUS</code></td></tr>
+<tr><td><code>ROW_FILTER</code></td><td>Optional extra WHERE predicate to scope which rows count (e.g. a doc-type filter), or NULL.</td><td><code>(null)</code></td></tr>
+<tr><td><code>SORT_ORDER</code></td><td>Order of record types within the object. Unique per <code>(CEMLI_CODE, SORT_ORDER)</code>.</td><td><code>10</code></td></tr>
+</table>
 
-<h3>Move 3 — Collapse the engine to registry dispatch + existing generic helpers</h3>
-<p><code>run_one_object_type</code> becomes one linear body — no CEMLI names in it:</p>
-<pre><span class="c">-- read the object's dispatch row once</span>
-def := get_pipeline_def(p_cemli_code);            <span class="c">-- VALIDATE_PROC, TRANSFORM_PROCS, GEN_PROC, PARTITION_KEY_SQL, PARAM_LIST_PROC</span>
-
-<span class="k">1.</span> refresh_lookups (unless skipped); get_erp_options(...);   <span class="c">-- already generic</span>
-   l_param_list := call_param_list_proc(def, ...);          <span class="c">-- or 'NEW,N'</span>
-<span class="k">2.</span> invoke(def.VALIDATE_PROC, p_run_id, p_scenario_id, p_run_mode, p_validate_upstream);
-<span class="k">3.</span> <span class="k">FOR</span> proc <span class="k">IN</span> def.TRANSFORM_PROCS <span class="k">LOOP</span> invoke(proc, p_run_id, p_scenario_id, p_run_mode); <span class="k">END LOOP</span>;
-<span class="k">4.</span> <span class="k">IF</span> def.PARTITION_KEY_SQL <span class="k">IS NULL THEN</span>
-       invoke_gen(def.GEN_PROC, p_run_id, l_zip, l_filename, l_csv_id);      <span class="c">-- set-based (Suppliers)</span>
-       submit_and_reconcile_one(l_zip, l_filename, l_csv_id, l_param_list, ...);
-   <span class="k">ELSE</span>
-       <span class="k">FOR</span> v <span class="k">IN</span> (<span class="k">EXECUTE</span> def.PARTITION_KEY_SQL <span class="k">USING</span> p_run_id) <span class="k">LOOP</span>   <span class="c">-- PO: one row per PRC_BU_NAME</span>
-           invoke_gen(def.GEN_PROC, p_run_id, l_zip, l_filename, l_csv_id, v.key);
-           l_param_list := call_param_list_proc(def, v.key);
-           submit_and_reconcile_one(l_zip, l_filename, l_csv_id, l_param_list, v.key, ...);
-       <span class="k">END LOOP</span>;
-   <span class="k">END IF</span>;
-<span class="c">-- on load failure anywhere:</span> DMT_QUEUE_WORKER_PKG.MARK_GENERATED_ROWS_FAILED(p_run_id, p_cemli_code, '[LOAD_ERROR] ...');
-<span class="c">-- reconcile + terminal decision: the ONE registry-driven path already in RECONCILE_ONE / apply_accounting_gate</span></pre>
-<p>The PO run in Part A would execute exactly this: <code>PARTITION_KEY_SQL</code> yields <code>US1 Business Unit</code>, the loop generates one zip, submits, and the same accounting gate closes the item. No PO literal anywhere. The nested <code>submit_and_reconcile_one</code> loses its ELSIF reconcile chain and calls <code>invoke_registered(def.RECON_PROC, …)</code> — the same call <code>RECONCILE_ONE</code> already uses. Ladders #6/#8/#9 disappear into the two generic worker procedures. Result: <strong>one linear engine, zero CEMLI literals</strong>.</p>
-
-<h3>Frozen constants (stop the drift returning)</h3>
+<div class="must">
+<strong>Required · seed rows in the option and report tables</strong>
+</div>
 <ul>
-<li><strong>Statuses</strong> — define once in <code>DMT_UTIL_PKG</code> and reference everywhere (no bare <code>'STAGED'</code>): STG <code>NEW/RETRY/TRANSFORMED/FAILED</code>; TFM <code>STAGED/GENERATED/LOADED/FAILED</code>; WORK <code>READY/VALIDATING/AWAITING_LOAD/AWAITING_IMPORT/RECONCILING/DONE/FAILED</code>.</li>
-<li><strong>Error tags</strong> — frozen set: <code>[PRE_VALIDATION] · [LOAD_ERROR] · [FUSION_ERROR] · [RECONCILE_ERROR]</code>, appended only via <code>APPEND_ERROR</code>, never overwritten.</li>
-<li><strong>ESS outcome constants</strong> — already exist in the loader body (<code>C_STATUS_SUCCEEDED/WARNING/FAILED/ERROR/EXPIRED</code>); promote to the shared package so poll and engine share them.</li>
+<li><strong><code>DMT_ERP_INTERFACE_OPTIONS_TBL</code></strong> — one row: the import ESS job name, the UCM account, the interface-details id, and an optional Fusion credential override. Read in Step 3.1; a missing row raises ORA-20040.</li>
+<li><strong><code>DMT_BIP_REPORT_TBL</code></strong> — the reconciliation report path used by the object's <code>RECONCILE_BATCH</code> (deploy the data model + report to <code>/Custom/DMT2/</code>).</li>
 </ul>
 
-<h2>Part E · The one path — new-object recipe (target end-state)</h2>
+<h3>B.2 — Tables</h3>
+<div class="must">
+<strong>Required · one <code>_STG_TBL</code> and one <code>_TFM_TBL</code> per record type</strong>, named <code>DMT_&lt;STEM&gt;_STG_TBL</code> / <code>DMT_&lt;STEM&gt;_TFM_TBL</code>.
+</div>
+<p>Every such table must carry the standard status and error columns so the shared status flow and the accounting gate work unchanged:</p>
+<table>
+<tr><th>Tier</th><th>Status column</th><th>Allowed status values</th><th>Error column</th></tr>
+<tr><td>STG (source)</td><td><code>STG_STATUS</code></td><td><code>NEW</code> → <code>RETRY</code> → <code>TRANSFORMED</code> / <code>FAILED</code></td><td rowspan="2"><code>ERROR_TEXT</code> — appended to via <code>DMT_UTIL_PKG.APPEND_ERROR</code>, never overwritten</td></tr>
+<tr><td>TFM (target)</td><td><code>TFM_STATUS</code></td><td><code>STAGED</code> → <code>GENERATED</code> → <code>LOADED</code> / <code>FAILED</code></td></tr>
+</table>
+<p>Child record types link to their header by the object's business key (PurchaseOrders uses <code>INTERFACE_HEADER_KEY</code>). The run prefix is applied to business keys during transform; names resolved against Fusion (like <code>PRC_BU_NAME</code>) are never prefixed.</p>
+
+<h3>B.3 — The four packages + the runner</h3>
+<p>Every object ships four packages — a validator, a transform, a generator, and a results (reconciler) — plus a three-line runner in <code>DMT_LOADER_PKG</code>. The generator is <code>_FBDI_GEN_PKG</code> for FBDI objects (<code>_HDL_GEN_PKG</code> / <code>_FBL_GEN_PKG</code> for HCM / configuration). Each must expose the entry point below with exactly this signature.</p>
+
+<div class="must"><strong>Required · the runner</strong> — registered as <code>EXEC_PROC</code>. Three lines: resolve the scenario, call the engine with the object's CEMLI code.</div>
+<pre><span class="k">PROCEDURE</span> RUN_&lt;OBJECT&gt; (
+    p_run_id          <span class="k">IN</span> NUMBER,
+    p_scenario_name   <span class="k">IN</span> VARCHAR2 <span class="k">DEFAULT</span> NULL,
+    p_run_mode        <span class="k">IN</span> VARCHAR2 <span class="k">DEFAULT</span> <span class="s">'NEW'</span>,
+    p_skip_bu_refresh <span class="k">IN</span> BOOLEAN  <span class="k">DEFAULT</span> FALSE
+);</pre>
+
+<div class="must"><strong>Required · the validator</strong> — <code>DMT_&lt;STEM&gt;_VALIDATOR_PKG</code>. One entry point that flips bad STG rows to <code>FAILED</code> with a <code>[PRE_VALIDATION]</code> tag before transform.</div>
+<pre><span class="k">PROCEDURE</span> VALIDATE_PRE_TRANSFORM (
+    p_run_id          <span class="k">IN</span> NUMBER,
+    p_scenario_id     <span class="k">IN</span> NUMBER   <span class="k">DEFAULT</span> NULL,
+    p_run_mode        <span class="k">IN</span> VARCHAR2 <span class="k">DEFAULT</span> <span class="s">'NEW'</span>,
+    p_validate_upstream <span class="k">IN</span> VARCHAR2 <span class="k">DEFAULT</span> <span class="s">'N'</span>
+);
+<span class="c">-- Set p_validate_upstream ON when the object depends on same-run data</span>
+<span class="c">-- (PurchaseOrders depends on Suppliers); OFF when its references already</span>
+<span class="c">-- exist in Fusion. Objects that filter by document/type may add a single</span>
+<span class="c">-- p_doc_type_filter / p_inv_type_filter parameter.</span></pre>
+
+<div class="must"><strong>Required · the transform</strong> — <code>DMT_&lt;STEM&gt;_TRANSFORM_PKG</code>. One entry point that copies STG → TFM as <code>STAGED</code>, applies the prefix, links children to headers, and flips STG rows to <code>TRANSFORMED</code>. Multi-record objects keep their sub-steps (headers/lines/locations/distributions) <em>inside</em> this one call.</div>
+<pre><span class="k">PROCEDURE</span> TRANSFORM (
+    p_run_id          <span class="k">IN</span> NUMBER,
+    p_scenario_id     <span class="k">IN</span> NUMBER   <span class="k">DEFAULT</span> NULL,
+    p_run_mode        <span class="k">IN</span> VARCHAR2 <span class="k">DEFAULT</span> <span class="s">'NEW'</span>,
+    p_reprocess_errors <span class="k">IN</span> BOOLEAN  <span class="k">DEFAULT</span> FALSE
+);</pre>
+
+<div class="must"><strong>Required · the generator</strong> — <code>DMT_&lt;STEM&gt;_FBDI_GEN_PKG</code>. One entry point that writes the FBDI zip and flips the emitted rows <code>STAGED → GENERATED</code>. The optional <code>p_partition</code> carries the partition value for partitioned objects (a business unit, a book) and is NULL for set-based objects.</div>
+<pre><span class="k">PROCEDURE</span> GENERATE_FBDI (
+    p_run_id      <span class="k">IN</span>  NUMBER,
+    x_fbdi_zip    <span class="k">OUT</span> BLOB,
+    x_filename    <span class="k">OUT</span> VARCHAR2,
+    x_fbdi_csv_id <span class="k">OUT</span> NUMBER,
+    p_partition   <span class="k">IN</span>  VARCHAR2 <span class="k">DEFAULT</span> NULL
+);</pre>
+
+<div class="must"><strong>Required · the results / reconciler</strong> — <code>DMT_&lt;STEM&gt;_RESULTS_PKG</code>. One entry point that runs the BIP report and flips matched TFM rows to <code>LOADED</code> (or <code>FAILED</code> with a <code>[FUSION_ERROR]</code> tag). Registered as <code>RECON_PROC</code>.</div>
+<pre><span class="k">PROCEDURE</span> RECONCILE_BATCH (
+    p_run_id        <span class="k">IN</span> NUMBER,
+    p_cemli_code    <span class="k">IN</span> VARCHAR2,
+    p_load_ess_id   <span class="k">IN</span> NUMBER,
+    p_import_ess_id <span class="k">IN</span> NUMBER <span class="k">DEFAULT</span> NULL
+);
+<span class="c">-- If the object registers RECON_HAS_CEMLI_ARG = 'N', the worker calls the</span>
+<span class="c">-- three-argument form (p_run_id, p_load_ess_id, p_import_ess_id) instead;</span>
+<span class="c">-- keep the object on ONE of the two shapes and set the flag to match.</span></pre>
+
+<div class="callout good">
+<strong>Why no engine edit is needed.</strong> The worker's dispatch (<code>get_dispatch</code> + <code>invoke_registered</code>), the single accounting gate, and the catalog-driven <code>ACCOUNT_ROWS</code> / <code>MARK_GENERATED_ROWS_FAILED</code> read everything about an object from the rows and packages above. Status literals (<code>STAGED/GENERATED/LOADED/FAILED</code>) and the <code>p_run_id</code> parameter name are uniform across all four packages. Provide the rows, tables, and matching signatures and the object flows the Part A path with no code change to the shared machinery.
+</div>
+
+<h2 id="partC">Part C · New-object checklist</h2>
+<p>The contract of Part B as an ordered build list. Each item links to its Part B requirement.</p>
 <ol class="recipe">
-<li>Add one row to <code>DMT_PIPELINE_DEF_TBL</code> — <code>CEMLI_CODE, SORT_ORDER, DEPENDS_ON, EXEC_MODE, EXEC_PROC, VALIDATE_PROC, TRANSFORM_PROCS, GEN_PROC, RECON_PROC, PARTITION_KEY_SQL, PARAM_LIST_PROC, POSTRUN_JOB</code>.</li>
-<li>Add one row per TFM table to <code>DMT_CEMLI_CATALOG_TBL</code> — <code>TFM_TABLE, STATUS_COLUMN='TFM_STATUS', ROW_FILTER, SORT_ORDER</code>.</li>
+<li>Add one row to <code>DMT_PIPELINE_DEF_TBL</code> (B.1) — <code>PIPELINE_CODE, CEMLI_CODE, SORT_ORDER, DEPENDS_ON, EXEC_PROC, EXEC_MODE, RECON_PROC, RECON_HAS_CEMLI_ARG, POSTRUN_JOB</code>.</li>
+<li>Add one row per TFM record type to <code>DMT_CEMLI_CATALOG_TBL</code> (B.1) — <code>CEMLI_CODE, DISPLAY_NAME, TFM_TABLE, STATUS_COLUMN, ROW_FILTER, SORT_ORDER</code>.</li>
 <li>Seed <code>DMT_ERP_INTERFACE_OPTIONS_TBL</code> (job name, UCM account, interface-details id, optional credential override) and <code>DMT_BIP_REPORT_TBL</code> (reconciliation report path).</li>
-<li>Create <code>DMT_&lt;STEM&gt;_STG_TBL</code> / <code>_TFM_TBL</code> with the standard status + <code>ERROR_TEXT</code> columns.</li>
-<li>Build the four packages to the <strong>uniform</strong> signatures in Part B — one validator entry, one transform entry (sub-steps internal), one 5-arg generator, one <code>RECONCILE_BATCH</code>.</li>
-<li>Add the three-line <code>RUN_&lt;OBJECT&gt;</code> to <code>DMT_LOADER_PKG</code> (or retire runners entirely once <code>EXEC_PROC</code> can point at a single generic <code>RUN_OBJECT</code>).</li>
-<li>Decide <code>p_validate_upstream</code> default (ON if it depends on same-run data — like PO on Suppliers; OFF if references pre-exist in Fusion). Set <code>PARTITION_KEY_SQL</code> only if it partitions.</li>
+<li>Create <code>DMT_&lt;STEM&gt;_STG_TBL</code> / <code>_TFM_TBL</code> with the standard status columns (<code>STG_STATUS</code> / <code>TFM_STATUS</code>) and <code>ERROR_TEXT</code> (B.2).</li>
+<li>Build the four packages to the exact signatures in B.3 — one validator entry, one transform entry (sub-steps internal), one generator, one <code>RECONCILE_BATCH</code>.</li>
+<li>Add the three-line <code>RUN_&lt;OBJECT&gt;</code> to <code>DMT_LOADER_PKG</code> and register it as <code>EXEC_PROC</code>.</li>
+<li>Decide <code>p_validate_upstream</code>'s default (ON if the object depends on same-run data — like PO on Suppliers; OFF if its references already exist in Fusion).</li>
 <li>Deploy the BIP data model + report to <code>/Custom/DMT2/</code>; write <code>objects/&lt;Name&gt;/README.md</code>.</li>
 <li>Run end-to-end under a test prefix — GOOD rows reach <code>LOADED</code>, BAD rows reach <code>FAILED</code> with reportable <code>ERROR_TEXT</code> (Rule #1). <strong>No engine edit at any step.</strong></li>
 </ol>
 
+<h2 id="appendix">Appendix · Known drift from this standard <span class="tag t-warn">revision deferred</span></h2>
+<p>The standard above is the target every object should follow. Some existing code has not fully caught up — mostly hardcoded per-object branches inside the engine that predate the catalog-driven dispatch, and a few package signatures that vary from B.3. These gaps are recorded here so nothing is lost, but they are <strong>out of scope for this document's purpose</strong> and left for a later revision. Severity: <span class="tag t-bad">high</span> blocks generalization / risks correctness · <span class="tag t-warn">med</span> drift &amp; maintenance cost · <span class="tag t-good">low</span> cosmetic.</p>
+<table>
+<tr><th>#</th><th>Gap against the standard</th><th>Evidence</th><th>Sev.</th></tr>
+<tr><td>C1</td><td>Hardcoded per-CEMLI ladders inside <code>run_one_object_type</code> (param-list, validate, transform, grouped-generate, load-fail marking, sync reconcile, still-generated count, failed count) instead of pure registry dispatch. <strong>The P1 fix is tracked in <code>docs/DMT_DESIGN.html</code> section 12: move all per-object logic into each object's package and invoke it through the one existing <code>EXECUTE IMMEDIATE</code>, so no IF/THEN literals remain.</strong></td><td>loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1237">1237</a>, :<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1318">1318</a>, :<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1485">1485</a>, :<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3000">3000</a></td><td><span class="tag t-bad">high</span></td></tr>
+<tr><td>C2</td><td>The loader re-implements by hand the row marking/counting the worker already does generically from <code>DMT_CEMLI_CATALOG_TBL</code>.</td><td>worker:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:134">134</a> (generic) vs loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:2862">2862</a> (hardcoded)</td><td><span class="tag t-bad">high</span></td></tr>
+<tr><td>C3</td><td>Reconcile dispatch is registry-driven in the worker but keeps hardcoded ELSIF chains in the loader's sync path and nested helper — three call sites, two conventions.</td><td>worker:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_queue_worker_pkg.pkb.sql:479">479</a> vs loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1151">1151</a>, :<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:3000">3000</a></td><td><span class="tag t-bad">high</span></td></tr>
+<tr><td>C4</td><td>Generator signature varies from B.3: Suppliers family is 3-arg (no <code>x_fbdi_csv_id</code>); PO/Assets add a partition arg. Not yet uniform.</td><td>gen pks:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_fbdi_gen_pkg.pks.sql:14">14</a></td><td><span class="tag t-bad">high</span></td></tr>
+<tr><td>C5</td><td>Reconciler signature varies (cemli arg present/absent), which is why <code>RECON_HAS_CEMLI_ARG</code> exists as a flag rather than one shape for all.</td><td>results pks:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_results_pkg.pks.sql:32">32</a></td><td><span class="tag t-warn">med</span></td></tr>
+<tr><td>C6</td><td>Validator entry-point naming drift: Suppliers uses five per-type names; PO/most use <code>VALIDATE_PRE_TRANSFORM</code>. Two conventions coexist.</td><td>validator pks:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_validator_pkg.pks.sql:33">33</a> vs loader:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_loader_pkg.pkb.sql:1329">1329</a></td><td><span class="tag t-warn">med</span></td></tr>
+<tr><td>C7</td><td>Validators take only <code>p_run_id</code> (not scenario-scoped) while transforms are scenario-filtered, so pre-validation can run across scenarios.</td><td>validator pks:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_validator_pkg.pks.sql:30">30</a></td><td><span class="tag t-warn">med</span></td></tr>
+<tr><td>C8</td><td>Dead <code>p_include_untagged</code> parameter still in the supplier transform signatures, though scenarios are mandatory and the switch was removed.</td><td>transform pks:<a class="src" href="vscode://file/C:/Users/Monroe/workspace/DMT2/db/packages/dmt_poz_sup_transform_pkg.pks.sql:25">25</a></td><td><span class="tag t-warn">med</span></td></tr>
+</table>
+<p class="muted">The direction to close these (deferred): move the last per-object facts — the validate/transform/generate procedure names and any partition rule — into <code>DMT_PIPELINE_DEF_TBL</code> as new columns, standardize the generator and reconciler signatures to B.3, and replace each hardcoded ladder in <code>run_one_object_type</code> with the registry dispatch the worker already uses. When that lands, the engine body becomes one linear path with zero CEMLI literals, and Part B is fully enforced rather than partly convention.</p>
+
 <hr>
-<p class="muted">Prepared for review — no code or canonical-doc changes made. Mock data (run 9007, Acme Supplies, PO-1001, ESS ids, Fusion ids, ERP option values) is illustrative, chosen to show the shape of each table; column names, procedure names, and line references are from the current code. Once the direction is agreed, the natural next steps are: (1) land the uniform generator + reconciler signatures, (2) add the <code>DMT_PIPELINE_DEF_TBL</code> columns and backfill, (3) collapse the engine ladders one at a time behind the regression scenario, each change gated green before the next. Section and rule numbers refer to <code>docs/DMT_DESIGN.html</code>.</p>
+<p class="muted">Mock data (run 9007, Acme Supplies, PO-1001, ESS ids, Fusion ids, ERP option values) is illustrative, chosen to show the shape of each table; column names, procedure names, registry columns, and line references are from the current code. Part A teaches the flow; Part B and Part C are the contract for building a new object; the Appendix lists deferred gaps between current code and that contract.</p>
 
 </div>
 </body>
