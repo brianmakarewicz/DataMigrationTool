@@ -289,6 +289,7 @@
                 -- Tier 2: Found in FA_ADDITIONS_B = positively LOADED
                 UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
+                       FUSION_ASSET_ID      = r.fusion_id,
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
@@ -301,6 +302,7 @@
                 IF r.import_status IN ('POSTED','POST','Y','PROCESSED','SUCCESS','COMPLETED') THEN
                     UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
+                           FUSION_ASSET_ID      = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id

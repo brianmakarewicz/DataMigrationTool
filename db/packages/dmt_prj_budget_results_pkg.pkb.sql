@@ -271,6 +271,7 @@ AS
                 -- Tier 2: Found in base table = positively LOADED
                 UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
+                       FUSION_BUDGET_VERSION_ID = r.fusion_id,
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
@@ -284,6 +285,7 @@ AS
                    OR r.load_status IN ('COMPLETED','PROCESSED','P','SUCCESS') THEN
                     UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
+                           FUSION_BUDGET_VERSION_ID = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id

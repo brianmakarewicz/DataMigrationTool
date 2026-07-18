@@ -486,6 +486,7 @@ AS
                 -- Tier 2: Found in base table = positively LOADED
                 UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
+                       FUSION_EVENT_ID      = r.fusion_id,
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
@@ -498,6 +499,7 @@ AS
                 IF r.fusion_status IN ('COMPLETE','COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
                     UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
+                           FUSION_EVENT_ID      = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
