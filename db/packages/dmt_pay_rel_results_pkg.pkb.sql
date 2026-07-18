@@ -34,6 +34,13 @@ AS
             p_dataset_status => p_dataset_status,
             p_log_context    => C_CEMLI || ' > PayrollRelationship');
 
+        -- Post-reconciliation: capture the Fusion PAYROLL_RELATIONSHIP_ID on
+        -- each LOADED row (design section 7 rule). Blocked object today, so
+        -- this returns zero LOADED rows until PayrollRelationships loads.
+        DMT_HDL_UTIL_PKG.LOOKUP_FUSION_IDS(
+            p_run_id => p_run_id,
+            p_object_type    => 'PayrollRelationship',
+            p_log_context    => C_CEMLI || ' > PayrollRelationship');
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
