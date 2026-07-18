@@ -50111,8 +50111,8 @@ wwv_flow_imp_page.create_page_plug(
 '  END LOOP;',
 '',
 '  htp.p(''<div style="margin-bottom:10px"><a href="''',
-'    ||APEX_PAGE.GET_URL(p_page=>54,p_items=>''P54_RUN_ID'',p_values=>TO_CHAR(v_run))',
-'    ||''" style="color:#0070d2;text-decoration:none;font-weight:600">View Activity Log for this run &rarr;</a></div>'');',
+'    ||APEX_PAGE.GET_URL(p_page=>54,p_items=>''P54_RUN_ID,P54_CEMLI_CODE'',p_values=>v_run||'',''||v_cemli)',
+'    ||''" style="color:#0070d2;text-decoration:none;font-weight:600">View activity log for this object &rarr;</a></div>'');',
 '',
 '  htp.p(''<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px">'');',
 '  htp.p(''<thead><tr style="background:#f3f6fa;color:#39485c">''',
@@ -50517,9 +50517,12 @@ wwv_flow_imp_page.create_page_plug(
 '       l.SQLERRM_TEXT AS ERROR',
 'FROM DMT_LOG_TBL l',
 'WHERE (:P54_RUN_ID IS NULL OR l.INTEGRATION_ID = :P54_RUN_ID)',
+'  AND (:P54_CEMLI_CODE IS NULL OR l.QUEUE_ID IN (',
+'         SELECT q.QUEUE_ID FROM DMT_OWNER.DMT_WORK_QUEUE_TBL q',
+'         WHERE q.RUN_ID = :P54_RUN_ID AND q.CEMLI_CODE = :P54_CEMLI_CODE))',
 'ORDER BY l.LOG_DATE DESC'))
 ,p_plug_source_type=>'NATIVE_IR'
-,p_ajax_items_to_submit=>'P54_RUN_ID'
+,p_ajax_items_to_submit=>'P54_RUN_ID,P54_CEMLI_CODE'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'
 ,p_prn_paper_size=>'LETTER'
@@ -50645,6 +50648,14 @@ wwv_flow_imp_page.create_page_item(
  p_id=>wwv_flow_imp.id(1533157876923036912)
 ,p_name=>'P54_RUN_ID'
 ,p_item_sequence=>25
+,p_display_as=>'NATIVE_HIDDEN'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(1533157876923037777)
+,p_name=>'P54_CEMLI_CODE'
+,p_item_sequence=>30
 ,p_display_as=>'NATIVE_HIDDEN'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'value_protected', 'Y')).to_clob

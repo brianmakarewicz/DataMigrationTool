@@ -5,6 +5,27 @@
 -- DMT_UTIL_PKG Body
 -- ============================================================
 
+    -- Session log context (see SET_LOG_CONTEXT). Session-scoped package
+    -- globals: each child-job session sets its own, so there is no leakage
+    -- across work items. LOG / LOG_ERROR read these to stamp every row.
+    g_ctx_run_id   NUMBER;
+    g_ctx_queue_id NUMBER;
+
+    PROCEDURE SET_LOG_CONTEXT (
+        p_run_id   IN NUMBER,
+        p_queue_id IN NUMBER DEFAULT NULL
+    ) IS
+    BEGIN
+        g_ctx_run_id   := p_run_id;
+        g_ctx_queue_id := p_queue_id;
+    END SET_LOG_CONTEXT;
+
+    PROCEDURE CLEAR_LOG_CONTEXT IS
+    BEGIN
+        g_ctx_run_id   := NULL;
+        g_ctx_queue_id := NULL;
+    END CLEAR_LOG_CONTEXT;
+
     -- --------------------------------------------------------
     -- Private: extract hostname from a full URL
     -- e.g. 'https://fa-esew-dev28.oraclecloud.com/fscmUI' -> 'fa-esew-dev28.oraclecloud.com'
@@ -198,6 +219,7 @@
         INSERT INTO DMT_OWNER.DMT_LOG_TBL (
             LOG_ID,
             RUN_ID,
+            QUEUE_ID,
             LOG_DATE,
             LOG_TYPE,
             PACKAGE_NAME,
@@ -205,7 +227,8 @@
             MESSAGE
         ) VALUES (
             DMT_OWNER.DMT_LOG_ID_SEQ.NEXTVAL,
-            p_run_id,
+            NVL(p_run_id, g_ctx_run_id),
+            g_ctx_queue_id,
             SYSDATE,
             NVL(p_log_type, 'INFO'),
             p_package,
@@ -236,6 +259,7 @@
         INSERT INTO DMT_OWNER.DMT_LOG_TBL (
             LOG_ID,
             RUN_ID,
+            QUEUE_ID,
             LOG_DATE,
             LOG_TYPE,
             PACKAGE_NAME,
@@ -244,7 +268,8 @@
             SQLERRM_TEXT
         ) VALUES (
             DMT_OWNER.DMT_LOG_ID_SEQ.NEXTVAL,
-            p_run_id,
+            NVL(p_run_id, g_ctx_run_id),
+            g_ctx_queue_id,
             SYSDATE,
             'ERROR',
             p_package,

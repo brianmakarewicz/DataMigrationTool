@@ -56,6 +56,18 @@ AS
     -- so log entries survive even if the caller rolls back
     -- --------------------------------------------------------
 
+    -- Session log context. The queue worker sets the current work item's
+    -- run and queue id once (per child-job session); every LOG / LOG_ERROR
+    -- call in that session then stamps QUEUE_ID automatically, so callers do
+    -- not thread the queue id through every logging call. Package globals are
+    -- session-scoped, so a child job's context is isolated to its own session
+    -- and vanishes when the job ends (nothing to clear across jobs).
+    PROCEDURE SET_LOG_CONTEXT (
+        p_run_id   IN NUMBER,
+        p_queue_id IN NUMBER DEFAULT NULL
+    );
+    PROCEDURE CLEAR_LOG_CONTEXT;
+
     -- Write an INFO or WARN log entry.
     PROCEDURE LOG (
         p_run_id IN NUMBER    DEFAULT NULL,
