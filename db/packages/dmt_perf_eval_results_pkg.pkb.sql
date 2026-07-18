@@ -45,6 +45,13 @@ AS
             p_dataset_status => p_dataset_status,
             p_log_context    => C_CEMLI || ' > PerformanceRating');
 
+        -- Post-reconciliation: capture the Fusion evaluation id on each
+        -- LOADED row (design section 7 rule). Blocked object today.
+        DMT_HDL_UTIL_PKG.LOOKUP_FUSION_IDS(
+            p_run_id => p_run_id,
+            p_object_type    => 'PerfEvaluations',
+            p_log_context    => C_CEMLI || ' > PerformanceDocument');
+
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

@@ -589,6 +589,7 @@
         l_person_id NUMBER;
         l_asgn_id   NUMBER;
         l_salary_id NUMBER;
+        l_fusion_id NUMBER;   -- generic captured id for the extended HDL objects
         l_ok_count  NUMBER := 0;
         l_err_count NUMBER := 0;
         l_total     NUMBER := 0;
@@ -622,6 +623,151 @@
             WHERE s.RUN_ID = p_run_id
               AND s.TFM_STATUS = 'LOADED'
               AND s.FUSION_SALARY_ID IS NULL;
+
+        -- ==================================================================
+        -- Extended HDL objects (design section 5 source map). Each resolves
+        -- the worker's PersonId from the LOADED worker TFM (same dependency
+        -- as Salary), then reads the object's person-scoped HCM REST child
+        -- resource. NOTE: none of these objects loads to its Fusion base
+        -- table on the demo instance today (per-object blockers documented
+        -- in objects/{Object}/README.md and the HCM live-state notes), so
+        -- these cursors will return zero LOADED rows and populate nothing
+        -- until the object itself loads. The lookup/UPDATE wiring follows
+        -- the exact Worker/Assignment/Salary pattern so no further plumbing
+        -- is needed once an object goes live; the REST resource paths below
+        -- are the documented HCM REST resources and must be confirmed
+        -- against a real loaded record before that object is declared live.
+        -- ==================================================================
+
+        -- PayrollRelationships -> PAY_PAY_RELATIONSHIPS_DN.PAYROLL_RELATIONSHIP_ID
+        CURSOR c_payroll_rels IS
+            SELECT p.TFM_SEQUENCE_ID, p.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_PAY_REL_TFM_TBL p
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = p.PERSON_NUMBER
+              AND w.RUN_ID = p.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE p.RUN_ID = p_run_id
+              AND p.TFM_STATUS = 'LOADED'
+              AND p.FUSION_PAYROLL_RELATIONSHIP_ID IS NULL;
+
+        -- TalentProfiles -> HRT_PROFILES_B.PROFILE_ID
+        CURSOR c_talent_profiles IS
+            SELECT tp.TFM_SEQUENCE_ID, tp.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_TALENT_PROF_TFM_TBL tp
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = tp.PERSON_NUMBER
+              AND w.RUN_ID = tp.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE tp.RUN_ID = p_run_id
+              AND tp.TFM_STATUS = 'LOADED'
+              AND tp.FUSION_PROFILE_ID IS NULL;
+
+        -- Absences -> ANC_PER_ABS_ENTRIES.PER_ABSENCE_ENTRY_ID
+        CURSOR c_absences IS
+            SELECT a.TFM_SEQUENCE_ID, a.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_ABSENCE_TFM_TBL a
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = a.PERSON_NUMBER
+              AND w.RUN_ID = a.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE a.RUN_ID = p_run_id
+              AND a.TFM_STATUS = 'LOADED'
+              AND a.FUSION_ABSENCE_ENTRY_ID IS NULL;
+
+        -- TaxCards -> the DIR card id
+        CURSOR c_tax_cards IS
+            SELECT tc.TFM_SEQUENCE_ID, tc.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_TAX_CARD_TFM_TBL tc
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = tc.PERSON_NUMBER
+              AND w.RUN_ID = tc.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE tc.RUN_ID = p_run_id
+              AND tc.TFM_STATUS = 'LOADED'
+              AND tc.FUSION_DIR_CARD_ID IS NULL;
+
+        -- W2Balances -> the person balance id
+        CURSOR c_w2_balances IS
+            SELECT b.TFM_SEQUENCE_ID, b.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_W2_BAL_TFM_TBL b
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = b.PERSON_NUMBER
+              AND w.RUN_ID = b.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE b.RUN_ID = p_run_id
+              AND b.TFM_STATUS = 'LOADED'
+              AND b.FUSION_BALANCE_ID IS NULL;
+
+        -- WorkSchedules -> the assigned work schedule id
+        CURSOR c_work_schedules IS
+            SELECT ws.TFM_SEQUENCE_ID, ws.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_WORK_SCHED_TFM_TBL ws
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = ws.PERSON_NUMBER
+              AND w.RUN_ID = ws.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE ws.RUN_ID = p_run_id
+              AND ws.TFM_STATUS = 'LOADED'
+              AND ws.FUSION_SCHEDULE_ID IS NULL;
+
+        -- PerfEvaluations -> the performance evaluation id
+        CURSOR c_perf_evals IS
+            SELECT pe.TFM_SEQUENCE_ID, pe.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_PERF_EVAL_TFM_TBL pe
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = pe.PERSON_NUMBER
+              AND w.RUN_ID = pe.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE pe.RUN_ID = p_run_id
+              AND pe.TFM_STATUS = 'LOADED'
+              AND pe.FUSION_EVALUATION_ID IS NULL;
+
+        -- Benefits participants -> the enrolled participant id
+        CURSOR c_ben_partics IS
+            SELECT bp.TFM_SEQUENCE_ID, bp.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_BEN_PARTIC_TFM_TBL bp
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = bp.PERSON_NUMBER
+              AND w.RUN_ID = bp.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE bp.RUN_ID = p_run_id
+              AND bp.TFM_STATUS = 'LOADED'
+              AND bp.FUSION_PARTICIPANT_ID IS NULL;
+
+        -- Benefits beneficiaries -> the beneficiary id
+        CURSOR c_ben_benfys IS
+            SELECT bb.TFM_SEQUENCE_ID, bb.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_BEN_BENFY_TFM_TBL bb
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = bb.PERSON_NUMBER
+              AND w.RUN_ID = bb.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE bb.RUN_ID = p_run_id
+              AND bb.TFM_STATUS = 'LOADED'
+              AND bb.FUSION_BENEFICIARY_ID IS NULL;
+
+        -- Benefits dependents -> the dependent id
+        CURSOR c_ben_depends IS
+            SELECT bd.TFM_SEQUENCE_ID, bd.PERSON_NUMBER, w.FUSION_PERSON_ID
+            FROM DMT_OWNER.DMT_BEN_DEPEND_TFM_TBL bd
+            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+              ON  w.PERSON_NUMBER = bd.PERSON_NUMBER
+              AND w.RUN_ID = bd.RUN_ID
+              AND w.TFM_STATUS = 'LOADED'
+              AND w.FUSION_PERSON_ID IS NOT NULL
+            WHERE bd.RUN_ID = p_run_id
+              AND bd.TFM_STATUS = 'LOADED'
+              AND bd.FUSION_DEPENDENT_ID IS NULL;
 
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -765,6 +911,380 @@
                             'Salary lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
                             ' | ' || SQLERRM,
                             DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- PayrollRelationship: workers/{PersonId}/child/workRelationships
+        --   /child/... — PayrollRelationshipId on the payroll-relationship
+        --   child. Blocked today (the worker HIRE auto-creates the payroll
+        --   relationship, so a separate object collides); populates only for
+        --   an EXISTING-worker target once that path loads.
+        -- ======================================================
+        ELSIF p_object_type = 'PayrollRelationship' THEN
+            FOR r IN c_payroll_rels LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'PayrollRelationship lookup skipped for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | No FUSION_PERSON_ID available from worker TFM.',
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+
+                    l_url := l_base_url || '/' || r.FUSION_PERSON_ID ||
+                             '/child/workRelationships?fields=PayrollRelationshipId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(
+                        JSON_VALUE(l_response, '$.items[0].PayrollRelationshipId'));
+
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_PAY_REL_TFM_TBL
+                        SET FUSION_PAYROLL_RELATIONSHIP_ID = l_fusion_id,
+                            LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'PayrollRelationshipId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'PayrollRelationship lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- TalentProfiles: talentProfiles?q=PersonId=X — ProfileId.
+        --   Blocked today (the DAT imports but the load errors, 0 loaded);
+        --   populates once the profile reaches HRT_PROFILES_B.
+        -- ======================================================
+        ELSIF p_object_type = 'TalentProfiles' THEN
+            FOR r IN c_talent_profiles LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/talentProfiles' ||
+                             '?q=PersonId=' || r.FUSION_PERSON_ID ||
+                             '&fields=ProfileId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].ProfileId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_TALENT_PROF_TFM_TBL
+                        SET FUSION_PROFILE_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'ProfileId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'TalentProfiles lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- Absences: absences?q=PersonId=X — PersonAbsenceEntryId.
+        --   Blocked today (instance approval-workflow config rejects the
+        --   absence status); populates once ANC_PER_ABS_ENTRIES accepts it.
+        -- ======================================================
+        ELSIF p_object_type = 'Absences' THEN
+            FOR r IN c_absences LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/absences' ||
+                             '?q=PersonId=' || r.FUSION_PERSON_ID ||
+                             '&fields=PersonAbsenceEntryId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].PersonAbsenceEntryId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_ABSENCE_TFM_TBL
+                        SET FUSION_ABSENCE_ENTRY_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'PersonAbsenceEntryId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'Absences lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- TaxCards: workers/{PersonId}/child/... deduction card id.
+        --   Blocked today (generator can't supply SourceType on the DIR
+        --   card child + the worker needs a Tax Reporting Unit association).
+        -- ======================================================
+        ELSIF p_object_type = 'TaxCards' THEN
+            FOR r IN c_tax_cards LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/payrollDeductionCards' ||
+                             '?q=PersonId=' || r.FUSION_PERSON_ID ||
+                             '&fields=DeductionCardId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].DeductionCardId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_TAX_CARD_TFM_TBL
+                        SET FUSION_DIR_CARD_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'DeductionCardId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'TaxCards lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- W2Balances: personBalances?q=PersonId=X — the balance id.
+        --   Blocked today (not yet seeded); populates once loaded.
+        -- ======================================================
+        ELSIF p_object_type = 'W2Balances' THEN
+            FOR r IN c_w2_balances LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/balances' ||
+                             '?q=PersonId=' || r.FUSION_PERSON_ID ||
+                             '&fields=BalanceId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].BalanceId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_W2_BAL_TFM_TBL
+                        SET FUSION_BALANCE_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'BalanceId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'W2Balances lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- WorkSchedules: workScheduleAssignmentsDEO?q=PersonId=X — the
+        --   assigned schedule id. Blocked today (not yet seeded).
+        -- ======================================================
+        ELSIF p_object_type = 'WorkSchedules' THEN
+            FOR r IN c_work_schedules LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/workScheduleAssignments' ||
+                             '?q=PersonId=' || r.FUSION_PERSON_ID ||
+                             '&fields=WorkScheduleId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].WorkScheduleId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_WORK_SCHED_TFM_TBL
+                        SET FUSION_SCHEDULE_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'WorkScheduleId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'WorkSchedules lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- PerfEvaluations: performanceRatings?q=PersonId=X — the
+        --   evaluation id. Blocked today (not yet seeded).
+        -- ======================================================
+        ELSIF p_object_type = 'PerfEvaluations' THEN
+            FOR r IN c_perf_evals LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/performanceRatings' ||
+                             '?q=PersonId=' || r.FUSION_PERSON_ID ||
+                             '&fields=EvaluationId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].EvaluationId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_PERF_EVAL_TFM_TBL
+                        SET FUSION_EVALUATION_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'EvaluationId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'PerfEvaluations lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- Benefits participants: participantEnrollments?q=PersonId=X.
+        --   Blocked today (not yet seeded).
+        -- ======================================================
+        ELSIF p_object_type = 'BenefitsParticipant' THEN
+            FOR r IN c_ben_partics LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/participantEnrollments' ||
+                             '?q=PersonId=' || r.FUSION_PERSON_ID ||
+                             '&fields=ParticipantId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].ParticipantId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_BEN_PARTIC_TFM_TBL
+                        SET FUSION_PARTICIPANT_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'ParticipantId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'BenefitsParticipant lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- Benefits beneficiaries: beneficiaries?q=PersonId=X.
+        --   Blocked today (not yet seeded).
+        -- ======================================================
+        ELSIF p_object_type = 'BenefitsBeneficiary' THEN
+            FOR r IN c_ben_benfys LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/beneficiaries' ||
+                             '?q=PersonId=' || r.FUSION_PERSON_ID ||
+                             '&fields=BeneficiaryId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].BeneficiaryId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_BEN_BENFY_TFM_TBL
+                        SET FUSION_BENEFICIARY_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'BeneficiaryId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'BenefitsBeneficiary lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+        -- ======================================================
+        -- Benefits dependents: dependents?q=PersonId=X.
+        --   Blocked today (not yet seeded).
+        -- ======================================================
+        ELSIF p_object_type = 'BenefitsDependent' THEN
+            FOR r IN c_ben_depends LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF r.FUSION_PERSON_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/dependents' ||
+                             '?q=PersonId=' || r.FUSION_PERSON_ID ||
+                             '&fields=DependentId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].DependentId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_BEN_DEPEND_TFM_TBL
+                        SET FUSION_DEPENDENT_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'DependentId not found for PersonNumber: ' || r.PERSON_NUMBER,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'BenefitsDependent lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
                 END;
             END LOOP;
 
