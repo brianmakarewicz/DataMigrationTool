@@ -333,6 +333,7 @@ AS
                 -- Tier 2: Found in base table = positively LOADED
                 UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
                 SET    TFM_STATUS                       = 'LOADED',
+                       FUSION_EXPENDITURE_ITEM_ID   = r.fusion_id,
                        RESULTS_UPDATED_DATE         = SYSDATE,
                        LAST_UPDATED_DATE            = SYSDATE
                 WHERE  RUN_ID               = p_run_id
