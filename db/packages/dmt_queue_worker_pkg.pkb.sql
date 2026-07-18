@@ -529,26 +529,47 @@ AS
     END RECONCILE_ONE;
 
     -- ============================================================
-    -- submit_postrun_job — Phase-2 staged load.
-    -- After the import job (e.g. PrepareMassAdditions) succeeds, a CEMLI
-    -- whose registry row carries a POSTRUN_JOB runs a standalone follow-up
-    -- ESS job before reconcile (Assets: PostMassAdditions). Returns the
-    -- follow-up ESS request id, or NULL when the CEMLI has no POSTRUN_JOB
-    -- (every active CEMLI except Assets → NULL → unchanged behavior).
-    -- C5 (2026-07-08): the job name is read from DMT_PIPELINE_DEF_TBL
-    -- .POSTRUN_JOB — the section-6 registry column ("POSTRUN_JOB (the
-    -- per-object post-run ESS job — today only Assets has one ...)").
-    -- The duplicate POST_LOAD_JOB_NAME on DMT_ERP_INTERFACE_OPTIONS_TBL
-    -- is no longer read (one fact, one home); the column itself is left
-    -- for the ERP-options triage.
+    -- submit_postrun_job — Phase-2 staged load / async-import downstream wait.
+    -- After the import job succeeds, a CEMLI may still have a downstream ESS
+    -- job that must reach a terminal state before reconcile. There are two
+    -- distinct kinds, and this function returns the request id of whichever
+    -- applies (or NULL when neither applies → straight to reconcile,
+    -- unchanged behavior for every synchronous object):
+    --
+    --   1. POSTRUN_JOB (DMT_PIPELINE_DEF_TBL) — a standalone follow-up job
+    --      that DMT SUBMITS itself (Assets: PrepareMassAdditions then
+    --      PostMassAdditions). Read from the section-6 registry column.
+    --
+    --   2. REPORT_JOB_DEF (DMT_ERP_INTERFACE_OPTIONS_TBL) — an async-invoke
+    --      import wrapper. The import ESS job (e.g. ImportProjectJobDef) hands
+    --      the real record creation to a Fusion async service and reports
+    --      SUCCEEDED as soon as the async request is ACCEPTED, not when the
+    --      records exist. In the same stage sequence it submits a report job
+    --      (ImportProjectReportJob) that runs AFTER the async creation
+    --      finishes and, at its end, purges the interface staging. So the
+    --      report job reaching terminal state is the reliable signal that the
+    --      async creation is done and the base tables are final. Evidence:
+    --      Projects run 170 — ImportProjectJobDef (9755887) reported SUCCEEDED
+    --      immediately ("Invoking project interface load data service
+    --      loadXfaceProjectData async method ... Async Status:SUCCESS") while
+    --      the base rows for that run's prefix were never created; the queue
+    --      reconciled against the wrapper and failed the projects blindly. We
+    --      DISCOVER (not submit) the report job via CAPTURE_REPORT_ESS_JOB
+    --      keyed on the import ESS id, and wait for it before reconcile.
+    --
+    -- C5 (2026-07-08): the POSTRUN_JOB name is read from DMT_PIPELINE_DEF_TBL
+    -- .POSTRUN_JOB. The duplicate POST_LOAD_JOB_NAME on
+    -- DMT_ERP_INTERFACE_OPTIONS_TBL is no longer read (one fact, one home).
     -- ============================================================
     FUNCTION submit_postrun_job (p_run_id IN NUMBER, p_cemli_code IN VARCHAR2,
-                                 p_partition_key IN VARCHAR2 DEFAULT NULL)
+                                 p_partition_key IN VARCHAR2 DEFAULT NULL,
+                                 p_import_ess_id IN VARCHAR2 DEFAULT NULL)
         RETURN VARCHAR2
     IS
         l_job   VARCHAR2(500);
         l_param VARCHAR2(4000);
         l_book  VARCHAR2(60);
+        l_report_id NUMBER;
     BEGIN
         BEGIN
             SELECT POSTRUN_JOB INTO l_job
@@ -557,6 +578,37 @@ AS
         EXCEPTION WHEN NO_DATA_FOUND THEN l_job := NULL;
         END;
         IF l_job IS NULL THEN
+            -- No standalone follow-up job. Fall back to the async-import
+            -- downstream wait: if this CEMLI's import is an async-invoke
+            -- wrapper (it has a REPORT_JOB_DEF), discover the report job that
+            -- runs after the async creation and return its request id so the
+            -- queue waits for it before reconciling. Objects without a
+            -- REPORT_JOB_DEF (every synchronous FBDI object) get NULL here and
+            -- go straight to reconcile exactly as before.
+            IF p_import_ess_id IS NOT NULL THEN
+                BEGIN
+                    l_report_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+                        p_run_id        => p_run_id,
+                        p_import_ess_id => TO_NUMBER(p_import_ess_id),
+                        p_cemli_code    => p_cemli_code);
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_report_id := NULL;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'Report-job discovery failed for ' || p_cemli_code ||
+                            ' (import ESS ' || p_import_ess_id || '); reconciling without ' ||
+                            'the downstream wait (' || SUBSTR(SQLERRM, 1, 200) || ').',
+                            'WARN', C_PKG, 'submit_postrun_job');
+                END;
+                IF l_report_id IS NOT NULL THEN
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Async-import downstream wait for ' || p_cemli_code ||
+                        ': report job ' || l_report_id || ' (child of import ESS ' ||
+                        p_import_ess_id || '). Reconcile deferred until it is terminal.',
+                        'INFO', C_PKG, 'submit_postrun_job');
+                    RETURN TO_CHAR(l_report_id);
+                END IF;
+            END IF;
             RETURN NULL;  -- no post-run stage for this CEMLI
         END IF;
 
@@ -758,10 +810,14 @@ AS
 
                 -- Phase-2 staged load: if this CEMLI has a post-run job in
                 -- the registry (Assets → PostMassAdditions), submit it and
-                -- poll it before reconcile. Others → NULL → straight to
-                -- RECONCILING.
+                -- poll it before reconcile. If instead the import is an
+                -- async-invoke wrapper (a REPORT_JOB_DEF is seeded, e.g.
+                -- Projects → ImportProjectReportJob), discover that downstream
+                -- report job — which runs after the async creation — and poll
+                -- it before reconcile. Others → NULL → straight to RECONCILING.
                 BEGIN
-                    l_postrun_id := submit_postrun_job(l_rec.RUN_ID, l_rec.CEMLI_CODE, l_rec.PARTITION_KEY);
+                    l_postrun_id := submit_postrun_job(l_rec.RUN_ID, l_rec.CEMLI_CODE,
+                                                       l_rec.PARTITION_KEY, l_rec.IMPORT_ESS_JOB_ID);
                 EXCEPTION
                     WHEN OTHERS THEN
                         l_postrun_id := NULL;
