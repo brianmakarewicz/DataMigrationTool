@@ -1,10 +1,6 @@
 -- DMT_RECORD_DETAIL_V
 CREATE OR REPLACE EDITIONABLE VIEW "DMT_RECORD_DETAIL_V" ("CEMLI_CODE", "SUB_OBJECT", "TFM_SEQUENCE_ID", "STG_SEQUENCE_ID", "RUN_ID", "INTEGRATION_ID", "DISPLAY_KEY", "LOOKUP_KEY", "TFM_STATUS", "ERROR_TEXT", "ERROR_CATEGORY", "RESULTS_UPDATED_DATE", "RECONCILIATION_STATUS")  AS 
-  SELECT q.CEMLI_CODE, q.SUB_OBJECT,
-       q.TFM_SEQUENCE_ID, q.STG_SEQUENCE_ID, q.RUN_ID, q.RUN_ID AS INTEGRATION_ID,
-       q.DISPLAY_KEY, q.LOOKUP_KEY, q.TFM_STATUS, q.ERROR_TEXT,
-       q.ERROR_CATEGORY, q.RESULTS_UPDATED_DATE, q.RECONCILIATION_STATUS
-FROM (
+WITH tfm_lanes AS (
 -- RECONCILIATION_STATUS: drives row-level badge color
 --   CONFIRMED = LOADED or FAILED-with-error (green)
 --   UNRECONCILED = FAILED with no error text (red)
@@ -909,4 +905,39 @@ SELECT 'Banks', 'Bank Accounts',
        RESULTS_UPDATED_DATE,
        CASE WHEN TFM_STATUS = 'LOADED' THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' AND ERROR_TEXT IS NOT NULL THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' THEN 'UNRECONCILED' ELSE 'IN_PROGRESS' END
 FROM DMT_OWNER.DMT_CE_BANK_ACCT_TFM_TBL
+)
+  SELECT q.CEMLI_CODE, q.SUB_OBJECT,
+       q.TFM_SEQUENCE_ID, q.STG_SEQUENCE_ID, q.RUN_ID, q.RUN_ID AS INTEGRATION_ID,
+       q.DISPLAY_KEY, q.LOOKUP_KEY, q.TFM_STATUS, q.ERROR_TEXT,
+       q.ERROR_CATEGORY, q.RESULTS_UPDATED_DATE, q.RECONCILIATION_STATUS
+FROM (
+    SELECT CEMLI_CODE, SUB_OBJECT, TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
+           DISPLAY_KEY, LOOKUP_KEY, TFM_STATUS, ERROR_TEXT, ERROR_CATEGORY,
+           RESULTS_UPDATED_DATE, RECONCILIATION_STATUS
+    FROM tfm_lanes
+    UNION ALL
+    -- Pre-transform failures: rows rejected before any TFM table (pre-validation or
+    -- transform-stage errors), which are invisible to the TFM lanes above -- so an
+    -- object whose rows all failed pre-validation showed 0 records instead of N failed.
+    -- Surface them as FAILED records carrying their real [PRE_VALIDATION]/[TRANSFORM_ERROR]
+    -- message, so counts key off the STG inventory (STG total = TFM this run + these).
+    -- Anti-join the TFM lanes (RUN_ID+CEMLI_CODE+SUB_OBJECT+STG_SEQUENCE_ID) so a row
+    -- that both errored early and later transformed (ALL-mode reprocessing) is counted
+    -- once -- reaching TFM wins. failed-with-error is a clean accounted failure.
+    SELECT e.CEMLI_CODE, e.SUB_OBJECT,
+           CAST(NULL AS NUMBER) AS TFM_SEQUENCE_ID, e.STG_SEQUENCE_ID, e.RUN_ID,
+           e.SUB_OBJECT || ' STG#' || e.STG_SEQUENCE_ID AS DISPLAY_KEY,
+           CAST(NULL AS VARCHAR2(200)) AS LOOKUP_KEY,
+           'FAILED' AS TFM_STATUS, e.ERROR_TEXT,
+           REGEXP_SUBSTR(e.ERROR_TEXT, '^\[([^\]]+)\]', 1, 1, NULL, 1) AS ERROR_CATEGORY,
+           e.CREATED_DATE AS RESULTS_UPDATED_DATE,
+           'CONFIRMED' AS RECONCILIATION_STATUS
+    FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+    WHERE NOT EXISTS (
+        SELECT 1 FROM tfm_lanes t
+        WHERE t.RUN_ID = e.RUN_ID
+          AND t.CEMLI_CODE = e.CEMLI_CODE
+          AND NVL(t.SUB_OBJECT,'~') = NVL(e.SUB_OBJECT,'~')
+          AND t.STG_SEQUENCE_ID = e.STG_SEQUENCE_ID
+    )
 ) q;
