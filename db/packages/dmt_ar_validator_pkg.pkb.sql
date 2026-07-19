@@ -108,7 +108,7 @@ AS
             FROM   DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL
             WHERE  TFM_STATUS = 'LOADED' AND ROWNUM = 1;
 
-            IF l_any_loaded > 0 THEN
+            IF l_any_loaded > 0 AND DMT_UTIL_PKG.GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN
                 INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                 SELECT p_run_id, 'ARInvoices', 'AR Lines', ln.STG_SEQUENCE_ID,

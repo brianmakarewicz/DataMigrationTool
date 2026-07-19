@@ -213,3 +213,8 @@ begin
 exception when dup_val_on_index then null;
 end;
 /
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('VALIDATE_UPSTREAM_DEPS','N','Master switch for cross-object upstream dependency PRE-validation (the "parent must be LOADED" checks in the object validators). N (default) = skip them: references resolve through DMT_XREF_PKG (most-recent LOADED value, or raw source if the parent is pre-existing / not migrated) and a genuinely-missing parent still fails at Fusion with a reportable error. Y = enforce the checks. Per design: the tool''s job is to move data and account for every outcome, not to pre-validate.',sysdate,'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
