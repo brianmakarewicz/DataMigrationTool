@@ -348,9 +348,15 @@ AS
                     WHERE  CEMLI_CODE = l_rec.CEMLI_CODE;
                 EXCEPTION WHEN NO_DATA_FOUND THEN
                     l_child_col := NULL;
+                    l_tfm_table := NULL;
                 END;
 
                 IF l_child_col IS NOT NULL THEN
+                    -- Harden the identifiers before they enter dynamic SQL. They come
+                    -- from the PK-keyed control table, but validating fails loudly if
+                    -- the registry is ever mis-seeded (and closes the injection surface).
+                    l_child_col := DBMS_ASSERT.SIMPLE_SQL_NAME(l_child_col);
+                    l_tfm_table := DBMS_ASSERT.QUALIFIED_SQL_NAME(l_tfm_table);
                     -- 1. Transform-only pass (validate + STG -> TFM STAGED, no generate).
                     --    Generalizes RUN_ASSETS_TRANSFORM_ONLY to any configured object.
                     DMT_LOADER_PKG.RUN_TRANSFORM_ONLY(
@@ -539,8 +545,12 @@ AS
         IF l_rec.CEMLI_CODE = 'Items' THEN
             DECLARE l_cat_gen NUMBER;
             BEGIN
+                -- Work-queue-ID core: only reconcile categories THIS item generated.
+                -- Scoping by WORK_QUEUE_ID stops one Items batch's reconcile from
+                -- touching another still-in-flight batch's category rows.
                 SELECT COUNT(*) INTO l_cat_gen FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
-                WHERE RUN_ID = l_rec.RUN_ID AND TFM_STATUS = 'GENERATED';
+                WHERE RUN_ID = l_rec.RUN_ID AND TFM_STATUS = 'GENERATED'
+                AND   WORK_QUEUE_ID = p_queue_id;
                 IF l_cat_gen > 0 THEN
                     DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
                         TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID),
