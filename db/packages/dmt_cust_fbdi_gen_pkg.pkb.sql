@@ -65,6 +65,77 @@ AS
     END fmt_date;
 
     -- --------------------------------------------------------
+    -- Private: the run's prefix (from DMT_PIPELINE_RUN_TBL).
+    -- Mirrors DMT_CUST_TRANSFORM_PKG.get_prefix so the synthesized
+    -- reference is prefixed identically to a source-supplied one.
+    -- --------------------------------------------------------
+    FUNCTION get_prefix (p_run_id IN NUMBER) RETURN VARCHAR2
+    IS
+        l_prefix VARCHAR2(30);
+    BEGIN
+        SELECT PREFIX INTO l_prefix
+        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
+        RETURN l_prefix;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RETURN NULL;
+    END get_prefix;
+
+    -- --------------------------------------------------------
+    -- Private: site-use ORIG_SYSTEM_REFERENCE synthesis (2026-07-20).
+    -- A site-use is identified by its site + purpose, so real source
+    -- systems (EBS) often carry NO per-site-use reference. The transform
+    -- copies the (null) source reference through, so the site-use TFM
+    -- reference column is NULL for those rows. Fusion needs a unique
+    -- OrigSystemReference per site-use to address and reconcile it, and
+    -- our reconciler matches on that stored value -- a NULL key never
+    -- matches, so every such site-use is falsely swept to RECONCILE_ERROR.
+    --
+    -- Fix (FIX_PLAN #3): when the site-use reference is NULL, synthesize a
+    -- deterministic one and PERSIST it once into the TFM reference column
+    -- at generation time. The CSV generator and the reconciler then both
+    -- read the identical stored value (never recomputed in two places).
+    -- The formula is TFM_SEQUENCE_ID || '-' || WORK_QUEUE_ID, prefixed via
+    -- PREFIXED (component use, allowed): TFM_SEQUENCE_ID is the row's unique
+    -- identity; the queue-item id ties it to the run context. Only NULL
+    -- references are touched -- a source-supplied reference always wins.
+    -- FBDI only; HDL SourceSystemId is out of scope (business-keyed).
+    PROCEDURE synthesize_null_siteuse_refs (
+        p_run_id   IN NUMBER,
+        p_batch_id IN NUMBER DEFAULT NULL
+    )
+    IS
+        l_prefix   VARCHAR2(30) := get_prefix(p_run_id);
+        -- The synthesized reference's WORK_QUEUE_ID component. g_gen_queue_id
+        -- is the current item's queue id, set for every object. It can be NULL
+        -- for a non-queue caller; TFM_SEQUENCE_ID alone still makes the key
+        -- unique, so a NULL component just yields "<seq>-".
+        l_wqid     NUMBER := DMT_LOADER_PKG.g_gen_queue_id;
+    BEGIN
+        -- Party site-uses: SITEUSE_ORIG_SYSTEM_REF is the reconciliation key.
+        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
+        SET    SITEUSE_ORIG_SYSTEM_REF =
+                   DMT_UTIL_PKG.PREFIXED(l_prefix,
+                       TO_CHAR(TFM_SEQUENCE_ID) || '-' || TO_CHAR(l_wqid))
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id)
+        AND    SITEUSE_ORIG_SYSTEM_REF IS NULL;
+
+        -- Account site-uses: CUST_SITEUSE_ORIG_SYS_REF is the reconciliation key
+        -- (same site-use-has-no-natural-reference pattern as the party tier).
+        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL
+        SET    CUST_SITEUSE_ORIG_SYS_REF =
+                   DMT_UTIL_PKG.PREFIXED(l_prefix,
+                       TO_CHAR(TFM_SEQUENCE_ID) || '-' || TO_CHAR(l_wqid))
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id)
+        AND    CUST_SITEUSE_ORIG_SYS_REF IS NULL;
+    END synthesize_null_siteuse_refs;
+
+    -- --------------------------------------------------------
     -- Private: generate HzImpPartiesT.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_parties_csv (
@@ -552,6 +623,11 @@ AS
             p_procedure      => C_PROC);
 
         x_filename := 'Customers_' || TO_CHAR(p_run_id) || '.zip';
+
+        -- Synthesize + persist a deterministic ORIG_SYSTEM_REFERENCE for any
+        -- site-use whose source reference is null, BEFORE the CSVs are built,
+        -- so the generated file and the reconciler read the same stored value.
+        synthesize_null_siteuse_refs(p_run_id, p_batch_id);
 
         -- Generate all 7 CSVs
         l_parties_csv    := gen_parties_csv(p_run_id, p_batch_id);

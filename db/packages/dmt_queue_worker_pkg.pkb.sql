@@ -337,6 +337,12 @@ AS
             CASE WHEN l_rec.PARTITION_KEY IS NOT NULL AND l_rec.PARTITION_KEY <> 'ALL'
                  THEN p_queue_id END;
 
+        -- Site-use reference synthesis (2026-07-20): the current item's QUEUE_ID for
+        -- EVERY object (not gated on partitioning). A generator uses it only as the
+        -- WORK_QUEUE_ID component of a synthesized child ORIG_SYSTEM_REFERENCE; it does
+        -- NOT change the reconcile sweep scope (that stays keyed off g_work_queue_id).
+        DMT_LOADER_PKG.g_gen_queue_id := p_queue_id;
+
         -- Spawn-per-partition split (generalized from the Assets-only per-book path,
         -- 2026-07-20). An object configured in DMT_CEMLI_SPLIT_CFG with a
         -- CHILD_PARTITION_COLUMN loads by: the un-partitioned PARENT row transforms once
@@ -413,6 +419,7 @@ AS
                     DMT_LOADER_PKG.g_async_mode := FALSE;
                     DMT_LOADER_PKG.g_partition_key := NULL;
                     DMT_LOADER_PKG.g_work_queue_id := NULL;
+                    DMT_LOADER_PKG.g_gen_queue_id := NULL;
                     RETURN;
                 END IF;
             END;
@@ -435,6 +442,7 @@ AS
         DMT_LOADER_PKG.g_load_ess_id := NULL;
         DMT_LOADER_PKG.g_partition_key := NULL;
         DMT_LOADER_PKG.g_work_queue_id := NULL;
+        DMT_LOADER_PKG.g_gen_queue_id := NULL;
 
         IF l_load_ess_id IS NOT NULL THEN
             UPDATE DMT_WORK_QUEUE_TBL
@@ -467,6 +475,7 @@ AS
             DMT_LOADER_PKG.g_load_ess_id := NULL;
             DMT_LOADER_PKG.g_partition_key := NULL;
             DMT_LOADER_PKG.g_work_queue_id := NULL;
+            DMT_LOADER_PKG.g_gen_queue_id := NULL;
 
             DECLARE l_err VARCHAR2(4000) := SQLERRM; BEGIN
             UPDATE DMT_WORK_QUEUE_TBL
