@@ -231,7 +231,7 @@ AS
                           'Y'                                || '|' ||  -- EffectiveLatestChange
                           pv(r.PERSON_NUMBER) || '_TRM'      || '|' ||  -- WorkTermsAssignmentId(SourceSystemId)
                           pv(r.ASSIGNMENT_NAME)              || '|' ||
-                          'ET-' || pv(r.PERSON_NUMBER)       || '|' ||  -- AssignmentNumber: prefixed + matches WorkTerms (line above). The raw ASSIGNMENT_NUMBER is not run-prefixed, so it collided with prior runs ("already exists").
+                          pv(r.ASSIGNMENT_NUMBER)            || '|' ||
                           pv(r.ASSIGNMENT_STATUS_TYPE_CODE)  || '|' ||
                           'Employee'                         || '|' ||  -- PersonTypeCode
                           pv(r.BUSINESS_UNIT_NAME)           || '|' ||  -- BusinessUnitShortCode
