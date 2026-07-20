@@ -256,19 +256,18 @@
                     s.ORIG_SYS_SOLD_PARTY_REF,
                     s.ORIG_SYSTEM_SOLD_CUSTOMER_REF,
 
-                    CASE WHEN s.BILL_CUSTOMER_ACCOUNT_NUMBER IS NOT NULL
-                         THEN DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.BILL_CUSTOMER_ACCOUNT_NUMBER, 30)
-                    END,
+                    -- Resolve the referenced customer account via the cross-reference
+                    -- resolver: the most-recent LOADED (prefixed) account if the tool
+                    -- migrated it, or the raw source value if it is a pre-existing Fusion
+                    -- account (e.g. 10060). Blind prefixing turned 10060 into 1006110060,
+                    -- which Fusion could not find.
+                    DMT_XREF_PKG.CUSTOMER_ACCOUNT_NUMBER(s.BILL_CUSTOMER_ACCOUNT_NUMBER),
                     s.BILL_CUSTOMER_SITE_NUMBER,
                     s.BILL_CONTACT_PARTY_NUMBER,
-                    CASE WHEN s.SHIP_CUSTOMER_ACCOUNT_NUMBER IS NOT NULL
-                         THEN DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.SHIP_CUSTOMER_ACCOUNT_NUMBER, 30)
-                    END,
+                    DMT_XREF_PKG.CUSTOMER_ACCOUNT_NUMBER(s.SHIP_CUSTOMER_ACCOUNT_NUMBER),
                     s.SHIP_CUSTOMER_SITE_NUMBER,
                     s.SHIP_CONTACT_PARTY_NUMBER,
-                    CASE WHEN s.SOLD_CUSTOMER_ACCOUNT_NUMBER IS NOT NULL
-                         THEN DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.SOLD_CUSTOMER_ACCOUNT_NUMBER, 30)
-                    END,
+                    DMT_XREF_PKG.CUSTOMER_ACCOUNT_NUMBER(s.SOLD_CUSTOMER_ACCOUNT_NUMBER),
                     s.LINE_TYPE,
                     s.DESCRIPTION,
                     s.CURRENCY_CODE,
