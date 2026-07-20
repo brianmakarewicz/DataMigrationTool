@@ -1,11 +1,15 @@
--- ============================================================
--- Customers BIP reconciliation query -- MIRROR of the deployed
--- data model bip/Customers/DMT_CUST_RECON_V2_DM.xdm (deploy target
--- /Custom/DMT2/Customers/). The SQL below is the byte-exact
--- CDATA body of that .xdm; regenerate this file from the .xdm
--- whenever the data model changes -- the mirror must never drift.
--- ============================================================
-
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="cust_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
 SELECT record_type, orig_system_reference, fusion_id, error_message
 FROM (
     -- ---- BASE tier: positive proof, one block per record type ----
@@ -170,4 +174,37 @@ FROM (
     WHERE  iasu.load_request_id = :P_LOAD_REQUEST_ID
 )
 WHERE  fusion_id IS NOT NULL OR error_message IS NOT NULL
-      
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="cust_recon_results">
+          <element name="RECORD_TYPE"           value="RECORD_TYPE"           dataType="xsd:string"  tagName="RECORD_TYPE"/>
+          <element name="ORIG_SYSTEM_REFERENCE" value="ORIG_SYSTEM_REFERENCE" dataType="xsd:string"  tagName="ORIG_SYSTEM_REFERENCE"/>
+          <element name="FUSION_ID"             value="FUSION_ID"             dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"         value="ERROR_MESSAGE"         dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
