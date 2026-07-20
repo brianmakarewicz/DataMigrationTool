@@ -242,10 +242,15 @@ AS
                 l_deps := GET_CEMLI_DEPENDENCIES('STANDALONE', l_cemli);
                 validate_depends_on(l_cemli, l_deps);  -- A13: unknown token = error
 
-                -- Split objects get PARTITION_KEY='ALL' so dispatch_ready
-                -- picks them up directly (EXECUTE_ONE handles grouping internally).
+                -- OLD-style in-zip split objects get PARTITION_KEY='ALL' so
+                -- dispatch_ready picks them up directly (EXECUTE_ONE handles the
+                -- in-zip grouping internally). Objects configured with a
+                -- CHILD_PARTITION_COLUMN use the newer spawn-per-partition path and
+                -- MUST keep PARTITION_KEY NULL (the queue worker transforms once, then
+                -- spawns one child work item per partition) -- so they are excluded here.
                 SELECT COUNT(*) INTO l_is_split
-                FROM DMT_CEMLI_SPLIT_CFG WHERE CEMLI_CODE = l_cemli;
+                FROM DMT_CEMLI_SPLIT_CFG
+                WHERE CEMLI_CODE = l_cemli AND CHILD_PARTITION_COLUMN IS NULL;
 
                 INSERT INTO DMT_OWNER.DMT_WORK_QUEUE_TBL (
                     RUN_ID, PIPELINE, CEMLI_CODE, SORT_ORDER, DEPENDS_ON,
@@ -281,8 +286,11 @@ AS
                     l_deps := GET_CEMLI_DEPENDENCIES(l_pipeline, l_cemli);
                     validate_depends_on(l_cemli, l_deps);  -- A13: unknown token = error
 
+                    -- Only OLD-style in-zip splits get 'ALL'; CHILD_PARTITION_COLUMN
+                    -- objects keep PARTITION_KEY NULL for the spawn-per-partition path.
                     SELECT COUNT(*) INTO l_is_split
-                    FROM DMT_CEMLI_SPLIT_CFG WHERE CEMLI_CODE = l_cemli;
+                    FROM DMT_CEMLI_SPLIT_CFG
+                    WHERE CEMLI_CODE = l_cemli AND CHILD_PARTITION_COLUMN IS NULL;
 
                     INSERT INTO DMT_OWNER.DMT_WORK_QUEUE_TBL (
                         RUN_ID, PIPELINE, CEMLI_CODE, SORT_ORDER, DEPENDS_ON,
