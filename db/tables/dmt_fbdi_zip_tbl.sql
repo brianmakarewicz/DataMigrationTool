@@ -11,6 +11,7 @@ begin
 	"PARAMETER_LIST" VARCHAR2(1000), 
 	"RUN_ID" NUMBER, 
 	"INTEGRATION_ID" NUMBER GENERATED ALWAYS AS ("RUN_ID"+0) VIRTUAL , 
+	"WORK_QUEUE_ID" NUMBER, 
 	 CONSTRAINT "DMT_FBDI_ZIP_TBL_PK" PRIMARY KEY ("FBDI_ZIP_ID")
   USING INDEX  ENABLE
    ) ';
@@ -37,3 +38,19 @@ begin
 exception when others then if sqlcode not in (-904,-957) then raise; end if;
 end;
 /
+
+-- WORK_QUEUE_ID (work-queue-ID granularity foundation, accepted 2026-07-20;
+-- docs/FIX_PLAN.md item 1). Guarded in-file ALTER so an existing DB converges
+-- via db/install.sql (the CREATE above carries it for fresh installs). FK is
+-- in db/tables/_foreign_keys.sql. NULLABLE for now; NOT NULL deferred.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where table_name = 'DMT_FBDI_ZIP_TBL' and column_name = 'WORK_QUEUE_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_FBDI_ZIP_TBL" ADD ("WORK_QUEUE_ID" NUMBER)';
+  end if;
+end;
+/
+COMMENT ON COLUMN "DMT_FBDI_ZIP_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';

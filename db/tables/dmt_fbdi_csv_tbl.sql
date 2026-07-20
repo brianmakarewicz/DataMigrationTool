@@ -12,6 +12,7 @@ begin
 	"FBDI_ZIP_ID" NUMBER,
 	"FILE_SEQ" NUMBER DEFAULT 1 NOT NULL ENABLE,
 	"INTEGRATION_ID" NUMBER GENERATED ALWAYS AS ("RUN_ID"+0) VIRTUAL ,
+	"WORK_QUEUE_ID" NUMBER, 
 	 CONSTRAINT "DMT_FBDI_CSV_TBL_PK" PRIMARY KEY ("FBDI_CSV_ID")
   USING INDEX  ENABLE
    ) ';
@@ -48,3 +49,19 @@ end;
 /
 COMMENT ON COLUMN "DMT_FBDI_CSV_TBL"."FBDI_ZIP_ID" IS 'FK up to DMT_FBDI_ZIP_TBL -- the zip this CSV is a member of';
 COMMENT ON COLUMN "DMT_FBDI_CSV_TBL"."FILE_SEQ" IS 'Member order within the zip (1..N); preserves add1file order for byte-identical archives';
+
+-- WORK_QUEUE_ID (work-queue-ID granularity foundation, accepted 2026-07-20;
+-- docs/FIX_PLAN.md item 1). Guarded in-file ALTER so an existing DB converges
+-- via db/install.sql (the CREATE above carries it for fresh installs). FK is
+-- in db/tables/_foreign_keys.sql. NULLABLE for now; NOT NULL deferred.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where table_name = 'DMT_FBDI_CSV_TBL' and column_name = 'WORK_QUEUE_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_FBDI_CSV_TBL" ADD ("WORK_QUEUE_ID" NUMBER)';
+  end if;
+end;
+/
+COMMENT ON COLUMN "DMT_FBDI_CSV_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';

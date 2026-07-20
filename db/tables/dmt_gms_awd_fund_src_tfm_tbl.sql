@@ -20,6 +20,7 @@ begin
 	"RUN_ID" NUMBER, 
 	"RECON_KEY" VARCHAR2(1000), 
 	"FUSION_AWARD_ID" NUMBER, 
+	"WORK_QUEUE_ID" NUMBER, 
 	 CONSTRAINT "DMT_GMS_AWD_FSRC_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -110,3 +111,19 @@ end;
 COMMENT ON COLUMN "DMT_GMS_AWD_FUND_SRC_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
 COMMENT ON COLUMN "DMT_GMS_AWD_FUND_SRC_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
 COMMENT ON COLUMN "DMT_GMS_AWD_FUND_SRC_TFM_TBL"."FUSION_AWARD_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';
+
+-- WORK_QUEUE_ID (work-queue-ID granularity foundation, accepted 2026-07-20;
+-- docs/FIX_PLAN.md item 1). Guarded in-file ALTER so an existing DB converges
+-- via db/install.sql (the CREATE above carries it for fresh installs). FK is
+-- in db/tables/_foreign_keys.sql. NULLABLE for now; NOT NULL deferred.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where table_name = 'DMT_GMS_AWD_FUND_SRC_TFM_TBL' and column_name = 'WORK_QUEUE_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_GMS_AWD_FUND_SRC_TFM_TBL" ADD ("WORK_QUEUE_ID" NUMBER)';
+  end if;
+end;
+/
+COMMENT ON COLUMN "DMT_GMS_AWD_FUND_SRC_TFM_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';

@@ -19,8 +19,9 @@ begin
 	"LAST_POLL_AT" TIMESTAMP (6), 
 	"NEXT_POLL_AFTER" TIMESTAMP (6), 
 	"ERROR_MESSAGE" VARCHAR2(4000), 
-	"STARTED_AT" TIMESTAMP (6), 
-	"COMPLETED_AT" TIMESTAMP (6), 
+	"STARTED_AT" TIMESTAMP (6),
+	"COMPLETED_AT" TIMESTAMP (6),
+	"PARENT_QUEUE_ID" NUMBER,
 	 CONSTRAINT "DMT_WORK_QUEUE_PK" PRIMARY KEY ("QUEUE_ID")
   USING INDEX  ENABLE, 
 	 CONSTRAINT "DMT_WORK_QUEUE_STATUS_CK" CHECK (
@@ -103,3 +104,36 @@ exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
 /
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-20 work-queue-ID granularity foundation (DMT_DESIGN section 7,
+-- accepted 2026-07-20; docs/FIX_PLAN.md item 1). PARENT_QUEUE_ID gives a
+-- spawned child work item a reference back to the parent it was split from
+-- (self-FK to QUEUE_ID). Nullable for parents/top-level items. Guarded +
+-- idempotent so it converges an existing database; fresh installs already get
+-- the column from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_WORK_QUEUE_TBL' and column_name = 'PARENT_QUEUE_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_WORK_QUEUE_TBL" ADD ("PARENT_QUEUE_ID" NUMBER)';
+  end if;
+end;
+/
+begin
+  execute immediate 'ALTER TABLE "DMT_WORK_QUEUE_TBL" ADD CONSTRAINT "DMT_WORK_QUEUE_PARENT_FK"
+    FOREIGN KEY ("PARENT_QUEUE_ID") REFERENCES "DMT_WORK_QUEUE_TBL" ("QUEUE_ID") ENABLE';
+exception when others then
+  if sqlcode not in (-955,-2275,-2264) then raise; end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_WORK_QUEUE_N2" ON "DMT_WORK_QUEUE_TBL" ("PARENT_QUEUE_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+COMMENT ON COLUMN "DMT_WORK_QUEUE_TBL"."PARENT_QUEUE_ID" IS 'Self-reference to the parent work item this child was spawned from at partition split (null for top-level items). FK to DMT_WORK_QUEUE_TBL.QUEUE_ID.';
