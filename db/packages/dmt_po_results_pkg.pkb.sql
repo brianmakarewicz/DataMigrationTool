@@ -293,9 +293,10 @@ AS
             END IF;
         END LOOP;
 
-        -- (The absence != LOADED catch-all now lives in the standard
-        -- SWEEP_UNACCOUNTED procedure, called at the end of RECONCILE_BATCH,
-        -- which sweeps headers AND child tables — see design §7.)
+        -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor
+        -- given a real Fusion error is left GENERATED (unaccounted). The
+        -- accounting gate then reports the object not-DONE and the funnel
+        -- surfaces it as UNRECONCILED — no fabricated FAILED.)
 
         -- Cascade LOADED to child TFM tables (lines/locs/dists)
         -- Lines: match on INTERFACE_HEADER_KEY
@@ -409,124 +410,6 @@ AS
             RAISE;
     END PARSE_AND_UPDATE;
 
-    -- ============================================================
-    -- SWEEP_UNACCOUNTED — STANDARD RECONCILE-ERROR SWEEP.
-    -- Absence != LOADED (Rule #1): after reconciliation, any TFM row still
-    -- not resolved to LOADED or FAILED reached neither the Fusion base table
-    -- nor the interface, so its outcome cannot be verified. Mark it FAILED
-    -- with a reportable [RECONCILE_ERROR] so no row silently passes.
-    --
-    -- STANDARD PROCEDURE (design §7): every reconciler package defines
-    -- SWEEP_UNACCOUNTED with this EXACT name and signature and calls it at the
-    -- end of RECONCILE_BATCH. Only the TFM table name(s) and the descriptive
-    -- [RECONCILE_ERROR] message text may differ between packages. It does NOT
-    -- commit — the caller (RECONCILE_BATCH) owns the transaction and commits.
-    -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
-    BEGIN
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Purchase order header not confirmed in Fusion '
-                   || '(neither the PO_HEADERS_ALL base table nor the PO import interface) '
-                   || 'after reconciliation; its import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
-        --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
-        --   ONLY when the object shares this TFM table with another object. If the
-        --   table is NOT shared, delete everything from EDIT-SCOPE to END EDIT-SCOPE.>>
-        AND    STYLE_DISPLAY_NAME = 'Purchase Order'
-        -- <<END EDIT-SCOPE — nothing below this changes>>
-        ;
-
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Purchase order line not confirmed loaded in Fusion '
-                   || 'after reconciliation (its header was not confirmed, or the line '
-                   || 'itself was not accounted); import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
-        --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
-        --   ONLY when the object shares this TFM table with another object. If the
-        --   table is NOT shared, delete everything from EDIT-SCOPE to END EDIT-SCOPE.>>
-        AND    INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = 'Purchase Order')
-        -- <<END EDIT-SCOPE — nothing below this changes>>
-        ;
-
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Purchase order line location not confirmed loaded '
-                   || 'in Fusion after reconciliation; import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
-        --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
-        --   ONLY when the object shares this TFM table with another object. If the
-        --   table is NOT shared, delete everything from EDIT-SCOPE to END EDIT-SCOPE.>>
-        AND    INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL WHERE INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = 'Purchase Order'))
-        -- <<END EDIT-SCOPE — nothing below this changes>>
-        ;
-
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Purchase order distribution not confirmed loaded '
-                   || 'in Fusion after reconciliation; import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
-        --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
-        --   ONLY when the object shares this TFM table with another object. If the
-        --   table is NOT shared, delete everything from EDIT-SCOPE to END EDIT-SCOPE.>>
-        AND    INTERFACE_LINE_LOCATION_KEY IN (SELECT INTERFACE_LINE_LOCATION_KEY FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL WHERE INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL WHERE INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = 'Purchase Order')))
-        -- <<END EDIT-SCOPE — nothing below this changes>>
-        ;
-    END SWEEP_UNACCOUNTED;
-
     -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- --------------------------------------------------------
@@ -555,8 +438,9 @@ AS
             DBMS_LOB.FREETEMPORARY(l_xml);
         END IF;
 
-        -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id);
+        -- Unresolved records intentionally left GENERATED (unaccounted).
+        -- No fabricated FAILED: the accounting gate reports the object
+        -- not-DONE and the funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

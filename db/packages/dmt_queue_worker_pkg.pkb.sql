@@ -761,25 +761,27 @@ AS
                 l_timeout_min := 30;
         END;
         IF l_rec.POLL_COUNT >= l_timeout_min THEN
-            MARK_GENERATED_ROWS_FAILED(
-                p_run_id     => l_rec.RUN_ID,
-                p_cemli_code => l_rec.CEMLI_CODE,
-                p_error_text => '[LOAD_ERROR] ESS poll timeout: job ' || l_ess_id ||
-                                ' (' || l_rec.WORK_STATUS || ') not terminal after ' ||
-                                l_rec.POLL_COUNT || ' polls (~' || l_timeout_min ||
-                                ' min, ESS_POLL_TIMEOUT_MINUTES). All-or-nothing: an ' ||
-                                'unfinished load committed nothing trustworthy.');
+            -- A timeout is a trigger for the failure path, never a per-record
+            -- verdict (section 2). We do NOT pre-stamp the GENERATED rows FAILED
+            -- with a fabricated "[LOAD_ERROR] poll timeout" message: that asserts a
+            -- failure we did not observe and would hide any row reconciliation
+            -- cannot resolve. We log the timeout and route to reconcile with the
+            -- rows left GENERATED. Reconciliation writes each per-record verdict
+            -- (LOADED if the job actually finished after we stopped watching,
+            -- FAILED on a REAL interface/base error, otherwise LEFT GENERATED /
+            -- unaccounted). The object is settled by the accounting gate alone.
             DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
                 'ESS poll timeout for ' || l_rec.CEMLI_CODE || ' (job ' || l_ess_id ||
                 ', ' || l_rec.POLL_COUNT || ' polls >= ' || l_timeout_min ||
-                ' min). GENERATED rows marked FAILED [LOAD_ERROR]; routing to reconcile.',
+                ' min). Routing to reconcile; rows left GENERATED so reconciliation '
+                || 'writes each per-record verdict.',
                 'WARN', C_PKG, 'POLL_ONE');
 
             get_dispatch(l_rec.CEMLI_CODE, l_exec_proc, l_exec_mode, l_recon_proc, l_recon_cemli);
             IF l_recon_proc IS NOT NULL THEN
                 -- Reconciliation still runs — if the job actually completed
                 -- after we stopped watching, it finds the records in Fusion
-                -- and flips them LOADED, overriding the precaution.
+                -- and flips them LOADED.
                 UPDATE DMT_WORK_QUEUE_TBL
                 SET WORK_STATUS = 'RECONCILING'
                 WHERE QUEUE_ID = p_queue_id;
@@ -905,34 +907,25 @@ AS
             -- not short-circuit it.
             -- ('EXPIRED' is excluded above — it is a per-tick poll artifact, not a status.)
             IF l_rec.WORK_STATUS = 'AWAITING_LOAD' THEN
-                -- A6 (2026-07-08): section 5 tag table, [LOAD_ERROR] row —
-                -- "When the load ESS job fails, every GENERATED row of that
-                -- ZIP is marked FAILED with this tag plus the job's
-                -- diagnostics", then routed to reconcile which can flip
-                -- confirmed rows back to LOADED (section 5 "A Load ESS ERROR
-                -- marks all GENERATED rows FAILED and routes to reconcile — it
-                -- never short-circuits").
-                --
-                -- Wording note: the placeholder states only what we know at this
-                -- point — the job ended ERROR and these rows are not yet confirmed
-                -- in Fusion. It deliberately does not pre-judge the load outcome
-                -- (it neither asserts the ZIP rolled back nor that any row was
-                -- committed); reconciliation is what actually accounts for each
-                -- row against the interface and base tables and writes the final
-                -- per-row verdict, leaving any row it cannot confirm with a
-                -- truthful "not confirmed / outcome could not be verified" error.
-                -- The decided SqlLdr-WARNING semantics in docs/DMT_DESIGN.html
-                -- section 5 still govern how the Interfaced funnel counts a failed
-                -- load; this message does not change or contradict that rule.
-                MARK_GENERATED_ROWS_FAILED(
-                    p_run_id     => l_rec.RUN_ID,
-                    p_cemli_code => l_rec.CEMLI_CODE,
-                    p_error_text => '[LOAD_ERROR] Load ESS job ' || l_ess_id ||
-                                    ' ended ' || l_status ||
-                                    '. These rows are not yet confirmed in Fusion; ' ||
-                                    'reconciliation will account for each against the ' ||
-                                    'interface and base tables. Check the ESS job log ' ||
-                                    'for load diagnostics.');
+                -- The load ESS job ended in a terminal error state. That is a real
+                -- observed event about the JOB, but it is NOT a per-record verdict:
+                -- an FBDI load can end ERROR/WARNING on partial success (some rows
+                -- reach base, some land in the interface error table). We therefore
+                -- do NOT pre-stamp the GENERATED rows FAILED with a generic
+                -- "[LOAD_ERROR] ... not yet confirmed" message — that fabricates a
+                -- failure we have not observed and would hide any row reconciliation
+                -- cannot resolve. Instead we log the job error and route to
+                -- reconcile with the rows left GENERATED. Reconciliation is the one
+                -- place that writes a per-record verdict: LOADED when confirmed in a
+                -- base table, FAILED when it has a REAL interface/base error, and
+                -- LEFT GENERATED (unaccounted) otherwise — surfaced by the
+                -- accounting gate (object not-DONE) and the funnel (UNRECONCILED).
+                DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                    'Load ESS job ' || l_ess_id || ' ended ' || l_status ||
+                    ' for ' || l_rec.CEMLI_CODE || '. Routing to reconcile; rows left '
+                    || 'GENERATED so reconciliation writes each per-record verdict. '
+                    || 'Check the ESS job log for load diagnostics.',
+                    'WARN', C_PKG, 'EXECUTE_ONE');
                 -- Capture the import job id (if any) first so the reconciler
                 -- can read the import error table.
                 IF l_rec.IMPORT_ESS_JOB_ID IS NULL THEN

@@ -650,7 +650,8 @@ AS
             AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
             AND    p.TFM_STATUS     = 'FAILED');
 
-        -- (Absence != LOADED catch-all moved to the standard SWEEP_UNACCOUNTED — §7.)
+        -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor given
+        -- a real Fusion error is left GENERATED (unaccounted) — no fabricated FAILED.)
         l_not_recon := 0;
 
         -- NO write-back to staging — the TFM row is the sole record of the
@@ -680,99 +681,6 @@ AS
                 p_procedure => C_PROC);
             RAISE;
     END PARSE_AND_UPDATE;
-
-    -- ============================================================
-    -- SWEEP_UNACCOUNTED — STANDARD RECONCILE-ERROR SWEEP (design §7).
-    -- Marks every TFM row still NOT IN ('LOADED','FAILED') as FAILED with a
-    -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
-    -- across packages except the tagged EDIT regions. Does NOT commit.
-    -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
-    BEGIN
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Project not confirmed in Fusion '
-                   || '(not found in the PJF_PROJECTS_ALL_B base table for this run) '
-                   || 'after reconciliation; its import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_PJF_PROJECTS_TFM_TBL is not shared.)
-        ;
-
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Project task not confirmed in Fusion '
-                   || '(not found in the PJF_TASKS base table for this run) after '
-                   || 'reconciliation; its import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_PJF_TASKS_TFM_TBL is not shared.)
-        ;
-
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Project team member not confirmed in Fusion '
-                   || '(not found in the PJF_PROJECT_PARTIES base table for this run) '
-                   || 'after reconciliation; its import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_PJF_TEAM_MEMBERS_TFM_TBL is not shared.)
-        ;
-
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Project transaction control not confirmed in '
-                   || 'Fusion (not found in the PJC_TXN_CONTROLS base table for this run) '
-                   || 'after reconciliation; its import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_PJC_TXN_CONTROLS_TFM_TBL is not shared.)
-        ;
-    END SWEEP_UNACCOUNTED;
 
     -- --------------------------------------------------------
     -- RECONCILE_BATCH
@@ -810,8 +718,9 @@ AS
 
         PARSE_AND_UPDATE(p_run_id, l_xml, p_import_ess_id);
 
-        -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id);
+        -- Unresolved records intentionally left GENERATED (unaccounted).
+        -- No fabricated FAILED: the accounting gate reports the object
+        -- not-DONE and the funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,

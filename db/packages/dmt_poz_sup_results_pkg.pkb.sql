@@ -384,63 +384,6 @@
             RAISE;
     END PARSE_AND_UPDATE;
 
-    -- ============================================================
-    -- SWEEP_UNACCOUNTED — STANDARD RECONCILE-ERROR SWEEP (design §7),
-    -- MULTI-CEMLI EXCEPTION variant. This one package reconciles five supplier
-    -- objects, one per call keyed by p_cemli_code, so — unlike the single-object
-    -- reconcilers whose SWEEP_UNACCOUNTED(p_run_id) is byte-identical — this sweep
-    -- takes p_cemli_code and fails only the rows of the table for the object being
-    -- reconciled. Each arm is otherwise the standard body: any row still
-    -- NOT IN ('LOADED','FAILED') becomes FAILED with a reportable [RECONCILE_ERROR]
-    -- (absence != LOADED, Rule #1). Does NOT commit. This exception is retired when
-    -- the "split supplier reconciler per object" backlog item lands — each split
-    -- package then carries the plain SWEEP_UNACCOUNTED(p_run_id).
-    -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER, p_cemli_code IN VARCHAR2) IS
-    BEGIN
-        IF p_cemli_code = 'Suppliers' THEN
-            UPDATE DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] Supplier not confirmed in Fusion (not found in '
-                       || 'POZ_SUPPLIERS) after reconciliation; import outcome could not be verified.'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
-        ELSIF p_cemli_code = 'SupplierAddresses' THEN
-            UPDATE DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] Supplier address not confirmed in Fusion (not found '
-                       || 'in HZ_PARTY_SITES) after reconciliation; import outcome could not be verified.'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
-        ELSIF p_cemli_code = 'SupplierSites' THEN
-            UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] Supplier site not confirmed in Fusion (not found in '
-                       || 'POZ_SUPPLIER_SITES_ALL_M) after reconciliation; import outcome could not be verified.'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
-        ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-            UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] Supplier site assignment not confirmed in Fusion (not '
-                       || 'found in POZ_SITE_ASSIGNMENTS_ALL_M) after reconciliation; import outcome could not be verified.'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
-        ELSIF p_cemli_code = 'SupplierContacts' THEN
-            UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] Supplier contact not confirmed in Fusion (not found in '
-                       || 'HZ_PARTIES person party) after reconciliation; import outcome could not be verified.'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
-        END IF;
-    END SWEEP_UNACCOUNTED;
-
     -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- Orchestrates FETCH then PARSE for one CEMLI.
@@ -480,8 +423,9 @@
         END IF;
         PARSE_AND_UPDATE(p_run_id, p_cemli_code, l_xml);
 
-        -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id, p_cemli_code);
+        -- Unresolved records intentionally left GENERATED (unaccounted).
+        -- No fabricated FAILED: the accounting gate reports the object
+        -- not-DONE and the funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
