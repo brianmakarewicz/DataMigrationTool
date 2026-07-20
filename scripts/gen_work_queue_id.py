@@ -68,7 +68,6 @@ def process(path: pathlib.Path):
     if pk_line_idx is None:
         raise RuntimeError(f"no PK constraint found in {path.name}")
 
-    table = pk_name.rsplit("_", 1)[0] if False else None  # unused
     # Derive table name from the CREATE TABLE statement.
     tm = re.search(r'CREATE TABLE "([A-Z0-9_]+)"', text)
     table_name = tm.group(1)
