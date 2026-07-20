@@ -1,0 +1,24 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "W2Balances_gold.zip",
+  "members": [
+    { "template": "InitializeBalanceBatchHeader.dat", "archive_name": "InitializeBalanceBatchHeader.dat" },
+    { "template": "InitializeBalanceBatchLine.dat", "archive_name": "InitializeBalanceBatchLine.dat" }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["2", "2852"],
+    "bad_keys": ["DMTW2${PREFIX}NOSUCH"],
+    "bad_error_contains": "valid value for the batchid",
+    "base_read": {
+      "_comment": "Base table for the HDL load of this object is the balance batch line, PAY_BAL_BATCH_LINES, joined to its header PAY_BAL_BATCH_HEADERS on this run's prefixed batch name DMTW2<prefix>. NOTE: use the PAY_BAL_BATCH_* tables (the live, current tables), NOT PAY_BALANCE_BATCH_* -- that similarly-named replica is stale by months in this BIP relay (max creation_date frozen at 2026-04-14). HDL upload+load writes the accepted lines here (the good rows), keyed by PAYROLL_RELATIONSHIP_NUMBER. The bad line references a nonexistent parent batch name (DMTW2<prefix>NOSUCH), which HDL cannot resolve, so it errors at load and no line is written -- proven by the load-time HDL message plus absence from this base read. v2 seeded: the LDG name, the two good payroll relationship numbers (2, 2852), the bad line's relationship (2854), and the two payroll names (Biweekly, Retail Biweekly) are hard-coded standard seeded demo values -- confirmed present on the pod via read-only BIP, never records we loaded. The batch name keeps ${PREFIX} so each run is a brand-new batch and is naturally re-runnable. The downstream Load Initial Balances ESS process then converts the accepted batch lines (status U = unprocessed) into actual balances in PAY_RUN_BALANCES -- that step is documented in GOLD_README but is not part of the standalone HDL load path.",
+      "sql": "SELECT l.payroll_relationship_number AS PRN, MAX(l.batch_line_id) AS BATCH_LINE_ID, MAX(l.batch_line_status) AS BATCH_LINE_STATUS, MAX(l.balance_name) AS BALANCE_NAME, MAX(l.value) AS VAL FROM pay_bal_batch_lines l JOIN pay_bal_batch_headers h ON h.batch_id=l.batch_id WHERE h.batch_name='DMTW2${PREFIX}' AND h.legislative_data_group_id=300000046974970 GROUP BY l.payroll_relationship_number",
+      "cols": ["PRN", "BATCH_LINE_ID", "BATCH_LINE_STATUS", "BALANCE_NAME", "VAL"],
+      "key_col": "PRN",
+      "id_col": "BATCH_LINE_ID"
+    }
+  }
+}

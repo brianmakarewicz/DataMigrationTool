@@ -1,0 +1,20 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "BenDependent_gold.zip",
+  "dat": { "template": "Contact.dat", "archive_name": "Contact.dat" },
+  "bad_error_contains": "ContactType",
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["Dep${PREFIX}One", "Dep${PREFIX}Two"],
+    "bad_keys": ["${PREFIX}DMTDEP-BAD_REL"],
+    "base_read": {
+      "sql": "SELECT nm.last_name AS LNAME, TO_CHAR(MAX(cr.contact_relationship_id)) AS RID, MAX(cr.contact_type) AS CT, MAX(cr.dependent_flag) AS DF FROM per_contact_relships_f cr JOIN per_person_names_f nm ON (nm.person_id = cr.contact_person_id OR nm.person_id = cr.person_id) AND nm.name_type = 'GLOBAL' AND SYSDATE BETWEEN nm.effective_start_date AND nm.effective_end_date WHERE cr.dependent_flag = 'Y' AND SYSDATE BETWEEN cr.effective_start_date AND cr.effective_end_date AND nm.last_name IN ('Dep${PREFIX}One','Dep${PREFIX}Two','Dep${PREFIX}Bad') GROUP BY nm.last_name",
+      "cols": ["LNAME", "RID", "CT", "DF"],
+      "key_col": "LNAME",
+      "id_col": "RID"
+    }
+  }
+}

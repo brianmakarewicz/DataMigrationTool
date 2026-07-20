@@ -1,0 +1,2 @@
+"LookupType","Meaning","Description","CreatedBy","CreationDate","LastUpdatedBy","LastUpdateDate","LastUpdateLogin","ModuleId","CustomizationLevel","RestAccessSecured","BossAppPackageName","BossAppPackageVersion","BossModuleName","BossIdentifier"
+"RT_GOLD_${PREFIX}","RT Gold Lookup ${PREFIX}","Gold regression standard lookup ${PREFIX}","FIN_IMPL","2020/01/01 00:00:00.0","FIN_IMPL","2020/01/01 00:00:00.0","","40B3FA7250D19380E040449823C67A1A","U","SECURE","","","",""

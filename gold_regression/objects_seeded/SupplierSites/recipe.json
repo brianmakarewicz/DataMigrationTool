@@ -1,0 +1,31 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "calvin.roth",
+  "doc_account": "prc/supplier/import",
+  "interface_details_id": 25,
+  "import_job_name_raw": "/oracle/apps/ess/prc/poz/supplierImport;ImportSupplierSites",
+  "job_name": "/oracle/apps/ess/prc/poz/supplierImport,ImportSupplierSites",
+  "parameter_list": "NEW,N",
+  "filename": "SupplierSites_gold.zip",
+  "csvs": [
+    { "template": "PozSupplierSitesInt.csv", "fbdi_name": "PozSupplierSitesInt.csv" }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-SITE-G1", "${PREFIX}RT-SITE-G2"],
+    "bad_keys": ["${PREFIX}RT-SITE-BAD"],
+    "base_read": {
+      "sql": "SELECT vendor_site_code AS VENDOR_SITE_CODE, vendor_site_id AS VENDOR_SITE_ID, vendor_id AS VENDOR_ID FROM poz_supplier_sites_all_m WHERE vendor_id = 300000047414571 AND vendor_site_code LIKE :PREFIX || 'RT-SITE-%'",
+      "cols": ["VENDOR_SITE_CODE", "VENDOR_SITE_ID", "VENDOR_ID"],
+      "key_col": "VENDOR_SITE_CODE",
+      "id_col": "VENDOR_SITE_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT i.vendor_site_code AS VENDOR_SITE_CODE, i.vendor_site_interface_id AS SITE_INTERFACE_ID, i.status AS IFACE_STATUS, i.vendor_site_id AS IFACE_VENDOR_SITE_ID, (SELECT LISTAGG(CASE WHEN r.attribute IS NOT NULL THEN r.reject_lookup_code || ' [' || r.attribute || ']' ELSE r.reject_lookup_code END, '; ') WITHIN GROUP (ORDER BY r.rejection_id) FROM poz_supplier_int_rejections r WHERE r.parent_table = 'POZ_SUPPLIER_SITES_INT' AND r.parent_id = i.vendor_site_interface_id) AS ERROR_MESSAGE FROM poz_supplier_sites_int i WHERE i.load_request_id = :LRID",
+      "cols": ["VENDOR_SITE_CODE", "SITE_INTERFACE_ID", "IFACE_STATUS", "IFACE_VENDOR_SITE_ID", "ERROR_MESSAGE"],
+      "key_col": "VENDOR_SITE_CODE",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/payables/import",
+  "interface_details_id": 1,
+  "import_job_name_raw": "/oracle/apps/ess/financials/payables/invoices/transactions;APXIIMPT",
+  "job_name": "/oracle/apps/ess/financials/payables/invoices/transactions,APXIIMPT",
+  "parameter_list": ",300000046987012,N,${GL_DATE},#NULL,#NULL,1000,Manual Invoice Entry,${PREFIX},N,Y,300000046975971,#NULL,1",
+  "filename": "APInvoices_gold.zip",
+  "csvs": [
+    { "template": "ApInvoicesInterface.csv",      "fbdi_name": "ApInvoicesInterface.csv" },
+    { "template": "ApInvoiceLinesInterface.csv",  "fbdi_name": "ApInvoiceLinesInterface.csv" }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-APINV-G1", "${PREFIX}RT-APINV-G2"],
+    "bad_keys": ["${PREFIX}RT-APINV-BAD1"],
+    "base_read": {
+      "sql": "SELECT invoice_num AS INVOICE_NUM, invoice_id AS INVOICE_ID, invoice_amount AS INVOICE_AMOUNT FROM ap_invoices_all WHERE invoice_num LIKE :PREFIX || 'RT-APINV-%'",
+      "cols": ["INVOICE_NUM", "INVOICE_ID", "INVOICE_AMOUNT"],
+      "key_col": "INVOICE_NUM",
+      "id_col": "INVOICE_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT h.invoice_num AS INVOICE_NUM, h.invoice_id AS IFACE_INVOICE_ID, (SELECT LISTAGG(NVL(r.rejection_message, r.reject_lookup_code), '; ') WITHIN GROUP (ORDER BY r.reject_lookup_code) FROM ap_interface_rejections r WHERE r.parent_id = h.invoice_id AND r.parent_table = 'AP_INVOICES_INTERFACE') AS ERROR_MESSAGE FROM ap_invoices_interface h WHERE h.load_request_id = :LRID",
+      "cols": ["INVOICE_NUM", "IFACE_INVOICE_ID", "ERROR_MESSAGE"],
+      "key_col": "INVOICE_NUM",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

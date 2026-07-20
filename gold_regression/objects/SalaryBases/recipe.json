@@ -1,0 +1,33 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "SalaryBases_gold.zip",
+  "dat": { "template": "SalaryBasis.dat", "archive_name": "SalaryBasis.dat" },
+  "discovery": [
+    {
+      "name": "SALARY_ELEMENT_IV_LDG",
+      "role": "hcm_impl",
+      "cols": ["ELEM_NAME", "IV_NAME", "LDG_NAME"],
+      "sql": "SELECT et.base_element_name AS ELEM_NAME, iv.base_name AS IV_NAME, ldg.name AS LDG_NAME FROM cmp_salary_bases b JOIN pay_element_types_f et ON et.element_type_id = b.element_type_id AND SYSDATE BETWEEN et.effective_start_date AND et.effective_end_date JOIN pay_input_values_f iv ON iv.input_value_id = b.input_value_id AND SYSDATE BETWEEN iv.effective_start_date AND iv.effective_end_date JOIN pay_legislative_data_groups ldg ON ldg.legislative_data_group_id = b.legislative_data_group_id WHERE b.name = 'US1 Annual Salary' AND ROWNUM = 1",
+      "bind": {
+        "ELEM_NAME": "ELEM_NAME",
+        "IV_NAME": "IV_NAME",
+        "LDG_NAME": "LDG_NAME"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PREFIX} DMT Annual Salary", "${PREFIX} DMT Annual Salary 2"],
+    "bad_keys": ["${PREFIX}DMTSB-BAD"],
+    "base_read": {
+      "sql": "SELECT b.name AS BASIS_NAME, TO_CHAR(MAX(b.salary_basis_id)) AS SALARY_BASIS_ID FROM cmp_salary_bases b WHERE b.name LIKE '${PREFIX} DMT%' GROUP BY b.name",
+      "cols": ["BASIS_NAME", "SALARY_BASIS_ID"],
+      "key_col": "BASIS_NAME",
+      "id_col": "SALARY_BASIS_ID"
+    }
+  }
+}

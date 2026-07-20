@@ -1,0 +1,4 @@
+"AP_TERM_HEADER.Name","Name","Description","Language","SourceLang"
+"GldRegTerm ${PREFIX} A","GldRegTerm ${PREFIX} A","Gold Reg Payment Term ${PREFIX} A (net 30)","US","US"
+"GldRegTerm ${PREFIX} B","GldRegTerm ${PREFIX} B","Gold Reg Payment Term ${PREFIX} B (net 45)","US","US"
+"GldRegTerm ${PREFIX} BAD","GldRegTerm ${PREFIX} BAD","Gold Reg Payment Term ${PREFIX} BAD (invalid set)","US","US"

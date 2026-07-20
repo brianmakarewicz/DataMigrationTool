@@ -1,0 +1,33 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "prj/projectFoundation/import",
+  "interface_details_id": 46,
+  "import_job_name_raw": "/oracle/apps/ess/projects/foundation/projectDefinition;ImportProjectJobDef",
+  "job_name": "/oracle/apps/ess/projects/foundation/projectDefinition,ImportProjectJobDef",
+  "parameter_list": ",,Y",
+  "filename": "Projects_gold.zip",
+  "csvs": [
+    { "template": "PjfProjectsAllXface.csv",  "fbdi_name": "PjfProjectsAllXface.csv" },
+    { "template": "PjfProjElementsXface.csv", "fbdi_name": "PjfProjElementsXface.csv" },
+    { "template": "PjfProjectPartiesInt.csv", "fbdi_name": "PjfProjectPartiesInt.csv" }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-PRJ-G1", "${PREFIX}RT-PRJ-G2"],
+    "bad_keys": ["${PREFIX}RT-PRJ-BAD1"],
+    "base_read": {
+      "sql": "SELECT segment1 AS PROJECT_NUMBER, project_id AS PROJECT_ID, name AS PROJECT_NAME FROM pjf_projects_all_vl WHERE segment1 LIKE :PREFIX || 'RT-PRJ-%'",
+      "cols": ["PROJECT_NUMBER", "PROJECT_ID", "PROJECT_NAME"],
+      "key_col": "PROJECT_NUMBER",
+      "id_col": "PROJECT_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT project_number AS PROJECT_NUMBER, 'IMPORT_STATUS=' || NVL(import_status,'(null)') || ' LOAD_STATUS=' || NVL(load_status,'(null)') AS ERROR_MESSAGE FROM pjf_projects_all_xface WHERE load_request_id = :LRID",
+      "cols": ["PROJECT_NUMBER", "ERROR_MESSAGE"],
+      "key_col": "PROJECT_NUMBER",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

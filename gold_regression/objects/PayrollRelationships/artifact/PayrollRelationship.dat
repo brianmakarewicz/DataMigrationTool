@@ -1,0 +1,4 @@
+METADATA|AssignedPayroll|EffectiveStartDate|AssignmentNumber|PayrollDefinitionCode|LegislativeDataGroupName|StartDate
+MERGE|AssignedPayroll|2026/07/19|${ASG1}|${PAYROLL_NAME}|${LDG_NAME}|2026/07/19
+MERGE|AssignedPayroll|2026/07/19|${ASG2}|${PAYROLL_NAME}|${LDG_NAME}|2026/07/19
+MERGE|AssignedPayroll|2026/07/19|${ASG3}|DMT NONEXISTENT PAYROLL|${LDG_NAME}|2026/07/19

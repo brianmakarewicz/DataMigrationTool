@@ -1,0 +1,4 @@
+METADATA|InitializeBalanceBatchLine|LegislativeDataGroupName|BatchName|LineSequence|UploadDate|PayrollRelationshipNumber|PayrollName|BalanceName|DimensionName|Value
+MERGE|InitializeBalanceBatchLine|US Legislative Data Group|DMTW2${PREFIX}|1|${GL_DATE_SLASH}|2|Biweekly|Regular Salary|Core Relationship Year to Date|1000
+MERGE|InitializeBalanceBatchLine|US Legislative Data Group|DMTW2${PREFIX}|2|${GL_DATE_SLASH}|2852|Retail Biweekly|Regular Salary|Core Relationship Year to Date|2000
+MERGE|InitializeBalanceBatchLine|US Legislative Data Group|DMTW2${PREFIX}NOSUCH|3|${GL_DATE_SLASH}|2854|Retail Biweekly|Regular Salary|Core Relationship Year to Date|3000

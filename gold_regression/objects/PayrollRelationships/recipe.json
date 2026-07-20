@@ -1,0 +1,37 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "PayrollRelationships_gold.zip",
+  "dat": { "template": "PayrollRelationship.dat", "archive_name": "AssignedPayroll.dat" },
+  "discovery": [
+    {
+      "name": "US_LDG_PAYROLL_AND_UNASSIGNED_ASGS",
+      "role": "hcm_impl",
+      "cols": ["LDG_NAME", "PAYROLL_NAME", "PAYROLL_ID", "ASG1", "ASG2", "ASG3"],
+      "sql": "SELECT ldg.name AS LDG_NAME, pl.payroll_name AS PAYROLL_NAME, TO_CHAR(pl.payroll_id) AS PAYROLL_ID, MAX(CASE WHEN c.rn=1 THEN c.assignment_number END) AS ASG1, MAX(CASE WHEN c.rn=2 THEN c.assignment_number END) AS ASG2, MAX(CASE WHEN c.rn=3 THEN c.assignment_number END) AS ASG3 FROM pay_legislative_data_groups ldg CROSS JOIN (SELECT pd.payroll_name, pd.payroll_id FROM pay_all_payrolls_f pd WHERE pd.legislative_data_group_id=300000046974970 AND pd.payroll_name='Biweekly' AND SYSDATE BETWEEN pd.effective_start_date AND pd.effective_end_date AND ROWNUM=1) pl CROSS JOIN (SELECT a.assignment_number, ROW_NUMBER() OVER (ORDER BY a.assignment_id ASC) rn FROM per_all_assignments_m a JOIN per_all_people_f p ON p.person_id=a.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date JOIN pay_pay_relationships_dn pr ON pr.person_id=a.person_id AND pr.legislative_data_group_id=300000046974970 WHERE a.effective_latest_change='Y' AND SYSDATE BETWEEN a.effective_start_date AND a.effective_end_date AND a.assignment_type='E' AND a.primary_flag='Y' AND a.location_id IS NOT NULL AND REGEXP_LIKE(p.person_number,'^[0-9]+$') AND NOT EXISTS (SELECT 1 FROM pay_rel_groups_dn g JOIN pay_assigned_payrolls_dn ap ON ap.payroll_term_id=g.term_id WHERE g.payroll_relationship_id=pr.payroll_relationship_id)) c WHERE ldg.legislative_data_group_id=300000046974970 AND c.rn<=3 GROUP BY ldg.name, pl.payroll_name, pl.payroll_id",
+      "bind": {
+        "LDG_NAME": "LDG_NAME",
+        "PAYROLL_NAME": "PAYROLL_NAME",
+        "PAYROLL_ID": "PAYROLL_ID",
+        "ASG1": "ASG1",
+        "ASG2": "ASG2",
+        "ASG3": "ASG3"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${ASG1}", "${ASG2}"],
+    "bad_keys": ["${ASG3}"],
+    "base_read": {
+      "_comment": "Robust replica-stable proof: assigned-payroll base row correlated to the discovered person/assignment via pay_pay_relationships_dn (payroll_term_id = the relationship-level term, id just above payroll_relationship_id). Avoids pay_rel_groups_dn, whose term rows lag in this BIP replica. Scoped to the discovered Biweekly payroll_id + today's start_date so a row is unambiguously this run's.",
+      "sql": "SELECT a.assignment_number AS ASG_NUM, MAX(ap.assigned_payroll_id) AS ASSIGNED_PAYROLL_ID, MAX(ap.payroll_id) AS PAYROLL_ID FROM pay_assigned_payrolls_dn ap JOIN pay_pay_relationships_dn pr ON pr.legislative_data_group_id=300000046974970 AND ap.payroll_term_id BETWEEN pr.payroll_relationship_id AND pr.payroll_relationship_id + 5 JOIN per_all_assignments_m a ON a.person_id=pr.person_id AND a.effective_latest_change='Y' AND a.assignment_type='E' AND a.primary_flag='Y' WHERE ap.legislative_data_group_id=300000046974970 AND ap.payroll_id=${PAYROLL_ID} AND ap.start_date=DATE '2026-07-19' AND a.assignment_number IN ('${ASG1}','${ASG2}','${ASG3}') GROUP BY a.assignment_number",
+      "cols": ["ASG_NUM", "ASSIGNED_PAYROLL_ID", "PAYROLL_ID"],
+      "key_col": "ASG_NUM",
+      "id_col": "ASSIGNED_PAYROLL_ID"
+    }
+  }
+}

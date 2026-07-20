@@ -1,0 +1,4 @@
+METADATA|PersonAbsenceEntry|Employer|PersonNumber|AbsenceType|AbsenceReason|AbsenceStatus|ApprovalStatus|StartDate|EndDate|Duration|SourceSystemOwner|SourceSystemId
+MERGE|PersonAbsenceEntry|US1 Legal Entity|6|Vacation||SUBMITTED|APPROVED|${ABS_START}|${ABS_END}|16|HRC_SQLLOADER|${PREFIX}DMTABS001
+MERGE|PersonAbsenceEntry|US1 Legal Entity|9|Vacation||SUBMITTED|APPROVED|${ABS_START}|${ABS_END}|16|HRC_SQLLOADER|${PREFIX}DMTABS002
+MERGE|PersonAbsenceEntry|US1 Legal Entity|10|DMT NONEXISTENT ABSENCE TYPE||SUBMITTED|APPROVED|${ABS_START}|${ABS_END}|16|HRC_SQLLOADER|${PREFIX}DMTABS-BAD

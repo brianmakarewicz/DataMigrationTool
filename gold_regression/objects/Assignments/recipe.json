@@ -1,0 +1,34 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "Assignments_gold.zip",
+  "dat": { "template": "Assignment.dat", "archive_name": "Worker.dat" },
+  "discovery": [
+    {
+      "name": "EXISTING_ACTIVE_ASSIGNMENTS",
+      "role": "hcm_impl",
+      "cols": ["ASG1", "WT1", "PN1", "LE1", "DS1", "ASG2", "WT2", "PN2", "LE2", "DS2", "ASG3", "WT3", "PN3", "LE3", "DS3"],
+      "sql": "SELECT MAX(CASE WHEN c.rn=1 THEN c.asg END) AS ASG1, MAX(CASE WHEN c.rn=1 THEN c.wt END) AS WT1, MAX(CASE WHEN c.rn=1 THEN c.pn END) AS PN1, MAX(CASE WHEN c.rn=1 THEN c.le END) AS LE1, MAX(CASE WHEN c.rn=1 THEN c.ds END) AS DS1, MAX(CASE WHEN c.rn=2 THEN c.asg END) AS ASG2, MAX(CASE WHEN c.rn=2 THEN c.wt END) AS WT2, MAX(CASE WHEN c.rn=2 THEN c.pn END) AS PN2, MAX(CASE WHEN c.rn=2 THEN c.le END) AS LE2, MAX(CASE WHEN c.rn=2 THEN c.ds END) AS DS2, MAX(CASE WHEN c.rn=3 THEN c.asg END) AS ASG3, MAX(CASE WHEN c.rn=3 THEN c.wt END) AS WT3, MAX(CASE WHEN c.rn=3 THEN c.pn END) AS PN3, MAX(CASE WHEN c.rn=3 THEN c.le END) AS LE3, MAX(CASE WHEN c.rn=3 THEN c.ds END) AS DS3 FROM (SELECT a.assignment_number AS asg, wt.assignment_number AS wt, p.person_number AS pn, le_tl.name AS le, TO_CHAR(pos.date_start,'YYYY/MM/DD') AS ds, ROW_NUMBER() OVER (ORDER BY a.assignment_id) rn FROM per_all_assignments_m a JOIN per_all_people_f p ON p.person_id = a.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date JOIN pay_pay_relationships_dn pr ON pr.person_id = a.person_id AND pr.legislative_data_group_id = 300000046974970 JOIN per_all_assignments_m wt ON wt.period_of_service_id = a.period_of_service_id AND wt.assignment_type='ET' AND wt.effective_latest_change='Y' AND SYSDATE BETWEEN wt.effective_start_date AND wt.effective_end_date JOIN per_periods_of_service pos ON pos.period_of_service_id = a.period_of_service_id JOIN hr_organization_units_f_tl le_tl ON le_tl.organization_id = pos.legal_entity_id AND le_tl.language='US' AND SYSDATE BETWEEN le_tl.effective_start_date AND le_tl.effective_end_date WHERE a.effective_latest_change='Y' AND SYSDATE BETWEEN a.effective_start_date AND a.effective_end_date AND a.assignment_type='E' AND a.primary_flag='Y' AND a.assignment_status_type='ACTIVE' AND REGEXP_LIKE(p.person_number,'^[0-9]+$')) c WHERE c.rn <= 3",
+      "bind": {
+        "ASG1": "ASG1", "WT1": "WT1", "PN1": "PN1", "LE1": "LE1", "DS1": "DS1",
+        "ASG2": "ASG2", "WT2": "WT2", "PN2": "PN2", "LE2": "LE2", "DS2": "DS2",
+        "ASG3": "ASG3", "WT3": "WT3", "PN3": "PN3", "LE3": "LE3", "DS3": "DS3"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${ASG1}", "${ASG2}"],
+    "bad_keys": ["${PREFIX}DMTASG-BAD"],
+    "bad_error_contains": "valid value for the ActionCode field",
+    "base_read": {
+      "sql": "SELECT a.assignment_number AS ASG_NUM, MAX(a.assignment_id) AS ASG_ID, MAX(TO_CHAR(a.normal_hours)) AS NHOURS, MAX(TO_CHAR(a.effective_start_date,'YYYY/MM/DD')) AS ESD FROM per_all_assignments_m a WHERE a.assignment_number IN ('${ASG1}','${ASG2}','${ASG3}') AND a.effective_latest_change='Y' AND a.effective_start_date >= TRUNC(SYSDATE) - 2 AND a.normal_hours = 37.5 GROUP BY a.assignment_number",
+      "cols": ["ASG_NUM", "ASG_ID", "NHOURS", "ESD"],
+      "key_col": "ASG_NUM",
+      "id_col": "ASG_ID"
+    }
+  }
+}

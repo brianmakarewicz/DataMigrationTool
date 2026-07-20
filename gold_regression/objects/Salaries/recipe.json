@@ -1,0 +1,35 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "Salaries_gold.zip",
+  "dat": { "template": "Salary.dat", "archive_name": "Salary.dat" },
+  "discovery": [
+    {
+      "name": "SALARY_BASIS_AND_NOSAL_ASGS",
+      "role": "hcm_impl",
+      "cols": ["BASIS_NAME", "BASIS_ID", "ASG1", "ASG2", "ASG3"],
+      "sql": "SELECT b.name AS BASIS_NAME, TO_CHAR(b.salary_basis_id) AS BASIS_ID, MAX(CASE WHEN c.rn=1 THEN c.assignment_number END) AS ASG1, MAX(CASE WHEN c.rn=2 THEN c.assignment_number END) AS ASG2, MAX(CASE WHEN c.rn=3 THEN c.assignment_number END) AS ASG3 FROM cmp_salary_bases b CROSS JOIN (SELECT a.assignment_number, ROW_NUMBER() OVER (ORDER BY a.assignment_id) rn FROM per_all_assignments_m a JOIN per_all_people_f p ON p.person_id = a.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date JOIN pay_pay_relationships_dn pr ON pr.person_id = a.person_id AND pr.legislative_data_group_id = 300000046974970 WHERE a.effective_latest_change='Y' AND SYSDATE BETWEEN a.effective_start_date AND a.effective_end_date AND a.assignment_type='E' AND a.primary_flag='Y' AND NOT EXISTS (SELECT 1 FROM cmp_salary s WHERE s.assignment_id = a.assignment_id) AND REGEXP_LIKE(p.person_number, '^[0-9]+$')) c WHERE b.name = 'US1 Annual Salary' AND c.rn <= 3 GROUP BY b.name, b.salary_basis_id",
+      "bind": {
+        "SALARY_BASIS": "BASIS_NAME",
+        "SALARY_BASIS_ID": "BASIS_ID",
+        "ASG1": "ASG1",
+        "ASG2": "ASG2",
+        "ASG3": "ASG3"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${ASG1}", "${ASG2}"],
+    "bad_keys": ["${PREFIX}DMTSAL-BAD"],
+    "base_read": {
+      "sql": "SELECT a.assignment_number AS ASG_NUM, MAX(s.salary_id) AS SALARY_ID, MAX(s.salary_amount) AS SALARY_AMOUNT FROM cmp_salary s JOIN per_all_assignments_m a ON a.assignment_id = s.assignment_id AND a.effective_latest_change='Y' WHERE s.salary_basis_id = ${SALARY_BASIS_ID} AND s.date_from = DATE '2026-07-19' AND a.assignment_number IN ('${ASG1}','${ASG2}','${ASG3}') GROUP BY a.assignment_number",
+      "cols": ["ASG_NUM", "SALARY_ID", "SALARY_AMOUNT"],
+      "key_col": "ASG_NUM",
+      "id_col": "SALARY_ID"
+    }
+  }
+}

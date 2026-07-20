@@ -1,0 +1,4 @@
+"AP_TERM_HEADER.Name","Name","Description","Language","SourceLang"
+"GldRegTerm 90212 A","GldRegTerm 90212 A","Gold Reg Payment Term 90212 A (net 30)","US","US"
+"GldRegTerm 90212 B","GldRegTerm 90212 B","Gold Reg Payment Term 90212 B (net 45)","US","US"
+"GldRegTerm 90212 BAD","GldRegTerm 90212 BAD","Gold Reg Payment Term 90212 BAD (invalid set)","US","US"

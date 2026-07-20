@@ -1,0 +1,42 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "W2Balances_gold.zip",
+  "members": [
+    { "template": "InitializeBalanceBatchHeader.dat", "archive_name": "InitializeBalanceBatchHeader.dat" },
+    { "template": "InitializeBalanceBatchLine.dat", "archive_name": "InitializeBalanceBatchLine.dat" }
+  ],
+  "discovery": [
+    {
+      "name": "US_LDG_BALANCE_AND_ASSIGNED_PAYREL",
+      "role": "hcm_impl",
+      "cols": ["LDG_NAME", "PRN1", "PAY1", "PRN2", "PAY2", "PRN3", "PAY3"],
+      "sql": "SELECT ldg.name AS LDG_NAME, MAX(CASE WHEN c.rn=1 THEN c.prn END) AS PRN1, MAX(CASE WHEN c.rn=1 THEN c.payname END) AS PAY1, MAX(CASE WHEN c.rn=2 THEN c.prn END) AS PRN2, MAX(CASE WHEN c.rn=2 THEN c.payname END) AS PAY2, MAX(CASE WHEN c.rn=3 THEN c.prn END) AS PRN3, MAX(CASE WHEN c.rn=3 THEN c.payname END) AS PAY3 FROM pay_legislative_data_groups ldg CROSS JOIN (SELECT prn, payname, ROW_NUMBER() OVER (ORDER BY prn) rn FROM (SELECT DISTINCT pr.payroll_relationship_number prn, pl.payroll_name payname, ROW_NUMBER() OVER (PARTITION BY pr.payroll_relationship_number ORDER BY pl.payroll_name) r2 FROM pay_assigned_payrolls_dn ap JOIN pay_pay_relationships_dn pr ON ap.payroll_term_id BETWEEN pr.payroll_relationship_id AND pr.payroll_relationship_id+6 AND pr.legislative_data_group_id=300000046974970 JOIN per_all_people_f p ON p.person_id=pr.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date JOIN pay_all_payrolls_f pl ON pl.payroll_id=ap.payroll_id AND SYSDATE BETWEEN pl.effective_start_date AND pl.effective_end_date WHERE ap.legislative_data_group_id=300000046974970 AND REGEXP_LIKE(pr.payroll_relationship_number,'^[0-9]+$')) WHERE r2=1) c WHERE ldg.legislative_data_group_id=300000046974970 AND c.rn<=3 GROUP BY ldg.name",
+      "bind": {
+        "LDG_NAME": "LDG_NAME",
+        "PRN1": "PRN1",
+        "PAY1": "PAY1",
+        "PRN2": "PRN2",
+        "PAY2": "PAY2",
+        "PRN3": "PRN3",
+        "PAY3": "PAY3"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PRN1}", "${PRN2}"],
+    "bad_keys": ["DMTW2${PREFIX}NOSUCH"],
+    "bad_error_contains": "valid value for the batchid",
+    "base_read": {
+      "_comment": "Base table for the HDL load of this object is the balance batch line, PAY_BAL_BATCH_LINES, joined to its header PAY_BAL_BATCH_HEADERS on this run's prefixed batch name DMTW2<prefix>. NOTE: use the PAY_BAL_BATCH_* tables (the live, current tables), NOT PAY_BALANCE_BATCH_* -- that similarly-named replica is stale by months in this BIP relay (max creation_date frozen at 2026-04-14). HDL upload+load writes the accepted lines here (the good rows), keyed by PAYROLL_RELATIONSHIP_NUMBER. The bad line references a nonexistent PayrollRelationshipNumber (<prefix>BADPRN), which HDL cannot resolve, so it errors at load and no line is written -- proven by the load-time HDL message plus absence from this base read. The downstream Load Initial Balances ESS process then converts the accepted batch lines (status U = unprocessed) into actual balances in PAY_RUN_BALANCES -- that step is documented in GOLD_README but is not part of the standalone REST load path.",
+      "sql": "SELECT l.payroll_relationship_number AS PRN, MAX(l.batch_line_id) AS BATCH_LINE_ID, MAX(l.batch_line_status) AS BATCH_LINE_STATUS, MAX(l.balance_name) AS BALANCE_NAME, MAX(l.value) AS VAL FROM pay_bal_batch_lines l JOIN pay_bal_batch_headers h ON h.batch_id=l.batch_id WHERE h.batch_name='DMTW2${PREFIX}' AND h.legislative_data_group_id=300000046974970 GROUP BY l.payroll_relationship_number",
+      "cols": ["PRN", "BATCH_LINE_ID", "BATCH_LINE_STATUS", "BALANCE_NAME", "VAL"],
+      "key_col": "PRN",
+      "id_col": "BATCH_LINE_ID"
+    }
+  }
+}

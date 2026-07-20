@@ -1,0 +1,73 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/budgetBalance/import",
+  "interface_details_id": 17,
+  "import_job_name_raw": "/oracle/apps/ess/financials/generalLedger/ledgers/ledgerDefinitions;ValidateAndLoadBudgets",
+  "job_name": "/oracle/apps/ess/financials/generalLedger/ledgers/ledgerDefinitions,ValidateAndLoadBudgets",
+  "parameter_list": "#NULL",
+  "filename": "GLBudgets_gold.zip",
+  "csvs": [
+    { "template": "GlBudgetInterface.csv", "fbdi_name": "GlBudgetInterface.csv" }
+  ],
+  "downstream_jobs": [
+    {
+      "name": "ValidateAndLoadBudgets (good run name)",
+      "job_path": "/oracle/apps/ess/financials/generalLedger/ledgers/ledgerDefinitions,ValidateAndLoadBudgets",
+      "parameter_list": "${PREFIX}RT-GLBUD-G"
+    },
+    {
+      "name": "ValidateAndLoadBudgets (bad run name)",
+      "job_path": "/oracle/apps/ess/financials/generalLedger/ledgers/ledgerDefinitions,ValidateAndLoadBudgets",
+      "parameter_list": "${PREFIX}RT-GLBUD-B"
+    }
+  ],
+  "discovery": [
+    {
+      "name": "GL_BUDGET_REF",
+      "role": "fin_impl",
+      "cols": ["LEDGER_NAME", "LEDGER_ID", "BUDGET_NAME", "CURRENCY_CODE", "PERIOD_NAME", "S1", "S2", "S4", "S5", "S6", "ACCT_A", "ACCT_B", "ACCT_C", "ACCT_D"],
+      "sql": "SELECT * FROM ( SELECT led.name LEDGER_NAME, ref.ledger_id LEDGER_ID, ref.budget_name BUDGET_NAME, ref.currency_code CURRENCY_CODE, per.period_name PERIOD_NAME, ref.segment1 S1, ref.segment2 S2, ref.segment4 S4, ref.segment5 S5, ref.segment6 S6, MAX(CASE WHEN acc.rn=1 THEN acc.acct3 END) ACCT_A, MAX(CASE WHEN acc.rn=2 THEN acc.acct3 END) ACCT_B, MAX(CASE WHEN acc.rn=3 THEN acc.acct3 END) ACCT_C, MAX(CASE WHEN acc.rn=4 THEN acc.acct3 END) ACCT_D FROM ( SELECT ledger_id, budget_name, currency_code, segment1, segment2, segment4, segment5, segment6 FROM gl_budget_balances WHERE currency_code = 'USD' AND segment4 = '000' AND segment5 = '000' AND segment6 = '000' GROUP BY ledger_id, budget_name, currency_code, segment1, segment2, segment4, segment5, segment6 ORDER BY COUNT(*) DESC FETCH FIRST 1 ROWS ONLY ) ref JOIN gl_ledgers led ON led.ledger_id = ref.ledger_id CROSS APPLY ( SELECT ps.period_name FROM gl_period_statuses ps JOIN gl_periods p ON p.period_set_name = led.period_set_name AND p.period_name = ps.period_name WHERE ps.ledger_id = ref.ledger_id AND ps.application_id = 101 AND ps.closing_status = 'O' ORDER BY p.end_date DESC FETCH FIRST 1 ROWS ONLY ) per CROSS APPLY ( SELECT acct3, ROW_NUMBER() OVER (ORDER BY acct3) rn FROM ( SELECT DISTINCT segment3 acct3 FROM gl_budget_balances WHERE ledger_id = ref.ledger_id AND budget_name = ref.budget_name AND segment1 = ref.segment1 AND segment2 = ref.segment2 ) WHERE ROWNUM <= 4 ) acc GROUP BY led.name, ref.ledger_id, ref.budget_name, ref.currency_code, per.period_name, ref.segment1, ref.segment2, ref.segment4, ref.segment5, ref.segment6 ) WHERE ROWNUM = 1",
+      "bind": {
+        "LEDGER_NAME": "LEDGER_NAME",
+        "LEDGER_ID": "LEDGER_ID",
+        "BUDGET_NAME": "BUDGET_NAME",
+        "CURRENCY_CODE": "CURRENCY_CODE",
+        "PERIOD_NAME": "PERIOD_NAME",
+        "S1": "S1",
+        "S2": "S2",
+        "S4": "S4",
+        "S5": "S5",
+        "S6": "S6",
+        "ACCT_A": "ACCT_A",
+        "ACCT_B": "ACCT_B",
+        "ACCT_C": "ACCT_C",
+        "ACCT_D": "ACCT_D"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": [
+      "${S1}-${S2}-${ACCT_A}-${S4}-${S5}-${S6}",
+      "${S1}-${S2}-${ACCT_B}-${S4}-${S5}-${S6}",
+      "${S1}-${S2}-${ACCT_C}-${S4}-${S5}-${S6}",
+      "${S1}-${S2}-${ACCT_D}-${S4}-${S5}-${S6}"
+    ],
+    "bad_keys": ["${PREFIX}RT-GLBUD-B"],
+    "base_read": {
+      "sql": "SELECT bb.concat_account AS CONCAT_ACCOUNT, TO_CHAR(bb.period_net_dr) AS PERIOD_NET_DR, TO_CHAR(bb.last_update_date,'YYYY-MM-DD HH24:MI:SS') AS UPD FROM gl_budget_balances bb WHERE bb.ledger_id = ${LEDGER_ID} AND bb.budget_name = '${BUDGET_NAME}' AND bb.period_name = '${PERIOD_NAME}' AND bb.currency_code = '${CURRENCY_CODE}' AND bb.concat_account IN ('${S1}-${S2}-${ACCT_A}-${S4}-${S5}-${S6}','${S1}-${S2}-${ACCT_B}-${S4}-${S5}-${S6}','${S1}-${S2}-${ACCT_C}-${S4}-${S5}-${S6}','${S1}-${S2}-${ACCT_D}-${S4}-${S5}-${S6}') AND bb.period_net_dr = 1000 AND bb.last_update_date >= SYSDATE - INTERVAL '4' HOUR",
+      "cols": ["CONCAT_ACCOUNT", "PERIOD_NET_DR", "UPD"],
+      "key_col": "CONCAT_ACCOUNT",
+      "id_col": "PERIOD_NET_DR"
+    },
+    "interface_read": {
+      "sql": "SELECT i.run_name AS RUN_NAME, i.status AS IFACE_STATUS, i.error_message AS ERROR_MESSAGE FROM gl_budget_interface i WHERE i.run_name = '${PREFIX}RT-GLBUD-B'",
+      "cols": ["RUN_NAME", "IFACE_STATUS", "ERROR_MESSAGE"],
+      "key_col": "RUN_NAME",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

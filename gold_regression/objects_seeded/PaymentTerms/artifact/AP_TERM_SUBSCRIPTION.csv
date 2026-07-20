@@ -1,0 +1,4 @@
+"AP_TERM_HEADER.Name","SetCode"
+"GldRegTerm ${PREFIX} A","COMMON"
+"GldRegTerm ${PREFIX} B","COMMON"
+"GldRegTerm ${PREFIX} BAD","ZZ_NO_SUCH_SET"

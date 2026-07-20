@@ -1,0 +1,49 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/payables/import",
+  "interface_details_id": 1,
+  "import_job_name_raw": "/oracle/apps/ess/financials/payables/invoices/transactions;APXIIMPT",
+  "job_name": "/oracle/apps/ess/financials/payables/invoices/transactions,APXIIMPT",
+  "parameter_list": ",${BU_ID},N,${GL_DATE},#NULL,#NULL,1000,Manual Invoice Entry,${PREFIX},N,Y,${LEDGER_ID},#NULL,1",
+  "filename": "APInvoices_gold.zip",
+  "csvs": [
+    { "template": "ApInvoicesInterface.csv",      "fbdi_name": "ApInvoicesInterface.csv" },
+    { "template": "ApInvoiceLinesInterface.csv",  "fbdi_name": "ApInvoiceLinesInterface.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "AP_SUPPLIER_SITE_BU",
+      "role": "fin_impl",
+      "cols": ["VNAME", "VNUM", "SITE", "BUID", "BUNAME", "LEDGERID"],
+      "sql": "SELECT * FROM (SELECT sv.vendor_name AS VNAME, sv.segment1 AS VNUM, ss.vendor_site_code AS SITE, ss.prc_bu_id AS BUID, bu.bu_name AS BUNAME, bu.primary_ledger_id AS LEDGERID FROM poz_supplier_sites_all_m ss JOIN poz_suppliers_v sv ON sv.vendor_id = ss.vendor_id JOIN fun_all_business_units_v bu ON bu.bu_id = ss.prc_bu_id WHERE ss.pay_site_flag = 'Y' AND bu.primary_ledger_id IS NOT NULL AND bu.bu_name = 'US1 Business Unit' AND NVL(ss.inactive_date, SYSDATE+1) > SYSDATE AND REGEXP_LIKE(sv.segment1, '^[0-9]+$') AND sv.vendor_name NOT LIKE '%RT %' AND sv.vendor_name NOT LIKE '%RT-%' ORDER BY TO_NUMBER(sv.segment1)) WHERE ROWNUM = 1",
+      "bind": {
+        "SUPPLIER_NAME": "VNAME",
+        "SUPPLIER_NUM": "VNUM",
+        "SUPPLIER_SITE": "SITE",
+        "BU_ID": "BUID",
+        "BU_NAME": "BUNAME",
+        "LEDGER_ID": "LEDGERID"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-APINV-G1", "${PREFIX}RT-APINV-G2"],
+    "bad_keys": ["${PREFIX}RT-APINV-BAD1"],
+    "base_read": {
+      "sql": "SELECT invoice_num AS INVOICE_NUM, invoice_id AS INVOICE_ID, invoice_amount AS INVOICE_AMOUNT FROM ap_invoices_all WHERE invoice_num LIKE :PREFIX || 'RT-APINV-%'",
+      "cols": ["INVOICE_NUM", "INVOICE_ID", "INVOICE_AMOUNT"],
+      "key_col": "INVOICE_NUM",
+      "id_col": "INVOICE_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT h.invoice_num AS INVOICE_NUM, h.invoice_id AS IFACE_INVOICE_ID, (SELECT LISTAGG(NVL(r.rejection_message, r.reject_lookup_code), '; ') WITHIN GROUP (ORDER BY r.reject_lookup_code) FROM ap_interface_rejections r WHERE r.parent_id = h.invoice_id AND r.parent_table = 'AP_INVOICES_INTERFACE') AS ERROR_MESSAGE FROM ap_invoices_interface h WHERE h.load_request_id = :LRID",
+      "cols": ["INVOICE_NUM", "IFACE_INVOICE_ID", "ERROR_MESSAGE"],
+      "key_col": "INVOICE_NUM",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

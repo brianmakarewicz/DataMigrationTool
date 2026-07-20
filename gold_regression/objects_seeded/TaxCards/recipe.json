@@ -1,0 +1,21 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "TaxCards_gold.zip",
+  "dat": { "template": "TaxWithholding.dat", "archive_name": "TaxWithholding.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["4176"],
+    "bad_keys": ["${PREFIX}DMT-NO-REL"],
+    "bad_error_contains": "valid value for the sourceid",
+    "base_read": {
+      "_comment": "GOOD proof (base CREATE): a US Tax Withholding card (dir_card_definition_id 300000000375476) now exists in PAY_DIR_CARDS_F on the hard-coded seeded card-free secondary payroll relationship 4176 (payroll_relationship_id 300000175399856), effective this run's date (pod today ${GL_DATE_SLASH}), with at least one component in PAY_DIR_CARD_COMPONENTS_F carrying the federal ExtraWithholding value. The bad PayrollRelationshipNumber resolves to no relationship, so HDL errors it at load and it never appears in PAY_DIR_CARDS_F. The parent card CREATE is one-shot per relationship: the first run creates the card; a second run against the same relationship MERGEs onto the existing card (same dir_card_id, no new card) and still passes because the card + component are present.",
+      "sql": "SELECT '4176' AS PRNUM, TO_CHAR(x.dir_card_id) AS DIR_CARD_ID, TO_CHAR(x.card_esd,'YYYY/MM/DD') AS CARD_ESD, TO_CHAR((SELECT COUNT(*) FROM pay_dir_card_components_f cc WHERE cc.dir_card_id=x.dir_card_id)) AS COMP_CNT FROM (SELECT MAX(c.dir_card_id) AS dir_card_id, MAX(c.effective_start_date) AS card_esd FROM pay_dir_cards_f c WHERE c.dir_card_definition_id=300000000375476 AND c.payroll_relationship_id=300000175399856) x WHERE x.dir_card_id IS NOT NULL",
+      "cols": ["PRNUM", "DIR_CARD_ID", "CARD_ESD", "COMP_CNT"],
+      "key_col": "PRNUM",
+      "id_col": "DIR_CARD_ID"
+    }
+  }
+}

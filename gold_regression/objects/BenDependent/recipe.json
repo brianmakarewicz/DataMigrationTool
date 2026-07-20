@@ -1,0 +1,37 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "BenDependent_gold.zip",
+  "dat": { "template": "Contact.dat", "archive_name": "Contact.dat" },
+  "bad_error_contains": "ContactType",
+  "discovery": [
+    {
+      "name": "EXISTING_US1_EMPLOYEES",
+      "role": "hcm_impl",
+      "cols": ["PNUM1", "PNUM2", "PNUM3", "PID1", "PID2", "PID3"],
+      "sql": "SELECT MAX(CASE WHEN rn=1 THEN person_number END) AS PNUM1, MAX(CASE WHEN rn=2 THEN person_number END) AS PNUM2, MAX(CASE WHEN rn=3 THEN person_number END) AS PNUM3, MAX(CASE WHEN rn=1 THEN person_id END) AS PID1, MAX(CASE WHEN rn=2 THEN person_id END) AS PID2, MAX(CASE WHEN rn=3 THEN person_id END) AS PID3 FROM (SELECT p.person_number, TO_CHAR(p.person_id) person_id, ROW_NUMBER() OVER (ORDER BY p.person_number) rn FROM per_all_assignments_m a JOIN per_all_people_f p ON p.person_id = a.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date WHERE a.legal_entity_id = 300000046974965 AND a.effective_latest_change = 'Y' AND SYSDATE BETWEEN a.effective_start_date AND a.effective_end_date AND a.assignment_type = 'E' AND a.primary_flag = 'Y' AND REGEXP_LIKE(p.person_number, '^[0-9]+$')) WHERE rn <= 3",
+      "bind": {
+        "PNUM1": "PNUM1",
+        "PNUM2": "PNUM2",
+        "PNUM3": "PNUM3",
+        "PID1": "PID1",
+        "PID2": "PID2",
+        "PID3": "PID3"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["Dep${PREFIX}One", "Dep${PREFIX}Two"],
+    "bad_keys": ["${PREFIX}DMTDEP-BAD_REL"],
+    "base_read": {
+      "sql": "SELECT nm.last_name AS LNAME, TO_CHAR(MAX(cr.contact_relationship_id)) AS RID, MAX(cr.contact_type) AS CT, MAX(cr.dependent_flag) AS DF FROM per_contact_relships_f cr JOIN per_person_names_f nm ON (nm.person_id = cr.contact_person_id OR nm.person_id = cr.person_id) AND nm.name_type = 'GLOBAL' AND SYSDATE BETWEEN nm.effective_start_date AND nm.effective_end_date WHERE cr.dependent_flag = 'Y' AND SYSDATE BETWEEN cr.effective_start_date AND cr.effective_end_date AND nm.last_name IN ('Dep${PREFIX}One','Dep${PREFIX}Two','Dep${PREFIX}Bad') GROUP BY nm.last_name",
+      "cols": ["LNAME", "RID", "CT", "DF"],
+      "key_col": "LNAME",
+      "id_col": "RID"
+    }
+  }
+}

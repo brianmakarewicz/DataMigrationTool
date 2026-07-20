@@ -1,0 +1,31 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "calvin.roth",
+  "doc_account": "prc/supplier/import",
+  "interface_details_id": 27,
+  "import_job_name_raw": "/oracle/apps/ess/prc/poz/supplierImport;ImportSupplierSiteAssignments",
+  "job_name": "/oracle/apps/ess/prc/poz/supplierImport,ImportSupplierSiteAssignments",
+  "parameter_list": "NEW,N",
+  "filename": "SupplierSiteAssignments_gold.zip",
+  "csvs": [
+    { "template": "PozSiteAssignmentsInt.csv", "fbdi_name": "PozSiteAssignmentsInt.csv" }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["Sweden Business Unit", "UK Business Unit"],
+    "bad_keys": ["${PREFIX}NO SUCH BU"],
+    "base_read": {
+      "sql": "SELECT b.bu_name AS BUSINESS_UNIT_NAME, a.assignment_id AS ASSIGNMENT_ID, a.vendor_site_id AS VENDOR_SITE_ID FROM poz_site_assignments_all_m a JOIN fun_all_business_units_v b ON b.bu_id = a.bu_id WHERE a.vendor_site_id = 300000267319997 AND a.inactive_date IS NULL AND b.bu_name IN ('Sweden Business Unit', 'UK Business Unit')",
+      "cols": ["BUSINESS_UNIT_NAME", "ASSIGNMENT_ID", "VENDOR_SITE_ID"],
+      "key_col": "BUSINESS_UNIT_NAME",
+      "id_col": "ASSIGNMENT_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT i.business_unit_name AS BUSINESS_UNIT_NAME, i.assignment_interface_id AS ASSIGNMENT_INTERFACE_ID, i.vendor_site_code AS VENDOR_SITE_CODE, (SELECT LISTAGG(CASE WHEN r.attribute IS NOT NULL THEN r.reject_lookup_code || ' [' || r.attribute || ']' ELSE r.reject_lookup_code END, '; ') WITHIN GROUP (ORDER BY r.rejection_id) FROM poz_supplier_int_rejections r WHERE r.parent_table = 'POZ_SITE_ASSIGNMENTS_INT' AND r.parent_id = i.assignment_interface_id) AS ERROR_MESSAGE FROM poz_site_assignments_int i WHERE i.load_request_id = :LRID",
+      "cols": ["BUSINESS_UNIT_NAME", "ASSIGNMENT_INTERFACE_ID", "VENDOR_SITE_CODE", "ERROR_MESSAGE"],
+      "key_col": "BUSINESS_UNIT_NAME",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

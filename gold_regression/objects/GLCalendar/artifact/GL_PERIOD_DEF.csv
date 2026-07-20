@@ -1,0 +1,13 @@
+PeriodName,PeriodSetName,LastUpdateDate,LastUpdatedBy,StartDate,EndDate,YearStartDate,QuarterStartDate,PeriodYear,PeriodNum,QuarterNum,EnteredPeriodName,AdjustmentPeriodFlag,CreationDate,CreatedBy,LastUpdateLogin,Description,Attribute1,Attribute2,Attribute3,Attribute4,Attribute5,Attribute6,Attribute7,Attribute8,ConfirmationStatus,PeriodStatus,RequiredPrevPrdNum,RqrdPrevNonAdjEndDate,CurrentPeriodYear,AttributeCategory,FiscalYear,GlobalAttribute1,GlobalAttribute10,GlobalAttribute11,GlobalAttribute12,GlobalAttribute13,GlobalAttribute14,GlobalAttribute15,GlobalAttribute16,GlobalAttribute17,GlobalAttribute18,GlobalAttribute19,GlobalAttribute2,GlobalAttribute20,GlobalAttribute3,GlobalAttribute4,GlobalAttribute5,GlobalAttribute6,GlobalAttribute7,GlobalAttribute8,GlobalAttribute9,GlobalAttributeCategory,GlobalAttributeDate1,GlobalAttributeDate2,GlobalAttributeDate3,GlobalAttributeDate4,GlobalAttributeDate5,GlobalAttributeNumber1,GlobalAttributeNumber2,GlobalAttributeNumber3,GlobalAttributeNumber4,GlobalAttributeNumber5
+Jan-35,RTG${PREFIX},,,2035/01/01,2035/01/31,2035/01/01,2035/01/01,2035,1,1,Jan,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Feb-35,RTG${PREFIX},,,2035/02/01,2035/02/28,2035/01/01,2035/01/01,2035,2,1,Feb,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Mar-35,RTG${PREFIX},,,2035/03/01,2035/03/31,2035/01/01,2035/01/01,2035,3,1,Mar,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Apr-35,RTG${PREFIX},,,2035/04/01,2035/04/30,2035/01/01,2035/04/01,2035,4,2,Apr,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+May-35,RTG${PREFIX},,,2035/05/01,2035/05/31,2035/01/01,2035/04/01,2035,5,2,May,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Jun-35,RTG${PREFIX},,,2035/06/01,2035/06/30,2035/01/01,2035/04/01,2035,6,2,Jun,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Jul-35,RTG${PREFIX},,,2035/07/01,2035/07/31,2035/01/01,2035/07/01,2035,7,3,Jul,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Aug-35,RTG${PREFIX},,,2035/08/01,2035/08/31,2035/01/01,2035/07/01,2035,8,3,Aug,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Sep-35,RTG${PREFIX},,,2035/09/01,2035/09/30,2035/01/01,2035/07/01,2035,9,3,Sep,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Oct-35,RTG${PREFIX},,,2035/10/01,2035/10/31,2035/01/01,2035/10/01,2035,10,4,Oct,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Nov-35,RTG${PREFIX},,,2035/11/01,2035/11/30,2035/01/01,2035/10/01,2035,11,4,Nov,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Dec-35,RTG${PREFIX},,,2035/12/01,2035/12/31,2035/01/01,2035/10/01,2035,12,4,Dec,N,,,,,,,,,,,,,,,,,,,2035,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,

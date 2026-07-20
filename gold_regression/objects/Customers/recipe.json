@@ -1,0 +1,55 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/receivables/import",
+  "interface_details_id": 4,
+  "import_job_name_raw": "/oracle/apps/ess/cdm/foundation/bulkImport;CDMAutoBulkImportJob",
+  "job_name": "/oracle/apps/ess/cdm/foundation/bulkImport,CDMAutoBulkImportJob",
+  "parameter_list": "${PREFIX},Batch ID ${PREFIX} ${ORIG_SYSTEM},CUSTOMER,${ORIG_SYSTEM}",
+  "filename": "Customers_gold.zip",
+  "csvs": [
+    { "template": "HzImpPartiesT.csv",       "fbdi_name": "HzImpPartiesT.csv" },
+    { "template": "HzImpLocationsT.csv",      "fbdi_name": "HzImpLocationsT.csv" },
+    { "template": "HzImpPartySitesT.csv",     "fbdi_name": "HzImpPartySitesT.csv" },
+    { "template": "HzImpPartySiteUsesT.csv",  "fbdi_name": "HzImpPartySiteUsesT.csv" },
+    { "template": "HzImpAccountsT.csv",       "fbdi_name": "HzImpAccountsT.csv" },
+    { "template": "HzImpAcctSitesT.csv",      "fbdi_name": "HzImpAcctSitesT.csv" },
+    { "template": "HzImpAcctSiteUsesT.csv",   "fbdi_name": "HzImpAcctSiteUsesT.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "TCA_SOURCE_SYSTEM",
+      "role": "fin_impl",
+      "cols": ["OS"],
+      "sql": "SELECT os FROM (SELECT orig_system AS os, CASE orig_system WHEN 'LEG1' THEN 0 WHEN 'LEG2' THEN 1 WHEN 'CSV' THEN 2 ELSE 3 END AS pref FROM hz_orig_systems_b WHERE status = 'A' AND enable_for_tca_flag = 'Y' AND orig_system_type = 'SPOKE' ORDER BY pref, orig_system) WHERE ROWNUM = 1",
+      "bind": { "ORIG_SYSTEM": "OS" },
+      "required": true
+    },
+    {
+      "name": "AR_BUSINESS_UNIT",
+      "role": "fin_impl",
+      "cols": ["BUNAME", "BUID"],
+      "sql": "SELECT * FROM (SELECT bu.bu_name AS buname, bu.bu_id AS buid FROM fun_all_business_units_v bu WHERE bu.primary_ledger_id IS NOT NULL AND bu.bu_name = 'US1 Business Unit' ORDER BY bu.bu_id) WHERE ROWNUM = 1",
+      "bind": { "BU_NAME": "BUNAME", "BU_ID": "BUID" },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}G001", "${PREFIX}G002"],
+    "bad_keys": ["${PREFIX}BAD01"],
+    "base_read": {
+      "sql": "SELECT account_number AS ACCOUNT_NUMBER, cust_account_id AS CUST_ACCOUNT_ID FROM hz_cust_accounts WHERE account_number LIKE :PREFIX || '%'",
+      "cols": ["ACCOUNT_NUMBER", "CUST_ACCOUNT_ID"],
+      "key_col": "ACCOUNT_NUMBER",
+      "id_col": "CUST_ACCOUNT_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT a.account_number AS ACCOUNT_NUMBER, (SELECT LISTAGG(e.message_name, '; ') WITHIN GROUP (ORDER BY e.error_seq_id) FROM hz_imp_errors e WHERE e.batch_id = :PREFIX AND e.interface_table_name IN ('HZ_IMP_PARTIES_T','HZ_IMP_ACCOUNTS_T')) AS ERROR_MESSAGE FROM hz_imp_accounts_t a WHERE a.batch_id = :PREFIX AND a.account_number LIKE :PREFIX || 'BAD%'",
+      "cols": ["ACCOUNT_NUMBER", "ERROR_MESSAGE"],
+      "key_col": "ACCOUNT_NUMBER",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

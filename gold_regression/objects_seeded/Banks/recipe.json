@@ -1,0 +1,107 @@
+{
+  "type": "REST",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "rest": {
+    "banks_path": "/fscmRestApi/resources/11.13.18.05/cashBanks",
+    "branches_path": "/fscmRestApi/resources/11.13.18.05/cashBankBranches",
+    "accounts_path": "/fscmRestApi/resources/11.13.18.05/cashBankAccounts"
+  },
+  "records": {
+    "banks": [
+      {
+        "tag": "BANK1",
+        "expect": "good",
+        "payload": {
+          "CountryName": "United States",
+          "BankName": "DMT Gold Bank ${PREFIX}-1",
+          "BankNumber": "${PREFIX}101",
+          "Description": "Gold regression bank ${PREFIX} one"
+        }
+      },
+      {
+        "tag": "BANK2",
+        "expect": "good",
+        "payload": {
+          "CountryName": "United States",
+          "BankName": "DMT Gold Bank ${PREFIX}-2",
+          "BankNumber": "${PREFIX}102",
+          "Description": "Gold regression bank ${PREFIX} two"
+        }
+      },
+      {
+        "tag": "BANKBAD",
+        "expect": "bad",
+        "payload": {
+          "CountryName": "Nowhereland",
+          "BankName": "DMT Gold Bank ${PREFIX}-BAD",
+          "BankNumber": "${PREFIX}199"
+        }
+      }
+    ],
+    "branches": [
+      {
+        "tag": "BRANCH1",
+        "bank_tag": "BANK1",
+        "payload": {
+          "BankName": "DMT Gold Bank ${PREFIX}-1",
+          "BankBranchName": "DMT Gold Branch ${PREFIX}-1",
+          "BranchNumber": "${ROUTING1}",
+          "CountryName": "United States",
+          "EFTSWIFTCode": "DMTGUS${PREFIX}",
+          "Description": "Gold regression branch ${PREFIX} one"
+        }
+      },
+      {
+        "tag": "BRANCH2",
+        "bank_tag": "BANK2",
+        "payload": {
+          "BankName": "DMT Gold Bank ${PREFIX}-2",
+          "BankBranchName": "DMT Gold Branch ${PREFIX}-2",
+          "BranchNumber": "${ROUTING2}",
+          "CountryName": "United States",
+          "Description": "Gold regression branch ${PREFIX} two"
+        }
+      }
+    ],
+    "accounts": [
+      {
+        "branch_tag": "BRANCH1",
+        "payload": {
+          "BankAccountName": "DMT Gold Account ${PREFIX}-1",
+          "BankAccountNumber": "${PREFIX}301",
+          "CurrencyCode": "USD",
+          "BankName": "DMT Gold Bank ${PREFIX}-1",
+          "BankBranchName": "DMT Gold Branch ${PREFIX}-1",
+          "LegalEntityName": "US INS Legal Entity",
+          "Description": "Gold regression account ${PREFIX} one"
+        }
+      }
+    ]
+  },
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["DMT Gold Bank ${PREFIX}-1", "DMT Gold Bank ${PREFIX}-2"],
+    "bad_keys": ["DMT Gold Bank ${PREFIX}-BAD"],
+    "base_read": {
+      "sql": "SELECT bank_name AS BANK_NAME, MAX(bank_party_id) AS BANK_PARTY_ID FROM ce_banks_v WHERE bank_name LIKE 'DMT Gold Bank ${PREFIX}-%' GROUP BY bank_name",
+      "cols": ["BANK_NAME", "BANK_PARTY_ID"],
+      "key_col": "BANK_NAME",
+      "id_col": "BANK_PARTY_ID"
+    },
+    "branch_read": {
+      "sql": "SELECT bank_branch_name AS BRANCH_NAME, MAX(branch_party_id) AS BRANCH_PARTY_ID FROM ce_bank_branches_v WHERE bank_branch_name LIKE 'DMT Gold Branch ${PREFIX}-%' GROUP BY bank_branch_name",
+      "cols": ["BRANCH_NAME", "BRANCH_PARTY_ID"],
+      "key_col": "BRANCH_NAME",
+      "id_col": "BRANCH_PARTY_ID"
+    },
+    "account_read": {
+      "sql": "SELECT bank_account_name AS ACCOUNT_NAME, MAX(bank_account_id) AS BANK_ACCOUNT_ID FROM ce_bank_accounts WHERE bank_account_name LIKE 'DMT Gold Account ${PREFIX}-%' GROUP BY bank_account_name",
+      "cols": ["ACCOUNT_NAME", "BANK_ACCOUNT_ID"],
+      "key_col": "ACCOUNT_NAME",
+      "id_col": "BANK_ACCOUNT_ID"
+    },
+    "bad_proof_is_absence": true,
+    "bad_absence_note": "REST POST to cashBanks rejected with HTTP 400 (invalid CountryName 'Nowhereland') at load time; the error 'detail' is captured in the load result. Rejection is proven by ABSENCE from base table CE_BANKS_V while the good banks from the same run reached CE_BANKS_V with real BankPartyId values. The bank REST create is atomic: a rejected POST creates no party."
+  }
+}

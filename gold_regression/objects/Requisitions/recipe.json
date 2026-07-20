@@ -1,0 +1,67 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "prc/requisition/import",
+  "interface_details_id": 28,
+  "import_job_name_raw": "/oracle/apps/ess/prc/por/createReq/reqImport;RequisitionImportJob",
+  "job_name": "/oracle/apps/ess/prc/por/createReq/reqImport,RequisitionImportJob",
+  "parameter_list": "#NULL,${PREFIX},#NULL,${BU_ID},NONE,#NULL,NO,ALL",
+  "filename": "Requisitions_gold.zip",
+  "csvs": [
+    { "template": "PorReqHeadersInterfaceAll.csv", "fbdi_name": "PorReqHeadersInterfaceAll.csv" },
+    { "template": "PorReqLinesInterfaceAll.csv",   "fbdi_name": "PorReqLinesInterfaceAll.csv" },
+    { "template": "PorReqDistsInterfaceAll.csv",   "fbdi_name": "PorReqDistsInterfaceAll.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "REQ_BU",
+      "role": "fin_impl",
+      "cols": ["BUID", "BUNAME", "LEDGERID"],
+      "sql": "SELECT * FROM (SELECT bu.bu_id AS BUID, bu.bu_name AS BUNAME, bu.primary_ledger_id AS LEDGERID FROM fun_all_business_units_v bu WHERE bu.primary_ledger_id IS NOT NULL AND EXISTS (SELECT 1 FROM por_requisition_headers_all h WHERE h.req_bu_id = bu.bu_id) ORDER BY DECODE(bu.bu_name,'US1 Business Unit',0,1), bu.bu_id) WHERE ROWNUM = 1",
+      "bind": { "BU_ID": "BUID", "REQ_BU_NAME": "BUNAME", "LEDGER_ID": "LEDGERID" },
+      "required": true
+    },
+    {
+      "name": "REQ_PREPARER",
+      "role": "fin_impl",
+      "cols": ["EMAIL"],
+      "sql": "SELECT * FROM (SELECT (SELECT MIN(pea.email_address) FROM per_email_addresses pea WHERE pea.person_id = h.preparer_id AND pea.email_address LIKE '%oraclepdemos.com') AS EMAIL FROM por_requisition_headers_all h WHERE h.preparer_id IS NOT NULL AND h.req_bu_id = (SELECT bu.bu_id FROM fun_all_business_units_v bu WHERE bu.primary_ledger_id IS NOT NULL AND EXISTS (SELECT 1 FROM por_requisition_headers_all x WHERE x.req_bu_id = bu.bu_id) ORDER BY DECODE(bu.bu_name,'US1 Business Unit',0,1), bu.bu_id FETCH FIRST 1 ROWS ONLY) ORDER BY h.creation_date DESC) WHERE EMAIL IS NOT NULL AND ROWNUM = 1",
+      "bind": { "PREPARER_EMAIL": "EMAIL" },
+      "required": true
+    },
+    {
+      "name": "REQ_LINE_REF",
+      "role": "fin_impl",
+      "cols": ["LOC", "UOM", "CUR", "CATNAME"],
+      "sql": "SELECT * FROM (SELECT (SELECT loc.location_code FROM hr_locations_all loc WHERE loc.location_id = l.deliver_to_location_id) AS LOC, l.uom_code AS UOM, l.currency_code AS CUR, (SELECT c.category_name FROM egp_categories_vl c WHERE c.category_id = l.category_id) AS CATNAME FROM por_requisition_lines_all l JOIN por_requisition_headers_all h ON h.requisition_header_id = l.requisition_header_id WHERE l.deliver_to_location_id IS NOT NULL AND l.destination_type_code = 'EXPENSE' AND l.uom_code IS NOT NULL AND l.category_id IS NOT NULL AND h.req_bu_id = (SELECT bu.bu_id FROM fun_all_business_units_v bu WHERE bu.primary_ledger_id IS NOT NULL AND EXISTS (SELECT 1 FROM por_requisition_headers_all x WHERE x.req_bu_id = bu.bu_id) ORDER BY DECODE(bu.bu_name,'US1 Business Unit',0,1), bu.bu_id FETCH FIRST 1 ROWS ONLY) ORDER BY l.creation_date DESC) WHERE LOC IS NOT NULL AND CATNAME IS NOT NULL AND ROWNUM = 1",
+      "bind": { "DELIVER_TO_LOCATION": "LOC", "UOM_CODE": "UOM", "CURRENCY_CODE": "CUR", "CATEGORY_NAME": "CATNAME" },
+      "required": true
+    },
+    {
+      "name": "REQ_CHARGE_ACCT",
+      "role": "fin_impl",
+      "cols": ["S1", "S2", "S3", "S4", "S5", "S6"],
+      "sql": "SELECT * FROM (SELECT g.segment1 S1, g.segment2 S2, g.segment3 S3, g.segment4 S4, g.segment5 S5, g.segment6 S6 FROM por_req_distributions_all d JOIN por_requisition_lines_all l ON l.requisition_line_id = d.requisition_line_id JOIN por_requisition_headers_all h ON h.requisition_header_id = l.requisition_header_id JOIN gl_code_combinations g ON g.code_combination_id = d.code_combination_id WHERE g.enabled_flag = 'Y' AND NVL(g.end_date_active, SYSDATE+1) > SYSDATE AND g.detail_posting_allowed_flag = 'Y' AND h.req_bu_id = (SELECT bu.bu_id FROM fun_all_business_units_v bu WHERE bu.primary_ledger_id IS NOT NULL AND EXISTS (SELECT 1 FROM por_requisition_headers_all x WHERE x.req_bu_id = bu.bu_id) ORDER BY DECODE(bu.bu_name,'US1 Business Unit',0,1), bu.bu_id FETCH FIRST 1 ROWS ONLY) ORDER BY d.creation_date DESC) WHERE S3 IS NOT NULL AND ROWNUM = 1",
+      "bind": { "CHG_S1": "S1", "CHG_S2": "S2", "CHG_S3": "S3", "CHG_S4": "S4", "CHG_S5": "S5", "CHG_S6": "S6" },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-REQ-G1"],
+    "bad_keys": ["${PREFIX}RT-REQ-BAD1"],
+    "base_read": {
+      "sql": "SELECT requisition_number AS REQUISITION_NUMBER, requisition_header_id AS REQUISITION_HEADER_ID, document_status AS DOCUMENT_STATUS FROM por_requisition_headers_all WHERE requisition_number LIKE :PREFIX || 'RT-REQ-%'",
+      "cols": ["REQUISITION_NUMBER", "REQUISITION_HEADER_ID", "DOCUMENT_STATUS"],
+      "key_col": "REQUISITION_NUMBER",
+      "id_col": "REQUISITION_HEADER_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT h.requisition_number AS REQUISITION_NUMBER, h.interface_header_key AS INTERFACE_HEADER_KEY, h.process_flag AS PROCESS_FLAG, (SELECT LISTAGG(e.column_name || '=' || e.column_value || ': ' || e.text_line, ' | ') WITHIN GROUP (ORDER BY e.req_import_error_id) FROM por_req_import_errors e JOIN por_req_lines_interface_all l ON l.load_request_id = e.load_request_id AND l.req_line_interface_id = e.interface_id WHERE l.load_request_id = h.load_request_id AND l.interface_header_key = h.interface_header_key) AS ERROR_MESSAGE FROM por_req_headers_interface_all h WHERE h.load_request_id = :LRID",
+      "cols": ["REQUISITION_NUMBER", "INTERFACE_HEADER_KEY", "PROCESS_FLAG", "ERROR_MESSAGE"],
+      "key_col": "REQUISITION_NUMBER",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

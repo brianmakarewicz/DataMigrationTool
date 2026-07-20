@@ -1,0 +1,99 @@
+{
+  "type": "FSM_CSV_IMPORT",
+  "status": "PASS",
+  "pass_note": "Loaded live to base tables on 2026-07-20 via the FSM 'Setup Data Import from CSV file' REST mechanism (setupTaskCSVImports), the same non-UI path the GLCalendar investigation found. Unlike GLCalendar (an 'External Loading' object whose batch never round-tripped), Units of Measure exports as FLAT CSVs at the zip root and re-imports cleanly. Two good UOMs reached INV_UNITS_OF_MEASURE_B/_TL; the bad row (invalid UOM class) was rejected with a reportable error and never reached base.",
+  "cred_role": "scm_impl",
+  "auth_user": "scm_impl",
+  "task_code": "INV_MANAGE_UNITS_OF_MEASURE",
+  "task_name": "Manage Units of Measure",
+  "import_supported_flag": true,
+  "external_loading": false,
+  "rest_import_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports",
+  "rest_export_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVExports",
+  "rest_tasks_resource": "/fscmRestApi/resources/11.13.18.05/setupTasks",
+  "content_type": "application/vnd.oracle.adf.resourceitem+json",
+  "task_discovery": {
+    "note": "Find the TaskCode by name; do not hardcode across pods.",
+    "get": "/fscmRestApi/resources/11.13.18.05/setupTasks?q=TaskName LIKE '%Units of Measure%'&fields=TaskCode,TaskName",
+    "expected_task_code": "INV_MANAGE_UNITS_OF_MEASURE",
+    "import_supported_check": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports/INV_MANAGE_UNITS_OF_MEASURE -> ImportSupportedFlag=true"
+  },
+  "import_body_template": {
+    "TaskCode": "INV_MANAGE_UNITS_OF_MEASURE",
+    "SetupTaskCSVImportProcess": [
+      { "TaskCode": "INV_MANAGE_UNITS_OF_MEASURE", "FileContent": "<BASE64_ZIP>", "SourceTargetDiffOkFlag": true }
+    ]
+  },
+  "poll": {
+    "get": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports/INV_MANAGE_UNITS_OF_MEASURE/child/SetupTaskCSVImportProcess/${PROCESS_ID}",
+    "completed_flag": "ProcessCompletedFlag",
+    "log_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessLog",
+    "results_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessResultsReport"
+  },
+  "package_layout": {
+    "outer_zip": "UnitsOfMeasure_gold.zip",
+    "structure": "FLAT CSVs at the zip root plus the manifest (NO nested batch zip). Built by mimicking a live export (setupTaskCSVExports of INV_MANAGE_UNITS_OF_MEASURE) which produced these members at the top level.",
+    "members": [
+      "ASM_SETUP_CSV_METADATA.xml (real, exported live 2026-07-20; ProcessType flipped EXPORT->IMPORT)",
+      "INV_UNIT_OF_MEASURE.csv (the UOMs)",
+      "INV_UNIT_OF_MEASURE_TRANSLATION.csv (US names)"
+    ],
+    "csv_format": "Header row of column names, comma-separated, every value double-quoted, CRLF line endings. The header names map columns (order need not match the manifest XmlAttributeList). Only the minimal columns are needed; the rest are optional.",
+    "member_filenames_match": "BusinessObjectShortName in the manifest.",
+    "note": "The full live export also contained INV_UNIT_OF_MEASURE_CLASS.csv, ORA_INV_UNIT_OF_MEASURE_STD_CONVERSION.csv and ORA_RCS_PACKAGING_STRINGS.csv; they are not required to add UOMs to an existing class and were omitted from the minimal package. The manifest still declares all business objects (import treats absent members as no-ops)."
+  },
+  "uom_csv_min_columns": ["UnitOfMeasure", "UomCode", "BaseUomFlag", "Description", "UomClassCode", "HasGeneratedCode"],
+  "tl_csv_min_columns": ["INV_UNIT_OF_MEASURE.UnitOfMeasure", "UnitOfMeasure", "Description", "Language", "SourceLang"],
+  "service_name": "oracle.apps.scm.inventory.uom.unitsOfMeasureService.UnitOfMeasureService",
+  "discovery": [
+    {
+      "name": "UOM_CLASS_REF",
+      "role": "scm_impl",
+      "cols": ["UCLASS"],
+      "sql": "SELECT UOM_CLASS AS UCLASS, COUNT(*) AS N FROM INV_UNITS_OF_MEASURE_B GROUP BY UOM_CLASS ORDER BY COUNT(*) DESC FETCH FIRST 1 ROWS ONLY",
+      "bind": { "UOM_CLASS": "UCLASS" },
+      "note": "UOM_CLASS in the base table is a short code (e.g. '5' = Quantity). The FSM CSV UomClassCode uses this same value. Nothing hardcoded; the largest class is discovered live per pod.",
+      "required": true
+    },
+    {
+      "name": "FREE_UOM_CODES",
+      "role": "scm_impl",
+      "note": "UOM_CODE is capped at 3 characters in Fusion, so a 5-digit ${PREFIX} cannot live in the code. Pick 3 unused 3-char codes at load time (query INV_UNITS_OF_MEASURE_B.UOM_CODE for the used set). The ${PREFIX} is carried in the UOM NAME/DESCRIPTION and verification is by name.",
+      "sql": "SELECT UOM_CODE AS C FROM INV_UNITS_OF_MEASURE_B"
+    }
+  ],
+  "good_bad_design": {
+    "good": "Two NEW non-base UOMs placed in the discovered existing class ${UOM_CLASS}. Codes are 3 unused chars picked at load time; the run ${PREFIX} is carried in the name/description ('GldRegUOM ${PREFIX} A' / 'GldRegUOM ${PREFIX} B'). Standalone reference data - no upstream dependency (rules 6-8 satisfied: nothing hardcoded, class discovered live).",
+    "bad": "A NEW UOM with UomClassCode = 'ZZ_NO_SUCH_CLASS' (a class that does not exist). The Manage Units of Measure CSV import rejects it with 'UomClass does not exist; skipping record' and it never reaches INV_UNITS_OF_MEASURE_B. Deterministic and pod-independent.",
+    "prefix_lives_in": "UOM name/description (UOM_CODE is 3-char capped)"
+  },
+  "verify": {
+    "cred_role": "scm_impl",
+    "note": "TL joins to B on UNIT_OF_MEASURE_ID (there is no UOM_ID column). The prefix is in the name.",
+    "base_read_good": {
+      "sql": "SELECT b.UOM_CODE AS UOM_CODE, b.UNIT_OF_MEASURE_ID AS UOM_ID, b.UOM_CLASS AS UOM_CLASS, t.UNIT_OF_MEASURE AS NM FROM INV_UNITS_OF_MEASURE_B b JOIN INV_UNITS_OF_MEASURE_TL t ON t.UNIT_OF_MEASURE_ID = b.UNIT_OF_MEASURE_ID WHERE t.LANGUAGE = 'US' AND t.UNIT_OF_MEASURE LIKE 'GldRegUOM ${PREFIX}%'",
+      "cols": ["UOM_CODE", "UOM_ID", "UOM_CLASS", "NM"],
+      "key_col": "UOM_CODE",
+      "expect": "2 rows with real UNIT_OF_MEASURE_ID values"
+    },
+    "bad_absent_read": {
+      "sql": "SELECT UOM_CODE AS C FROM INV_UNITS_OF_MEASURE_B WHERE UOM_CODE = '${BAD_CODE}'",
+      "cols": ["C"],
+      "expect": "zero rows (bad UOM with invalid class rejected, never reaches base)"
+    }
+  },
+  "live_evidence": {
+    "date": "2026-07-20",
+    "prefix": "90210",
+    "class_code": "5",
+    "good_codes": ["GAA", "GAB"],
+    "good_uom_ids": ["300000331549888", "300000331549889"],
+    "bad_code": "GAC",
+    "bad_error": "UnitOfMeasure:Import-Export Process : UomClass does not exist; skipping record. (uom :GldRegUOM 90210 BAD,uomCode:GAC,uomClassCode:ZZ_NO_SUCH_CLASS) ,Skipping the row",
+    "import_process_id": "100007866630872",
+    "import_ess_request_id": "9765360",
+    "export_process_id": "100007866630828",
+    "export_ess_request_id": "9765315",
+    "result": "2 good UOMs in INV_UNITS_OF_MEASURE_B/_TL; 1 bad row failed and absent."
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "calvin.roth",
+  "doc_account": "prc/supplier/import",
+  "interface_details_id": 56,
+  "import_job_name_raw": "/oracle/apps/ess/prc/poz/supplierImport;ImportSupplierAddresses",
+  "job_name": "/oracle/apps/ess/prc/poz/supplierImport,ImportSupplierAddresses",
+  "parameter_list": "NEW,N",
+  "filename": "SupplierAddresses_gold.zip",
+  "csvs": [
+    { "template": "PozSupAddressesInt.csv", "fbdi_name": "PozSupAddressesInt.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "EXISTING_SUPPLIER",
+      "role": "fin_impl",
+      "cols": ["VNAME", "VNUM", "PID"],
+      "sql": "SELECT * FROM (SELECT sv.vendor_name AS VNAME, sv.segment1 AS VNUM, sv.party_id AS PID FROM poz_suppliers_v sv WHERE NVL(sv.enabled_flag,'Y')='Y' AND NVL(sv.supplier_locked_flag,'N') = 'N' AND REGEXP_LIKE(sv.segment1,'^[0-9]+$') AND sv.vendor_name NOT LIKE '%RT %' AND sv.vendor_name NOT LIKE '%RT-%' AND sv.vendor_type_lookup_code IS NOT NULL ORDER BY TO_NUMBER(sv.segment1)) WHERE ROWNUM = 1",
+      "bind": {
+        "VENDOR_NAME": "VNAME",
+        "VENDOR_NUM": "VNUM",
+        "SUPPLIER_PARTY_ID": "PID"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-ADDR-G1", "${PREFIX}RT-ADDR-G2"],
+    "bad_keys": ["${PREFIX}RT-ADDR-BAD1"],
+    "base_read": {
+      "sql": "SELECT ps.party_site_name AS PARTY_SITE_NAME, ps.party_site_id AS PARTY_SITE_ID FROM hz_party_sites ps WHERE ps.party_id = ${SUPPLIER_PARTY_ID} AND ps.party_site_name LIKE :PREFIX || 'RT-ADDR-%'",
+      "cols": ["PARTY_SITE_NAME", "PARTY_SITE_ID"],
+      "key_col": "PARTY_SITE_NAME",
+      "id_col": "PARTY_SITE_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT NVL(i.party_site_name, i.party_site_name_new) AS PARTY_SITE_NAME, i.address_interface_id AS ADDRESS_INTERFACE_ID, (SELECT LISTAGG(CASE WHEN r.attribute IS NOT NULL THEN r.reject_lookup_code || ' [' || r.attribute || ']' ELSE r.reject_lookup_code END, '; ') WITHIN GROUP (ORDER BY r.rejection_id) FROM poz_supplier_int_rejections r WHERE r.parent_table = 'POZ_SUP_ADDRESSES_INT' AND r.parent_id = i.address_interface_id AND r.request_id = i.request_id) AS ERROR_MESSAGE FROM poz_sup_addresses_int i WHERE i.load_request_id = :LRID",
+      "cols": ["PARTY_SITE_NAME", "ADDRESS_INTERFACE_ID", "ERROR_MESSAGE"],
+      "key_col": "PARTY_SITE_NAME",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

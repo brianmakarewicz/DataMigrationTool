@@ -1,0 +1,76 @@
+{
+  "type": "FSM_CSV_IMPORT",
+  "status": "TABLED",
+  "tabled_reason": "The FSM 'Setup Data Import from CSV file' path (setupTaskCSVImports) -- the same mechanism that made UnitsOfMeasure pass -- was retried live for tax rates on 2026-07-20 and does NOT create a tax-rate header on this pod. The rate-level setup task ZX_MANAGE_TAX_RATES_AND_TAX_RECOVERY_RATES DOES report ImportSupportedFlag=true and CSVExportImportSupportedFlag=Y, and an import round-trip ran cleanly (HTTP 201, completed), so the earlier note's claim of 'no non-UI path at all' is superseded. BUT: a live setupTaskCSVExports of that task (ESS 9765467) enumerates exactly 22 business objects and NONE of them is a tax-rate-header object -- they are all rate DETAIL/child objects (default tax accounts, amount/unit-price/percent/quantity/gross/withheld schedules and types, recovery types) plus ZX_TAX_STATUS. There is no ZX_RATES / tax-rate-header business object in the task's CSV package, so the CSV import cannot CREATE the base ZX_RATES_B row this fixture needs -- it only round-trips detail attributes onto rates that already exist (rate headers are still created only by the UI-only Tax Configuration Workbook). Two live import attempts (a hand-authored ZX_RATES member, then six candidate header short names ORA_ZX_TAX_RATES/ZX_RATES/ZX_TAX_RATE/ORA_ZX_MANAGE_TAX_RATE/TAX_RATE/ZX_RATES_B) all completed with the CSV silently skipped ('all related CSV files are missing or empty' / unknown-BO no-op) and ZERO rows reached ZX_RATES_B (verified read-only). Additionally the export itself is unreliable here: it takes ~45 min and finishes COMPLETED_ERRORS with the CSV members absent from the returned zip (only the manifest came back), so the exact rate-object CSV column layout could not be learned to attempt a detail-only load. TABLED stands, now with a precise mechanism finding rather than a documentation inference.",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "task_code": "ZX_MANAGE_TAX_RATES_AND_TAX_RECOVERY_RATES",
+  "task_name": "Manage Tax Rates and Tax Recovery Rates",
+  "import_supported_flag": true,
+  "csv_export_import_supported_flag": "Y",
+  "rest_import_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports",
+  "rest_export_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVExports",
+  "rest_tasks_resource": "/fscmRestApi/resources/11.13.18.05/setupTasks",
+  "content_type": "application/vnd.oracle.adf.resourceitem+json",
+  "fsm_mechanism_finding": {
+    "date": "2026-07-20",
+    "task_discovery": "GET setupTasks?q=TaskName LIKE '%Tax Rate%' -> ZX_MANAGE_TAX_RATES_AND_TAX_RECOVERY_RATES; GET setupTaskCSVImports/{task} -> ImportSupportedFlag=true.",
+    "export_processes": ["100007867615347 (ESS 9765467, full, COMPLETED_ERRORS, no CSV members in zip)", "100007867615781 (scoped attempt, never completed)"],
+    "export_business_objects_22": [
+      "ORA_TAX_RATE_LINE_AMOUNT_DEFAULT_TAX_ACCOUNT", "ORA_TAX_RATE_LINE_AMOUNT_SCHEDULE", "ORA_TAX_RATE_LINE_AMOUNT_TYPE",
+      "ORA_TAX_RATE_UNIT_PRICE_DEFAULT_TAX_ACCOUNT", "ORA_TAX_RATE_UNIT_PRICE_RATE_SCHEDULE", "ORA_TAX_RATE_UNIT_PRICE_TYPE",
+      "ORA_ZX_RATE_SCHEDULE", "ORA_ZX_TAX_RATE_GROSS_AMT_TYPE", "ORA_ZX_TAX_RATE_GROSS_DEF_TAX_ACCOUNT", "ORA_ZX_TAX_RATE_GROSS_SCHEDULE",
+      "ORA_ZX_TAX_RATE_PERCENT_DEF_ACCOUNT", "ORA_ZX_TAX_RATE_PERCENT_TYPE", "ORA_ZX_TAX_RATE_QTY_DEF_TAX_ACCOUNT", "ORA_ZX_TAX_RATE_QTY_TYPE",
+      "ORA_ZX_TAX_RATE_RECOVERY_DEF_TAX_ACC", "ORA_ZX_TAX_RATE_RECOVERY_TYPE", "ORA_ZX_TAX_RATE_SCH_RATE_TYPE", "ORA_ZX_TAX_RATE_SCH_WITHHELD",
+      "ORA_ZX_TAX_RATE_WITHHELD_AMT_TYPE", "ORA_ZX_TAX_RATE_WITHHELD_DEF_ACC", "ORA_ZX_TAX_SCH_DEF_TAX_ACCOUNT", "ZX_TAX_STATUS"
+    ],
+    "no_rate_header_object": "None of the 22 is a tax-rate-header object; the task CSV package carries only rate detail/child objects + tax status. So the FSM CSV import cannot create a ZX_RATES_B row.",
+    "import_attempts": [
+      {"process_id": "100007868615103", "ess_request_id": "9765656", "member": "ZX_RATES.csv (hand-authored)", "outcome": "completed, CSV skipped ('all related CSV files are missing or empty'), 0 rows in ZX_RATES_B"},
+      {"members": ["ORA_ZX_TAX_RATES", "ZX_RATES", "ZX_TAX_RATE", "ORA_ZX_MANAGE_TAX_RATE", "TAX_RATE", "ZX_RATES_B"], "outcome": "each completed HTTP 201, unknown-BO no-op, 0 rows in ZX_RATES_B (prefix 90211)"}
+    ],
+    "evidence_file": "artifact/EXPORT_MANIFEST_ZX_MANAGE_TAX_RATES.xml (the real live export manifest listing the 22 business objects)"
+  },
+  "content_upload_job_raw": "/oracle/apps/ess/financials/tax/report;LaunchTaxConfigContentUpload",
+  "content_upload_erp_options_id": 19,
+  "content_upload_interface_table": "ZX_DATA_UPLOAD_INTERFACE",
+  "content_upload_limitation": "US-only tax-partner content (sales/use tax geography + rates from a registered tax content partner). Cannot create arbitrary custom tax rates.",
+  "workbook_ui_task": "Manage Tax Regimes",
+  "workbook_ui_action": "Rapid Setup Spreadsheets -> Upload Tax Configuration Workbook (select the saved compressed CSV, Upload; monitor on Monitor Upload and Download Processes)",
+  "delimiter": ",",
+  "date_format": "yyyy/MM/dd",
+  "encoding": "UTF-8",
+  "zipped": false,
+  "files": [
+    { "template": "TaxRates.csv", "purpose": "Tax Rates worksheet of the Tax Configuration Workbook (new rate rows attached to an existing regime/tax/status) -- retained for the UI-workbook path; the FSM CSV import does not consume it" }
+  ],
+  "discovery": [
+    {
+      "name": "US_TAX_REGIME_TAX_STATUS",
+      "role": "fin_impl",
+      "cols": ["RC", "TX", "STS"],
+      "sql": "SELECT * FROM (SELECT r.tax_regime_code AS RC, t.tax AS TX, s.tax_status_code AS STS FROM zx_regimes_b r JOIN zx_taxes_b t ON t.tax_regime_code = r.tax_regime_code JOIN zx_status_b s ON s.tax = t.tax AND s.tax_regime_code = t.tax_regime_code WHERE r.country_code = 'US' ORDER BY r.tax_regime_code, t.tax) WHERE ROWNUM = 1",
+      "bind": {
+        "TAX_REGIME_CODE": "RC",
+        "TAX": "TX",
+        "TAX_STATUS_CODE": "STS"
+      },
+      "required": true,
+      "note": "Portability rule 7: discover an existing US regime + tax + tax status on the TARGET pod at load time. Returned live 2026-07-20: US EXCISE TAX / US NY EXCISE TAX / US NY EXCISE."
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "note": "ZX_RATES_B is BIP-readable with fin_impl on this pod (confirmed 2026-07-20). Verification is by the prefixed rate code.",
+    "good_keys": ["${PREFIX}RT-TAXRATE-G1", "${PREFIX}RT-TAXRATE-G2"],
+    "bad_keys": ["${PREFIX}RT-TAXRATE-BAD1"],
+    "base_read": {
+      "sql": "SELECT tax_rate_code AS TAX_RATE_CODE, tax_rate_id AS TAX_RATE_ID, percentage_rate AS PERCENTAGE_RATE FROM zx_rates_b WHERE tax_rate_code LIKE :PREFIX || 'RT-TAXRATE-%'",
+      "cols": ["TAX_RATE_CODE", "TAX_RATE_ID", "PERCENTAGE_RATE"],
+      "key_col": "TAX_RATE_CODE",
+      "id_col": "TAX_RATE_ID"
+    },
+    "bad_proof_is_absence": true,
+    "bad_absence_note": "A rate whose parent regime/tax/status does not exist is rejected and never reaches ZX_RATES_B; the bad-row proof is absence from ZX_RATES_B. (Not exercised end-to-end -- no load path creates the good rate either.)"
+  }
+}

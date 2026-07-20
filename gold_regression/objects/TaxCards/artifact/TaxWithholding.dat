@@ -1,0 +1,7 @@
+METADATA|TaxWithholding|LegislativeDataGroupName|PayrollRelationshipNumber|CardSequence|EffectiveStartDate|SourceRef001=PayrollRelationshipNumber
+MERGE|TaxWithholding|${LDG_NAME}|${PRNUM1}|1|${EFF_DATE}|${PRNUM1}
+MERGE|TaxWithholding|${LDG_NAME}|${PREFIX}DMT-NO-REL|1|${EFF_DATE}|${PREFIX}DMT-NO-REL
+METADATA|FederalTaxes|LegislativeDataGroupName|PayrollRelationshipNumber|CardSequence|EffectiveStartDate|SourceRef001=PayrollRelationshipNumber
+MERGE|FederalTaxes|${LDG_NAME}|${PRNUM1}|1|${EFF_DATE}|${PRNUM1}
+METADATA|FederalTaxes2023|LegislativeDataGroupName|PayrollRelationshipNumber|CardSequence|EffectiveStartDate|ExtraWithholding|SourceRef001=PayrollRelationshipNumber
+MERGE|FederalTaxes2023|${LDG_NAME}|${PRNUM1}|1|${EFF_DATE}|${EXTRA_WH}|${PRNUM1}

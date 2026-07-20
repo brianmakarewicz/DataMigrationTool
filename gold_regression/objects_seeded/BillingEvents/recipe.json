@@ -1,0 +1,34 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "prj/projectBilling/import",
+  "interface_details_id": 68,
+  "import_job_name_raw": "/oracle/apps/ess/projects/billing/transactions;ImportBillingEventJob",
+  "job_name": "/oracle/apps/ess/projects/billing/transactions,ImportBillingEventJob",
+  "report_job_def": "ImportBillingEventReportJob",
+  "parameter_list": "#NULL",
+  "filename": "BillingEvents_gold.zip",
+  "csvs": [
+    { "template": "PjbBillingEventsXface.csv", "fbdi_name": "PjbBillingEventsXface.csv" }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-BE-G1", "${PREFIX}RT-BE-G2"],
+    "bad_keys": ["${PREFIX}RT-BE-BAD1"],
+    "bad_proof_is_absence": true,
+    "_bad_proof_note": "PJB_BILLING_EVENTS_INT is unconditionally purged after ImportBillingEventJob (MOS 2534525.1); the bad row's error text survives only in the ImportBillingEventReportJob XML. Authoritative BAD proof here is absence from the base table while good rows from the same load reached base.",
+    "base_read": {
+      "sql": "SELECT be.sourceref AS SOURCEREF, be.event_id AS EVENT_ID, be.event_num AS EVENT_NUM, TO_CHAR(be.bill_trns_amount) AS BILL_TRNS_AMOUNT FROM pjb_billing_events be WHERE be.sourceref LIKE :PREFIX || 'RT-BE-%'",
+      "cols": ["SOURCEREF", "EVENT_ID", "EVENT_NUM", "BILL_TRNS_AMOUNT"],
+      "key_col": "SOURCEREF",
+      "id_col": "EVENT_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT i.sourceref AS SOURCEREF, i.load_request_id AS LOAD_REQUEST_ID, i.import_status AS IMPORT_STATUS, i.import_status AS ERROR_MESSAGE FROM pjb_billing_events_int i WHERE i.load_request_id = :LRID",
+      "cols": ["SOURCEREF", "LOAD_REQUEST_ID", "IMPORT_STATUS", "ERROR_MESSAGE"],
+      "key_col": "SOURCEREF",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

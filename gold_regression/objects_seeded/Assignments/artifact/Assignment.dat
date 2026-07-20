@@ -1,0 +1,9 @@
+SET PURGE_FUTURE_CHANGES N
+METADATA|WorkTerms|AssignmentNumber|PersonNumber|LegalEmployerName|DateStart|WorkerType|ActionCode|EffectiveStartDate|EffectiveEndDate|EffectiveSequence|EffectiveLatestChange|PrimaryWorkTermsFlag
+MERGE|WorkTerms|ET2|2|US1 Legal Entity|2004/12/29|E|WORK_HOURS_CHANGE|${BEN_DATE}|4712/12/31|1|Y|Y
+MERGE|WorkTerms|ET3|3|US1 Legal Entity|2003/02/14|E|WORK_HOURS_CHANGE|${BEN_DATE}|4712/12/31|1|Y|Y
+MERGE|WorkTerms|ET4|4|US1 Legal Entity|2004/09/30|E|DMT_INVALID_ACTION|${BEN_DATE}|4712/12/31|1|Y|Y
+METADATA|Assignment|AssignmentNumber|PersonNumber|LegalEmployerName|DateStart|WorkerType|WorkTermsNumber|ActionCode|EffectiveStartDate|EffectiveEndDate|EffectiveSequence|EffectiveLatestChange|PrimaryAssignmentFlag|NormalHours
+MERGE|Assignment|E2|2|US1 Legal Entity|2004/12/29|E|ET2|WORK_HOURS_CHANGE|${BEN_DATE}|4712/12/31|1|Y|Y|37.5
+MERGE|Assignment|E3|3|US1 Legal Entity|2003/02/14|E|ET3|WORK_HOURS_CHANGE|${BEN_DATE}|4712/12/31|1|Y|Y|37.5
+MERGE|Assignment|E4|4|US1 Legal Entity|2004/09/30|E|ET4|DMT_INVALID_ACTION|${BEN_DATE}|4712/12/31|1|Y|Y|37.5

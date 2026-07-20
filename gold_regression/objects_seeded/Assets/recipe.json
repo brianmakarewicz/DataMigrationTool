@@ -1,0 +1,39 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/assets/import",
+  "interface_details_id": 9,
+  "import_job_name_raw": "/oracle/apps/ess/financials/assets/additions;PrepareMassAdditions",
+  "job_name": "/oracle/apps/ess/financials/assets/additions,PrepareMassAdditions",
+  "parameter_list": "US CORP,,NORMAL",
+  "filename": "Assets_gold.zip",
+  "csvs": [
+    { "template": "FaMassAdditions.csv",          "fbdi_name": "FaMassAdditions.csv" },
+    { "template": "FaMassaddDistributions.csv",   "fbdi_name": "FaMassaddDistributions.csv" }
+  ],
+  "downstream_jobs": [
+    {
+      "name": "PostMassAdditions",
+      "job_path": "/oracle/apps/ess/financials/assets/additions,PostMassAdditions",
+      "parameter_list": "US CORP"
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-ASSET-G1", "${PREFIX}RT-ASSET-G2"],
+    "bad_keys": ["${PREFIX}RT-ASSET-BAD1"],
+    "base_read": {
+      "sql": "SELECT asset_number AS ASSET_NUMBER, asset_id AS ASSET_ID, asset_type AS ASSET_TYPE FROM fa_additions_b WHERE asset_number LIKE :PREFIX || 'RT-ASSET-%'",
+      "cols": ["ASSET_NUMBER", "ASSET_ID", "ASSET_TYPE"],
+      "key_col": "ASSET_NUMBER",
+      "id_col": "ASSET_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT ma.asset_number AS ASSET_NUMBER, ma.mass_addition_id AS MASS_ADDITION_ID, ma.posting_status AS POSTING_STATUS, TRIM(ma.posting_status || ': ' || SUBSTR(ma.error_msg, 1, 400)) AS ERROR_MESSAGE FROM fa_mass_additions ma WHERE ma.asset_number LIKE :PREFIX || 'RT-ASSET-%'",
+      "cols": ["ASSET_NUMBER", "MASS_ADDITION_ID", "POSTING_STATUS", "ERROR_MESSAGE"],
+      "key_col": "ASSET_NUMBER",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

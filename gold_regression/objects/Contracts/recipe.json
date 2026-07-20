@@ -1,0 +1,59 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "prc/contractPurchaseAgreement/import",
+  "interface_details_id": 22,
+  "import_job_name_raw": "/oracle/apps/ess/prc/po/pdoi;ImportCPAJob",
+  "job_name": "/oracle/apps/ess/prc/po/pdoi,ImportCPAJob",
+  "parameter_list": "${BU_ID},${AGENT_ID},SUBMIT,${PREFIX},RT${PREFIX},N,${BU_ID}_${PREFIX}",
+  "filename": "Contracts_gold.zip",
+  "csvs": [
+    { "template": "PoHeadersInterfaceContract.csv", "fbdi_name": "PoHeadersInterfaceContract.csv" }
+  ],
+  "downstream_jobs": [
+    {
+      "name": "ImportCPAJob (Import Contract Agreements)",
+      "job_path": "/oracle/apps/ess/prc/po/pdoi,ImportCPAJob",
+      "cred_role": "calvin.roth",
+      "parameter_list": "${BU_ID},${AGENT_ID},SUBMIT,${PREFIX},RT${PREFIX},N,${BU_ID}_${PREFIX}"
+    }
+  ],
+  "discovery": [
+    {
+      "name": "CPA_TEMPLATE",
+      "role": "fin_impl",
+      "cols": ["PRC_BU","BUID","AGENTID","AGENT","AGENTEMAIL","VNAME","VNUM","SITE","CUR"],
+      "sql": "SELECT * FROM (SELECT bu.bu_name PRC_BU, bu.bu_id BUID, ph.agent_id AGENTID, (SELECT MAX(pn.full_name) FROM per_person_names_f pn WHERE pn.person_id=ph.agent_id AND pn.name_type='GLOBAL') AGENT, (SELECT MAX(pea.email_address) FROM per_email_addresses pea WHERE pea.person_id=ph.agent_id) AGENTEMAIL, sv.vendor_name VNAME, sv.segment1 VNUM, ss.vendor_site_code SITE, ph.currency_code CUR FROM po_headers_all ph JOIN fun_all_business_units_v bu ON bu.bu_id=ph.prc_bu_id JOIN poz_suppliers_v sv ON sv.vendor_id=ph.vendor_id JOIN poz_supplier_sites_all_m ss ON ss.vendor_site_id=ph.vendor_site_id WHERE ph.type_lookup_code='STANDARD' AND ph.prc_bu_id IS NOT NULL AND bu.primary_ledger_id IS NOT NULL AND ph.agent_id IS NOT NULL AND ph.currency_code IS NOT NULL AND ss.purchasing_site_flag='Y' AND NVL(ss.inactive_date,SYSDATE+1)>SYSDATE AND REGEXP_LIKE(sv.segment1,'^[0-9]+$') AND sv.vendor_name NOT LIKE '%RT %' AND sv.vendor_name NOT LIKE '%RT-%' ORDER BY DECODE(bu.bu_name,'US1 Business Unit',0,1), ph.po_header_id DESC) WHERE ROWNUM=1",
+      "bind": {
+        "PRC_BU_NAME": "PRC_BU",
+        "BU_ID": "BUID",
+        "AGENT_ID": "AGENTID",
+        "AGENT_NAME": "AGENT",
+        "AGENT_EMAIL": "AGENTEMAIL",
+        "VENDOR_NAME": "VNAME",
+        "VENDOR_NUM": "VNUM",
+        "VENDOR_SITE_CODE": "SITE",
+        "CURRENCY_CODE": "CUR"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-CPA-G1", "${PREFIX}RT-CPA-G2"],
+    "bad_keys": ["${PREFIX}RT-CPA-BAD1"],
+    "base_read": {
+      "sql": "SELECT segment1 AS AGREEMENT_NUMBER, po_header_id AS PO_HEADER_ID, type_lookup_code AS TYPE_LOOKUP_CODE, document_status AS DOCUMENT_STATUS FROM po_headers_all WHERE segment1 LIKE :PREFIX || 'RT-CPA-%' AND type_lookup_code='CONTRACT'",
+      "cols": ["AGREEMENT_NUMBER", "PO_HEADER_ID", "TYPE_LOOKUP_CODE", "DOCUMENT_STATUS"],
+      "key_col": "AGREEMENT_NUMBER",
+      "id_col": "PO_HEADER_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT h.document_num AS AGREEMENT_NUMBER, h.interface_header_id AS INTERFACE_HEADER_ID, h.process_code AS PROCESS_CODE, (SELECT LISTAGG(e.column_name || '=' || e.column_value || ': ' || e.error_message, ' | ') WITHIN GROUP (ORDER BY e.creation_date) FROM po_interface_errors e WHERE e.interface_header_id = h.interface_header_id) AS ERROR_MESSAGE FROM po_headers_interface h WHERE h.load_request_id = :LRID",
+      "cols": ["AGREEMENT_NUMBER", "INTERFACE_HEADER_ID", "PROCESS_CODE", "ERROR_MESSAGE"],
+      "key_col": "AGREEMENT_NUMBER",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

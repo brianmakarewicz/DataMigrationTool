@@ -1,0 +1,21 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "Absences_gold.zip",
+  "dat": { "template": "PersonAbsenceEntry.dat", "archive_name": "PersonAbsenceEntry.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["6", "9"],
+    "bad_keys": ["${PREFIX}DMTABS-BAD"],
+    "bad_error_contains": "absence type",
+    "base_read": {
+      "_comment": "Good proof: a Vacation (absence_type_id 300000071752546) entry in base table ANC_PER_ABS_ENTRIES starting on this run's prefix-derived date ${ABS_START_DASH} for seeded persons 6 and 9. These are long-tenured US1 employees (assignment start dates in the 2000s) with a published work schedule, so a near-future Monday validates as a scheduled workday. Keyed by person_number. The bad person (10) got an invalid absence type so no base entry exists for it -> proves absence.",
+      "sql": "SELECT p.person_number AS PNUM, TO_CHAR(MAX(e.per_absence_entry_id)) AS EID, TO_CHAR(MAX(e.duration)) AS DUR FROM anc_per_abs_entries e JOIN per_all_people_f p ON p.person_id=e.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date WHERE e.absence_type_id=300000071752546 AND e.start_date=DATE '${ABS_START_DASH}' AND p.person_number IN ('6','9','10') GROUP BY p.person_number",
+      "cols": ["PNUM", "EID", "DUR"],
+      "key_col": "PNUM",
+      "id_col": "EID"
+    }
+  }
+}

@@ -1,0 +1,84 @@
+<MigrationProcessCSVMetadataVO>
+   <MigrationProcessCSVMetadataVORow>
+      <ProcessId>-999</ProcessId>
+      <ProcessName>Manage Payment Terms_20260720_020546_089</ProcessName>
+      <ProcessDescription>Manage Payment Terms_20260720_020546_089</ProcessDescription>
+      <ProcessDate>2026-07-20 02:06:12.589</ProcessDate>
+      <ObjectShortName>AP_MANAGE_PAYMENT_TERMS</ObjectShortName>
+      <ObjectType>TASK</ObjectType>
+      <CreatedByFlow>TASK_CSV_SERVICE</CreatedByFlow>
+      <ProcessType>IMPORT</ProcessType>
+      <ProcessStatus>COMPLETED</ProcessStatus>
+      <ProcessEnv>esew-dev28</ProcessEnv>
+      <ProcessStartDate>2026-07-20 02:05:46.357</ProcessStartDate>
+      <ProcessEndDate>2026-07-20 02:06:12.589</ProcessEndDate>
+      <ProcessRelease>11.13.26.04.0</ProcessRelease>
+      <SubmittedBy>FIN_IMPL</SubmittedBy>
+      <ESSRequestId>9765461</ESSRequestId>
+      <MigrationProcessBusinessObjectCSVMetadata1>
+         <MigrationProcessBusinessObjectCSVMetadataVORow>
+            <ProcessId>-999</ProcessId>
+            <BusinessObjectShortName>AP_TERM_SUBSCRIPTION</BusinessObjectShortName>
+            <BatchName null="true"/>
+            <XmlAttributeList>LastUpdateDate,LastUpdatedBy,CreationDate,CreatedBy,LastUpdateLogin,SetCode</XmlAttributeList>
+            <XmlAttributeTypeList>dateTime,string,dateTime,string,string,string</XmlAttributeTypeList>
+            <XmlNodePath>/PaymentTermHeaderVO/PaymentTermHeaderVORow/PaymentTermSubscription/PaymentTermSubscriptionVORow</XmlNodePath>
+            <NodeSequence>4</NodeSequence>
+         </MigrationProcessBusinessObjectCSVMetadataVORow>
+         <MigrationProcessBusinessObjectCSVMetadataVORow>
+            <ProcessId>-999</ProcessId>
+            <BusinessObjectShortName>AP_TERM_HEADER</BusinessObjectShortName>
+            <BatchName null="true"/>
+            <XmlAttributeList>LastUpdateDate,LastUpdatedBy,CreationDate,CreatedBy,LastUpdateLogin,EnabledFlag,DueCutoffDay,Type,StartDateActive,EndDateActive,Rank,AttributeCategory,Attribute1,Attribute2,Attribute3,Attribute4,Attribute5,Attribute6,Attribute7,Attribute8,Attribute9,Attribute10,Attribute11,Attribute12,Attribute13,Attribute14,Attribute15,Name,Description,GlobalAttributeCategory,GlobalAttribute1,GlobalAttribute2,GlobalAttribute3,GlobalAttribute4,GlobalAttribute5,GlobalAttribute6,GlobalAttribute7,GlobalAttribute8,GlobalAttribute9,GlobalAttribute10,GlobalAttribute11,GlobalAttribute12,GlobalAttribute13,GlobalAttribute14,GlobalAttribute15,GlobalAttribute16,GlobalAttribute17,GlobalAttribute18,GlobalAttribute19,GlobalAttribute20,GlobalAttributeDate1,GlobalAttributeDate2,GlobalAttributeDate3,GlobalAttributeDate4,GlobalAttributeDate5,GlobalAttributeNumber1,GlobalAttributeNumber2,GlobalAttributeNumber3,GlobalAttributeNumber4,GlobalAttributeNumber5</XmlAttributeList>
+            <XmlAttributeTypeList>dateTime,string,dateTime,string,string,string,int,string,date,date,long,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,date,date,date,date,date,decimal,decimal,decimal,decimal,decimal</XmlAttributeTypeList>
+            <XmlNodePath>/PaymentTermHeaderVO/PaymentTermHeaderVORow</XmlNodePath>
+            <NodeSequence>1</NodeSequence>
+         </MigrationProcessBusinessObjectCSVMetadataVORow>
+         <MigrationProcessBusinessObjectCSVMetadataVORow>
+            <ProcessId>-999</ProcessId>
+            <BusinessObjectShortName>AP_TERM_HEADER_TRANSLATION</BusinessObjectShortName>
+            <BatchName null="true"/>
+            <XmlAttributeList>LastUpdateDate,LastUpdatedBy,CreationDate,CreatedBy,LastUpdateLogin,Name,Description,Language,SourceLang</XmlAttributeList>
+            <XmlAttributeTypeList>dateTime,string,dateTime,string,string,string,string,string,string</XmlAttributeTypeList>
+            <XmlNodePath>/PaymentTermHeaderVO/PaymentTermHeaderVORow/PaymentTermHeaderTranslation/PaymentTermHeaderTranslationVORow</XmlNodePath>
+            <NodeSequence>1</NodeSequence>
+         </MigrationProcessBusinessObjectCSVMetadataVORow>
+         <MigrationProcessBusinessObjectCSVMetadataVORow>
+            <ProcessId>-999</ProcessId>
+            <BusinessObjectShortName>AP_TERM_LINE</BusinessObjectShortName>
+            <BatchName null="true"/>
+            <XmlAttributeList>SequenceNum,LastUpdateDate,LastUpdatedBy,CreationDate,CreatedBy,LastUpdateLogin,DuePercent,DueAmount,DueDays,DueDayOfMonth,DueMonthsForward,DiscountPercent,DiscountDays,DiscountDayOfMonth,DiscountMonthsForward,DiscountPercent2,DiscountDays2,DiscountDayOfMonth2,DiscountMonthsForward2,DiscountPercent3,DiscountDays3,DiscountDayOfMonth3,DiscountMonthsForward3,AttributeCategory,Attribute1,Attribute2,Attribute3,Attribute4,Attribute5,Attribute6,Attribute7,Attribute8,Attribute9,Attribute10,Attribute11,Attribute12,Attribute13,Attribute14,Attribute15,FixedDate,Calendar</XmlAttributeList>
+            <XmlAttributeTypeList>int,dateTime,string,dateTime,string,string,decimal,decimal,int,int,int,decimal,int,int,int,decimal,int,int,int,decimal,int,int,int,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,string,date,string</XmlAttributeTypeList>
+            <XmlNodePath>/PaymentTermHeaderVO/PaymentTermHeaderVORow/PaymentTermLine/PaymentTermLineVORow</XmlNodePath>
+            <NodeSequence>2</NodeSequence>
+         </MigrationProcessBusinessObjectCSVMetadataVORow>
+      </MigrationProcessBusinessObjectCSVMetadata1>
+      <MigrationProcessBatchCSVMetadata null="true"/>
+      <MigrationProcessScopeValueCSVMetadata null="true"/>
+      <MigrationProcessMigrationObjectCSVMetadata>
+         <MigrationProcessMigrationObjectCSVMetadataVORow>
+            <ProcessId>-999</ProcessId>
+            <BusinessObjectShortName>AP_TERM_HEADER</BusinessObjectShortName>
+            <MigrateFlag>Y</MigrateFlag>
+            <IncludeExternalDataFlag>Y</IncludeExternalDataFlag>
+            <ServiceType null="true"/>
+         </MigrationProcessMigrationObjectCSVMetadataVORow>
+         <MigrationProcessMigrationObjectCSVMetadataVORow>
+            <ProcessId>-999</ProcessId>
+            <BusinessObjectShortName>AP_TERM_LINE</BusinessObjectShortName>
+            <MigrateFlag>Y</MigrateFlag>
+            <IncludeExternalDataFlag>Y</IncludeExternalDataFlag>
+            <ServiceType null="true"/>
+         </MigrationProcessMigrationObjectCSVMetadataVORow>
+         <MigrationProcessMigrationObjectCSVMetadataVORow>
+            <ProcessId>-999</ProcessId>
+            <BusinessObjectShortName>AP_TERM_SUBSCRIPTION</BusinessObjectShortName>
+            <MigrateFlag>Y</MigrateFlag>
+            <IncludeExternalDataFlag>Y</IncludeExternalDataFlag>
+            <ServiceType null="true"/>
+         </MigrationProcessMigrationObjectCSVMetadataVORow>
+      </MigrationProcessMigrationObjectCSVMetadata>
+      <MigrationProcessTaskCSVMetadata null="true"/>
+      <MigrationProcessServiceVersionCSVMetadata null="true"/>
+   </MigrationProcessCSVMetadataVORow>
+</MigrationProcessCSVMetadataVO>

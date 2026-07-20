@@ -1,0 +1,4 @@
+"Name","EnabledFlag","Type","StartDateActive","Description"
+"GldRegTerm ${PREFIX} A","Y","STD","2020/01/01","Gold Reg Payment Term ${PREFIX} A (net 30)"
+"GldRegTerm ${PREFIX} B","Y","STD","2020/01/01","Gold Reg Payment Term ${PREFIX} B (net 45)"
+"GldRegTerm ${PREFIX} BAD","Y","STD","2020/01/01","Gold Reg Payment Term ${PREFIX} BAD (invalid set)"

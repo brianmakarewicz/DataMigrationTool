@@ -1,0 +1,116 @@
+{
+  "type": "FSM_CSV_IMPORT",
+  "status": "PASS",
+  "pass_note": "Loaded live to base tables on 2026-07-20 via the FSM 'Setup Data Import from CSV file' REST mechanism (setupTaskCSVImports), the same non-UI path proven for Units of Measure. Manage Payment Terms (AP_MANAGE_PAYMENT_TERMS) has ImportSupportedFlag=true and exports as FLAT CSVs at the zip root, so it re-imports cleanly. Two good terms (net-30, net-45) reached AP_TERMS_B/AP_TERMS_TL with real TERM_IDs; the bad row (subscription to a nonexistent reference set) was rejected with a reportable error and never reached base. This SUPERSEDES the 2026-07-19 TABLED finding, which pre-dated the proven FSM CSV mechanism (the old REST-read-only / no-FBDI facts still hold but are not the load path).",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "task_code": "AP_MANAGE_PAYMENT_TERMS",
+  "task_name": "Manage Payment Terms",
+  "import_supported_flag": true,
+  "external_loading": false,
+  "base_tables": ["AP_TERMS_B", "AP_TERMS_TL", "AP_TERMS_LINES"],
+  "rest_import_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports",
+  "rest_export_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVExports",
+  "rest_tasks_resource": "/fscmRestApi/resources/11.13.18.05/setupTasks",
+  "content_type": "application/vnd.oracle.adf.resourceitem+json",
+  "task_discovery": {
+    "note": "Find the TaskCode by name; do not hardcode across pods.",
+    "get": "/fscmRestApi/resources/11.13.18.05/setupTasks?q=TaskName LIKE '%Payment Terms%'&fields=TaskCode,TaskName",
+    "expected_task_code": "AP_MANAGE_PAYMENT_TERMS",
+    "sibling_note": "The same query also returns AR_MANAGE_RECEIVABLES_PAYMENT_TERMS (Receivables). AP_MANAGE_PAYMENT_TERMS is the Payables one that writes AP_TERMS_B.",
+    "import_supported_check": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports/AP_MANAGE_PAYMENT_TERMS -> ImportSupportedFlag=true"
+  },
+  "import_body_template": {
+    "TaskCode": "AP_MANAGE_PAYMENT_TERMS",
+    "SetupTaskCSVImportProcess": [
+      { "TaskCode": "AP_MANAGE_PAYMENT_TERMS", "FileContent": "<BASE64_ZIP>", "SourceTargetDiffOkFlag": true }
+    ]
+  },
+  "poll": {
+    "get": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports/AP_MANAGE_PAYMENT_TERMS/child/SetupTaskCSVImportProcess/${PROCESS_ID}",
+    "completed_flag": "ProcessCompletedFlag",
+    "log_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessLog",
+    "results_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessResultsReport"
+  },
+  "export_download": {
+    "note": "The exported package zip is the enclosure FileContent on the export RESULT row (queryable by ProcessId even though the result collection lists empty).",
+    "result_row": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVExports/AP_MANAGE_PAYMENT_TERMS/child/SetupTaskCSVExportProcess/${PROCESS_ID}/child/SetupTaskCSVExportProcessResult/${PROCESS_ID}",
+    "zip_enclosure": "${result_row}/enclosure/FileContent"
+  },
+  "package_layout": {
+    "outer_zip": "PaymentTerms_gold.zip",
+    "structure": "FLAT CSVs at the zip root plus the manifest (NO nested batch zip). Built by mimicking a live export (setupTaskCSVExports of AP_MANAGE_PAYMENT_TERMS) which produced these members at the top level.",
+    "members": [
+      "ASM_SETUP_CSV_METADATA.xml (real, exported live 2026-07-20; ProcessType flipped EXPORT->IMPORT)",
+      "AP_TERM_HEADER.csv (the term header)",
+      "AP_TERM_LINE.csv (installment lines, FK to header by Name)",
+      "AP_TERM_HEADER_TRANSLATION.csv (US name/description, FK by Name)",
+      "AP_TERM_SUBSCRIPTION.csv (reference-set assignment, FK by Name)"
+    ],
+    "csv_format": "Header row of column names, comma-separated, every value double-quoted, CRLF line endings. Header names map columns (order need not match the manifest XmlAttributeList). Only the minimal columns are needed; the rest are optional.",
+    "member_filenames_match": "BusinessObjectShortName in the manifest.",
+    "child_fk_column": "Each child CSV's first column is 'AP_TERM_HEADER.Name' -- the foreign key back to the parent term by name."
+  },
+  "header_csv_min_columns": ["Name", "EnabledFlag", "Type", "StartDateActive", "Description"],
+  "line_csv_min_columns": ["AP_TERM_HEADER.Name", "SequenceNum", "DuePercent", "DueDays"],
+  "translation_csv_min_columns": ["AP_TERM_HEADER.Name", "Name", "Description", "Language", "SourceLang"],
+  "subscription_csv_min_columns": ["AP_TERM_HEADER.Name", "SetCode"],
+  "date_format": "YYYY/MM/DD (e.g. 2020/01/01)",
+  "type_value": "STD (standard term)",
+  "service_name": "Payables Payment Term service (PaymentTermHeaderVO); the FSM importer resolves SetCode -> SetId for the subscription.",
+  "discovery": [
+    {
+      "name": "REFERENCE_SET",
+      "role": "fin_impl",
+      "note": "A payment term must be subscribed to a reference data set that exists (the importer resolves SetCode to SetId). 'COMMON' is the standard reference set and is the most-used one on this pod (22 seeded subscriptions in the export). Not hardcoded logic: the set list is learned from the live export's AP_TERM_SUBSCRIPTION.csv (SetCode column). Use COMMON for portable reference data.",
+      "learned_set_codes": ["COMMON", "US1BUSET", "FRBUSET", "JPBUSET", "NLBUSET", "CHBUSET", "PLBUSET"]
+    }
+  ],
+  "good_bad_design": {
+    "good": "Two NEW terms subscribed to the discovered reference set COMMON: 'GldRegTerm ${PREFIX} A' (net-30: one line DuePercent=100 DueDays=30) and 'GldRegTerm ${PREFIX} B' (net-45: DuePercent=100 DueDays=45). The run ${PREFIX} lives in the term NAME (verification is by name). Standalone reference data - no upstream dependency (rules 6-8 satisfied: nothing hardcoded, reference set discovered live).",
+    "bad": "A NEW term 'GldRegTerm ${PREFIX} BAD' whose AP_TERM_SUBSCRIPTION row names SetCode='ZZ_NO_SUCH_SET' (a reference set that does not exist). The importer cannot resolve it to a SetId and rejects the whole term with 'JBO-27014: Attribute SetId in PaymentTermSubscriptionEO is required'; it never reaches AP_TERMS_B. Deterministic and pod-independent.",
+    "prefix_lives_in": "term Name (AP_TERMS_TL.NAME)"
+  },
+  "verify": {
+    "cred_role": "fin_impl",
+    "note": "AP_TERMS_TL joins to AP_TERMS_B on TERM_ID. The prefix is in the name. Lines are in AP_TERMS_LINES (TERM_ID FK).",
+    "base_read_good": {
+      "sql": "SELECT t.NAME AS TERM_NAME, b.TERM_ID AS TERM_ID FROM AP_TERMS_B b JOIN AP_TERMS_TL t ON t.TERM_ID = b.TERM_ID WHERE t.LANGUAGE = 'US' AND t.NAME LIKE 'GldRegTerm ${PREFIX}%'",
+      "cols": ["TERM_NAME", "TERM_ID"],
+      "key_col": "TERM_NAME",
+      "id_col": "TERM_ID",
+      "expect": "2 rows with real TERM_ID values"
+    },
+    "base_read_lines": {
+      "sql": "SELECT b.TERM_ID AS TID, l.SEQUENCE_NUM AS SEQ, l.DUE_PERCENT AS PCT, l.DUE_DAYS AS DAYS FROM AP_TERMS_B b JOIN AP_TERMS_LINES l ON l.TERM_ID = b.TERM_ID JOIN AP_TERMS_TL t ON t.TERM_ID = b.TERM_ID WHERE t.LANGUAGE = 'US' AND t.NAME LIKE 'GldRegTerm ${PREFIX}%'",
+      "cols": ["TID", "SEQ", "PCT", "DAYS"],
+      "expect": "one line per term: DUE_PERCENT=100, DUE_DAYS 30 (A) / 45 (B)"
+    },
+    "bad_absent_read": {
+      "sql": "SELECT t.NAME AS NM FROM AP_TERMS_TL t WHERE t.LANGUAGE = 'US' AND t.NAME = 'GldRegTerm ${PREFIX} BAD'",
+      "cols": ["NM"],
+      "expect": "zero rows (bad term with invalid reference set rejected, never reaches base)"
+    }
+  },
+  "live_evidence": {
+    "date": "2026-07-20",
+    "prefix": "90212",
+    "reference_set": "COMMON",
+    "good_terms": ["GldRegTerm 90212 A", "GldRegTerm 90212 B"],
+    "good_term_ids": ["300000331550019", "300000331550020"],
+    "good_lines": {"GldRegTerm 90212 A": "100% / 30 days", "GldRegTerm 90212 B": "100% / 45 days"},
+    "bad_term": "GldRegTerm 90212 BAD",
+    "bad_set_code": "ZZ_NO_SUCH_SET",
+    "bad_error": "JBO-27024: Failed to validate a row ... in PaymentTermSubscriptionEO / JBO-27014: Attribute SetId in PaymentTermSubscriptionEO is required (the nonexistent reference set has no SetId; the term is rejected)",
+    "import_process_id": "100007867615386",
+    "import_ess_request_id": "9765468",
+    "export_process_id": "100007866630921",
+    "export_ess_request_id": "9765461",
+    "process_log_summary": "A total of 3 rows were processed. 1 rows of them failed",
+    "result": "2 good terms in AP_TERMS_B/_TL/_LINES; 1 bad row failed and absent."
+  },
+  "supersedes_tabled": {
+    "prior_status": "TABLED (2026-07-19)",
+    "why_prior_was_wrong": "The 2026-07-19 note concluded 'no standalone bulk load path' because it evaluated only FBDI (none exists), HDL (none), and the read-only payablesPaymentTerms REST resource (GET-only, POST 403). Those facts are all still true, but they are not the load path. The FSM 'Setup Data Import from CSV file' REST mechanism (setupTaskCSVImports) had not yet been proven when that note was written; AP_MANAGE_PAYMENT_TERMS reports ImportSupportedFlag=true and loads AP_TERMS_B directly."
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "type": "FSM_CSV_IMPORT",
+  "version": "v2-seeded",
+  "status": "PASS",
+  "conversion_note": "v2 seeded conversion of v1 objects/UnitsOfMeasure. v1 discovered two things at load time: (1) UOM_CLASS_REF -- the largest existing UOM class, which resolved to '5' (Quantity); (2) FREE_UOM_CODES -- three unused 3-char UOM_CODE values. Both discovery blocks are DELETED here. The class is now the hard-coded seeded literal '5' (confirmed via read-only BIP 2026-07-20: class 5 is the largest seeded Quantity class, 17 UOMs, none carrying our GldRegUOM prefix -- standard demo-pod data we did not load). The 3-char codes are derived deterministically from the run ${PREFIX} in the runner (${C1}/${C2}/${C3}) so distinct prefixes give distinct codes with no query. UOM_CODE is 3-char capped, so the 5-digit ${PREFIX} rides in the UOM NAME/DESCRIPTION exactly as v1; verification is by name.",
+  "cred_role": "scm_impl",
+  "auth_user": "scm_impl",
+  "task_code": "INV_MANAGE_UNITS_OF_MEASURE",
+  "task_name": "Manage Units of Measure",
+  "import_supported_flag": true,
+  "external_loading": false,
+  "rest_import_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports",
+  "rest_export_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVExports",
+  "content_type": "application/vnd.oracle.adf.resourceitem+json",
+  "import_body_template": {
+    "TaskCode": "INV_MANAGE_UNITS_OF_MEASURE",
+    "SetupTaskCSVImportProcess": [
+      { "TaskCode": "INV_MANAGE_UNITS_OF_MEASURE", "FileContent": "<BASE64_ZIP>", "SourceTargetDiffOkFlag": true }
+    ]
+  },
+  "poll": {
+    "get": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports/INV_MANAGE_UNITS_OF_MEASURE/child/SetupTaskCSVImportProcess/${PROCESS_ID}",
+    "completed_flag": "ProcessCompletedFlag",
+    "log_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessLog",
+    "results_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessResultsReport"
+  },
+  "package_layout": {
+    "outer_zip": "UnitsOfMeasure_gold.zip",
+    "structure": "FLAT CSVs at the zip root plus the manifest (NO nested batch zip). Built by mimicking a live export of INV_MANAGE_UNITS_OF_MEASURE.",
+    "members": [
+      "ASM_SETUP_CSV_METADATA.xml (real, exported live 2026-07-20; ProcessType flipped EXPORT->IMPORT; carries no prefix)",
+      "INV_UNIT_OF_MEASURE.csv (the UOMs; ${PREFIX} in name/description, ${C1}/${C2}/${C3} codes, UomClassCode hard-coded '5')",
+      "INV_UNIT_OF_MEASURE_TRANSLATION.csv (US names; ${PREFIX} in name)"
+    ],
+    "csv_format": "Header row of column names, comma-separated, every value double-quoted, CRLF line endings."
+  },
+  "uom_csv_min_columns": ["UnitOfMeasure", "UomCode", "BaseUomFlag", "Description", "UomClassCode", "HasGeneratedCode"],
+  "tl_csv_min_columns": ["INV_UNIT_OF_MEASURE.UnitOfMeasure", "UnitOfMeasure", "Description", "Language", "SourceLang"],
+  "service_name": "oracle.apps.scm.inventory.uom.unitsOfMeasureService.UnitOfMeasureService",
+  "seeded_reference": {
+    "UOM_CLASS_CODE": "5",
+    "note": "Hard-coded seeded literal (was v1 discovery UOM_CLASS_REF). Class 5 = Quantity, the largest seeded UOM class on every demo pod. Confirmed via read-only BIP 2026-07-20: 17 seeded UOMs, none carrying our GldRegUOM prefix. Standard demo data we did not load."
+  },
+  "code_derivation": {
+    "note": "UOM_CODE is 3-char capped and cannot hold the 5-digit prefix. The runner derives 3 distinct 3-char codes from the prefix deterministically: a 2-char base36 stem = (int(prefix) % 1296) then suffix A/B/C. So distinct prefixes give distinct codes with NO discovery query. The ${PREFIX} rides in the UOM name/description; verification is by name, so a rare code collision does not affect the pass.",
+    "tokens": { "C1": "<stem>A (good 1)", "C2": "<stem>B (good 2)", "C3": "<stem>C (bad)" }
+  },
+  "discovery": [],
+  "good_bad_design": {
+    "good": "Two NEW non-base UOMs placed in the hard-coded seeded class '5' (Quantity). Codes ${C1}/${C2} derived from the prefix; the run ${PREFIX} is carried in the name/description ('GldRegUOM ${PREFIX} A' / 'GldRegUOM ${PREFIX} B'). Standalone reference data, no upstream dependency, no discovery.",
+    "bad": "A NEW UOM (code ${C3}) with UomClassCode = 'ZZ_NO_SUCH_CLASS' (a class that does not exist). The Manage Units of Measure CSV import rejects it with 'UomClass does not exist; skipping record' and it never reaches INV_UNITS_OF_MEASURE_B. Deterministic and pod-independent.",
+    "prefix_lives_in": "UOM name/description (UOM_CODE is 3-char capped)"
+  },
+  "verify": {
+    "cred_role": "scm_impl",
+    "note": "TL joins to B on UNIT_OF_MEASURE_ID (there is no UOM_ID column). The prefix is in the name.",
+    "base_read_good": {
+      "sql": "SELECT b.UOM_CODE AS UOM_CODE, b.UNIT_OF_MEASURE_ID AS UOM_ID, b.UOM_CLASS AS UOM_CLASS, t.UNIT_OF_MEASURE AS NM FROM INV_UNITS_OF_MEASURE_B b JOIN INV_UNITS_OF_MEASURE_TL t ON t.UNIT_OF_MEASURE_ID = b.UNIT_OF_MEASURE_ID WHERE t.LANGUAGE = 'US' AND t.UNIT_OF_MEASURE LIKE 'GldRegUOM ${PREFIX}%' AND t.UNIT_OF_MEASURE NOT LIKE '%BAD%'",
+      "cols": ["UOM_CODE", "UOM_ID", "UOM_CLASS", "NM"],
+      "key_col": "UOM_CODE",
+      "expect": "2 rows (A and B) with real UNIT_OF_MEASURE_ID values and UOM_CLASS = 5"
+    },
+    "bad_absent_read": {
+      "sql": "SELECT UOM_CODE AS C FROM INV_UNITS_OF_MEASURE_B WHERE UOM_CODE = '${BAD_CODE}'",
+      "cols": ["C"],
+      "expect": "zero rows (bad UOM with invalid class rejected, never reaches base)"
+    }
+  }
+}

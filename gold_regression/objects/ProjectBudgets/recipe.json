@@ -1,0 +1,51 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "prj/projectControl/import",
+  "interface_details_id": 39,
+  "import_job_name_raw": "/oracle/apps/ess/projects/control/budgetsAndForecasts;ImportBudgetsInterfaceData",
+  "job_name": "/oracle/apps/ess/projects/control/budgetsAndForecasts,ImportBudgetsInterfaceData",
+  "parameter_list": "#NULL",
+  "filename": "ProjectBudgets_gold.zip",
+  "csvs": [
+    { "template": "PjoPlanVersionsXface.csv", "fbdi_name": "PjoPlanVersionsXface.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "PRJ_BUDGET_REF",
+      "role": "fin_impl",
+      "cols": ["PNUM", "PNAME", "FPT", "TASKNUM", "RES", "PERNAME", "CUR", "AWD", "FSNAME", "FSNUM"],
+      "sql": "SELECT * FROM ( SELECT x.project_number PNUM, x.project_name PNAME, x.financial_plan_type FPT, x.task_number TASKNUM, x.resource_name RES, x.period_name PERNAME, x.planning_currency CUR, NVL(x.award_number,'#NONE') AWD, NVL(x.funding_source_name,'#NONE') FSNAME, NVL(x.funding_source_number,'#NONE') FSNUM FROM pjo_plan_versions_xface x JOIN pjf_projects_all_vl pe ON pe.segment1 = x.project_number JOIN pjf_projects_all_b pab ON pab.project_id = pe.project_id WHERE x.processing_mode = 'Create' AND x.line_type = 'PERIODIC' AND x.load_status = 'SUCCESS' AND x.task_number IS NOT NULL AND x.resource_name IS NOT NULL AND x.period_name IS NOT NULL AND x.planning_currency IS NOT NULL AND x.funding_source_name IS NOT NULL AND pab.project_status_code = 'APPROVED' AND NVL(pab.template_flag,'N') = 'N' ORDER BY x.project_number, x.resource_name ) WHERE ROWNUM = 1",
+      "bind": {
+        "PROJECT_NUMBER": "PNUM",
+        "PROJECT_NAME": "PNAME",
+        "FIN_PLAN_TYPE": "FPT",
+        "TASK_NUMBER": "TASKNUM",
+        "RESOURCE_NAME": "RES",
+        "PERIOD_NAME": "PERNAME",
+        "CURRENCY": "CUR",
+        "AWARD_NUMBER": "AWD",
+        "FUNDING_SOURCE_NAME": "FSNAME"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-PBUD-G1", "${PREFIX}RT-PBUD-G2"],
+    "bad_keys": ["${PREFIX}RT-PBUD-B"],
+    "base_read": {
+      "sql": "SELECT tl.version_name AS VERSION_NAME, TO_CHAR(pv.plan_version_id) AS PLAN_VERSION_ID, pv.plan_class_code AS PLAN_CLASS_CODE FROM pjo_plan_versions_tl tl JOIN pjo_plan_versions_b pv ON pv.plan_version_id = tl.plan_version_id JOIN pjf_projects_all_vl pe ON pe.project_id = pv.project_id WHERE tl.language = 'US' AND pe.segment1 = '${PROJECT_NUMBER}' AND tl.version_name LIKE :PREFIX || 'RT-PBUD-%'",
+      "cols": ["VERSION_NAME", "PLAN_VERSION_ID", "PLAN_CLASS_CODE"],
+      "key_col": "VERSION_NAME",
+      "id_col": "PLAN_VERSION_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT x.plan_version_name AS VERSION_NAME, TO_CHAR(x.plan_version_xface_id) AS XFACE_ID, x.financial_plan_type AS FIN_PLAN_TYPE, (x.load_status || DECODE(x.process_code, NULL, '', ' / process_code=' || x.process_code)) AS ERROR_MESSAGE FROM pjo_plan_versions_xface x WHERE x.load_request_id = :LRID AND x.plan_version_name LIKE :PREFIX || 'RT-PBUD-%' AND x.load_status = 'ERROR'",
+      "cols": ["VERSION_NAME", "XFACE_ID", "FIN_PLAN_TYPE", "ERROR_MESSAGE"],
+      "key_col": "VERSION_NAME",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

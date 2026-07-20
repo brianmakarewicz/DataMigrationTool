@@ -1,0 +1,21 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "PerformanceEvaluations_gold.zip",
+  "dat": { "template": "GoalPlan.dat", "archive_name": "GoalPlan.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PREFIX} DMT Goal Plan A", "${PREFIX} DMT Goal Plan B"],
+    "bad_keys": ["${PREFIX} DMT Goal Plan BAD"],
+    "bad_error_contains": "DMT_INVALID_TYPE",
+    "base_read": {
+      "_comment": "Good goal plans reach base table HRG_GOAL_PLANS_B; the name lives in HRG_GOAL_PLANS_TL (US). Read by prefix on the goal plan name -- unambiguous, no existing plan name starts with a numeric run prefix. GOAL_PLAN_ID present = created in base. The bad row (invalid GoalPlanTypeCode) never reaches base, so its name returns no row.",
+      "sql": "SELECT tl.goal_plan_name AS GP_NAME, gp.goal_plan_id AS GOAL_PLAN_ID, gp.goal_plan_type_code AS TYP FROM hrg_goal_plans_b gp JOIN hrg_goal_plans_tl tl ON tl.goal_plan_id=gp.goal_plan_id AND tl.language='US' WHERE tl.goal_plan_name LIKE '${PREFIX}%'",
+      "cols": ["GP_NAME", "GOAL_PLAN_ID", "TYP"],
+      "key_col": "GP_NAME",
+      "id_col": "GOAL_PLAN_ID"
+    }
+  }
+}

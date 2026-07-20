@@ -1,0 +1,36 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "TaxCards_gold.zip",
+  "dat": { "template": "TaxWithholding.dat", "archive_name": "TaxWithholding.dat" },
+  "discovery": [
+    {
+      "name": "US_LDG_AND_CARDLESS_RELATIONSHIP",
+      "role": "hcm_impl",
+      "cols": ["LDG_NAME", "EFF_DATE", "PRNUM1", "PRID1"],
+      "sql": "SELECT ldg.name AS LDG_NAME, TO_CHAR(SYSDATE,'YYYY/MM/DD') AS EFF_DATE, c.prnum AS PRNUM1, c.prid AS PRID1 FROM pay_legislative_data_groups ldg CROSS JOIN (SELECT pr.payroll_relationship_number prnum, TO_CHAR(pr.payroll_relationship_id) prid, ROW_NUMBER() OVER (ORDER BY pr.payroll_relationship_id) rn FROM pay_pay_relationships_dn pr JOIN per_all_people_f p ON p.person_id=pr.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date JOIN per_all_assignments_m a ON a.person_id=pr.person_id AND a.effective_latest_change='Y' AND SYSDATE BETWEEN a.effective_start_date AND a.effective_end_date AND a.assignment_type='E' AND a.primary_flag='Y' AND a.location_id IS NOT NULL WHERE pr.legislative_data_group_id=300000046974970 AND NOT EXISTS (SELECT 1 FROM pay_dir_cards_f dc WHERE dc.payroll_relationship_id=pr.payroll_relationship_id AND dc.dir_card_definition_id=300000000375476)) c WHERE ldg.legislative_data_group_id=300000046974970 AND c.rn=1",
+      "bind": {
+        "LDG_NAME": "LDG_NAME",
+        "EFF_DATE": "EFF_DATE",
+        "PRNUM1": "PRNUM1",
+        "PRID1": "PRID1"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PRNUM1}"],
+    "bad_keys": ["${PREFIX}DMT-NO-REL"],
+    "bad_error_contains": "valid value for the sourceid",
+    "base_read": {
+      "_comment": "GOOD proof (base CREATE, this run): a brand-new US Tax Withholding card (dir_card_definition_id 300000000375476) now exists in PAY_DIR_CARDS_F on the discovered card-free payroll relationship ${PRID1}, effective this run's date ${EFF_DATE}, with at least one component in PAY_DIR_CARD_COMPONENTS_F. Keyed portably by the discovered PayrollRelationshipNumber (SOURCE_TYPE=PREL, SOURCE_ID=payroll_relationship_id) so the same fixture creates a fresh card on any pod. The bad PayrollRelationshipNumber resolves to no relationship, so HDL errors it at load and it never appears in PAY_DIR_CARDS_F. Correlated back to the PayrollRelationshipNumber for the pass check.",
+      "sql": "SELECT '${PRNUM1}' AS PRNUM, TO_CHAR(MAX(c.dir_card_id)) AS DIR_CARD_ID, TO_CHAR(TO_CHAR(MAX(c.effective_start_date),'YYYY/MM/DD')) AS CARD_ESD, TO_CHAR(MAX((SELECT COUNT(*) FROM pay_dir_card_components_f cc WHERE cc.dir_card_id=c.dir_card_id))) AS COMP_CNT FROM pay_dir_cards_f c WHERE c.dir_card_definition_id=300000000375476 AND c.payroll_relationship_id=${PRID1} AND c.effective_start_date >= TO_DATE('${EFF_DATE}','YYYY/MM/DD')",
+      "cols": ["PRNUM", "DIR_CARD_ID", "CARD_ESD", "COMP_CNT"],
+      "key_col": "PRNUM",
+      "id_col": "DIR_CARD_ID"
+    }
+  }
+}

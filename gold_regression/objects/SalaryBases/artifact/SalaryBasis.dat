@@ -1,0 +1,4 @@
+METADATA|SalaryBasis|SourceSystemOwner|SourceSystemId|SalaryBasisName|ElementName|InputValueName|SalaryBasisCode|SalaryAnnualizationFactor|LegislativeDataGroupName|Description
+MERGE|SalaryBasis|HRC_SQLLOADER|${PREFIX}DMTSB001|${PREFIX} DMT Annual Salary|${ELEM_NAME}|${IV_NAME}|ANNUAL|1|${LDG_NAME}|Gold regression annual salary basis
+MERGE|SalaryBasis|HRC_SQLLOADER|${PREFIX}DMTSB002|${PREFIX} DMT Annual Salary 2|${ELEM_NAME}|${IV_NAME}|ANNUAL|1|${LDG_NAME}|Gold regression annual salary basis 2
+MERGE|SalaryBasis|HRC_SQLLOADER|${PREFIX}DMTSB-BAD|${PREFIX} DMT Bad Basis|DMT NONEXISTENT ELEMENT ${PREFIX}|${IV_NAME}|ANNUAL|1|${LDG_NAME}|Gold regression bad basis

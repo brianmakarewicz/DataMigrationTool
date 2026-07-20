@@ -1,0 +1,21 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "PayrollRelationships_gold.zip",
+  "dat": { "template": "PayrollRelationship.dat", "archive_name": "AssignedPayroll.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["E15", "E16"],
+    "bad_keys": ["E6"],
+    "bad_error_contains": "PayrollId",
+    "base_read": {
+      "_comment": "Seeded v2 (no discovery). Assigned-payroll base rows for the hard-coded seeded assignments E15/E16/E6, correlated to the person/assignment via pay_pay_relationships_dn (payroll_term_id = relationship-level term, id just above payroll_relationship_id; the lagging pay_rel_groups_dn is deliberately avoided). Scoped to the seeded Biweekly payroll id 300000051084930 and THIS run's prefix-derived start_date (${PAY_DATE_DASH}), so any row it returns is unambiguously this run's assigned-payroll segment.",
+      "sql": "SELECT a.assignment_number AS ASG_NUM, MAX(ap.assigned_payroll_id) AS ASSIGNED_PAYROLL_ID, MAX(ap.payroll_id) AS PAYROLL_ID FROM pay_assigned_payrolls_dn ap JOIN pay_pay_relationships_dn pr ON pr.legislative_data_group_id=300000046974970 AND ap.payroll_term_id BETWEEN pr.payroll_relationship_id AND pr.payroll_relationship_id + 5 JOIN per_all_assignments_m a ON a.person_id=pr.person_id AND a.effective_latest_change='Y' AND a.assignment_type='E' AND a.primary_flag='Y' WHERE ap.legislative_data_group_id=300000046974970 AND ap.payroll_id=300000051084930 AND ap.start_date=DATE '${PAY_DATE_DASH}' AND a.assignment_number IN ('E15','E16','E6') GROUP BY a.assignment_number",
+      "cols": ["ASG_NUM", "ASSIGNED_PAYROLL_ID", "PAYROLL_ID"],
+      "key_col": "ASG_NUM",
+      "id_col": "ASSIGNED_PAYROLL_ID"
+    }
+  }
+}

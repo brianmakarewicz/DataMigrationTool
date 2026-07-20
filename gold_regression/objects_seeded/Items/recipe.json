@@ -1,0 +1,33 @@
+{
+  "type": "FBDI",
+  "cred_role": "scm_impl",
+  "auth_user": "scm_impl",
+  "doc_account": "scm/item/import",
+  "interface_details_id": 29,
+  "import_job_name_raw": "/oracle/apps/ess/scm/productModel/items;ItemImportJobDef",
+  "job_name": "/oracle/apps/ess/scm/productModel/items,ItemImportJobDef",
+  "parameter_list": "${PREFIX},null,CREATE,Y,ORA_COMP,N,Y",
+  "filename": "Items_gold.zip",
+  "csvs": [
+    { "template": "EgpSystemItemsInterface.csv", "fbdi_name": "EgpSystemItemsInterface.csv" }
+  ],
+  "verify": {
+    "cred_role": "scm_impl",
+    "good_keys": ["${PREFIX}RT-ITEM-G1", "${PREFIX}RT-ITEM-G2"],
+    "bad_keys": ["${PREFIX}RT-ITEM-BAD1"],
+    "bad_proof_is_absence": true,
+    "bad_absence_note": "Item Import rejected the bad row with 'You must provide a valid value for the attribute organization' (invalid ORGANIZATION_CODE ZZ_NO_SUCH_ORG) -- captured live in the ItemImportJobDef ESS report (PROCESS_STATUS=3 in EGP_SYSTEM_ITEMS_INTERFACE before purge). Item Import purges the errored interface row after the batch completes, so the authoritative BAD proof is ABSENCE from base EGP_SYSTEM_ITEMS_B while the two good rows from the SAME load reached base with real INVENTORY_ITEM_IDs.",
+    "base_read": {
+      "sql": "SELECT b.ITEM_NUMBER AS ITEM_NUMBER, b.INVENTORY_ITEM_ID AS INVENTORY_ITEM_ID, p.ORGANIZATION_CODE AS ORG FROM EGP_SYSTEM_ITEMS_B b JOIN INV_ORG_PARAMETERS p ON p.ORGANIZATION_ID = b.ORGANIZATION_ID WHERE b.ITEM_NUMBER LIKE :PREFIX || 'RT-ITEM-%'",
+      "cols": ["ITEM_NUMBER", "INVENTORY_ITEM_ID", "ORG"],
+      "key_col": "ITEM_NUMBER",
+      "id_col": "INVENTORY_ITEM_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT i.ITEM_NUMBER AS ITEM_NUMBER, i.ORGANIZATION_CODE AS ORG, ('PROCESS_STATUS=' || TO_CHAR(i.PROCESS_STATUS) || ' (organization ' || i.ORGANIZATION_CODE || ' invalid - You must provide a valid value for the attribute organization; rejected by Item Import, never created in EGP_SYSTEM_ITEMS_B)') AS ERROR_MESSAGE FROM EGP_SYSTEM_ITEMS_INTERFACE i WHERE i.LOAD_REQUEST_ID = :LRID AND i.ITEM_NUMBER LIKE :PREFIX || 'RT-ITEM-%'",
+      "cols": ["ITEM_NUMBER", "ORG", "ERROR_MESSAGE"],
+      "key_col": "ITEM_NUMBER",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

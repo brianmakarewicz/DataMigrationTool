@@ -1,0 +1,4 @@
+"FND_APP_STANDARD_LOOKUP.LookupType","LookupCode","Meaning","Description","EnabledFlag","StartDateActive","EndDateActive","DisplaySequence","CreatedBy","CreationDate","LastUpdatedBy","LastUpdateDate","LastUpdateLogin","Tag"
+"RT_GOLD_${PREFIX}","G1","RT Gold Code 1 ${PREFIX}","RT Gold Code 1 ${PREFIX}","Y","","","10","FIN_IMPL","2020/01/01 00:00:00.0","FIN_IMPL","2020/01/01 00:00:00.0","",""
+"RT_GOLD_${PREFIX}","G2","RT Gold Code 2 ${PREFIX}","RT Gold Code 2 ${PREFIX}","Y","","","20","FIN_IMPL","2020/01/01 00:00:00.0","FIN_IMPL","2020/01/01 00:00:00.0","",""
+"RT_NO_SUCH_TYPE_${PREFIX}","BAD1","RT Bad Code ${PREFIX}","RT Bad Code ${PREFIX}","Y","","","10","FIN_IMPL","2020/01/01 00:00:00.0","FIN_IMPL","2020/01/01 00:00:00.0","",""

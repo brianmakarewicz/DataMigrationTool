@@ -1,0 +1,3 @@
+"CREATE","${PREFIX}","","${ITEMNUM}","${ORGCODE}","eCommerce Catalog","","${G1CODE}","","","DMTGOLD","${PREFIX}RT-ICAT-G1","",""
+"CREATE","${PREFIX}","","${ITEMNUM}","${ORGCODE}","eCommerce Catalog","","${G2CODE}","","","DMTGOLD","${PREFIX}RT-ICAT-G2","",""
+"CREATE","${PREFIX}","","${ITEMNUM}","${ORGCODE}","eCommerce Catalog","","ZZBADCAT${PREFIX}","","","DMTGOLD","${PREFIX}RT-ICAT-BAD1","",""

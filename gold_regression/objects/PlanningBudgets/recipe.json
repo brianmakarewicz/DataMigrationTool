@@ -1,0 +1,24 @@
+{
+  "type": "TABLED",
+  "tabled_reason": "EPM-only. PlanningBudgets is an Oracle EPM Cloud (EPBCS / Planning and Budgeting) integration, not a Fusion ERP FBDI object. It has no ERP Integration SOAP loadAndImportData path, no UCM DocumentAccount, and no ESS import job on this Fusion ERP demo pod. It cannot be live-proven to a Fusion ERP base table because the destination is an Essbase planning cube in a separate EPM Cloud pod that this demo instance does not subscribe to.",
+  "mechanism_finding": {
+    "what_it_is": "EPBCS planning/budget data load (Enterprise Planning and Budgeting Cloud Service).",
+    "generator_evidence": "db/packages/dmt_plan_budget_fbdi_gen_pkg.pkb.sql emits a single member EpbcsDataImport.csv with EPM dimension columns SCENARIO, VERSION, ENTITY, ACCOUNT, PERIOD, AMOUNT, CURRENCY, DATA_LOAD_DEFINITION_NAME, ATTRIBUTE1..5 -- an EPM Data Management / Data Integration load format, NOT a Fusion ERP FBDI interface CSV.",
+    "load_channel": "Oracle EPM Cloud Data Management / Data Integration (a Data Load Definition run inside the EPM pod), or the EPM REST 'Import Data' job. Not the Fusion ERP ErpIntegrationService.",
+    "not_gl_budgets": "Distinct from GLBudgets (opts id 17, GL_BUDGET_INTERFACE, ValidateAndLoadBudgets) and ProjectBudgets (opts id 39, PjoPlanVersionsXface.csv, ImportBudgetsInterfaceData) -- both of which ARE Fusion ERP FBDI and are handled by their own objects."
+  },
+  "evidence": {
+    "no_interface_options_row": "db/seed/dmt_erp_interface_options_tbl.sql has NO row whose CEMLI_CODE / BUSINESS_OBJECT / UCM_ACCOUNT is PlanningBudgets or EPBCS. grep for PlanningBudget|EpbcsData|epbcs returns nothing. GL and Project budget rows exist (ids 17, 39, 51, 78, 79, 153) but none is EPBCS.",
+    "no_fbdi_metadata_row": "db/seed/dmt_upload_fbdi_metadata.sql maps no object_code to EpbcsDataImport.csv.",
+    "cemli_catalog_out_of_scope": "db/seed/dmt_cemli_catalog_tbl.sql line 7: 'PlanningBudgets is out of scope (2026-07-07) and is not seeded.'",
+    "object_readme": "objects/PlanningBudgets/README.md status = DORMANT (EPBCS table not accessible on demo instance).",
+    "pod_probe_read_only": "Read-only BIP: ESS_REQUEST_HISTORY has ZERO runs whose name/definition mentions EPBCS or Planning Budget; the 124 budget-named runs are all GL/Project ERP-FBDI budget jobs. gl_budget_interface is reachable (ERP), confirming this is a Fusion ERP pod with no EPM/EPBCS registration.",
+    "web": "Oracle EPM budget/planning data loads go through EPM Data Management/Data Integration (EPM Cloud), replacing FDMEE; ERP FBDI is for ERP/SCM objects only."
+  },
+  "cred_role": "fin_impl",
+  "filename": null,
+  "csvs": [],
+  "discovery": [],
+  "verify": null,
+  "revisit_if": "This pod (or a client pod) subscribes to Oracle EPM Cloud (Planning/EPBCS) AND exposes a Data Load Definition or the EPM 'Import Data' REST job with a readable planning cube. Only then can EpbcsDataImport.csv be loaded and a good/bad row proven to the planning cube. On a pure Fusion ERP demo, there is no base table to prove to."
+}
