@@ -512,10 +512,15 @@ begin
 
     -- ----------------------------------------------------------
     -- (i) 34-37. Poll timeout, fully offline: a work item stuck in
-    --     AWAITING_LOAD past ESS_POLL_TIMEOUT_MINUTES has its
-    --     GENERATED rows marked FAILED [LOAD_ERROR] and routes to
-    --     RECONCILING -- the timeout is a trigger, never a verdict;
-    --     the item then settles by the accounting rule alone.
+    --     AWAITING_LOAD past ESS_POLL_TIMEOUT_MINUTES routes to
+    --     RECONCILING with its GENERATED rows LEFT GENERATED --
+    --     the timeout is a trigger, never a verdict. We do NOT
+    --     fabricate a FAILED [LOAD_ERROR] for rows we never observed
+    --     failing; reconciliation writes each row's real outcome
+    --     against Fusion, and the item then settles by the
+    --     accounting rule alone. Here the mock reconciler is set to
+    --     LOADED (line above), so both rows confirm LOADED -> the
+    --     item is DONE and the run is COMPLETED (no invented errors).
     --     (The queue/run rows are fabricated directly: the mock is
     --     LOCAL and never enters AWAITING_LOAD on its own.)
     -- ----------------------------------------------------------
@@ -545,15 +550,24 @@ begin
     dmt_util_pkg.set_config(p_key => 'ESS_POLL_TIMEOUT_MINUTES', p_value => '1');
     dmt_queue_worker_pkg.poll_one(l_queue_i);
 
+    -- Section 2 Timeouts (leave-GENERATED behavior): "when it expires,
+    -- the file's GENERATED rows are left GENERATED (unaccounted) -- we do
+    -- not fabricate a [LOAD_ERROR] timeout failure." Assert both rows are
+    -- STILL GENERATED and that NO [LOAD_ERROR] text was written by the
+    -- timeout path.
     select count(*) into l_cnt
       from dmt_mock_tfm_tbl
-     where run_id = l_run_i and tfm_status = 'FAILED'
-       and dbms_lob.instr(error_text, '[LOAD_ERROR]') > 0;
-    -- Section 2 Timeouts: "when it expires, every GENERATED row of the
-    -- file is marked FAILED with a [LOAD_ERROR]-tagged timeout message
-    -- (the all-or-nothing rule)."
+     where run_id = l_run_i and tfm_status = 'GENERATED';
     assert(l_cnt = 2, 34,
-        'timeout marked both GENERATED rows FAILED with [LOAD_ERROR] (got '||l_cnt||')');
+        'timeout LEFT both rows GENERATED, unaccounted (got '||l_cnt||' still GENERATED)');
+
+    select count(*) into l_cnt
+      from dmt_mock_tfm_tbl
+     where run_id = l_run_i
+       and error_text is not null
+       and dbms_lob.instr(error_text, '[LOAD_ERROR]') > 0;
+    assert(l_cnt = 0, 341,
+        'timeout wrote NO fabricated [LOAD_ERROR] text on any row (got '||l_cnt||' tagged)');
 
     select work_status into l_wstatus
       from dmt_work_queue_tbl where queue_id = l_queue_i;
@@ -568,14 +582,16 @@ begin
     select work_status into l_wstatus
       from dmt_work_queue_tbl where queue_id = l_queue_i;
     -- Section 2 Timeouts: "The work item ends DONE or FAILED by the
-    -- accounting rule alone, never directly from the timer." All rows
-    -- are FAILED with reportable [LOAD_ERROR] text = accounted -> DONE.
+    -- accounting rule alone, never directly from the timer." Reconciliation
+    -- (mock outcome LOADED) confirmed both left-GENERATED rows in Fusion and
+    -- flipped them LOADED = every record accounted -> DONE. Honest accounting:
+    -- the timeout invented nothing, so a job that really finished settles clean.
     assert(l_wstatus = 'DONE', 36,
-        'post-timeout item settled DONE by the accounting rule (got '||l_wstatus||')');
-    -- Run-status table, COMPLETED_ERRORS row (rows ended FAILED with
-    -- reportable errors; all items finished).
-    assert(l_status = 'COMPLETED_ERRORS', 37,
-        'post-timeout run rolled up to COMPLETED_ERRORS (got '||l_status||')');
+        'post-timeout item settled DONE after reconciliation confirmed the rows LOADED (got '||l_wstatus||')');
+    -- Run-status table, COMPLETED row: every record LOADED, no failures --
+    -- because the timeout did NOT fabricate any FAILED rows.
+    assert(l_status = 'COMPLETED', 37,
+        'post-timeout run rolled up to COMPLETED, no invented errors (got '||l_status||')');
 
     dmt_util_pkg.set_config(p_key => 'ESS_POLL_TIMEOUT_MINUTES', p_value => '30');
 
