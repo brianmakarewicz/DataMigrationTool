@@ -1,0 +1,4 @@
+METADATA|GoalPlan|GoalPlanExternalId|GoalPlanName|GoalPlanTypeCode|GoalPlanActiveFlag|EnableWeightingFlag|StartDate|EndDate|EnforceGoalWeightFlag|GoalAccessLevelCode|IncludeInPerfdocFlag|ReqSubmittedByPersonNumber|RequestSubmissionDate|ReviewPeriodName
+MERGE|GoalPlan|GP_${PREFIX}_1|${PREFIX} DMT Goal Plan A|ORA_HRG_WORKER|A|Y|${RP_START}|${RP_END}|N|ALL|N|${SUBMITTER_PN}|${RUN_DATE}|${REVIEW_PERIOD}
+MERGE|GoalPlan|GP_${PREFIX}_2|${PREFIX} DMT Goal Plan B|ORA_HRG_WORKER|A|Y|${RP_START}|${RP_END}|N|ALL|N|${SUBMITTER_PN}|${RUN_DATE}|${REVIEW_PERIOD}
+MERGE|GoalPlan|GP_${PREFIX}_3|${PREFIX} DMT Goal Plan BAD|DMT_INVALID_TYPE|A|Y|${RP_START}|${RP_END}|N|ALL|N|${SUBMITTER_PN}|${RUN_DATE}|${REVIEW_PERIOD}

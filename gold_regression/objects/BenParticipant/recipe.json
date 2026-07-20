@@ -1,0 +1,35 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "BenParticipant_gold.zip",
+  "dat": { "template": "PersonBenefitBalance.dat", "archive_name": "PersonBenefitBalance.dat" },
+  "discovery": [
+    {
+      "name": "BALANCE_AND_ENROLLED_PERSONS",
+      "role": "hcm_impl",
+      "cols": ["BAL_NAME", "BAL_ID", "PNUM1", "PNUM2", "PNUM3"],
+      "sql": "SELECT bb.name AS BAL_NAME, TO_CHAR(bb.bnfts_bal_id) AS BAL_ID, MAX(CASE WHEN c.rn=1 THEN c.person_number END) AS PNUM1, MAX(CASE WHEN c.rn=2 THEN c.person_number END) AS PNUM2, MAX(CASE WHEN c.rn=3 THEN c.person_number END) AS PNUM3 FROM ben_bnfts_bal_f bb JOIN (SELECT p.person_number, ROW_NUMBER() OVER (ORDER BY p.person_number) rn FROM per_all_assignments_m a JOIN per_all_people_f p ON p.person_id = a.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date WHERE a.legal_entity_id = 300000046974965 AND a.effective_latest_change = 'Y' AND SYSDATE BETWEEN a.effective_start_date AND a.effective_end_date AND a.assignment_type = 'E' AND a.primary_flag = 'Y' AND REGEXP_LIKE(p.person_number, '^[0-9]+$') AND NOT EXISTS (SELECT 1 FROM ben_per_bnfts_bal_f pb JOIN ben_bnfts_bal_f b2 ON b2.bnfts_bal_id = pb.bnfts_bal_id WHERE pb.person_id = p.person_id AND b2.name = '401k Employee Balance' AND SYSDATE BETWEEN pb.effective_start_date AND pb.effective_end_date)) c ON c.rn <= 3 WHERE bb.name = '401k Employee Balance' AND SYSDATE BETWEEN bb.effective_start_date AND bb.effective_end_date AND bb.legal_entity_id = 300000046974965 GROUP BY bb.name, bb.bnfts_bal_id",
+      "bind": {
+        "BAL_NAME": "BAL_NAME",
+        "BAL_ID": "BAL_ID",
+        "PNUM1": "PNUM1",
+        "PNUM2": "PNUM2",
+        "PNUM3": "PNUM3"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PNUM1}", "${PNUM2}"],
+    "bad_keys": ["${PREFIX}DMTBEN-BAD"],
+    "base_read": {
+      "sql": "SELECT p.person_number AS PNUM, TO_CHAR(MAX(pb.per_bnfts_bal_id)) AS PBID, TO_CHAR(MAX(pb.val)) AS VAL FROM ben_per_bnfts_bal_f pb JOIN per_all_people_f p ON p.person_id = pb.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date WHERE pb.bnfts_bal_id = ${BAL_ID} AND pb.effective_start_date = DATE '2026-07-19' AND p.person_number IN ('${PNUM1}','${PNUM2}','${PNUM3}') GROUP BY p.person_number",
+      "cols": ["PNUM", "PBID", "VAL"],
+      "key_col": "PNUM",
+      "id_col": "PBID"
+    }
+  }
+}

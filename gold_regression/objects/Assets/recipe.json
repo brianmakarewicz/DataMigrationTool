@@ -1,0 +1,62 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/assets/import",
+  "interface_details_id": 9,
+  "import_job_name_raw": "/oracle/apps/ess/financials/assets/additions;PrepareMassAdditions",
+  "job_name": "/oracle/apps/ess/financials/assets/additions,PrepareMassAdditions",
+  "parameter_list": "${BOOK},,NORMAL",
+  "filename": "Assets_gold.zip",
+  "csvs": [
+    { "template": "FaMassAdditions.csv",          "fbdi_name": "FaMassAdditions.csv" },
+    { "template": "FaMassaddDistributions.csv",   "fbdi_name": "FaMassaddDistributions.csv" }
+  ],
+  "downstream_jobs": [
+    {
+      "name": "PostMassAdditions",
+      "job_path": "/oracle/apps/ess/financials/assets/additions,PostMassAdditions",
+      "parameter_list": "${BOOK}"
+    }
+  ],
+  "discovery": [
+    {
+      "name": "FA_CORP_BOOK_COMBO",
+      "role": "fin_impl",
+      "cols": ["BOOK", "CAT1", "CAT2", "L1", "L2", "L3", "D1", "D2", "D3", "D4", "D5", "D6"],
+      "sql": "SELECT * FROM (SELECT bk.book_type_code BOOK, ac.segment1 CAT1, ac.segment2 CAT2, loc.segment1 L1, loc.segment2 L2, loc.segment3 L3, de.segment1 D1, de.segment2 D2, de.segment3 D3, de.segment4 D4, de.segment5 D5, de.segment6 D6 FROM fa_additions_b ad JOIN fa_book_controls bc ON bc.book_class = 'CORPORATE' AND NVL(bc.date_ineffective, SYSDATE+1) > SYSDATE JOIN fa_books bk ON bk.asset_id = ad.asset_id AND bk.date_ineffective IS NULL AND bk.book_type_code = bc.book_type_code JOIN fa_distribution_history dh ON dh.asset_id = ad.asset_id AND dh.date_ineffective IS NULL AND dh.book_type_code = bk.book_type_code JOIN fa_categories_b ac ON ac.category_id = ad.asset_category_id JOIN fa_locations loc ON loc.location_id = dh.location_id JOIN gl_code_combinations de ON de.code_combination_id = dh.code_combination_id AND de.enabled_flag = 'Y' AND NVL(de.end_date_active, SYSDATE+1) > SYSDATE AND de.detail_posting_allowed_flag = 'Y' WHERE ad.asset_type = 'CAPITALIZED' AND ac.segment1 IS NOT NULL AND loc.segment1 IS NOT NULL ORDER BY DECODE(bk.book_type_code,'US CORP',0,1), ad.asset_id DESC) WHERE ROWNUM = 1",
+      "bind": {
+        "BOOK": "BOOK",
+        "CAT1": "CAT1",
+        "CAT2": "CAT2",
+        "LOC1": "L1",
+        "LOC2": "L2",
+        "LOC3": "L3",
+        "DE1": "D1",
+        "DE2": "D2",
+        "DE3": "D3",
+        "DE4": "D4",
+        "DE5": "D5",
+        "DE6": "D6"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-ASSET-G1", "${PREFIX}RT-ASSET-G2"],
+    "bad_keys": ["${PREFIX}RT-ASSET-BAD1"],
+    "base_read": {
+      "sql": "SELECT asset_number AS ASSET_NUMBER, asset_id AS ASSET_ID, asset_type AS ASSET_TYPE FROM fa_additions_b WHERE asset_number LIKE :PREFIX || 'RT-ASSET-%'",
+      "cols": ["ASSET_NUMBER", "ASSET_ID", "ASSET_TYPE"],
+      "key_col": "ASSET_NUMBER",
+      "id_col": "ASSET_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT ma.asset_number AS ASSET_NUMBER, ma.mass_addition_id AS MASS_ADDITION_ID, ma.posting_status AS POSTING_STATUS, TRIM(ma.posting_status || ': ' || SUBSTR(ma.error_msg, 1, 400)) AS ERROR_MESSAGE FROM fa_mass_additions ma WHERE ma.asset_number LIKE :PREFIX || 'RT-ASSET-%'",
+      "cols": ["ASSET_NUMBER", "MASS_ADDITION_ID", "POSTING_STATUS", "ERROR_MESSAGE"],
+      "key_col": "ASSET_NUMBER",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

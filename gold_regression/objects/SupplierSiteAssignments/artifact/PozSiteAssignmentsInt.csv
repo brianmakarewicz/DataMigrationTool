@@ -1,0 +1,3 @@
+"CREATE","${SUPPLIER_NAME}","${VENDOR_SITE_CODE}","${PROC_BU}","${CBU1}","${CBU1}","","","","","","","","",""
+"CREATE","${SUPPLIER_NAME}","${VENDOR_SITE_CODE}","${PROC_BU}","${CBU2}","${CBU2}","","","","","","","","",""
+"CREATE","${SUPPLIER_NAME}","${VENDOR_SITE_CODE}","${PROC_BU}","${PREFIX}NO SUCH BU","${PREFIX}NO SUCH BU","","","","","","","","",""

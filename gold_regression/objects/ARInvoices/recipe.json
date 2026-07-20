@@ -1,0 +1,72 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/receivables/import",
+  "interface_details_id": 2,
+  "import_job_name_raw": "/oracle/apps/ess/financials/receivables/transactions/autoInvoices;AutoInvoiceImportEss",
+  "job_name": "/oracle/apps/ess/financials/receivables/transactions/autoInvoices,AutoInvoiceImportEss",
+  "parameter_list": "${BU_NAME},${BATCH_SOURCE},${GL_DATE},,,,,,,,,,,,,,,,,,,,N,Y,",
+  "downstream_jobs": [
+    {
+      "name": "AutoInvoiceMasterEss (Import Receivables Transactions Using AutoInvoice)",
+      "job_path": "/oracle/apps/ess/financials/receivables/transactions/autoInvoices,AutoInvoiceMasterEss",
+      "parameter_list": "1~${BU_ID}~${BSID}~${BATCH_SOURCE}~${GL_DATE}~~~~~~~~~~~~~~~~~~~~~N~Y~"
+    }
+  ],
+  "filename": "ARInvoices_gold.zip",
+  "csvs": [
+    { "template": "RaInterfaceLinesAll.csv", "fbdi_name": "RaInterfaceLinesAll.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "AR_BU",
+      "role": "fin_impl",
+      "cols": ["BUNAME", "BUID", "LEDGERID"],
+      "sql": "SELECT * FROM (SELECT bu.bu_name AS BUNAME, bu.bu_id AS BUID, bu.primary_ledger_id AS LEDGERID FROM fun_all_business_units_v bu WHERE bu.primary_ledger_id IS NOT NULL AND bu.bu_id IN (SELECT DISTINCT t.org_id FROM ra_customer_trx_all t WHERE t.org_id IS NOT NULL) ORDER BY CASE WHEN bu.bu_name = 'US1 Business Unit' THEN 0 ELSE 1 END, bu.bu_name) WHERE ROWNUM = 1",
+      "bind": { "BU_NAME": "BUNAME", "BU_ID": "BUID", "LEDGER_ID": "LEDGERID" },
+      "required": true
+    },
+    {
+      "name": "AR_BATCH_SOURCE",
+      "role": "fin_impl",
+      "cols": ["BSNAME", "BSID"],
+      "sql": "SELECT * FROM (SELECT bs.name AS BSNAME, bs.batch_source_id AS BSID FROM ra_batch_sources_all bs WHERE bs.batch_source_type = 'FOREIGN' ORDER BY CASE WHEN bs.name = 'Receivables Import' THEN 0 WHEN bs.name LIKE 'External Source%' THEN 1 ELSE 2 END, bs.name) WHERE ROWNUM = 1",
+      "bind": { "BATCH_SOURCE": "BSNAME", "BSID": "BSID" },
+      "required": true
+    },
+    {
+      "name": "AR_TRX_TYPE",
+      "role": "fin_impl",
+      "cols": ["TTNAME", "TTID"],
+      "sql": "SELECT * FROM (SELECT ct.name AS TTNAME, ct.cust_trx_type_seq_id AS TTID FROM ra_cust_trx_types_all ct WHERE ct.type = 'INV' AND NVL(ct.end_date, SYSDATE+1) > SYSDATE ORDER BY CASE WHEN ct.name = 'Invoice' THEN 0 ELSE 1 END, ct.name) WHERE ROWNUM = 1",
+      "bind": { "TRX_TYPE": "TTNAME" },
+      "required": true
+    },
+    {
+      "name": "AR_BILL_CUSTOMER",
+      "role": "fin_impl",
+      "cols": ["ACCTNUM", "PARTY", "SITENUM"],
+      "sql": "SELECT * FROM (SELECT DISTINCT hca.account_number AS ACCTNUM, hp.party_name AS PARTY, su.location AS SITENUM FROM ra_customer_trx_all t JOIN hz_cust_accounts hca ON hca.cust_account_id = t.bill_to_customer_id JOIN hz_parties hp ON hp.party_id = hca.party_id JOIN hz_cust_site_uses_all su ON su.site_use_id = t.bill_to_site_use_id WHERE t.org_id = ${BU_ID} AND hca.status = 'A' AND su.status = 'A' AND su.location IS NOT NULL AND hca.account_number IS NOT NULL AND REGEXP_LIKE(hca.account_number, '^[0-9]+$') ORDER BY TO_NUMBER(hca.account_number)) WHERE ROWNUM = 1",
+      "bind": { "BILL_ACCT": "ACCTNUM" },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-AR-G1", "${PREFIX}RT-AR-G2"],
+    "bad_keys": ["${PREFIX}RT-AR-BAD1"],
+    "base_read": {
+      "sql": "SELECT trx_number AS TRX_NUMBER, customer_trx_id AS CUSTOMER_TRX_ID FROM ra_customer_trx_all WHERE trx_number LIKE :PREFIX || 'RT-AR-%'",
+      "cols": ["TRX_NUMBER", "CUSTOMER_TRX_ID"],
+      "key_col": "TRX_NUMBER",
+      "id_col": "CUSTOMER_TRX_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT l.interface_line_attribute1 AS LINE_REF, l.interface_line_id AS IFACE_LINE_ID, (SELECT LISTAGG(NVL(e.message_text, e.invalid_value), '; ') WITHIN GROUP (ORDER BY e.message_text) FROM ra_interface_errors_all e WHERE e.interface_line_id = l.interface_line_id) AS ERROR_MESSAGE FROM ra_interface_lines_all l WHERE l.interface_line_context = :PREFIX",
+      "cols": ["LINE_REF", "IFACE_LINE_ID", "ERROR_MESSAGE"],
+      "key_col": "LINE_REF",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

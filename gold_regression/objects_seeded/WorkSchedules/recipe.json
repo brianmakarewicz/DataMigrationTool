@@ -1,0 +1,19 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "WorkSchedules_gold.zip",
+  "dat": { "template": "WorkPattern.dat", "archive_name": "WorkPattern.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PREFIX} DMT Work Schedule 1", "${PREFIX} DMT Work Schedule 2"],
+    "bad_keys": ["${PREFIX}DMTWS-BAD"],
+    "base_read": {
+      "sql": "SELECT work_pattern_name AS WORK_PATTERN_NAME, TO_CHAR(MAX(work_pattern_id)) AS WORK_PATTERN_ID FROM hts_work_patterns_vl WHERE work_pattern_name LIKE '${PREFIX} DMT Work Schedule%' GROUP BY work_pattern_name",
+      "cols": ["WORK_PATTERN_NAME", "WORK_PATTERN_ID"],
+      "key_col": "WORK_PATTERN_NAME",
+      "id_col": "WORK_PATTERN_ID"
+    }
+  }
+}

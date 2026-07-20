@@ -1,0 +1,4 @@
+Tax Regime Code,Configuration Owner,Tax,Tax Status Code,Tax Rate Code,Tax Rate Type,Rate Percentage,Effective From,Set as Default Rate,Default Effective From,Description
+${TAX_REGIME_CODE},Global configuration owner,${TAX},${TAX_STATUS_CODE},${PREFIX}RT-TAXRATE-G1,PERCENTAGE,5,2020/01/01,No,,RT Gold Tax Rate G1 ${PREFIX}
+${TAX_REGIME_CODE},Global configuration owner,${TAX},${TAX_STATUS_CODE},${PREFIX}RT-TAXRATE-G2,PERCENTAGE,7.25,2020/01/01,No,,RT Gold Tax Rate G2 ${PREFIX}
+RT_NO_SUCH_REGIME_${PREFIX},Global configuration owner,RT_NO_SUCH_TAX,RT_NO_SUCH_STATUS,${PREFIX}RT-TAXRATE-BAD1,PERCENTAGE,9,2020/01/01,No,,RT Bad Tax Rate BAD1 ${PREFIX}

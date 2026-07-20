@@ -1,0 +1,42 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "prc/blanketPurchaseAgreement/import",
+  "interface_details_id": 23,
+  "import_job_name_raw": "/oracle/apps/ess/prc/po/pdoi;ImportBPAJob",
+  "job_name": "/oracle/apps/ess/prc/po/pdoi,ImportBPAJob",
+  "parameter_list": "300000046987012,300000047340498,N,SUBMIT,${PREFIX},RT${PREFIX},N,300000046987012_${PREFIX}",
+  "filename": "BlanketPOs_gold.zip",
+  "csvs": [
+    { "template": "PoHeadersInterfaceBlanket.csv",       "fbdi_name": "PoHeadersInterfaceBlanket.csv" },
+    { "template": "PoLinesInterfaceBlanket.csv",          "fbdi_name": "PoLinesInterfaceBlanket.csv" },
+    { "template": "PoLineLocationsInterfaceBlanket.csv",  "fbdi_name": "PoLineLocationsInterfaceBlanket.csv" },
+    { "template": "PoGAOrgAssignInterfaceBlanket.csv",    "fbdi_name": "PoGAOrgAssignInterfaceBlanket.csv" }
+  ],
+  "downstream_jobs": [
+    {
+      "name": "ImportBPAJob (Import Blanket Agreements)",
+      "job_path": "/oracle/apps/ess/prc/po/pdoi,ImportBPAJob",
+      "cred_role": "calvin.roth",
+      "parameter_list": "300000046987012,300000047340498,N,SUBMIT,${PREFIX},RT${PREFIX},N,300000046987012_${PREFIX}"
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-BPA-G1", "${PREFIX}RT-BPA-G2"],
+    "bad_keys": ["${PREFIX}RT-BPA-BAD1"],
+    "base_read": {
+      "sql": "SELECT segment1 AS PO_NUMBER, po_header_id AS PO_HEADER_ID, type_lookup_code AS TYPE_LOOKUP_CODE, document_status AS DOCUMENT_STATUS FROM po_headers_all WHERE segment1 LIKE :PREFIX || 'RT-BPA-%' AND type_lookup_code='BLANKET'",
+      "cols": ["PO_NUMBER", "PO_HEADER_ID", "TYPE_LOOKUP_CODE", "DOCUMENT_STATUS"],
+      "key_col": "PO_NUMBER",
+      "id_col": "PO_HEADER_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT h.document_num AS PO_NUMBER, h.interface_header_id AS INTERFACE_HEADER_ID, h.process_code AS PROCESS_CODE, (SELECT LISTAGG(e.column_name || '=' || e.column_value || ': ' || e.error_message, ' | ') WITHIN GROUP (ORDER BY e.creation_date) FROM po_interface_errors e WHERE e.interface_header_id = h.interface_header_id) AS ERROR_MESSAGE FROM po_headers_interface h WHERE h.load_request_id = :LRID",
+      "cols": ["PO_NUMBER", "INTERFACE_HEADER_ID", "PROCESS_CODE", "ERROR_MESSAGE"],
+      "key_col": "PO_NUMBER",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

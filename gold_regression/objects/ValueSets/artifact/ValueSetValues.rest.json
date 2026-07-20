@@ -1,0 +1,10 @@
+{
+  "_comment": "REST payload template for gold ValueSets (flexfield value set VALUES). Not a loadable file: value set VALUES are created one-per-POST via the Fusion REST API, not via an FBDI/FBL file. This documents the exact request bodies the harness (harness/load_rest_vsv.py) sends to POST /fscmRestApi/resources/11.13.18.05/valueSets/{ValueSetCode}/child/values. ${VS_CODE} is a discovered existing editable independent value set (URL-encoded into the path); ${PREFIX} is the fresh numeric run prefix.",
+  "resource": "/fscmRestApi/resources/11.13.18.05/valueSets/${VS_CODE}/child/values",
+  "method": "POST",
+  "values": [
+    { "tag": "GOOD1", "Value": "G${PREFIX}1", "EnabledFlag": "Y", "Description": "DMT gold value ${PREFIX} one" },
+    { "tag": "GOOD2", "Value": "G${PREFIX}2", "EnabledFlag": "Y", "Description": "DMT gold value ${PREFIX} two" },
+    { "tag": "BAD",   "Value": "B${PREFIX}TOOLONGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", "EnabledFlag": "Y", "Description": "DMT gold bad value ${PREFIX} exceeds MaximumSize -> HTTP 400 FND-2825" }
+  ]
+}

@@ -1,0 +1,3 @@
+UserPeriodSetName,PeriodSetName,Description,SecurityFlag,AdjPeriodsNum,NonAdjPeriodsNum,LatestYearStartDate,CalendarStartDate,CalendarTypeCode,LegacyCalendarFlag,Attribute1,Attribute2,Attribute3,Attribute4,Attribute5,CreationDate,CreatedBy,LastUpdateDate,LastUpdateLogin,LastUpdatedBy,NonAdjPeriodFreqCode,AdjPeriodFreqCode,LegacyRulesEnabledFlag,PeriodNameFormatCode,PeriodNameSeparatorCode,ReferencedByLedger,TotalPeriodsNum,CalendarFlowType,AttributeCategory,SamplePeriodName,UserPeriodNamePrefix
+RT Gold Cal ${PREFIX},RTG${PREFIX},RT Gold Calendar ${PREFIX},,0,12,2035/01/01,2035/01/01,M,,,,,,,,,,,,M,,,MMMYY,,,12,,,,
+RT Bad Cal ${PREFIX},RTB${PREFIX},RT Bad Calendar ${PREFIX},,0,12,2035/01/01,2035/01/01,M,,,,,,,,,,,,M,,,MMMYY,,,12,,,,

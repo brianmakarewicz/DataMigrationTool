@@ -1,0 +1,39 @@
+{
+  "type": "FBDI",
+  "cred_role": "scm_impl",
+  "auth_user": "scm_impl",
+  "doc_account": "scm/inventoryTransaction/import",
+  "interface_details_id": 33,
+  "import_job_name_raw": "/oracle/apps/ess/scm/inventory/materialTransactions/txnManager;SingleTMEssJob",
+  "job_name": "/oracle/apps/ess/scm/inventory/materialTransactions/txnManager,SingleTMEssJob",
+  "parameter_list": "#NULL",
+  "downstream_jobs": [
+    {
+      "name": "ManageInventoryTransactions_PollTM",
+      "cred_role": "scm_impl",
+      "job_path": "/oracle/apps/ess/scm/inventory/materialTransactions/txnManager,PollTMEssJob",
+      "parameter_list": "#NULL"
+    }
+  ],
+  "filename": "MiscReceipts_gold.zip",
+  "csvs": [
+    { "template": "InvTransactionsInterface.csv", "fbdi_name": "InvTransactionsInterface.csv" }
+  ],
+  "verify": {
+    "cred_role": "scm_impl",
+    "good_keys": ["${PREFIX}RT-INVRCPT-G1", "${PREFIX}RT-INVRCPT-G2"],
+    "bad_keys": ["${PREFIX}RT-INVRCPT-BAD1"],
+    "base_read": {
+      "sql": "SELECT transaction_reference AS TRANSACTION_REFERENCE, transaction_id AS TRANSACTION_ID, transaction_quantity AS TRANSACTION_QUANTITY FROM inv_material_txns WHERE source_code = 'DMT' AND transaction_reference LIKE :PREFIX || 'RT-INVRCPT-%'",
+      "cols": ["TRANSACTION_REFERENCE", "TRANSACTION_ID", "TRANSACTION_QUANTITY"],
+      "key_col": "TRANSACTION_REFERENCE",
+      "id_col": "TRANSACTION_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT transaction_reference AS TRANSACTION_REFERENCE, transaction_interface_id AS TRANSACTION_INTERFACE_ID, error_code AS ERROR_MESSAGE, process_flag AS PROCESS_FLAG FROM inv_transactions_interface WHERE load_request_id = :LRID AND transaction_reference LIKE :PREFIX || 'RT-INVRCPT-%'",
+      "cols": ["TRANSACTION_REFERENCE", "TRANSACTION_INTERFACE_ID", "ERROR_MESSAGE", "PROCESS_FLAG"],
+      "key_col": "TRANSACTION_REFERENCE",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

@@ -1,0 +1,4 @@
+"AP_TERM_HEADER.Name","SequenceNum","DuePercent","DueDays"
+"GldRegTerm 90212 A","1","100","30"
+"GldRegTerm 90212 B","1","100","45"
+"GldRegTerm 90212 BAD","1","100","30"

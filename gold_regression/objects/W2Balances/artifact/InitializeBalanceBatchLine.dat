@@ -1,0 +1,4 @@
+METADATA|InitializeBalanceBatchLine|LegislativeDataGroupName|BatchName|LineSequence|UploadDate|PayrollRelationshipNumber|PayrollName|BalanceName|DimensionName|Value
+MERGE|InitializeBalanceBatchLine|${LDG_NAME}|DMTW2${PREFIX}|1|${GL_DATE_SLASH}|${PRN1}|${PAY1}|Regular Salary|Core Relationship Year to Date|1000
+MERGE|InitializeBalanceBatchLine|${LDG_NAME}|DMTW2${PREFIX}|2|${GL_DATE_SLASH}|${PRN2}|${PAY2}|Regular Salary|Core Relationship Year to Date|2000
+MERGE|InitializeBalanceBatchLine|${LDG_NAME}|DMTW2${PREFIX}NOSUCH|3|${GL_DATE_SLASH}|${PRN3}|${PAY3}|Regular Salary|Core Relationship Year to Date|3000

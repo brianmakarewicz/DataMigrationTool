@@ -1,0 +1,37 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "WorkSchedules_gold.zip",
+  "dat": { "template": "WorkPattern.dat", "archive_name": "WorkPattern.dat" },
+  "discovery": [
+    {
+      "name": "DEMO_ASSIGNMENTS",
+      "role": "hcm_impl",
+      "cols": ["ANUM1", "ANUM2"],
+      "sql": "SELECT MAX(CASE WHEN rn = 1 THEN anum END) AS ANUM1, MAX(CASE WHEN rn = 2 THEN anum END) AS ANUM2 FROM (SELECT anum, ROWNUM AS rn FROM (SELECT paam.assignment_number AS anum FROM per_all_assignments_m paam JOIN per_all_people_f pap ON pap.person_id = paam.person_id AND SYSDATE BETWEEN pap.effective_start_date AND pap.effective_end_date WHERE paam.assignment_type = 'E' AND paam.effective_latest_change = 'Y' AND paam.assignment_status_type = 'ACTIVE' AND paam.primary_flag = 'Y' AND SYSDATE BETWEEN paam.effective_start_date AND paam.effective_end_date AND REGEXP_LIKE(pap.person_number, '^[0-9]+$') AND paam.assignment_number = 'E' || pap.person_number AND NOT EXISTS (SELECT 1 FROM hts_work_pattern_assignments hwpa WHERE hwpa.assignment_id = paam.assignment_id) ORDER BY TO_NUMBER(pap.person_number)) WHERE ROWNUM <= 2)",
+      "bind": { "ASSIGNMENT_NUMBER_1": "ANUM1", "ASSIGNMENT_NUMBER_2": "ANUM2" },
+      "required": true
+    },
+    {
+      "name": "STD_SHIFT",
+      "role": "hcm_impl",
+      "cols": ["SNAME"],
+      "sql": "SELECT sname AS SNAME FROM (SELECT s.shift_name AS sname, CASE WHEN s.shift_name = '9A - 5P General Shift' THEN 0 ELSE 1 END AS pref FROM hts_shifts_vl s WHERE s.active_flag = 'Y' AND s.work_duration = 480 AND s.shift_category = 'ORA_HTS_SHIFT_DAY' ORDER BY pref, s.shift_name) WHERE ROWNUM = 1",
+      "bind": { "SHIFT_NAME": "SNAME" },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PREFIX} DMT Work Schedule 1", "${PREFIX} DMT Work Schedule 2"],
+    "bad_keys": ["${PREFIX}DMTWS-BAD"],
+    "base_read": {
+      "sql": "SELECT work_pattern_name AS WORK_PATTERN_NAME, TO_CHAR(MAX(work_pattern_id)) AS WORK_PATTERN_ID FROM hts_work_patterns_vl WHERE work_pattern_name LIKE '${PREFIX} DMT Work Schedule%' GROUP BY work_pattern_name",
+      "cols": ["WORK_PATTERN_NAME", "WORK_PATTERN_ID"],
+      "key_col": "WORK_PATTERN_NAME",
+      "id_col": "WORK_PATTERN_ID"
+    }
+  }
+}

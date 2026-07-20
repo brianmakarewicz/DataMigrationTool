@@ -1,0 +1,33 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/generalLedger/import",
+  "interface_details_id": 15,
+  "import_job_name_raw": "/oracle/apps/ess/financials/generalLedger/programs/common;JournalImportLauncher",
+  "job_name": "/oracle/apps/ess/financials/generalLedger/programs/common,JournalImportLauncher",
+  "parameter_list": "300000046975980,Spreadsheet,300000046975971,${PREFIX},N,N,N",
+  "filename": "GLBalances_gold.zip",
+  "csvs": [
+    { "template": "GlInterface.csv", "fbdi_name": "GlInterface.csv" }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-JNL-G1"],
+    "bad_keys": ["${PREFIX}RT-JNL-BAD1"],
+    "base_read": {
+      "comment": "Authoritative base-write proof for GL: GL_INTERFACE row for this run's GROUP_ID with STATUS='P' (Processed) carries the base JE_HEADER_ID that Journal Import assigned when it wrote the journal into GL_JE_BATCHES/HEADERS/LINES. STATUS='P' is Oracle's record that the row imported into the GL_JE_* base tables (GL keeps processed interface rows with 'P' until a separate purge). This is read directly and is immediately current, unaffected by the BIP ApplicationDB_FSCM GL_JE_* replica lag (which lags the transactional GL_JE tables by many hours on this demo pod, so a direct GL_JE_HEADERS read of a just-created journal returns no row). Grouped by REFERENCE1 so the good batch name is the natural key.",
+      "sql": "SELECT gi.reference1 AS REF1, TO_CHAR(MIN(gi.je_header_id)) AS JE_HEADER_ID, TO_CHAR(SUM(gi.entered_dr)) AS TOT_DR, TO_CHAR(SUM(gi.entered_cr)) AS TOT_CR, MIN(gi.status) AS STATUS FROM gl_interface gi WHERE gi.group_id = ${PREFIX} AND gi.status = 'P' GROUP BY gi.reference1",
+      "cols": ["REF1", "JE_HEADER_ID", "TOT_DR", "TOT_CR", "STATUS"],
+      "key_col": "REF1",
+      "id_col": "JE_HEADER_ID"
+    },
+    "interface_read": {
+      "comment": "Bad-row rejection: GL_INTERFACE rows for this GROUP_ID with STATUS<>'P'. The bad line's invalid natural account (SEGMENT3=99999, not in the chart's value set) leaves the row unprocessed with status EF04 and STATUS_DESCRIPTION 'FLEX-VALUE DOES NOT EXIST'. It reaches the interface and is rejected there; it never gets a code combination, so it is absent from the base tables.",
+      "sql": "SELECT gi.reference1 AS REF1, gi.status || ' - ' || SUBSTR(gi.status_description, 1, 200) AS STATUS_ERR, gi.status AS STATUS, TO_CHAR(gi.code_combination_id) AS CCID, TO_CHAR(gi.je_line_num) AS LINE_NUM FROM gl_interface gi WHERE gi.group_id = ${PREFIX} AND gi.status <> 'P'",
+      "cols": ["REF1", "STATUS_ERR", "STATUS", "CCID", "LINE_NUM"],
+      "key_col": "REF1",
+      "error_col": "STATUS_ERR"
+    }
+  }
+}

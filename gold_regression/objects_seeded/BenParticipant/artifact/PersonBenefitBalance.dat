@@ -1,0 +1,4 @@
+METADATA|PersonBenefitBalance|SourceSystemOwner|SourceSystemId|PersonNumber|BenefitBalanceName|BenefitRelationName|EffectiveStartDate|Val
+MERGE|PersonBenefitBalance|HRC_SQLLOADER|DMTBEN-SEED-13|13|401k Employee Balance|DFLT|${BEN_DATE}|${PREFIX}1
+MERGE|PersonBenefitBalance|HRC_SQLLOADER|DMTBEN-SEED-19|19|401k Employee Balance|DFLT|${BEN_DATE}|${PREFIX}2
+MERGE|PersonBenefitBalance|HRC_SQLLOADER|${PREFIX}DMTBEN-BAD|20|DMT NONEXISTENT BENEFIT BALANCE|DFLT|${BEN_DATE}|99999

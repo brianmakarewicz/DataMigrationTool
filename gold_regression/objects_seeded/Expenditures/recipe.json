@@ -1,0 +1,36 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "prj/projectCosting/import",
+  "interface_details_id": 20,
+  "job_name": "/oracle/apps/ess/projects/costing/transactions/onestop,ImportAndProcessTxnsJob",
+  "parameter_list": "IMPORT_AND_PROCESS~300000046987012~ALL~#NULL~#NULL~300000049907116~300000049907117~#NULL~#NULL~#NULL",
+  "filename": "Expenditures_gold.zip",
+  "csvs": [
+    { "template": "PjcTxnXfaceStageAll.csv", "fbdi_name": "PjcTxnXfaceStageAll.csv" }
+  ],
+  "downstream_jobs": [
+    {
+      "name": "Import and Process Cost Transactions",
+      "job_path": "/oracle/apps/ess/projects/costing/transactions/onestop,ImportAndProcessTxnsJob",
+      "cred_role": "fin_impl",
+      "parameter_list": "IMPORT_AND_PROCESS~300000046987012~ALL~#NULL~#NULL~300000049907116~300000049907117~#NULL~#NULL~#NULL"
+    }
+  ],
+  "_note_two_step": "loadAndImportData with interfaceDetails=20 ONLY runs Load File to Interface Tables on this product (rows land in PJC_TXN_XFACE_STAGE_ALL at TRANSACTION_STATUS_CODE='P'); it never chains the costing import. The import is a SEPARATE submitESSJobRequest declared as a downstream_job. The WORKING import job is onestop,ImportAndProcessTxnsJob (shadow proc pjc_import_and_process.import_and_process_ess, 10 positional args), NOT onestop,ImportProcessParallelEssJob (13 args, ORA-06502 on this pod). 10-arg positional order: 1=P_MODE(IMPORT_AND_PROCESS) 2=P_BU_ID(numeric) 3=P_TXN_STATUS(ALL) 4=P_BATCH_NAME(#NULL filter) 5=P_INTERFACE_ID(#NULL) 6=P_TXN_SOURCE_ID(numeric) 7=P_DOCUMENT_ID(numeric) 8=P_START_PROJECT_NO 9=P_END_PROJECT_NO 10=P_PROCESS_THROUGH_DATE.",
+  "_note_seeds": "v2 seeded: discovery removed. All references are hard-coded standard seeded demo data (confirmed live via read-only BIP, none carry a prefix): BU_ID=300000046987012 (US1 Business Unit); TXN_SOURCE_ID=300000049907116 (External Miscellaneous); DOCUMENT_ID=300000049907117 (Miscellaneous). In the CSV: project PCS10037 / task 5.2 (open for costing on US1), expenditure type Airfare, expenditure org Consulting North US, UOM DOLLARS, USER_TRANSACTION_SOURCE=External Miscellaneous, DOCUMENT_NAME=DOC_ENTRY_NAME=Miscellaneous. ${PREFIX} stays only on ORIG_TRANSACTION_REFERENCE and the per-row unique BATCH_NAME (NONLABOR CSV position 10 = position 40, same value as ORIG_TRANSACTION_REFERENCE) -- the unique batch is required or good rows collide on PJC_UNIQUE_BATCH_NAME. EXPENDITURE_ITEM_DATE and GL_DATE use ${GL_DATE_SLASH} (today, YYYY/MM/DD) so the rows stay in an open period without discovery.",
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-EXP-G1", "${PREFIX}RT-EXP-G2"],
+    "bad_keys": ["${PREFIX}RT-EXP-BAD1"],
+    "base_read": {
+      "sql": "SELECT orig_transaction_reference AS ORIG_TRANSACTION_REFERENCE, expenditure_item_id AS EXPENDITURE_ITEM_ID, denom_raw_cost AS DENOM_RAW_COST FROM pjc_exp_items_all WHERE orig_transaction_reference LIKE :PREFIX || 'RT-EXP-%'",
+      "cols": ["ORIG_TRANSACTION_REFERENCE", "EXPENDITURE_ITEM_ID", "DENOM_RAW_COST"],
+      "key_col": "ORIG_TRANSACTION_REFERENCE",
+      "id_col": "EXPENDITURE_ITEM_ID"
+    },
+    "bad_proof_is_absence": true,
+    "bad_absence_note": "Import and Process Cost Transactions purges rejected rows from PJC_TXN_XFACE_STAGE_ALL after the run (they are NOT retained at status 'R' on this pod, and PJC_TXN_XFACE_ALL / PJC_BIP_REPORT_DETAILS are not BIP-reachable). Rejection is proven by ABSENCE from base PJC_EXP_ITEMS_ALL while the two good rows from the SAME import reached base with real EXPENDITURE_ITEM_IDs. The per-row error (MESSAGE_NAME=PJC_EXP_TYPE_INVALID / ERROR_GROUP=VALIDATIONS for expenditure type ZZ-BAD-EXPTYPE-99) lives only in the Import-Costs report XML."
+  }
+}

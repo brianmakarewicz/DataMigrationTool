@@ -1,0 +1,20 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "BenBeneficiary_gold.zip",
+  "dat": { "template": "PersonBenefitBalance.dat", "archive_name": "PersonBenefitBalance.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["6", "8"],
+    "bad_keys": ["${PREFIX}DMTBNFY-BAD_BENBNFY"],
+    "bad_error_contains": "BnftsBalId",
+    "base_read": {
+      "sql": "SELECT p.person_number AS PNUM, TO_CHAR(MAX(pb.per_bnfts_bal_id)) AS PBID, TO_CHAR(MAX(pb.val)) AS VAL FROM ben_per_bnfts_bal_f pb JOIN per_all_people_f p ON p.person_id = pb.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date WHERE pb.bnfts_bal_id = 300000074351542 AND pb.val IN (${PREFIX}1, ${PREFIX}2) AND p.person_number IN ('6','8','9') GROUP BY p.person_number",
+      "cols": ["PNUM", "PBID", "VAL"],
+      "key_col": "PNUM",
+      "id_col": "PBID"
+    }
+  }
+}

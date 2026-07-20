@@ -1,0 +1,4 @@
+"INV_UNIT_OF_MEASURE.UnitOfMeasure","UnitOfMeasure","Description","Language","SourceLang"
+"GldRegUOM ${PREFIX} A","GldRegUOM ${PREFIX} A","Gold Reg UOM ${PREFIX} A","US","US"
+"GldRegUOM ${PREFIX} B","GldRegUOM ${PREFIX} B","Gold Reg UOM ${PREFIX} B","US","US"
+"GldRegUOM ${PREFIX} BAD","GldRegUOM ${PREFIX} BAD","Gold Reg UOM ${PREFIX} BAD","US","US"

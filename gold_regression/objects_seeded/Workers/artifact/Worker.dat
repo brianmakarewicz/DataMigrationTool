@@ -1,0 +1,32 @@
+METADATA|Worker|SourceSystemOwner|SourceSystemId|EffectiveStartDate|PersonNumber|StartDate|DateOfBirth|ActionCode
+MERGE|Worker|HRC_SQLLOADER|${PREFIX}DMTW001|2026/01/01|${PREFIX}DMTW001|2026/01/01|1985/03/15|HIRE
+MERGE|Worker|HRC_SQLLOADER|${PREFIX}DMTW-BAD|2026/01/01|${PREFIX}DMTW-BAD|2026/01/01||HIRE
+MERGE|Worker|HRC_SQLLOADER|${PREFIX}DMTW002|2026/01/01|${PREFIX}DMTW002|2026/01/01|1990/07/22|HIRE
+METADATA|PersonName|SourceSystemOwner|SourceSystemId|EffectiveStartDate|PersonId(SourceSystemId)|NameType|LegislationCode|LastName|FirstName|MiddleNames|Title
+MERGE|PersonName|HRC_SQLLOADER|${PREFIX}DMTW001_NME|2026/01/01|${PREFIX}DMTW001|GLOBAL|US|TestWorkerOne|Alice||
+MERGE|PersonName|HRC_SQLLOADER|${PREFIX}DMTW002_NME|2026/01/01|${PREFIX}DMTW002|GLOBAL|US|TestWorkerTwo|Bob||
+MERGE|PersonName|HRC_SQLLOADER|${PREFIX}DMTW-BAD_NME|2026/01/01|${PREFIX}DMTW-BAD|GLOBAL|US|BadWorker|Charlie||
+METADATA|WorkRelationship|SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|LegalEmployerName|DateStart|WorkerType|PrimaryFlag
+MERGE|WorkRelationship|HRC_SQLLOADER|${PREFIX}DMTW001_POS|${PREFIX}DMTW001|US1 Legal Entity|2026/01/01|E|Y
+MERGE|WorkRelationship|HRC_SQLLOADER|${PREFIX}DMTW-BAD_POS|${PREFIX}DMTW-BAD|DMT NONEXISTENT LEGAL EMPLOYER|2026/01/01|E|Y
+MERGE|WorkRelationship|HRC_SQLLOADER|${PREFIX}DMTW002_POS|${PREFIX}DMTW002|US1 Legal Entity|2026/01/01|E|Y
+METADATA|WorkTerms|SourceSystemOwner|SourceSystemId|PeriodOfServiceId(SourceSystemId)|ActionCode|EffectiveStartDate|EffectiveSequence|EffectiveLatestChange|DateStart|AssignmentName|AssignmentNumber|PrimaryWorkTermsFlag
+MERGE|WorkTerms|HRC_SQLLOADER|${PREFIX}DMTW001_TRM|${PREFIX}DMTW001_POS|HIRE|2026/01/01|1|Y|2026/01/01|ET-${PREFIX}DMTW001|ET-${PREFIX}DMTW001|Y
+MERGE|WorkTerms|HRC_SQLLOADER|${PREFIX}DMTW-BAD_TRM|${PREFIX}DMTW-BAD_POS|HIRE|2026/01/01|1|Y|2026/01/01|ET-${PREFIX}DMTW-BAD|ET-${PREFIX}DMTW-BAD|Y
+MERGE|WorkTerms|HRC_SQLLOADER|${PREFIX}DMTW002_TRM|${PREFIX}DMTW002_POS|HIRE|2026/01/01|1|Y|2026/01/01|ET-${PREFIX}DMTW002|ET-${PREFIX}DMTW002|Y
+METADATA|Assignment|SourceSystemOwner|SourceSystemId|ActionCode|EffectiveStartDate|EffectiveSequence|EffectiveLatestChange|WorkTermsAssignmentId(SourceSystemId)|AssignmentName|AssignmentNumber|AssignmentStatusTypeCode|PersonTypeCode|BusinessUnitShortCode|PrimaryAssignmentFlag
+MERGE|Assignment|HRC_SQLLOADER|${PREFIX}DMTW001_ASG|HIRE|2026/01/01|1|Y|${PREFIX}DMTW001_TRM|${PREFIX}DMTW001|${PREFIX}DMTW001|ACTIVE_PROCESS|Employee|US1 Business Unit|Y
+MERGE|Assignment|HRC_SQLLOADER|${PREFIX}DMTW-BAD_ASG|HIRE|2026/01/01|1|Y|${PREFIX}DMTW-BAD_TRM|${PREFIX}DMTW-BAD|${PREFIX}DMTW-BAD|ACTIVE_PROCESS|Employee|US1 Business Unit|Y
+MERGE|Assignment|HRC_SQLLOADER|${PREFIX}DMTW002_ASG|HIRE|2026/01/01|1|Y|${PREFIX}DMTW002_TRM|${PREFIX}DMTW002|${PREFIX}DMTW002|ACTIVE_PROCESS|Employee|US1 Business Unit|Y
+METADATA|PersonEmail|SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|DateFrom|EmailType|EmailAddress|PrimaryFlag
+MERGE|PersonEmail|HRC_SQLLOADER|${PREFIX}DMTW001_EML|${PREFIX}DMTW001|2026/01/01|W1|alice.test@example.com|Y
+MERGE|PersonEmail|HRC_SQLLOADER|${PREFIX}DMTW002_EML|${PREFIX}DMTW002|2026/01/01|W1|bob.test@example.com|Y
+METADATA|PersonPhone|SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|LegislationCode|DateFrom|PhoneType|CountryCodeNumber|AreaCode|PhoneNumber|PrimaryFlag
+MERGE|PersonPhone|HRC_SQLLOADER|${PREFIX}DMTW001_PHN|${PREFIX}DMTW001|US|2026/01/01|W1|1|555|1234567|Y
+MERGE|PersonPhone|HRC_SQLLOADER|${PREFIX}DMTW002_PHN|${PREFIX}DMTW002|US|2026/01/01|W1|1|555|9876543|Y
+METADATA|PersonNationalIdentifier|SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|LegislationCode|NationalIdentifierType|NationalIdentifierNumber|PrimaryFlag
+MERGE|PersonNationalIdentifier|HRC_SQLLOADER|${PREFIX}DMTW001_NID|${PREFIX}DMTW001|US|SSN|${SSN1}|Y
+MERGE|PersonNationalIdentifier|HRC_SQLLOADER|${PREFIX}DMTW002_NID|${PREFIX}DMTW002|US|SSN|${SSN2}|Y
+METADATA|PersonLegislativeData|SourceSystemOwner|SourceSystemId|EffectiveStartDate|PersonId(SourceSystemId)|LegislationCode|Sex|MaritalStatus|HighestEducationLevel
+MERGE|PersonLegislativeData|HRC_SQLLOADER|${PREFIX}DMTW001_LEG|2026/01/01|${PREFIX}DMTW001|US|F|S|
+MERGE|PersonLegislativeData|HRC_SQLLOADER|${PREFIX}DMTW002_LEG|2026/01/01|${PREFIX}DMTW002|US|M|M|

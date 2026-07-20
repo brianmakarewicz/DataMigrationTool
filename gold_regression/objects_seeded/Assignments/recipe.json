@@ -1,0 +1,20 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "Assignments_gold.zip",
+  "dat": { "template": "Assignment.dat", "archive_name": "Worker.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["E2", "E3"],
+    "bad_keys": ["${PREFIX}DMTASG-BAD"],
+    "bad_error_contains": "valid value for the ActionCode field",
+    "base_read": {
+      "sql": "SELECT a.assignment_number AS ASG_NUM, MAX(a.assignment_id) AS ASG_ID, MAX(TO_CHAR(a.normal_hours)) AS NHOURS, MAX(TO_CHAR(a.effective_start_date,'YYYY/MM/DD')) AS ESD FROM per_all_assignments_m a WHERE a.assignment_number IN ('E2','E3','E4') AND a.effective_latest_change='Y' AND a.effective_start_date = DATE '${BEN_DATE_DASH}' AND a.normal_hours = 37.5 GROUP BY a.assignment_number",
+      "cols": ["ASG_NUM", "ASG_ID", "NHOURS", "ESD"],
+      "key_col": "ASG_NUM",
+      "id_col": "ASG_ID"
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "type": "FSM_CSV_IMPORT",
+  "version": "v2-seeded",
+  "conversion_note": "v2 seeded conversion of v1 objects/PaymentTerms. The v1 recipe carried a 'discovery' block for REFERENCE_SET, but it was descriptive only -- the v1 CSVs already hard-coded SetCode='COMMON' as a literal (COMMON is the standard seeded reference set, present on every demo pod, 22 seeded subscriptions in the live export). No ${TOKEN} was ever substituted at load time. This v2 recipe DELETES the discovery block and pins SetCode='COMMON' as the seeded reference. Confirmed seeded/no-prefix via read-only BIP: FND_SETID_SETS_VL SET_CODE='COMMON' (SET_NAME 'Common Set') exists; 'ZZ_NO_SUCH_SET' does not. The only templated token is ${PREFIX} on the new term Name (GldRegTerm ${PREFIX} A/B/BAD) and stays exactly as in v1; new terms are naturally re-runnable via distinct names.",
+  "status": "PASS",
+  "proven": "v2 seeded LIVE-PROVEN 2026-07-20 (see live_evidence). Two good terms reached AP_TERMS_B/_TL/_LINES with real TERM_IDs; the bad term (SetCode ZZ_NO_SUCH_SET) was rejected with a reportable error and absent from base. A second consecutive run with a fresh prefix also passed.",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "task_code": "AP_MANAGE_PAYMENT_TERMS",
+  "task_name": "Manage Payment Terms",
+  "import_supported_flag": true,
+  "external_loading": false,
+  "base_tables": ["AP_TERMS_B", "AP_TERMS_TL", "AP_TERMS_LINES"],
+  "rest_import_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports",
+  "rest_export_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVExports",
+  "content_type": "application/vnd.oracle.adf.resourceitem+json",
+  "import_body_template": {
+    "TaskCode": "AP_MANAGE_PAYMENT_TERMS",
+    "SetupTaskCSVImportProcess": [
+      { "TaskCode": "AP_MANAGE_PAYMENT_TERMS", "FileContent": "<BASE64_ZIP>", "SourceTargetDiffOkFlag": true }
+    ]
+  },
+  "poll": {
+    "get": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports/AP_MANAGE_PAYMENT_TERMS/child/SetupTaskCSVImportProcess/${PROCESS_ID}",
+    "completed_flag": "ProcessCompletedFlag",
+    "log_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessLog",
+    "results_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessResultsReport"
+  },
+  "package_layout": {
+    "outer_zip": "PaymentTerms_gold.zip",
+    "structure": "FLAT CSVs at the zip root plus the manifest (NO nested batch zip). Members mimic a live setupTaskCSVExports of AP_MANAGE_PAYMENT_TERMS.",
+    "members": [
+      "ASM_SETUP_CSV_METADATA.xml (real, exported live; ProcessType EXPORT->IMPORT). Copied verbatim; not templated.",
+      "AP_TERM_HEADER.csv (the term header; ${PREFIX} in Name)",
+      "AP_TERM_LINE.csv (installment lines, FK to header by Name; ${PREFIX} in FK)",
+      "AP_TERM_HEADER_TRANSLATION.csv (US name/description, FK by Name; ${PREFIX})",
+      "AP_TERM_SUBSCRIPTION.csv (reference-set assignment, FK by Name; ${PREFIX} in FK, SetCode HARD-CODED to seeded COMMON / ZZ_NO_SUCH_SET for bad)"
+    ],
+    "csv_format": "Header row of column names, comma-separated, every value double-quoted, CRLF line endings. Dates YYYY/MM/DD."
+  },
+  "header_csv_min_columns": ["Name", "EnabledFlag", "Type", "StartDateActive", "Description"],
+  "line_csv_min_columns": ["AP_TERM_HEADER.Name", "SequenceNum", "DuePercent", "DueDays"],
+  "translation_csv_min_columns": ["AP_TERM_HEADER.Name", "Name", "Description", "Language", "SourceLang"],
+  "subscription_csv_min_columns": ["AP_TERM_HEADER.Name", "SetCode"],
+  "date_format": "YYYY/MM/DD (e.g. 2020/01/01)",
+  "type_value": "STD (standard term)",
+  "service_name": "Payables Payment Term service (PaymentTermHeaderVO); the FSM importer resolves SetCode -> SetId for the subscription.",
+  "seeded_references": [
+    {
+      "name": "REFERENCE_SET",
+      "value": "COMMON",
+      "hard_coded": true,
+      "where": "AP_TERM_SUBSCRIPTION.csv -> SetCode (good rows)",
+      "note": "Standard seeded reference data set present on every demo pod (FND_SETID_SETS_VL SET_CODE='COMMON', SET_NAME 'Common Set'; 22 seeded subscriptions in the live export). We did NOT load it. No prefix. Confirmed via read-only BIP 2026-07-20. NOT discovered -- pinned as a literal in the template."
+    }
+  ],
+  "good_bad_design": {
+    "good": "Two NEW terms subscribed to the seeded reference set COMMON: 'GldRegTerm ${PREFIX} A' (net-30: one line DuePercent=100 DueDays=30) and 'GldRegTerm ${PREFIX} B' (net-45: DuePercent=100 DueDays=45). The run ${PREFIX} lives in the term NAME (verification is by name). Standalone reference data - no upstream dependency, nothing discovered.",
+    "bad": "A NEW term 'GldRegTerm ${PREFIX} BAD' whose AP_TERM_SUBSCRIPTION row names SetCode='ZZ_NO_SUCH_SET' (a reference set that does not exist). The importer cannot resolve it to a SetId and rejects the whole term; it never reaches AP_TERMS_B. Deterministic and pod-independent.",
+    "prefix_lives_in": "term Name (AP_TERMS_TL.NAME)"
+  },
+  "verify": {
+    "cred_role": "fin_impl",
+    "note": "AP_TERMS_TL joins to AP_TERMS_B on TERM_ID. The prefix is in the name. Lines are in AP_TERMS_LINES (TERM_ID FK).",
+    "base_read_good": {
+      "sql": "SELECT t.NAME AS TERM_NAME, b.TERM_ID AS TERM_ID FROM AP_TERMS_B b JOIN AP_TERMS_TL t ON t.TERM_ID = b.TERM_ID WHERE t.LANGUAGE = 'US' AND t.NAME LIKE 'GldRegTerm ${PREFIX}%'",
+      "cols": ["TERM_NAME", "TERM_ID"],
+      "key_col": "TERM_NAME",
+      "id_col": "TERM_ID",
+      "expect": "2 rows with real TERM_ID values"
+    },
+    "base_read_lines": {
+      "sql": "SELECT b.TERM_ID AS TID, l.SEQUENCE_NUM AS SEQ, l.DUE_PERCENT AS PCT, l.DUE_DAYS AS DAYS FROM AP_TERMS_B b JOIN AP_TERMS_LINES l ON l.TERM_ID = b.TERM_ID JOIN AP_TERMS_TL t ON t.TERM_ID = b.TERM_ID WHERE t.LANGUAGE = 'US' AND t.NAME LIKE 'GldRegTerm ${PREFIX}%'",
+      "cols": ["TID", "SEQ", "PCT", "DAYS"],
+      "expect": "one line per term: DUE_PERCENT=100, DUE_DAYS 30 (A) / 45 (B)"
+    },
+    "bad_absent_read": {
+      "sql": "SELECT t.NAME AS NM FROM AP_TERMS_TL t WHERE t.LANGUAGE = 'US' AND t.NAME = 'GldRegTerm ${PREFIX} BAD'",
+      "cols": ["NM"],
+      "expect": "zero rows (bad term with invalid reference set rejected, never reaches base)"
+    }
+  },
+  "live_evidence": {
+    "date": "2026-07-20",
+    "subdir": "objects_seeded",
+    "reference_set": "COMMON (seeded, hard-coded)",
+    "run_1": {
+      "prefix": "83810",
+      "import_process_id": "100007867616149",
+      "import_ess_request_id": "9766671",
+      "good_terms": ["GldRegTerm 83810 A", "GldRegTerm 83810 B"],
+      "good_term_ids": ["300000331550466", "300000331550467"],
+      "good_lines": {"GldRegTerm 83810 A": "100% / 30 days", "GldRegTerm 83810 B": "100% / 45 days"},
+      "bad_term": "GldRegTerm 83810 BAD",
+      "bad_set_code": "ZZ_NO_SUCH_SET",
+      "bad_error": "JBO-27024: Failed to validate a row ... in PaymentTermSubscriptionEO / JBO-27014: Attribute SetId in PaymentTermSubscriptionEO is required",
+      "process_log_summary": "A total of 3 rows were processed. 1 rows of them failed",
+      "result": "PASS - 2 good terms in AP_TERMS_B/_TL/_LINES; 1 bad row failed and absent"
+    },
+    "run_2": {
+      "prefix": "97334",
+      "import_process_id": "100007867616187",
+      "import_ess_request_id": "9766708",
+      "good_terms": ["GldRegTerm 97334 A", "GldRegTerm 97334 B"],
+      "good_term_ids": ["300000331574575", "300000331574576"],
+      "good_lines": {"GldRegTerm 97334 A": "100% / 30 days", "GldRegTerm 97334 B": "100% / 45 days"},
+      "bad_term": "GldRegTerm 97334 BAD",
+      "bad_error": "JBO-27014: Attribute SetId in PaymentTermSubscriptionEO is required",
+      "result": "PASS - second consecutive run, fresh prefix, distinct TERM_IDs, no collision"
+    },
+    "rerun_note": "New terms are naturally re-runnable: each run stamps a fresh ${PREFIX} into the term Name, so distinct names never collide with prior runs. Two consecutive runs both reached base cleanly (prefix 83810 then 97334)."
+  }
+}

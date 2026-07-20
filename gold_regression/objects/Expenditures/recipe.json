@@ -1,0 +1,76 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "prj/projectCosting/import",
+  "interface_details_id": 20,
+  "job_name": "/oracle/apps/ess/projects/costing/transactions/onestop,ImportAndProcessTxnsJob",
+  "parameter_list": "IMPORT_AND_PROCESS~${BU_ID}~ALL~#NULL~#NULL~${TXN_SOURCE_ID}~${DOCUMENT_ID}~#NULL~#NULL~#NULL",
+  "filename": "Expenditures_gold.zip",
+  "csvs": [
+    { "template": "PjcTxnXfaceStageAll.csv", "fbdi_name": "PjcTxnXfaceStageAll.csv" }
+  ],
+  "downstream_jobs": [
+    {
+      "name": "Import and Process Cost Transactions",
+      "job_path": "/oracle/apps/ess/projects/costing/transactions/onestop,ImportAndProcessTxnsJob",
+      "cred_role": "fin_impl",
+      "parameter_list": "IMPORT_AND_PROCESS~${BU_ID}~ALL~#NULL~#NULL~${TXN_SOURCE_ID}~${DOCUMENT_ID}~#NULL~#NULL~#NULL"
+    }
+  ],
+  "_note_two_step": "loadAndImportData with interfaceDetails=20 ONLY runs Load File to Interface Tables on this product (rows land in PJC_TXN_XFACE_STAGE_ALL at TRANSACTION_STATUS_CODE='P'); it never chains the costing import. The import is a SEPARATE submitESSJobRequest declared as a downstream_job. CRITICAL: the WORKING import job is onestop,ImportAndProcessTxnsJob (shadow proc pjc_import_and_process.import_and_process_ess, 10 positional args), NOT onestop,ImportProcessParallelEssJob (shadow proc onestop_parallel_ess, 13 args). Every ImportProcessParallelEssJob submission on this pod ERRORs with ORA-06502 in its own parameter parsing -- confirmed across ~20 historical runs in ESS request history, state 10. The 10-arg positional order was read from two SUCCEEDED ImportAndProcessTxnsJob runs (request ids 9719834, 9719348) via FUSION.ESS_REQUEST_PROPERTY (submit.argument1..10) cross-referenced to the shadow proc signature in ALL_ARGUMENTS: 1=P_MODE(IMPORT_AND_PROCESS) 2=P_BU_ID(numeric bu id) 3=P_TXN_STATUS(ALL) 4=P_BATCH_NAME(free text) 5=P_INTERFACE_ID(empty) 6=P_TXN_SOURCE_ID(numeric) 7=P_DOCUMENT_ID(numeric) 8=P_START_PROJECT_NO 9=P_END_PROJECT_NO 10=P_PROCESS_THROUGH_DATE. The old 14-arg recipe crashed because it put a non-numeric (BU name / process date) into a numeric slot. Import validates + costs: accepted rows move to PJC_EXP_ITEMS_ALL; rejected rows get 'R' in the staging table.",
+  "discovery": [
+    {
+      "name": "EXP_PROJECT_TASK_REF",
+      "role": "fin_impl",
+      "cols": ["PRJNUM", "TASKNUM", "EXPTYPE", "EXPORG", "BUNAME", "BUID", "UOM", "EIDATE"],
+      "sql": "SELECT * FROM (SELECT pv.segment1 AS PRJNUM, tv.element_number AS TASKNUM, (SELECT expenditure_type_name FROM pjf_exp_types_tl t WHERE t.expenditure_type_id = ei.expenditure_type_id AND t.language = 'US') AS EXPTYPE, (SELECT name FROM hr_organization_units o WHERE o.organization_id = ei.expenditure_organization_id) AS EXPORG, (SELECT bu_name FROM fun_all_business_units_v b WHERE b.bu_id = ei.org_id) AS BUNAME, ei.org_id AS BUID, ei.unit_of_measure AS UOM, TO_CHAR(ei.expenditure_item_date, 'YYYY/MM/DD') AS EIDATE FROM pjc_exp_items_all ei JOIN pjf_projects_all_vl pv ON pv.project_id = ei.project_id JOIN pjf_proj_elements_vl tv ON tv.proj_element_id = ei.task_id WHERE ei.system_linkage_function = 'PJ' AND ei.org_id = 300000046987012 AND ei.expenditure_type_id IS NOT NULL AND ei.expenditure_organization_id IS NOT NULL AND (SELECT expenditure_type_name FROM pjf_exp_types_tl t WHERE t.expenditure_type_id = ei.expenditure_type_id AND t.language = 'US') IN ('Meals','Airfare','Hotel','Miscellaneous') ORDER BY ei.expenditure_item_date DESC, pv.segment1, tv.element_number) WHERE ROWNUM = 1",
+      "bind": {
+        "PROJECT_NUMBER": "PRJNUM",
+        "TASK_NUMBER": "TASKNUM",
+        "EXP_TYPE": "EXPTYPE",
+        "EXP_ORG": "EXPORG",
+        "BU_NAME": "BUNAME",
+        "BU_ID": "BUID",
+        "UOM": "UOM",
+        "EI_DATE": "EIDATE"
+      },
+      "required": true
+    },
+    {
+      "name": "EXP_TXN_SOURCE",
+      "role": "fin_impl",
+      "cols": ["UTS", "TSID", "DOCNAME", "DOCID", "ENTRYNAME"],
+      "sql": "SELECT * FROM (SELECT s.user_transaction_source AS UTS, s.transaction_source_id AS TSID, d.document_name AS DOCNAME, b.document_id AS DOCID, e.doc_entry_name AS ENTRYNAME FROM pjf_txn_sources_vl s JOIN pjf_txn_document_b b ON b.transaction_source_id = s.transaction_source_id JOIN pjf_txn_document_vl d ON d.document_id = b.document_id JOIN pjf_txn_doc_entry_vl e ON e.document_id = b.document_id AND e.system_linkage_function = 'PJ' WHERE s.user_transaction_source = 'External Miscellaneous') WHERE ROWNUM = 1",
+      "bind": {
+        "TXN_SOURCE": "UTS",
+        "TXN_SOURCE_ID": "TSID",
+        "DOC_NAME": "DOCNAME",
+        "DOCUMENT_ID": "DOCID",
+        "DOC_ENTRY": "ENTRYNAME"
+      },
+      "required": true
+    },
+    {
+      "name": "EXP_SYSDATE",
+      "role": "fin_impl",
+      "cols": ["SYSSLASH", "SYSDASH"],
+      "sql": "SELECT TO_CHAR(SYSDATE, 'YYYY/MM/DD') AS SYSSLASH, TO_CHAR(SYSDATE, 'YYYY-MM-DD') AS SYSDASH FROM dual",
+      "bind": { "SYSDATE_SLASH": "SYSSLASH", "SYSDATE_DASH": "SYSDASH" },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-EXP-G1", "${PREFIX}RT-EXP-G2"],
+    "bad_keys": ["${PREFIX}RT-EXP-BAD1"],
+    "base_read": {
+      "sql": "SELECT orig_transaction_reference AS ORIG_TRANSACTION_REFERENCE, expenditure_item_id AS EXPENDITURE_ITEM_ID, denom_raw_cost AS DENOM_RAW_COST FROM pjc_exp_items_all WHERE orig_transaction_reference LIKE :PREFIX || 'RT-EXP-%'",
+      "cols": ["ORIG_TRANSACTION_REFERENCE", "EXPENDITURE_ITEM_ID", "DENOM_RAW_COST"],
+      "key_col": "ORIG_TRANSACTION_REFERENCE",
+      "id_col": "EXPENDITURE_ITEM_ID"
+    },
+    "bad_proof_is_absence": true,
+    "bad_absence_note": "Import and Process Cost Transactions purges rejected rows from PJC_TXN_XFACE_STAGE_ALL after the run (0 rows for this prefix; they are NOT retained at status 'R' on this pod, and PJC_TXN_XFACE_ALL / PJC_BIP_REPORT_DETAILS are not BIP-reachable). Rejection is proven by ABSENCE from base PJC_EXP_ITEMS_ALL while the two good rows from the SAME import reached base with real EXPENDITURE_ITEM_IDs. The per-row error text lives only in the Import-Costs report XML (ESS_O_<n>_BIP.xml from downloadESSJobExecutionDetails on the import request): the bad key rejects with MESSAGE_NAME=PJC_EXP_TYPE_INVALID / ERROR_GROUP=VALIDATIONS for expenditure type ZZ-BAD-EXPTYPE-99."
+  }
+}

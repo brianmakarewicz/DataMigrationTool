@@ -1,0 +1,57 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "TalentProfiles_gold.zip",
+  "dat": { "template": "TalentProfile.dat", "archive_name": "TalentProfile.dat" },
+  "discovery": [
+    {
+      "name": "COMPETENCY_ITEM",
+      "role": "hcm_impl",
+      "cols": ["CONTENT_ITEM", "RATING_MODEL", "RATING_LEVEL", "SECTION_ID"],
+      "sql": "SELECT 'Oral Communication' AS CONTENT_ITEM, rm.rating_model_code AS RATING_MODEL, rl.rating_level_code AS RATING_LEVEL, TO_CHAR(pi.section_id) AS SECTION_ID FROM hrt_content_items_b itb JOIN hrt_content_items_tl itm ON itb.content_item_id=itm.content_item_id AND itm.language='US' JOIN hrt_content_types_b ct ON itb.content_type_id=ct.content_type_id JOIN hrt_rating_models_b rm ON rm.rating_model_id=itb.rating_model_id JOIN hrt_rating_levels_b rl ON rl.rating_model_id=itb.rating_model_id AND rl.rating_level_code='3' JOIN hrt_profile_items pi ON pi.content_item_id=itb.content_item_id WHERE ct.context_name='COMPETENCY' AND itm.name='Oral Communication' AND ROWNUM=1",
+      "bind": {
+        "CONTENT_ITEM": "CONTENT_ITEM",
+        "RATING_MODEL": "RATING_MODEL",
+        "RATING_LEVEL": "RATING_LEVEL",
+        "SECTION_ID": "SECTION_ID"
+      },
+      "required": true
+    },
+    {
+      "name": "TWO_PROFILES_WITHOUT_ITEM",
+      "role": "hcm_impl",
+      "cols": ["PROFILE_CODE1", "PROFILE_CODE2", "PERSON_ID1", "PERSON_ID2"],
+      "sql": "SELECT MAX(CASE WHEN rn=1 THEN profile_code END) AS PROFILE_CODE1, MAX(CASE WHEN rn=2 THEN profile_code END) AS PROFILE_CODE2, MAX(CASE WHEN rn=1 THEN person_id END) AS PERSON_ID1, MAX(CASE WHEN rn=2 THEN person_id END) AS PERSON_ID2 FROM (SELECT prf.profile_code, TO_CHAR(prf.person_id) AS person_id, ROW_NUMBER() OVER (ORDER BY pap.person_number) rn FROM hrt_profiles_b prf JOIN hrt_profile_types_b ptb ON prf.profile_type_id=ptb.profile_type_id AND ptb.profile_type_code='PERSON' JOIN per_all_people_f pap ON prf.person_id=pap.person_id AND SYSDATE BETWEEN pap.effective_start_date AND pap.effective_end_date WHERE prf.profile_status_code='A' AND prf.profile_code LIKE 'PERS\\_%' ESCAPE '\\' AND REGEXP_LIKE(pap.person_number,'^[0-9]+$') AND NOT EXISTS (SELECT 1 FROM hrt_profile_items pi JOIN hrt_content_items_b cib ON pi.content_item_id=cib.content_item_id JOIN hrt_content_items_tl cit ON cib.content_item_id=cit.content_item_id AND cit.language='US' WHERE pi.profile_id=prf.profile_id AND cit.name='Oral Communication')) WHERE rn<=2",
+      "bind": {
+        "PROFILE_CODE1": "PROFILE_CODE1",
+        "PROFILE_CODE2": "PROFILE_CODE2",
+        "PERSON_ID1": "PERSON_ID1",
+        "PERSON_ID2": "PERSON_ID2"
+      },
+      "required": true
+    },
+    {
+      "name": "OFFICIAL_QUALIFIER",
+      "role": "hcm_impl",
+      "cols": ["QUALIFIER_ID"],
+      "sql": "SELECT TO_CHAR(qualifier_id1) AS QUALIFIER_ID FROM (SELECT pi.qualifier_id1, COUNT(*) cnt FROM hrt_profile_items pi WHERE pi.section_id=101 AND pi.qualifier_id1 IS NOT NULL GROUP BY pi.qualifier_id1 ORDER BY COUNT(*) DESC) WHERE ROWNUM=1",
+      "bind": {
+        "QUALIFIER_ID": "QUALIFIER_ID"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PREFIX}DMTTP001", "${PREFIX}DMTTP002"],
+    "bad_keys": ["${PREFIX}DMTTP-BAD"],
+    "base_read": {
+      "sql": "SELECT km.source_system_id AS SSID, TO_CHAR(pi.profile_item_id) AS PROFILE_ITEM_ID FROM hrt_profile_items pi JOIN hrc_integration_key_map km ON km.surrogate_id=pi.profile_item_id AND km.source_system_owner='HRC_SQLLOADER' WHERE km.source_system_id LIKE '${PREFIX}DMTTP%'",
+      "cols": ["SSID", "PROFILE_ITEM_ID"],
+      "key_col": "SSID",
+      "id_col": "PROFILE_ITEM_ID"
+    }
+  }
+}

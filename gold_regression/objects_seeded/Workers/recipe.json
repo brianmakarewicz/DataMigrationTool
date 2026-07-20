@@ -1,0 +1,19 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "Workers_gold.zip",
+  "dat": { "template": "Worker.dat", "archive_name": "Worker.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PREFIX}DMTW001", "${PREFIX}DMTW002"],
+    "bad_keys": ["${PREFIX}DMTW-BAD"],
+    "base_read": {
+      "sql": "SELECT person_number AS PERSON_NUMBER, MAX(person_id) AS PERSON_ID FROM per_all_people_f WHERE person_number LIKE :PREFIX || 'DMTW%' GROUP BY person_number",
+      "cols": ["PERSON_NUMBER", "PERSON_ID"],
+      "key_col": "PERSON_NUMBER",
+      "id_col": "PERSON_ID"
+    }
+  }
+}

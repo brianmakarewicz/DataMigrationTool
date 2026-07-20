@@ -1,0 +1,4 @@
+METADATA|AssignedPayroll|EffectiveStartDate|AssignmentNumber|PayrollDefinitionCode|LegislativeDataGroupName|StartDate
+MERGE|AssignedPayroll|${PAY_DATE}|E15|Biweekly|US Legislative Data Group|${PAY_DATE}
+MERGE|AssignedPayroll|${PAY_DATE}|E16|Biweekly|US Legislative Data Group|${PAY_DATE}
+MERGE|AssignedPayroll|${PAY_DATE}|E6|DMT NONEXISTENT PAYROLL|US Legislative Data Group|${PAY_DATE}

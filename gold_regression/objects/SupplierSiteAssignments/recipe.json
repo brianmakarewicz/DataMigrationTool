@@ -1,0 +1,49 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "calvin.roth",
+  "doc_account": "prc/supplier/import",
+  "interface_details_id": 27,
+  "import_job_name_raw": "/oracle/apps/ess/prc/poz/supplierImport;ImportSupplierSiteAssignments",
+  "job_name": "/oracle/apps/ess/prc/poz/supplierImport,ImportSupplierSiteAssignments",
+  "parameter_list": "NEW,N",
+  "filename": "SupplierSiteAssignments_gold.zip",
+  "csvs": [
+    { "template": "PozSiteAssignmentsInt.csv", "fbdi_name": "PozSiteAssignmentsInt.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "EXISTING_SITE_AND_TWO_UNASSIGNED_CLIENT_BUS",
+      "role": "fin_impl",
+      "cols": ["SUPPLIER_NAME", "SUPPLIER_VENDOR_ID", "VENDOR_SITE_CODE", "VENDOR_SITE_ID", "PROC_BU", "CBU1", "CBU2"],
+      "sql": "SELECT * FROM (SELECT vendor_name AS SUPPLIER_NAME, vendor_id AS SUPPLIER_VENDOR_ID, vendor_site_code AS VENDOR_SITE_CODE, vendor_site_id AS VENDOR_SITE_ID, proc_bu_name AS PROC_BU, MAX(DECODE(rn,1,client_bu_name)) AS CBU1, MAX(DECODE(rn,2,client_bu_name)) AS CBU2 FROM (WITH valid_client AS (SELECT DISTINCT s.prc_bu_id, a.bu_id AS client_bu_id, b.bu_name AS client_bu_name FROM poz_site_assignments_all_m a JOIN poz_supplier_sites_all_m s ON s.vendor_site_id = a.vendor_site_id JOIN fun_all_business_units_v b ON b.bu_id = a.bu_id WHERE a.inactive_date IS NULL) SELECT ss.vendor_site_id, ss.vendor_site_code, sv.vendor_name, sv.vendor_id, pbu.bu_name AS proc_bu_name, vc.client_bu_name, ROW_NUMBER() OVER (PARTITION BY ss.vendor_site_id ORDER BY vc.client_bu_name) rn, COUNT(*) OVER (PARTITION BY ss.vendor_site_id) navail FROM poz_supplier_sites_all_m ss JOIN poz_suppliers_v sv ON sv.vendor_id = ss.vendor_id JOIN fun_all_business_units_v pbu ON pbu.bu_id = ss.prc_bu_id JOIN valid_client vc ON vc.prc_bu_id = ss.prc_bu_id WHERE NVL(ss.inactive_date, SYSDATE+1) > SYSDATE AND sv.vendor_name NOT LIKE '%RT %' AND sv.vendor_name NOT LIKE '%RT-%' AND ss.vendor_site_code NOT LIKE '%RT-SITE%' AND NOT EXISTS (SELECT 1 FROM poz_site_assignments_all_m x WHERE x.vendor_site_id = ss.vendor_site_id AND x.bu_id = vc.client_bu_id AND x.inactive_date IS NULL)) WHERE navail >= 2 GROUP BY vendor_name, vendor_id, vendor_site_code, vendor_site_id, proc_bu_name HAVING MAX(navail) >= 2 ORDER BY vendor_site_id DESC) WHERE ROWNUM = 1",
+      "bind": {
+        "SUPPLIER_NAME": "SUPPLIER_NAME",
+        "SUPPLIER_VENDOR_ID": "SUPPLIER_VENDOR_ID",
+        "VENDOR_SITE_CODE": "VENDOR_SITE_CODE",
+        "VENDOR_SITE_ID": "VENDOR_SITE_ID",
+        "PROC_BU": "PROC_BU",
+        "CBU1": "CBU1",
+        "CBU2": "CBU2"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${CBU1}", "${CBU2}"],
+    "bad_keys": ["${PREFIX}NO SUCH BU"],
+    "base_read": {
+      "sql": "SELECT b.bu_name AS BUSINESS_UNIT_NAME, a.assignment_id AS ASSIGNMENT_ID, a.vendor_site_id AS VENDOR_SITE_ID FROM poz_site_assignments_all_m a JOIN fun_all_business_units_v b ON b.bu_id = a.bu_id WHERE a.vendor_site_id = ${VENDOR_SITE_ID} AND a.inactive_date IS NULL AND b.bu_name IN ('${CBU1}', '${CBU2}')",
+      "cols": ["BUSINESS_UNIT_NAME", "ASSIGNMENT_ID", "VENDOR_SITE_ID"],
+      "key_col": "BUSINESS_UNIT_NAME",
+      "id_col": "ASSIGNMENT_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT i.business_unit_name AS BUSINESS_UNIT_NAME, i.assignment_interface_id AS ASSIGNMENT_INTERFACE_ID, i.vendor_site_code AS VENDOR_SITE_CODE, (SELECT LISTAGG(CASE WHEN r.attribute IS NOT NULL THEN r.reject_lookup_code || ' [' || r.attribute || ']' ELSE r.reject_lookup_code END, '; ') WITHIN GROUP (ORDER BY r.rejection_id) FROM poz_supplier_int_rejections r WHERE r.parent_table = 'POZ_SITE_ASSIGNMENTS_INT' AND r.parent_id = i.assignment_interface_id) AS ERROR_MESSAGE FROM poz_site_assignments_int i WHERE i.load_request_id = :LRID",
+      "cols": ["BUSINESS_UNIT_NAME", "ASSIGNMENT_INTERFACE_ID", "VENDOR_SITE_CODE", "ERROR_MESSAGE"],
+      "key_col": "BUSINESS_UNIT_NAME",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

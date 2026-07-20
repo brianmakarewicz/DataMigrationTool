@@ -1,0 +1,58 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/budgetBalance/import",
+  "interface_details_id": 17,
+  "import_job_name_raw": "/oracle/apps/ess/financials/generalLedger/ledgers/ledgerDefinitions;ValidateAndLoadBudgets",
+  "job_name": "/oracle/apps/ess/financials/generalLedger/ledgers/ledgerDefinitions,ValidateAndLoadBudgets",
+  "parameter_list": "#NULL",
+  "filename": "GLBudgets_gold.zip",
+  "csvs": [
+    { "template": "GlBudgetInterface.csv", "fbdi_name": "GlBudgetInterface.csv" }
+  ],
+  "downstream_jobs": [
+    {
+      "name": "ValidateAndLoadBudgets (good run name)",
+      "job_path": "/oracle/apps/ess/financials/generalLedger/ledgers/ledgerDefinitions,ValidateAndLoadBudgets",
+      "parameter_list": "${PREFIX}RT-GLBUD-G"
+    },
+    {
+      "name": "ValidateAndLoadBudgets (bad run name)",
+      "job_path": "/oracle/apps/ess/financials/generalLedger/ledgers/ledgerDefinitions,ValidateAndLoadBudgets",
+      "parameter_list": "${PREFIX}RT-GLBUD-B"
+    }
+  ],
+  "discovery": [
+    {
+      "name": "GL_OPEN_PERIOD",
+      "role": "fin_impl",
+      "cols": ["PERIOD_NAME"],
+      "sql": "SELECT period_name PERIOD_NAME FROM ( SELECT ps.period_name, p.end_date, CASE WHEN TRUNC(SYSDATE) BETWEEN p.start_date AND p.end_date THEN 0 ELSE 1 END is_current FROM gl_period_statuses ps JOIN gl_ledgers led ON led.ledger_id = ps.ledger_id JOIN gl_periods p ON p.period_set_name = led.period_set_name AND p.period_name = ps.period_name WHERE ps.ledger_id = 300000046975971 AND ps.application_id = 101 AND ps.closing_status = 'O' ORDER BY is_current ASC, p.end_date DESC ) WHERE ROWNUM = 1",
+      "bind": { "PERIOD_NAME": "PERIOD_NAME" },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": [
+      "101-10-11102-000-000-000",
+      "101-10-11200-000-000-000",
+      "101-10-12101-000-000-000",
+      "101-10-12310-000-000-000"
+    ],
+    "bad_keys": ["${PREFIX}RT-GLBUD-B"],
+    "base_read": {
+      "sql": "SELECT bb.concat_account AS CONCAT_ACCOUNT, TO_CHAR(bb.period_net_dr) AS PERIOD_NET_DR, TO_CHAR(bb.last_update_date,'YYYY-MM-DD HH24:MI:SS') AS UPD FROM gl_budget_balances bb WHERE bb.ledger_id = 300000046975971 AND bb.budget_name = 'Budget' AND bb.period_name = '${PERIOD_NAME}' AND bb.currency_code = 'USD' AND bb.concat_account IN ('101-10-11102-000-000-000','101-10-11200-000-000-000','101-10-12101-000-000-000','101-10-12310-000-000-000') AND bb.period_net_dr = 1000 AND bb.last_update_date >= SYSDATE - INTERVAL '4' HOUR",
+      "cols": ["CONCAT_ACCOUNT", "PERIOD_NET_DR", "UPD"],
+      "key_col": "CONCAT_ACCOUNT",
+      "id_col": "PERIOD_NET_DR"
+    },
+    "interface_read": {
+      "sql": "SELECT i.run_name AS RUN_NAME, i.status AS IFACE_STATUS, i.error_message AS ERROR_MESSAGE FROM gl_budget_interface i WHERE i.run_name = '${PREFIX}RT-GLBUD-B'",
+      "cols": ["RUN_NAME", "IFACE_STATUS", "ERROR_MESSAGE"],
+      "key_col": "RUN_NAME",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

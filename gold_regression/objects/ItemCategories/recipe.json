@@ -1,0 +1,50 @@
+{
+  "type": "FBDI",
+  "cred_role": "scm_impl",
+  "auth_user": "scm_impl",
+  "doc_account": "scm/item/import",
+  "interface_details_id": 137,
+  "import_job_name_raw": "/oracle/apps/ess/scm/productModel/items;CatalogImportJobDef",
+  "job_name": "/oracle/apps/ess/scm/productModel/items,CatalogImportJobDef",
+  "parameter_list": "${PREFIX},N,N",
+  "filename": "ItemCategories_gold.zip",
+  "csvs": [
+    { "template": "EgpItemCategoriesInterface.csv", "fbdi_name": "EgpItemCategoriesInterface.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "IC_ITEM",
+      "role": "scm_impl",
+      "cols": ["ITEMNUM", "ORGCODE"],
+      "sql": "SELECT ITEMNUM, ORGCODE FROM (SELECT b.item_number AS ITEMNUM, p.organization_code AS ORGCODE, (SELECT COUNT(*) FROM egp_categories_b c WHERE c.category_id IN (SELECT category_id FROM egp_category_set_valid_cats WHERE category_set_id=(SELECT category_set_id FROM egp_category_sets_vl WHERE category_set_name='eCommerce Catalog')) AND c.category_code NOT LIKE '%.%' AND NOT EXISTS (SELECT 1 FROM egp_item_categories a WHERE a.inventory_item_id=b.inventory_item_id AND a.category_id=c.category_id AND a.category_set_id=(SELECT category_set_id FROM egp_category_sets_vl WHERE category_set_name='eCommerce Catalog'))) AS FREECATS FROM egp_system_items_b b JOIN inv_org_parameters p ON p.organization_id=b.organization_id WHERE p.organization_code='000' AND b.item_number LIKE 'AS%' ORDER BY b.item_number) WHERE FREECATS >= 3 AND ROWNUM=1",
+      "bind": { "ITEMNUM": "ITEMNUM", "ORGCODE": "ORGCODE" },
+      "required": true
+    },
+    {
+      "name": "IC_CATEGORIES",
+      "role": "scm_impl",
+      "cols": ["G1CODE", "G2CODE"],
+      "sql": "SELECT G1CODE, G2CODE FROM (SELECT c.category_code AS G1CODE, LEAD(c.category_code) OVER (ORDER BY c.category_code) AS G2CODE, ROW_NUMBER() OVER (ORDER BY c.category_code) rn FROM egp_categories_b c WHERE c.category_id IN (SELECT category_id FROM egp_category_set_valid_cats WHERE category_set_id=(SELECT category_set_id FROM egp_category_sets_vl WHERE category_set_name='eCommerce Catalog')) AND c.category_code NOT LIKE '%.%' AND NOT EXISTS (SELECT 1 FROM egp_item_categories a JOIN egp_system_items_b b ON b.inventory_item_id=a.inventory_item_id WHERE b.item_number='${ITEMNUM}' AND a.category_id=c.category_id AND a.category_set_id=(SELECT category_set_id FROM egp_category_sets_vl WHERE category_set_name='eCommerce Catalog'))) WHERE rn=1",
+      "bind": { "G1CODE": "G1CODE", "G2CODE": "G2CODE" },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "scm_impl",
+    "good_keys": ["${G1CODE}", "${G2CODE}"],
+    "bad_keys": ["ZZBADCAT${PREFIX}"],
+    "base_read": {
+      "sql": "SELECT c.category_code AS CATEGORY_CODE, TO_CHAR(a.item_category_assignment_id) AS ASSIGN_ID FROM egp_item_categories a JOIN egp_system_items_b b ON b.inventory_item_id=a.inventory_item_id AND b.organization_id=a.organization_id JOIN inv_org_parameters p ON p.organization_id=a.organization_id JOIN egp_categories_b c ON c.category_id=a.category_id WHERE b.item_number='${ITEMNUM}' AND p.organization_code='${ORGCODE}' AND a.category_set_id=(SELECT category_set_id FROM egp_category_sets_vl WHERE category_set_name='eCommerce Catalog') AND c.category_code IN ('${G1CODE}','${G2CODE}','ZZBADCAT${PREFIX}')",
+      "cols": ["CATEGORY_CODE", "ASSIGN_ID"],
+      "key_col": "CATEGORY_CODE",
+      "id_col": "ASSIGN_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT i.category_code AS CATEGORY_CODE, i.process_status AS PROCESS_STATUS, (CASE WHEN i.has_errors='Y' OR i.process_status=1 THEN 'PROCESS_STATUS='||i.process_status||' HAS_ERRORS='||NVL(i.has_errors,'?')||' (rejected: category not found / not valid for catalog)' END) AS ERROR_MESSAGE FROM egp_item_categories_interface i WHERE i.load_request_id = :LRID",
+      "cols": ["CATEGORY_CODE", "PROCESS_STATUS", "ERROR_MESSAGE"],
+      "key_col": "CATEGORY_CODE",
+      "error_col": "ERROR_MESSAGE"
+    },
+    "bad_proof_is_absence": true
+  }
+}

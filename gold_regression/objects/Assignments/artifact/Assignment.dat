@@ -1,0 +1,9 @@
+SET PURGE_FUTURE_CHANGES N
+METADATA|WorkTerms|AssignmentNumber|PersonNumber|LegalEmployerName|DateStart|WorkerType|ActionCode|EffectiveStartDate|EffectiveEndDate|EffectiveSequence|EffectiveLatestChange|PrimaryWorkTermsFlag
+MERGE|WorkTerms|${WT1}|${PN1}|${LE1}|${DS1}|E|WORK_HOURS_CHANGE|${GL_DATE_SLASH}|4712/12/31|1|Y|Y
+MERGE|WorkTerms|${WT2}|${PN2}|${LE2}|${DS2}|E|WORK_HOURS_CHANGE|${GL_DATE_SLASH}|4712/12/31|1|Y|Y
+MERGE|WorkTerms|${WT3}|${PN3}|${LE3}|${DS3}|E|DMT_INVALID_ACTION|${GL_DATE_SLASH}|4712/12/31|1|Y|Y
+METADATA|Assignment|AssignmentNumber|PersonNumber|LegalEmployerName|DateStart|WorkerType|WorkTermsNumber|ActionCode|EffectiveStartDate|EffectiveEndDate|EffectiveSequence|EffectiveLatestChange|PrimaryAssignmentFlag|NormalHours
+MERGE|Assignment|${ASG1}|${PN1}|${LE1}|${DS1}|E|${WT1}|WORK_HOURS_CHANGE|${GL_DATE_SLASH}|4712/12/31|1|Y|Y|37.5
+MERGE|Assignment|${ASG2}|${PN2}|${LE2}|${DS2}|E|${WT2}|WORK_HOURS_CHANGE|${GL_DATE_SLASH}|4712/12/31|1|Y|Y|37.5
+MERGE|Assignment|${ASG3}|${PN3}|${LE3}|${DS3}|E|${WT3}|DMT_INVALID_ACTION|${GL_DATE_SLASH}|4712/12/31|1|Y|Y|37.5

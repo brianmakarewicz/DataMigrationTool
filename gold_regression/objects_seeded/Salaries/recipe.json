@@ -1,0 +1,19 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "Salaries_gold.zip",
+  "dat": { "template": "Salary.dat", "archive_name": "Salary.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["E10", "E12"],
+    "bad_keys": ["${PREFIX}DMTSAL-BAD"],
+    "base_read": {
+      "sql": "SELECT a.assignment_number AS ASG_NUM, MAX(s.salary_id) AS SALARY_ID, MAX(s.salary_amount) AS SALARY_AMOUNT FROM cmp_salary s JOIN per_all_assignments_m a ON a.assignment_id = s.assignment_id AND a.effective_latest_change='Y' WHERE s.salary_basis_id = 300000048365126 AND s.date_from = DATE '${SAL_DATE_DASH}' AND a.assignment_number IN ('E10','E12','E14') GROUP BY a.assignment_number",
+      "cols": ["ASG_NUM", "SALARY_ID", "SALARY_AMOUNT"],
+      "key_col": "ASG_NUM",
+      "id_col": "SALARY_ID"
+    }
+  }
+}

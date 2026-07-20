@@ -1,0 +1,4 @@
+"UnitOfMeasure","UomCode","BaseUomFlag","Description","UomClassCode","HasGeneratedCode"
+"GldRegUOM ${PREFIX} A","${C1}","N","Gold Reg UOM ${PREFIX} A","5","N"
+"GldRegUOM ${PREFIX} B","${C2}","N","Gold Reg UOM ${PREFIX} B","5","N"
+"GldRegUOM ${PREFIX} BAD","${C3}","N","Gold Reg UOM ${PREFIX} BAD","ZZ_NO_SUCH_CLASS","N"

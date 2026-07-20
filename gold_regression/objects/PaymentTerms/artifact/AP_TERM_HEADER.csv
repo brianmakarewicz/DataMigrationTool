@@ -1,0 +1,4 @@
+"Name","EnabledFlag","Type","StartDateActive","Description"
+"GldRegTerm 90212 A","Y","STD","2020/01/01","Gold Reg Payment Term 90212 A (net 30)"
+"GldRegTerm 90212 B","Y","STD","2020/01/01","Gold Reg Payment Term 90212 B (net 45)"
+"GldRegTerm 90212 BAD","Y","STD","2020/01/01","Gold Reg Payment Term 90212 BAD (invalid set)"

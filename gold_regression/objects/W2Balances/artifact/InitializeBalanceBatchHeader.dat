@@ -1,0 +1,2 @@
+METADATA|InitializeBalanceBatchHeader|LegislativeDataGroupName|BatchName|UploadDate
+MERGE|InitializeBalanceBatchHeader|${LDG_NAME}|DMTW2${PREFIX}|${GL_DATE_SLASH}

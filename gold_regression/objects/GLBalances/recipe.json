@@ -1,0 +1,74 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/generalLedger/import",
+  "interface_details_id": 15,
+  "import_job_name_raw": "/oracle/apps/ess/financials/generalLedger/programs/common;JournalImportLauncher",
+  "job_name": "/oracle/apps/ess/financials/generalLedger/programs/common,JournalImportLauncher",
+  "parameter_list": "${DAS_ID},${JE_SOURCE},${LEDGER_ID},${PREFIX},N,N,N",
+  "filename": "GLBalances_gold.zip",
+  "csvs": [
+    { "template": "GlInterface.csv", "fbdi_name": "GlInterface.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "GL_LEDGER_OPEN_PERIOD",
+      "role": "fin_impl",
+      "cols": ["LEDGER_ID", "LEDGER_NAME", "CURRENCY_CODE", "COA_ID", "DAS_ID", "OPEN_PERIOD", "ACCT_DATE", "DATE_CREATED", "JE_SOURCE", "JE_CATEGORY"],
+      "sql": "SELECT * FROM (SELECT gl.ledger_id AS LEDGER_ID, gl.name AS LEDGER_NAME, gl.currency_code AS CURRENCY_CODE, gl.chart_of_accounts_id AS COA_ID, (SELECT MIN(gas.access_set_id) FROM gl_access_sets gas WHERE gas.default_ledger_id = gl.ledger_id AND gas.automatically_created_flag = 'Y') AS DAS_ID, (SELECT MIN(ps.period_name) FROM gl_period_statuses ps WHERE ps.ledger_id = gl.ledger_id AND ps.application_id = 101 AND ps.closing_status = 'O' AND ps.adjustment_period_flag = 'N' AND TRUNC(SYSDATE) BETWEEN ps.start_date AND ps.end_date) AS OPEN_PERIOD, TO_CHAR((SELECT MIN(ps.start_date) FROM gl_period_statuses ps WHERE ps.ledger_id = gl.ledger_id AND ps.application_id = 101 AND ps.closing_status = 'O' AND ps.adjustment_period_flag = 'N' AND TRUNC(SYSDATE) BETWEEN ps.start_date AND ps.end_date), 'YYYY/MM/DD') AS ACCT_DATE, TO_CHAR(TRUNC(SYSDATE), 'YYYY/MM/DD') AS DATE_CREATED, 'Spreadsheet' AS JE_SOURCE, 'Adjustment' AS JE_CATEGORY FROM gl_ledgers gl WHERE gl.object_type_code = 'L' AND EXISTS (SELECT 1 FROM gl_period_statuses ps WHERE ps.ledger_id = gl.ledger_id AND ps.application_id = 101 AND ps.closing_status = 'O' AND ps.adjustment_period_flag = 'N' AND TRUNC(SYSDATE) BETWEEN ps.start_date AND ps.end_date) AND EXISTS (SELECT 1 FROM gl_code_combinations gcc WHERE gcc.chart_of_accounts_id = gl.chart_of_accounts_id AND gcc.enabled_flag = 'Y' AND NVL(gcc.detail_posting_allowed_flag,'Y') = 'Y' AND gcc.account_type = 'E' AND NVL(gcc.end_date_active, SYSDATE+1) > SYSDATE) ORDER BY CASE WHEN gl.name = 'US Primary Ledger' THEN 0 ELSE 1 END, gl.name) WHERE ROWNUM = 1",
+      "bind": {
+        "LEDGER_ID": "LEDGER_ID",
+        "LEDGER_NAME": "LEDGER_NAME",
+        "CURRENCY": "CURRENCY_CODE",
+        "DAS_ID": "DAS_ID",
+        "PERIOD_NAME": "OPEN_PERIOD",
+        "ACCT_DATE": "ACCT_DATE",
+        "DATE_CREATED": "DATE_CREATED",
+        "JE_SOURCE": "JE_SOURCE",
+        "JE_CATEGORY": "JE_CATEGORY"
+      },
+      "required": true
+    },
+    {
+      "name": "GL_VALID_ACCOUNT",
+      "role": "fin_impl",
+      "cols": ["SEG1", "SEG2", "SEG3", "SEG4", "SEG5", "SEG6"],
+      "sql": "SELECT * FROM (SELECT gcc.segment1 AS SEG1, gcc.segment2 AS SEG2, gcc.segment3 AS SEG3, gcc.segment4 AS SEG4, gcc.segment5 AS SEG5, gcc.segment6 AS SEG6 FROM gl_code_combinations gcc WHERE gcc.chart_of_accounts_id = (SELECT gl.chart_of_accounts_id FROM gl_ledgers gl WHERE gl.object_type_code = 'L' AND EXISTS (SELECT 1 FROM gl_period_statuses ps WHERE ps.ledger_id = gl.ledger_id AND ps.application_id = 101 AND ps.closing_status = 'O' AND ps.adjustment_period_flag = 'N' AND TRUNC(SYSDATE) BETWEEN ps.start_date AND ps.end_date) AND EXISTS (SELECT 1 FROM gl_code_combinations g2 WHERE g2.chart_of_accounts_id = gl.chart_of_accounts_id AND g2.enabled_flag = 'Y' AND NVL(g2.detail_posting_allowed_flag,'Y') = 'Y' AND g2.account_type = 'E' AND NVL(g2.end_date_active, SYSDATE+1) > SYSDATE) ORDER BY CASE WHEN gl.name = 'US Primary Ledger' THEN 0 ELSE 1 END, gl.name FETCH FIRST 1 ROW ONLY) AND gcc.enabled_flag = 'Y' AND NVL(gcc.detail_posting_allowed_flag,'Y') = 'Y' AND gcc.account_type = 'E' AND NVL(gcc.end_date_active, SYSDATE+1) > SYSDATE ORDER BY gcc.code_combination_id) WHERE ROWNUM = 1",
+      "bind": {
+        "SEG1": "SEG1",
+        "SEG2": "SEG2",
+        "SEG3": "SEG3",
+        "SEG4": "SEG4",
+        "SEG5": "SEG5",
+        "SEG6": "SEG6"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}RT-JNL-G1"],
+    "bad_keys": ["${PREFIX}RT-JNL-BAD1"],
+    "base_read": {
+      "comment": "Preferred: direct read of the GL_JE base tables by the prefix-stamped batch name. On demo pods the BIP ApplicationDB_FSCM GL_JE_* replica lags the transactional tables by many hours, so this may return no row for a just-created journal even though Journal Import wrote it. When that happens, the base-write is confirmed instead by GL_INTERFACE.STATUS = 'P' with an assigned JE_HEADER_ID (see base_read_fallback), which is the interface table's authoritative record that the row imported into the base tables.",
+      "sql": "SELECT SUBSTR(b.name, 1, INSTR(b.name, ' ') - 1) AS REF1, TO_CHAR(MIN(h.je_header_id)) AS JE_HEADER_ID, TO_CHAR(SUM(l.entered_dr)) AS TOT_DR, TO_CHAR(SUM(l.entered_cr)) AS TOT_CR, MIN(b.name) AS BATCH_NAME FROM gl_je_batches b JOIN gl_je_headers h ON h.je_batch_id = b.je_batch_id JOIN gl_je_lines l ON l.je_header_id = h.je_header_id WHERE b.name LIKE '${PREFIX}RT-JNL-G1%' GROUP BY SUBSTR(b.name, 1, INSTR(b.name, ' ') - 1)",
+      "cols": ["REF1", "JE_HEADER_ID", "TOT_DR", "TOT_CR", "BATCH_NAME"],
+      "key_col": "REF1",
+      "id_col": "JE_HEADER_ID"
+    },
+    "base_read_fallback": {
+      "comment": "Interface-side proof that the good journal reached the GL base tables: STATUS='P' (Processed) with the base JE_HEADER_ID that Journal Import assigned. Directly readable immediately, unaffected by the GL_JE replica lag.",
+      "sql": "SELECT gi.reference1 AS REF1, TO_CHAR(MIN(gi.je_header_id)) AS JE_HEADER_ID, TO_CHAR(SUM(gi.entered_dr)) AS TOT_DR, TO_CHAR(SUM(gi.entered_cr)) AS TOT_CR, MIN(gi.status) AS STATUS FROM gl_interface gi WHERE gi.group_id = ${PREFIX} AND gi.status = 'P' GROUP BY gi.reference1",
+      "cols": ["REF1", "JE_HEADER_ID", "TOT_DR", "TOT_CR", "STATUS"],
+      "key_col": "REF1",
+      "id_col": "JE_HEADER_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT gi.reference1 AS REF1, gi.status || ' - ' || SUBSTR(gi.status_description, 1, 200) AS STATUS_ERR, gi.status AS STATUS, TO_CHAR(gi.code_combination_id) AS CCID, TO_CHAR(gi.je_line_num) AS LINE_NUM FROM gl_interface gi WHERE gi.group_id = ${PREFIX} AND gi.status <> 'P'",
+      "cols": ["REF1", "STATUS_ERR", "STATUS", "CCID", "LINE_NUM"],
+      "key_col": "REF1",
+      "error_col": "STATUS_ERR"
+    }
+  }
+}

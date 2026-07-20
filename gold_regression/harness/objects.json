@@ -1,0 +1,33 @@
+{
+  "Suppliers": {
+    "type": "FBDI",
+    "cred_role": "fin_impl",
+    "auth_user": "calvin.roth",
+    "doc_account": "prc/supplier/import",
+    "interface_details_id": 24,
+    "import_job_name_raw": "/oracle/apps/ess/prc/poz/supplierImport;ImportSuppliers",
+    "job_name": "/oracle/apps/ess/prc/poz/supplierImport,ImportSuppliers",
+    "parameter_list": "NEW,N",
+    "filename": "Suppliers_gold.zip",
+    "csvs": [
+      { "template": "PoSupplierImport.csv", "fbdi_name": "PoSupplierImport.csv" }
+    ],
+    "verify": {
+      "cred_role": "fin_impl",
+      "good_keys": ["${PREFIX}RT-SUP-G1", "${PREFIX}RT-SUP-G2"],
+      "bad_keys": ["${PREFIX}RT-SUP-BAD1"],
+      "base_read": {
+        "sql": "SELECT s.segment1 AS SEGMENT1, s.vendor_id AS VENDOR_ID, p.party_name AS VENDOR_NAME FROM poz_suppliers s JOIN hz_parties p ON p.party_id = s.party_id WHERE s.segment1 LIKE :PREFIX || 'RT-SUP-%'",
+        "cols": ["SEGMENT1", "VENDOR_ID", "VENDOR_NAME"],
+        "key_col": "SEGMENT1",
+        "id_col": "VENDOR_ID"
+      },
+      "interface_read": {
+        "sql": "SELECT i.segment1 AS SEGMENT1, i.vendor_interface_id AS VENDOR_INTERFACE_ID, (SELECT LISTAGG(CASE WHEN r.attribute IS NOT NULL THEN r.reject_lookup_code || ' [' || r.attribute || ']' ELSE r.reject_lookup_code END, '; ') WITHIN GROUP (ORDER BY r.rejection_id) FROM poz_supplier_int_rejections r WHERE r.parent_table = 'POZ_SUPPLIERS_INT' AND r.parent_id = i.vendor_interface_id) AS ERROR_MESSAGE FROM poz_suppliers_int i WHERE i.load_request_id = :LRID",
+        "cols": ["SEGMENT1", "VENDOR_INTERFACE_ID", "ERROR_MESSAGE"],
+        "key_col": "SEGMENT1",
+        "error_col": "ERROR_MESSAGE"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "Workers_gold.zip",
+  "dat": { "template": "Worker.dat", "archive_name": "Worker.dat" },
+  "discovery": [
+    {
+      "name": "LEGAL_EMPLOYER_BU",
+      "role": "hcm_impl",
+      "cols": ["LENAME", "BUNAME"],
+      "sql": "SELECT le.name AS LENAME, bu.name AS BUNAME FROM (SELECT otl.name, otl.organization_id FROM hr_org_unit_classifications_f c JOIN hr_organization_units_f_tl otl ON c.organization_id = otl.organization_id AND otl.language = 'US' WHERE c.classification_code = 'HCM_LEMP' AND otl.name = 'US1 Legal Entity' AND SYSDATE BETWEEN c.effective_start_date AND c.effective_end_date AND ROWNUM = 1) le CROSS JOIN (SELECT otl.name FROM hr_organization_units_f_tl otl WHERE otl.language = 'US' AND otl.name = 'US1 Business Unit' AND ROWNUM = 1) bu",
+      "bind": { "LEGAL_EMPLOYER": "LENAME", "BU_SHORT": "BUNAME" },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PREFIX}DMTW001", "${PREFIX}DMTW002"],
+    "bad_keys": ["${PREFIX}DMTW-BAD"],
+    "base_read": {
+      "sql": "SELECT person_number AS PERSON_NUMBER, MAX(person_id) AS PERSON_ID FROM per_all_people_f WHERE person_number LIKE :PREFIX || 'DMTW%' GROUP BY person_number",
+      "cols": ["PERSON_NUMBER", "PERSON_ID"],
+      "key_col": "PERSON_NUMBER",
+      "id_col": "PERSON_ID"
+    }
+  }
+}

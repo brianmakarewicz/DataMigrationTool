@@ -1,0 +1,37 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "PerformanceEvaluations_gold.zip",
+  "dat": { "template": "GoalPlan.dat", "archive_name": "GoalPlan.dat" },
+  "discovery": [
+    {
+      "name": "REVIEW_PERIOD_SUBMITTER",
+      "role": "hcm_impl",
+      "cols": ["REVIEW_PERIOD", "RP_START", "RP_END", "SUBMITTER_PN", "RUN_DATE"],
+      "sql": "SELECT rp.review_period_name AS REVIEW_PERIOD, TO_CHAR(rp.start_date,'YYYY/MM/DD') AS RP_START, TO_CHAR(rp.end_date,'YYYY/MM/DD') AS RP_END, sub.person_number AS SUBMITTER_PN, TO_CHAR(SYSDATE,'YYYY/MM/DD') AS RUN_DATE FROM (SELECT review_period_name, start_date, end_date FROM hrt_review_periods_vl WHERE status_code='A' AND SYSDATE BETWEEN start_date AND end_date AND review_period_name NOT LIKE 'Default%' ORDER BY start_date DESC FETCH FIRST 1 ROW ONLY) rp CROSS JOIN (SELECT p.person_number FROM per_all_people_f p WHERE SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date AND REGEXP_LIKE(p.person_number,'^[0-9]+$') ORDER BY p.person_id ASC FETCH FIRST 1 ROW ONLY) sub",
+      "bind": {
+        "REVIEW_PERIOD": "REVIEW_PERIOD",
+        "RP_START": "RP_START",
+        "RP_END": "RP_END",
+        "SUBMITTER_PN": "SUBMITTER_PN",
+        "RUN_DATE": "RUN_DATE"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PREFIX} DMT Goal Plan A", "${PREFIX} DMT Goal Plan B"],
+    "bad_keys": ["${PREFIX} DMT Goal Plan BAD"],
+    "bad_error_contains": "DMT_INVALID_TYPE",
+    "base_read": {
+      "_comment": "Good goal plans reach base table HRG_GOAL_PLANS_B; the name lives in HRG_GOAL_PLANS_TL (US). Read by prefix on the goal plan name — unambiguous, no existing plan name starts with a numeric run prefix. GOAL_PLAN_ID present = created in base. The bad row (invalid GoalPlanTypeCode) never reaches base, so its name returns no row.",
+      "sql": "SELECT tl.goal_plan_name AS GP_NAME, gp.goal_plan_id AS GOAL_PLAN_ID, gp.goal_plan_type_code AS TYP FROM hrg_goal_plans_b gp JOIN hrg_goal_plans_tl tl ON tl.goal_plan_id=gp.goal_plan_id AND tl.language='US' WHERE tl.goal_plan_name LIKE '${PREFIX}%'",
+      "cols": ["GP_NAME", "GOAL_PLAN_ID", "TYP"],
+      "key_col": "GP_NAME",
+      "id_col": "GOAL_PLAN_ID"
+    }
+  }
+}

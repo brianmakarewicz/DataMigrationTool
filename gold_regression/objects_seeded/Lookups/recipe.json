@@ -1,0 +1,83 @@
+{
+  "type": "FSM_CSV_IMPORT",
+  "version": "v2-seeded",
+  "conversion_note": "v2 seeded conversion of v1 objects/Lookups. Nothing to convert: v1 already had discovery=[] and carried NO ${TOKEN} references — a Standard Lookup type is standalone reference data that borrows nothing upstream. The only run-time-derived value, ModuleId for the FND application (40B3FA7250D19380E040449823C67A1A), was already a hard-coded seeded literal in the v1 template (the seeded FND module present on every demo pod), not discovered. The single templated token is ${PREFIX} on the lookup type code (RT_GOLD_${PREFIX} / RT_NO_SUCH_TYPE_${PREFIX}) and stays exactly as in v1. Therefore objects_seeded/Lookups is a byte-identical copy of objects/Lookups.",
+  "status": "PASS",
+  "proven": "v2 seeded LIVE-PROVEN 2026-07-20, prefix 60416, import ProcessId 100007867616132 / ESS request 9766463 (fin_impl). Good lookup type RT_GOLD_60416 + codes G1,G2 reached FND_LOOKUP_TYPES_VL / FND_LOOKUP_VALUES_VL (over base _B/_TL). Bad code BAD1 (parent RT_NO_SUCH_TYPE_60416) rejected by the importer ('Parent row is missing in file FND_APP_STANDARD_LOOKUP.csv for row 3 in file ORA_FND_APP_STANDARD_LOOKUP_CODE.csv. Row will be skipped') and absent from base. (v1 baseline: prefix 90777, ProcessId 100007866630904 / ESS 9765415.)",
+  "mechanism_note": "Lookups was previously TABLED as UI-only. That was wrong: the FSM 'Setup Data Import from CSV file' REST path DOES support it. GET setupTaskCSVImports/FND_MANAGE_STANDARD_LOOKUPS returns ImportSupportedFlag=true, and (unlike GLCalendar) Standard Lookups is a PLAIN FLAT-CSV object, not 'External Loading' - the import ProcessLog reports 'Total Objects for External Loading: 0' and the CSVs load directly through the LookupWS service. This is the same non-UI mechanism GLCalendar found and UnitsOfMeasure proved; driven by harness/load_fsm_csv.py.",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "task_code": "FND_MANAGE_STANDARD_LOOKUPS",
+  "rest_import_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports",
+  "rest_export_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVExports",
+  "content_type": "application/vnd.oracle.adf.resourceitem+json",
+  "import_body_template": {
+    "TaskCode": "FND_MANAGE_STANDARD_LOOKUPS",
+    "SetupTaskCSVImportProcess": [
+      { "TaskCode": "FND_MANAGE_STANDARD_LOOKUPS", "FileContent": "<BASE64_ZIP>", "SourceTargetDiffOkFlag": true }
+    ]
+  },
+  "poll": {
+    "get": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports/FND_MANAGE_STANDARD_LOOKUPS/child/SetupTaskCSVImportProcess/${PROCESS_ID}",
+    "completed_flag": "ProcessCompletedFlag",
+    "log_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessLog",
+    "results_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessResultsReport"
+  },
+  "package_layout": {
+    "outer_zip": "Lookups_gold.zip",
+    "note": "Three files at the ROOT of the zip (NOT nested in a batch subzip - this is a flat-CSV object). Learned by exporting the live task (setupTaskCSVExports, ProcessType flipped EXPORT->IMPORT in the manifest).",
+    "members": [
+      "FND_APP_STANDARD_LOOKUP.csv (the lookup TYPES)",
+      "ORA_FND_APP_STANDARD_LOOKUP_CODE.csv (the lookup CODES; first column is parent-qualified 'FND_APP_STANDARD_LOOKUP.LookupType')",
+      "ASM_SETUP_CSV_METADATA.xml (real, exported live from esew-dev28; ProcessType EXPORT->IMPORT)"
+    ],
+    "csv_format": "COMMA-delimited, every field DOUBLE-QUOTED, CRLF line ends, header row present. Dates 'YYYY/MM/DD HH24:MI:SS.FF'. (NOTE: this supersedes the earlier UI-doc assumption of pipe-delimited unquoted files.)"
+  },
+  "business_objects": [
+    {
+      "code": "FND_APP_STANDARD_LOOKUP",
+      "role": "lookup type header (FND_LOOKUP_TYPES_B/_TL)",
+      "csv": "FND_APP_STANDARD_LOOKUP.csv",
+      "node_path": "/StandardLookupType1VO/StandardLookupType1VORow",
+      "service": "oracle.apps.fnd.applcore.lookups.webservice.LookupWS",
+      "columns_in_order": "LookupType,Meaning,Description,CreatedBy,CreationDate,LastUpdatedBy,LastUpdateDate,LastUpdateLogin,ModuleId,CustomizationLevel,RestAccessSecured,BossAppPackageName,BossAppPackageVersion,BossModuleName,BossIdentifier",
+      "min_required": "LookupType, Meaning, ModuleId (40B3FA7250D19380E040449823C67A1A = the FND application on this pod, read from the live export), CustomizationLevel (U), RestAccessSecured (SECURE)"
+    },
+    {
+      "code": "ORA_FND_APP_STANDARD_LOOKUP_CODE",
+      "role": "lookup codes (FND_LOOKUP_VALUES_B/_TL), child of the type",
+      "csv": "ORA_FND_APP_STANDARD_LOOKUP_CODE.csv",
+      "node_path": "/StandardLookupType1VO/StandardLookupType1VORow/Lookup1VO/Lookup1VORow",
+      "columns_in_order": "FND_APP_STANDARD_LOOKUP.LookupType,LookupCode,Meaning,Description,EnabledFlag,StartDateActive,EndDateActive,DisplaySequence,CreatedBy,CreationDate,LastUpdatedBy,LastUpdateDate,LastUpdateLogin,Tag",
+      "note": "First column is the parent-qualified key 'FND_APP_STANDARD_LOOKUP.LookupType' - it links each code to its type. A code whose parent LookupType is not in the type CSV is skipped with 'Parent row is missing'."
+    }
+  ],
+  "discovery": [],
+  "good_bad_design": {
+    "good": "NEW lookup type RT_GOLD_${PREFIX} (meaning 'RT Gold Lookup ${PREFIX}') with two enabled codes G1, G2. Standalone reference data - no upstream dependency, no discovery (ModuleId for FND is read once from the live export).",
+    "bad": "A code row BAD1 whose parent LookupType = RT_NO_SUCH_TYPE_${PREFIX} is NOT present in the type CSV. The importer skips it ('Parent row is missing') so it never reaches FND_LOOKUP_VALUES - deterministic, pod-independent."
+  },
+  "verify": {
+    "cred_role": "fin_impl",
+    "note": "The BIP relay data source (ApplicationDB_FSCM) is not granted the _B tables directly (ORA-00942), but IS granted the translated views FND_LOOKUP_TYPES_VL / FND_LOOKUP_VALUES_VL (which sit over _B + _TL). Verify through the _VL views.",
+    "good_keys": ["RT_GOLD_${PREFIX}"],
+    "good_code_keys": ["G1", "G2"],
+    "bad_keys": ["RT_NO_SUCH_TYPE_${PREFIX}"],
+    "base_read_types": {
+      "sql": "SELECT lookup_type AS LOOKUP_TYPE FROM fnd_lookup_types_vl WHERE lookup_type = 'RT_GOLD_${PREFIX}'",
+      "cols": ["LOOKUP_TYPE"],
+      "key_col": "LOOKUP_TYPE"
+    },
+    "base_read_values": {
+      "sql": "SELECT lookup_type AS LOOKUP_TYPE, lookup_code AS LOOKUP_CODE FROM fnd_lookup_values_vl WHERE lookup_type = 'RT_GOLD_${PREFIX}' AND lookup_code IN ('G1','G2')",
+      "cols": ["LOOKUP_TYPE", "LOOKUP_CODE"],
+      "key_col": "LOOKUP_CODE"
+    },
+    "bad_absent_read": {
+      "sql": "SELECT lookup_type AS LOOKUP_TYPE, lookup_code AS LOOKUP_CODE FROM fnd_lookup_values_vl WHERE lookup_type = 'RT_NO_SUCH_TYPE_${PREFIX}'",
+      "cols": ["LOOKUP_TYPE", "LOOKUP_CODE"],
+      "key_col": "LOOKUP_CODE",
+      "expect": "zero rows (parent LookupType absent -> code skipped, never reaches base)"
+    }
+  }
+}

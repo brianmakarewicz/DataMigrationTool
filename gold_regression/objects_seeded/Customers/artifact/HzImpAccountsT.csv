@@ -1,0 +1,3 @@
+"${PREFIX}","LEG1","${PREFIX}RT-ACCT-G1","LEG1","${PREFIX}RT-CUST-G1","${PREFIX}G001","I","R","","${PREFIX} RT Customer Good-1","","","","","","","","","","","","","","","","","","","","","","",""
+"${PREFIX}","LEG1","${PREFIX}RT-ACCT-G2","LEG1","${PREFIX}RT-CUST-G2","${PREFIX}G002","I","R","","${PREFIX} RT Customer Good-2","","","","","","","","","","","","","","","","","","","","","","",""
+"${PREFIX}","LEG1","${PREFIX}RT-ACCT-BAD1","LEG1","${PREFIX}RT-CUST-BAD1","${PREFIX}BAD01","I","R","","${PREFIX} RT Customer Bad-1","","","","","","","","","","","","","","","","","","","","","","",""

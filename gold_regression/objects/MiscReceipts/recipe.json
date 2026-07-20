@@ -1,0 +1,55 @@
+{
+  "type": "FBDI",
+  "cred_role": "scm_impl",
+  "auth_user": "scm_impl",
+  "doc_account": "scm/inventoryTransaction/import",
+  "interface_details_id": 33,
+  "import_job_name_raw": "/oracle/apps/ess/scm/inventory/materialTransactions/txnManager;SingleTMEssJob",
+  "job_name": "/oracle/apps/ess/scm/inventory/materialTransactions/txnManager,SingleTMEssJob",
+  "parameter_list": "#NULL",
+  "downstream_jobs": [
+    {
+      "name": "ManageInventoryTransactions_PollTM",
+      "cred_role": "scm_impl",
+      "job_path": "/oracle/apps/ess/scm/inventory/materialTransactions/txnManager,PollTMEssJob",
+      "parameter_list": "#NULL"
+    }
+  ],
+  "filename": "MiscReceipts_gold.zip",
+  "csvs": [
+    { "template": "InvTransactionsInterface.csv", "fbdi_name": "InvTransactionsInterface.csv" }
+  ],
+  "discovery": [
+    {
+      "name": "INV_ORG_ITEM_SUBINV",
+      "role": "scm_impl",
+      "cols": ["ORG_NAME", "ORG_CODE", "ITEM_NUMBER", "SUBINV", "UOM_NAME", "LAST_MISC"],
+      "sql": "SELECT * FROM (SELECT hou.name AS ORG_NAME, p.organization_code AS ORG_CODE, e.item_number AS ITEM_NUMBER, sub.secondary_inventory_name AS SUBINV, u.unit_of_measure AS UOM_NAME, (SELECT MAX(t.transaction_date) FROM inv_material_txns t WHERE t.inventory_item_id = e.inventory_item_id AND t.organization_id = e.organization_id AND t.transaction_type_id = 42) AS LAST_MISC FROM egp_system_items_b e JOIN inv_org_parameters p ON p.organization_id = e.organization_id JOIN hr_organization_units_f_tl hou ON hou.organization_id = p.organization_id AND hou.language = USERENV('LANG') JOIN inv_units_of_measure_vl u ON u.uom_code = e.primary_uom_code JOIN inv_secondary_inventories sub ON sub.organization_id = e.organization_id AND sub.secondary_inventory_name = 'Stores' WHERE p.organization_id <> p.master_organization_id AND e.lot_control_code = 1 AND e.serial_number_control_code = 1 AND e.stock_enabled_flag = 'Y' AND e.mtl_transactions_enabled_flag = 'Y' AND e.inventory_asset_flag = 'Y' AND EXISTS (SELECT 1 FROM inv_material_txns t WHERE t.inventory_item_id = e.inventory_item_id AND t.organization_id = e.organization_id AND t.transaction_type_id = 42) ORDER BY (SELECT MAX(t.transaction_date) FROM inv_material_txns t WHERE t.inventory_item_id = e.inventory_item_id AND t.organization_id = e.organization_id AND t.transaction_type_id = 42) DESC, e.item_number) WHERE ROWNUM = 1",
+      "bind": {
+        "ORG_NAME": "ORG_NAME",
+        "ORG_CODE": "ORG_CODE",
+        "ITEM_NUMBER": "ITEM_NUMBER",
+        "SUBINV": "SUBINV",
+        "UOM_NAME": "UOM_NAME"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "scm_impl",
+    "good_keys": ["${PREFIX}RT-INVRCPT-G1", "${PREFIX}RT-INVRCPT-G2"],
+    "bad_keys": ["${PREFIX}RT-INVRCPT-BAD1"],
+    "base_read": {
+      "sql": "SELECT transaction_reference AS TRANSACTION_REFERENCE, transaction_id AS TRANSACTION_ID, transaction_quantity AS TRANSACTION_QUANTITY FROM inv_material_txns WHERE source_code = 'DMT' AND transaction_reference LIKE :PREFIX || 'RT-INVRCPT-%'",
+      "cols": ["TRANSACTION_REFERENCE", "TRANSACTION_ID", "TRANSACTION_QUANTITY"],
+      "key_col": "TRANSACTION_REFERENCE",
+      "id_col": "TRANSACTION_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT transaction_reference AS TRANSACTION_REFERENCE, transaction_interface_id AS TRANSACTION_INTERFACE_ID, error_code AS ERROR_MESSAGE, process_flag AS PROCESS_FLAG FROM inv_transactions_interface WHERE load_request_id = :LRID AND transaction_reference LIKE :PREFIX || 'RT-INVRCPT-%'",
+      "cols": ["TRANSACTION_REFERENCE", "TRANSACTION_INTERFACE_ID", "ERROR_MESSAGE", "PROCESS_FLAG"],
+      "key_col": "TRANSACTION_REFERENCE",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}

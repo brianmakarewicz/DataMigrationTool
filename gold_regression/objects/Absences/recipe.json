@@ -1,0 +1,36 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "Absences_gold.zip",
+  "dat": { "template": "PersonAbsenceEntry.dat", "archive_name": "PersonAbsenceEntry.dat" },
+  "discovery": [
+    {
+      "name": "US_EMPLOYER_AND_ELIGIBLE_PERSONS",
+      "role": "hcm_impl",
+      "cols": ["EMPLOYER", "PNUM1", "PNUM2", "PNUM3"],
+      "sql": "SELECT le.name AS EMPLOYER, MAX(CASE WHEN c.rn=1 THEN c.person_number END) AS PNUM1, MAX(CASE WHEN c.rn=2 THEN c.person_number END) AS PNUM2, MAX(CASE WHEN c.rn=3 THEN c.person_number END) AS PNUM3 FROM (SELECT otl.name FROM hr_org_unit_classifications_f cl JOIN hr_organization_units_f_tl otl ON cl.organization_id=otl.organization_id AND otl.language='US' WHERE cl.classification_code='HCM_LEMP' AND otl.name='US1 Legal Entity' AND SYSDATE BETWEEN cl.effective_start_date AND cl.effective_end_date AND ROWNUM=1) le CROSS JOIN (SELECT p.person_number, ROW_NUMBER() OVER (ORDER BY a.assignment_id) rn FROM per_all_assignments_m a JOIN per_all_people_f p ON p.person_id=a.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date JOIN pay_pay_relationships_dn pr ON pr.person_id=a.person_id AND pr.legislative_data_group_id=300000046974970 WHERE a.legal_entity_id=300000046974965 AND a.effective_latest_change='Y' AND SYSDATE BETWEEN a.effective_start_date AND a.effective_end_date AND a.assignment_type='E' AND a.primary_flag='Y' AND REGEXP_LIKE(p.person_number,'^[0-9]+$') AND NOT EXISTS (SELECT 1 FROM anc_per_abs_entries e WHERE e.person_id=p.person_id AND e.absence_type_id=300000071752546 AND e.start_date=DATE '2026-08-03')) c WHERE c.rn<=3 GROUP BY le.name",
+      "bind": {
+        "EMPLOYER": "EMPLOYER",
+        "PNUM1": "PNUM1",
+        "PNUM2": "PNUM2",
+        "PNUM3": "PNUM3"
+      },
+      "required": true
+    }
+  ],
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["${PNUM1}", "${PNUM2}"],
+    "bad_keys": ["${PREFIX}DMTABS-BAD"],
+    "bad_error_contains": "absence type",
+    "base_read": {
+      "_comment": "Good proof: a Vacation (absence_type_id 300000071752546) entry in the base table ANC_PER_ABS_ENTRIES with start_date 2026-08-03 for the discovered persons this run. Keyed by person_number. Bad person (PNUM3) got an invalid absence type so no base entry exists for it -> proves absence.",
+      "sql": "SELECT p.person_number AS PNUM, TO_CHAR(MAX(e.per_absence_entry_id)) AS EID, TO_CHAR(MAX(e.duration)) AS DUR FROM anc_per_abs_entries e JOIN per_all_people_f p ON p.person_id=e.person_id AND SYSDATE BETWEEN p.effective_start_date AND p.effective_end_date WHERE e.absence_type_id=300000071752546 AND e.start_date=DATE '2026-08-03' AND p.person_number IN ('${PNUM1}','${PNUM2}','${PNUM3}') GROUP BY p.person_number",
+      "cols": ["PNUM", "EID", "DUR"],
+      "key_col": "PNUM",
+      "id_col": "EID"
+    }
+  }
+}

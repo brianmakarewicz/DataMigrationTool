@@ -1,0 +1,78 @@
+{
+  "type": "FSM_CSV_IMPORT",
+  "status": "TABLED",
+  "tabled_reason": "A non-UI standalone load path EXISTS and is reachable (REST setupTaskCSVImports, TaskCode GL_MANAGE_ACCOUNTING_CALENDARS, ImportSupportedFlag=true, fin_impl authorized) - unlike Lookups which had NO web-service path at all. BUT the import payload for this task is an 'External Loading' FSM configuration-package batch (a nested XML batch through the SOA CalendarsService), NOT the simple flat-CSV format that setupTaskCSVImports validates directly. Every batch we constructed (flat CSV named per business object, and nested CalendarVO/PeriodVO XML) is silently skipped by the importer with 'The import process skipped the Accounting Calendar business object because all the related CSV files are missing or empty' (import Completed successfully, 0 objects loaded). We cannot obtain a valid reference batch to mimic the exact shape because on this pod the export of the Accounting Calendar object always produces a single GL_CALENDAR.xml of 13.24 MB (191 pre-existing calendars) which exceeds the FSM 10 MB per-file export limit and is never emitted (the export FileContent zip contains only ASM_SETUP_CSV_METADATA.xml, never the batch), and scope criteria (BusinessObjectCode/AttributeName/AttributeValue) are ignored. So the mechanism is proven reachable but the exact batch payload is unverifiable on this pod; nothing reached GL_PERIOD_SETS/GL_CALENDARS/GL_PERIODS.",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "task_code": "GL_MANAGE_ACCOUNTING_CALENDARS",
+  "rest_import_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports",
+  "rest_export_resource": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVExports",
+  "content_type": "application/vnd.oracle.adf.resourceitem+json",
+  "import_body_template": {
+    "TaskCode": "GL_MANAGE_ACCOUNTING_CALENDARS",
+    "SetupTaskCSVImportProcess": [
+      { "TaskCode": "GL_MANAGE_ACCOUNTING_CALENDARS", "FileContent": "<BASE64_ZIP>", "SourceTargetDiffOkFlag": true }
+    ]
+  },
+  "poll": {
+    "get": "/fscmRestApi/resources/11.13.18.05/setupTaskCSVImports/GL_MANAGE_ACCOUNTING_CALENDARS/child/SetupTaskCSVImportProcess/${PROCESS_ID}",
+    "completed_flag": "ProcessCompletedFlag",
+    "log_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessLog",
+    "results_enclosure": "/child/SetupTaskCSVImportProcessResult/${PROCESS_ID}/enclosure/ProcessResultsReport"
+  },
+  "package_layout": {
+    "outer_zip": "GLCalendar_gold.zip",
+    "members": [
+      "ASM_SETUP_CSV_METADATA.xml (real, exported live from esew-dev28; ProcessType flipped EXPORT->IMPORT)",
+      "Calendar/1_BATCH.zip -> { GL_PERIOD_SET.csv, GL_PERIOD_DEF.csv }"
+    ],
+    "note": "This is our best-known layout. The importer still reports the CSVs as missing/empty, so the exact batch member naming/shape the CalendarsService expects for External-Loading objects is NOT confirmed. Do NOT treat this zip as proven."
+  },
+  "business_objects": [
+    {
+      "code": "GL_PERIOD_SET",
+      "role": "calendar header (GL_PERIOD_SETS / GL_CALENDARS)",
+      "node_path": "/CalendarVO/CalendarVORow",
+      "service": "oracle.apps.financials.generalLedger.calendars.accounting.calendarsService.CalendarsService",
+      "columns_in_order": "UserPeriodSetName,PeriodSetName,Description,SecurityFlag,AdjPeriodsNum,NonAdjPeriodsNum,LatestYearStartDate,CalendarStartDate,CalendarTypeCode,LegacyCalendarFlag,Attribute1..5,CreationDate,CreatedBy,LastUpdateDate,LastUpdateLogin,LastUpdatedBy,NonAdjPeriodFreqCode,AdjPeriodFreqCode,LegacyRulesEnabledFlag,PeriodNameFormatCode,PeriodNameSeparatorCode,ReferencedByLedger,TotalPeriodsNum,CalendarFlowType,AttributeCategory,SamplePeriodName,UserPeriodNamePrefix"
+    },
+    {
+      "code": "GL_PERIOD_DEF",
+      "role": "periods (GL_PERIODS), child of the calendar",
+      "node_path": "/CalendarVO/CalendarVORow/Period/PeriodVORow",
+      "columns_in_order": "PeriodName,PeriodSetName,LastUpdateDate,LastUpdatedBy,StartDate,EndDate,YearStartDate,QuarterStartDate,PeriodYear,PeriodNum,QuarterNum,EnteredPeriodName,AdjustmentPeriodFlag,CreationDate,CreatedBy,LastUpdateLogin,Description,Attribute1..8,ConfirmationStatus,PeriodStatus,RequiredPrevPrdNum,RqrdPrevNonAdjEndDate,CurrentPeriodYear,AttributeCategory,FiscalYear,GlobalAttribute*"
+    }
+  ],
+  "discovery": [],
+  "good_bad_design": {
+    "good": "NEW monthly calendar period-set RTG${PREFIX} (user name 'RT Gold Cal ${PREFIX}') with 12 non-adjusting monthly periods for fiscal year 2035 (a far-future year so it never collides with pod ledgers). Standalone setup data - no upstream dependency, no discovery required (a calendar borrows nothing).",
+    "bad": "NEW period-set RTB${PREFIX} present in GL_PERIOD_SET.csv but with ZERO period rows in GL_PERIOD_DEF.csv. A calendar with no periods is rejected deterministically (a period set must have its full non-adjusting period count) and cannot reach the base tables - pod-independent, needs no bad reference data.",
+    "prefix_far_future_year": 2035
+  },
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["RTG${PREFIX}"],
+    "bad_keys": ["RTB${PREFIX}"],
+    "base_read_calendar": {
+      "sql": "SELECT user_period_set_name AS UPN, period_set_name AS PSN FROM gl_calendars WHERE period_set_name = 'RTG${PREFIX}'",
+      "cols": ["UPN", "PSN"],
+      "key_col": "PSN"
+    },
+    "base_read_periodset": {
+      "sql": "SELECT period_set_name AS PSN, description AS DSC FROM gl_period_sets WHERE period_set_name = 'RTG${PREFIX}'",
+      "cols": ["PSN", "DSC"],
+      "key_col": "PSN"
+    },
+    "base_read_periods": {
+      "sql": "SELECT period_set_name AS PSN, period_name AS PN, TO_CHAR(start_date,'YYYY/MM/DD') AS SD, TO_CHAR(end_date,'YYYY/MM/DD') AS ED FROM gl_periods WHERE period_set_name = 'RTG${PREFIX}' ORDER BY period_num",
+      "cols": ["PSN", "PN", "SD", "ED"],
+      "key_col": "PN"
+    },
+    "bad_absent_read": {
+      "sql": "SELECT period_set_name AS PSN FROM gl_period_sets WHERE period_set_name = 'RTB${PREFIX}'",
+      "cols": ["PSN"],
+      "key_col": "PSN",
+      "expect": "zero rows (period set with no periods rejected, never reaches base)"
+    }
+  }
+}

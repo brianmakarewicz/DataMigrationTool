@@ -1,0 +1,20 @@
+{
+  "type": "HDL",
+  "cred_role": "hcm_impl",
+  "auth_user": "hcm_impl",
+  "ucm_account": "hcm$/dataloader$/import$",
+  "filename": "TalentProfiles_gold.zip",
+  "dat": { "template": "TalentProfile.dat", "archive_name": "TalentProfile.dat" },
+  "verify": {
+    "cred_role": "hcm_impl",
+    "good_keys": ["DMTTP-SEED-1", "DMTTP-SEED-2"],
+    "bad_keys": ["${PREFIX}DMTTP-BAD"],
+    "bad_error_contains": "ContentItemId",
+    "base_read": {
+      "sql": "SELECT km.source_system_id AS SSID, TO_CHAR(pi.profile_item_id) AS PROFILE_ITEM_ID FROM hrt_profile_items pi JOIN hrc_integration_key_map km ON km.surrogate_id=pi.profile_item_id AND km.source_system_owner='HRC_SQLLOADER' WHERE km.source_system_id LIKE 'DMTTP-SEED-%'",
+      "cols": ["SSID", "PROFILE_ITEM_ID"],
+      "key_col": "SSID",
+      "id_col": "PROFILE_ITEM_ID"
+    }
+  }
+}

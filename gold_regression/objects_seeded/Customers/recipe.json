@@ -1,0 +1,37 @@
+{
+  "type": "FBDI",
+  "cred_role": "fin_impl",
+  "auth_user": "fin_impl",
+  "doc_account": "fin/receivables/import",
+  "interface_details_id": 4,
+  "import_job_name_raw": "/oracle/apps/ess/cdm/foundation/bulkImport;CDMAutoBulkImportJob",
+  "job_name": "/oracle/apps/ess/cdm/foundation/bulkImport,CDMAutoBulkImportJob",
+  "parameter_list": "${PREFIX},Batch ID ${PREFIX} LEG1,CUSTOMER,LEG1",
+  "filename": "Customers_gold.zip",
+  "csvs": [
+    { "template": "HzImpPartiesT.csv",       "fbdi_name": "HzImpPartiesT.csv" },
+    { "template": "HzImpLocationsT.csv",      "fbdi_name": "HzImpLocationsT.csv" },
+    { "template": "HzImpPartySitesT.csv",     "fbdi_name": "HzImpPartySitesT.csv" },
+    { "template": "HzImpPartySiteUsesT.csv",  "fbdi_name": "HzImpPartySiteUsesT.csv" },
+    { "template": "HzImpAccountsT.csv",       "fbdi_name": "HzImpAccountsT.csv" },
+    { "template": "HzImpAcctSitesT.csv",      "fbdi_name": "HzImpAcctSitesT.csv" },
+    { "template": "HzImpAcctSiteUsesT.csv",   "fbdi_name": "HzImpAcctSiteUsesT.csv" }
+  ],
+  "verify": {
+    "cred_role": "fin_impl",
+    "good_keys": ["${PREFIX}G001", "${PREFIX}G002"],
+    "bad_keys": ["${PREFIX}BAD01"],
+    "base_read": {
+      "sql": "SELECT account_number AS ACCOUNT_NUMBER, cust_account_id AS CUST_ACCOUNT_ID FROM hz_cust_accounts WHERE account_number LIKE :PREFIX || '%'",
+      "cols": ["ACCOUNT_NUMBER", "CUST_ACCOUNT_ID"],
+      "key_col": "ACCOUNT_NUMBER",
+      "id_col": "CUST_ACCOUNT_ID"
+    },
+    "interface_read": {
+      "sql": "SELECT a.account_number AS ACCOUNT_NUMBER, (SELECT LISTAGG(e.message_name, '; ') WITHIN GROUP (ORDER BY e.error_seq_id) FROM hz_imp_errors e WHERE e.batch_id = :PREFIX AND e.interface_table_name IN ('HZ_IMP_PARTIES_T','HZ_IMP_ACCOUNTS_T')) AS ERROR_MESSAGE FROM hz_imp_accounts_t a WHERE a.batch_id = :PREFIX AND a.account_number LIKE :PREFIX || 'BAD%'",
+      "cols": ["ACCOUNT_NUMBER", "ERROR_MESSAGE"],
+      "key_col": "ACCOUNT_NUMBER",
+      "error_col": "ERROR_MESSAGE"
+    }
+  }
+}
