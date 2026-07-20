@@ -36,9 +36,15 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_OBJECT_FUNNEL_V"
      "GENERATED", "LOADED", "LOAD_FAILED", "IN_PROGRESS", "UNRECONCILED",
      "PIPELINE_CODES", "SCENARIO_NAME", "PREFIX", "SUBMITTED_DATE", "COMPLETED_DATE", "RUN_STATUS") AS
   WITH reached_tfm AS (
-    -- the set of source records that reached TFM this run (one row per TFM record)
+    -- the set of source records that reached TFM this run (one row per TFM record).
+    -- DMT_RECORD_DETAIL_V now also carries a pre-transform-failure lane whose rows
+    -- did NOT reach TFM (TFM_SEQUENCE_ID IS NULL); exclude them here so this CTE keeps
+    -- meaning "rows that actually reached a TFM table" — otherwise the err anti-join
+    -- below would treat every pre-validation failure as already-in-TFM and drop it,
+    -- making 100%-pre-validation-failed objects vanish from the funnel entirely.
     SELECT DISTINCT RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID
     FROM   DMT_RECORD_DETAIL_V
+    WHERE  TFM_SEQUENCE_ID IS NOT NULL
   ),
   err AS (
     -- distinct records that failed at each pre-TFM stage AND did not reach TFM
