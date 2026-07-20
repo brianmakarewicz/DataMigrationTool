@@ -602,9 +602,12 @@
               AND TFM_STATUS = 'LOADED'
               AND FUSION_PERSON_ID IS NULL;
 
-        -- Assignment cursor: LOADED rows with NULL FUSION_ASSIGNMENT_ID
+        -- Assignment cursor: LOADED rows with NULL FUSION_ASSIGNMENT_ID.
+        -- ASSIGNMENT_NUMBER is carried so each row can be matched to its OWN
+        -- assignment in the worker's assignments child (a person may have
+        -- more than one assignment), instead of blindly taking assignments[0].
         CURSOR c_assignments IS
-            SELECT TFM_SEQUENCE_ID, PERSON_NUMBER
+            SELECT TFM_SEQUENCE_ID, PERSON_NUMBER, ASSIGNMENT_NUMBER
             FROM DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL
             WHERE RUN_ID = p_run_id
               AND TFM_STATUS = 'LOADED'
@@ -826,6 +829,17 @@
             FOR r IN c_assignments LOOP
                 l_total := l_total + 1;
                 BEGIN
+                    -- Expand the worker's assignments child and ask for both
+                    -- AssignmentNumber and AssignmentId so we can match this
+                    -- TFM row to its OWN assignment by number. A person may
+                    -- have several assignments; taking assignments[0] would
+                    -- give every one of that person's rows the first
+                    -- assignment's id (the classic multi-assignment bug).
+                    -- expand=assignments returns the full assignments child,
+                    -- which includes AssignmentNumber and AssignmentId. We do
+                    -- not narrow the child fields (nested field selectors are
+                    -- fragile across Fusion releases); the top-level worker is
+                    -- trimmed to PersonId only.
                     l_url := l_base_url ||
                              '?q=PersonNumber=' || UTL_URL.ESCAPE(r.PERSON_NUMBER, TRUE) ||
                              '&fields=PersonId&expand=assignments&onlyData=true';
@@ -835,9 +849,33 @@
                         p_method         => 'GET',
                         p_run_id => p_run_id);
 
-                    -- Parse AssignmentId from the first assignment child
-                    l_asgn_id := TO_NUMBER(
-                        JSON_VALUE(l_response, '$.items[0].assignments[0].AssignmentId'));
+                    -- The generator emits the assignment's AssignmentNumber as
+                    -- the RAW source value (DMT_ASSIGNMENT_HDL_GEN_PKG uses
+                    -- pv(ASSIGNMENT_NUMBER), no run prefix), and the transform
+                    -- stores it raw in DMT_ASSIGNMENT_TFM_TBL.ASSIGNMENT_NUMBER.
+                    -- So Fusion holds the same raw number this TFM row carries
+                    -- and we match raw-to-raw. Structured JSON parsing only:
+                    -- pull every assignment (number + id) and pick the one whose
+                    -- number equals this row's. No offset/string arithmetic.
+                    l_asgn_id := NULL;
+
+                    BEGIN
+                        SELECT TO_NUMBER(jt.assignment_id)
+                        INTO   l_asgn_id
+                        FROM   JSON_TABLE(
+                                   l_response,
+                                   '$.items[0].assignments[*]'
+                                   COLUMNS (
+                                       assignment_number VARCHAR2(120) PATH '$.AssignmentNumber',
+                                       assignment_id     VARCHAR2(40)  PATH '$.AssignmentId'
+                                   )
+                               ) jt
+                        WHERE  jt.assignment_number = r.ASSIGNMENT_NUMBER
+                          AND  ROWNUM = 1;
+                    EXCEPTION
+                        WHEN NO_DATA_FOUND THEN
+                            l_asgn_id := NULL;
+                    END;
 
                     IF l_asgn_id IS NOT NULL THEN
                         UPDATE DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL
@@ -846,9 +884,13 @@
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;
                     ELSE
+                        -- No assignment in the response carried this row's
+                        -- number. Leave FUSION_ASSIGNMENT_ID null (unconfirmed)
+                        -- and log honestly. Never fall back to assignments[0].
                         DMT_UTIL_PKG.LOG(p_run_id,
-                            'AssignmentId not found for PersonNumber: ' || r.PERSON_NUMBER ||
-                            ' | Response empty or no assignments child.',
+                            'AssignmentId not confirmed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' AssignmentNumber: ' || r.ASSIGNMENT_NUMBER ||
+                            ' | No assignment with that number in the worker response.',
                             DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
                     END IF;
 
