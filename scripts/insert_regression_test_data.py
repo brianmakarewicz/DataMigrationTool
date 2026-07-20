@@ -1393,24 +1393,25 @@ def main():
     #     BAD:  1 for non-existent project [BAD-UPS]
     # ====================================================================
     print("\n=== 27. Expenditures ===")
-    # Import Project Costs (ImportProcessParallelEssJob) resolves the transaction
-    # SOURCE + DOCUMENT + DOCUMENT ENTRY to their internal ids inside a one-stop
-    # PL/SQL routine. If USER_TRANSACTION_SOURCE is null/unmatched that routine
-    # cannot resolve the source and dies with:
-    #   ORA-06502: PL/SQL: numeric or value error: character to number conversion
-    # The row then sits in PJC_TXN_XFACE_STAGE_ALL at status 'P' (pending, NOT
-    # success) and never posts to PJC_EXP_ITEMS_ALL. Confirmed from run 168's
-    # import ESS log (request 9750753) 2026-07-17.
+    # The proven-good expenditure is a LABOR row, mirroring run 116
+    # (Expenditures_116.zip) — the CSV Fusion actually costed into
+    # PJC_EXP_ITEMS_ALL. A LABOR row is a 105-field CSV with NO
+    # NON_LABOR_RESOURCE columns (those four appear only on the 107-field
+    # NONLABOR layout); the FBDI generator emits the two layouts by the
+    # LABOR/NONLABOR discriminator, so a LABOR fixture exercises the LABOR
+    # branch end to end.
     #
-    # Correct import-enabled third-party non-labor source on this instance
-    # (verified live 2026-07-17 via pjf_txn_sources_vl / pjf_txn_document_vl /
-    # pjf_txn_doc_entry_vl):
-    #   USER_TRANSACTION_SOURCE = 'External Miscellaneous' (src id 300000049907116)
-    #   DOCUMENT_NAME           = 'Miscellaneous'          (doc id 300000049907117)
-    #   DOC_ENTRY_NAME          = 'Miscellaneous'          (entry id 300000049907118,
-    #                                                        system linkage 'PJ')
-    # System linkage 'PJ' is a miscellaneous cost, so NONLABOR with no person and
-    # no non-labor resource is valid.
+    # Import Project Costs still needs each row to name a transaction SOURCE +
+    # DOCUMENT + DOCUMENT ENTRY, or the row sits in PJC_TXN_XFACE_STAGE_ALL at
+    # status 'P' (pending, NOT success) and never posts. For labor the valid
+    # trio is the Time Card / Straight Time document (system linkage 'ST'),
+    # which pairs with a person and an hours quantity (README Option A):
+    #   USER_TRANSACTION_SOURCE = 'Time Card'
+    #   DOCUMENT_NAME           = 'Time Card'
+    #   DOC_ENTRY_NAME          = 'Straight Time'  (system linkage 'ST')
+    #   PERSON_NUMBER           = '7'   (a real Fusion EMP, per run 116)
+    #   EXPENDITURE_TYPE        = 'Administrative' (proven good in run 116)
+    #   QUANTITY                = hours
     for proj_num, task_num, qty, amount in [
         ("RTPRJ001", "RTPRJ001.1", 8,  1500.00),
         ("RTPRJ002", "RTPRJ002.1", 16, 2500.00),
@@ -1420,43 +1421,47 @@ def main():
                 TRANSACTION_TYPE, BUSINESS_UNIT,
                 PROJECT_NUMBER, TASK_NUMBER,
                 EXPENDITURE_TYPE, EXPENDITURE_ITEM_DATE,
-                ORGANIZATION_NAME, QUANTITY,
+                ORGANIZATION_NAME, QUANTITY, PERSON_NUMBER,
                 DENOM_CURRENCY_CODE, DENOM_RAW_COST,
                 USER_TRANSACTION_SOURCE, DOCUMENT_NAME, DOC_ENTRY_NAME,
                 ORIG_TRANSACTION_REFERENCE, SOURCE_ID
             ) VALUES (
-                'NONLABOR', :bu,
+                'LABOR', :bu,
                 :pnum, :tnum,
-                'Miscellaneous', DATE '2025-06-15',
-                :bu, :qty,
+                'Administrative', DATE '2025-06-15',
+                :bu, :qty, '7',
                 'USD', :amt,
-                'External Miscellaneous', 'Miscellaneous', 'Miscellaneous',
+                'Time Card', 'Time Card', 'Straight Time',
                 :ref, :src
             )
         """, {"bu": BU, "pnum": proj_num, "tnum": task_num,
               "qty": qty, "amt": amount,
               "ref": f"RT-EXP-{proj_num}", "src": f"RT-EXP-{proj_num}"},
-        label=f"GOOD Expenditure: {proj_num}/{task_num}")
+        label=f"GOOD Expenditure (LABOR): {proj_num}/{task_num}")
 
+    # BAD: a LABOR row that fails for a real, attributable reason — an
+    # EXPENDITURE_TYPE that is not a valid Fusion lookup ('BadValue'). It still
+    # carries a valid document trio and person so the rejection is attributed to
+    # the bad expenditure type, not to a missing document.
     run_sql(cur, """
         INSERT INTO DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL (
             TRANSACTION_TYPE, BUSINESS_UNIT,
             PROJECT_NUMBER, TASK_NUMBER,
             EXPENDITURE_TYPE, EXPENDITURE_ITEM_DATE,
-            ORGANIZATION_NAME, QUANTITY,
+            ORGANIZATION_NAME, QUANTITY, PERSON_NUMBER,
             DENOM_CURRENCY_CODE, DENOM_RAW_COST,
             USER_TRANSACTION_SOURCE, DOCUMENT_NAME, DOC_ENTRY_NAME,
             ORIG_TRANSACTION_REFERENCE, SOURCE_ID
         ) VALUES (
-            'NONLABOR', :bu,
+            'LABOR', :bu,
             'RTPRJ001', 'RTPRJ001.1',
             'BadValue', DATE '2025-06-15',
-            :bu, 8,
+            :bu, 8, '7',
             'USD', 999.99,
-            'External Miscellaneous', 'Miscellaneous', 'Miscellaneous',
+            'Time Card', 'Time Card', 'Straight Time',
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
-    """, {"bu": BU}, label="BAD Expenditure: invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
+    """, {"bu": BU}, label="BAD Expenditure (LABOR): invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
     tag_scenario(cur, "DMT_PJC_EXPENDITURES_STG_TBL", scenario_id)
 
     # ====================================================================
