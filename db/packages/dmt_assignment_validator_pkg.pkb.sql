@@ -51,23 +51,39 @@ AS
                                   );
     END FLAG_STG_FAILED;
 
+    -- --------------------------------------------------------
+    -- VALIDATE_PRE_TRANSFORM
+    --   R1  ASSIGNMENT_NUMBER must be present. The assignment number is the
+    --       HDL business key (SourceSystemId <AssignmentNumber>_ASG and the
+    --       AssignmentNumber attribute). It is provided by source and never
+    --       fabricated, so a blank one is a hard rejection — not a value the
+    --       generator invents from the person.
+    -- --------------------------------------------------------
     PROCEDURE VALIDATE_PRE_TRANSFORM (
         p_run_id IN NUMBER
     )
     IS
+        l_bad PLS_INTEGER;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => 'VALIDATE_PRE_TRANSFORM start. (stub — no rules)',
+            p_message        => 'VALIDATE_PRE_TRANSFORM start.',
             p_package        => C_PKG,
             p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 
-        -- No pre-transform validations implemented yet.
-        NULL;
+        -- R1: assignment number required (business key — not fabricated).
+        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'Assignments', 'Assignments', a.STG_SEQUENCE_ID,
+               '[PRE_VALIDATION] ASSIGNMENT_NUMBER is required.'
+        FROM   DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+        WHERE  a.STG_STATUS = 'NEW'
+        AND    a.ASSIGNMENT_NUMBER IS NULL;
+        l_bad := SQL%ROWCOUNT;
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => 'VALIDATE_PRE_TRANSFORM complete. (stub — no rules)',
+            p_message        => 'VALIDATE_PRE_TRANSFORM complete. Rows tagged FAILED: ' || l_bad,
             p_package        => C_PKG,
             p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 

@@ -52,6 +52,10 @@ AS
     --       PersonNumber; a worker with no number cannot be loaded).
     --   R2  ACTION_CODE must be one of the supported new-hire actions
     --       (HIRE, ADD_CWK) -- an unknown action fails the HDL load.
+    --   R3  A valid worker must have at least one Assignment source row with a
+    --       real ASSIGNMENT_NUMBER (joined by PERSON_NUMBER). The Worker load
+    --       builds its required assignment section from that number and never
+    --       fabricates one, so a worker with no assignment row is rejected.
     -- A failing row is set to STG_STATUS='FAILED' with an appended
     -- [PRE_VALIDATION] message; passing rows are left untouched (NEW).
     -- --------------------------------------------------------
@@ -84,6 +88,35 @@ AS
         AND (  w.PERSON_NUMBER IS NULL
             OR NVL(w.ACTION_CODE, 'X') NOT IN ('HIRE', 'ADD_CWK') );
         l_bad := SQL%ROWCOUNT;
+
+        -- R3: a new-hire worker needs at least one Assignment source row (with a
+        -- real ASSIGNMENT_NUMBER) so the Worker load can build its required
+        -- WorkTerms + Assignment sections from that number. The Worker load no
+        -- longer fabricates an assignment number from the person, so a worker
+        -- with no matching assignment row cannot be loaded — it is a validation
+        -- failure, not a fabricated placeholder. Only workers that passed R1/R2
+        -- above (still NEW, valid action, non-null person) are checked here.
+        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'Workers', 'Workers', w.STG_SEQUENCE_ID,
+               '[PRE_VALIDATION] No assignment row found for this worker '
+               || '(PERSON_NUMBER=' || w.PERSON_NUMBER
+               || '); an assignment number is required and cannot be fabricated.'
+        FROM   DMT_OWNER.DMT_WORKER_STG_TBL w
+        WHERE  w.STG_STATUS = 'NEW'
+        AND    w.PERSON_NUMBER IS NOT NULL
+        AND    NVL(w.ACTION_CODE, 'X') IN ('HIRE', 'ADD_CWK')
+        AND    NOT EXISTS (
+                   SELECT 1 FROM DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+                   WHERE  a.PERSON_NUMBER = w.PERSON_NUMBER
+                   AND    a.ASSIGNMENT_NUMBER IS NOT NULL
+                   -- Match the HDL-gen join exactly: a worker only passes R3 if it
+                   -- has an assignment the generator will actually emit. A FAILED
+                   -- assignment is skipped there, so it must not satisfy R3 either
+                   -- (otherwise a future pipeline-order change could let an
+                   -- R3-passed worker generate zero WorkTerms/Assignment rows).
+                   AND    NVL(a.STG_STATUS, 'NEW') <> 'FAILED' );
+        l_bad := l_bad + SQL%ROWCOUNT;
 
         -- Standard final step: flag the STG rows FAILED from the recorded error
         -- rows (status only, no message) so FAILED-mode reruns select on them (§7).

@@ -126,8 +126,10 @@ AS
         --   Worker:           SSO=HRC_SQLLOADER, SSID=<PersonNumber>
         --   PersonName:       SSID=<PersonNumber>_NME, PersonId(SSID)=<PersonNumber>
         --   WorkRelationship: SSID=<PersonNumber>_POS, PersonId(SSID)=<PersonNumber>
-        --   WorkTerms:        SSID=<PersonNumber>_TRM, PeriodOfServiceId(SSID)=<PersonNumber>_POS
-        --   Assignment:       SSID=<PersonNumber>_ASG, WorkTermsAssignmentId(SSID)=<PersonNumber>_TRM
+        --   WorkTerms:        SSID=<AssignmentNumber>_TRM, PeriodOfServiceId(SSID)=<PersonNumber>_POS
+        --   Assignment:       SSID=<AssignmentNumber>_ASG, WorkTermsAssignmentId(SSID)=<AssignmentNumber>_TRM
+        -- The assignment number is a SOURCE business key (from the Assignment
+        -- object's rows, joined by person) — never fabricated from the person.
 
         -- ============================================================
         -- 1. Worker
@@ -211,59 +213,101 @@ AS
         END LOOP;
 
         -- ============================================================
-        -- 4. WorkTerms (auto-generated from Worker rows — required for new hires)
+        -- 4. WorkTerms (one per assignment — required for new hires)
+        --    The assignment number is a business key that comes from the
+        --    Assignment source, joined to the worker by PERSON_NUMBER. The
+        --    Worker load NEVER fabricates the number: both this section and the
+        --    standalone Assignment object derive the HDL keys from the SAME
+        --    source field (ASSIGNMENT_NUMBER), so they always agree on
+        --    SourceSystemId/AssignmentNumber and never collide on the shared
+        --    assignment id. One assignment source row = one WorkTerms + one
+        --    Assignment line, so multiple assignments per person get distinct
+        --    keys by construction. A worker with no assignment row is a
+        --    validation failure (worker validator rule R3, checked before this).
+        --
+        --    IMPORTANT: source the assignment from the Assignment STG table, NOT
+        --    its TFM table. The Workers step runs BEFORE the Assignments step in
+        --    the pipeline (Assignments DEPENDS_ON Workers), so the assignment
+        --    TFM rows do not exist yet at worker-generate time. STG is populated
+        --    at stage time and carries the raw, unprefixed ASSIGNMENT_NUMBER —
+        --    which is exactly what the Assignment load later emits (the
+        --    assignment transform prefixes PERSON_NUMBER but leaves
+        --    ASSIGNMENT_NUMBER raw), so the two loads still produce identical
+        --    keys. Join worker TFM -> worker STG (by STG_SEQUENCE_ID) to get the
+        --    raw person, then to assignment STG by that raw person. Only
+        --    non-FAILED assignment STG rows are used, matching R3's population.
         -- ============================================================
         DBMS_LOB.WRITEAPPEND(l_dat, LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS)),
             DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS));
 
         FOR r IN (
-            SELECT t.*
-            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id
-            AND    t.TFM_STATUS = 'STAGED'
-            ORDER BY t.TFM_SEQUENCE_ID
+            SELECT w.PERSON_NUMBER, w.START_DATE,
+                   a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME, a.ACTION_CODE,
+                   a.PRIMARY_ASSIGNMENT_FLAG
+            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL w
+            JOIN   DMT_OWNER.DMT_WORKER_STG_TBL ws
+                   ON  ws.STG_SEQUENCE_ID = w.STG_SEQUENCE_ID
+            JOIN   DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+                   ON  a.PERSON_NUMBER = ws.PERSON_NUMBER
+                   AND a.ASSIGNMENT_NUMBER IS NOT NULL
+                   AND NVL(a.STG_STATUS, 'NEW') <> 'FAILED'
+            WHERE  w.RUN_ID = p_run_id
+            AND    w.TFM_STATUS = 'STAGED'
+            ORDER BY w.TFM_SEQUENCE_ID, a.STG_SEQUENCE_ID
         ) LOOP
-            l_vals := C_SOURCE_SYSTEM                || '|' ||
-                      pv(r.PERSON_NUMBER) || '_TRM'  || '|' ||  -- SourceSystemId
-                      pv(r.PERSON_NUMBER) || '_POS'  || '|' ||  -- PeriodOfServiceId(SourceSystemId)
-                      pv(r.ACTION_CODE)              || '|' ||
-                      pv(r.START_DATE)             || '|' ||  -- EffectiveStartDate
-                      '1'                            || '|' ||  -- EffectiveSequence
-                      'Y'                            || '|' ||  -- EffectiveLatestChange
-                      pv(r.START_DATE)             || '|' ||  -- DateStart (From Date)
-                      'ET-' || pv(r.PERSON_NUMBER)   || '|' ||  -- AssignmentName
-                      'ET-' || pv(r.PERSON_NUMBER)   || '|' ||  -- AssignmentNumber
-                      'Y';                                       -- PrimaryWorkTermsFlag
+            l_vals := C_SOURCE_SYSTEM                        || '|' ||
+                      pv(r.ASSIGNMENT_NUMBER) || '_TRM'      || '|' ||  -- SourceSystemId (per assignment)
+                      pv(r.PERSON_NUMBER) || '_POS'          || '|' ||  -- PeriodOfServiceId(SourceSystemId)
+                      pv(NVL(r.ACTION_CODE, 'HIRE'))         || '|' ||
+                      pv(r.START_DATE)                       || '|' ||  -- EffectiveStartDate
+                      '1'                                    || '|' ||  -- EffectiveSequence
+                      'Y'                                    || '|' ||  -- EffectiveLatestChange
+                      pv(r.START_DATE)                       || '|' ||  -- DateStart (From Date)
+                      pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
+                      pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
+                      pv(NVL(r.PRIMARY_ASSIGNMENT_FLAG, 'Y'));    -- PrimaryWorkTermsFlag (source primary flag; one 'Y' per _POS)
             DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'WorkTerms');
             l_row_count := l_row_count + 1;
         END LOOP;
 
         -- ============================================================
-        -- 5. Assignment (auto-generated from Worker rows — required for new hires)
+        -- 5. Assignment (one per assignment — required for new hires)
+        --    Keyed by the source ASSIGNMENT_NUMBER, matching section 4 and the
+        --    standalone Assignment object. Detail (BU/job/grade/...) comes from
+        --    the assignment source row rather than fabricated constants.
         -- ============================================================
         DBMS_LOB.WRITEAPPEND(l_dat, LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('Assignment', C_ASSIGNMENT_COLS)),
             DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('Assignment', C_ASSIGNMENT_COLS));
 
         FOR r IN (
-            SELECT t.*
-            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id
-            AND    t.TFM_STATUS = 'STAGED'
-            ORDER BY t.TFM_SEQUENCE_ID
+            SELECT w.PERSON_NUMBER, w.START_DATE,
+                   a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME, a.ACTION_CODE,
+                   a.ASSIGNMENT_STATUS_TYPE_CODE, a.BUSINESS_UNIT_NAME,
+                   a.PRIMARY_ASSIGNMENT_FLAG
+            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL w
+            JOIN   DMT_OWNER.DMT_WORKER_STG_TBL ws
+                   ON  ws.STG_SEQUENCE_ID = w.STG_SEQUENCE_ID
+            JOIN   DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+                   ON  a.PERSON_NUMBER = ws.PERSON_NUMBER
+                   AND a.ASSIGNMENT_NUMBER IS NOT NULL
+                   AND NVL(a.STG_STATUS, 'NEW') <> 'FAILED'
+            WHERE  w.RUN_ID = p_run_id
+            AND    w.TFM_STATUS = 'STAGED'
+            ORDER BY w.TFM_SEQUENCE_ID, a.STG_SEQUENCE_ID
         ) LOOP
-            l_vals := C_SOURCE_SYSTEM                || '|' ||
-                      pv(r.PERSON_NUMBER) || '_ASG'  || '|' ||  -- SourceSystemId
-                      pv(r.ACTION_CODE)              || '|' ||
-                      pv(r.START_DATE)             || '|' ||  -- EffectiveStartDate
-                      '1'                            || '|' ||  -- EffectiveSequence
-                      'Y'                            || '|' ||  -- EffectiveLatestChange
-                      pv(r.PERSON_NUMBER) || '_TRM'  || '|' ||  -- WorkTermsAssignmentId(SourceSystemId)
-                      pv(r.PERSON_NUMBER)            || '|' ||  -- AssignmentName
-                      pv(r.PERSON_NUMBER)            || '|' ||  -- AssignmentNumber
-                      'ACTIVE_PROCESS'               || '|' ||  -- AssignmentStatusTypeCode
-                      'Employee'                     || '|' ||  -- PersonTypeCode
-                      pv(l_bu_short)                 || '|' ||  -- BusinessUnitShortCode (named config)
-                      'Y';                                       -- PrimaryAssignmentFlag
+            l_vals := C_SOURCE_SYSTEM                        || '|' ||
+                      pv(r.ASSIGNMENT_NUMBER) || '_ASG'      || '|' ||  -- SourceSystemId (per assignment)
+                      pv(NVL(r.ACTION_CODE, 'HIRE'))         || '|' ||
+                      pv(r.START_DATE)                       || '|' ||  -- EffectiveStartDate
+                      '1'                                    || '|' ||  -- EffectiveSequence
+                      'Y'                                    || '|' ||  -- EffectiveLatestChange
+                      pv(r.ASSIGNMENT_NUMBER) || '_TRM'      || '|' ||  -- WorkTermsAssignmentId(SourceSystemId)
+                      pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
+                      pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
+                      pv(NVL(r.ASSIGNMENT_STATUS_TYPE_CODE, 'ACTIVE_PROCESS')) || '|' ||  -- AssignmentStatusTypeCode
+                      'Employee'                             || '|' ||  -- PersonTypeCode
+                      pv(NVL(r.BUSINESS_UNIT_NAME, l_bu_short)) || '|' ||  -- BusinessUnitShortCode
+                      pv(NVL(r.PRIMARY_ASSIGNMENT_FLAG, 'Y'));            -- PrimaryAssignmentFlag
             DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'Assignment');
             l_row_count := l_row_count + 1;
         END LOOP;
