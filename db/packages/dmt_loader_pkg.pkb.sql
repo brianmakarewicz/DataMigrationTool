@@ -820,7 +820,7 @@
     -- (requestid > load ESS ID).
     --
     -- Uses the pre-deployed static BIP report (AD#16 — no ephemeral BIP):
-    --   /Custom/DMT/common/DMT_ESS_CHILD_JOB_RPT.xdo
+    --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo
     -- Called via runReport with P_LOAD_ESS_ID and P_JOB_DEF bound parameters.
     --
     -- Retries every 15 seconds for up to 15 minutes.
@@ -832,7 +832,7 @@
         p_load_ess_id    IN VARCHAR2
     ) RETURN VARCHAR2 IS
         C_PROC        CONSTANT VARCHAR2(50)  := 'GET_IMPORT_ESS_ID';
-        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT/common/DMT_ESS_CHILD_JOB_RPT.xdo';
+        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo';
         C_MAX_TRIES   CONSTANT INTEGER       := 60;
         C_SLEEP_SEC   CONSTANT NUMBER        := 15;
 
