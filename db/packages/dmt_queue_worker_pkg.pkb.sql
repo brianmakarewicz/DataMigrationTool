@@ -813,16 +813,17 @@ AS
                 -- marks all GENERATED rows FAILED and routes to reconcile — it
                 -- never short-circuits").
                 --
-                -- Honesty note: the load job ending ERROR does NOT prove the ZIP
-                -- rolled back. A SQL*Loader WARNING is a partial load — some rows
-                -- can reach the interface — and the downstream async import may
-                -- still have run. We have not verified either way at this point,
-                -- so this placeholder states only what we know (the job ended
-                -- ERROR and these rows are not yet confirmed in Fusion). It never
-                -- asserts a rollback. Reconciliation is what actually accounts for
-                -- each row against the interface and base tables and writes the
-                -- final per-row verdict; any row it cannot confirm is left with a
+                -- Wording note: the placeholder states only what we know at this
+                -- point — the job ended ERROR and these rows are not yet confirmed
+                -- in Fusion. It deliberately does not pre-judge the load outcome
+                -- (it neither asserts the ZIP rolled back nor that any row was
+                -- committed); reconciliation is what actually accounts for each
+                -- row against the interface and base tables and writes the final
+                -- per-row verdict, leaving any row it cannot confirm with a
                 -- truthful "not confirmed / outcome could not be verified" error.
+                -- The decided SqlLdr-WARNING semantics in docs/DMT_DESIGN.html
+                -- section 5 still govern how the Interfaced funnel counts a failed
+                -- load; this message does not change or contradict that rule.
                 MARK_GENERATED_ROWS_FAILED(
                     p_run_id     => l_rec.RUN_ID,
                     p_cemli_code => l_rec.CEMLI_CODE,
