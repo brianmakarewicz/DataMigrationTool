@@ -233,42 +233,19 @@ AS
         l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
         IF l_xml IS NULL THEN
             -- No reportBytes at all — BIP returned 0 rows from BOTH datasets.
-            UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-            SET    TFM_STATUS               = 'FAILED',
-                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows from both interface and base tables. Cannot verify Fusion outcome.'),
-                   RESULTS_UPDATED_DATE = SYSDATE,
-                   LAST_UPDATED_DATE    = SYSDATE
-            WHERE  RUN_ID       = p_run_id
-            AND    TFM_STATUS               = 'GENERATED';
-            l_not_recon := SQL%ROWCOUNT;
-
-            UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
-            SET    ln.TFM_STATUS            = 'FAILED',
-                   ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows. Parent header not reconciled.'),
-                   ln.RESULTS_UPDATED_DATE = SYSDATE,
-                   ln.LAST_UPDATED_DATE = SYSDATE
-            WHERE  ln.RUN_ID    = p_run_id
-            AND    ln.TFM_STATUS            = 'GENERATED';
-
-            UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
-            SET    d.TFM_STATUS            = 'FAILED',
-                   d.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows. Parent header not reconciled.'),
-                   d.RESULTS_UPDATED_DATE = SYSDATE,
-                   d.LAST_UPDATED_DATE = SYSDATE
-            WHERE  d.RUN_ID    = p_run_id
-            AND    d.TFM_STATUS            = 'GENERATED';
-
+            -- We could determine neither a base-table LOADED nor a real Fusion
+            -- per-record error, so we do NOT fabricate a FAILED. The GENERATED
+            -- header, line and distribution rows are left as-is (unaccounted);
+            -- the accounting gate reports the object not-DONE and the funnel
+            -- surfaces them as unreconciled.
             DMT_UTIL_PKG.LOG(
                 p_run_id => p_run_id,
                 p_message        => C_PROC || ': No <reportBytes> in BIP response. ' ||
-                                    l_not_recon || ' GENERATED header rows marked FAILED (not reconciled).',
+                                    'GENERATED rows left unaccounted (not marked FAILED).',
                 p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package        => C_PKG,
                 p_procedure      => C_PROC);
-            GOTO echo_to_stg;
+            RETURN;
         END IF;
 
         -- ============================================================
@@ -339,9 +316,10 @@ AS
             END IF;
         END LOOP;
 
-        -- (The absence != LOADED catch-all now lives in the standard
-        -- SWEEP_UNACCOUNTED procedure, called at the end of RECONCILE_BATCH,
-        -- which sweeps headers AND child tables (lines/dists) — design §7.)
+        -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor
+        -- given a real Fusion error is left GENERATED (unaccounted). The
+        -- accounting gate then reports the object not-DONE and the funnel
+        -- surfaces it as UNRECONCILED — no fabricated FAILED.)
         l_not_recon := 0;
 
         -- ============================================================
@@ -595,78 +573,6 @@ AS
             RAISE;
     END PARSE_AND_UPDATE;
 
-    -- ============================================================
-    -- SWEEP_UNACCOUNTED — STANDARD RECONCILE-ERROR SWEEP (design §7).
-    -- Marks every TFM row still NOT IN ('LOADED','FAILED') as FAILED with a
-    -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
-    -- across packages except the tagged EDIT regions. Does NOT commit.
-    -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
-    BEGIN
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Requisition header not confirmed in Fusion '
-                   || '(neither the POR_REQUISITION_HEADERS_ALL base table nor the '
-                   || 'requisition import interface) after reconciliation; import outcome '
-                   || 'could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_POR_REQ_HEADERS_TFM_TBL is not shared.)
-        ;
-
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Requisition line not confirmed loaded in Fusion '
-                   || 'after reconciliation (its header was not confirmed, or the line '
-                   || 'itself was not accounted); import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_POR_REQ_LINES_TFM_TBL is not shared.)
-        ;
-
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Requisition distribution not confirmed loaded in '
-                   || 'Fusion after reconciliation; import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_POR_REQ_DISTS_TFM_TBL is not shared.)
-        ;
-    END SWEEP_UNACCOUNTED;
-
     -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- --------------------------------------------------------
@@ -692,8 +598,9 @@ AS
             DBMS_LOB.FREETEMPORARY(l_xml);
         END IF;
 
-        -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id);
+        -- Unresolved records intentionally left GENERATED (unaccounted).
+        -- No fabricated FAILED: the accounting gate reports the object
+        -- not-DONE and the funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

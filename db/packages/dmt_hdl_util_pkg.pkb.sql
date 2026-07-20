@@ -459,8 +459,9 @@
         -- If data set was ORA_COMPLETED, remaining rows are successes.
         -- If data set was ORA_IN_ERROR and we found specific error rows,
         --   remaining rows MAY be successes (partial success) — mark LOADED.
-        -- If data set was ORA_IN_ERROR and we found NO error rows,
-        --   we have no evidence either way — mark FAILED as precaution.
+        -- If data set was ORA_IN_ERROR and we found NO error rows, we have no
+        --   per-record evidence either way — LEAVE the rows GENERATED (unaccounted).
+        --   We never fabricate a FAILED for an outcome we did not observe.
         IF p_dataset_status IN ('ORA_COMPLETED', 'ORA_SUCCESS', 'SUCCESS') THEN
             -- All remaining are confirmed successes
             EXECUTE IMMEDIATE
@@ -478,27 +479,20 @@
                 USING p_run_id;
             l_ok_count := SQL%ROWCOUNT;
         ELSIF p_dataset_status IN ('ORA_IN_ERROR', 'ERROR') AND l_err_count = 0 THEN
-            -- Error but no specific row match — mark all FAILED
-            EXECUTE IMMEDIATE
-                'UPDATE DMT_OWNER.' || p_tfm_table ||
-                ' SET TFM_STATUS = ''FAILED'', ' ||
-                '    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, ' ||
-                '        ''[FUSION_ERROR] HDL data set ended in error but no row-level error matched. Check Fusion HCM Data Loader.''), ' ||
-                '    LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
-                USING p_run_id;
-            l_err_count := l_err_count + SQL%ROWCOUNT;
+            -- Error status but NO row-level error matched this run's rows. We have
+            -- no per-record evidence either way, so we must NOT fabricate a FAILED:
+            -- the remaining GENERATED rows are LEFT GENERATED (unaccounted). The
+            -- accounting gate then reports the object not-DONE and the funnel
+            -- surfaces these as UNRECONCILED. (Previously these were stamped
+            -- '[FUSION_ERROR] ... no row-level error matched' — a fabricated
+            -- fallback that asserted a failure we never observed.)
+            NULL;
         ELSE
-            -- Unknown status (EXPIRED, etc.) — mark FAILED
-            EXECUTE IMMEDIATE
-                'UPDATE DMT_OWNER.' || p_tfm_table ||
-                ' SET TFM_STATUS = ''FAILED'', ' ||
-                '    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, ' ||
-                '        ''[FUSION_ERROR] HDL data set status: ' || NVL(p_dataset_status, 'UNKNOWN') || '''), ' ||
-                '    LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
-                USING p_run_id;
-            l_err_count := l_err_count + SQL%ROWCOUNT;
+            -- Unknown / non-terminal status (EXPIRED, etc.). No positive success
+            -- and no per-record error observed — LEAVE remaining GENERATED rows
+            -- GENERATED (unaccounted) rather than fabricate a FAILED from a bare
+            -- status code. The accounting gate + funnel surface them honestly.
+            NULL;
         END IF;
 
         -- Step 3: Echo to STG tables

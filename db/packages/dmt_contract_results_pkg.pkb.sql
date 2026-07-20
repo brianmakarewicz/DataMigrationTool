@@ -294,8 +294,10 @@ AS
             END IF;
         END LOOP;
 
-        -- (The absence != LOADED catch-all now lives in the standard
-        -- SWEEP_UNACCOUNTED procedure, called at the end of RECONCILE_BATCH,
+        -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor
+        -- given a real Fusion error is left GENERATED (unaccounted). The
+        -- accounting gate then reports the object not-DONE and the funnel
+        -- surfaces it as UNRECONCILED — no fabricated FAILED.)
         -- scoped to contract-style rows in the shared PO header table — §7.)
 
         -- No child cascade needed — contracts have no lines/locs/dists
@@ -326,41 +328,6 @@ AS
             RAISE;
     END PARSE_AND_UPDATE;
 
-    -- ============================================================
-    -- SWEEP_UNACCOUNTED — STANDARD RECONCILE-ERROR SWEEP (design §7).
-    -- Marks every TFM row still NOT IN ('LOADED','FAILED') as FAILED with a
-    -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
-    -- across packages except the tagged EDIT regions. Does NOT commit.
-    -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
-    BEGIN
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Contract purchase agreement not confirmed in Fusion '
-                   || '(neither the PO_HEADERS_ALL base table nor the PO import interface) '
-                   || 'after reconciliation; import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
-        --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
-        --   ONLY when the object shares this TFM table with another object. If the
-        --   table is NOT shared, delete everything from EDIT-SCOPE to END EDIT-SCOPE.>>
-        AND    STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'
-        -- <<END EDIT-SCOPE — nothing below this changes>>
-        ;
-    END SWEEP_UNACCOUNTED;
-
     -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- --------------------------------------------------------
@@ -386,8 +353,9 @@ AS
         l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id, p_import_ess_id);
         PARSE_AND_UPDATE(p_run_id, l_xml);
 
-        -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id);
+        -- Unresolved records intentionally left GENERATED (unaccounted).
+        -- No fabricated FAILED: the accounting gate reports the object
+        -- not-DONE and the funnel surfaces these as UNRECONCILED.
 
         IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
             DBMS_LOB.FREETEMPORARY(l_xml);

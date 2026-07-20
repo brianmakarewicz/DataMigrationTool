@@ -196,18 +196,15 @@ AS
         -- VARCHAR2(32767) truncation). Returns NULL when there are no rows.
         l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
         IF l_xml IS NULL THEN
-            -- No reportBytes = 0 rows from both interface and base tables. Cannot verify.
-            UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL
-            SET TFM_STATUS='FAILED',
-                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                    '[RECONCILE_ERROR] BIP returned 0 rows from both interface and base tables. Cannot verify Fusion outcome.'),
-                RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-            l_failed := SQL%ROWCOUNT;
+            -- No reportBytes = 0 rows from both interface and base tables. We
+            -- could determine neither a base-table LOADED nor a real Fusion
+            -- per-record error, so we do NOT fabricate a FAILED. The GENERATED
+            -- rows are left as-is (unaccounted); the accounting gate reports the
+            -- object not-DONE and the funnel surfaces them as unreconciled.
             DMT_UTIL_PKG.LOG(p_run_id,
-                C_PROC || ': No <reportBytes> in BIP response. ' || l_failed || ' GENERATED rows marked FAILED (not reconciled).',
+                C_PROC || ': No <reportBytes> in BIP response. GENERATED rows left unaccounted (not marked FAILED).',
                 C_PKG, C_PROC);
-            GOTO cascade_and_echo;
+            RETURN;
         END IF;
 
         -- Process header rows from BIP XML — two-tier reconciliation
@@ -266,8 +263,10 @@ AS
             END IF;
         END LOOP;
 
-        -- (The absence != LOADED catch-all now lives in the standard
-        -- SWEEP_UNACCOUNTED procedure, called at the end of RECONCILE_BATCH — §7.)
+        -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor
+        -- given a real Fusion error is left GENERATED (unaccounted). The
+        -- accounting gate then reports the object not-DONE and the funnel
+        -- surfaces it as UNRECONCILED — no fabricated FAILED.)
 
         <<cascade_and_echo>>
         -- Cascade LOADED to all 14 child TFM tables via AWARD_NUMBER
@@ -430,36 +429,6 @@ AS
             RAISE;
     END PARSE_AND_UPDATE;
 
-    -- ============================================================
-    -- SWEEP_UNACCOUNTED — STANDARD RECONCILE-ERROR SWEEP (design §7).
-    -- Marks every TFM row still NOT IN ('LOADED','FAILED') as FAILED with a
-    -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
-    -- across packages except the tagged EDIT regions. Does NOT commit.
-    -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
-    BEGIN
-        -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
-        --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
-        --   the object owns.>>
-        UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-MSG>>
-        SET    TFM_STATUS           = 'FAILED',
-               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-        -- <<EDIT-MSG — CHANGE BELOW: the message text. It MUST begin with the
-        --   literal '[RECONCILE_ERROR] ' tag.>>
-                   '[RECONCILE_ERROR] Award not confirmed in Fusion (neither the GMS '
-                   || 'award base tables nor the grants interface) after reconciliation; '
-                   || 'import outcome could not be verified.'
-        -- <<END EDIT-MSG — everything below is FIXED until EDIT-SCOPE>>
-               ),
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID     = p_run_id
-        AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-        -- (EDIT-SCOPE deleted — DMT_GMS_AWD_HEADERS_TFM_TBL is not shared.)
-        ;
-    END SWEEP_UNACCOUNTED;
-
     -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- --------------------------------------------------------
@@ -483,8 +452,9 @@ AS
             DBMS_LOB.FREETEMPORARY(l_xml);
         END IF;
 
-        -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id);
+        -- Unresolved records intentionally left GENERATED (unaccounted).
+        -- No fabricated FAILED: the accounting gate reports the object
+        -- not-DONE and the funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' complete.', C_PKG, C_PROC);
