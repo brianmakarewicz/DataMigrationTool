@@ -334,7 +334,7 @@
     -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
     -- across packages except the tagged EDIT regions. Does NOT commit.
     -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
+    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER, p_work_queue_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
         --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
@@ -354,6 +354,7 @@
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID     = p_run_id
         AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)  -- work-queue-ID core: sweep only this item's rows
         -- (EDIT-SCOPE deleted — DMT_EGP_ITEM_TFM_TBL is not shared.)
         ;
     END SWEEP_UNACCOUNTED;
@@ -364,7 +365,8 @@
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
         p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
+        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml CLOB;
@@ -383,7 +385,7 @@
         END IF;
 
         -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id);
+        SWEEP_UNACCOUNTED(p_run_id, p_work_queue_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

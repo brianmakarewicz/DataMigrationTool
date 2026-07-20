@@ -396,7 +396,7 @@
     -- the "split supplier reconciler per object" backlog item lands — each split
     -- package then carries the plain SWEEP_UNACCOUNTED(p_run_id).
     -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER, p_cemli_code IN VARCHAR2) IS
+    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER, p_cemli_code IN VARCHAR2, p_work_queue_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         IF p_cemli_code = 'Suppliers' THEN
             UPDATE DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL
@@ -405,7 +405,8 @@
                        '[RECONCILE_ERROR] Supplier not confirmed in Fusion (not found in '
                        || 'POZ_SUPPLIERS) after reconciliation; import outcome could not be verified.'),
                    RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED')
+                   AND (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);  -- work-queue-ID core
         ELSIF p_cemli_code = 'SupplierAddresses' THEN
             UPDATE DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL
             SET    TFM_STATUS = 'FAILED',
@@ -413,7 +414,8 @@
                        '[RECONCILE_ERROR] Supplier address not confirmed in Fusion (not found '
                        || 'in HZ_PARTY_SITES) after reconciliation; import outcome could not be verified.'),
                    RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED')
+                   AND (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);  -- work-queue-ID core
         ELSIF p_cemli_code = 'SupplierSites' THEN
             UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL
             SET    TFM_STATUS = 'FAILED',
@@ -421,7 +423,8 @@
                        '[RECONCILE_ERROR] Supplier site not confirmed in Fusion (not found in '
                        || 'POZ_SUPPLIER_SITES_ALL_M) after reconciliation; import outcome could not be verified.'),
                    RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED')
+                   AND (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);  -- work-queue-ID core
         ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
             UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL
             SET    TFM_STATUS = 'FAILED',
@@ -429,7 +432,8 @@
                        '[RECONCILE_ERROR] Supplier site assignment not confirmed in Fusion (not '
                        || 'found in POZ_SITE_ASSIGNMENTS_ALL_M) after reconciliation; import outcome could not be verified.'),
                    RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED')
+                   AND (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);  -- work-queue-ID core
         ELSIF p_cemli_code = 'SupplierContacts' THEN
             UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_TFM_TBL
             SET    TFM_STATUS = 'FAILED',
@@ -437,7 +441,8 @@
                        '[RECONCILE_ERROR] Supplier contact not confirmed in Fusion (not found in '
                        || 'HZ_PARTIES person party) after reconciliation; import outcome could not be verified.'),
                    RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED');
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED')
+                   AND (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);  -- work-queue-ID core
         END IF;
     END SWEEP_UNACCOUNTED;
 
@@ -449,7 +454,8 @@
         p_run_id  IN NUMBER,
         p_cemli_code      IN VARCHAR2,
         p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
+        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC  CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml   XMLTYPE;
@@ -481,7 +487,7 @@
         PARSE_AND_UPDATE(p_run_id, p_cemli_code, l_xml);
 
         -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id, p_cemli_code);
+        SWEEP_UNACCOUNTED(p_run_id, p_cemli_code, p_work_queue_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

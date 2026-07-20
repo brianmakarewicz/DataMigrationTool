@@ -664,14 +664,19 @@
         -- the asset's book). p_book NULL = all books (single-FBDI / legacy path).
         -- BOOK + HDR ride in FaMassAdditions.csv (csv 1); ASSIGN rides in
         -- FaMassaddDistributions.csv (csv 2). Book guard preserved exactly.
-        UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
+        -- Work-queue-ID core (2026-07-20): stamp WORK_QUEUE_ID = the generating per-book
+        -- child work-queue item's id so reconcile scopes its sweep to this book's rows.
+        UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id,
+               WORK_QUEUE_ID=DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE=l_now
         WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED' AND (p_book IS NULL OR BOOK_TYPE_CODE=p_book);
-        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id, LAST_UPDATED_DATE=l_now
+        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id,
+               WORK_QUEUE_ID=DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE=l_now
         WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
         AND (p_book IS NULL OR ASSET_NUMBER IN (
               SELECT ASSET_NUMBER FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
               WHERE RUN_ID=p_run_id AND BOOK_TYPE_CODE=p_book));
-        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_dist_csv_id, LAST_UPDATED_DATE=l_now
+        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_dist_csv_id,
+               WORK_QUEUE_ID=DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE=l_now
         WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
         AND (p_book IS NULL OR ASSET_NUMBER IN (
               SELECT ASSET_NUMBER FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL

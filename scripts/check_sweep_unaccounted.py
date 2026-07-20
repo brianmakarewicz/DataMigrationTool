@@ -14,6 +14,12 @@ For every REQUIRED reconciler package (the FBDI / base-confirming reconcilers):
   3. The sweep body uses the fixed status predicate  TFM_STATUS NOT IN ('LOADED','FAILED')
   4. The sweep body tags failures with the literal  [RECONCILE_ERROR]
   5. The sweep procedure body contains NO  COMMIT  (RECONCILE_BATCH owns the txn).
+  6. The sweep takes a p_work_queue_id argument and scopes its UPDATE by it
+     (work-queue-ID core, 2026-07-20): the signature carries p_work_queue_id, and
+     the body carries the scope predicate
+       (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
+     so each work-queue item sweeps only its own partition's rows. This is what
+     makes batch N's reconcile stop failing batch N+1's still-STAGED rows.
 
 DEFERRED packages (HCM / HDL reconcilers, and config reconcilers) do NOT yet carry
 the sweep — they reconcile via a REST/HDL model that does not positively confirm
@@ -114,6 +120,24 @@ def check_pkg(base):
     if re.search(r"\bCOMMIT\b", body, re.IGNORECASE):
         fails.append("sweep body contains a COMMIT (RECONCILE_BATCH must own the "
                      "transaction)")
+
+    # (6) work-queue-ID core: queue-scoped signature + predicate.
+    sig = re.search(r"PROCEDURE\s+SWEEP_UNACCOUNTED\s*\(([^)]*)\)", body,
+                    re.IGNORECASE | re.DOTALL)
+    if not sig or "p_work_queue_id" not in sig.group(1).lower():
+        fails.append("SWEEP_UNACCOUNTED signature missing the p_work_queue_id argument "
+                     "(work-queue-ID core)")
+    if "p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id" not in body:
+        fails.append("sweep body missing the queue-scope predicate "
+                     "(p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)")
+
+    # RECONCILE_BATCH must pass p_work_queue_id through to the sweep.
+    calls = [ln for ln in text.splitlines()
+             if re.search(r"\bSWEEP_UNACCOUNTED\s*\(\s*p_run_id", ln, re.IGNORECASE)
+             and not re.search(r"\bPROCEDURE\b", ln, re.IGNORECASE)]
+    if calls and not any("p_work_queue_id" in ln.lower() for ln in calls):
+        fails.append("RECONCILE_BATCH calls SWEEP_UNACCOUNTED without passing "
+                     "p_work_queue_id")
     return fails
 
 

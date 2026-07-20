@@ -226,7 +226,7 @@
     -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
     -- across packages except the tagged EDIT regions. Does NOT commit.
     -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
+    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER, p_work_queue_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
         --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
@@ -246,6 +246,7 @@
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID     = p_run_id
         AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)  -- work-queue-ID core: sweep only this item's rows
         -- (EDIT-SCOPE deleted — DMT_GL_BUDGET_INT_TFM_TBL is not shared.)
         ;
     END SWEEP_UNACCOUNTED;
@@ -255,7 +256,8 @@
         p_load_ess_id   IN NUMBER,
         p_import_ess_id IN NUMBER    DEFAULT NULL,
         p_run_start     IN TIMESTAMP DEFAULT NULL,
-        p_ledger_id     IN NUMBER    DEFAULT NULL
+        p_ledger_id     IN NUMBER    DEFAULT NULL,
+        p_work_queue_id IN NUMBER    DEFAULT NULL
     ) IS
         l_xml CLOB;
     BEGIN
@@ -263,7 +265,7 @@
         PARSE_AND_UPDATE(p_run_id, l_xml);
         IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN DBMS_LOB.FREETEMPORARY(l_xml); END IF;
         -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id);
+        SWEEP_UNACCOUNTED(p_run_id, p_work_queue_id);
     EXCEPTION WHEN OTHERS THEN
         DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'RECONCILE_BATCH failed.', SQLERRM, C_PKG, 'RECONCILE_BATCH'); RAISE;
     END RECONCILE_BATCH;

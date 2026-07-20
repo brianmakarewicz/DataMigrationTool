@@ -422,7 +422,7 @@ AS
     -- [RECONCILE_ERROR] message text may differ between packages. It does NOT
     -- commit — the caller (RECONCILE_BATCH) owns the transaction and commits.
     -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
+    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER, p_work_queue_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
         --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
@@ -442,6 +442,7 @@ AS
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID     = p_run_id
         AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)  -- work-queue-ID core: sweep only this item's rows
         -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
         --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
         --   ONLY when the object shares this TFM table with another object. If the
@@ -468,6 +469,7 @@ AS
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID     = p_run_id
         AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)  -- work-queue-ID core: sweep only this item's rows
         -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
         --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
         --   ONLY when the object shares this TFM table with another object. If the
@@ -493,6 +495,7 @@ AS
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID     = p_run_id
         AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)  -- work-queue-ID core: sweep only this item's rows
         -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
         --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
         --   ONLY when the object shares this TFM table with another object. If the
@@ -518,6 +521,7 @@ AS
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID     = p_run_id
         AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)  -- work-queue-ID core: sweep only this item's rows
         -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
         --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
         --   ONLY when the object shares this TFM table with another object. If the
@@ -533,7 +537,8 @@ AS
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
         p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
+        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml CLOB;
@@ -556,7 +561,7 @@ AS
         END IF;
 
         -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id);
+        SWEEP_UNACCOUNTED(p_run_id, p_work_queue_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

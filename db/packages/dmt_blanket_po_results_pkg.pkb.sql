@@ -361,7 +361,7 @@ AS
     -- reportable [RECONCILE_ERROR] (absence != LOADED, Rule #1). Byte-identical
     -- across packages except the tagged EDIT regions. Does NOT commit.
     -- ============================================================
-    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER) IS
+    PROCEDURE SWEEP_UNACCOUNTED (p_run_id IN NUMBER, p_work_queue_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE — CHANGE BELOW: the object's TFM table name. Repeat this
         --   whole UPDATE block (EDIT-TABLE through the ';') once per TFM table
@@ -381,6 +381,7 @@ AS
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID     = p_run_id
         AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)  -- work-queue-ID core: sweep only this item's rows
         -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
         --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
         --   ONLY when the object shares this TFM table with another object. If the
@@ -407,6 +408,7 @@ AS
                LAST_UPDATED_DATE    = SYSDATE
         WHERE  RUN_ID     = p_run_id
         AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)  -- work-queue-ID core: sweep only this item's rows
         -- <<EDIT-SCOPE — OPTIONAL. CHANGE BELOW: one "AND <filter>" that is EXACTLY
         --   this object's ROW_FILTER for THIS table from DMT_CEMLI_CATALOG_TBL. Use
         --   ONLY when the object shares this TFM table with another object. If the
@@ -422,7 +424,8 @@ AS
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
         p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
+        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml CLOB;
@@ -442,7 +445,7 @@ AS
         PARSE_AND_UPDATE(p_run_id, l_xml);
 
         -- Standard final step: fail any row still unaccounted (absence != LOADED).
-        SWEEP_UNACCOUNTED(p_run_id);
+        SWEEP_UNACCOUNTED(p_run_id, p_work_queue_id);
 
         IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
             DBMS_LOB.FREETEMPORARY(l_xml);
