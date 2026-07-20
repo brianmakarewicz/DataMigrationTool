@@ -743,7 +743,13 @@
                     s.INSERT_UPDATE_FLAG,
                     s.CUSTOMER_TYPE,
                     s.CUSTOMER_CLASS_CODE,
-                    s.ACCOUNT_NAME,
+                    -- ACCOUNT_NAME is prefixed for run isolation: Fusion CDM matches
+                    -- accounts by name, so an un-prefixed name collides with prior
+                    -- runs' accounts and gets held for duplicate review. It is a
+                    -- display/isolation field (nothing references it), so prefixing is
+                    -- safe -- unlike linking keys (PARTY_SITE_NUMBER) or reference keys,
+                    -- which stay raw.
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.ACCOUNT_NAME),
                     s.ACCOUNT_ESTABLISHED_DATE,
                     s.ATTRIBUTE_CATEGORY,
                     s.ATTRIBUTE1,  s.ATTRIBUTE2,  s.ATTRIBUTE3,  s.ATTRIBUTE4,  s.ATTRIBUTE5,
