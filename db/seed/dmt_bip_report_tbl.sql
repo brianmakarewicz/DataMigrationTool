@@ -127,10 +127,10 @@ using (
            'POZ_SUPPLIERS_INT' interface_table,
            'Supplier header import reconciliation' notes from dual
     union all select 100000012, 'Customers', 'Customer',
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_DM.xdm',
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_RPT.xdo',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo',
            'HZ_IMP_PARTIES_T',
-           'Customer party import reconciliation (Contract v1)' from dual
+           'Customer party import reconciliation (Contract v1). V2 (Fix A): adds NOT-LOADED error-tier blocks for all child interface tables (Locations, PartySites, PartySiteUses, AccountSites, AccountSiteUses) so held/rejected child records report their real interface status instead of the generic reconcile sweep. Deployed additively alongside the v1 DMT_CUST_RECON_* artifacts.' from dual
     union all select 100000014, 'SupplierAddresses', 'Supplier Address',
            '/Custom/DMT2/SupplierAddresses/SUP_ADDR_DM.xdm',
            '/Custom/DMT2/SupplierAddresses/SUP_ADDR_RPT.xdo',
