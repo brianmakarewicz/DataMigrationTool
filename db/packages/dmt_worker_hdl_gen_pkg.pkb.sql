@@ -215,16 +215,27 @@ AS
         -- ============================================================
         -- 4. WorkTerms (one per assignment — required for new hires)
         --    The assignment number is a business key that comes from the
-        --    Assignment source (DMT_ASSIGNMENT_TFM_TBL), joined to the worker
-        --    by PERSON_NUMBER. The Worker load NEVER fabricates the number:
-        --    both this section and the standalone Assignment object derive the
-        --    HDL keys from the SAME source field (ASSIGNMENT_NUMBER), so they
-        --    always agree on SourceSystemId/AssignmentNumber and never collide
-        --    on the shared assignment id. One assignment source row = one
-        --    WorkTerms + one Assignment line, so multiple assignments per
-        --    person get distinct keys by construction. A worker with no
-        --    matching assignment row is a validation failure (the worker
-        --    validator rejects it before this point).
+        --    Assignment source, joined to the worker by PERSON_NUMBER. The
+        --    Worker load NEVER fabricates the number: both this section and the
+        --    standalone Assignment object derive the HDL keys from the SAME
+        --    source field (ASSIGNMENT_NUMBER), so they always agree on
+        --    SourceSystemId/AssignmentNumber and never collide on the shared
+        --    assignment id. One assignment source row = one WorkTerms + one
+        --    Assignment line, so multiple assignments per person get distinct
+        --    keys by construction. A worker with no assignment row is a
+        --    validation failure (worker validator rule R3, checked before this).
+        --
+        --    IMPORTANT: source the assignment from the Assignment STG table, NOT
+        --    its TFM table. The Workers step runs BEFORE the Assignments step in
+        --    the pipeline (Assignments DEPENDS_ON Workers), so the assignment
+        --    TFM rows do not exist yet at worker-generate time. STG is populated
+        --    at stage time and carries the raw, unprefixed ASSIGNMENT_NUMBER —
+        --    which is exactly what the Assignment load later emits (the
+        --    assignment transform prefixes PERSON_NUMBER but leaves
+        --    ASSIGNMENT_NUMBER raw), so the two loads still produce identical
+        --    keys. Join worker TFM -> worker STG (by STG_SEQUENCE_ID) to get the
+        --    raw person, then to assignment STG by that raw person. Only
+        --    non-FAILED assignment STG rows are used, matching R3's population.
         -- ============================================================
         DBMS_LOB.WRITEAPPEND(l_dat, LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS)),
             DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS));
@@ -233,13 +244,15 @@ AS
             SELECT w.PERSON_NUMBER, w.START_DATE,
                    a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME, a.ACTION_CODE
             FROM   DMT_OWNER.DMT_WORKER_TFM_TBL w
-            JOIN   DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL a
-                   ON  a.RUN_ID = w.RUN_ID
-                   AND a.PERSON_NUMBER = w.PERSON_NUMBER
-                   AND a.TFM_STATUS <> 'FAILED'
+            JOIN   DMT_OWNER.DMT_WORKER_STG_TBL ws
+                   ON  ws.STG_SEQUENCE_ID = w.STG_SEQUENCE_ID
+            JOIN   DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+                   ON  a.PERSON_NUMBER = ws.PERSON_NUMBER
+                   AND a.ASSIGNMENT_NUMBER IS NOT NULL
+                   AND NVL(a.STG_STATUS, 'NEW') <> 'FAILED'
             WHERE  w.RUN_ID = p_run_id
             AND    w.TFM_STATUS = 'STAGED'
-            ORDER BY w.TFM_SEQUENCE_ID, a.TFM_SEQUENCE_ID
+            ORDER BY w.TFM_SEQUENCE_ID, a.STG_SEQUENCE_ID
         ) LOOP
             l_vals := C_SOURCE_SYSTEM                        || '|' ||
                       pv(r.ASSIGNMENT_NUMBER) || '_TRM'      || '|' ||  -- SourceSystemId (per assignment)
@@ -271,13 +284,15 @@ AS
                    a.ASSIGNMENT_STATUS_TYPE_CODE, a.BUSINESS_UNIT_NAME,
                    a.PRIMARY_ASSIGNMENT_FLAG
             FROM   DMT_OWNER.DMT_WORKER_TFM_TBL w
-            JOIN   DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL a
-                   ON  a.RUN_ID = w.RUN_ID
-                   AND a.PERSON_NUMBER = w.PERSON_NUMBER
-                   AND a.TFM_STATUS <> 'FAILED'
+            JOIN   DMT_OWNER.DMT_WORKER_STG_TBL ws
+                   ON  ws.STG_SEQUENCE_ID = w.STG_SEQUENCE_ID
+            JOIN   DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+                   ON  a.PERSON_NUMBER = ws.PERSON_NUMBER
+                   AND a.ASSIGNMENT_NUMBER IS NOT NULL
+                   AND NVL(a.STG_STATUS, 'NEW') <> 'FAILED'
             WHERE  w.RUN_ID = p_run_id
             AND    w.TFM_STATUS = 'STAGED'
-            ORDER BY w.TFM_SEQUENCE_ID, a.TFM_SEQUENCE_ID
+            ORDER BY w.TFM_SEQUENCE_ID, a.STG_SEQUENCE_ID
         ) LOOP
             l_vals := C_SOURCE_SYSTEM                        || '|' ||
                       pv(r.ASSIGNMENT_NUMBER) || '_ASG'      || '|' ||  -- SourceSystemId (per assignment)
