@@ -1292,8 +1292,11 @@
                 DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
                 DECLARE l_cat_gen2 NUMBER;
                 BEGIN
+                    -- Work-queue-ID core: only reconcile categories THIS item generated
+                    -- (scope by WORK_QUEUE_ID so a multi-batch load does not cross-touch).
                     SELECT COUNT(*) INTO l_cat_gen2 FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
-                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                    AND   (g_work_queue_id IS NULL OR WORK_QUEUE_ID = g_work_queue_id);
                     IF l_cat_gen2 > 0 THEN
                         DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
                     END IF;
@@ -4864,22 +4867,18 @@
         p_scenario_name    IN VARCHAR2 DEFAULT NULL,
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     ) IS
-        C_PROC CONSTANT VARCHAR2(40) := 'RUN_ASSETS_TRANSFORM_ONLY';
-        v_scenario_id NUMBER;
     BEGIN
-        resolve_scenario(p_scenario_name, v_scenario_id);
-        DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ASSETS_TRANSFORM_ONLY start.', 'INFO', C_PKG, C_PROC);
-        DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        COMMIT;
-        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_BOOKS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        COMMIT;
-        DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ASSETS_TRANSFORM_ONLY complete.', 'INFO', C_PKG, C_PROC);
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'RUN_ASSETS_TRANSFORM_ONLY failed.', SQLERRM, C_PKG, C_PROC);
-            RAISE;
+        -- 2026-07-20: superseded by the generic RUN_TRANSFORM_ONLY (which sets
+        -- g_transform_only so run_one_object_type returns right after transform).
+        -- Kept only as a thin, contract-honoring wrapper so any legacy caller still
+        -- gets the same transform-only behavior. The queue worker no longer calls
+        -- this directly -- it drives Assets through RUN_TRANSFORM_ONLY like every
+        -- other spawn-per-partition object.
+        RUN_TRANSFORM_ONLY(
+            p_run_id        => p_run_id,
+            p_cemli_code    => 'Assets',
+            p_scenario_name => p_scenario_name,
+            p_run_mode      => p_run_mode);
     END RUN_ASSETS_TRANSFORM_ONLY;
 
     -- Generic transform-only pass for spawn-per-partition objects (2026-07-20).
