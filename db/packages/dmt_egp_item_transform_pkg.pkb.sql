@@ -244,7 +244,7 @@
                     p_run_id,
                     -- Identity
                     s.TRANSACTION_TYPE,
-                    NVL(s.BATCH_ID, DMT_LOADER_PKG.g_work_queue_id),  -- work-queue-ID core: user's BATCH_ID (ESS arg1 + partition key); work-queue-item id as fallback (never the prefix)
+                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: user's BATCH_ID (ESS arg1 + partition key); run id as fallback (always non-null at transform time — g_work_queue_id is NULL during the parent transform-only pass), never the prefix
                     s.BATCH_NUMBER,
                     s.ORGANIZATION_CODE,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.ITEM_NUMBER),
