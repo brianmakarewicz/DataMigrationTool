@@ -259,7 +259,7 @@ AS
                       'Y'                            || '|' ||  -- EffectiveLatestChange
                       pv(r.PERSON_NUMBER) || '_TRM'  || '|' ||  -- WorkTermsAssignmentId(SourceSystemId)
                       pv(r.PERSON_NUMBER)            || '|' ||  -- AssignmentName
-                      pv(r.PERSON_NUMBER)            || '|' ||  -- AssignmentNumber
+                      'ET-' || pv(r.PERSON_NUMBER)   || '|' ||  -- AssignmentNumber: prefixed + matches WorkTerms (line above). Bare person number diverged from the WorkTerms number and collided across runs.
                       'ACTIVE_PROCESS'               || '|' ||  -- AssignmentStatusTypeCode
                       'Employee'                     || '|' ||  -- PersonTypeCode
                       pv(l_bu_short)                 || '|' ||  -- BusinessUnitShortCode (named config)
