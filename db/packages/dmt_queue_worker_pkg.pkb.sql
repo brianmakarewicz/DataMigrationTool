@@ -808,19 +808,31 @@ AS
                 -- A6 (2026-07-08): section 5 tag table, [LOAD_ERROR] row —
                 -- "When the load ESS job fails, every GENERATED row of that
                 -- ZIP is marked FAILED with this tag plus the job's
-                -- diagnostics" (all-or-nothing, whole ZIP; a SQL*Loader
-                -- failure/WARNING errors the load job and nothing arrives).
-                -- Reconciliation still runs and can flip confirmed rows back
-                -- to LOADED (section 5 "A Load ESS ERROR marks all GENERATED
-                -- rows FAILED and routes to reconcile — it never
-                -- short-circuits").
+                -- diagnostics", then routed to reconcile which can flip
+                -- confirmed rows back to LOADED (section 5 "A Load ESS ERROR
+                -- marks all GENERATED rows FAILED and routes to reconcile — it
+                -- never short-circuits").
+                --
+                -- Wording note: the placeholder states only what we know at this
+                -- point — the job ended ERROR and these rows are not yet confirmed
+                -- in Fusion. It deliberately does not pre-judge the load outcome
+                -- (it neither asserts the ZIP rolled back nor that any row was
+                -- committed); reconciliation is what actually accounts for each
+                -- row against the interface and base tables and writes the final
+                -- per-row verdict, leaving any row it cannot confirm with a
+                -- truthful "not confirmed / outcome could not be verified" error.
+                -- The decided SqlLdr-WARNING semantics in docs/DMT_DESIGN.html
+                -- section 5 still govern how the Interfaced funnel counts a failed
+                -- load; this message does not change or contradict that rule.
                 MARK_GENERATED_ROWS_FAILED(
                     p_run_id     => l_rec.RUN_ID,
                     p_cemli_code => l_rec.CEMLI_CODE,
                     p_error_text => '[LOAD_ERROR] Load ESS job ' || l_ess_id ||
                                     ' ended ' || l_status ||
-                                    '. All-or-nothing: the whole ZIP rolled back; ' ||
-                                    'check the ESS job log for diagnostics.');
+                                    '. These rows are not yet confirmed in Fusion; ' ||
+                                    'reconciliation will account for each against the ' ||
+                                    'interface and base tables. Check the ESS job log ' ||
+                                    'for load diagnostics.');
                 -- Capture the import job id (if any) first so the reconciler
                 -- can read the import error table.
                 IF l_rec.IMPORT_ESS_JOB_ID IS NULL THEN
