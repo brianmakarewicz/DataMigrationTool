@@ -105,11 +105,22 @@ AS
                 || '"' || NVL(TO_CHAR(EXPENDITURE_TYPE_ID), '') || '"' || ','
                 || '"' || REPLACE(NVL(ORGANIZATION_NAME,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(ORGANIZATION_ID), '') || '"' || ','
-                -- NONLABOR rows carry 4 extra resource columns here per the FBDI
-                -- CTL (the layout is keyed off the LABOR/NONLABOR discriminator);
-                -- LABOR rows have none, so emit them only for NONLABOR or every
-                -- field from QUANTITY on shifts left by 4 and SQL*Loader rejects
-                -- the row (ORA-01400).
+                -- The SQL*Loader control file PjcTxnXfaceStageAll.ctl is a
+                -- discriminator file: the FIRST field (LABOR/NONLABOR) selects one
+                -- of several INTO TABLE branches, each with its OWN column layout.
+                -- The NONLABOR branch inserts these four NON_LABOR_RESOURCE columns
+                -- right after ORGANIZATION_ID; the LABOR branch does NOT have them.
+                -- Both layouts are proven live:
+                --   LABOR    = 105 positional fields, NO NLR columns
+                --              (proven CSV: run-116 Expenditures_116.zip, costed to
+                --               PJC_EXP_ITEMS_ALL).
+                --   NONLABOR = 107 positional fields, WITH these 4 NLR columns
+                --              (proven CSV: gold_regression/objects/Expenditures,
+                --               costed to PJC_EXP_ITEMS_ALL, prefix 32159).
+                -- So the 4 NLR columns are emitted ONLY for NONLABOR. Emitting them
+                -- for LABOR would push QUANTITY (a numeric CTL column) right by 4 and
+                -- the import dies with ORA-06502 character-to-number; omitting them
+                -- for NONLABOR would shift QUANTITY left by 4 (ORA-01400).
                 || CASE WHEN UPPER(TRANSACTION_TYPE) = 'NONLABOR' THEN
                        '"' || REPLACE(NVL(NON_LABOR_RESOURCE,''), '"', '""') || '"' || ','
                     || '"' || NVL(TO_CHAR(NON_LABOR_RESOURCE_ID), '') || '"' || ','
@@ -190,9 +201,13 @@ AS
                 || '"' || REPLACE(NVL(CONTRACT_NAME,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(CONTRACT_ID), '') || '"' || ','
                 || '"' || REPLACE(NVL(FUNDING_SOURCE_NUMBER,''), '"', '""') || '"' || ','
-                || '"' || REPLACE(NVL(FUNDING_SOURCE_NAME,''), '"', '""') || '"' || ','
-                || '""' || ','
-                || '""' || CHR(10) AS csv_line
+                || '"' || REPLACE(NVL(FUNDING_SOURCE_NAME,''), '"', '""') || '"'
+                -- Tail differs by branch (both proven live):
+                --   LABOR    : two more empty positional fields
+                --              (PROJECT_ROLE_NAME, PROJECT_ROLE_ID) => 105 fields.
+                --   NONLABOR : FUNDING_SOURCE_NAME is the last field => 107 fields.
+                || CASE WHEN UPPER(TRANSACTION_TYPE) = 'NONLABOR' THEN CHR(10)
+                        ELSE ',' || '""' || ',' || '""' || CHR(10) END AS csv_line
             FROM   DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
