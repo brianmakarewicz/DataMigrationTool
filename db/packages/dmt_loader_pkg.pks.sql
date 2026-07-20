@@ -289,6 +289,15 @@ AS
     -- item context is active.
     g_work_queue_id NUMBER := NULL;
 
+    -- Site-use reference synthesis (2026-07-20): the QUEUE_ID of the work-queue item
+    -- currently generating rows, set UNCONDITIONALLY for every object (unlike
+    -- g_work_queue_id, which stays NULL for non-partitioned objects to preserve the
+    -- run-scoped reconcile sweep). Read only as the WORK_QUEUE_ID component when a
+    -- generator synthesizes a deterministic ORIG_SYSTEM_REFERENCE for a child record
+    -- whose source reference is null (see DMT_CUST_FBDI_GEN_PKG). It never affects the
+    -- sweep scope. NULL when no item context is active.
+    g_gen_queue_id NUMBER := NULL;
+
     -- Work-queue-ID core (2026-07-20): when TRUE, run_one_object_type validates and
     -- transforms (STG -> TFM STAGED) and returns BEFORE any generate/submit. The
     -- queue worker uses this on the PARENT of a spawn-per-partition object, then
