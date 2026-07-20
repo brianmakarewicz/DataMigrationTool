@@ -41,23 +41,39 @@ AS
                                   );
     END FLAG_STG_FAILED;
 
+    -- --------------------------------------------------------
+    -- VALIDATE_PRE_TRANSFORM
+    --   R1  ASSIGNMENT_NUMBER must be present. Salary references the
+    --       assignment through the FK AssignmentId(SourceSystemId) =
+    --       <AssignmentNumber>_ASG. Without the number the reference cannot
+    --       resolve, so a blank one is a hard rejection.
+    -- --------------------------------------------------------
     PROCEDURE VALIDATE_PRE_TRANSFORM (
         p_run_id IN NUMBER
     )
     IS
+        l_bad PLS_INTEGER;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => 'VALIDATE_PRE_TRANSFORM start. (stub — no rules)',
+            p_message        => 'VALIDATE_PRE_TRANSFORM start.',
             p_package        => C_PKG,
             p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 
-        -- No pre-transform validations implemented yet.
-        NULL;
+        -- R1: assignment number required (the FK to the assignment resolves by it).
+        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'Salaries', 'Salaries', s.STG_SEQUENCE_ID,
+               '[PRE_VALIDATION] ASSIGNMENT_NUMBER is required '
+               || '(salary references the assignment by number).'
+        FROM   DMT_OWNER.DMT_SALARY_STG_TBL s
+        WHERE  s.STG_STATUS = 'NEW'
+        AND    s.ASSIGNMENT_NUMBER IS NULL;
+        l_bad := SQL%ROWCOUNT;
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => 'VALIDATE_PRE_TRANSFORM complete. (stub — no rules)',
+            p_message        => 'VALIDATE_PRE_TRANSFORM complete. Rows tagged FAILED: ' || l_bad,
             p_package        => C_PKG,
             p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 

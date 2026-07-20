@@ -104,11 +104,16 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                -- AssignmentId(SourceSystemId) references the assignment SSID
-                -- Convention: PERSON_NUMBER || '_ASG' (from Worker/Assignment load)
-                l_vals := C_SOURCE_SYSTEM                || '|' ||
-                          pv(r.PERSON_NUMBER) || '_SAL'  || '|' ||  -- SourceSystemId
-                          pv(r.PERSON_NUMBER) || '_ASG'  || '|' ||  -- AssignmentId(SourceSystemId)
+                -- AssignmentId(SourceSystemId) references the assignment SSID,
+                -- which is keyed by the SOURCE assignment number
+                -- (<AssignmentNumber>_ASG) — the same key the Worker and
+                -- Assignment loads build. Salary carries ASSIGNMENT_NUMBER, so
+                -- the FK resolves to the exact assignment (supports multiple
+                -- assignments per person). A blank number fails the salary
+                -- validator before this point.
+                l_vals := C_SOURCE_SYSTEM                    || '|' ||
+                          pv(r.PERSON_NUMBER) || '_SAL'      || '|' ||  -- SourceSystemId
+                          pv(r.ASSIGNMENT_NUMBER) || '_ASG'  || '|' ||  -- AssignmentId(SourceSystemId)
                           pv(r.DATE_FROM)                 || '|' ||
                           pv(r.SALARY_AMOUNT)             || '|' ||
                           pv(r.SALARY_BASIS_NAME)         || '|' ||

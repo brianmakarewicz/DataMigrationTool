@@ -52,7 +52,10 @@ number, date start, legal employer, worker type, action) and the Assignment line
    `POSITION_CODE`, `WORKER_CATEGORY`, `ASSIGNMENT_CATEGORY`, `FULL_PART_TIME`,
    `PERMANENT_TEMPORARY`, `NORMAL_HOURS`, `FREQUENCY`, `SOURCE_ID`, `STG_STATUS='NEW'`.
    (`PersonTypeCode` is hard-coded to `Employee` in the generator; the assignment SSID is
-   built as `PERSON_NUMBER || '_ASG'`, linking WorkTerms → Assignment automatically.)
+   built as `ASSIGNMENT_NUMBER || '_ASG'` and links to `ASSIGNMENT_NUMBER || '_TRM'` WorkTerms.
+   Keying off the source assignment number — not the person — makes the Worker load and this
+   load agree on the same assignment id, and lets one person carry multiple assignments.
+   `ASSIGNMENT_NUMBER` is required: a blank one fails the assignment validator, R1.)
 
 ### Real reference values (queried live via BIP, hcm_impl)
 A real active worker (person 10, Mandy Steward, assignment E10) on the demo instance:
@@ -105,8 +108,10 @@ OPTIONAL for a minimal load and are left blank in the GOOD row below.
 | STG_STATUS | `NEW` |
 | GRADE_CODE / LOCATION_CODE / POSITION_CODE / WORKER_CATEGORY / FULL_PART_TIME / PERMANENT_TEMPORARY | (blank — optional) |
 
-Note: the AssignmentNumber/Name must match the WorkTerms name the generator builds, which is
-`ET-` || PERSON_NUMBER. Using `ET-RT-WKR-G1` keeps the assignment aligned to its work terms.
+Note: the WorkTerms SourceSystemId and AssignmentNumber the generator builds both come from
+`ASSIGNMENT_NUMBER` (here `ET-RT-WKR-G1`), so the WorkTerms and Assignment stay aligned by the
+same source key. A second assignment for the same person just carries a distinct number (e.g.
+`ET-RT-WKR-G1B`, PrimaryAssignmentFlag `N`) and gets its own distinct keys.
 
 ### Proposed BAD seed row (validation failure at Fusion)
 Assignment validator is a stub (no local rules), so the BAD row must be rejected by Fusion.

@@ -32,13 +32,22 @@ E2E LOADED — ALL 10 COMPONENTS (3L/0F, prefix 9210, 2026-04-04 DB-20)
 | Worker | (none) | PERSON_NUMBER |
 | PersonName | _NME | DMTW001_NME |
 | WorkRelationship | _POS | DMTW001_POS |
-| WorkTerms | _TRM | DMTW001_TRM |
-| Assignment | _ASG | DMTW001_ASG |
+| WorkTerms | _TRM | `<AssignmentNumber>_TRM` (e.g. ET-RT-WKR-G1_TRM) |
+| Assignment | _ASG | `<AssignmentNumber>_ASG` (e.g. ET-RT-WKR-G1_ASG) |
 | PersonEmail | _EML | DMTW001_EML |
 | PersonPhone | _PHN | DMTW001_PHN |
 | PersonAddress | _ADR | DMTW001_ADR |
 | PersonNID | _NID | DMTW001_NID |
 | PersonLegislativeData | _LEG | DMTW001_LEG |
+
+**WorkTerms and Assignment are keyed by the SOURCE assignment number, not the
+person.** The Worker load has no assignment number of its own, so it sources one
+from the Assignment object's rows (joined by PERSON_NUMBER) and emits one
+WorkTerms + one Assignment per assignment. The Assignment object builds the same
+`<AssignmentNumber>_TRM` / `<AssignmentNumber>_ASG` keys from the same field, so
+the two loads never collide on the shared assignment id, and one person can carry
+multiple assignments with distinct keys. A worker with no matching assignment row
+fails the worker validator (rule R3) — the number is never fabricated.
 
 ## V2 Audit — Invalid Attributes
 These attributes exist in the V2 template but are rejected by the Fusion REST API. The HDL generator must exclude them.

@@ -26,7 +26,10 @@ See `v2_audit.md` for full attribute audit details.
 
 ## FK Dependency
 - **Must use the same prefix as Workers** for the AssignmentId(SourceSystemId) FK to resolve correctly.
-- AssignmentId references the Assignment SourceSystemId from the Workers load (e.g., DMTW001_ASG).
+- AssignmentId references the Assignment SourceSystemId, keyed by the source assignment number:
+  `ASSIGNMENT_NUMBER || '_ASG'` (e.g. ET-RT-WKR-G1_ASG). Salary carries `ASSIGNMENT_NUMBER`, so the
+  FK resolves to the exact assignment even when a person has several. A blank number fails the
+  salary validator (R1).
 
 ## Code References
 - STG Table DDL: `schema/tables/114_dmt_salary_stg_tbl.sql`
@@ -69,12 +72,13 @@ See `v2_audit.md` for full attribute audit details.
 Goal: one GOOD salary for the good worker `RT-WKR-G1` reaches `CMP_SALARY`, and one BAD
 salary reaches FAILED with a reportable Fusion error. All HCM objects in a regression run
 share one numeric prefix, so the `AssignmentId(SourceSystemId)` FK
-(`RT-WKR-G1_ASG`) resolves to the assignment loaded earlier in the same run.
+(`ET-RT-WKR-G1_ASG`, built from the source assignment number) resolves to the
+assignment loaded earlier in the same run.
 
 ### Required STG table/columns (from `dmt_salary_hdl_gen_pkg`)
 Single table: **`DMT_SALARY_STG_TBL`**. Salary is standalone — no parent chain — but it
 DEPENDS on Workers/Assignments having loaded first so the assignment SSID exists. Columns
-the generator actually emits (SSID is `PERSON_NUMBER || '_SAL'`, FK is `PERSON_NUMBER || '_ASG'`):
+the generator actually emits (SSID is `PERSON_NUMBER || '_SAL'`, FK is `ASSIGNMENT_NUMBER || '_ASG'`):
 `PERSON_NUMBER`, `DATE_FROM` (YYYY/MM/DD), `SALARY_AMOUNT`, `SALARY_BASIS_NAME`,
 `SALARY_APPROVED`, `ACTION_CODE`, `NEXT_SAL_REVIEW_DATE` (optional), `DATE_TO` (optional),
 plus infra `SOURCE_ID`, `STG_STATUS='NEW'`.
@@ -92,7 +96,7 @@ plus infra `SOURCE_ID`, `STG_STATUS='NEW'`.
 | Column | Value |
 |--------|-------|
 | PERSON_NUMBER | `RT-WKR-G1` |
-| ASSIGNMENT_NUMBER | `ET-RT-WKR-G1` (informational; FK uses PERSON_NUMBER_ASG) |
+| ASSIGNMENT_NUMBER | `ET-RT-WKR-G1` (required; the FK is `ASSIGNMENT_NUMBER || '_ASG'`) |
 | SALARY_AMOUNT | `75000` |
 | SALARY_BASIS_NAME | `US1 Annual Salary` |
 | ACTION_CODE | `HIRE` |
@@ -113,5 +117,5 @@ does not exist.
 
 ### Prerequisite reference data (confirmed present)
 - Salary basis `US1 Annual Salary` — CONFIRMED live and active on the demo instance.
-- The worker's assignment (`RT-WKR-G1_ASG`) must load first in the same prefixed run —
+- The worker's assignment (`ET-RT-WKR-G1_ASG`) must load first in the same prefixed run —
   this is the only ordering dependency. No standalone blocker; GOOD row should reach `CMP_SALARY`.

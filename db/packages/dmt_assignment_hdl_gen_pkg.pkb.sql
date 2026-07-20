@@ -9,7 +9,11 @@ AS
 -- HDL requires the full parent chain in the file even for updates:
 --   Worker → WorkRelationship → WorkTerms → Assignment
 -- Parent records are re-stated as MERGEs using the SourceSystemId
--- pattern from the original Worker load (PERSON_NUMBER, _POS, _TRM, _ASG).
+-- pattern shared with the Worker load. WorkRelationship/PeriodOfService keys
+-- off the person (<PersonNumber>_POS); WorkTerms and Assignment key off the
+-- SOURCE assignment number (<AssignmentNumber>_TRM / <AssignmentNumber>_ASG),
+-- so both loads derive the same keys from the same field and never collide on
+-- the shared assignment id. Multiple assignments per person are supported.
 --
 -- METADATA validated against Fusion 25B V2 (proven in Worker pipeline).
 -- V2 invalid: EffectiveStartDate/EndDate on WR, ManagerPersonNumber,
@@ -184,27 +188,35 @@ AS
             END LOOP;
 
             -- ============================================================
-            -- 4. WorkTerms (parent chain)
+            -- 4. WorkTerms (parent chain — one per assignment)
+            --    Keyed by the source ASSIGNMENT_NUMBER (a business key), NOT
+            --    the person. The SourceSystemId (<AssignmentNumber>_TRM) and
+            --    AssignmentNumber therefore match exactly what the Worker load
+            --    emits for the same assignment, so the two loads never collide
+            --    on the shared assignment id. The work relationship
+            --    (<PersonNumber>_POS) stays person-keyed — one period of
+            --    service per person.
             -- ============================================================
             DBMS_LOB.WRITEAPPEND(l_dat, LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS)),
                 DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS));
 
             FOR r IN (
-                SELECT DISTINCT wr.PERSON_NUMBER,
-                       wr.DATE_START, wr.ACTION_CODE
-                FROM   DMT_OWNER.DMT_WORK_REL_TFM_TBL wr
-                WHERE  wr.RUN_ID = p_run_id
-                AND    wr.TFM_STATUS = 'STAGED'
+                SELECT a.PERSON_NUMBER, a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME,
+                       a.EFFECTIVE_START_DATE, a.ACTION_CODE
+                FROM   DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL a
+                WHERE  a.RUN_ID = p_run_id
+                AND    a.TFM_STATUS = 'STAGED'
+                ORDER BY a.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                || '|' ||
-                          pv(r.PERSON_NUMBER) || '_TRM'  || '|' ||  -- SourceSystemId
-                          pv(r.PERSON_NUMBER) || '_POS'  || '|' ||  -- PeriodOfServiceId(SourceSystemId)
-                          NVL(r.ACTION_CODE, 'HIRE')     || '|' ||
-                          pv(r.DATE_START)               || '|' ||  -- EffectiveStartDate
-                          '1'                            || '|' ||  -- EffectiveSequence
-                          'Y'                            || '|' ||  -- EffectiveLatestChange
-                          'ET-' || pv(r.PERSON_NUMBER)   || '|' ||  -- AssignmentName
-                          'ET-' || pv(r.PERSON_NUMBER)   || '|' ||  -- AssignmentNumber
+                l_vals := C_SOURCE_SYSTEM                        || '|' ||
+                          pv(r.ASSIGNMENT_NUMBER) || '_TRM'      || '|' ||  -- SourceSystemId (per assignment)
+                          pv(r.PERSON_NUMBER) || '_POS'          || '|' ||  -- PeriodOfServiceId(SourceSystemId)
+                          NVL(r.ACTION_CODE, 'HIRE')             || '|' ||
+                          pv(r.EFFECTIVE_START_DATE)             || '|' ||  -- EffectiveStartDate
+                          '1'                                    || '|' ||  -- EffectiveSequence
+                          'Y'                                    || '|' ||  -- EffectiveLatestChange
+                          pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
+                          pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
                           'Y';                                       -- PrimaryWorkTermsFlag
                 DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'WorkTerms');
                 l_row_count := l_row_count + 1;
@@ -224,12 +236,12 @@ AS
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
                 l_vals := C_SOURCE_SYSTEM                    || '|' ||
-                          pv(r.PERSON_NUMBER) || '_ASG'      || '|' ||  -- SourceSystemId
+                          pv(r.ASSIGNMENT_NUMBER) || '_ASG'  || '|' ||  -- SourceSystemId (per assignment)
                           pv(r.ACTION_CODE)                  || '|' ||
                           pv(r.EFFECTIVE_START_DATE)          || '|' ||
                           '1'                                || '|' ||  -- EffectiveSequence
                           'Y'                                || '|' ||  -- EffectiveLatestChange
-                          pv(r.PERSON_NUMBER) || '_TRM'      || '|' ||  -- WorkTermsAssignmentId(SourceSystemId)
+                          pv(r.ASSIGNMENT_NUMBER) || '_TRM'  || '|' ||  -- WorkTermsAssignmentId(SourceSystemId)
                           pv(r.ASSIGNMENT_NAME)              || '|' ||
                           pv(r.ASSIGNMENT_NUMBER)            || '|' ||
                           pv(r.ASSIGNMENT_STATUS_TYPE_CODE)  || '|' ||

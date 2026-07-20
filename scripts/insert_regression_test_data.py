@@ -2207,10 +2207,13 @@ def main():
 
     # ====================================================================
     # 41. WORKERS (HCM HDL) — minimal loadable worker
-    #     A hire needs just two STG rows: the worker + a GLOBAL name. The
-    #     generator builds the WorkRelationship/WorkTerms/Assignment sections
-    #     from the worker row (LegalEmployerName='US1 Legal Entity', a real
-    #     legal entity on this instance; BU default from WORKER_DEFAULT_BU_NAME).
+    #     A hire needs the worker + a GLOBAL name + at least one Assignment row.
+    #     The generator builds the WorkRelationship section from the worker row
+    #     (LegalEmployerName='US1 Legal Entity', a real legal entity on this
+    #     instance), and builds the WorkTerms/Assignment sections from the
+    #     Assignment source rows joined by person, using the real
+    #     ASSIGNMENT_NUMBER as the HDL key — it never fabricates a number. A
+    #     worker with no assignment row fails the worker validator (rule R3).
     #     The run prefix makes PERSON_NUMBER unique, so no collision with real
     #     persons or frozen DMTW* data. (objects/Workers/README.md, 2026-07-15.)
     #     GOOD: RT-WKR-G1 (HIRE). BAD: RT-WKR-B1 (ACTION_CODE=TERMINATE, caught
@@ -2271,12 +2274,15 @@ def main():
             'RT-WKR-G1-WR', 'NEW'
         )
     """, label="Work relationship for RT-WKR-G1")
-    # Good and bad must be DISTINCT records. The generator keys the Assignment
-    # SourceSystemId off PERSON_NUMBER (|| '_ASG'), NOT the assignment number, so
-    # the bad row uses a distinct person or HDL rejects both as duplicate lines.
-    for pnum, anum, status, bu, label in [
-        ("RT-WKR-G1",   "ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "GOOD Assignment: RT-WKR-G1"),
-        ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
+    # The generator now keys the Assignment SourceSystemId off the source
+    # ASSIGNMENT_NUMBER (|| '_ASG'), NOT the person, so distinct assignment
+    # numbers are distinct HDL records. RT-WKR-G1 gets TWO assignments to prove
+    # a single person can carry multiple assignments with distinct keys. The bad
+    # row has its own distinct number and a bad BU so it fails cleanly.
+    for pnum, anum, status, bu, primary, label in [
+        ("RT-WKR-G1",   "ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "Y", "GOOD Assignment: RT-WKR-G1 (primary)"),
+        ("RT-WKR-G1",   "ET-RT-WKR-G1B", "ACTIVE_PROCESS", "US1 Business Unit", "N", "GOOD Assignment: RT-WKR-G1 (second — proves multiple assignments/person)"),
+        ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "Y", "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_OWNER.DMT_ASSIGNMENT_STG_TBL (
@@ -2290,9 +2296,10 @@ def main():
                 '2026/01/01', :status,
                 :bu, 'HIRE', 'JOB071', 'Sales',
                 '40', 'W', 'FR',
-                'Y', :src, 'NEW'
+                :primary, :src, 'NEW'
             )
-        """, {"pnum": pnum, "anum": anum, "status": status, "bu": bu, "src": f"RT-{anum}"},
+        """, {"pnum": pnum, "anum": anum, "status": status, "bu": bu,
+              "primary": primary, "src": f"RT-{anum}"},
         label=label)
     tag_scenario(cur, "DMT_WORK_REL_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_ASSIGNMENT_STG_TBL", scenario_id)
