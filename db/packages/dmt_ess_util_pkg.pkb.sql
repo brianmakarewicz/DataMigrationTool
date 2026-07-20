@@ -367,7 +367,7 @@
     -- Queries ESS_REQUEST_HISTORY via pre-deployed BIP DM (AD#16)
     -- for the parent + all descendants. Inserts into DMT_ESS_JOB_TBL.
     --
-    -- Uses: /Custom/DMT/common/DMT_ESS_HIERARCHY_RPT.xdo
+    -- Uses: /Custom/DMT2/common/DMT_ESS_HIERARCHY_RPT.xdo
     -- Parameter: P_PARENT_REQUEST_ID
     -- ============================================================
     PROCEDURE CAPTURE_ESS_HIERARCHY (
@@ -376,7 +376,7 @@
         p_cemli_code        IN VARCHAR2 DEFAULT NULL
     ) IS
         C_PROC     CONSTANT VARCHAR2(30)  := 'CAPTURE_ESS_HIERARCHY';
-        C_RPT_PATH CONSTANT VARCHAR2(200) := '/Custom/DMT/common/DMT_ESS_HIERARCHY_RPT.xdo';
+        C_RPT_PATH CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_HIERARCHY_RPT.xdo';
 
         l_base_url  VARCHAR2(500);
         l_bip_user  VARCHAR2(100);
@@ -1059,7 +1059,7 @@
         p_cemli_code     IN VARCHAR2 DEFAULT NULL
     ) RETURN NUMBER IS
         C_PROC     CONSTANT VARCHAR2(30)  := 'CAPTURE_REPORT_ESS_JOB';
-        C_RPT_PATH CONSTANT VARCHAR2(200) := '/Custom/DMT/common/DMT_ESS_CHILD_JOB_RPT.xdo';
+        C_RPT_PATH CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo';
 
         l_report_job_def VARCHAR2(200);
         l_base_url  VARCHAR2(500);
