@@ -327,7 +327,15 @@ AS
         DMT_LOADER_PKG.g_partition_key := l_rec.PARTITION_KEY;
         -- Work-queue-ID core (2026-07-20): the id of the item generating these rows, so
         -- the generators stamp WORK_QUEUE_ID and reconcile sweeps only this item's rows.
-        DMT_LOADER_PKG.g_work_queue_id := p_queue_id;
+        -- Scoped ONLY for spawn-per-partition children (a real PARTITION_KEY, not the
+        -- old in-zip 'ALL' split and not the un-partitioned parent): only those objects'
+        -- generators stamp WORK_QUEUE_ID. For every other object it stays NULL so
+        -- SWEEP_UNACCOUNTED keeps its byte-identical run-scoped behavior — otherwise the
+        -- scope predicate (WORK_QUEUE_ID = p_work_queue_id) would compare a non-NULL id
+        -- to an unstamped NULL column and silently sweep zero rows (Rule #1 regression).
+        DMT_LOADER_PKG.g_work_queue_id :=
+            CASE WHEN l_rec.PARTITION_KEY IS NOT NULL AND l_rec.PARTITION_KEY <> 'ALL'
+                 THEN p_queue_id END;
 
         -- Spawn-per-partition split (generalized from the Assets-only per-book path,
         -- 2026-07-20). An object configured in DMT_CEMLI_SPLIT_CFG with a
