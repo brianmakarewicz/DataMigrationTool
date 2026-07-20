@@ -278,40 +278,16 @@ AS
 
             apply_import_report(p_run_id, p_import_ess_id, l_ir_matched);
 
-            -- Mark remaining GENERATED rows FAILED across all four TFM tables.
-            UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows. Cannot verify Fusion outcome.'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            l_not_recon := SQL%ROWCOUNT;
-            UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows. Cannot verify Fusion outcome.'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            l_not_recon := l_not_recon + SQL%ROWCOUNT;
-            UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows. Cannot verify Fusion outcome.'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            l_not_recon := l_not_recon + SQL%ROWCOUNT;
-            UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows. Cannot verify Fusion outcome.'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            l_not_recon := l_not_recon + SQL%ROWCOUNT;
-
+            -- Any rows the Import Report fallback matched are now FAILED with a
+            -- REAL import error. The rows it did NOT match remain GENERATED: we
+            -- could determine neither a base-table LOADED nor a real Fusion
+            -- per-record error for them, so we do NOT fabricate a FAILED. They
+            -- are left unaccounted; the accounting gate reports the object
+            -- not-DONE and the funnel surfaces them as unreconciled.
             DMT_UTIL_PKG.LOG(
                 p_run_id  => p_run_id,
                 p_message => C_PROC || ': zero-row path complete. IR_MATCHED: ' || l_ir_matched ||
-                             ', NOT_RECONCILED: ' || l_not_recon || '.',
+                             '. Remaining GENERATED rows left unaccounted (not marked FAILED).',
                 p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package   => C_PKG,
                 p_procedure => C_PROC);

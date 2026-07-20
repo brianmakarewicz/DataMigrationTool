@@ -223,24 +223,18 @@ AS
         l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
         IF l_xml IS NULL THEN
             -- No reportBytes at all — BIP returned 0 rows from BOTH tiers.
-            -- Mark all GENERATED rows as FAILED (not reconciled).
-            UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
-            SET    TFM_STATUS               = 'FAILED',
-                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows from both interface and base tables. Cannot verify Fusion outcome.'),
-                   RESULTS_UPDATED_DATE = SYSDATE,
-                   LAST_UPDATED_DATE    = SYSDATE
-            WHERE  RUN_ID       = p_run_id
-            AND    TFM_STATUS               = 'GENERATED';
-            l_not_recon := SQL%ROWCOUNT;
+            -- We could determine neither a base-table LOADED nor a real Fusion
+            -- per-record error, so we do NOT fabricate a FAILED. The GENERATED
+            -- rows are left as-is (unaccounted); the accounting gate reports the
+            -- object not-DONE and the funnel surfaces them as unreconciled.
             DMT_UTIL_PKG.LOG(
                 p_run_id => p_run_id,
                 p_message        => C_PROC || ': No <reportBytes> in BIP response. ' ||
-                                    l_not_recon || ' GENERATED rows marked FAILED (not reconciled).',
+                                    'GENERATED rows left unaccounted (not marked FAILED).',
                 p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package        => C_PKG,
                 p_procedure      => C_PROC);
-            GOTO echo_to_stg;
+            RETURN;
         END IF;
 
         -- Process rows from BIP XML — two-tier reconciliation

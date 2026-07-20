@@ -233,42 +233,19 @@ AS
         l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
         IF l_xml IS NULL THEN
             -- No reportBytes at all — BIP returned 0 rows from BOTH datasets.
-            UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-            SET    TFM_STATUS               = 'FAILED',
-                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows from both interface and base tables. Cannot verify Fusion outcome.'),
-                   RESULTS_UPDATED_DATE = SYSDATE,
-                   LAST_UPDATED_DATE    = SYSDATE
-            WHERE  RUN_ID       = p_run_id
-            AND    TFM_STATUS               = 'GENERATED';
-            l_not_recon := SQL%ROWCOUNT;
-
-            UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
-            SET    ln.TFM_STATUS            = 'FAILED',
-                   ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows. Parent header not reconciled.'),
-                   ln.RESULTS_UPDATED_DATE = SYSDATE,
-                   ln.LAST_UPDATED_DATE = SYSDATE
-            WHERE  ln.RUN_ID    = p_run_id
-            AND    ln.TFM_STATUS            = 'GENERATED';
-
-            UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
-            SET    d.TFM_STATUS            = 'FAILED',
-                   d.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows. Parent header not reconciled.'),
-                   d.RESULTS_UPDATED_DATE = SYSDATE,
-                   d.LAST_UPDATED_DATE = SYSDATE
-            WHERE  d.RUN_ID    = p_run_id
-            AND    d.TFM_STATUS            = 'GENERATED';
-
+            -- We could determine neither a base-table LOADED nor a real Fusion
+            -- per-record error, so we do NOT fabricate a FAILED. The GENERATED
+            -- header, line and distribution rows are left as-is (unaccounted);
+            -- the accounting gate reports the object not-DONE and the funnel
+            -- surfaces them as unreconciled.
             DMT_UTIL_PKG.LOG(
                 p_run_id => p_run_id,
                 p_message        => C_PROC || ': No <reportBytes> in BIP response. ' ||
-                                    l_not_recon || ' GENERATED header rows marked FAILED (not reconciled).',
+                                    'GENERATED rows left unaccounted (not marked FAILED).',
                 p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package        => C_PKG,
                 p_procedure      => C_PROC);
-            GOTO echo_to_stg;
+            RETURN;
         END IF;
 
         -- ============================================================

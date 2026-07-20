@@ -54,12 +54,22 @@ def reconciler_files():
 # Fabricated-fallback signatures that must never reappear in a reconciler. These are
 # the generic "we could not find it, so we call it failed" strings, plus any trace of
 # the removed fabricating sweep.
+#
+# Note on the BIP-0-rows family: a legitimate LOG line may truthfully say "BIP
+# returned 0 rows" before handing off to an import-report fallback, so the bare
+# phrase is NOT banned. What IS banned is asserting an outcome we never observed —
+# "Cannot verify Fusion outcome", "No reconciliation data returned", and the
+# "0 rows ... Parent ... not reconciled" cascade — which only ever appeared as
+# fabricated ERROR_TEXT written onto a FAILED row.
 FABRICATED_PATTERNS = [
     re.compile(r"PROCEDURE\s+SWEEP_UNACCOUNTED\b", re.I),
     re.compile(r"\bSWEEP_UNACCOUNTED\s*\(", re.I),
     re.compile(r"not confirmed in Fusion.*could not be verified", re.I | re.S),
     re.compile(r"import outcome could not be verified", re.I),
     re.compile(r"no row-level error matched", re.I),
+    re.compile(r"Cannot verify Fusion outcome", re.I),
+    re.compile(r"No reconciliation data returned", re.I),
+    re.compile(r"BIP returned 0 rows\.\s*Parent header not reconciled", re.I),
 ]
 
 

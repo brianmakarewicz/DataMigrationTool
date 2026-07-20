@@ -140,59 +140,7 @@
         C_PROC   CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
         l_loaded NUMBER := 0;
         l_failed NUMBER := 0;
-        l_sweep  NUMBER := 0;
         l_rc     NUMBER := 0;
-
-        -- Mark every GENERATED row FAILED across all seven TFM tables
-        -- (used for the zero-row report case and reused by the final
-        -- unaccounted sweep). Static UPDATEs, one per table -- no dynamic
-        -- SQL. Returns the total rows touched.
-        FUNCTION fail_all_generated(p_note IN VARCHAR2) RETURN NUMBER IS
-            n NUMBER := 0;
-        BEGIN
-            UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
-            SET TFM_STATUS='FAILED',
-                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_note),
-                RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-            n := SQL%ROWCOUNT;
-            UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL
-            SET TFM_STATUS='FAILED',
-                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_note),
-                RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-            n := n + SQL%ROWCOUNT;
-            UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL
-            SET TFM_STATUS='FAILED',
-                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_note),
-                RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-            n := n + SQL%ROWCOUNT;
-            UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
-            SET TFM_STATUS='FAILED',
-                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_note),
-                RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-            n := n + SQL%ROWCOUNT;
-            UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL
-            SET TFM_STATUS='FAILED',
-                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_note),
-                RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-            n := n + SQL%ROWCOUNT;
-            UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL
-            SET TFM_STATUS='FAILED',
-                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_note),
-                RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-            n := n + SQL%ROWCOUNT;
-            UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL
-            SET TFM_STATUS='FAILED',
-                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_note),
-                RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-            RETURN n + SQL%ROWCOUNT;
-        END fail_all_generated;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
@@ -200,16 +148,17 @@
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
-        -- NULL report = BIP returned 0 rows from both tiers. Positive
-        -- verification is impossible, so every GENERATED row across all
-        -- seven tables is FAILED (no absence=LOADED, Rule #1).
+        -- NULL report = BIP returned 0 rows from both tiers. We could determine
+        -- neither a base-table LOADED nor a real Fusion per-record error, so we
+        -- do NOT fabricate a FAILED (no absence=LOADED either). The GENERATED
+        -- rows across all seven tables are left as-is (unaccounted); the
+        -- accounting gate reports the object not-DONE and the funnel surfaces
+        -- them as unreconciled.
         IF p_report_xml IS NULL THEN
-            l_sweep := fail_all_generated(
-                '[RECONCILE_ERROR] BIP returned 0 rows. Cannot verify Fusion outcome.');
             DMT_UTIL_PKG.LOG(
                 p_run_id  => p_run_id,
                 p_message => C_PROC || ': BIP report returned zero rows. ' ||
-                             l_sweep || ' GENERATED rows marked FAILED (not reconciled).',
+                             'GENERATED rows left unaccounted (not marked FAILED).',
                 p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package   => C_PKG,
                 p_procedure => C_PROC);
@@ -377,8 +326,7 @@
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
             p_message => C_PROC || ' complete. LOADED (base-confirmed): ' || l_loaded ||
-                         ', FAILED (Fusion reject): ' || l_failed ||
-                         ', not-reconciled (all tiers): ' || l_sweep || '.',
+                         ', FAILED (Fusion reject): ' || l_failed || '.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
 

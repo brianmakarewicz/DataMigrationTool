@@ -128,23 +128,16 @@
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
-        -- NULL report = BIP returned 0 rows from both tiers. Positive
-        -- verification is impossible, so every GENERATED row is FAILED
-        -- (no absence=LOADED).
+        -- NULL report = BIP returned 0 rows from both tiers. We could determine
+        -- neither a base-table LOADED nor a real Fusion per-record error, so we
+        -- do NOT fabricate a FAILED (no absence=LOADED either). The GENERATED
+        -- rows are left as-is (unaccounted); the accounting gate reports the
+        -- object not-DONE and the funnel surfaces them as unreconciled.
         IF p_report_xml IS NULL THEN
-            UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
-            SET    TFM_STATUS           = 'FAILED',
-                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows from both interface and base tables. Cannot verify Fusion outcome.'),
-                   RESULTS_UPDATED_DATE = SYSDATE,
-                   LAST_UPDATED_DATE    = SYSDATE
-            WHERE  RUN_ID     = p_run_id
-            AND    TFM_STATUS = 'GENERATED';
-            l_not_recon := SQL%ROWCOUNT;
             DMT_UTIL_PKG.LOG(
                 p_run_id  => p_run_id,
                 p_message => C_PROC || ': BIP report returned zero rows. ' ||
-                             l_not_recon || ' GENERATED rows marked FAILED (not reconciled).',
+                             'GENERATED rows left unaccounted (not marked FAILED).',
                 p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package   => C_PKG,
                 p_procedure => C_PROC);

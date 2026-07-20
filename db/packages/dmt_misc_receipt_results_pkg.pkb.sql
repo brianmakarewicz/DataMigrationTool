@@ -195,21 +195,14 @@ AS
         -- VARCHAR2(32767) truncation). Returns NULL when there are no rows.
         l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
         IF l_xml IS NULL THEN
-            -- No reportBytes at all — BIP returned nothing. Mark all GENERATED as FAILED (unknown).
+            -- No reportBytes at all — BIP returned nothing. We could determine
+            -- neither a base-table LOADED nor a real Fusion per-record error, so
+            -- we do NOT fabricate a FAILED. The GENERATED rows are left as-is
+            -- (unaccounted); the accounting gate reports the object not-DONE and
+            -- the funnel surfaces them as unreconciled.
             DMT_UTIL_PKG.LOG(p_run_id,
-                C_PROC || ': No <reportBytes> in BIP response. Cannot reconcile.',
+                C_PROC || ': No <reportBytes> in BIP response. GENERATED rows left unaccounted (not marked FAILED).',
                 DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
-
-            UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[BIP] No reconciliation data returned'),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            l_failed := SQL%ROWCOUNT;
-
-            DMT_UTIL_PKG.LOG(p_run_id,
-                C_PROC || ' complete. LOADED: 0, FAILED: ' || l_failed || '.',
-                C_PKG, C_PROC);
             RETURN;
         END IF;
 

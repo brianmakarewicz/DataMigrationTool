@@ -284,20 +284,17 @@ AS
                 END;
             END IF;
 
-            -- Mark remaining GENERATED rows as FAILED (not reconciled by BIP or Import Report)
-            UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
-            SET    TFM_STATUS               = 'FAILED',
-                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[RECONCILE_ERROR] BIP returned 0 rows from both interface and base tables. Cannot verify Fusion outcome.'),
-                   RESULTS_UPDATED_DATE = SYSDATE,
-                   LAST_UPDATED_DATE    = SYSDATE
-            WHERE  RUN_ID       = p_run_id
-            AND    TFM_STATUS               = 'GENERATED';
-            l_not_recon := SQL%ROWCOUNT;
+            -- Rows the Import Report fallback matched are now FAILED with a REAL
+            -- import error. The rows it did NOT match remain GENERATED: we could
+            -- determine neither a base-table LOADED nor a real Fusion per-record
+            -- error for them, so we do NOT fabricate a FAILED. They are left
+            -- unaccounted; the accounting gate reports the object not-DONE and
+            -- the funnel surfaces them as unreconciled.
             DMT_UTIL_PKG.LOG(
                 p_run_id => p_run_id,
                 p_message        => C_PROC || ': After Import Report fallback, ' ||
-                                    l_not_recon || ' GENERATED rows still not reconciled — marked FAILED.',
+                                    l_ir_matched || ' rows matched a real import error; remaining ' ||
+                                    'GENERATED rows left unaccounted (not marked FAILED).',
                 p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package        => C_PKG,
                 p_procedure      => C_PROC);
