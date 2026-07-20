@@ -67,7 +67,8 @@ AS
         p_scenario_name    IN VARCHAR2 DEFAULT NULL,
         p_run_mode         IN VARCHAR2 DEFAULT NULL,
         p_load_ess_id      IN NUMBER   DEFAULT NULL,
-        p_import_ess_id    IN NUMBER   DEFAULT NULL
+        p_import_ess_id    IN NUMBER   DEFAULT NULL,
+        p_work_queue_id    IN NUMBER   DEFAULT NULL
     ) IS
     BEGIN
         IF p_proc IS NULL
@@ -86,13 +87,14 @@ AS
         ELSIF p_style = 'RECON_CEMLI' THEN
             EXECUTE IMMEDIATE
                 'BEGIN ' || p_proc || '(p_run_id => :b1, p_cemli_code => :b2, '
-                || 'p_load_ess_id => :b3, p_import_ess_id => :b4); END;'
-                USING p_run_id, p_cemli_code, p_load_ess_id, p_import_ess_id;
+                || 'p_load_ess_id => :b3, p_import_ess_id => :b4, '
+                || 'p_work_queue_id => :b5); END;'
+                USING p_run_id, p_cemli_code, p_load_ess_id, p_import_ess_id, p_work_queue_id;
         ELSIF p_style = 'RECON' THEN
             EXECUTE IMMEDIATE
                 'BEGIN ' || p_proc || '(p_run_id => :b1, p_load_ess_id => :b2, '
-                || 'p_import_ess_id => :b3); END;'
-                USING p_run_id, p_load_ess_id, p_import_ess_id;
+                || 'p_import_ess_id => :b3, p_work_queue_id => :b4); END;'
+                USING p_run_id, p_load_ess_id, p_import_ess_id, p_work_queue_id;
         ELSE
             RAISE_APPLICATION_ERROR(-20102,
                 'invoke_registered: unknown dispatch style ' || p_style);
@@ -319,50 +321,87 @@ AS
         -- SYNC (MiscReceipts) and LOCAL (mocks) run inline.
         DMT_LOADER_PKG.g_async_mode := (l_exec_mode = 'ASYNC');
         DMT_LOADER_PKG.g_load_ess_id := NULL;
-        -- Multi-book: a partitioned row carries its BOOK_TYPE_CODE; the loader uses this to
-        -- skip re-transform and generate the FBDI for only this book.
+        -- Spawn-per-partition: a partitioned child row carries its single partition value
+        -- (a BOOK_TYPE_CODE / BATCH_ID); the loader uses this to skip re-transform and
+        -- generate/load only that partition.
         DMT_LOADER_PKG.g_partition_key := l_rec.PARTITION_KEY;
+        -- Work-queue-ID core (2026-07-20): the id of the item generating these rows, so
+        -- the generators stamp WORK_QUEUE_ID and reconcile sweeps only this item's rows.
+        DMT_LOADER_PKG.g_work_queue_id := p_queue_id;
 
-        -- Multi-book Assets split: the un-partitioned row transforms once (STG -> TFM STAGED),
-        -- then spawns one child queue row per distinct BOOK_TYPE_CODE. Each child generates +
-        -- loads + Prepares + Posts (per book) + reconciles independently. One book per asset.
-        IF l_rec.CEMLI_CODE = 'Assets' AND l_rec.PARTITION_KEY IS NULL THEN
-            DMT_LOADER_PKG.RUN_ASSETS_TRANSFORM_ONLY(
-                l_rec.RUN_ID, l_run_rec.SCENARIO_NAME, l_run_rec.RUN_MODE);
+        -- Spawn-per-partition split (generalized from the Assets-only per-book path,
+        -- 2026-07-20). An object configured in DMT_CEMLI_SPLIT_CFG with a
+        -- CHILD_PARTITION_COLUMN loads by: the un-partitioned PARENT row transforms once
+        -- (STG -> TFM STAGED), then spawns one child work-queue item per distinct value
+        -- of that column. Each child generates + loads + reconciles + sweeps ONLY its
+        -- own partition (scoped by WORK_QUEUE_ID) and settles independently.
+        -- Assets -> BOOK_TYPE_CODE, Items -> BATCH_ID, Requisitions -> BATCH_ID.
+        IF l_rec.PARTITION_KEY IS NULL THEN
             DECLARE
-                l_cnt PLS_INTEGER := 0;
+                l_child_col   VARCHAR2(30);
+                l_tfm_table   VARCHAR2(128);
             BEGIN
-                FOR brec IN (
-                    SELECT DISTINCT BOOK_TYPE_CODE AS bk
-                    FROM   DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
-                    WHERE  RUN_ID = l_rec.RUN_ID AND TFM_STATUS = 'STAGED' AND BOOK_TYPE_CODE IS NOT NULL
-                ) LOOP
-                    INSERT INTO DMT_WORK_QUEUE_TBL (
-                        RUN_ID, PIPELINE, CEMLI_CODE, PARTITION_KEY, PARTITION_LABEL,
-                        SORT_ORDER, DEPENDS_ON, WORK_STATUS
-                    ) VALUES (
-                        l_rec.RUN_ID, l_rec.PIPELINE, 'Assets', brec.bk, brec.bk,
-                        l_rec.SORT_ORDER, l_rec.DEPENDS_ON, 'READY'
-                    );
-                    l_cnt := l_cnt + 1;
-                END LOOP;
-                -- Accounting-gate exemption with spec citation (proposed rule
-                -- "Terminal work-item states pass one accounting gate"): this
-                -- parent row is split BOOKKEEPING, not a data item — section 2
-                -- "Handles data-dependent splits — partitions that can only be
-                -- known after transform (Assets per book) get their per-partition
-                -- work items created mid-run". Its records are owned and
-                -- accounted by the per-book child items created above.
-                UPDATE DMT_WORK_QUEUE_TBL
-                SET WORK_STATUS = 'DONE', COMPLETED_AT = SYSTIMESTAMP,
-                    PARTITION_LABEL = CASE WHEN l_cnt = 0 THEN 'No qualifying asset rows'
-                                           ELSE '(split into ' || l_cnt || ' book(s))' END
-                WHERE QUEUE_ID = p_queue_id;
-                COMMIT;
+                BEGIN
+                    SELECT CHILD_PARTITION_COLUMN, TFM_TABLE
+                    INTO   l_child_col, l_tfm_table
+                    FROM   DMT_OWNER.DMT_CEMLI_SPLIT_CFG
+                    WHERE  CEMLI_CODE = l_rec.CEMLI_CODE;
+                EXCEPTION WHEN NO_DATA_FOUND THEN
+                    l_child_col := NULL;
+                END;
+
+                IF l_child_col IS NOT NULL THEN
+                    -- 1. Transform-only pass (validate + STG -> TFM STAGED, no generate).
+                    --    Generalizes RUN_ASSETS_TRANSFORM_ONLY to any configured object.
+                    DMT_LOADER_PKG.RUN_TRANSFORM_ONLY(
+                        p_run_id        => l_rec.RUN_ID,
+                        p_cemli_code    => l_rec.CEMLI_CODE,
+                        p_scenario_name => l_run_rec.SCENARIO_NAME,
+                        p_run_mode      => l_run_rec.RUN_MODE);
+
+                    -- 2. Spawn one READY child per distinct partition value, tagged with
+                    --    PARENT_QUEUE_ID for traceability. Dynamic because the TFM table
+                    --    and partition column come from the registry.
+                    DECLARE
+                        l_cnt   PLS_INTEGER := 0;
+                        l_keys  SYS.ODCIVARCHAR2LIST;
+                    BEGIN
+                        EXECUTE IMMEDIATE
+                            'SELECT DISTINCT TO_CHAR(' || l_child_col || ') FROM DMT_OWNER.' || l_tfm_table ||
+                            ' WHERE RUN_ID = :b1 AND TFM_STATUS = ''STAGED'' AND ' || l_child_col || ' IS NOT NULL'
+                            BULK COLLECT INTO l_keys USING l_rec.RUN_ID;
+
+                        IF l_keys IS NOT NULL THEN
+                            FOR i IN 1 .. l_keys.COUNT LOOP
+                                INSERT INTO DMT_WORK_QUEUE_TBL (
+                                    RUN_ID, PIPELINE, CEMLI_CODE, PARTITION_KEY, PARTITION_LABEL,
+                                    PARENT_QUEUE_ID, SORT_ORDER, DEPENDS_ON, WORK_STATUS
+                                ) VALUES (
+                                    l_rec.RUN_ID, l_rec.PIPELINE, l_rec.CEMLI_CODE, l_keys(i), l_keys(i),
+                                    p_queue_id, l_rec.SORT_ORDER, l_rec.DEPENDS_ON, 'READY'
+                                );
+                                l_cnt := l_cnt + 1;
+                            END LOOP;
+                        END IF;
+
+                        -- Accounting-gate exemption (mirrors the Assets per-book rule):
+                        -- this parent row is split BOOKKEEPING, not a data item. Its
+                        -- records are owned and accounted by the per-partition child
+                        -- items spawned above, so it is marked DONE directly.
+                        UPDATE DMT_WORK_QUEUE_TBL
+                        SET WORK_STATUS = 'DONE', COMPLETED_AT = SYSTIMESTAMP,
+                            PARTITION_LABEL = CASE WHEN l_cnt = 0 THEN 'No qualifying rows'
+                                                   ELSE '(split into ' || l_cnt || ' partition(s))' END
+                        WHERE QUEUE_ID = p_queue_id;
+                        COMMIT;
+                    END;
+
+                    DMT_LOADER_PKG.g_async_mode := FALSE;
+                    DMT_LOADER_PKG.g_partition_key := NULL;
+                    DMT_LOADER_PKG.g_work_queue_id := NULL;
+                    RETURN;
+                END IF;
             END;
-            DMT_LOADER_PKG.g_async_mode := FALSE;
-            DMT_LOADER_PKG.g_partition_key := NULL;
-            RETURN;
         END IF;
 
         -- Registry-driven dispatch (was: hardcoded ~39-branch CASE over
@@ -381,6 +420,7 @@ AS
         DMT_LOADER_PKG.g_async_mode := FALSE;
         DMT_LOADER_PKG.g_load_ess_id := NULL;
         DMT_LOADER_PKG.g_partition_key := NULL;
+        DMT_LOADER_PKG.g_work_queue_id := NULL;
 
         IF l_load_ess_id IS NOT NULL THEN
             UPDATE DMT_WORK_QUEUE_TBL
@@ -412,6 +452,7 @@ AS
             DMT_LOADER_PKG.g_async_mode := FALSE;
             DMT_LOADER_PKG.g_load_ess_id := NULL;
             DMT_LOADER_PKG.g_partition_key := NULL;
+            DMT_LOADER_PKG.g_work_queue_id := NULL;
 
             DECLARE l_err VARCHAR2(4000) := SQLERRM; BEGIN
             UPDATE DMT_WORK_QUEUE_TBL
@@ -482,7 +523,11 @@ AS
             p_run_id        => l_rec.RUN_ID,
             p_cemli_code    => l_rec.CEMLI_CODE,
             p_load_ess_id   => TO_NUMBER(l_rec.LOAD_ESS_JOB_ID),
-            p_import_ess_id => TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
+            p_import_ess_id => TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID),
+            -- Work-queue-ID core: the reconciler sweeps only THIS item's rows.
+            -- For a spawn-per-partition child this is its own (child) queue id;
+            -- for a single-item object it is the object's own queue id.
+            p_work_queue_id => p_queue_id);
 
         -- Items special case (kept from the retired chain, deliberately NOT
         -- registry-expressible yet: the Items FBDI ZIP bundles the
@@ -498,7 +543,8 @@ AS
                 WHERE RUN_ID = l_rec.RUN_ID AND TFM_STATUS = 'GENERATED';
                 IF l_cat_gen > 0 THEN
                     DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                        TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID));
+                        TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID),
+                        p_work_queue_id => p_queue_id);
                 END IF;
             END;
         END IF;

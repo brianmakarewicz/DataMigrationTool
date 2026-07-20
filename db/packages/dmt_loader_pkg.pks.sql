@@ -278,12 +278,40 @@ AS
 
     -- Multi-book Assets: when set (to a BOOK_TYPE_CODE), run_one_object_type for Assets
     -- skips re-transform and generates the FBDI for ONLY this book. NULL = all books.
+    -- Generalized (2026-07-20): also carries the single partition value for any
+    -- spawn-per-partition object (Items/Requisitions -> a BATCH_ID).
     g_partition_key VARCHAR2(200) := NULL;
+
+    -- Work-queue-ID core (2026-07-20): the QUEUE_ID of the work-queue item that is
+    -- currently generating rows. EXECUTE_ONE sets it from the (child) queue row so
+    -- the generators can stamp WORK_QUEUE_ID onto every TFM / FBDI row they produce,
+    -- and the reconcile sweep can be scoped to just that item's rows. NULL when no
+    -- item context is active.
+    g_work_queue_id NUMBER := NULL;
+
+    -- Work-queue-ID core (2026-07-20): when TRUE, run_one_object_type validates and
+    -- transforms (STG -> TFM STAGED) and returns BEFORE any generate/submit. The
+    -- queue worker uses this on the PARENT of a spawn-per-partition object, then
+    -- spawns one child work-queue item per distinct partition value. Generalizes the
+    -- Assets-only RUN_ASSETS_TRANSFORM_ONLY to every configured object.
+    g_transform_only BOOLEAN := FALSE;
 
     -- Transform-only pass for Assets multi-book split: validate + transform STG->TFM (STAGED),
     -- no generate/submit. The queue worker then splits into one child queue row per book.
     PROCEDURE RUN_ASSETS_TRANSFORM_ONLY (
         p_run_id           IN NUMBER,
+        p_scenario_name    IN VARCHAR2 DEFAULT NULL,
+        p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
+    );
+
+    -- Generic transform-only pass (2026-07-20, work-queue-ID core): validate +
+    -- transform STG -> TFM (STAGED) for any object, no generate/submit. Sets
+    -- g_transform_only so run_one_object_type returns right after transform. The
+    -- queue worker calls this on a spawn-per-partition PARENT, then spawns one child
+    -- work-queue item per distinct partition value.
+    PROCEDURE RUN_TRANSFORM_ONLY (
+        p_run_id           IN NUMBER,
+        p_cemli_code       IN VARCHAR2,
         p_scenario_name    IN VARCHAR2 DEFAULT NULL,
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     );

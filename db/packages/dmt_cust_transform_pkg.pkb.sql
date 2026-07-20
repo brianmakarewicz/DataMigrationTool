@@ -112,7 +112,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, DMT_LOADER_PKG.g_work_queue_id),  -- work-queue-ID core (2026-07-20): source BATCH_ID first; fall back to the work-queue-item id, never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
@@ -277,7 +277,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, DMT_LOADER_PKG.g_work_queue_id),  -- work-queue-ID core (2026-07-20): source BATCH_ID first; fall back to the work-queue-item id, never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.LOCATION_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.LOCATION_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
@@ -446,7 +446,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, DMT_LOADER_PKG.g_work_queue_id),  -- work-queue-ID core (2026-07-20): source BATCH_ID first; fall back to the work-queue-item id, never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.SITE_ORIG_SYSTEM,
@@ -596,7 +596,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, DMT_LOADER_PKG.g_work_queue_id),  -- work-queue-ID core (2026-07-20): source BATCH_ID first; fall back to the work-queue-item id, never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.SITE_ORIG_SYSTEM,
@@ -734,7 +734,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, DMT_LOADER_PKG.g_work_queue_id),  -- work-queue-ID core (2026-07-20): source BATCH_ID first; fall back to the work-queue-item id, never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.CUST_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_ORIG_SYSTEM_REFERENCE),
                     s.PARTY_ORIG_SYSTEM,
@@ -877,7 +877,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, DMT_LOADER_PKG.g_work_queue_id),  -- work-queue-ID core (2026-07-20): source BATCH_ID first; fall back to the work-queue-item id, never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.CUST_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_ORIG_SYSTEM_REFERENCE),
                     s.CUST_SITE_ORIG_SYSTEM,
@@ -1022,7 +1022,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, DMT_LOADER_PKG.g_work_queue_id),  -- work-queue-ID core (2026-07-20): source BATCH_ID first; fall back to the work-queue-item id, never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.CUST_SITE_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_SITE_ORIG_SYS_REF),
                     s.CUST_SITEUSE_ORIG_SYSTEM,

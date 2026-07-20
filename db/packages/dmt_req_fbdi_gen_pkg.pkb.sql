@@ -523,14 +523,18 @@ AS
         -- Scoped to the batch (when passed) so one batch's generate only flips
         -- its own rows and does not starve later batches in the same run.
         -- Headers filter by BATCH_ID directly; lines/dists filter through their header.
+        -- Work-queue-ID core (2026-07-20): stamp WORK_QUEUE_ID = the generating child
+        -- work-queue item's id so reconcile scopes its sweep to this item's rows only.
         UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         -- Lines -> lines csv id
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR EXISTS (
                     SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
@@ -540,7 +544,8 @@ AS
 
         -- Distributions -> dists csv id
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR EXISTS (
                     SELECT 1

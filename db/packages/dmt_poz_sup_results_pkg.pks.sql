@@ -33,7 +33,8 @@ AS
         p_run_id  IN NUMBER,
         p_cemli_code      IN VARCHAR2,
         p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
+        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
     -- Run the reconciliation BIP report via the shared transport
