@@ -510,21 +510,121 @@ AS
         COMMIT;
 
     EXCEPTION
+        -- Code-classified failure split (run 179 fix). The old blanket handler
+        -- failed the whole object on ANY reconcile exception -- including a
+        -- single transient transport blip during the BIP verify call. Run 179:
+        -- MiscReceipts and Expenditures both LOADED and IMPORTED cleanly, then a
+        -- one-off ORA-29273 (HTTP request failed) on a BIP fetch marked the whole
+        -- object FAILED with 0 records, even though the data was already in Fusion.
+        --
+        -- A transient transport failure is NOT the object's verdict. On these we
+        -- route the work item back to RECONCILING so the poller re-spawns
+        -- DMT_RC_{queue_id} next tick and re-runs the verify (mirrors the existing
+        -- "retry next tick" idiom: dispatch_reconcile re-dispatches any RECONCILING
+        -- row whose one-shot child job has auto-dropped). We retry up to 3 attempts
+        -- total, tracked in a reconcile-owned sentinel in ERROR_MESSAGE
+        -- ('[RECONCILE_RETRY n]') -- nothing else reads ERROR_MESSAGE as data, and
+        -- POLL_COUNT still carries stale AWAITING-phase poll history at this point,
+        -- so it cannot be compared to a small cap. After 3 exhausted attempts we
+        -- fail with an honest message that says the load could not be VERIFIED --
+        -- not that the data failed. Any other exception (genuine BIP/SOAP
+        -- application fault, bad SQL, etc.) fails immediately, exactly as before.
         WHEN OTHERS THEN
-            DECLARE l_err VARCHAR2(4000) := SQLERRM; BEGIN
-            UPDATE DMT_WORK_QUEUE_TBL
-            SET WORK_STATUS = 'FAILED',
-                ERROR_MESSAGE = 'Reconciliation failed: ' || SUBSTR(l_err, 1, 3500),
-                COMPLETED_AT = SYSTIMESTAMP
-            WHERE QUEUE_ID = p_queue_id;
-            COMMIT;
-            END;
-
+            DECLARE
+                C_MAX_RETRY  CONSTANT PLS_INTEGER := 3;
+                l_err        VARCHAR2(4000) := SQLERRM;
+                l_code       PLS_INTEGER    := SQLCODE;
+                l_transient  BOOLEAN;
+                l_msg        VARCHAR2(4000);
+                l_attempt    PLS_INTEGER;
             BEGIN
-                DMT_UTIL_PKG.LOG_ERROR(l_rec.RUN_ID,
-                    'RECONCILE_ONE failed for ' || l_rec.CEMLI_CODE,
-                    SQLERRM, C_PKG, 'RECONCILE_ONE');
-            EXCEPTION WHEN OTHERS THEN NULL;
+                -- HTTP / network transport codes only. Primary case is ORA-29273
+                -- (UTL_HTTP request failed); the rest are transfer/TNS timeouts and
+                -- connection resets seen on the same BIP/ESS calls. SQLCODE is
+                -- negative for ORA-nnnnn errors.
+                l_transient := l_code IN (
+                    -29273,  -- HTTP request failed
+                    -29276,  -- transfer timeout
+                    -12170,  -- TNS: connect timeout occurred
+                    -12535,  -- TNS: operation timed out
+                    -12547,  -- TNS: lost contact
+                    -12571   -- TNS: packet writer failure
+                );
+
+                IF l_transient THEN
+                    -- Prior attempt count from the reconcile-owned sentinel.
+                    BEGIN
+                        SELECT NVL(TO_NUMBER(
+                                 REGEXP_SUBSTR(ERROR_MESSAGE,
+                                   '\[RECONCILE_RETRY ([0-9]+)\]', 1, 1, NULL, 1)), 0)
+                        INTO   l_attempt
+                        FROM   DMT_WORK_QUEUE_TBL
+                        WHERE  QUEUE_ID = p_queue_id;
+                    EXCEPTION WHEN OTHERS THEN
+                        l_attempt := 0;
+                    END;
+                    l_attempt := l_attempt + 1;
+
+                    IF l_attempt < C_MAX_RETRY THEN
+                        -- Route back to RECONCILING for another tick. Stamp the
+                        -- attempt so the next failure can count. Do NOT set
+                        -- COMPLETED_AT -- the item is not terminal.
+                        UPDATE DMT_WORK_QUEUE_TBL
+                        SET WORK_STATUS = 'RECONCILING',
+                            ERROR_MESSAGE = '[RECONCILE_RETRY ' || l_attempt || '] '
+                                || 'transient transport failure, retrying: '
+                                || SUBSTR(l_err, 1, 3400)
+                        WHERE QUEUE_ID = p_queue_id;
+                        COMMIT;
+
+                        BEGIN
+                            DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                                'RECONCILE_ONE transient transport failure for '
+                                || l_rec.CEMLI_CODE || ' (attempt ' || l_attempt
+                                || ' of ' || C_MAX_RETRY || '); routing back to '
+                                || 'RECONCILING for retry next tick ('
+                                || SUBSTR(l_err, 1, 300) || ')',
+                                'WARN', C_PKG, 'RECONCILE_ONE');
+                        EXCEPTION WHEN OTHERS THEN NULL;
+                        END;
+                    ELSE
+                        -- Cap reached: fail honestly. The data may well be loaded;
+                        -- we simply could not VERIFY it after 3 tries.
+                        l_msg := 'Reconciliation could not be verified after '
+                            || C_MAX_RETRY || ' attempts (last error: '
+                            || SUBSTR(l_err, 1, 3400) || ')';
+                        UPDATE DMT_WORK_QUEUE_TBL
+                        SET WORK_STATUS = 'FAILED',
+                            ERROR_MESSAGE = SUBSTR(l_msg, 1, 4000),
+                            COMPLETED_AT = SYSTIMESTAMP
+                        WHERE QUEUE_ID = p_queue_id;
+                        COMMIT;
+
+                        BEGIN
+                            DMT_UTIL_PKG.LOG_ERROR(l_rec.RUN_ID,
+                                'RECONCILE_ONE could not verify ' || l_rec.CEMLI_CODE
+                                || ' after ' || C_MAX_RETRY || ' transient attempts',
+                                SQLERRM, C_PKG, 'RECONCILE_ONE');
+                        EXCEPTION WHEN OTHERS THEN NULL;
+                        END;
+                    END IF;
+                ELSE
+                    -- Non-transient (genuine application fault): fail immediately,
+                    -- exactly as the original blanket handler did.
+                    UPDATE DMT_WORK_QUEUE_TBL
+                    SET WORK_STATUS = 'FAILED',
+                        ERROR_MESSAGE = 'Reconciliation failed: ' || SUBSTR(l_err, 1, 3500),
+                        COMPLETED_AT = SYSTIMESTAMP
+                    WHERE QUEUE_ID = p_queue_id;
+                    COMMIT;
+
+                    BEGIN
+                        DMT_UTIL_PKG.LOG_ERROR(l_rec.RUN_ID,
+                            'RECONCILE_ONE failed for ' || l_rec.CEMLI_CODE,
+                            SQLERRM, C_PKG, 'RECONCILE_ONE');
+                    EXCEPTION WHEN OTHERS THEN NULL;
+                    END;
+                END IF;
             END;
     END RECONCILE_ONE;
 
