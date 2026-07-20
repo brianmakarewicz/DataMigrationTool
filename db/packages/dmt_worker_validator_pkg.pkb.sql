@@ -109,7 +109,13 @@ AS
         AND    NOT EXISTS (
                    SELECT 1 FROM DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
                    WHERE  a.PERSON_NUMBER = w.PERSON_NUMBER
-                   AND    a.ASSIGNMENT_NUMBER IS NOT NULL );
+                   AND    a.ASSIGNMENT_NUMBER IS NOT NULL
+                   -- Match the HDL-gen join exactly: a worker only passes R3 if it
+                   -- has an assignment the generator will actually emit. A FAILED
+                   -- assignment is skipped there, so it must not satisfy R3 either
+                   -- (otherwise a future pipeline-order change could let an
+                   -- R3-passed worker generate zero WorkTerms/Assignment rows).
+                   AND    NVL(a.STG_STATUS, 'NEW') <> 'FAILED' );
         l_bad := l_bad + SQL%ROWCOUNT;
 
         -- Standard final step: flag the STG rows FAILED from the recorded error

@@ -202,7 +202,8 @@ AS
 
             FOR r IN (
                 SELECT a.PERSON_NUMBER, a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME,
-                       a.EFFECTIVE_START_DATE, a.ACTION_CODE
+                       a.EFFECTIVE_START_DATE, a.ACTION_CODE,
+                       a.PRIMARY_ASSIGNMENT_FLAG
                 FROM   DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL a
                 WHERE  a.RUN_ID = p_run_id
                 AND    a.TFM_STATUS = 'STAGED'
@@ -217,7 +218,7 @@ AS
                           'Y'                                    || '|' ||  -- EffectiveLatestChange
                           pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
                           pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
-                          'Y';                                       -- PrimaryWorkTermsFlag
+                          pv(NVL(r.PRIMARY_ASSIGNMENT_FLAG, 'Y'));    -- PrimaryWorkTermsFlag (source primary flag; one 'Y' per _POS)
                 DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'WorkTerms');
                 l_row_count := l_row_count + 1;
             END LOOP;
