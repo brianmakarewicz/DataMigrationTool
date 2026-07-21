@@ -1360,23 +1360,93 @@
             -- MCCS RICE_006: ImportProjectJobDef takes 3 args (,,Y)
             l_param_list := ',,Y';
         ELSIF p_cemli_code = 'Expenditures' THEN
-            -- MCCS RICE_007: ImportProcessParallelEssJob takes 14 args
-            -- Pos: 1=BU_NAME, 2=BU_ID, 3=Process, 4=Selection,
-            --      5=Batch(empty), 6=TxnSource(empty=all), 7-11=(empty), 12=Date,
-            --      13=(empty), 14=ExpenditureTypeClass
-            -- Using #NULL for empty params per Oracle ESS convention.
-            -- No-hardcoded-IDs standard (design section 7): the business unit is
-            -- named in config (EXPENDITURE_BU_NAME) and its instance-specific id
-            -- is resolved from the prepopulated BU lookup, never baked into code.
+            -- "Import and Process Cost Transactions" job
+            -- (onestop,ImportAndProcessTxnsJob -> shadow proc
+            -- PJC_IMPORT_AND_PROCESS.IMPORT_AND_PROCESS_ESS), a 10-position,
+            -- tilde-delimited ParameterList. This REPLACES the earlier
+            -- ImportProcessParallelEssJob (14-arg) form, which crashed on this pod
+            -- with ORA-06502 in its own parameter parsing (it put a BU name / date
+            -- string into numeric argument slots) so zero rows ever posted to base.
+            -- See objects/Expenditures/README.md and the gold fixture GOLD_README.
+            --
+            -- 10 positions (Pos=ProcArg=Value):
+            --   1  P_MODE                 = IMPORT_AND_PROCESS
+            --   2  P_BU_ID                = numeric BU id (never the name)
+            --   3  P_TXN_STATUS           = ALL
+            --   4  P_BATCH_NAME           = #NULL (batch-name FILTER; leave null so
+            --                               all pending rows for the BU are selected)
+            --   5  P_INTERFACE_ID         = #NULL
+            --   6  P_TXN_SOURCE_ID        = numeric transaction-source id
+            --   7  P_DOCUMENT_ID          = numeric document id
+            --   8  P_START_PROJECT_NO     = #NULL
+            --   9  P_END_PROJECT_NO       = #NULL
+            --   10 P_PROCESS_THROUGH_DATE = #NULL
+            --
+            -- No-hardcoded-IDs standard (design section 7): every numeric id is
+            -- resolved from a prepopulated lookup at pipeline preflight, never baked
+            -- into code. The BU id comes from BU_NAME_TO_BU_ID (config
+            -- EXPENDITURE_BU_NAME). The transaction-source and document ids come from
+            -- PJC_TXN_SOURCE_NAME_TO_ID / PJC_DOC_NAME_TO_ID (populated by
+            -- REFRESH_LOOKUPS from pjf_txn_sources_vl / pjf_txn_document_vl), keyed by
+            -- the USER_TRANSACTION_SOURCE and DOCUMENT_NAME the run's rows carry.
+            -- Positions 6/7 are import filters, so they must match the source and
+            -- document those interface rows name.
             DECLARE
-                l_exp_bu_name VARCHAR2(240);
-                l_exp_bu_id   VARCHAR2(30);
+                l_exp_bu_name    VARCHAR2(240);
+                l_exp_bu_id      VARCHAR2(30);
+                l_exp_src_name   VARCHAR2(240);
+                l_exp_doc_name   VARCHAR2(240);
+                l_exp_src_id     VARCHAR2(30);
+                l_exp_doc_id     VARCHAR2(30);
+                l_exp_src_cnt    NUMBER;
+                l_exp_doc_cnt    NUMBER;
             BEGIN
                 l_exp_bu_name := DMT_UTIL_PKG.GET_CONFIG('EXPENDITURE_BU_NAME');
                 l_exp_bu_id   := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', l_exp_bu_name);
-                l_param_list := l_exp_bu_name || ',' || l_exp_bu_id
-                    || ',IMPORT_AND_PROCESS,PREV_NOT_IMPORTED,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,'
-                    || TO_CHAR(SYSDATE, 'YYYY-MM-DD') || ',#NULL,ORA_PJC_DETAIL';
+
+                -- Source + document NAME carried on this run's staging rows. This
+                -- runs at Step 1 (before transform), so read from STG -- the TFM
+                -- table has no rows yet. All rows in a run must share one
+                -- source/document trio (positions 6/7 are single-value import
+                -- filters), so a mixed run would silently exclude one source's rows;
+                -- COUNT(DISTINCT) lets us fail loudly instead of half-loading.
+                -- Run-mode + scenario scoped to match EXACTLY the rows this run
+                -- loads (same status-set branching as the canonical row-selection
+                -- recipe, so a lingering FAILED row from a prior run can't inject a
+                -- foreign source/document and abort an otherwise-consistent run).
+                SELECT MAX(USER_TRANSACTION_SOURCE), MAX(DOCUMENT_NAME),
+                       COUNT(DISTINCT USER_TRANSACTION_SOURCE),
+                       COUNT(DISTINCT DOCUMENT_NAME)
+                INTO   l_exp_src_name, l_exp_doc_name, l_exp_src_cnt, l_exp_doc_cnt
+                FROM   DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL
+                WHERE  (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
+                AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL') );
+
+                -- Fail closed with a clear, object-scoped message (not a bare lookup
+                -- error) when the run staged no usable source/document, or carried
+                -- more than one -- either way the import filter cannot be built safely.
+                IF l_exp_src_name IS NULL OR l_exp_doc_name IS NULL THEN
+                    RAISE_APPLICATION_ERROR(-20057,
+                        'Expenditures: no staged rows carry a USER_TRANSACTION_SOURCE '||
+                        'and DOCUMENT_NAME for scenario '||NVL(TO_CHAR(p_scenario_id),'(all)')||
+                        '. Import and Process Cost Transactions needs both to build its '||
+                        'transaction-source/document filter.');
+                END IF;
+                IF l_exp_src_cnt > 1 OR l_exp_doc_cnt > 1 THEN
+                    RAISE_APPLICATION_ERROR(-20058,
+                        'Expenditures: this run mixes '||l_exp_src_cnt||' transaction sources '||
+                        'and '||l_exp_doc_cnt||' documents. The import filter takes exactly one '||
+                        'of each; split the sources into separate runs.');
+                END IF;
+
+                l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_exp_src_name);
+                l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_exp_doc_name);
+
+                l_param_list := 'IMPORT_AND_PROCESS~' || l_exp_bu_id
+                    || '~ALL~#NULL~#NULL~' || l_exp_src_id || '~' || l_exp_doc_id
+                    || '~#NULL~#NULL~#NULL';
             END;
         -- Requisitions: the ParameterList is built per batch inside the
         -- grouped-by-BATCH_ID block below (position 2 = the batch id,

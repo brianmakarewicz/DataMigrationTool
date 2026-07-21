@@ -164,7 +164,16 @@
             s.DOCUMENT_ID,
             s.DOC_ENTRY_NAME,
             s.DOC_ENTRY_ID,
-            s.BATCH_NAME,
+            -- BATCH_NAME must be UNIQUE per row and per prefix, or Import Costs
+            -- rejects the good rows on PJC_UNIQUE_BATCH_NAME (they collide on an
+            -- empty/duplicate batch, across each other and across ALL-mode reruns).
+            -- The source rarely supplies one, so synthesise a deterministic unique
+            -- batch: the prefixed ORIG_TRANSACTION_REFERENCE (already unique per row
+            -- and stamped with the run prefix below), falling back to any batch the
+            -- source did provide. This mirrors the gold fixture, where BATCH_NAME =
+            -- ORIG_TRANSACTION_REFERENCE = ${PREFIX}RT-EXP-*.
+            NVL(s.BATCH_NAME,
+                DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.ORIG_TRANSACTION_REFERENCE)),
             s.BATCH_ENDING_DATE,
             s.BATCH_DESCRIPTION,
             s.EXPENDITURE_ITEM_DATE,
@@ -204,7 +213,11 @@
             s.VENDOR_ID,
             s.INVENTORY_ITEM_NAME,
             s.INVENTORY_ITEM_ID,
-            s.ORIG_TRANSACTION_REFERENCE,
+            -- Stamp the run prefix onto the natural key so reruns (and ALL-mode)
+            -- never collide with a prior run's transactions. This is the key the
+            -- base-table read verifies (${PREFIX}RT-EXP-*), and it feeds the
+            -- synthesised unique BATCH_NAME above.
+            DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.ORIG_TRANSACTION_REFERENCE, 240),
             s.UNMATCHED_NEGATIVE_TXN_FLAG,
             s.REVERSED_ORIG_TXN_REFERENCE,
             s.EXPENDITURE_COMMENT,

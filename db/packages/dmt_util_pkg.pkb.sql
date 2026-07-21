@@ -1140,8 +1140,10 @@
     -- group; the managed types are deleted then re-inserted so a value dropped
     -- in Fusion never lingers. Types produced: BU_NAME_TO_BU_ID,
     -- BU_NAME_TO_PRIMARY_LEDGER_ID, LEDGER_NAME_TO_LEDGER_ID
-    -- (RETURN_VALUE = ledger_id~access_set_id), and
-    -- BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID (AutoInvoice transaction-source id).
+    -- (RETURN_VALUE = ledger_id~access_set_id),
+    -- BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID (AutoInvoice transaction-source id),
+    -- PJC_TXN_SOURCE_NAME_TO_ID and PJC_DOC_NAME_TO_ID (PPM Import and Process
+    -- Cost Transactions transaction-source id / document entry id).
     -- --------------------------------------------------------
     PROCEDURE REFRESH_LOOKUPS IS
         C_PKG  CONSTANT VARCHAR2(30) := 'DMT_UTIL_PKG';
@@ -1214,6 +1216,31 @@
 '<element name="RETURN_VALUE" value="RETURN_VALUE" dataType="xsd:string" tagName="RETURN_VALUE"/>'||
 '</group></dataStructure></nodeList></output><eventTriggers/><lexicals/><valueSets/><bursting/></dataModel>';
 
+        -- Project-costing txn-source / document DM: resolves the numeric ids the
+        -- "Import and Process Cost Transactions" job needs in positions 6 and 7 of
+        -- its ParameterList. Import Costs filters the pending rows by transaction
+        -- source id AND document id, so those two ids must match the source and
+        -- document NAME each interface row carries (e.g. Time Card / Time Card, or
+        -- External Miscellaneous / Miscellaneous). We emit one typed row per
+        -- transaction-source name and one per document name -- keyed by name -- so
+        -- the loader resolves whichever source/document the run's rows actually use.
+        -- No hardcoded Fusion ids: both ids are read by name at pipeline preflight,
+        -- exactly like the BU, ledger and AR batch-source lookups above.
+        C_PJC_SOURCE_XDM CONSTANT CLOB :=
+'<?xml version="1.0" encoding="utf-8"?>'||CHR(10)||
+'<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1" defaultDataSourceRef="ApplicationDB_FSCM">'||CHR(10)||
+'<dataProperties><property name="include_parameters" value="true"/><property name="include_null_Element" value="true"/><property name="include_rowsettag" value="false"/><property name="xml_tag_case" value="upper"/></dataProperties>'||CHR(10)||
+'<dataSets><dataSet name="pjc_source_lookups" type="complex"><sql dataSourceRef="ApplicationDB_FSCM"><![CDATA['||
+'SELECT ''PJC_TXN_SOURCE_NAME_TO_ID'' AS LOOKUP_TYPE, ts.user_transaction_source AS LOOKUP_VALUE, TO_CHAR(ts.transaction_source_id) AS RETURN_VALUE FROM pjf_txn_sources_vl ts '||
+'UNION ALL '||
+'SELECT ''PJC_DOC_NAME_TO_ID'', dv.document_name, TO_CHAR(db.document_id) FROM pjf_txn_document_b db, pjf_txn_document_vl dv WHERE db.document_id = dv.document_id'||
+']]></sql></dataSet></dataSets>'||CHR(10)||
+'<output rootName="DATA_DS" uniqueRowName="false"><nodeList name="data-structure"><dataStructure tagName="DATA_DS"><group name="G_LKP" label="G_LKP" source="pjc_source_lookups">'||
+'<element name="LOOKUP_TYPE" value="LOOKUP_TYPE" dataType="xsd:string" tagName="LOOKUP_TYPE"/>'||
+'<element name="LOOKUP_VALUE" value="LOOKUP_VALUE" dataType="xsd:string" tagName="LOOKUP_VALUE"/>'||
+'<element name="RETURN_VALUE" value="RETURN_VALUE" dataType="xsd:string" tagName="RETURN_VALUE"/>'||
+'</group></dataStructure></nodeList></output><eventTriggers/><lexicals/><valueSets/><bursting/></dataModel>';
+
     BEGIN
         LOG(p_message => C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
@@ -1226,10 +1253,11 @@
         DELETE FROM DMT_OWNER.DMT_LOOKUP_TBL WHERE LOOKUP_TYPE IN ('BU','LEDGER');
         COMMIT;
 
-        l_dms.EXTEND(3);
-        l_dms(1).dm_name := 'DMT_BU_LKP_DM';        l_dms(1).xdm_xml := C_BU_XDM;
-        l_dms(2).dm_name := 'DMT_LEDGER_LKP_DM';    l_dms(2).xdm_xml := C_LEDGER_XDM;
-        l_dms(3).dm_name := 'DMT_AR_SOURCE_LKP_DM'; l_dms(3).xdm_xml := C_AR_SOURCE_XDM;
+        l_dms.EXTEND(4);
+        l_dms(1).dm_name := 'DMT_BU_LKP_DM';         l_dms(1).xdm_xml := C_BU_XDM;
+        l_dms(2).dm_name := 'DMT_LEDGER_LKP_DM';     l_dms(2).xdm_xml := C_LEDGER_XDM;
+        l_dms(3).dm_name := 'DMT_AR_SOURCE_LKP_DM';  l_dms(3).xdm_xml := C_AR_SOURCE_XDM;
+        l_dms(4).dm_name := 'DMT_PJC_SOURCE_LKP_DM'; l_dms(4).xdm_xml := C_PJC_SOURCE_XDM;
 
         FOR i IN 1..l_dms.COUNT LOOP
             LOG(p_message => C_PROC || ': running ' || l_dms(i).dm_name,
