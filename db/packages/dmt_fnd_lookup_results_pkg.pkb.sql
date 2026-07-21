@@ -312,19 +312,10 @@
             END;
         END LOOP;
 
-        -- Mark orphan values (parent type FAILED) as FAILED too
-        UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
-        SET    TFM_STATUS = 'FAILED',
-               ERROR_TEXT = NVL(ERROR_TEXT, '') || '[FUSION_ERROR] Parent lookup type was not loaded.',
-               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    NOT EXISTS (
-            SELECT 1 FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id
-            AND    t.LOOKUP_TYPE = DMT_FND_LOOKUP_VALUE_TFM_TBL.LOOKUP_TYPE
-            AND    t.TFM_STATUS = 'LOADED'
-        );
+        -- Orphan values (parent type not LOADED) are NOT fabricated as FAILED.
+        -- The parent-not-LOADED set includes types left GENERATED, so there is no
+        -- real Fusion error to attribute. Leave GENERATED for the honest sweep to
+        -- mark UNACCOUNTED.
 
         -- Echo those to STG
         UPDATE DMT_FND_LOOKUP_VALUE_STG_TBL

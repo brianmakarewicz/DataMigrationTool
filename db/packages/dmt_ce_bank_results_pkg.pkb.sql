@@ -286,18 +286,7 @@
         ) LOOP
             BEGIN
                 IF NOT l_bank_map.EXISTS(r.SOURCE_GROUP_ID) THEN
-                    l_errmsg := 'No BankPartyId mapping found for SOURCE_GROUP_ID=' || r.SOURCE_GROUP_ID;
-                    UPDATE DMT_CE_BRANCH_TFM_TBL
-                    SET    TFM_STATUS = 'FAILED',
-                           ERROR_TEXT = '[FUSION_ERROR] ' || l_errmsg,
-                           RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-
-                    UPDATE DMT_CE_BRANCH_STG_TBL
-                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-                    WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
-
-                    l_branches_failed := l_branches_failed + 1;
+                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
                     CONTINUE;
                 END IF;
 
@@ -394,19 +383,10 @@
             END;
         END LOOP;
 
-        -- Mark orphan branches (parent bank FAILED)
-        UPDATE DMT_CE_BRANCH_TFM_TBL
-        SET    TFM_STATUS = 'FAILED',
-               ERROR_TEXT = NVL(ERROR_TEXT, '') || '[FUSION_ERROR] Parent bank was not loaded.',
-               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    NOT EXISTS (
-            SELECT 1 FROM DMT_CE_BANK_TFM_TBL bk
-            WHERE  bk.RUN_ID  = p_run_id
-            AND    bk.SOURCE_GROUP_ID  = DMT_CE_BRANCH_TFM_TBL.SOURCE_GROUP_ID
-            AND    bk.TFM_STATUS       = 'LOADED'
-        );
+        -- Orphan branches (parent bank not LOADED) have no real Fusion error to
+        -- carry: the parent may have been left GENERATED, or there may be no
+        -- parent bank row at all. No composed cascade; leave these branches
+        -- GENERATED for the honest sweep to mark UNACCOUNTED.
 
         UPDATE DMT_CE_BRANCH_STG_TBL
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
@@ -526,19 +506,10 @@
             END;
         END LOOP;
 
-        -- Mark orphan accounts (parent branch FAILED)
-        UPDATE DMT_CE_BANK_ACCT_TFM_TBL
-        SET    TFM_STATUS = 'FAILED',
-               ERROR_TEXT = NVL(ERROR_TEXT, '') || '[FUSION_ERROR] Parent branch was not loaded.',
-               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    NOT EXISTS (
-            SELECT 1 FROM DMT_CE_BRANCH_TFM_TBL br
-            WHERE  br.RUN_ID = p_run_id
-            AND    br.SOURCE_LINE_ID  = DMT_CE_BANK_ACCT_TFM_TBL.SOURCE_LINE_ID
-            AND    br.TFM_STATUS      = 'LOADED'
-        );
+        -- Orphan accounts (parent branch not LOADED) have no real Fusion error
+        -- to carry: the parent may have been left GENERATED, or there may be no
+        -- parent branch row at all. No composed cascade; leave these accounts
+        -- GENERATED for the honest sweep to mark UNACCOUNTED.
 
         UPDATE DMT_CE_BANK_ACCT_STG_TBL
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE

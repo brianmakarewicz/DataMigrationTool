@@ -266,18 +266,23 @@ AS
                 AND    TFM_STATUS               != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSE
-                -- NULL or any non-P tfm_status = FAILED
-                UPDATE DMT_OWNER.DMT_RA_LINES_TFM_TBL
-                SET    TFM_STATUS               = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                 '[FUSION_ERROR] ' || NVL(r.error_msg,
-                                                 'Interface status: ' || NVL(r.interface_status, 'NULL'))),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_LINE_ATTRIBUTE1 = r.interface_line_attribute1
-                AND    TFM_STATUS              != 'FAILED';
-                l_failed := l_failed + SQL%ROWCOUNT;
+                -- NULL or any non-P interface status. Only mark FAILED when the BIP
+                -- report carried a real Fusion error message (r.error_msg). A NULL
+                -- interface status is pending, not a rejection, and gives us no real
+                -- Fusion error: leave the row GENERATED for the honest sweep to mark
+                -- UNACCOUNTED.
+                IF r.error_msg IS NOT NULL THEN
+                    UPDATE DMT_OWNER.DMT_RA_LINES_TFM_TBL
+                    SET    TFM_STATUS               = 'FAILED',
+                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                     '[FUSION_ERROR] ' || r.error_msg),
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID       = p_run_id
+                    AND    INTERFACE_LINE_ATTRIBUTE1 = r.interface_line_attribute1
+                    AND    TFM_STATUS              != 'FAILED';
+                    l_failed := l_failed + SQL%ROWCOUNT;
+                END IF;
             END IF;
         END LOOP;
 
@@ -296,12 +301,20 @@ AS
             AND    ln.INTERFACE_LINE_ATTRIBUTE1 = d.INTERFACE_LINE_ATTRIBUTE1
             AND    ln.TFM_STATUS                    = 'LOADED');
 
-        -- Cascade FAILED to distribution TFM rows
+        -- Cascade FAILED to distribution TFM rows. The parent line only reaches
+        -- FAILED with a real Fusion error (r.error_msg from the BIP report), so the
+        -- distribution carries that same real parent error in the prescribed
+        -- linked-record form.
         UPDATE DMT_OWNER.DMT_RA_DISTS_TFM_TBL d
         SET    d.TFM_STATUS              = 'FAILED',
                d.ERROR_TEXT          = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent AR invoice line (attr1=''' ||
-                   d.INTERFACE_LINE_ATTRIBUTE1 || ''') was rejected by Fusion.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT ln.ERROR_TEXT FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL ln
+                    WHERE  ln.RUN_ID           = p_run_id
+                    AND    ln.INTERFACE_LINE_CONTEXT    = d.INTERFACE_LINE_CONTEXT
+                    AND    ln.INTERFACE_LINE_ATTRIBUTE1 = d.INTERFACE_LINE_ATTRIBUTE1
+                    AND    ln.TFM_STATUS                    = 'FAILED'
+                    AND    ROWNUM = 1)),
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE  = SYSDATE
         WHERE  d.RUN_ID     = p_run_id

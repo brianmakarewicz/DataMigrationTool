@@ -311,28 +311,17 @@ AS
                     AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    -- Mark FAILED but do NOT write error text here.
-                    -- Specific errors come from G_ERRORS in Step 2.
-                    UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
+                    -- Interface reports a rejection, but the status token alone is
+                    -- not a real Fusion error message. The real per-record errors
+                    -- are written from G_ERRORS in Step 2. Do NOT mark FAILED on a
+                    -- status label with no error text.
+                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 ELSE
-                    -- Unknown tfm_status — mark FAILED with tfm_status info
-                    UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] Unrecognized interface status: ' || NVL(r.process_code, 'NULL')),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
+                    -- Unrecognized interface status and no real Fusion error to
+                    -- report. Do NOT fabricate a FAILED.
+                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 END IF;
             END IF;
         END LOOP;
@@ -398,11 +387,17 @@ AS
         --         Errors always APPEND (concatenate), never overwrite.
         -- ============================================================
 
-        -- 3a. Dists with errors → mark parent LINE as FAILED + append message
+        -- 3a. Dists with a real Fusion error → mark parent LINE as FAILED and
+        --     carry the child distribution's real Fusion error (from G_ERRORS).
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                   '[FUSION_ERROR] Child distribution rejected by Fusion. See distribution details.'),
+                   '[FUSION_ERROR]The child record has the following Fusion error: ' ||
+                   (SELECT d.ERROR_TEXT FROM DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
+                    WHERE  d.RUN_ID = p_run_id
+                    AND    d.INTERFACE_LINE_KEY = ln.INTERFACE_LINE_KEY
+                    AND    d.ERROR_TEXT IS NOT NULL
+                    AND    ROWNUM = 1)),
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
@@ -413,20 +408,10 @@ AS
             AND    d.INTERFACE_LINE_KEY = ln.INTERFACE_LINE_KEY
             AND    d.ERROR_TEXT        IS NOT NULL);
 
-        -- 3b. Lines with errors (own or from 3a) → append message to parent HEADER.
-        --     Header may already be FAILED from Step 1 — just append error context.
-        UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
-        SET    h.ERROR_TEXT         = DMT_UTIL_PKG.APPEND_ERROR(h.ERROR_TEXT,
-                   '[FUSION_ERROR] Child line rejected by Fusion. See line details.'),
-               h.RESULTS_UPDATED_DATE = SYSDATE,
-               h.LAST_UPDATED_DATE = SYSDATE
-        WHERE  h.RUN_ID    = p_run_id
-        AND    h.TFM_STATUS            = 'FAILED'
-        AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
-            WHERE  ln.RUN_ID      = p_run_id
-            AND    ln.INTERFACE_HEADER_KEY = h.INTERFACE_HEADER_KEY
-            AND    ln.ERROR_TEXT          IS NOT NULL);
+        -- 3b. (Removed.) This appended a composed "Child line rejected by Fusion"
+        --     sentence to the parent header. The header's own real Fusion errors
+        --     are already written from G_ERRORS in Step 2; no composed child
+        --     summary is added. The header is left as-is for the honest sweep.
 
         -- ============================================================
         -- STEP 4: Top-down cascade LOADED to children of LOADED headers
@@ -461,22 +446,12 @@ AS
         --         by bottom-up. Point to the correct parent level.
         -- ============================================================
 
-        -- 5a. Lines still GENERATED under FAILED headers — only if they
-        --     don't already have their own error text (from Step 2 or 3a)
-        UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
-        SET    ln.TFM_STATUS            = 'FAILED',
-               ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent requisition header was rejected by Fusion. See header details.'),
-               ln.RESULTS_UPDATED_DATE = SYSDATE,
-               ln.LAST_UPDATED_DATE = SYSDATE
-        WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
-        AND    ln.ERROR_TEXT       IS NULL
-        AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
-            WHERE  h.RUN_ID      = p_run_id
-            AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
-            AND    h.TFM_STATUS              = 'FAILED');
+        -- 5a. (Removed.) This failed lines under a rejected header with a composed
+        --     "Parent requisition header was rejected" sentence. The header no
+        --     longer reaches FAILED on a status label alone (it is left GENERATED
+        --     unless G_ERRORS wrote a real Fusion error), so there is no real
+        --     parent error to carry. Lines with no real error of their own are
+        --     left GENERATED for the honest sweep to mark UNACCOUNTED.
 
         -- 5a2. Lines with their own error that are still GENERATED: just set FAILED
         UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
@@ -487,11 +462,19 @@ AS
         AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    ln.ERROR_TEXT       IS NOT NULL;
 
-        -- 5b. Dists still GENERATED under FAILED lines — only if no own error
+        -- 5b. Dists still GENERATED under a FAILED line, with no real error of
+        --     their own. The parent line only reaches FAILED carrying a real
+        --     Fusion error (its own from G_ERRORS, or a child distribution's real
+        --     error), so the distribution carries that same real parent error.
         UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
         SET    d.TFM_STATUS            = 'FAILED',
                d.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent requisition line was rejected by Fusion. See line details.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT ln.ERROR_TEXT FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL ln
+                    WHERE  ln.RUN_ID = p_run_id
+                    AND    ln.INTERFACE_LINE_KEY = d.INTERFACE_LINE_KEY
+                    AND    ln.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE = SYSDATE
         WHERE  d.RUN_ID    = p_run_id

@@ -288,28 +288,27 @@ AS
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE','E')
                       OR r.load_status IN ('ERROR','REJECTED','E','FAILED') THEN
-                    UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.process_code || '/' || r.load_status)),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    SRC_BUDGET_LINE_REFERENCE = r.src_budget_line_reference
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
+                    -- Only mark FAILED when Fusion actually returned an error
+                    -- message. When error_msg is NULL we have only a status label
+                    -- (which we compose), not a real Fusion error, so we leave the
+                    -- row GENERATED for the honest sweep to mark UNACCOUNTED.
+                    IF r.error_msg IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
+                        SET    TFM_STATUS               = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                         '[FUSION_ERROR] ' || r.error_msg),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID       = p_run_id
+                        AND    SRC_BUDGET_LINE_REFERENCE = r.src_budget_line_reference
+                        AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
+                        l_failed := l_failed + SQL%ROWCOUNT;
+                    END IF;
                 ELSE
-                    -- Unknown tfm_status from interface table — treat as error
-                    UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] Unrecognized interface status: ' || NVL(r.process_code, 'NULL') || '/' || NVL(r.load_status, 'NULL')),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    SRC_BUDGET_LINE_REFERENCE = r.src_budget_line_reference
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
+                    -- Unknown interface status and no real Fusion error to report.
+                    -- Do NOT compose a FAILED; leave the row GENERATED for the
+                    -- honest sweep to mark UNACCOUNTED.
+                    NULL;
                 END IF;
             END IF;
         END LOOP;

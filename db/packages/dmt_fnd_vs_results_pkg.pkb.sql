@@ -331,19 +331,10 @@
             END;
         END LOOP;
 
-        -- Mark orphan values (parent set FAILED) as FAILED too
-        UPDATE DMT_FND_VS_VALUE_TFM_TBL
-        SET    TFM_STATUS = 'FAILED',
-               ERROR_TEXT = NVL(ERROR_TEXT, '') || '[FUSION_ERROR] Parent value set was not loaded.',
-               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    NOT EXISTS (
-            SELECT 1 FROM DMT_FND_VS_SET_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id
-            AND    t.VALUE_SET_CODE  = DMT_FND_VS_VALUE_TFM_TBL.VALUE_SET_CODE
-            AND    t.TFM_STATUS = 'LOADED'
-        );
+        -- Orphan values (parent set not LOADED) are NOT fabricated as FAILED.
+        -- The parent-not-LOADED set includes sets left GENERATED, so there is no
+        -- real Fusion error to attribute. Leave GENERATED for the honest sweep to
+        -- mark UNACCOUNTED.
 
         -- Echo those to STG
         UPDATE DMT_FND_VS_VALUE_STG_TBL

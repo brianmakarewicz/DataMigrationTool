@@ -324,17 +324,22 @@
                     AND    ASSET_NUMBER         = r.asset_number
                     AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSE
+                ELSIF r.error_msg IS NOT NULL THEN
+                    -- Not posted, WITH a real Fusion-returned rejection message = FAILED.
                     UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] ' || NVL(r.error_msg, 'Asset not posted. Posting status: ' || NVL(r.import_status, 'NULL'))),
+                                                     '[FUSION_ERROR] ' || r.error_msg),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    ASSET_NUMBER         = r.asset_number
                     AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
+                ELSE
+                    -- Not posted but no Fusion error message returned.
+                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 END IF;
             END IF;
         END LOOP;
@@ -363,10 +368,17 @@
             AND    hdr.ASSET_NUMBER    = bk.ASSET_NUMBER
             AND    hdr.TFM_STATUS          = 'LOADED');
 
+        -- The parent header only reaches FAILED with a real Fusion error, so the
+        -- book row carries that same real parent error in the linked-record form.
         UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS            = 'FAILED',
                bk.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent asset header failed or not reconciled.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT hdr.ERROR_TEXT FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
+                    WHERE  hdr.RUN_ID = bk.RUN_ID
+                    AND    hdr.ASSET_NUMBER = bk.ASSET_NUMBER
+                    AND    hdr.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                bk.LAST_UPDATED_DATE = SYSDATE
         WHERE  bk.RUN_ID    = p_run_id
         AND    bk.TFM_STATUS            = 'GENERATED'
@@ -388,10 +400,17 @@
             AND    hdr.ASSET_NUMBER    = asn.ASSET_NUMBER
             AND    hdr.TFM_STATUS          = 'LOADED');
 
+        -- The parent header only reaches FAILED with a real Fusion error, so the
+        -- assignment row carries that same real parent error in the linked-record form.
         UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL asn
         SET    asn.TFM_STATUS            = 'FAILED',
                asn.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent asset header failed or not reconciled.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT hdr.ERROR_TEXT FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
+                    WHERE  hdr.RUN_ID = asn.RUN_ID
+                    AND    hdr.ASSET_NUMBER = asn.ASSET_NUMBER
+                    AND    hdr.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                asn.LAST_UPDATED_DATE = SYSDATE
         WHERE  asn.RUN_ID    = p_run_id
         AND    asn.TFM_STATUS            = 'GENERATED'

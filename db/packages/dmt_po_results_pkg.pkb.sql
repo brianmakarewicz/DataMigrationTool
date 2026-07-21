@@ -339,10 +339,18 @@ AS
             AND    loc.TFM_STATUS                      = 'LOADED');
 
         -- Cascade FAILED to child TFM tables
+        -- The parent PO header only reaches FAILED with a real Fusion error
+        -- (from the INTERFACE ERROR/REJECTED path above), so the line carries
+        -- that same real parent error in the prescribed linked-record form.
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent PO header ''' || ln.INTERFACE_HEADER_KEY || ''' was rejected by Fusion.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT h.ERROR_TEXT FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+                    WHERE  h.RUN_ID = p_run_id
+                    AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
+                    AND    h.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
@@ -353,10 +361,17 @@ AS
             AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
             AND    h.TFM_STATUS              = 'FAILED');
 
+        -- The parent line only reaches FAILED carrying the header's real Fusion
+        -- error (set just above), so the location carries that same real error.
         UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
         SET    loc.TFM_STATUS            = 'FAILED',
                loc.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(loc.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent PO header was rejected by Fusion.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT ln.ERROR_TEXT FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
+                    WHERE  ln.RUN_ID = p_run_id
+                    AND    ln.INTERFACE_LINE_KEY = loc.INTERFACE_LINE_KEY
+                    AND    ln.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                loc.RESULTS_UPDATED_DATE = SYSDATE,
                loc.LAST_UPDATED_DATE = SYSDATE
         WHERE  loc.RUN_ID    = p_run_id
@@ -367,10 +382,17 @@ AS
             AND    ln.INTERFACE_LINE_KEY = loc.INTERFACE_LINE_KEY
             AND    ln.TFM_STATUS            = 'FAILED');
 
+        -- The parent location only reaches FAILED carrying the real Fusion error
+        -- cascaded from the header, so the distribution carries that same error.
         UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL d
         SET    d.TFM_STATUS            = 'FAILED',
                d.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent PO header was rejected by Fusion.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT loc.ERROR_TEXT FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
+                    WHERE  loc.RUN_ID = p_run_id
+                    AND    loc.INTERFACE_LINE_LOCATION_KEY = d.INTERFACE_LINE_LOCATION_KEY
+                    AND    loc.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE = SYSDATE
         WHERE  d.RUN_ID    = p_run_id

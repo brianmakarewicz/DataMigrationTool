@@ -267,34 +267,16 @@ AS
                 l_failed := l_failed + SQL%ROWCOUNT;
             ELSIF r.import_status IN ('NEW', 'STAGING') THEN
                 -- Row is in interface table but APXIIMPT did not process it.
-                -- This means the Import job's ParameterList did not match
-                -- (wrong source, wrong OU, or invoice was skipped).
-                UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                SET    TFM_STATUS           = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           '[FUSION_ERROR] Invoice still in interface table (tfm_status=' ||
-                           r.import_status || '). Import Payables Invoices (APXIIMPT) did not ' ||
-                           'process this invoice. Check the ParameterList, invoice SOURCE, ' ||
-                           'and Operating Unit.'),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INVOICE_NUM          = r.invoice_num
-                AND    TFM_STATUS          != 'FAILED';
-                l_failed := l_failed + SQL%ROWCOUNT;
+                -- We have no real Fusion error for this invoice, only a
+                -- non-terminal interface status. Do NOT fabricate a FAILED:
+                -- leave the row GENERATED so the shared honest sweep flips it
+                -- to UNACCOUNTED.
+                NULL;
             ELSE
-                -- Unknown tfm_status — don't silently ignore it
-                UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                SET    TFM_STATUS           = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           '[FUSION_ERROR] Unexpected interface tfm_status: ' ||
-                           r.import_status || '. Investigate AP_INVOICES_INTERFACE.'),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INVOICE_NUM          = r.invoice_num
-                AND    TFM_STATUS          != 'FAILED';
-                l_failed := l_failed + SQL%ROWCOUNT;
+                -- Unknown interface status and no real Fusion error to report.
+                -- Do NOT fabricate a FAILED: leave the row GENERATED for the
+                -- honest sweep to mark UNACCOUNTED.
+                NULL;
             END IF;
         END LOOP;
 
@@ -311,11 +293,18 @@ AS
             AND    h.INVOICE_ID     = ln.INVOICE_ID
             AND    h.TFM_STATUS         = 'LOADED');
 
-        -- Cascade FAILED to child TFM table (lines via INVOICE_ID)
+        -- Cascade FAILED to child TFM table (lines via INVOICE_ID). The parent
+        -- header only reaches FAILED with a real Fusion error, so the line
+        -- carries that same real parent error in the prescribed linked-record form.
         UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent invoice was rejected by Fusion.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT h.ERROR_TEXT FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
+                    WHERE  h.RUN_ID = p_run_id
+                    AND    h.INVOICE_ID = ln.INVOICE_ID
+                    AND    h.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
@@ -463,16 +452,12 @@ AS
                                 l_loaded := l_loaded + 1;
                             END;
                         ELSE
-                            -- Not found in base table after import — genuine failure
-                            UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
-                            SET    TFM_STATUS               = 'FAILED',
-                                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                       '[FUSION_ERROR] Invoice not found in AP base table after import. ' ||
-                                       'Import ESS succeeded but invoice was likely rejected during processing.'),
-                                   RESULTS_UPDATED_DATE = SYSDATE,
-                                   LAST_UPDATED_DATE    = SYSDATE
-                            WHERE  TFM_SEQUENCE_ID      = r.TFM_SEQUENCE_ID;
-                            l_failed := l_failed + 1;
+                            -- Not found in the base table after import. The REST
+                            -- lookup returned only "not found", not a real Fusion
+                            -- rejection message, so we have no Fusion error to
+                            -- report. Do NOT fabricate a FAILED: leave the row
+                            -- GENERATED for the honest sweep to mark UNACCOUNTED.
+                            NULL;
                         END IF;
                     EXCEPTION
                         WHEN OTHERS THEN
@@ -503,17 +488,11 @@ AS
                     WHERE  h.RUN_ID = p_run_id
                     AND    h.INVOICE_ID = ln.INVOICE_ID AND h.TFM_STATUS = 'LOADED');
 
-                UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
-                SET    ln.TFM_STATUS = 'FAILED',
-                       ln.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                           '[FUSION_ERROR] Parent invoice not found in AP base table.'),
-                       ln.RESULTS_UPDATED_DATE = SYSDATE, ln.LAST_UPDATED_DATE = SYSDATE
-                WHERE  ln.RUN_ID = p_run_id
-                AND    ln.TFM_STATUS NOT IN ('LOADED', 'FAILED')
-                AND    EXISTS (
-                    SELECT 1 FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
-                    WHERE  h.RUN_ID = p_run_id
-                    AND    h.INVOICE_ID = ln.INVOICE_ID AND h.TFM_STATUS = 'FAILED');
+                -- Lines whose parent invoice was not found in the base table have
+                -- no real Fusion error to carry (the parent was left GENERATED,
+                -- not FAILED with a real error). Do NOT fabricate a FAILED cascade:
+                -- leave these lines GENERATED for the honest sweep to mark
+                -- UNACCOUNTED.
 
                 -- Echo to STG
                 UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL stg

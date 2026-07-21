@@ -339,25 +339,28 @@ AS
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'INTERFACE' THEN
-                -- Tier 1: interface row. The BASE tier is the ONLY source of LOADED
-                -- (a genuinely-posted row is in PJC_EXP_ITEMS_ALL and was marked LOADED
-                -- above; BASE rows are processed first via the ORDER BY). A row reaching
-                -- here that is not already LOADED is NOT in the base table -> it is NOT
-                -- good and MUST be FAILED. An interface "success" status (e.g. 'P') is
-                -- NOT proof of a base row: the import can error after staging (verified
-                -- run 151 -- import ORA-06502, 0 base rows, yet interface rows were 'P').
-                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
-                SET    TFM_STATUS               = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                 CASE WHEN r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R')
-                                                      THEN '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.fusion_status)
-                                                      ELSE '[FUSION_ERROR] In interface but not created in base (status ' || NVL(r.fusion_status, 'NULL') || ') -- import did not post it' END),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID            = p_run_id
-                AND    ORIG_TRANSACTION_REFERENCE = r.orig_transaction_reference
-                AND    TFM_STATUS                    NOT IN ('LOADED','FAILED');
-                l_failed := l_failed + SQL%ROWCOUNT;
+                -- Tier 1: interface row. The BASE tier is the ONLY source of LOADED.
+                -- A row reaching here is not in the base table. We may only mark it
+                -- FAILED when the interface carries a REAL Fusion rejection message:
+                -- a reject-class status AND a non-null error_msg. In that case we
+                -- write the actual returned error_msg. If the interface returned only
+                -- a status label and no message (including a "success" status like 'P'
+                -- with no base row), we have NO real Fusion error -- do NOT fabricate a
+                -- FAILED. Leave the row GENERATED so the Import Report fallback below
+                -- or the shared honest sweep accounts for it (sweep -> UNACCOUNTED).
+                IF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R')
+                   AND r.error_msg IS NOT NULL THEN
+                    UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                    SET    TFM_STATUS               = 'FAILED',
+                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                     '[FUSION_ERROR] ' || r.error_msg),
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID            = p_run_id
+                    AND    ORIG_TRANSACTION_REFERENCE = r.orig_transaction_reference
+                    AND    TFM_STATUS                    NOT IN ('LOADED','FAILED');
+                    l_failed := l_failed + SQL%ROWCOUNT;
+                END IF;
             END IF;
         END LOOP;
 

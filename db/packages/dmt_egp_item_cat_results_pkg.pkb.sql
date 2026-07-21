@@ -400,19 +400,7 @@
                 l_errmsg := 'No ERP interface options row found for CEMLI_CODE=ItemCategories.';
                 DMT_UTIL_PKG.LOG_ERROR(p_run_id, l_errmsg, l_errmsg, C_PKG, C_PROC);
 
-                UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
-                SET    TFM_STATUS = 'FAILED',
-                       ERROR_TEXT = '[FUSION_ERROR] ' || l_errmsg,
-                       RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-
-                UPDATE DMT_EGP_ITEM_CAT_STG_TBL
-                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-                WHERE  STG_SEQUENCE_ID IN (
-                    SELECT STG_SEQUENCE_ID FROM DMT_EGP_ITEM_CAT_TFM_TBL
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
-                );
-
+                -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
                 COMMIT;
                 RETURN;
         END;
@@ -483,22 +471,10 @@
 
             RECONCILE_BATCH(p_run_id, TO_NUMBER(l_load_ess_id), TO_NUMBER(l_import_ess_id));
         ELSE
-            UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = '[FUSION_ERROR] Load ESS ' || l_load_ess_id || ' status: ' || l_fusion_status,
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            l_count := SQL%ROWCOUNT;
-
-            UPDATE DMT_EGP_ITEM_CAT_STG_TBL
-            SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_SEQUENCE_ID IN (
-                SELECT STG_SEQUENCE_ID FROM DMT_EGP_ITEM_CAT_TFM_TBL
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
-            );
-
+            -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
             DMT_UTIL_PKG.LOG(p_run_id,
-                'ItemCategories load FAILED. ESS=' || l_fusion_status || ', rows marked FAILED=' || l_count,
+                'ItemCategories load did not succeed. ESS=' || l_fusion_status
+                || '. Rows left GENERATED for the honest sweep.',
                 C_PKG, C_PROC, 'WARN');
         END IF;
 

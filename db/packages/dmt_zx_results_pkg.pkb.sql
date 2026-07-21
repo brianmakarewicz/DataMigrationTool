@@ -349,19 +349,10 @@
             END;
         END LOOP;
 
-        -- Mark orphan rates (parent regime FAILED) as FAILED too
-        UPDATE DMT_ZX_RATE_TFM_TBL
-        SET    TFM_STATUS = 'FAILED',
-               ERROR_TEXT = NVL(ERROR_TEXT, '') || '[FUSION_ERROR] Parent tax regime was not loaded.',
-               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    NOT EXISTS (
-            SELECT 1 FROM DMT_ZX_REGIME_TFM_TBL t
-            WHERE  t.RUN_ID  = p_run_id
-            AND    t.TAX_REGIME_CODE = DMT_ZX_RATE_TFM_TBL.TAX_REGIME_CODE
-            AND    t.TFM_STATUS = 'LOADED'
-        );
+        -- Orphan rates (parent regime not LOADED) are NOT fabricated as FAILED.
+        -- The parent-not-LOADED set includes regimes left GENERATED, so there is no
+        -- real Fusion error to attribute. Leave GENERATED for the honest sweep to
+        -- mark UNACCOUNTED.
 
         -- Echo those to STG
         UPDATE DMT_ZX_RATE_STG_TBL
