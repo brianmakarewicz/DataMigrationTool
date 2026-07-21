@@ -55,6 +55,7 @@ begin
 	"EXEC_MODE" VARCHAR2(10) DEFAULT ''ASYNC'' NOT NULL ENABLE,
 	"RECON_PROC" VARCHAR2(200),
 	"RECON_HAS_CEMLI_ARG" VARCHAR2(1) DEFAULT ''N'' NOT NULL ENABLE,
+	"PARTITION_KEYS_PROC" VARCHAR2(200),
 	 CONSTRAINT "DMT_PIPELINE_DEF_PK" PRIMARY KEY ("PIPELINE_DEF_ID")
   USING INDEX  ENABLE,
 	 CONSTRAINT "DMT_PIPELINE_DEF_UK1" UNIQUE ("CEMLI_CODE")
@@ -93,6 +94,20 @@ end;
 /
 begin
   execute immediate 'ALTER TABLE "DMT_PIPELINE_DEF_TBL" ADD ("RECON_HAS_CEMLI_ARG" VARCHAR2(1) DEFAULT ''N'' NOT NULL)';
+exception when others then
+  if sqlcode not in (-1430) then raise; end if;
+end;
+/
+
+-- 2026-07-20 work-queue-ID core: PARTITION_KEYS_PROC names the PKG.FUNCTION
+-- the queue worker calls (through invoke_registered, style KEYS) to get a
+-- spawn-per-partition object's distinct partition tokens with STATIC SQL over
+-- that object's OWN transform table(s). Set only for Items/Assets/Requisitions;
+-- NULL for every object that is not split into per-partition child work items.
+-- Replaces the retired dynamic SELECT DISTINCT in EXECUTE_ONE (removed the
+-- fourth EXECUTE IMMEDIATE site). Additive + nullable; converges an existing DB.
+begin
+  execute immediate 'ALTER TABLE "DMT_PIPELINE_DEF_TBL" ADD ("PARTITION_KEYS_PROC" VARCHAR2(200))';
 exception when others then
   if sqlcode not in (-1430) then raise; end if;
 end;

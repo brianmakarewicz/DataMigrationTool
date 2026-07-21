@@ -18,6 +18,27 @@ AS
     C_CEMLI CONSTANT VARCHAR2(30) := 'Requisitions';
 
     -- --------------------------------------------------------
+    -- GET_PARTITION_KEYS — distinct BATCH_ID tokens for one run, STATIC SQL
+    -- over the requisition-headers transform table (this object's own table).
+    -- Spawn-per-partition (work-queue-ID core, 2026-07-20): one child work item
+    -- per batch. Called through invoke_registered (style KEYS).
+    -- --------------------------------------------------------
+    FUNCTION GET_PARTITION_KEYS (
+        p_run_id IN NUMBER
+    ) RETURN DMT_OWNER.DMT_PARTITION_KEY_TBL IS
+        l_keys DMT_OWNER.DMT_PARTITION_KEY_TBL;
+    BEGIN
+        -- One JSON object per distinct batch, keyed by the partition column name.
+        SELECT DISTINCT JSON_OBJECT('BATCH_ID' VALUE TO_CHAR(BATCH_ID))
+        BULK COLLECT INTO l_keys
+        FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'STAGED'
+        AND    BATCH_ID IS NOT NULL;
+        RETURN l_keys;
+    END GET_PARTITION_KEYS;
+
+    -- --------------------------------------------------------
     -- Private: POST a SOAP envelope; return full response CLOB.
     -- (Same helper as other results packages — duplicated to keep packages independent.)
     -- --------------------------------------------------------

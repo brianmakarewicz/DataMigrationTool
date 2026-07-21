@@ -55,6 +55,18 @@ AS
     --          RECON       p_proc(p_run_id, p_load_ess_id, p_import_ess_id)
     --          RECON_CEMLI p_proc(p_run_id, p_cemli_code,
     --                             p_load_ess_id, p_import_ess_id)
+    --          KEYS        x_keys := p_proc(p_run_id)   -- a FUNCTION returning
+    --                             DMT_PARTITION_KEY_TBL; the spawn-per-partition
+    --                             object's own GET_PARTITION_KEYS. Same
+    --                             sanctioned site — the target name is registry
+    --                             data (DMT_PIPELINE_DEF_TBL.PARTITION_KEYS_PROC),
+    --                             validated by the same PKG.PROC allow-pattern,
+    --                             every value bound. This keeps the distinct-
+    --                             partition query out of the queue worker (it is
+    --                             STATIC SQL inside each object's package),
+    --                             retiring the former fourth EXECUTE IMMEDIATE
+    --                             site (the dynamic SELECT DISTINCT in EXECUTE_ONE)
+    --                             without adding a new dispatch site.
     -- (p_include_untagged is REMOVED end-to-end: scenarios are
     --  mandatory at ingestion — Overview glossary "Scenario" — so an
     --  untagged-row switch cannot exist; design section 12 removal.)
@@ -68,7 +80,8 @@ AS
         p_run_mode         IN VARCHAR2 DEFAULT NULL,
         p_load_ess_id      IN NUMBER   DEFAULT NULL,
         p_import_ess_id    IN NUMBER   DEFAULT NULL,
-        p_work_queue_id    IN NUMBER   DEFAULT NULL
+        p_work_queue_id    IN NUMBER   DEFAULT NULL,
+        x_keys             OUT NOCOPY  DMT_OWNER.DMT_PARTITION_KEY_TBL
     ) IS
     BEGIN
         IF p_proc IS NULL
@@ -78,12 +91,20 @@ AS
                 '" for ' || p_cemli_code || ' is not a valid PKG.PROC identifier');
         END IF;
 
+        x_keys := NULL;
+
         IF p_style = 'EXEC' THEN
             EXECUTE IMMEDIATE
                 'BEGIN ' || p_proc || '(p_run_id => :b1, p_scenario_name => :b2, '
                 || 'p_run_mode => :b3, '
                 || 'p_skip_bu_refresh => TRUE); END;'
                 USING p_run_id, p_scenario_name, p_run_mode;
+        ELSIF p_style = 'KEYS' THEN
+            -- p_proc is a FUNCTION returning DMT_PARTITION_KEY_TBL — the object's
+            -- own GET_PARTITION_KEYS. Bind the result out; p_run_id in.
+            EXECUTE IMMEDIATE
+                'BEGIN :r := ' || p_proc || '(p_run_id => :b1); END;'
+                USING OUT x_keys, IN p_run_id;
         ELSIF p_style = 'RECON_CEMLI' THEN
             EXECUTE IMMEDIATE
                 'BEGIN ' || p_proc || '(p_run_id => :b1, p_cemli_code => :b2, '
@@ -134,12 +155,13 @@ AS
     -- task 5 (partition model rework), noted 2026-07-08.
     -- ============================================================
     PROCEDURE ACCOUNT_ROWS (
-        p_run_id      IN  NUMBER,
-        p_cemli_code  IN  VARCHAR2,
-        x_total       OUT NUMBER,
-        x_loaded      OUT NUMBER,
-        x_failed      OUT NUMBER,
-        x_unaccounted OUT NUMBER
+        p_run_id        IN  NUMBER,
+        p_cemli_code    IN  VARCHAR2,
+        x_total         OUT NUMBER,
+        x_loaded        OUT NUMBER,
+        x_failed        OUT NUMBER,
+        x_unaccounted   OUT NUMBER,
+        p_work_queue_id IN  NUMBER DEFAULT NULL
     ) IS
         l_sql   VARCHAR2(4000);
         l_cnt   NUMBER;
@@ -165,6 +187,10 @@ AS
             -- Accounted = LOADED, or FAILED with non-empty ERROR_TEXT.
             -- FAILED + empty ERROR_TEXT is the derived UNRECONCILED
             -- classification (Overview row-status table) — unaccounted.
+            -- Work-queue-ID core: when p_work_queue_id is set (a spawn-per-partition
+            -- child), scope the count to that item's own rows so it settles on its
+            -- own batch only — a sibling batch still STAGED/GENERATED must not fail
+            -- this child. NULL keeps the byte-identical run-scoped count.
             l_sql :=
                 'SELECT COUNT(*), '
                 || 'SUM(CASE WHEN ' || r.STATUS_COLUMN || ' = ''LOADED'' THEN 1 ELSE 0 END), '
@@ -173,10 +199,16 @@ AS
                 || '          AND DBMS_LOB.GETLENGTH(ERROR_TEXT) > 0 THEN 1 ELSE 0 END) '
                 || 'FROM DMT_OWNER.' || r.TFM_TABLE
                 || ' WHERE RUN_ID = :run_id'
+                || CASE WHEN p_work_queue_id IS NOT NULL
+                        THEN ' AND WORK_QUEUE_ID = :wq' END
                 || CASE WHEN r.ROW_FILTER IS NOT NULL
                         THEN ' AND ' || r.ROW_FILTER END;
 
-            EXECUTE IMMEDIATE l_sql INTO l_cnt, l_ld, l_fl USING p_run_id;
+            IF p_work_queue_id IS NOT NULL THEN
+                EXECUTE IMMEDIATE l_sql INTO l_cnt, l_ld, l_fl USING p_run_id, p_work_queue_id;
+            ELSE
+                EXECUTE IMMEDIATE l_sql INTO l_cnt, l_ld, l_fl USING p_run_id;
+            END IF;
 
             l_un := l_cnt - NVL(l_ld, 0) - NVL(l_fl, 0);
             x_total       := x_total       + l_cnt;
@@ -249,9 +281,27 @@ AS
         l_loaded      NUMBER;
         l_failed      NUMBER;
         l_unaccounted NUMBER;
+        l_partition_key DMT_WORK_QUEUE_TBL.PARTITION_KEY%TYPE;
+        l_scope_wq    NUMBER;
     BEGIN
+        -- Work-queue-ID core (2026-07-20): a spawn-per-partition child (a real
+        -- PARTITION_KEY, not the un-partitioned parent NULL and not the in-zip
+        -- 'ALL' split) stamps WORK_QUEUE_ID on its rows and must settle on THOSE
+        -- rows only — otherwise a sibling batch still STAGED/GENERATED when this
+        -- child's gate runs would mark this child FAILED (a false cross-batch
+        -- failure). Scope the count to this item's queue id in that case; every
+        -- other item keeps the run-scoped count (l_scope_wq stays NULL). This
+        -- reuses the same signal that decides whether the generators stamp
+        -- WORK_QUEUE_ID (EXECUTE_ONE: PARTITION_KEY IS NOT NULL AND <> 'ALL').
+        SELECT PARTITION_KEY INTO l_partition_key
+        FROM   DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
+        l_scope_wq := CASE WHEN l_partition_key IS NOT NULL
+                            AND l_partition_key <> 'ALL'
+                           THEN p_queue_id END;
+
         ACCOUNT_ROWS(p_run_id, p_cemli_code,
-                     l_total, l_loaded, l_failed, l_unaccounted);
+                     l_total, l_loaded, l_failed, l_unaccounted,
+                     p_work_queue_id => l_scope_wq);
 
         IF l_unaccounted > 0 THEN
             UPDATE DMT_WORK_QUEUE_TBL
@@ -300,6 +350,7 @@ AS
         l_exec_mode   VARCHAR2(10);
         l_recon_proc  VARCHAR2(200);
         l_recon_cemli VARCHAR2(1);
+        l_ignore_keys DMT_OWNER.DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
         SELECT * INTO l_run_rec FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = l_rec.RUN_ID;
@@ -354,6 +405,7 @@ AS
             DECLARE
                 l_child_col   VARCHAR2(30);
                 l_tfm_table   VARCHAR2(128);
+                l_keys_proc   VARCHAR2(200);
             BEGIN
                 BEGIN
                     SELECT CHILD_PARTITION_COLUMN, TFM_TABLE
@@ -366,11 +418,31 @@ AS
                 END;
 
                 IF l_child_col IS NOT NULL THEN
-                    -- Harden the identifiers before they enter dynamic SQL. They come
-                    -- from the PK-keyed control table, but validating fails loudly if
-                    -- the registry is ever mis-seeded (and closes the injection surface).
+                    -- l_child_col is the partition column name; used below only as the
+                    -- JSON key to derive each child's human-readable PARTITION_LABEL.
+                    -- Validate it (fails loudly on a mis-seeded registry). l_tfm_table
+                    -- is no longer used for a dynamic query — the distinct partition
+                    -- values come from the object's own GET_PARTITION_KEYS function,
+                    -- called through the sanctioned registered-dispatch path below.
                     l_child_col := DBMS_ASSERT.SIMPLE_SQL_NAME(l_child_col);
-                    l_tfm_table := DBMS_ASSERT.QUALIFIED_SQL_NAME(l_tfm_table);
+
+                    -- The PKG.FUNCTION that returns this object's distinct partition
+                    -- tokens (JSON objects) with STATIC SQL over its own TFM table(s).
+                    BEGIN
+                        SELECT PARTITION_KEYS_PROC
+                        INTO   l_keys_proc
+                        FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+                        WHERE  CEMLI_CODE = l_rec.CEMLI_CODE;
+                    EXCEPTION WHEN NO_DATA_FOUND THEN
+                        l_keys_proc := NULL;
+                    END;
+                    IF l_keys_proc IS NULL THEN
+                        RAISE_APPLICATION_ERROR(-20104,
+                            'No PARTITION_KEYS_PROC registered in DMT_PIPELINE_DEF_TBL for '
+                            || 'spawn-per-partition object ' || l_rec.CEMLI_CODE
+                            || ' (CHILD_PARTITION_COLUMN is set but the keys function is not).');
+                    END IF;
+
                     -- 1. Transform-only pass (validate + STG -> TFM STAGED, no generate).
                     --    Generalizes RUN_ASSETS_TRANSFORM_ONLY to any configured object.
                     DMT_LOADER_PKG.RUN_TRANSFORM_ONLY(
@@ -380,24 +452,33 @@ AS
                         p_run_mode      => l_run_rec.RUN_MODE);
 
                     -- 2. Spawn one READY child per distinct partition value, tagged with
-                    --    PARENT_QUEUE_ID for traceability. Dynamic because the TFM table
-                    --    and partition column come from the registry.
+                    --    PARENT_QUEUE_ID for traceability. The distinct values come from
+                    --    the object's own GET_PARTITION_KEYS (STATIC SQL) via the
+                    --    sanctioned registered dispatch (invoke_registered, style KEYS) —
+                    --    no dynamic SELECT DISTINCT here. Each token is a JSON object
+                    --    keyed by the partition column (e.g. {"BATCH_ID":"8102"}); it is
+                    --    stored OPAQUE in PARTITION_KEY, and its decoded scalar becomes
+                    --    the human-readable PARTITION_LABEL for logs/UI.
                     DECLARE
-                        l_cnt   PLS_INTEGER := 0;
-                        l_keys  SYS.ODCIVARCHAR2LIST;
+                        l_cnt    PLS_INTEGER := 0;
+                        l_keys   DMT_OWNER.DMT_PARTITION_KEY_TBL;
+                        l_label  VARCHAR2(4000);
                     BEGIN
-                        EXECUTE IMMEDIATE
-                            'SELECT DISTINCT TO_CHAR(' || l_child_col || ') FROM DMT_OWNER.' || l_tfm_table ||
-                            ' WHERE RUN_ID = :b1 AND TFM_STATUS = ''STAGED'' AND ' || l_child_col || ' IS NOT NULL'
-                            BULK COLLECT INTO l_keys USING l_rec.RUN_ID;
+                        invoke_registered(
+                            p_proc       => l_keys_proc,
+                            p_style      => 'KEYS',
+                            p_run_id     => l_rec.RUN_ID,
+                            p_cemli_code => l_rec.CEMLI_CODE,
+                            x_keys       => l_keys);
 
                         IF l_keys IS NOT NULL THEN
                             FOR i IN 1 .. l_keys.COUNT LOOP
+                                l_label := JSON_VALUE(l_keys(i), '$.' || l_child_col);
                                 INSERT INTO DMT_WORK_QUEUE_TBL (
                                     RUN_ID, PIPELINE, CEMLI_CODE, PARTITION_KEY, PARTITION_LABEL,
                                     PARENT_QUEUE_ID, SORT_ORDER, DEPENDS_ON, WORK_STATUS
                                 ) VALUES (
-                                    l_rec.RUN_ID, l_rec.PIPELINE, l_rec.CEMLI_CODE, l_keys(i), l_keys(i),
+                                    l_rec.RUN_ID, l_rec.PIPELINE, l_rec.CEMLI_CODE, l_keys(i), l_label,
                                     p_queue_id, l_rec.SORT_ORDER, l_rec.DEPENDS_ON, 'READY'
                                 );
                                 l_cnt := l_cnt + 1;
@@ -435,7 +516,8 @@ AS
             p_run_id           => l_rec.RUN_ID,
             p_cemli_code       => l_rec.CEMLI_CODE,
             p_scenario_name    => l_run_rec.SCENARIO_NAME,
-            p_run_mode         => l_run_rec.RUN_MODE);
+            p_run_mode         => l_run_rec.RUN_MODE,
+            x_keys             => l_ignore_keys);
 
         l_load_ess_id := DMT_LOADER_PKG.g_load_ess_id;
         DMT_LOADER_PKG.g_async_mode := FALSE;
@@ -505,6 +587,7 @@ AS
         l_exec_mode   VARCHAR2(10);
         l_recon_proc  VARCHAR2(200);
         l_recon_cemli VARCHAR2(1);
+        l_ignore_keys DMT_OWNER.DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
 
@@ -550,7 +633,8 @@ AS
             -- Work-queue-ID core: the reconciler sweeps only THIS item's rows.
             -- For a spawn-per-partition child this is its own (child) queue id;
             -- for a single-item object it is the object's own queue id.
-            p_work_queue_id => p_queue_id);
+            p_work_queue_id => p_queue_id,
+            x_keys          => l_ignore_keys);
 
         -- Items special case (kept from the retired chain, deliberately NOT
         -- registry-expressible yet: the Items FBDI ZIP bundles the
@@ -748,10 +832,11 @@ AS
         -- from the run's book TFM. VERIFY exact format at the gated run
         -- (README notes 'US CORP,,NORMAL').
         IF p_cemli_code = 'Assets' THEN
-            -- Per-book partition: the queue row's PARTITION_KEY IS the book. Fallback to the
-            -- single distinct book in the run (legacy single-FBDI path).
+            -- Per-book partition: the queue row's PARTITION_KEY is a JSON object
+            -- (e.g. {"BOOK_TYPE_CODE":"US CORP"}); decode to the raw book code.
+            -- Fallback to the single distinct book in the run (legacy single-FBDI path).
             IF p_partition_key IS NOT NULL THEN
-                l_book := p_partition_key;
+                l_book := DMT_LOADER_PKG.DECODE_PARTITION_KEY(p_partition_key, 'BOOK_TYPE_CODE');
             ELSE
                 BEGIN
                     SELECT MAX(BOOK_TYPE_CODE) INTO l_book

@@ -103,59 +103,70 @@ commit;
 --     registry row: ItemCategories is bundled into the Items token and
 --     PlanBudgets (PlanningBudgets) is out of scope (both decided
 --     2026-07-07) -- neither is one of the 45 canonical objects.
+--   * PARTITION_KEYS_PROC (2026-07-20, work-queue-ID core): the PKG.FUNCTION
+--     the queue worker calls to get a spawn-per-partition object's distinct
+--     partition tokens with STATIC SQL over that object's own transform
+--     table(s). Set only for the three spawn objects -- Items
+--     (DMT_EGP_ITEM_RESULTS_PKG.GET_PARTITION_KEYS, which UNIONs the item and
+--     item-category transform tables so a category-only batch still spawns a
+--     child), Assets and Requisitions (their single transform table). NULL for
+--     every other object. This replaced the retired dynamic SELECT DISTINCT in
+--     EXECUTE_ONE, so there is NO EXECUTE IMMEDIATE outside the three
+--     sanctioned DMT_QUEUE_WORKER_PKG dispatch/accounting sites.
 -- ----------------------------------------------------------------------
 merge into "DMT_PIPELINE_DEF_TBL" t
 using (
-    select 'Items' cemli_code, 'DMT_LOADER_PKG.RUN_ITEMS' exec_proc, 'ASYNC' exec_mode, 'DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH' recon_proc, 'N' recon_has_cemli_arg from dual
-    union all select 'Suppliers', 'DMT_LOADER_PKG.RUN_SUPPLIERS', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y' from dual
-    union all select 'SupplierAddresses', 'DMT_LOADER_PKG.RUN_SUPPLIER_ADDRESSES', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y' from dual
-    union all select 'SupplierSites', 'DMT_LOADER_PKG.RUN_SUPPLIER_SITES', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y' from dual
-    union all select 'SupplierSiteAssignments', 'DMT_LOADER_PKG.RUN_SUPPLIER_SITE_ASSIGNMENTS', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y' from dual
-    union all select 'SupplierContacts', 'DMT_LOADER_PKG.RUN_SUPPLIER_CONTACTS', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y' from dual
-    union all select 'Requisitions', 'DMT_LOADER_PKG.RUN_REQUISITIONS', 'ASYNC', 'DMT_REQ_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'PurchaseOrders', 'DMT_LOADER_PKG.RUN_PURCHASE_ORDERS', 'ASYNC', 'DMT_PO_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'BlanketPOs', 'DMT_LOADER_PKG.RUN_BLANKET_POS', 'ASYNC', 'DMT_BLANKET_PO_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'Contracts', 'DMT_LOADER_PKG.RUN_CONTRACTS', 'ASYNC', 'DMT_CONTRACT_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'APInvoices', 'DMT_LOADER_PKG.RUN_AP_INVOICES', 'ASYNC', 'DMT_AP_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'MiscReceipts', 'DMT_LOADER_PKG.RUN_MISC_RECEIPTS', 'SYNC', 'DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'Customers', 'DMT_LOADER_PKG.RUN_CUSTOMERS', 'ASYNC', 'DMT_CUST_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'ARInvoices', 'DMT_LOADER_PKG.RUN_AR_INVOICES', 'ASYNC', 'DMT_AR_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'ARReceipts', null, 'ASYNC', null, 'N' from dual
-    union all select 'Projects', 'DMT_LOADER_PKG.RUN_PROJECTS', 'ASYNC', 'DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'BillingEvents', 'DMT_LOADER_PKG.RUN_BILLING_EVENTS', 'ASYNC', 'DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'Expenditures', 'DMT_LOADER_PKG.RUN_EXPENDITURES', 'ASYNC', 'DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'Grants', 'DMT_LOADER_PKG.RUN_GRANTS', 'ASYNC', 'DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'ProjectBudgets', 'DMT_LOADER_PKG.RUN_PROJECT_BUDGETS', 'ASYNC', 'DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_GL_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'GLBudgets', 'DMT_LOADER_PKG.RUN_GL_BUDGETS', 'ASYNC', 'DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'Assets', 'DMT_LOADER_PKG.RUN_ASSETS', 'ASYNC', 'DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH', 'N' from dual
-    union all select 'Workers', 'DMT_LOADER_PKG.RUN_WORKERS', 'ASYNC', null, 'N' from dual
-    union all select 'Assignments', 'DMT_LOADER_PKG.RUN_ASSIGNMENTS', 'ASYNC', null, 'N' from dual
-    union all select 'Salaries', 'DMT_LOADER_PKG.RUN_SALARIES', 'ASYNC', null, 'N' from dual
-    union all select 'SalaryBases', 'DMT_LOADER_PKG.RUN_SALARY_BASES', 'ASYNC', null, 'N' from dual
-    union all select 'PayrollRelationships', 'DMT_LOADER_PKG.RUN_PAYROLL_RELS', 'ASYNC', null, 'N' from dual
-    union all select 'TaxCards', 'DMT_LOADER_PKG.RUN_TAX_CARDS', 'ASYNC', null, 'N' from dual
-    union all select 'W2Balances', 'DMT_LOADER_PKG.RUN_W2_BALANCES', 'ASYNC', null, 'N' from dual
-    union all select 'BenParticipant', 'DMT_LOADER_PKG.RUN_BEN_PARTICIPANT', 'ASYNC', null, 'N' from dual
-    union all select 'BenDependent', 'DMT_LOADER_PKG.RUN_BEN_DEPENDENT', 'ASYNC', null, 'N' from dual
-    union all select 'BenBeneficiary', 'DMT_LOADER_PKG.RUN_BEN_BENEFICIARY', 'ASYNC', null, 'N' from dual
-    union all select 'Absences', 'DMT_LOADER_PKG.RUN_ABSENCES', 'ASYNC', null, 'N' from dual
-    union all select 'TalentProfiles', 'DMT_LOADER_PKG.RUN_TALENT_PROFILES', 'ASYNC', null, 'N' from dual
-    union all select 'PerfEvaluations', 'DMT_LOADER_PKG.RUN_PERF_EVALUATIONS', 'ASYNC', null, 'N' from dual
-    union all select 'WorkSchedules', 'DMT_LOADER_PKG.RUN_WORK_SCHEDULES', 'ASYNC', null, 'N' from dual
-    union all select 'GLCalendar', null, 'ASYNC', null, 'N' from dual
-    union all select 'ValueSets', null, 'ASYNC', null, 'N' from dual
-    union all select 'Lookups', null, 'ASYNC', null, 'N' from dual
-    union all select 'UnitsOfMeasure', null, 'ASYNC', null, 'N' from dual
-    union all select 'PaymentTerms', null, 'ASYNC', null, 'N' from dual
-    union all select 'TaxConfig', null, 'ASYNC', null, 'N' from dual
-    union all select 'Banks', null, 'ASYNC', null, 'N' from dual
+    select 'Items' cemli_code, 'DMT_LOADER_PKG.RUN_ITEMS' exec_proc, 'ASYNC' exec_mode, 'DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH' recon_proc, 'N' recon_has_cemli_arg, 'DMT_EGP_ITEM_RESULTS_PKG.GET_PARTITION_KEYS' partition_keys_proc from dual
+    union all select 'Suppliers', 'DMT_LOADER_PKG.RUN_SUPPLIERS', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
+    union all select 'SupplierAddresses', 'DMT_LOADER_PKG.RUN_SUPPLIER_ADDRESSES', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
+    union all select 'SupplierSites', 'DMT_LOADER_PKG.RUN_SUPPLIER_SITES', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
+    union all select 'SupplierSiteAssignments', 'DMT_LOADER_PKG.RUN_SUPPLIER_SITE_ASSIGNMENTS', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
+    union all select 'SupplierContacts', 'DMT_LOADER_PKG.RUN_SUPPLIER_CONTACTS', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
+    union all select 'Requisitions', 'DMT_LOADER_PKG.RUN_REQUISITIONS', 'ASYNC', 'DMT_REQ_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_REQ_RESULTS_PKG.GET_PARTITION_KEYS' from dual
+    union all select 'PurchaseOrders', 'DMT_LOADER_PKG.RUN_PURCHASE_ORDERS', 'ASYNC', 'DMT_PO_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'BlanketPOs', 'DMT_LOADER_PKG.RUN_BLANKET_POS', 'ASYNC', 'DMT_BLANKET_PO_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'Contracts', 'DMT_LOADER_PKG.RUN_CONTRACTS', 'ASYNC', 'DMT_CONTRACT_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'APInvoices', 'DMT_LOADER_PKG.RUN_AP_INVOICES', 'ASYNC', 'DMT_AP_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'MiscReceipts', 'DMT_LOADER_PKG.RUN_MISC_RECEIPTS', 'SYNC', 'DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'Customers', 'DMT_LOADER_PKG.RUN_CUSTOMERS', 'ASYNC', 'DMT_CUST_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'ARInvoices', 'DMT_LOADER_PKG.RUN_AR_INVOICES', 'ASYNC', 'DMT_AR_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'ARReceipts', null, 'ASYNC', null, 'N', null from dual
+    union all select 'Projects', 'DMT_LOADER_PKG.RUN_PROJECTS', 'ASYNC', 'DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'BillingEvents', 'DMT_LOADER_PKG.RUN_BILLING_EVENTS', 'ASYNC', 'DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'Expenditures', 'DMT_LOADER_PKG.RUN_EXPENDITURES', 'ASYNC', 'DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'Grants', 'DMT_LOADER_PKG.RUN_GRANTS', 'ASYNC', 'DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'ProjectBudgets', 'DMT_LOADER_PKG.RUN_PROJECT_BUDGETS', 'ASYNC', 'DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_GL_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'GLBudgets', 'DMT_LOADER_PKG.RUN_GL_BUDGETS', 'ASYNC', 'DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    union all select 'Assets', 'DMT_LOADER_PKG.RUN_ASSETS', 'ASYNC', 'DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_FA_ASSET_RESULTS_PKG.GET_PARTITION_KEYS' from dual
+    union all select 'Workers', 'DMT_LOADER_PKG.RUN_WORKERS', 'ASYNC', null, 'N', null from dual
+    union all select 'Assignments', 'DMT_LOADER_PKG.RUN_ASSIGNMENTS', 'ASYNC', null, 'N', null from dual
+    union all select 'Salaries', 'DMT_LOADER_PKG.RUN_SALARIES', 'ASYNC', null, 'N', null from dual
+    union all select 'SalaryBases', 'DMT_LOADER_PKG.RUN_SALARY_BASES', 'ASYNC', null, 'N', null from dual
+    union all select 'PayrollRelationships', 'DMT_LOADER_PKG.RUN_PAYROLL_RELS', 'ASYNC', null, 'N', null from dual
+    union all select 'TaxCards', 'DMT_LOADER_PKG.RUN_TAX_CARDS', 'ASYNC', null, 'N', null from dual
+    union all select 'W2Balances', 'DMT_LOADER_PKG.RUN_W2_BALANCES', 'ASYNC', null, 'N', null from dual
+    union all select 'BenParticipant', 'DMT_LOADER_PKG.RUN_BEN_PARTICIPANT', 'ASYNC', null, 'N', null from dual
+    union all select 'BenDependent', 'DMT_LOADER_PKG.RUN_BEN_DEPENDENT', 'ASYNC', null, 'N', null from dual
+    union all select 'BenBeneficiary', 'DMT_LOADER_PKG.RUN_BEN_BENEFICIARY', 'ASYNC', null, 'N', null from dual
+    union all select 'Absences', 'DMT_LOADER_PKG.RUN_ABSENCES', 'ASYNC', null, 'N', null from dual
+    union all select 'TalentProfiles', 'DMT_LOADER_PKG.RUN_TALENT_PROFILES', 'ASYNC', null, 'N', null from dual
+    union all select 'PerfEvaluations', 'DMT_LOADER_PKG.RUN_PERF_EVALUATIONS', 'ASYNC', null, 'N', null from dual
+    union all select 'WorkSchedules', 'DMT_LOADER_PKG.RUN_WORK_SCHEDULES', 'ASYNC', null, 'N', null from dual
+    union all select 'GLCalendar', null, 'ASYNC', null, 'N', null from dual
+    union all select 'ValueSets', null, 'ASYNC', null, 'N', null from dual
+    union all select 'Lookups', null, 'ASYNC', null, 'N', null from dual
+    union all select 'UnitsOfMeasure', null, 'ASYNC', null, 'N', null from dual
+    union all select 'PaymentTerms', null, 'ASYNC', null, 'N', null from dual
+    union all select 'TaxConfig', null, 'ASYNC', null, 'N', null from dual
+    union all select 'Banks', null, 'ASYNC', null, 'N', null from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set
-    t."EXEC_PROC"           = s.exec_proc,
-    t."EXEC_MODE"           = s.exec_mode,
-    t."RECON_PROC"          = s.recon_proc,
-    t."RECON_HAS_CEMLI_ARG" = s.recon_has_cemli_arg;
+    t."EXEC_PROC"            = s.exec_proc,
+    t."EXEC_MODE"            = s.exec_mode,
+    t."RECON_PROC"           = s.recon_proc,
+    t."RECON_HAS_CEMLI_ARG"  = s.recon_has_cemli_arg,
+    t."PARTITION_KEYS_PROC"  = s.partition_keys_proc;
 
 commit;

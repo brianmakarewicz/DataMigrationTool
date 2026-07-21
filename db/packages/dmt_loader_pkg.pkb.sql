@@ -8,6 +8,27 @@
     -- Package-level constants
     C_PKG  CONSTANT VARCHAR2(30) := 'DMT_LOADER_PKG';
 
+    -- --------------------------------------------------------
+    -- DECODE_PARTITION_KEY — the ONE decoder for JSON-encoded spawn partition
+    -- keys (work-queue-ID core, 2026-07-20). A real spawn child's PARTITION_KEY
+    -- is a JSON object keyed by the partition column name, e.g.
+    -- {"BATCH_ID":"8102"}; the consuming generator asks for the scalar it needs
+    -- by column name and binds it into its existing static cursor. The two
+    -- sentinels are never JSON: NULL (parent / no partition) and 'ALL' (in-zip
+    -- non-spawn split) pass through unchanged so parent-detection and the ALL
+    -- path behave exactly as before.
+    -- --------------------------------------------------------
+    FUNCTION DECODE_PARTITION_KEY (
+        p_partition_key IN VARCHAR2,
+        p_column        IN VARCHAR2
+    ) RETURN VARCHAR2 IS
+    BEGIN
+        IF p_partition_key IS NULL OR p_partition_key = 'ALL' THEN
+            RETURN p_partition_key;
+        END IF;
+        RETURN JSON_VALUE(p_partition_key, '$.' || p_column);
+    END DECODE_PARTITION_KEY;
+
     -- Fusion ESS terminal statuses
     C_STATUS_SUCCEEDED CONSTANT VARCHAR2(20) := 'SUCCEEDED';
     C_STATUS_WARNING   CONSTANT VARCHAR2(20) := 'WARNING';
@@ -2056,9 +2077,11 @@
                 DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('Requisitions', l_rq_user, l_rq_pass);
 
                 -- Work-queue-ID core (2026-07-20): when this is a spawn-per-partition
-                -- child, g_partition_key holds its single BATCH_ID and the loop runs
-                -- exactly once for that batch. The parent loop (g_partition_key NULL)
-                -- is retained only for the legacy/standalone single-item path.
+                -- child, g_partition_key holds its single BATCH_ID (JSON-encoded,
+                -- e.g. {"BATCH_ID":"8102"}) and the loop runs exactly once for that
+                -- batch. DECODE_PARTITION_KEY yields the raw BATCH_ID to bind into
+                -- the static cursor. The parent loop (g_partition_key NULL) is
+                -- retained only for the legacy/standalone single-item path.
                 FOR grp_rec IN (
                     SELECT BATCH_ID,
                            MIN(REQ_BU_NAME)            AS REQ_BU_NAME,
@@ -2067,7 +2090,8 @@
                     WHERE  RUN_ID = p_run_id
                     AND    TFM_STATUS = 'STAGED'
                     AND    BATCH_ID IS NOT NULL
-                    AND    (g_partition_key IS NULL OR BATCH_ID = g_partition_key)
+                    AND    (g_partition_key IS NULL
+                            OR BATCH_ID = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
                     GROUP BY BATCH_ID
                     ORDER BY BATCH_ID
                 ) LOOP
@@ -2214,18 +2238,22 @@
                 -- A batch may have item rows, category rows, or both -- union both
                 -- TFM tables for the complete set of distinct batch ids.
                 -- Work-queue-ID core (2026-07-20): a spawn-per-partition child sets
-                -- g_partition_key to its single BATCH_ID, so the loop runs once for
-                -- that batch. g_partition_key NULL keeps the legacy all-batches loop.
+                -- g_partition_key to its single BATCH_ID (JSON-encoded, e.g.
+                -- {"BATCH_ID":"8102"}); DECODE_PARTITION_KEY yields the raw batch id
+                -- to bind, so the loop runs once for that batch. g_partition_key NULL
+                -- keeps the legacy all-batches loop.
                 FOR grp_rec IN (
                     SELECT TO_CHAR(BATCH_ID) AS BATCH_ID
                     FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
-                    AND    (g_partition_key IS NULL OR TO_CHAR(BATCH_ID) = g_partition_key)
+                    AND    (g_partition_key IS NULL
+                            OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
                     UNION
                     SELECT TO_CHAR(BATCH_ID)
                     FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
-                    AND    (g_partition_key IS NULL OR TO_CHAR(BATCH_ID) = g_partition_key)
+                    AND    (g_partition_key IS NULL
+                            OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
                     ORDER BY 1
                 ) LOOP
                     l_it_count := l_it_count + 1;
@@ -2861,7 +2889,11 @@
             DECLARE l_csv_id NUMBER;
             BEGIN
                 -- Multi-book: generate FBDI for ONLY this book when partitioned.
-                DMT_FA_ASSET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id, g_partition_key);
+                -- g_partition_key is JSON-encoded for a spawn child (e.g.
+                -- {"BOOK_TYPE_CODE":"US CORP"}); decode to the raw book code the
+                -- generator's static cursor filters on. NULL passes through (all books).
+                DMT_FA_ASSET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id,
+                    DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BOOK_TYPE_CODE'));
             END;
         ELSE
             RAISE_APPLICATION_ERROR(-20043,

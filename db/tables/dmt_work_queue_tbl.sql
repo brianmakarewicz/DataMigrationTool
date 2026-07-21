@@ -137,3 +137,5 @@ exception when others then
 end;
 /
 COMMENT ON COLUMN "DMT_WORK_QUEUE_TBL"."PARENT_QUEUE_ID" IS 'Self-reference to the parent work item this child was spawned from at partition split (null for top-level items). FK to DMT_WORK_QUEUE_TBL.QUEUE_ID.';
+COMMENT ON COLUMN "DMT_WORK_QUEUE_TBL"."PARTITION_KEY" IS 'For a spawn-per-partition child, a JSON object keyed by the partition column name, e.g. {"BATCH_ID":"8102"} or {"BOOK_TYPE_CODE":"US CORP"}; decode with JSON_VALUE (DMT_LOADER_PKG.DECODE_PARTITION_KEY). Composite keys add more keys to the same object. The engine treats it as an opaque string - only the producing GET_PARTITION_KEYS and the consuming object package read/write the JSON. Two sentinels are never JSON: NULL = un-partitioned parent / no partition; ''ALL'' = in-zip (non-spawn) FBDI split.';
+COMMENT ON COLUMN "DMT_WORK_QUEUE_TBL"."PARTITION_LABEL" IS 'Human-readable partition value for logs/UI, e.g. ''8102'' or ''US CORP'' - the raw scalar decoded from PARTITION_KEY at spawn time. Distinct from PARTITION_KEY, which holds the opaque JSON token.';

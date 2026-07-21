@@ -280,7 +280,26 @@ AS
     -- skips re-transform and generates the FBDI for ONLY this book. NULL = all books.
     -- Generalized (2026-07-20): also carries the single partition value for any
     -- spawn-per-partition object (Items/Requisitions -> a BATCH_ID).
-    g_partition_key VARCHAR2(200) := NULL;
+    -- JSON encoding (2026-07-20): for a real spawn-per-partition child this now
+    -- holds a JSON object keyed by the partition column name, e.g.
+    -- {"BATCH_ID":"8102"} or {"BOOK_TYPE_CODE":"US CORP"} (future composite keys
+    -- add more keys to the same object). It is an OPAQUE string to the engine;
+    -- a consuming generator decodes the scalar it needs with DECODE_PARTITION_KEY
+    -- and binds THAT into its existing static cursor. The sentinels NULL (parent /
+    -- no partition) and 'ALL' (in-zip non-spawn split) are NEVER JSON — they pass
+    -- through unchanged.
+    g_partition_key VARCHAR2(4000) := NULL;
+
+    -- DECODE_PARTITION_KEY (2026-07-20): extract one column's scalar value from a
+    -- JSON-encoded spawn partition key. Passthrough for the two sentinels: if the
+    -- key is NULL or 'ALL' it is returned as-is (those are never JSON); otherwise
+    -- the value of p_column is read with JSON_VALUE. This is the ONE decoder the
+    -- consuming object packages call so the JSON convention lives in exactly one
+    -- place; the column name is unchanged from the object's static cursor.
+    FUNCTION DECODE_PARTITION_KEY (
+        p_partition_key IN VARCHAR2,
+        p_column        IN VARCHAR2
+    ) RETURN VARCHAR2;
 
     -- Work-queue-ID core (2026-07-20): the QUEUE_ID of the work-queue item that is
     -- currently generating rows. EXECUTE_ONE sets it from the (child) queue row so
