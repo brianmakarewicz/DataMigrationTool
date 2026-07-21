@@ -57,6 +57,23 @@ number, date start, legal employer, worker type, action) and the Assignment line
    load agree on the same assignment id, and lets one person carry multiple assignments.
    `ASSIGNMENT_NUMBER` is required: a blank one fails the assignment validator, R1.)
 
+### HDL error match key (reconciliation)
+When an Assignment data set ends in error, Fusion returns per-row messages keyed by the
+SourceSystemId the generator emitted: `<ASSIGNMENT_NUMBER>_TRM` for the employment-terms
+record and `<ASSIGNMENT_NUMBER>_ASG` for the assignment record (e.g. `ET-RT-WKR-G1_TRM`,
+`ET-RT-WKR-G1_ASG`). These do NOT begin with a `PERSON_NUMBER`, so reconciling the Assignment
+TFM table by `PERSON_NUMBER` matched nothing and every row was left unaccounted.
+
+Rule: reconcile `DMT_ASSIGNMENT_TFM_TBL` on `ASSIGNMENT_NUMBER`, not `PERSON_NUMBER`. The
+call passes `p_key_column => 'ASSIGNMENT_NUMBER'` and `p_key_suffixes => '_TRM,_ASG'` to
+`DMT_HDL_UTIL_PKG.RECONCILE_HDL`. The suffix list switches the match from the legacy prefix
+`LIKE key||'%'` to EXACT equality against `key||'_TRM'` and `key||'_ASG'`, so each real error
+lands on its own assignment row and a shorter number (`G1`) cannot absorb a longer one that
+shares its prefix (`G1B`). The WorkRelationship table stays keyed on `PERSON_NUMBER` (its
+SourceSystemId is `<PERSON_NUMBER>_POS`, prefix-safe). General rule for any HDL object: pick
+the match key from the value the generator actually puts in SourceSystemId, and pass the exact
+suffixes when one business key can be a prefix of another.
+
 ### Real reference values (queried live via BIP, hcm_impl)
 A real active worker (person 10, Mandy Steward, assignment E10) on the demo instance:
 

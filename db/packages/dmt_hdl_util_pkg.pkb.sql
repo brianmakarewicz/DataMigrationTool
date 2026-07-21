@@ -397,17 +397,55 @@
         p_stg_table       IN VARCHAR2,
         p_key_column      IN VARCHAR2 DEFAULT 'SOURCE_REF',
         p_dataset_status  IN VARCHAR2 DEFAULT NULL,
-        p_log_context     IN VARCHAR2 DEFAULT NULL
+        p_log_context     IN VARCHAR2 DEFAULT NULL,
+        p_key_suffixes    IN VARCHAR2 DEFAULT NULL
     ) IS
         l_json      CLOB;
         l_proc      VARCHAR2(100) := NVL(p_log_context, '') || ' > RECONCILE_HDL';
         l_err_count NUMBER := 0;
         l_ok_count  NUMBER := 0;
         l_gen_count NUMBER := 0;
+        l_match     VARCHAR2(4000);
+        l_sfx       VARCHAR2(200);
+        l_rest      VARCHAR2(4000);
+        l_pos       PLS_INTEGER;
     BEGIN
+        -- Build the row<->message match predicate against jt.src_ref (the HDL
+        -- SourceSystemId) and t.<p_key_column>.
+        --   * No suffixes (person-keyed loads): legacy prefix match. A worker's
+        --     name/position/etc. SourceSystemIds all begin with PERSON_NUMBER.
+        --   * With suffixes (e.g. '_TRM,_ASG'): EXACT equality against
+        --     p_key_column||<suffix>. This is what the Assignment generator emits
+        --     ('<ASSIGNMENT_NUMBER>_TRM' / '<ASSIGNMENT_NUMBER>_ASG'), so each
+        --     real error lands on its own row and 'G1' never absorbs 'G1B'.
+        IF p_key_suffixes IS NULL THEN
+            l_match := 'jt.src_ref LIKE t.' || p_key_column || ' || ''%''';
+        ELSE
+            l_match := '(';
+            l_rest  := p_key_suffixes;
+            l_pos   := 0;
+            LOOP
+                l_pos := INSTR(l_rest, ',');
+                IF l_pos > 0 THEN
+                    l_sfx  := TRIM(SUBSTR(l_rest, 1, l_pos - 1));
+                    l_rest := SUBSTR(l_rest, l_pos + 1);
+                ELSE
+                    l_sfx  := TRIM(l_rest);
+                    l_rest := NULL;
+                END IF;
+                l_match := l_match || 'jt.src_ref = t.' || p_key_column ||
+                           ' || ''' || l_sfx || '''';
+                EXIT WHEN l_rest IS NULL;
+                l_match := l_match || ' OR ';
+            END LOOP;
+            l_match := l_match || ')';
+        END IF;
+
         DMT_UTIL_PKG.LOG(p_run_id,
             'RECONCILE_HDL start. RequestId: ' || p_request_id ||
             ' | TFM: ' || p_tfm_table || ' | Key: ' || p_key_column ||
+            CASE WHEN p_key_suffixes IS NULL THEN ''
+                 ELSE ' | Suffixes: ' || p_key_suffixes END ||
             ' | DataSetStatus: ' || NVL(p_dataset_status, '(unknown)'),
             'INFO', C_PKG, l_proc);
 
@@ -437,14 +475,14 @@
                 '        FROM JSON_TABLE(:json, ''$.items[*]'' ' ||
                 '            COLUMNS (src_ref VARCHAR2(200) PATH ''$.SourceSystemId'', ' ||
                 '                     msg VARCHAR2(4000) PATH ''$.MessageText'')) jt ' ||
-                '        WHERE jt.src_ref LIKE t.' || p_key_column || ' || ''%'')), ' ||
+                '        WHERE ' || l_match || ')), ' ||
                 '    t.LAST_UPDATED_DATE = SYSDATE ' ||
                 'WHERE t.RUN_ID = :iid ' ||
                 'AND   t.TFM_STATUS = ''GENERATED'' ' ||
                 'AND   EXISTS ( ' ||
                 '    SELECT 1 FROM JSON_TABLE(:json2, ''$.items[*]'' ' ||
                 '        COLUMNS (src_ref VARCHAR2(200) PATH ''$.SourceSystemId'')) jt ' ||
-                '    WHERE jt.src_ref LIKE t.' || p_key_column || ' || ''%'')'
+                '    WHERE ' || l_match || ')'
                 USING l_json, p_run_id, l_json;
             l_err_count := SQL%ROWCOUNT;
         EXCEPTION
