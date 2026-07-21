@@ -88,7 +88,7 @@
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'ALL')
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         -- Scenario scoping: only transform rows for the active scenario (and, when requested,
@@ -111,7 +111,7 @@
         WHERE  (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND s.STG_STATUS IN ('NEW', 'RETRY'))
+            OR (p_run_mode = 'ALL')
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
