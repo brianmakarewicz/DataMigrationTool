@@ -23,7 +23,12 @@ For every reconciler package (all *_RESULTS_PKG that carry RECONCILE_BATCH):
   2. It contains NO call to SWEEP_UNACCOUNTED(...).
   3. It contains NO fabricated reconcile-fallback message text — the generic
      "not confirmed in Fusion ... could not be verified" family that asserted a
-     failure we never observed.
+     failure we never observed, PLUS the interface-present-but-not-in-base family
+     ("In interface but not created in base", "import did not post it", the
+     "(status ' || <expr> || ') -- import" template, and the bare "(status P"
+     observation) that asserted a FAILED from the mere presence of a row in an
+     interface/staging table with a non-error status. Such a row is UNACCOUNTED,
+     not FAILED, and must be left GENERATED.
 
 A green run means no reconciler fabricates a FAILED for an unresolved record.
 
@@ -70,6 +75,16 @@ FABRICATED_PATTERNS = [
     re.compile(r"Cannot verify Fusion outcome", re.I),
     re.compile(r"No reconciliation data returned", re.I),
     re.compile(r"BIP returned 0 rows\.\s*Parent header not reconciled", re.I),
+    # The interface-present-but-not-in-base family (Expenditures ELSE, 2026-07-21).
+    # These asserted a FAILED from the mere observation that a row sat in an
+    # interface/staging table with a non-error status. That is UNACCOUNTED, not
+    # FAILED — the record must be left GENERATED.
+    re.compile(r"In interface but not created in base", re.I),
+    re.compile(r"import did not post it", re.I),
+    # "... (status ' || <expr> || ') -- import did not post it" and the bare
+    # "status P" observation used as a FAILED reason.
+    re.compile(r"status\s*'\s*\|\|.*\|\|\s*'\s*\)\s*--\s*import", re.I | re.S),
+    re.compile(r"\(status\s+P\b", re.I),
 ]
 
 

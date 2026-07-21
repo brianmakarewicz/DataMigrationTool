@@ -338,26 +338,31 @@ AS
                 AND    TFM_STATUS                      NOT IN ('LOADED','FAILED');
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
-            ELSIF r.source_type = 'INTERFACE' THEN
-                -- Tier 1: interface row. The BASE tier is the ONLY source of LOADED
-                -- (a genuinely-posted row is in PJC_EXP_ITEMS_ALL and was marked LOADED
-                -- above; BASE rows are processed first via the ORDER BY). A row reaching
-                -- here that is not already LOADED is NOT in the base table -> it is NOT
-                -- good and MUST be FAILED. An interface "success" status (e.g. 'P') is
-                -- NOT proof of a base row: the import can error after staging (verified
-                -- run 151 -- import ORA-06502, 0 base rows, yet interface rows were 'P').
+            ELSIF r.source_type = 'INTERFACE'
+                  AND r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R') THEN
+                -- Tier 1: interface row that carries a REAL Fusion rejection status.
+                -- Only these are marked FAILED, using the actual Fusion-returned
+                -- error message (r.error_msg). A record with any other interface
+                -- status (e.g. a "success" status like 'P') is NOT proof of a base
+                -- row, but it is ALSO not a Fusion error -- it is UNACCOUNTED and is
+                -- left GENERATED (see comment below). Never fabricate a FAILED from a
+                -- composed "in interface but not in base" sentence.
                 UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
                 SET    TFM_STATUS               = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                 CASE WHEN r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R')
-                                                      THEN '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.fusion_status)
-                                                      ELSE '[FUSION_ERROR] In interface but not created in base (status ' || NVL(r.fusion_status, 'NULL') || ') -- import did not post it' END),
+                                                 '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.fusion_status)),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID            = p_run_id
                 AND    ORIG_TRANSACTION_REFERENCE = r.orig_transaction_reference
                 AND    TFM_STATUS                    NOT IN ('LOADED','FAILED');
                 l_failed := l_failed + SQL%ROWCOUNT;
+
+            -- ELSE (INTERFACE row with no base hit and no Fusion error status, e.g.
+            -- status 'P'): intentionally left GENERATED (unaccounted). The Import
+            -- Report fallback below may still attach a real import error; otherwise
+            -- the accounting gate reports the object not-DONE and the funnel surfaces
+            -- the row as UNRECONCILED. No fabricated FAILED.
             END IF;
         END LOOP;
 
