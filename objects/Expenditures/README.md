@@ -1,19 +1,69 @@
 # Expenditures
 
 ## Status
-E2E LOADED (3/3 regression, including BAD row — pre-validation issue)
+Import-job + ParameterList + unique-batch fix applied (2026-07-20, branch
+fix/expenditure-correct-import-job). Good rows now target base table PJC_EXP_ITEMS_ALL.
+Live proof pending the owner's full regression rerun. (Prior "3/3 LOADED" was a false
+positive — it used the crashing parallel job and 0 rows actually reached base.)
 
 ## Pipeline
 - Module: Projects
 - FBDI Template: PjcExpendituresInterface.xlsm
 - CSV Filename: PjcTxnXfaceStageAll.csv
-- Interface Table: PJC_TXN_XFACE_STAGE_ALL
+- Interface Table: PJC_TXN_XFACE_STAGE_ALL (base success table: PJC_EXP_ITEMS_ALL)
 - UCM Account: prj/projectCosting/import
-- ESS Job: /oracle/apps/ess/projects/costing/transactions/onestop,ImportProcessParallelEssJob
-- ParameterList: US1 Business Unit,300000046987012,IMPORT_AND_PROCESS,PREV_NOT_IMPORTED,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,{SYSDATE},#NULL,ORA_PJC_DETAIL
+- ESS Job: /oracle/apps/ess/projects/costing/transactions/onestop,ImportAndProcessTxnsJob
+  (the NON-parallel "Import and Process Cost Transactions" job — 10-arg. See the
+  Import-job fix note below.)
+- ParameterList (10 positions, tilde-delimited):
+  `IMPORT_AND_PROCESS~{BU_ID}~ALL~#NULL~#NULL~{TXN_SOURCE_ID}~{DOCUMENT_ID}~#NULL~#NULL~#NULL`
+  - Position 2 BU_ID: numeric business-unit id, resolved from lookup BU_NAME_TO_BU_ID
+    (config EXPENDITURE_BU_NAME). Never the BU name.
+  - Position 6 TXN_SOURCE_ID: numeric transaction-source id, resolved from lookup
+    PJC_TXN_SOURCE_NAME_TO_ID keyed by the USER_TRANSACTION_SOURCE the rows carry.
+  - Position 7 DOCUMENT_ID: numeric document id, resolved from lookup PJC_DOC_NAME_TO_ID
+    keyed by the DOCUMENT_NAME the rows carry.
+  - Positions 6 and 7 are import FILTERS, so they must match the source/document each
+    interface row names (Time Card/Time Card for the labor fixture, or External
+    Miscellaneous/Miscellaneous for the non-labor gold path).
 - InterfaceDetails ID: 20
 - Loader Type: SQLLOADER
 - Auth User: fin_impl
+
+## Import-job fix (2026-07-20) — the reason rows never reached base
+The pipeline previously submitted the PARALLEL job
+`onestop;ImportProcessParallelEssJob` (14-arg). That job crashes on this pod with
+ORA-06502 (character-to-number) in its own parameter parsing every run — the old
+ParameterList put the BU NAME and a date string into numeric argument slots, so zero
+rows ever costed to base. The gold-proven job is the NON-parallel
+`onestop,ImportAndProcessTxnsJob` (10-arg). The fix, in three parts:
+1. Seed `db/seed/dmt_erp_interface_options_tbl.sql` row 20 IMPORT_JOB_NAME: only the
+   definition name changed, from `ImportProcessParallelEssJob` to
+   `ImportAndProcessTxnsJob`. The seed keeps the semicolon storage convention
+   (`...onestop;ImportAndProcessTxnsJob`); `get_erp_options` converts the last semicolon
+   to a comma at submit time, producing the gold's comma form
+   `...onestop,ImportAndProcessTxnsJob` for the loadAndImportData JobName. (Storing a
+   comma here would break that converter and yield a leading-comma path.)
+2. Loader `dmt_loader_pkg.pkb.sql` Expenditures branch builds the 10-position tilde list
+   above. The two numeric ids come from lookups, never hardcoded (design section 7).
+3. Two new lookups, PJC_TXN_SOURCE_NAME_TO_ID and PJC_DOC_NAME_TO_ID, populated by
+   `DMT_UTIL_PKG.REFRESH_LOOKUPS` at pipeline preflight from Fusion views
+   `pjf_txn_sources_vl` and `pjf_txn_document_b`/`pjf_txn_document_vl` (same
+   BIP-data-model pattern as the BU, ledger and AR-batch-source lookups).
+
+Before/after generated ParameterList (offline-proven on dmt2-local):
+- BEFORE: `US1 Business Unit,300000046987012,IMPORT_AND_PROCESS,PREV_NOT_IMPORTED,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,{SYSDATE},#NULL,ORA_PJC_DETAIL`
+- AFTER:  `IMPORT_AND_PROCESS~300000046987012~ALL~#NULL~#NULL~300000049907116~300000049907117~#NULL~#NULL~#NULL`
+
+## Unique BATCH_NAME rule (the second blocker)
+Import Costs validates each transaction's batch name is unique
+(MESSAGE_NAME=PJC_UNIQUE_BATCH_NAME). If interface rows carry an empty/duplicate
+BATCH_NAME the GOOD rows collide with each other and across prefixes and are ALL
+rejected. The Expenditures transform now synthesises a deterministic unique BATCH_NAME:
+the prefixed ORIG_TRANSACTION_REFERENCE (`{PREFIX}RT-EXP-*`, already unique per row and
+stamped with the run prefix), so ALL-mode reruns never collide. The transform also stamps
+the run prefix onto ORIG_TRANSACTION_REFERENCE (the base-table verification key). Source
+is no longer required to supply a batch name.
 
 ## CSV Format Notes
 - First field is TRANSACTION discriminator: 'LABOR' or 'NONLABOR' (FILLER in CTL, used as WHEN clause)
