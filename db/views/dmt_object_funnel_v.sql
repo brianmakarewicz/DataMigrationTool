@@ -19,10 +19,14 @@
 -- double-count.
 --
 -- Stages (left to right): STAGED -> [PREVALIDATION_FAILED] -> TRANSFORMED
---   -> [TRANSFORM_FAILED] -> GENERATED -> LOADED / LOAD_FAILED; IN_PROGRESS and
---   UNRECONCILED are in-flight / accounting-defect buckets carried from the detail
---   view. STAGED is derived per run (STG has no RUN_ID): everything that entered
---   this run for the sub-object = TRANSFORMED + the two (non-transformed) failed lanes.
+--   -> [TRANSFORM_FAILED] -> GENERATED -> LOADED / LOAD_FAILED / UNACCOUNTED;
+--   IN_PROGRESS and UNRECONCILED are in-flight / accounting-defect buckets carried
+--   from the detail view. UNACCOUNTED is the real terminal status set by the shared
+--   unaccounted sweep (a record neither confirmed LOADED nor failed with a real
+--   Fusion error) — its own lane, distinct from LOAD_FAILED, so the UI can color it
+--   dark-red; the goal of the cycle is to drive it to zero. STAGED is derived per run
+--   (STG has no RUN_ID): everything that entered this run for the sub-object =
+--   TRANSFORMED + the two (non-transformed) failed lanes.
 --
 -- The two failed lanes are split by the design's ERROR_TEXT tag prefix (section 5:
 -- '[PRE_VALIDATION]' vs '[TRANSFORM_ERROR]', always the leading token) — an
@@ -33,7 +37,7 @@
 CREATE OR REPLACE EDITIONABLE VIEW "DMT_OBJECT_FUNNEL_V"
     ("CEMLI_CODE", "SUB_OBJECT", "SUB_ORDER", "RUN_ID",
      "STAGED", "PREVALIDATION_FAILED", "TRANSFORMED", "TRANSFORM_FAILED",
-     "GENERATED", "LOADED", "LOAD_FAILED", "IN_PROGRESS", "UNRECONCILED",
+     "GENERATED", "LOADED", "LOAD_FAILED", "UNACCOUNTED", "IN_PROGRESS", "UNRECONCILED",
      "PIPELINE_CODES", "SCENARIO_NAME", "PREFIX", "SUBMITTED_DATE", "COMPLETED_DATE", "RUN_STATUS") AS
   WITH reached_tfm AS (
     -- the set of source records that reached TFM this run (one row per TFM record).
@@ -71,6 +75,10 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_OBJECT_FUNNEL_V"
     NVL(d.GENERATED_ROWS, 0)                                              AS GENERATED,
     NVL(d.LOADED_ROWS, 0)                                                 AS LOADED,
     NVL(d.FAILED_ROWS, 0)                                                 AS LOAD_FAILED,
+    -- UNACCOUNTED lane (2026-07-21): rows the shared sweep marked with the real
+    -- terminal status UNACCOUNTED. Distinct from LOAD_FAILED so the UI can render
+    -- it dark-red (unaccounted) vs the lighter red of a genuine load failure.
+    NVL(d.UNACCOUNTED_ROWS, 0)                                            AS UNACCOUNTED,
     NVL(d.IN_PROGRESS_ROWS, 0)                                            AS IN_PROGRESS,
     NVL(d.UNRECONCILED_ROWS, 0)                                           AS UNRECONCILED,
     m.PIPELINE_CODES,

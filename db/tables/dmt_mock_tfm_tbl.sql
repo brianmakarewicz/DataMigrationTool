@@ -10,7 +10,13 @@
 -- keys) are test-setup only — test/unit/setup_mock_objects.sql — so no
 -- mock object is ever dispatchable on a production install.
 -- Status vocabulary mirrors the Overview TFM row-status table:
--- STAGED / GENERATED / LOADED / FAILED.
+-- STAGED / GENERATED / LOADED / FAILED / UNACCOUNTED.
+-- UNACCOUNTED (added 2026-07-21): the real stored terminal status set by the
+-- one shared unaccounted sweep (DMT_QUEUE_WORKER_PKG.SWEEP_UNACCOUNTED) for a
+-- row reconciliation could neither confirm LOADED nor mark FAILED with a real
+-- Fusion error. DMT_MOCK_TFM_TBL is the only TFM table carrying an IN-list
+-- CHECK on TFM_STATUS; every other TFM table constrains TFM_STATUS to NOT NULL
+-- only, so the sweep's UPDATE ... = 'UNACCOUNTED' is already accepted there.
 
 begin
   execute immediate 'CREATE TABLE "DMT_MOCK_TFM_TBL"
@@ -24,7 +30,7 @@ begin
 	 CONSTRAINT "DMT_MOCK_TFM_PK" PRIMARY KEY ("MOCK_ID")
   USING INDEX  ENABLE,
 	 CONSTRAINT "DMT_MOCK_TFM_STATUS_CK" CHECK (
-        TFM_STATUS IN (''STAGED'',''GENERATED'',''LOADED'',''FAILED'')) ENABLE
+        TFM_STATUS IN (''STAGED'',''GENERATED'',''LOADED'',''FAILED'',''UNACCOUNTED'')) ENABLE
    ) ';
 exception when others then
   if sqlcode not in (-955) then raise; end if;
@@ -58,7 +64,28 @@ begin
     end;
     execute immediate 'ALTER TABLE "DMT_MOCK_TFM_TBL" RENAME COLUMN "STATUS" TO "TFM_STATUS"';
     execute immediate 'ALTER TABLE "DMT_MOCK_TFM_TBL" ADD CONSTRAINT "DMT_MOCK_TFM_STATUS_CK" CHECK (
-        TFM_STATUS IN (''STAGED'',''GENERATED'',''LOADED'',''FAILED''))';
+        TFM_STATUS IN (''STAGED'',''GENERATED'',''LOADED'',''FAILED'',''UNACCOUNTED''))';
   end if;
+end;
+/
+
+-- ---------------------------------------------------------------------------
+-- 2026-07-21: add 'UNACCOUNTED' to the TFM_STATUS IN-list. UNACCOUNTED is the
+-- real stored terminal status set by the shared unaccounted sweep. Idempotent
+-- drop-and-recreate of the named CHECK (keeps the constraint name). Fresh
+-- installs already get the final IN-list from the CREATE above; this converges
+-- a pre-existing database whose CHECK was created without UNACCOUNTED.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_constraints
+  where  table_name = 'DMT_MOCK_TFM_TBL' and constraint_name = 'DMT_MOCK_TFM_STATUS_CK';
+  if l_n = 1 then
+    execute immediate 'ALTER TABLE "DMT_MOCK_TFM_TBL" DROP CONSTRAINT "DMT_MOCK_TFM_STATUS_CK"';
+  end if;
+  execute immediate 'ALTER TABLE "DMT_MOCK_TFM_TBL" ADD CONSTRAINT "DMT_MOCK_TFM_STATUS_CK" CHECK (
+        TFM_STATUS IN (''STAGED'',''GENERATED'',''LOADED'',''FAILED'',''UNACCOUNTED''))';
+exception when others then
+  if sqlcode not in (-2264,-2260) then raise; end if;  -- name already used / already exists
 end;
 /

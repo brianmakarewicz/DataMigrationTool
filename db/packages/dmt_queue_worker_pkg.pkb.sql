@@ -185,8 +185,13 @@ AS
             assert_catalog_identifier(r.STATUS_COLUMN, 'STATUS_COLUMN');
 
             -- Accounted = LOADED, or FAILED with non-empty ERROR_TEXT.
-            -- FAILED + empty ERROR_TEXT is the derived UNRECONCILED
-            -- classification (Overview row-status table) — unaccounted.
+            -- Everything else is unaccounted by subtraction (l_un below):
+            -- a row still GENERATED, a row now UNACCOUNTED (the real stored
+            -- terminal status set by SWEEP_UNACCOUNTED), and FAILED + empty
+            -- ERROR_TEXT (the derived UNRECONCILED classification) all count
+            -- as NOT accounted, so any of them keeps the object not-DONE.
+            -- Only LOADED and FAILED-with-a-real-error are counted as
+            -- accounted; UNACCOUNTED is never counted as accounted.
             -- Work-queue-ID core: when p_work_queue_id is set (a spawn-per-partition
             -- child), scope the count to that item's own rows so it settles on its
             -- own batch only — a sibling batch still STAGED/GENERATED must not fail
@@ -219,21 +224,38 @@ AS
     END ACCOUNT_ROWS;
 
     -- ============================================================
-    -- MARK_GENERATED_ROWS_FAILED — the section-5 [LOAD_ERROR] rule
-    -- made catalog-generic: "When the load ESS job fails, every
-    -- GENERATED row of that ZIP is marked FAILED with this tag plus
-    -- the job's diagnostics" (tag table, [LOAD_ERROR] row). Also the
-    -- timeout trigger (section 2 Timeouts: "when it expires, every
-    -- GENERATED row of the file is marked FAILED with a
-    -- [LOAD_ERROR]-tagged timeout message ... and reconciliation
-    -- still runs"). ERROR_TEXT accumulates via APPEND_ERROR — a row
-    -- later confirmed in Fusion is flipped LOADED by reconciliation
-    -- with the timeout text kept as history.
+    -- SWEEP_UNACCOUNTED — the one shared unaccounted sweep (design
+    -- section 5 record-accounting rule + the [UNACCOUNTED] tag row,
+    -- owner directive 2026-07-21). After an object's RECONCILE_BATCH
+    -- has run, every TFM row of that object still GENERATED for this
+    -- run (neither flipped LOADED by base-table confirmation nor
+    -- FAILED with a real Fusion error) is set to the real stored
+    -- terminal status UNACCOUNTED, and the bare [UNACCOUNTED] tag is
+    -- appended to ERROR_TEXT. The tag stands alone: this procedure
+    -- writes NO other text (no composed "not confirmed", no status
+    -- observation) — that is the whole point of the honest marker.
+    --
+    -- It does NOT commit — the caller (RECONCILE_ONE) owns the
+    -- transaction, so the sweep and the accounting gate settle atomically.
+    --
+    -- Scope: RUN_ID always; plus WORK_QUEUE_ID when p_work_queue_id is
+    -- non-NULL. This mirrors ACCOUNT_ROWS / apply_accounting_gate exactly:
+    -- a spawn-per-partition child stamps WORK_QUEUE_ID on its own rows and
+    -- sweeps only those, so it never sweeps a sibling batch's rows that
+    -- are legitimately still GENERATED and awaiting their own load. For a
+    -- single-item object WORK_QUEUE_ID is unstamped (NULL on the rows), so
+    -- the caller passes NULL here and the run-scoped sweep is used — never
+    -- WORK_QUEUE_ID = <id> against an all-NULL column (which would sweep
+    -- zero rows, a Rule #1 regression).
+    --
+    -- Stays inside the sanctioned dynamic-SQL site (section 7): the table
+    -- and status-column names come only from the seeded catalog and are
+    -- identifier-checked by assert_catalog_identifier; every value is bound.
     -- ============================================================
-    PROCEDURE MARK_GENERATED_ROWS_FAILED (
-        p_run_id     IN NUMBER,
-        p_cemli_code IN VARCHAR2,
-        p_error_text IN VARCHAR2
+    PROCEDURE SWEEP_UNACCOUNTED (
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         l_sql VARCHAR2(4000);
     BEGIN
@@ -249,17 +271,22 @@ AS
 
             l_sql :=
                 'UPDATE DMT_OWNER.' || r.TFM_TABLE
-                || ' SET ' || r.STATUS_COLUMN || ' = ''FAILED'','
-                || ' ERROR_TEXT = DMT_OWNER.DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, :msg)'
+                || ' SET ' || r.STATUS_COLUMN || ' = ''UNACCOUNTED'','
+                || ' ERROR_TEXT = DMT_OWNER.DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, ''[UNACCOUNTED]'')'
                 || ' WHERE RUN_ID = :run_id'
                 || ' AND ' || r.STATUS_COLUMN || ' = ''GENERATED'''
+                || CASE WHEN p_work_queue_id IS NOT NULL
+                        THEN ' AND WORK_QUEUE_ID = :wq' END
                 || CASE WHEN r.ROW_FILTER IS NOT NULL
                         THEN ' AND ' || r.ROW_FILTER END;
 
-            EXECUTE IMMEDIATE l_sql USING p_error_text, p_run_id;
+            IF p_work_queue_id IS NOT NULL THEN
+                EXECUTE IMMEDIATE l_sql USING p_run_id, p_work_queue_id;
+            ELSE
+                EXECUTE IMMEDIATE l_sql USING p_run_id;
+            END IF;
         END LOOP;
-        COMMIT;
-    END MARK_GENERATED_ROWS_FAILED;
+    END SWEEP_UNACCOUNTED;
 
     -- ============================================================
     -- apply_accounting_gate — THE single accounting gate. The only
@@ -659,6 +686,33 @@ AS
                 END IF;
             END;
         END IF;
+
+        -- Unaccounted sweep (owner directive 2026-07-21). After RECONCILE_BATCH
+        -- (and the import-report error pass above), any TFM row still GENERATED
+        -- for this object was neither confirmed LOADED nor marked FAILED with a
+        -- real Fusion error. The single shared sweep flips those rows to the real
+        -- terminal status UNACCOUNTED and appends the bare [UNACCOUNTED] tag, so a
+        -- row is never left GENERATED after reconciliation. Every object reaches
+        -- reconciliation through this procedure, so every object is swept — no
+        -- per-reconciler code. It does not commit; the gate below and this sweep
+        -- settle in the one COMMIT that follows.
+        --
+        -- Scope decision mirrors apply_accounting_gate exactly: a spawn-per-
+        -- partition child (a real PARTITION_KEY, not the un-partitioned parent
+        -- NULL and not the in-zip 'ALL' split) stamps WORK_QUEUE_ID on its own
+        -- rows and sweeps only those; every other object sweeps run-scoped
+        -- (l_scope_wq stays NULL) because WORK_QUEUE_ID is unstamped on its rows.
+        DECLARE
+            l_partition_key DMT_WORK_QUEUE_TBL.PARTITION_KEY%TYPE;
+            l_scope_wq      NUMBER;
+        BEGIN
+            SELECT PARTITION_KEY INTO l_partition_key
+            FROM   DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
+            l_scope_wq := CASE WHEN l_partition_key IS NOT NULL
+                                AND l_partition_key <> 'ALL'
+                               THEN p_queue_id END;
+            SWEEP_UNACCOUNTED(l_rec.RUN_ID, l_rec.CEMLI_CODE, l_scope_wq);
+        END;
 
         -- B1 (2026-07-08): the object-level DONE/FAILED decision now runs
         -- through the single catalog-driven accounting gate (was: an inline

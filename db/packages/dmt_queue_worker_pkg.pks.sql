@@ -66,18 +66,21 @@ AS
     );
 
     -- ------------------------------------------------------------
-    -- Catalog-driven [LOAD_ERROR] row marking (design section 5 tag
-    -- table, [LOAD_ERROR] row: "When the load ESS job fails, every
-    -- GENERATED row of that ZIP is marked FAILED with this tag plus
-    -- the job's diagnostics" — all-or-nothing, whole ZIP). Also the
-    -- timeout trigger path (section 2 Timeouts). p_error_text must
-    -- already carry the [LOAD_ERROR] tag; it is APPEND_ERROR'ed so
-    -- history accumulates, never overwrites.
+    -- SWEEP_UNACCOUNTED — the one shared unaccounted sweep (design
+    -- section 5 record-accounting rule + the [UNACCOUNTED] tag row,
+    -- owner directive 2026-07-21). Called from RECONCILE_ONE after an
+    -- object's RECONCILE_BATCH: every TFM row of the object still
+    -- GENERATED for this run is set to the real terminal status
+    -- UNACCOUNTED and the bare [UNACCOUNTED] tag is appended to
+    -- ERROR_TEXT (no other text). Does NOT commit — the caller owns the
+    -- transaction. Scope RUN_ID always; add WORK_QUEUE_ID only for a
+    -- spawn-per-partition child (mirrors ACCOUNT_ROWS / the gate). This
+    -- is the ONLY writer of UNACCOUNTED; no per-reconciler code sets it.
     -- ------------------------------------------------------------
-    PROCEDURE MARK_GENERATED_ROWS_FAILED (
-        p_run_id     IN NUMBER,
-        p_cemli_code IN VARCHAR2,
-        p_error_text IN VARCHAR2
+    PROCEDURE SWEEP_UNACCOUNTED (
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
 END DMT_QUEUE_WORKER_PKG;
