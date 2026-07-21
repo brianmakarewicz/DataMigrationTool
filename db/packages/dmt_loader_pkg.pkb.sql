@@ -2772,6 +2772,144 @@
         END IF;
 
         -- ============================================================
+        -- Expenditures: TWO-STEP load (like GL Budgets).
+        -- loadAndImportData (interfaceDetails=20) ONLY stages rows into
+        -- PJC_TXN_XFACE_STAGE_ALL at TRANSACTION_STATUS_CODE='P' on this
+        -- product; it does NOT chain the costing import. A SEPARATE ESS
+        -- submission of "Import and Process Cost Transactions"
+        -- (onestop,ImportAndProcessTxnsJob) validates and costs the pending
+        -- rows into base PJC_EXP_ITEMS_ALL.
+        --
+        -- PR #216 already resolved the working job (seed row 20 ->
+        -- ImportAndProcessTxnsJob, so l_job_name is the comma form here) and
+        -- built the correct 10-position tilde-delimited ParameterList in
+        -- l_param_list upstream (BU id + transaction-source id + document id,
+        -- all from lookups, single-source validated). What #216 lacked was the
+        -- second submit: that ParameterList was handed to loadAndImportData,
+        -- which for PJC does NOT chain the costing job, so nothing costed and
+        -- every row sat in interface at 'P' (run 206). This block adds the
+        -- missing separate submit + poll + reconcile, mirroring the GLBudgets
+        -- block above, and runs for BOTH sync and async registration (it
+        -- completes inline and GOTOs grouped_finish, before the async return).
+        -- ============================================================
+        IF p_cemli_code = 'Expenditures' THEN
+            DECLARE
+                l_ex_zip       BLOB;
+                l_ex_filename  VARCHAR2(200);
+                l_ex_csv_id    NUMBER;
+                l_ex_load_id   VARCHAR2(100);
+                l_ex_import_id VARCHAR2(100);
+                l_ex_status    VARCHAR2(50);
+                l_ex_rows      NUMBER := 0;
+                l_ex_user      VARCHAR2(100);
+                l_ex_pass      VARCHAR2(100);
+            BEGIN
+                -- Generate one FBDI zip for all STAGED expenditure rows this run
+                -- (rows move STAGED -> GENERATED).
+                DMT_EXPENDITURE_FBDI_GEN_PKG.GENERATE_FBDI(
+                    p_run_id, l_ex_zip, l_ex_filename, l_ex_csv_id);
+
+                SELECT COUNT(*) INTO l_ex_rows
+                FROM   DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+
+                IF l_ex_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ex_zip) = 0 OR l_ex_rows = 0 THEN
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'No STAGED Expenditure rows found. Skipping Expenditures.',
+                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                    RETURN FALSE;
+                END IF;
+
+                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code, l_ex_user, l_ex_pass);
+
+                -- Step 1: Load File to Interface Tables (loadAndImportData).
+                -- Stages the CSV into PJC_TXN_XFACE_STAGE_ALL at status 'P'.
+                -- The load step takes no costing ParameterList; the costing
+                -- ParameterList (l_param_list, built by #216) is submitted with
+                -- the SEPARATE import job in Step 2.
+                l_ex_load_id := SUBMIT_LOAD(
+                    p_run_id            => p_run_id,
+                    p_fbdi_zip          => l_ex_zip,
+                    p_filename          => l_ex_filename,
+                    p_job_name          => l_job_name,
+                    p_interface_details => l_interface_details,
+                    p_doc_account       => l_ucm_account,
+                    p_parameter_list    => '#NULL',
+                    p_log_context       => l_obj,
+                    p_username          => l_ex_user,
+                    p_password          => l_ex_pass);
+                DBMS_LOB.FREETEMPORARY(l_ex_zip);
+
+                UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = l_param_list
+                WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_OWNER.DMT_FBDI_CSV_TBL
+                                      WHERE FBDI_CSV_ID = l_ex_csv_id);
+                COMMIT;
+
+                POLL_ESS_JOB(p_run_id, l_ex_load_id, 1800, FALSE, l_obj, p_cemli_code, l_ex_status,
+                             p_username => l_ex_user, p_password => l_ex_pass);
+                IF l_ex_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Expenditure Load ESS ' || l_ex_load_id || ' returned ' || l_ex_status ||
+                        '. No rows staged. Marking GENERATED rows FAILED.',
+                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                    UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                    SET    TFM_STATUS = 'FAILED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                               '[LOAD_ERROR] Load to PJC_TXN_XFACE_STAGE_ALL failed. Check ESS job ' || l_ex_load_id || '.'),
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+                    COMMIT;
+                    RETURN FALSE;
+                END IF;
+
+                -- Step 2: submit Import and Process Cost Transactions as a
+                -- SEPARATE ESS request, reusing #216's validated 10-arg
+                -- ParameterList. l_job_name is the comma form (onestop,
+                -- ImportAndProcessTxnsJob) resolved by get_erp_options.
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'Submitting Import and Process Cost Transactions (separate ESS request). ParamList: '
+                    || l_param_list, 'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+
+                l_ex_import_id := SUBMIT_IMPORT_JOB(
+                    p_run_id     => p_run_id,
+                    p_job_name   => l_job_name,
+                    p_param_list => l_param_list);
+
+                -- Poll the costing import to terminal. WARNING is normal when
+                -- some rows reject; the reconciler settles per-record outcome.
+                POLL_ESS_JOB(p_run_id, l_ex_import_id, 1800, FALSE, l_obj, p_cemli_code, l_ex_status,
+                             p_username => l_ex_user, p_password => l_ex_pass);
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'Import and Process Cost Transactions ' || l_ex_import_id || ' -> ' || l_ex_status,
+                    'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+
+                -- Capture the import report errors (per-record rejects) regardless
+                -- of BIP outcome, then reconcile against base PJC_EXP_ITEMS_ALL.
+                BEGIN
+                    DECLARE l_ir_count NUMBER;
+                    BEGIN
+                        l_ir_count := DMT_IMPORT_REPORT_PKG.PARSE_AND_LOG_ERRORS(
+                            p_run_id     => p_run_id,
+                            p_request_id => TO_NUMBER(l_ex_import_id),
+                            p_cemli_code => p_cemli_code);
+                    END;
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+
+                -- Step 3: reconcile. Good rows appear in base PJC_EXP_ITEMS_ALL
+                -- keyed by prefixed ORIG_TRANSACTION_REFERENCE -> LOADED. The
+                -- existing reconciler (dmt_expenditure_results_pkg) decides
+                -- per-record outcome; its classification is left untouched.
+                DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(
+                    p_run_id        => p_run_id,
+                    p_load_ess_id   => TO_NUMBER(l_ex_load_id),
+                    p_import_ess_id => TO_NUMBER(l_ex_import_id),
+                    p_work_queue_id => g_work_queue_id);
+            END;
+            GOTO grouped_finish;
+        END IF;
+
+        -- ============================================================
         -- GLBalances: grouped load by LEDGER_NAME
         -- Each distinct ledger gets its own FBDI zip,
         -- JournalImportLauncher call, and BIP reconciliation.
