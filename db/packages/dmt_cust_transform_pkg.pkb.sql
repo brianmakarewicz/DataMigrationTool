@@ -112,7 +112,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
@@ -277,7 +277,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.LOCATION_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.LOCATION_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
@@ -446,7 +446,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.SITE_ORIG_SYSTEM,
@@ -596,7 +596,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.SITE_ORIG_SYSTEM,
@@ -734,7 +734,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.CUST_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_ORIG_SYSTEM_REFERENCE),
                     s.PARTY_ORIG_SYSTEM,
@@ -743,7 +743,13 @@
                     s.INSERT_UPDATE_FLAG,
                     s.CUSTOMER_TYPE,
                     s.CUSTOMER_CLASS_CODE,
-                    s.ACCOUNT_NAME,
+                    -- ACCOUNT_NAME is prefixed for run isolation: Fusion CDM matches
+                    -- accounts by name, so an un-prefixed name collides with prior
+                    -- runs' accounts and gets held for duplicate review. It is a
+                    -- display/isolation field (nothing references it), so prefixing is
+                    -- safe -- unlike linking keys (PARTY_SITE_NUMBER) or reference keys,
+                    -- which stay raw.
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.ACCOUNT_NAME),
                     s.ACCOUNT_ESTABLISHED_DATE,
                     s.ATTRIBUTE_CATEGORY,
                     s.ATTRIBUTE1,  s.ATTRIBUTE2,  s.ATTRIBUTE3,  s.ATTRIBUTE4,  s.ATTRIBUTE5,
@@ -877,7 +883,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.CUST_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_ORIG_SYSTEM_REFERENCE),
                     s.CUST_SITE_ORIG_SYSTEM,
@@ -1022,7 +1028,7 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(TO_NUMBER(l_prefix), s.BATCH_ID),  -- per-run batch (prefix) so HZ_IMP_ERRORS isolates by run; falls back to fixture BATCH_ID only in prefix-less cutover
+                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
                     s.CUST_SITE_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_SITE_ORIG_SYS_REF),
                     s.CUST_SITEUSE_ORIG_SYSTEM,

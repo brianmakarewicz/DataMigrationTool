@@ -139,7 +139,11 @@ def fallback_submit(pipelines, scenario, run_mode, on_failure):
         for cemli in [c.strip() for c in seq.split(',') if c.strip()]:
             deps = cur.callfunc('DMT_OWNER.DMT_SCHEDULER_PKG.GET_CEMLI_DEPENDENCIES',
                                 oracledb.STRING, [label, cemli])
-            cur.execute("SELECT COUNT(*) FROM DMT_OWNER.DMT_CEMLI_SPLIT_CFG WHERE CEMLI_CODE = :1", [cemli])
+            # Only the legacy in-zip split (no CHILD_PARTITION_COLUMN) takes
+            # PARTITION_KEY='ALL'; spawn-per-partition objects get NULL so the
+            # scheduler's parent-detection/spawn branch fires.
+            cur.execute("SELECT COUNT(*) FROM DMT_OWNER.DMT_CEMLI_SPLIT_CFG "
+                        "WHERE CEMLI_CODE = :1 AND CHILD_PARTITION_COLUMN IS NULL", [cemli])
             is_split = cur.fetchone()[0] > 0
             plan.append((label, cemli, deps, is_split))
             all_cemlis.append(cemli)

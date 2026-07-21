@@ -68,7 +68,10 @@ AS
         p_run_id        IN NUMBER,
         p_cemli_code    IN VARCHAR2,
         p_load_ess_id   IN NUMBER,
-        p_import_ess_id IN NUMBER DEFAULT NULL
+        p_import_ess_id IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL  -- work-queue-ID core: match the
+        -- sanctioned RECON_CEMLI dispatch shape (invoke_registered passes it to
+        -- every reconciler). The mock ignores it; real reconcilers scope by it.
     );
 
 END DMT_MOCK_PKG;

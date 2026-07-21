@@ -184,6 +184,9 @@ prompt == Sequences ==
 @@sequences/dmt_zx_regime_stg_seq.sql
 @@sequences/dmt_zx_regime_tfm_seq.sql
 
+prompt == Types ==
+@@types/dmt_partition_key_tbl.sql
+
 prompt == Tables ==
 @@tables/apex_export_tmp.sql
 @@tables/dmt_absence_stg_tbl.sql

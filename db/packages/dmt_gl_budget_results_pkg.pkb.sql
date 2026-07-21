@@ -226,7 +226,8 @@
         p_load_ess_id   IN NUMBER,
         p_import_ess_id IN NUMBER    DEFAULT NULL,
         p_run_start     IN TIMESTAMP DEFAULT NULL,
-        p_ledger_id     IN NUMBER    DEFAULT NULL
+        p_ledger_id     IN NUMBER    DEFAULT NULL,
+        p_work_queue_id IN NUMBER    DEFAULT NULL
     ) IS
         l_xml CLOB;
     BEGIN

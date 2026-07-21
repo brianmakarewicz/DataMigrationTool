@@ -278,12 +278,68 @@ AS
 
     -- Multi-book Assets: when set (to a BOOK_TYPE_CODE), run_one_object_type for Assets
     -- skips re-transform and generates the FBDI for ONLY this book. NULL = all books.
-    g_partition_key VARCHAR2(200) := NULL;
+    -- Generalized (2026-07-20): also carries the single partition value for any
+    -- spawn-per-partition object (Items/Requisitions -> a BATCH_ID).
+    -- JSON encoding (2026-07-20): for a real spawn-per-partition child this now
+    -- holds a JSON object keyed by the partition column name, e.g.
+    -- {"BATCH_ID":"8102"} or {"BOOK_TYPE_CODE":"US CORP"} (future composite keys
+    -- add more keys to the same object). It is an OPAQUE string to the engine;
+    -- a consuming generator decodes the scalar it needs with DECODE_PARTITION_KEY
+    -- and binds THAT into its existing static cursor. The sentinels NULL (parent /
+    -- no partition) and 'ALL' (in-zip non-spawn split) are NEVER JSON — they pass
+    -- through unchanged.
+    g_partition_key VARCHAR2(4000) := NULL;
+
+    -- DECODE_PARTITION_KEY (2026-07-20): extract one column's scalar value from a
+    -- JSON-encoded spawn partition key. Passthrough for the two sentinels: if the
+    -- key is NULL or 'ALL' it is returned as-is (those are never JSON); otherwise
+    -- the value of p_column is read with JSON_VALUE. This is the ONE decoder the
+    -- consuming object packages call so the JSON convention lives in exactly one
+    -- place; the column name is unchanged from the object's static cursor.
+    FUNCTION DECODE_PARTITION_KEY (
+        p_partition_key IN VARCHAR2,
+        p_column        IN VARCHAR2
+    ) RETURN VARCHAR2;
+
+    -- Work-queue-ID core (2026-07-20): the QUEUE_ID of the work-queue item that is
+    -- currently generating rows. EXECUTE_ONE sets it from the (child) queue row so
+    -- the generators can stamp WORK_QUEUE_ID onto every TFM / FBDI row they produce,
+    -- and the reconcile sweep can be scoped to just that item's rows. NULL when no
+    -- item context is active.
+    g_work_queue_id NUMBER := NULL;
+
+    -- Site-use reference synthesis (2026-07-20): the QUEUE_ID of the work-queue item
+    -- currently generating rows, set UNCONDITIONALLY for every object (unlike
+    -- g_work_queue_id, which stays NULL for non-partitioned objects to preserve the
+    -- run-scoped reconcile sweep). Read only as the WORK_QUEUE_ID component when a
+    -- generator synthesizes a deterministic ORIG_SYSTEM_REFERENCE for a child record
+    -- whose source reference is null (see DMT_CUST_FBDI_GEN_PKG). It never affects the
+    -- sweep scope. NULL when no item context is active.
+    g_gen_queue_id NUMBER := NULL;
+
+    -- Work-queue-ID core (2026-07-20): when TRUE, run_one_object_type validates and
+    -- transforms (STG -> TFM STAGED) and returns BEFORE any generate/submit. The
+    -- queue worker uses this on the PARENT of a spawn-per-partition object, then
+    -- spawns one child work-queue item per distinct partition value. Generalizes the
+    -- Assets-only RUN_ASSETS_TRANSFORM_ONLY to every configured object.
+    g_transform_only BOOLEAN := FALSE;
 
     -- Transform-only pass for Assets multi-book split: validate + transform STG->TFM (STAGED),
     -- no generate/submit. The queue worker then splits into one child queue row per book.
     PROCEDURE RUN_ASSETS_TRANSFORM_ONLY (
         p_run_id           IN NUMBER,
+        p_scenario_name    IN VARCHAR2 DEFAULT NULL,
+        p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
+    );
+
+    -- Generic transform-only pass (2026-07-20, work-queue-ID core): validate +
+    -- transform STG -> TFM (STAGED) for any object, no generate/submit. Sets
+    -- g_transform_only so run_one_object_type returns right after transform. The
+    -- queue worker calls this on a spawn-per-partition PARENT, then spawns one child
+    -- work-queue item per distinct partition value.
+    PROCEDURE RUN_TRANSFORM_ONLY (
+        p_run_id           IN NUMBER,
+        p_cemli_code       IN VARCHAR2,
         p_scenario_name    IN VARCHAR2 DEFAULT NULL,
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     );

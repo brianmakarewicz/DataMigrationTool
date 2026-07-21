@@ -102,7 +102,7 @@
                     -- Carry the user's batch id through (partition key + ESS
                     -- BatchId arg); fall back to the run id for isolation when
                     -- the source supplies none. No hardcode / no overwrite (§7).
-                    NVL(TO_CHAR(s.BATCH_ID), TO_CHAR(p_run_id)),
+                    NVL(TO_CHAR(s.BATCH_ID), TO_CHAR(p_run_id)),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time — g_work_queue_id is NULL during the parent transform-only pass), never the prefix
                     s.INTERFACE_SOURCE_LINE_ID,
                     CASE WHEN s.DOCUMENT_STATUS = 'APPROVED'
                               AND s.APPROVER_EMAIL_ADDR IS NULL

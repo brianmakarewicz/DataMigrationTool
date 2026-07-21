@@ -113,7 +113,9 @@ AS
         p_run_id        IN NUMBER,
         p_cemli_code    IN VARCHAR2,
         p_load_ess_id   IN NUMBER,
-        p_import_ess_id IN NUMBER DEFAULT NULL
+        p_import_ess_id IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL  -- accepted to match the sanctioned
+        -- RECON_CEMLI dispatch shape; the mock has no per-item scope to apply.
     ) IS
         l_outcome VARCHAR2(30);
     BEGIN

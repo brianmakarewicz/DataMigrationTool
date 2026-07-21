@@ -10,7 +10,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000002,'Projects','Project','/Custom/DMT/Projects/PROJECT_DM.xdm','/Custom/DMT/Projects/PROJECT_RPT.xdo','PJF_PROJECTS_ALL_XFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Project import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000002,'Projects','Project','/Custom/DMT2/Projects/PROJECT_DM.xdm','/Custom/DMT2/Projects/PROJECT_RPT.xdo','PJF_PROJECTS_ALL_XFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Project import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -20,7 +20,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000004,'Assets','Asset','/Custom/DMT/Assets/FA_ASSET_DM.xdm','/Custom/DMT/Assets/FA_ASSET_RPT.xdo','FA_MASS_ADDITIONS',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Fixed asset mass additions import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000004,'Assets','Asset','/Custom/DMT2/Assets/FA_ASSET_DM.xdm','/Custom/DMT2/Assets/FA_ASSET_RPT.xdo','FA_MASS_ADDITIONS',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Fixed asset mass additions import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -35,22 +35,22 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT/Grants/GRANTS_DM.xdm','/Custom/DMT/Grants/GRANTS_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants/awards import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/GRANTS_DM.xdm','/Custom/DMT2/Grants/GRANTS_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants/awards import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000008,'MiscReceipts','Misc Receipt (Items on Hand)','/Custom/DMT/MiscReceipts/MISC_RECEIPT_DM.xdm','/Custom/DMT/MiscReceipts/MISC_RECEIPT_RPT.xdo','RCV_HEADERS_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Miscellaneous receiving receipt import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000008,'MiscReceipts','Misc Receipt (Items on Hand)','/Custom/DMT2/MiscReceipts/MISC_RECEIPT_DM.xdm','/Custom/DMT2/MiscReceipts/MISC_RECEIPT_RPT.xdo','RCV_HEADERS_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Miscellaneous receiving receipt import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000009,'Requisitions','Requisition','/Custom/DMT/Requisitions/REQ_DM.xdm','/Custom/DMT/Requisitions/REQ_RPT.xdo','POR_REQ_HEADERS_INTERFACE_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Requisition import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000009,'Requisitions','Requisition','/Custom/DMT2/Requisitions/REQ_DM.xdm','/Custom/DMT2/Requisitions/REQ_RPT.xdo','POR_REQ_HEADERS_INTERFACE_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Requisition import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000011,'BillingEvents','Billing Event','/Custom/DMT/BillingEvents/BILLING_EVENT_DM.xdm','/Custom/DMT/BillingEvents/BILLING_EVENT_RPT.xdo','PJB_BILLING_EVENTS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Project billing event import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000011,'BillingEvents','Billing Event','/Custom/DMT2/BillingEvents/BILLING_EVENT_DM.xdm','/Custom/DMT2/BillingEvents/BILLING_EVENT_RPT.xdo','PJB_BILLING_EVENTS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Project billing event import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -60,12 +60,12 @@ end;
 -- frozen stack's /Custom/DMT/ to THIS stack's /Custom/DMT2/Customers/ with the
 -- Contract v1 _RECON_ artifact names.
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000013,'PlanningBudgets','Planning Budget','/Custom/DMT/PlanningBudgets/PLAN_BUDGET_DM.xdm','/Custom/DMT/PlanningBudgets/PLAN_BUDGET_RPT.xdo','N/A (EPBCS internal)',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Planning budget import reconciliation â€” no BIP-accessible interface table; uses absence=LOADED pattern (EPBCS â€” dormant)',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000013,'PlanningBudgets','Planning Budget','/Custom/DMT2/PlanningBudgets/PLAN_BUDGET_DM.xdm','/Custom/DMT2/PlanningBudgets/PLAN_BUDGET_RPT.xdo','N/A (EPBCS internal)',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Planning budget import reconciliation â€” no BIP-accessible interface table; uses absence=LOADED pattern (EPBCS â€” dormant)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT/GLBalances/GL_BAL_DM.xdm','/Custom/DMT/GLBalances/GL_BAL_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT2/GLBalances/GL_BAL_DM.xdm','/Custom/DMT2/GLBalances/GL_BAL_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -75,12 +75,12 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000018,'Expenditures','Expenditure','/Custom/DMT/Expenditures/EXPENDITURE_DM.xdm','/Custom/DMT/Expenditures/EXPENDITURE_RPT.xdo','PJC_TXN_XFACE_STAGE_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Project expenditure cost import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000018,'Expenditures','Expenditure','/Custom/DMT2/Expenditures/EXPENDITURE_DM.xdm','/Custom/DMT2/Expenditures/EXPENDITURE_RPT.xdo','PJC_TXN_XFACE_STAGE_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Project expenditure cost import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000019,'ProjectBudgets','Project Budget','/Custom/DMT/ProjectBudgets/PRJ_BUDGET_DM.xdm','/Custom/DMT/ProjectBudgets/PRJ_BUDGET_RPT.xdo','PJO_PLAN_VERSIONS_XFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Project budget import reconciliation â€” PjoPlanVersionsXface.csv via prj/projectControl/import',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000019,'ProjectBudgets','Project Budget','/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_DM.xdm','/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_RPT.xdo','PJO_PLAN_VERSIONS_XFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Project budget import reconciliation â€” PjoPlanVersionsXface.csv via prj/projectControl/import',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -94,7 +94,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000024,'COMMON_LOOKUPS','Business Unit Lookups','/Custom/DMT/common/DMT_FBDI_LOOKUPS_DM.xdm','/Custom/DMT/common/DMT_FBDI_LOOKUPS_RPT.xdo','FUN_ALL_BUSINESS_UNITS_V',to_date('2026-04-24 17:22:31','YYYY-MM-DD HH24:MI:SS'),'Auto-refresh BU IDs at pipeline start',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000024,'COMMON_LOOKUPS','Business Unit Lookups','/Custom/DMT2/common/DMT_FBDI_LOOKUPS_DM.xdm','/Custom/DMT2/common/DMT_FBDI_LOOKUPS_RPT.xdo','FUN_ALL_BUSINESS_UNITS_V',to_date('2026-04-24 17:22:31','YYYY-MM-DD HH24:MI:SS'),'Auto-refresh BU IDs at pipeline start',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -156,6 +156,62 @@ using (
            '/Custom/DMT2/GLBalances/GL_BAL_RPT.xdo',
            'GL_INTERFACE',
            'GL journal import reconciliation (Contract v1)' from dual
+    -- Issue 8 (2026-07-20): repoint the remaining reconciliation reports from the
+    -- frozen stack's /Custom/DMT/ to THIS stack's /Custom/DMT2/. Their data models
+    -- + reports were additively deployed to /Custom/DMT2/{CEMLI}/ and each report
+    -- verified to resolve (runReport HTTP 200) BEFORE this repoint. /Custom/DMT/
+    -- is retained untouched (additive/dual-folder). Placed in the MERGE (not the
+    -- idempotent-insert block above) so re-running the seed CONVERGES existing rows.
+    union all select 100000002, 'Projects', 'Project',
+           '/Custom/DMT2/Projects/PROJECT_DM.xdm',
+           '/Custom/DMT2/Projects/PROJECT_RPT.xdo',
+           'PJF_PROJECTS_ALL_XFACE',
+           'Project import reconciliation' from dual
+    union all select 100000004, 'Assets', 'Asset',
+           '/Custom/DMT2/Assets/FA_ASSET_DM.xdm',
+           '/Custom/DMT2/Assets/FA_ASSET_RPT.xdo',
+           'FA_MASS_ADDITIONS',
+           'Fixed asset mass additions import reconciliation' from dual
+    union all select 100000007, 'Grants', 'Grant/Award',
+           '/Custom/DMT2/Grants/GRANTS_DM.xdm',
+           '/Custom/DMT2/Grants/GRANTS_RPT.xdo',
+           'GMS_AWARD_HEADERS_INT',
+           'Grants/awards import reconciliation' from dual
+    union all select 100000008, 'MiscReceipts', 'Misc Receipt (Items on Hand)',
+           '/Custom/DMT2/MiscReceipts/MISC_RECEIPT_DM.xdm',
+           '/Custom/DMT2/MiscReceipts/MISC_RECEIPT_RPT.xdo',
+           'RCV_HEADERS_INTERFACE',
+           'Miscellaneous receiving receipt import reconciliation' from dual
+    union all select 100000009, 'Requisitions', 'Requisition',
+           '/Custom/DMT2/Requisitions/REQ_DM.xdm',
+           '/Custom/DMT2/Requisitions/REQ_RPT.xdo',
+           'POR_REQ_HEADERS_INTERFACE_ALL',
+           'Requisition import reconciliation' from dual
+    union all select 100000011, 'BillingEvents', 'Billing Event',
+           '/Custom/DMT2/BillingEvents/BILLING_EVENT_DM.xdm',
+           '/Custom/DMT2/BillingEvents/BILLING_EVENT_RPT.xdo',
+           'PJB_BILLING_EVENTS_INT',
+           'Project billing event import reconciliation' from dual
+    union all select 100000013, 'PlanningBudgets', 'Planning Budget',
+           '/Custom/DMT2/PlanningBudgets/PLAN_BUDGET_DM.xdm',
+           '/Custom/DMT2/PlanningBudgets/PLAN_BUDGET_RPT.xdo',
+           'N/A (EPBCS internal)',
+           'Planning budget import reconciliation - no BIP-accessible interface table; uses absence=LOADED pattern (EPBCS - dormant)' from dual
+    union all select 100000018, 'Expenditures', 'Expenditure',
+           '/Custom/DMT2/Expenditures/EXPENDITURE_DM.xdm',
+           '/Custom/DMT2/Expenditures/EXPENDITURE_RPT.xdo',
+           'PJC_TXN_XFACE_STAGE_ALL',
+           'Project expenditure cost import reconciliation' from dual
+    union all select 100000019, 'ProjectBudgets', 'Project Budget',
+           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_DM.xdm',
+           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_RPT.xdo',
+           'PJO_PLAN_VERSIONS_XFACE',
+           'Project budget import reconciliation - PjoPlanVersionsXface.csv via prj/projectControl/import' from dual
+    union all select 100000024, 'COMMON_LOOKUPS', 'Business Unit Lookups',
+           '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_DM.xdm',
+           '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_RPT.xdo',
+           'FUN_ALL_BUSINESS_UNITS_V',
+           'Auto-refresh BU IDs at pipeline start' from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set

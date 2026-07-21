@@ -20,6 +20,27 @@
     C_POLL_INTERVAL CONSTANT NUMBER := 60;
 
     -- --------------------------------------------------------
+    -- DECODE_PARTITION_KEY — the ONE decoder for JSON-encoded spawn partition
+    -- keys (work-queue-ID core, 2026-07-20). A real spawn child's PARTITION_KEY
+    -- is a JSON object keyed by the partition column name, e.g.
+    -- {"BATCH_ID":"8102"}; the consuming generator asks for the scalar it needs
+    -- by column name and binds it into its existing static cursor. The two
+    -- sentinels are never JSON: NULL (parent / no partition) and 'ALL' (in-zip
+    -- non-spawn split) pass through unchanged so parent-detection and the ALL
+    -- path behave exactly as before.
+    -- --------------------------------------------------------
+    FUNCTION DECODE_PARTITION_KEY (
+        p_partition_key IN VARCHAR2,
+        p_column        IN VARCHAR2
+    ) RETURN VARCHAR2 IS
+    BEGIN
+        IF p_partition_key IS NULL OR p_partition_key = 'ALL' THEN
+            RETURN p_partition_key;
+        END IF;
+        RETURN JSON_VALUE(p_partition_key, '$.' || p_column);
+    END DECODE_PARTITION_KEY;
+
+    -- --------------------------------------------------------
     -- Private: derive the ERP Integrations SOAP endpoint
     -- --------------------------------------------------------
     FUNCTION erp_soap_url RETURN VARCHAR2 IS
@@ -820,7 +841,7 @@
     -- (requestid > load ESS ID).
     --
     -- Uses the pre-deployed static BIP report (AD#16 — no ephemeral BIP):
-    --   /Custom/DMT/common/DMT_ESS_CHILD_JOB_RPT.xdo
+    --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo
     -- Called via runReport with P_LOAD_ESS_ID and P_JOB_DEF bound parameters.
     --
     -- Retries every 15 seconds for up to 15 minutes.
@@ -832,7 +853,7 @@
         p_load_ess_id    IN VARCHAR2
     ) RETURN VARCHAR2 IS
         C_PROC        CONSTANT VARCHAR2(50)  := 'GET_IMPORT_ESS_ID';
-        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT/common/DMT_ESS_CHILD_JOB_RPT.xdo';
+        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo';
         C_MAX_TRIES   CONSTANT INTEGER       := 60;
         C_SLEEP_SEC   CONSTANT NUMBER        := 15;
 
@@ -1264,52 +1285,55 @@
 
             -- Reconcile via BIP — dispatch by CEMLI code
             IF p_cemli_code = 'PurchaseOrders' THEN
-                DMT_PO_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_PO_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'ARInvoices' THEN
-                DMT_AR_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_AR_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'BlanketPOs' THEN
-                DMT_BLANKET_PO_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_BLANKET_PO_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'Contracts' THEN
-                DMT_CONTRACT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_CONTRACT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'APInvoices' THEN
-                DMT_AP_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_AP_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'GLBalances' THEN
-                DMT_GL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_GL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code LIKE 'Supplier%' THEN
-                DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_cemli_code, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_cemli_code, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'Customers' THEN
-                DMT_CUST_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_CUST_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'Projects' THEN
-                DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'BillingEvents' THEN
-                DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'Expenditures' THEN
-                DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'Grants' THEN
-                DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'Items' THEN
                 -- Reconcile items + bundled categories (if any)
-                DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
                 DECLARE l_cat_gen2 NUMBER;
                 BEGIN
+                    -- Work-queue-ID core: only reconcile categories THIS item generated
+                    -- (scope by WORK_QUEUE_ID so a multi-batch load does not cross-touch).
                     SELECT COUNT(*) INTO l_cat_gen2 FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
-                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                    AND   (g_work_queue_id IS NULL OR WORK_QUEUE_ID = g_work_queue_id);
                     IF l_cat_gen2 > 0 THEN
-                        DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                        DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
                     END IF;
                 END;
             ELSIF p_cemli_code = 'MiscReceipts' THEN
-                DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'Requisitions' THEN
-                DMT_REQ_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_REQ_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'GLBudgets' THEN
-                DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'PlanningBudgets' THEN
                 DMT_PLAN_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
             ELSIF p_cemli_code = 'ProjectBudgets' THEN
-                DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSIF p_cemli_code = 'Assets' THEN
-                DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
+                DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
             ELSE
                 -- Fail-open guard (Rule #1): no reconcile arm matched this CEMLI code, so
                 -- NOTHING was confirmed against the Fusion base tables. Never report success
@@ -1538,10 +1562,16 @@
         ELSIF p_cemli_code = 'Grants' THEN
             DMT_GRANTS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'Items' THEN
-            DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-            -- ItemCategories bundle into the Items FBDI ZIP, so they are validated under the
-            -- Items token (no separate 'ItemCategories' CEMLI in the pipeline sequence).
-            DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            -- Spawn-per-partition: a child row (g_partition_key set to a BATCH_ID) was
+            -- already validated by the parent's transform-only pass. Re-validating is
+            -- harmless but re-transforming below would reset STAGED rows, so both are
+            -- skipped for children (mirrors the Assets per-book path).
+            IF g_partition_key IS NULL THEN
+                DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+                -- ItemCategories bundle into the Items FBDI ZIP, so they are validated under the
+                -- Items token (no separate 'ItemCategories' CEMLI in the pipeline sequence).
+                DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            END IF;
         ELSIF p_cemli_code = 'ItemCategories' THEN
             -- Dead in the standard pipeline (no 'ItemCategories' token); retained for the
             -- RUN_ITEM_CATEGORIES standalone validate/transform helper.
@@ -1549,7 +1579,11 @@
         ELSIF p_cemli_code = 'MiscReceipts' THEN
             DMT_MISC_RECEIPT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'Requisitions' THEN
-            DMT_REQ_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            -- Spawn-per-partition child (g_partition_key set to a BATCH_ID): already
+            -- validated + transformed by the parent's transform-only pass.
+            IF g_partition_key IS NULL THEN
+                DMT_REQ_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            END IF;
         ELSIF p_cemli_code = 'GLBalances' THEN
             DMT_GL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'GLBudgets' THEN
@@ -1631,10 +1665,14 @@
             DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_REFERENCES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
             DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_TERMS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Items' THEN
-            DMT_EGP_ITEM_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            -- Transform bundled categories before the Items FBDI generator picks them up
-            -- (DMT_EGP_ITEM_FBDI_GEN_PKG reads DMT_EGP_ITEM_CAT_TFM_TBL for the bundled CSV).
-            DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            -- Spawn-per-partition child (g_partition_key set): already transformed by the
+            -- parent's transform-only pass; re-transforming would reset STAGED rows.
+            IF g_partition_key IS NULL THEN
+                DMT_EGP_ITEM_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+                -- Transform bundled categories before the Items FBDI generator picks them up
+                -- (DMT_EGP_ITEM_FBDI_GEN_PKG reads DMT_EGP_ITEM_CAT_TFM_TBL for the bundled CSV).
+                DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            END IF;
         ELSIF p_cemli_code = 'ItemCategories' THEN
             -- Dead in the standard pipeline (categories run under the Items token); retained
             -- for the RUN_ITEM_CATEGORIES standalone helper.
@@ -1642,9 +1680,13 @@
         ELSIF p_cemli_code = 'MiscReceipts' THEN
             DMT_MISC_RECEIPT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Requisitions' THEN
-            DMT_REQ_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_REQ_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_REQ_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            -- Spawn-per-partition child (g_partition_key set): already transformed by the
+            -- parent's transform-only pass; re-transforming would reset STAGED rows.
+            IF g_partition_key IS NULL THEN
+                DMT_REQ_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+                DMT_REQ_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+                DMT_REQ_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            END IF;
         ELSIF p_cemli_code = 'GLBalances' THEN
             DMT_GL_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'GLBudgets' THEN
@@ -1663,6 +1705,19 @@
             END IF;
         END IF;
         COMMIT;
+
+        -- Work-queue-ID core (2026-07-20): a spawn-per-partition PARENT transforms
+        -- once (STG -> TFM STAGED) and returns here. The queue worker then reads the
+        -- distinct partition values and spawns one child work-queue item per value;
+        -- each child re-enters with g_partition_key set and generates/loads only its
+        -- own partition. Generalizes the Assets-only transform-only pass.
+        IF g_transform_only THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Transform-only pass complete for ' || p_cemli_code ||
+                ' (spawn-per-partition parent). Returning to spawn child work items.',
+                'INFO', C_PKG, l_obj || ' > ' || C_PROC);
+            RETURN TRUE;
+        END IF;
 
         -- ============================================================
         -- PurchaseOrders: multi-BU load cycle
@@ -2091,6 +2146,12 @@
                 -- (same credential the single-submit path used to load online).
                 DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('Requisitions', l_rq_user, l_rq_pass);
 
+                -- Work-queue-ID core (2026-07-20): when this is a spawn-per-partition
+                -- child, g_partition_key holds its single BATCH_ID (JSON-encoded,
+                -- e.g. {"BATCH_ID":"8102"}) and the loop runs exactly once for that
+                -- batch. DECODE_PARTITION_KEY yields the raw BATCH_ID to bind into
+                -- the static cursor. The parent loop (g_partition_key NULL) is
+                -- retained only for the legacy/standalone single-item path.
                 FOR grp_rec IN (
                     SELECT BATCH_ID,
                            MIN(REQ_BU_NAME)            AS REQ_BU_NAME,
@@ -2099,6 +2160,8 @@
                     WHERE  RUN_ID = p_run_id
                     AND    TFM_STATUS = 'STAGED'
                     AND    BATCH_ID IS NOT NULL
+                    AND    (g_partition_key IS NULL
+                            OR BATCH_ID = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
                     GROUP BY BATCH_ID
                     ORDER BY BATCH_ID
                 ) LOOP
@@ -2244,14 +2307,23 @@
 
                 -- A batch may have item rows, category rows, or both -- union both
                 -- TFM tables for the complete set of distinct batch ids.
+                -- Work-queue-ID core (2026-07-20): a spawn-per-partition child sets
+                -- g_partition_key to its single BATCH_ID (JSON-encoded, e.g.
+                -- {"BATCH_ID":"8102"}); DECODE_PARTITION_KEY yields the raw batch id
+                -- to bind, so the loop runs once for that batch. g_partition_key NULL
+                -- keeps the legacy all-batches loop.
                 FOR grp_rec IN (
                     SELECT TO_CHAR(BATCH_ID) AS BATCH_ID
                     FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
+                    AND    (g_partition_key IS NULL
+                            OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
                     UNION
                     SELECT TO_CHAR(BATCH_ID)
                     FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
+                    AND    (g_partition_key IS NULL
+                            OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
                     ORDER BY 1
                 ) LOOP
                     l_it_count := l_it_count + 1;
@@ -2887,7 +2959,11 @@
             DECLARE l_csv_id NUMBER;
             BEGIN
                 -- Multi-book: generate FBDI for ONLY this book when partitioned.
-                DMT_FA_ASSET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id, g_partition_key);
+                -- g_partition_key is JSON-encoded for a spawn child (e.g.
+                -- {"BOOK_TYPE_CODE":"US CORP"}); decode to the raw book code the
+                -- generator's static cursor filters on. NULL passes through (all books).
+                DMT_FA_ASSET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id,
+                    DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BOOK_TYPE_CODE'));
             END;
         ELSE
             RAISE_APPLICATION_ERROR(-20043,
@@ -3098,40 +3174,47 @@
                 p_run_id => p_run_id,
                 p_cemli_code     => p_cemli_code,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
+                p_work_queue_id  => g_work_queue_id);
         ELSIF p_cemli_code = 'Projects' THEN
             DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
+                p_work_queue_id  => g_work_queue_id);
         ELSIF p_cemli_code = 'BillingEvents' THEN
             DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
+                p_work_queue_id  => g_work_queue_id);
         ELSIF p_cemli_code = 'Expenditures' THEN
             DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
+                p_work_queue_id  => g_work_queue_id);
         ELSIF p_cemli_code = 'Grants' THEN
             DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
+                p_work_queue_id  => g_work_queue_id);
         -- Items: handled in grouped loop above.
         ELSIF p_cemli_code = 'MiscReceipts' THEN
             DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
+                p_work_queue_id  => g_work_queue_id);
         -- Requisitions: handled in grouped loop above.
         -- GLBalances: handled in grouped loop above.
         ELSIF p_cemli_code = 'GLBudgets' THEN
             DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
+                p_work_queue_id  => g_work_queue_id);
         ELSIF p_cemli_code = 'PlanningBudgets' THEN
             DMT_PLAN_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
@@ -3141,12 +3224,14 @@
             DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
+                p_work_queue_id  => g_work_queue_id);
         ELSIF p_cemli_code = 'Assets' THEN
             DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH(
                 p_run_id => p_run_id,
                 p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
+                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
+                p_work_queue_id  => g_work_queue_id);
         END IF;
 
         -- Check for rows still at GENERATED after BIP reconciliation.
@@ -4884,23 +4969,48 @@
         p_scenario_name    IN VARCHAR2 DEFAULT NULL,
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     ) IS
-        C_PROC CONSTANT VARCHAR2(40) := 'RUN_ASSETS_TRANSFORM_ONLY';
+    BEGIN
+        -- 2026-07-20: superseded by the generic RUN_TRANSFORM_ONLY (which sets
+        -- g_transform_only so run_one_object_type returns right after transform).
+        -- Kept only as a thin, contract-honoring wrapper so any legacy caller still
+        -- gets the same transform-only behavior. The queue worker no longer calls
+        -- this directly -- it drives Assets through RUN_TRANSFORM_ONLY like every
+        -- other spawn-per-partition object.
+        RUN_TRANSFORM_ONLY(
+            p_run_id        => p_run_id,
+            p_cemli_code    => 'Assets',
+            p_scenario_name => p_scenario_name,
+            p_run_mode      => p_run_mode);
+    END RUN_ASSETS_TRANSFORM_ONLY;
+
+    -- Generic transform-only pass for spawn-per-partition objects (2026-07-20).
+    -- Sets g_transform_only so run_one_object_type validates + transforms (STG -> TFM
+    -- STAGED) and returns before any generate/submit. Always clears the flag.
+    PROCEDURE RUN_TRANSFORM_ONLY (
+        p_run_id           IN NUMBER,
+        p_cemli_code       IN VARCHAR2,
+        p_scenario_name    IN VARCHAR2 DEFAULT NULL,
+        p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
+    ) IS
+        C_PROC CONSTANT VARCHAR2(40) := 'RUN_TRANSFORM_ONLY';
         v_scenario_id NUMBER;
+        l_dummy       BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
-        DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ASSETS_TRANSFORM_ONLY start.', 'INFO', C_PKG, C_PROC);
-        DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        COMMIT;
-        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_BOOKS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        COMMIT;
-        DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ASSETS_TRANSFORM_ONLY complete.', 'INFO', C_PKG, C_PROC);
+        DMT_UTIL_PKG.LOG(p_run_id, 'RUN_TRANSFORM_ONLY start for ' || p_cemli_code || '.',
+            'INFO', C_PKG, C_PROC);
+        g_transform_only := TRUE;
+        l_dummy := run_one_object_type(p_run_id, p_cemli_code, v_scenario_id, p_run_mode, TRUE);
+        g_transform_only := FALSE;
+        DMT_UTIL_PKG.LOG(p_run_id, 'RUN_TRANSFORM_ONLY complete for ' || p_cemli_code || '.',
+            'INFO', C_PKG, C_PROC);
     EXCEPTION
         WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'RUN_ASSETS_TRANSFORM_ONLY failed.', SQLERRM, C_PKG, C_PROC);
+            g_transform_only := FALSE;
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'RUN_TRANSFORM_ONLY failed for ' || p_cemli_code || '.',
+                SQLERRM, C_PKG, C_PROC);
             RAISE;
-    END RUN_ASSETS_TRANSFORM_ONLY;
+    END RUN_TRANSFORM_ONLY;
 
     -- --------------------------------------------------------
     -- RUN_PROJECT_PIPELINE

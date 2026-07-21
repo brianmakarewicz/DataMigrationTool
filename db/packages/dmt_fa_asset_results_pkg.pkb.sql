@@ -15,6 +15,27 @@
     C_CEMLI CONSTANT VARCHAR2(30) := 'Assets';
 
     -- --------------------------------------------------------
+    -- GET_PARTITION_KEYS — distinct BOOK_TYPE_CODE tokens for one run,
+    -- STATIC SQL over the asset-book transform table (this object's own
+    -- table). Spawn-per-partition (work-queue-ID core, 2026-07-20): one child
+    -- work item per book. Called through invoke_registered (style KEYS).
+    -- --------------------------------------------------------
+    FUNCTION GET_PARTITION_KEYS (
+        p_run_id IN NUMBER
+    ) RETURN DMT_OWNER.DMT_PARTITION_KEY_TBL IS
+        l_keys DMT_OWNER.DMT_PARTITION_KEY_TBL;
+    BEGIN
+        -- One JSON object per distinct book, keyed by the partition column name.
+        SELECT DISTINCT JSON_OBJECT('BOOK_TYPE_CODE' VALUE TO_CHAR(BOOK_TYPE_CODE))
+        BULK COLLECT INTO l_keys
+        FROM   DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'STAGED'
+        AND    BOOK_TYPE_CODE IS NOT NULL;
+        RETURN l_keys;
+    END GET_PARTITION_KEYS;
+
+    -- --------------------------------------------------------
     -- Private: POST a SOAP envelope; return full response CLOB.
     -- --------------------------------------------------------
     FUNCTION bip_soap_post (
@@ -425,7 +446,8 @@
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
         p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
+        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml CLOB;

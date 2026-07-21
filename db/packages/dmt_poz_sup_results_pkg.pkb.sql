@@ -392,7 +392,8 @@
         p_run_id  IN NUMBER,
         p_cemli_code      IN VARCHAR2,
         p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
+        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC  CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml   XMLTYPE;

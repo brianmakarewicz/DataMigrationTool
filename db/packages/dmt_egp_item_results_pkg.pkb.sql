@@ -11,6 +11,41 @@
     C_CEMLI CONSTANT VARCHAR2(30) := 'Items';
 
     -- --------------------------------------------------------
+    -- GET_PARTITION_KEYS — distinct spawn-per-partition tokens for one run,
+    -- STATIC SQL over this object's OWN transform tables. Items is the one
+    -- object that UNIONs two tables: the item transform table and the
+    -- item-category transform table, so a batch present only in categories
+    -- (no item rows) still yields a token and spawns a child work item.
+    -- Tokens are BATCH_ID rendered with TO_CHAR; the engine treats each as
+    -- opaque. Called through DMT_QUEUE_WORKER_PKG.invoke_registered (KEYS).
+    -- --------------------------------------------------------
+    FUNCTION GET_PARTITION_KEYS (
+        p_run_id IN NUMBER
+    ) RETURN DMT_OWNER.DMT_PARTITION_KEY_TBL IS
+        l_keys DMT_OWNER.DMT_PARTITION_KEY_TBL;
+    BEGIN
+        -- One JSON object per distinct batch, keyed by the partition column name
+        -- (JSON_OBJECT escapes the value correctly). Composite keys would add more
+        -- keys to the same object without changing the callers.
+        SELECT JSON_OBJECT('BATCH_ID' VALUE TO_CHAR(BATCH_ID))
+        BULK COLLECT INTO l_keys
+        FROM (
+            SELECT BATCH_ID
+            FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'STAGED'
+            AND    BATCH_ID IS NOT NULL
+            UNION
+            SELECT BATCH_ID
+            FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'STAGED'
+            AND    BATCH_ID IS NOT NULL
+        );
+        RETURN l_keys;
+    END GET_PARTITION_KEYS;
+
+    -- --------------------------------------------------------
     -- Private: POST a SOAP envelope; return full response CLOB.
     -- --------------------------------------------------------
     FUNCTION bip_soap_post (
@@ -334,7 +369,8 @@
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
         p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
+        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml CLOB;

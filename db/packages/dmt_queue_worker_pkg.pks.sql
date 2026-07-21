@@ -50,13 +50,19 @@ AS
     --   bucket — it counts as unaccounted; Overview row-status table).
     -- Public so the heartbeat's run rollup reads the same numbers.
     -- ------------------------------------------------------------
+    -- p_work_queue_id (work-queue-ID core, 2026-07-20): when set, the counts are
+    -- scoped to just that work-queue item's rows (AND WORK_QUEUE_ID = it), so a
+    -- spawn-per-partition child settles on its OWN rows only and is not failed by
+    -- a sibling batch's still-unloaded rows. NULL = the run-scoped count exactly
+    -- as before (the heartbeat run rollup and every non-spawn object pass NULL).
     PROCEDURE ACCOUNT_ROWS (
-        p_run_id      IN  NUMBER,
-        p_cemli_code  IN  VARCHAR2,
-        x_total       OUT NUMBER,
-        x_loaded      OUT NUMBER,
-        x_failed      OUT NUMBER,
-        x_unaccounted OUT NUMBER
+        p_run_id        IN  NUMBER,
+        p_cemli_code    IN  VARCHAR2,
+        x_total         OUT NUMBER,
+        x_loaded        OUT NUMBER,
+        x_failed        OUT NUMBER,
+        x_unaccounted   OUT NUMBER,
+        p_work_queue_id IN  NUMBER DEFAULT NULL
     );
 
     -- ------------------------------------------------------------

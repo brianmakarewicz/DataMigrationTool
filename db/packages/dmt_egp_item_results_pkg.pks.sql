@@ -17,11 +17,25 @@
 -- CEMLI_CODE: 'Items'
 -- ============================================================
 
+    -- GET_PARTITION_KEYS — spawn-per-partition support (work-queue-ID core,
+    -- 2026-07-20). Returns the distinct partition tokens (BATCH_ID rendered
+    -- with TO_CHAR) for one run using STATIC SQL over the object's OWN transform
+    -- tables. Items UNIONs the item transform table AND the item-category
+    -- transform table, so a batch that exists only in categories (no item rows)
+    -- still spawns a child work item. The queue worker calls this through the
+    -- sanctioned registered-dispatch path (DMT_QUEUE_WORKER_PKG.invoke_registered,
+    -- style KEYS) and spawns one child per token; the token is OPAQUE to the
+    -- engine. Replaces the retired dynamic SELECT DISTINCT in EXECUTE_ONE.
+    FUNCTION GET_PARTITION_KEYS (
+        p_run_id IN NUMBER
+    ) RETURN DMT_OWNER.DMT_PARTITION_KEY_TBL;
+
     -- Main entry point for pipeline: call after POLL_ESS_JOB completes.
     PROCEDURE RECONCILE_BATCH (
         p_run_id IN NUMBER,
         p_load_ess_id    IN NUMBER,
-        p_import_ess_id  IN NUMBER DEFAULT NULL
+        p_import_ess_id  IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
     -- Call Fusion BIP v2 SOAP runReport and return raw XML response.

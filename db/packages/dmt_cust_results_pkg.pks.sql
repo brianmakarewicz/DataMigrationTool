@@ -33,7 +33,8 @@ AS
     PROCEDURE RECONCILE_BATCH (
         p_run_id          IN NUMBER,
         p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
+        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
     PROCEDURE FETCH_BIP_RESULTS (
