@@ -1,5 +1,52 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-07-16/17
+**What was done:** Regression hardening, cross-object reference standard, upload
+completion, and the funnel view -- eight PRs merged, one open.
+
+Merged:
+- **STG-error wiring generalized** -- 8 pre-validators write `DMT_STG_TFM_ERROR_TBL`
+  `[PRE_VALIDATION]` rows; the standard `FLAG_STG_FAILED` helper is on all 42
+  STG-owning validators (PRs #164, #167).
+- **Full-fidelity upload completed (both formats)** -- proprietary multi-CSV zip
+  (94 objects, 5,107 dict columns) + FBDI zip with seeded filenames/positions +
+  new `UPLOAD_ZIP_AUTO` auto-detect routing; proven on Docker; two test zips in
+  `test/upload_samples/` (PR #171).
+- **`DMT_XREF_PKG`** -- shared cross-reference resolver, one function per
+  referenceable key returning the most-recent-LOADED value or the raw source
+  value; BillingEvents `PROJECT_NUMBER` converted onto it (PR #172). Established
+  as the §7 standard for prefixing cross-object references; other transformers to
+  follow (backlog, PR #174).
+- **Expenditures NONLABOR fix** -- generator now emits the 4 `NON_LABOR_RESOURCE`
+  columns for NONLABOR rows (fixes the ORA-01400 zero-load; PR #173).
+- **Funnel view** -- `DMT_OBJECT_FUNNEL_V` built and deployed; per run/object/
+  sub-object stage counts; APEX UI unblocked (prompt handed off) (PR #178).
+- **Transform-stage error-capture standard documented** -- §7 RED rule +
+  `GENERIC_OBJECT_FLOW.html` step 3.3b (shared `DMT_TFM_ERRLOG` + `LOG ERRORS` +
+  fold + row-by-row fallback). Code not yet built (PR #176).
+
+Regression + diagnosis:
+- Rebuilt the RegressionTest scenario data (STG-only rebuild SQL; never deletes
+  TFM). Ran two full regressions: 167 (ALL-mode) and 168.
+- Root-caused the three zero-load objects: **AR** = demo pod has consolidated
+  billing enabled, which rejects the master-mode AutoInvoice job (parked, needs
+  the non-master job path); **BillingEvents** = transformer prefixed
+  `PROJECT_NUMBER` (fixed via `DMT_XREF_PKG`); **Expenditures** = generator column
+  shift (fixed, PR #173).
+
+**New finding logged (backlog):** ALL/FAILED-mode transform re-reads rows that
+pre-validation rejected, so pre-validation is bypassed outside NEW mode. The
+funnel view compensates (reaching TFM wins), but the transform predicate should
+exclude pre-validation-failed rows in every mode.
+
+**Open PRs:** #169 (APEX run-detail in-progress-icon fix -- changes requested,
+UI side). All of this session's PRs merged.
+
+**What's next:** build the transform-stage error wiring (documented standard);
+have the APEX agent build the funnel UI + the "Auto detect" upload radio; the AR
+non-master AutoInvoice job change (parked); retest BillingEvents/Expenditures on
+the next regression; convert the other transformers to `DMT_XREF_PKG`.
+
 ## Session -- 2026-07-14
 **What was done:** Requirements-design review of the canonical design doc
 (`workspace/DMT2/docs/DMT_DESIGN.html`); artifact republished. Related edits to
