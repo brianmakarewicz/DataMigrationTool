@@ -1140,8 +1140,10 @@
     -- group; the managed types are deleted then re-inserted so a value dropped
     -- in Fusion never lingers. Types produced: BU_NAME_TO_BU_ID,
     -- BU_NAME_TO_PRIMARY_LEDGER_ID, LEDGER_NAME_TO_LEDGER_ID
-    -- (RETURN_VALUE = ledger_id~access_set_id), and
-    -- BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID (AutoInvoice transaction-source id).
+    -- (RETURN_VALUE = ledger_id~access_set_id),
+    -- BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID (AutoInvoice transaction-source id),
+    -- PJC_TXN_SOURCE_NAME_TO_ID and PJC_DOC_NAME_TO_ID (PPM Import and Process
+    -- Cost Transactions transaction-source id / document entry id).
     -- --------------------------------------------------------
     PROCEDURE REFRESH_LOOKUPS IS
         C_PKG  CONSTANT VARCHAR2(30) := 'DMT_UTIL_PKG';

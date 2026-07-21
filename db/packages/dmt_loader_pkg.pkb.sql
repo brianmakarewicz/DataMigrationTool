@@ -1410,27 +1410,32 @@
                 -- source/document trio (positions 6/7 are single-value import
                 -- filters), so a mixed run would silently exclude one source's rows;
                 -- COUNT(DISTINCT) lets us fail loudly instead of half-loading.
-                -- Scenario-scoped to match the rows this run loads.
+                -- Run-mode + scenario scoped to match EXACTLY the rows this run
+                -- loads (same status-set branching as the canonical row-selection
+                -- recipe, so a lingering FAILED row from a prior run can't inject a
+                -- foreign source/document and abort an otherwise-consistent run).
                 SELECT MAX(USER_TRANSACTION_SOURCE), MAX(DOCUMENT_NAME),
                        COUNT(DISTINCT USER_TRANSACTION_SOURCE),
                        COUNT(DISTINCT DOCUMENT_NAME)
                 INTO   l_exp_src_name, l_exp_doc_name, l_exp_src_cnt, l_exp_doc_cnt
                 FROM   DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL
                 WHERE  (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
-                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED','FAILED');
+                AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL') );
 
                 -- Fail closed with a clear, object-scoped message (not a bare lookup
                 -- error) when the run staged no usable source/document, or carried
                 -- more than one -- either way the import filter cannot be built safely.
                 IF l_exp_src_name IS NULL OR l_exp_doc_name IS NULL THEN
-                    RAISE_APPLICATION_ERROR(-20055,
+                    RAISE_APPLICATION_ERROR(-20057,
                         'Expenditures: no staged rows carry a USER_TRANSACTION_SOURCE '||
                         'and DOCUMENT_NAME for scenario '||NVL(TO_CHAR(p_scenario_id),'(all)')||
                         '. Import and Process Cost Transactions needs both to build its '||
                         'transaction-source/document filter.');
                 END IF;
                 IF l_exp_src_cnt > 1 OR l_exp_doc_cnt > 1 THEN
-                    RAISE_APPLICATION_ERROR(-20055,
+                    RAISE_APPLICATION_ERROR(-20058,
                         'Expenditures: this run mixes '||l_exp_src_cnt||' transaction sources '||
                         'and '||l_exp_doc_cnt||' documents. The import filter takes exactly one '||
                         'of each; split the sources into separate runs.');
