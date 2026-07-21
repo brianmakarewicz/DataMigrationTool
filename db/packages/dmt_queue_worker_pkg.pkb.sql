@@ -286,6 +286,8 @@ AS
                 EXECUTE IMMEDIATE l_sql USING p_run_id;
             END IF;
         END LOOP;
+        -- Deliberately NO COMMIT here: the caller (RECONCILE_ONE) owns the
+        -- transaction so the sweep and the accounting gate settle atomically.
     END SWEEP_UNACCOUNTED;
 
     -- ============================================================
