@@ -8,6 +8,17 @@
     -- Package-level constants
     C_PKG  CONSTANT VARCHAR2(30) := 'DMT_LOADER_PKG';
 
+    -- Fusion ESS terminal statuses
+    C_STATUS_SUCCEEDED CONSTANT VARCHAR2(20) := 'SUCCEEDED';
+    C_STATUS_WARNING   CONSTANT VARCHAR2(20) := 'WARNING';
+    C_STATUS_FAILED    CONSTANT VARCHAR2(20) := 'FAILED';
+    C_STATUS_ERROR     CONSTANT VARCHAR2(20) := 'ERROR';
+    C_STATUS_EXPIRED   CONSTANT VARCHAR2(20) := 'EXPIRED';
+
+    -- Poll interval (seconds between ESS status checks)
+    -- 60s reduces repeated Basic Auth requests that trigger Fusion rate-limiting (HTTP 401)
+    C_POLL_INTERVAL CONSTANT NUMBER := 60;
+
     -- --------------------------------------------------------
     -- DECODE_PARTITION_KEY — the ONE decoder for JSON-encoded spawn partition
     -- keys (work-queue-ID core, 2026-07-20). A real spawn child's PARTITION_KEY
@@ -28,17 +39,6 @@
         END IF;
         RETURN JSON_VALUE(p_partition_key, '$.' || p_column);
     END DECODE_PARTITION_KEY;
-
-    -- Fusion ESS terminal statuses
-    C_STATUS_SUCCEEDED CONSTANT VARCHAR2(20) := 'SUCCEEDED';
-    C_STATUS_WARNING   CONSTANT VARCHAR2(20) := 'WARNING';
-    C_STATUS_FAILED    CONSTANT VARCHAR2(20) := 'FAILED';
-    C_STATUS_ERROR     CONSTANT VARCHAR2(20) := 'ERROR';
-    C_STATUS_EXPIRED   CONSTANT VARCHAR2(20) := 'EXPIRED';
-
-    -- Poll interval (seconds between ESS status checks)
-    -- 60s reduces repeated Basic Auth requests that trigger Fusion rate-limiting (HTTP 401)
-    C_POLL_INTERVAL CONSTANT NUMBER := 60;
 
     -- --------------------------------------------------------
     -- Private: derive the ERP Integrations SOAP endpoint
