@@ -40,14 +40,23 @@ AS
             p_log_context    => C_CEMLI || ' > WorkRelationship');
 
         -- 2. Assignment
+        --    Both the employment-terms and assignment records this run loads are
+        --    keyed by the source ASSIGNMENT_NUMBER, not the person: the generator
+        --    emits SourceSystemId '<ASSIGNMENT_NUMBER>_TRM' (WorkTerms) and
+        --    '<ASSIGNMENT_NUMBER>_ASG' (Assignment). Fusion returns per-row errors
+        --    under those same ids (e.g. 'ET-RT-WKR-G1_TRM'), which do NOT start
+        --    with a PERSON_NUMBER, so a PERSON_NUMBER key matched nothing. Match on
+        --    ASSIGNMENT_NUMBER with the exact '_TRM'/'_ASG' suffixes so each real
+        --    error ties to its own assignment row (and 'G1' cannot absorb 'G1B').
         DMT_HDL_UTIL_PKG.RECONCILE_HDL(
             p_run_id => p_run_id,
             p_request_id     => p_request_id,
             p_tfm_table      => 'DMT_ASSIGNMENT_TFM_TBL',
             p_stg_table      => 'DMT_ASSIGNMENT_STG_TBL',
-            p_key_column     => 'PERSON_NUMBER',
+            p_key_column     => 'ASSIGNMENT_NUMBER',
             p_dataset_status => p_dataset_status,
-            p_log_context    => C_CEMLI || ' > Assignment');
+            p_log_context    => C_CEMLI || ' > Assignment',
+            p_key_suffixes   => '_TRM,_ASG');
 
         -- Post-reconciliation: look up Fusion Assignment IDs for LOADED assignments
         DMT_HDL_UTIL_PKG.LOOKUP_FUSION_IDS(

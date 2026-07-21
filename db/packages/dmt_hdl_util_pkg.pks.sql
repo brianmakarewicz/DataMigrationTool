@@ -80,7 +80,17 @@
     -- RECONCILE_HDL: parse HDL error messages and update TFM/STG.
     -- Called by each HCM object's results package.
     -- p_stg_table / p_tfm_table: names of the staging/TFM tables.
-    -- p_key_column: column in TFM that matches HDL SourceReference001.
+    -- p_key_column: column in TFM that matches the HDL SourceSystemId.
+    -- p_key_suffixes: OPTIONAL comma-separated list of SourceSystemId suffixes
+    --   that the generator appends to p_key_column (e.g. '_TRM,_ASG' for the
+    --   Assignment load, where each row's employment-terms and assignment records
+    --   are keyed '<ASSIGNMENT_NUMBER>_TRM' / '<ASSIGNMENT_NUMBER>_ASG').
+    --   When set, a message ties to a row by EXACT equality against
+    --   p_key_column||<suffix> for each suffix — a true per-record match that
+    --   cannot collide when one key is a prefix of another (e.g. G1 vs G1B).
+    --   When NULL (default, all person-keyed loads), the legacy prefix match
+    --   'SourceSystemId LIKE p_key_column||''%''' is used (needed for the Worker
+    --   family, whose SourceSystemIds are PERSON_NUMBER plus a record suffix).
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_HDL (
         p_run_id  IN NUMBER,
@@ -89,7 +99,8 @@
         p_stg_table       IN VARCHAR2,
         p_key_column      IN VARCHAR2 DEFAULT 'SOURCE_REF',
         p_dataset_status  IN VARCHAR2 DEFAULT NULL,  -- ORA_COMPLETED / ORA_IN_ERROR from POLL_HDL
-        p_log_context     IN VARCHAR2 DEFAULT NULL
+        p_log_context     IN VARCHAR2 DEFAULT NULL,
+        p_key_suffixes    IN VARCHAR2 DEFAULT NULL
     );
 
     -- --------------------------------------------------------
