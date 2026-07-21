@@ -106,6 +106,23 @@ FABRICATED_PATTERNS = [
     re.compile(r"Cannot verify Fusion outcome", re.I),
     re.compile(r"No reconciliation data returned", re.I),
     re.compile(r"BIP returned 0 rows\.\s*Parent header not reconciled", re.I),
+    # Composed sentences removed 2026-07-21 (reconciler-composed-to-unaccounted).
+    # These asserted an outcome the tool did not observe from a real Fusion error,
+    # and are now the honest sweep's job (row -> UNACCOUNTED), never a FAILED.
+    re.compile(r"In interface but not created in base", re.I),
+    re.compile(r"import did not post it", re.I),
+    # The Expenditure-family "(status <expr>) -- import ..." composed template.
+    re.compile(r"\(status\s*'\s*\|\|.*?\|\|\s*'\)\s*--\s*import", re.I | re.S),
+    re.compile(r"was not loaded", re.I),
+    re.compile(r"did not process this invoice", re.I),
+    # "No <thing> mapping found" composed observations (TermId/BankPartyId/etc.).
+    re.compile(r"No \w+ mapping found", re.I),
+    # A composed "Interface status: X" label used as ERROR_TEXT — whether written
+    # directly ('[FUSION_ERROR] Interface status: ' || status) or as the NVL
+    # fallback (NVL(error_msg, 'Interface status: ' || status)) where a NULL Fusion
+    # message would make the composed status label the entire stored message. Both
+    # are now converted: a NULL message leaves the row GENERATED for the sweep.
+    re.compile(r"'\s*Interface status:\s*'\s*\|\|", re.I),
 ]
 
 

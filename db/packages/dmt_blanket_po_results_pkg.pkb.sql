@@ -314,11 +314,20 @@ AS
             AND    h.TFM_STATUS              = 'LOADED'
             AND    h.STYLE_DISPLAY_NAME  = 'Blanket Purchase Agreement');
 
-        -- Cascade FAILED to lines
+        -- Cascade FAILED to lines. The parent blanket PO header only reaches
+        -- FAILED with a real Fusion error (from the INTERFACE ERROR/REJECTED
+        -- path above), so the line carries that same real parent error in the
+        -- prescribed linked-record form.
         UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent blanket PO header ''' || ln.INTERFACE_HEADER_KEY || ''' was rejected by Fusion.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT h.ERROR_TEXT FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+                    WHERE  h.RUN_ID = p_run_id
+                    AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
+                    AND    h.TFM_STATUS = 'FAILED'
+                    AND    h.STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
+                    AND    ROWNUM = 1)),
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id

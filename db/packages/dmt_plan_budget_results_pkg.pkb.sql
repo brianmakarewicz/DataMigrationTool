@@ -96,12 +96,16 @@
                 UPDATE DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL SET TFM_STATUS='LOADED', RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                 WHERE RUN_ID=p_run_id AND SCENARIO=r.scenario AND TFM_STATUS!='LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
-            ELSE
+            ELSIF r.error_msg IS NOT NULL THEN
+                -- Real Fusion error returned — mark FAILED carrying it.
                 UPDATE DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL SET TFM_STATUS='FAILED',
                     ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                     RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                 WHERE RUN_ID=p_run_id AND SCENARIO=r.scenario AND TFM_STATUS!='FAILED';
                 l_failed := l_failed + SQL%ROWCOUNT;
+            -- Non-success status but no real Fusion error message: do NOT write a
+            -- bare '[FUSION_ERROR]' with no detail. Leave the row GENERATED for the
+            -- honest sweep to mark UNACCOUNTED.
             END IF;
         END LOOP;
 

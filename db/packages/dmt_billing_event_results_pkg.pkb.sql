@@ -231,16 +231,23 @@ AS
             END IF;
 
             IF r.import_status IN ('ERROR', 'REJECTED', 'FAILED', 'FAILURE', 'N') THEN
-                UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                SET    TFM_STATUS               = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           '[FUSION_ERROR] ' || NVL(l_err_msgs, 'Import status: ' || r.import_status)),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    SOURCEREF            = r.sourceref
-                AND    TFM_STATUS              NOT IN ('LOADED', 'FAILED');
-                l_failed := l_failed + SQL%ROWCOUNT;
+                -- Only mark FAILED when the Import Report actually returned per-row
+                -- error text (l_err_msgs, from G_7 ERROR_CODE/MESSAGE_TEXT). When the
+                -- report gives an ERROR status but no message, we have no real Fusion
+                -- error to write: leave the row GENERATED for the honest sweep to
+                -- mark UNACCOUNTED.
+                IF l_err_msgs IS NOT NULL THEN
+                    UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                    SET    TFM_STATUS               = 'FAILED',
+                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                               '[FUSION_ERROR] ' || l_err_msgs),
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID       = p_run_id
+                    AND    SOURCEREF            = r.sourceref
+                    AND    TFM_STATUS              NOT IN ('LOADED', 'FAILED');
+                    l_failed := l_failed + SQL%ROWCOUNT;
+                END IF;
 
             ELSIF r.import_status IN ('COMPLETE', 'COMPLETED', 'IMPORTED', 'Y', 'PROCESSED', 'SUCCESS', 'P') THEN
                 UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
@@ -253,18 +260,22 @@ AS
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSE
-                -- Unknown tfm_status — mark FAILED with whatever info we have
-                UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                SET    TFM_STATUS               = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           '[FUSION_ERROR] Import Report status: ' || NVL(r.import_status, 'NULL') ||
-                           CASE WHEN l_err_msgs IS NOT NULL THEN ' — ' || l_err_msgs END),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    SOURCEREF            = r.sourceref
-                AND    TFM_STATUS              NOT IN ('LOADED', 'FAILED');
-                l_failed := l_failed + SQL%ROWCOUNT;
+                -- Unknown import status. If the Import Report carried real per-row
+                -- error text (l_err_msgs, from G_7), that is a genuine Fusion error
+                -- and we record it; otherwise we have only a composed status label,
+                -- so leave the row GENERATED for the honest sweep to mark UNACCOUNTED.
+                IF l_err_msgs IS NOT NULL THEN
+                    UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                    SET    TFM_STATUS               = 'FAILED',
+                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                               '[FUSION_ERROR] ' || l_err_msgs),
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID       = p_run_id
+                    AND    SOURCEREF            = r.sourceref
+                    AND    TFM_STATUS              NOT IN ('LOADED', 'FAILED');
+                    l_failed := l_failed + SQL%ROWCOUNT;
+                END IF;
             END IF;
         END LOOP;
 
@@ -507,27 +518,27 @@ AS
                     AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N') THEN
-                    UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.fusion_status)),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    SOURCEREF            = r.sourceref
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
+                    -- Only mark FAILED when the BIP report carried a real Fusion
+                    -- error message (r.error_msg). An error interface status with no
+                    -- message gives us no real Fusion error to write: leave the row
+                    -- GENERATED for the honest sweep to mark UNACCOUNTED.
+                    IF r.error_msg IS NOT NULL THEN
+                        UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                        SET    TFM_STATUS               = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                         '[FUSION_ERROR] ' || r.error_msg),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID       = p_run_id
+                        AND    SOURCEREF            = r.sourceref
+                        AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
+                        l_failed := l_failed + SQL%ROWCOUNT;
+                    END IF;
                 ELSE
-                    UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] Unrecognized interface status: ' || NVL(r.fusion_status, 'NULL')),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    SOURCEREF            = r.sourceref
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
+                    -- Unrecognized interface status and no real Fusion error to
+                    -- report. Do NOT fabricate a FAILED; leave the row GENERATED for
+                    -- the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 END IF;
             END IF;
         END LOOP;

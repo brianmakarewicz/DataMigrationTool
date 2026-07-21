@@ -357,45 +357,38 @@ AS
                         l_prj_loaded := l_prj_loaded + SQL%ROWCOUNT;
                     ELSIF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
                         -- SUBMITTED = loaded but not processed (e.g. parent missing).
-                        UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                        SET    TFM_STATUS           = 'FAILED',
-                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                   '[FUSION_ERROR] ' || NVL(r.error_msg, 'Interface status: ' || r.import_status)),
-                               RESULTS_UPDATED_DATE = SYSDATE,
-                               LAST_UPDATED_DATE    = SYSDATE
-                        WHERE  RUN_ID         = p_run_id
-                        AND    PROJECT_NUMBER = r.project_number
-                        AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                        l_prj_failed := l_prj_failed + SQL%ROWCOUNT;
+                        -- Only mark FAILED when Fusion actually returned an error
+                        -- message. When error_msg is NULL we have only a status
+                        -- label (which we compose), not a real Fusion error, so we
+                        -- leave the row GENERATED for the honest sweep to mark
+                        -- UNACCOUNTED.
+                        IF r.error_msg IS NOT NULL THEN
+                            UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+                            SET    TFM_STATUS           = 'FAILED',
+                                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                       '[FUSION_ERROR] ' || r.error_msg),
+                                   RESULTS_UPDATED_DATE = SYSDATE,
+                                   LAST_UPDATED_DATE    = SYSDATE
+                            WHERE  RUN_ID         = p_run_id
+                            AND    PROJECT_NUMBER = r.project_number
+                            AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
+                            l_prj_failed := l_prj_failed + SQL%ROWCOUNT;
+                        END IF;
                     ELSE
-                        UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                        SET    TFM_STATUS           = 'FAILED',
-                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                   '[FUSION_ERROR] Unrecognized interface status: ' || NVL(r.import_status, 'NULL')),
-                               RESULTS_UPDATED_DATE = SYSDATE,
-                               LAST_UPDATED_DATE    = SYSDATE
-                        WHERE  RUN_ID         = p_run_id
-                        AND    PROJECT_NUMBER = r.project_number
-                        AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                        l_prj_failed := l_prj_failed + SQL%ROWCOUNT;
+                        -- Unrecognized interface status and no real Fusion error to
+                        -- report. Do NOT compose a FAILED; leave the row GENERATED
+                        -- for the honest sweep to mark UNACCOUNTED.
+                        NULL;
                     END IF;
                 END IF;
 
             -- ---- TASKS ----
             ELSIF r.object_type = 'TASKS' THEN
                 IF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                    UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[FUSION_ERROR] Task rejected by Fusion. Project: ' || r.project_number ||
-                               '. Interface status: ' || r.import_status),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID         = p_run_id
-                    AND    TASK_NAME      = r.task_name
-                    AND    PROJECT_NUMBER = r.project_number
-                    AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                    l_tsk_failed := l_tsk_failed + SQL%ROWCOUNT;
+                    -- No real Fusion error is returned for tasks (only a status
+                    -- label, which we would compose). Leave GENERATED for the
+                    -- honest sweep to mark UNACCOUNTED.
+                    NULL;
                 ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
                     UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
@@ -407,34 +400,18 @@ AS
                     AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
                     l_tsk_loaded := l_tsk_loaded + SQL%ROWCOUNT;
                 ELSE
-                    UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[FUSION_ERROR] Task unrecognized status: ' || NVL(r.import_status, 'NULL')),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID         = p_run_id
-                    AND    TASK_NAME      = r.task_name
-                    AND    PROJECT_NUMBER = r.project_number
-                    AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                    l_tsk_failed := l_tsk_failed + SQL%ROWCOUNT;
+                    -- Unrecognized status and no real Fusion error to report.
+                    -- Leave GENERATED for the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 END IF;
 
             -- ---- TEAM MEMBERS ----
             ELSIF r.object_type = 'TEAMMEMBERS' THEN
                 IF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                    UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[FUSION_ERROR] Team member rejected by Fusion. Project: ' || r.project_name ||
-                               '. Interface status: ' || r.import_status),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID           = p_run_id
-                    AND    TEAM_MEMBER_NAME = r.team_member_name
-                    AND    PROJECT_NAME     = r.project_name
-                    AND    TFM_STATUS       NOT IN ('LOADED','FAILED');
-                    l_tm_failed := l_tm_failed + SQL%ROWCOUNT;
+                    -- No real Fusion error is returned for team members (only a
+                    -- status label, which we would compose). Leave GENERATED for
+                    -- the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
                     UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
@@ -446,35 +423,19 @@ AS
                     AND    TFM_STATUS       NOT IN ('LOADED','FAILED');
                     l_tm_loaded := l_tm_loaded + SQL%ROWCOUNT;
                 ELSE
-                    UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[FUSION_ERROR] Team member unrecognized status: ' || NVL(r.import_status, 'NULL')),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID           = p_run_id
-                    AND    TEAM_MEMBER_NAME = r.team_member_name
-                    AND    PROJECT_NAME     = r.project_name
-                    AND    TFM_STATUS       NOT IN ('LOADED','FAILED');
-                    l_tm_failed := l_tm_failed + SQL%ROWCOUNT;
+                    -- Unrecognized status and no real Fusion error to report.
+                    -- Leave GENERATED for the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 END IF;
 
             -- ---- TXN CONTROLS ----
             ELSIF r.object_type = 'TXNCONTROLS' THEN
                 -- PJC_TXN_CONTROLS_STAGE has LOAD_STATUS but no IMPORT_STATUS.
                 IF NVL(r.import_status, r.load_status) IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                    UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[FUSION_ERROR] Txn control rejected by Fusion. Project: ' || r.project_number ||
-                               '. Status: ' || NVL(r.import_status, r.load_status)),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID             = p_run_id
-                    AND    TXN_CTRL_REFERENCE = r.txn_ctrl_reference
-                    AND    PROJECT_NUMBER     = r.project_number
-                    AND    TFM_STATUS         NOT IN ('LOADED','FAILED');
-                    l_tc_failed := l_tc_failed + SQL%ROWCOUNT;
+                    -- No real Fusion error is returned for txn controls (only a
+                    -- status label, which we would compose). Leave GENERATED for
+                    -- the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 ELSIF NVL(r.import_status, r.load_status) IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P','COMPLETE') THEN
                     UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
@@ -486,18 +447,9 @@ AS
                     AND    TFM_STATUS         NOT IN ('LOADED','FAILED');
                     l_tc_loaded := l_tc_loaded + SQL%ROWCOUNT;
                 ELSE
-                    UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[FUSION_ERROR] Txn control unrecognized status: ' ||
-                               NVL(r.import_status, NVL(r.load_status, 'NULL'))),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID             = p_run_id
-                    AND    TXN_CTRL_REFERENCE = r.txn_ctrl_reference
-                    AND    PROJECT_NUMBER     = r.project_number
-                    AND    TFM_STATUS         NOT IN ('LOADED','FAILED');
-                    l_tc_failed := l_tc_failed + SQL%ROWCOUNT;
+                    -- Unrecognized status and no real Fusion error to report.
+                    -- Leave GENERATED for the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 END IF;
 
             END IF;
@@ -581,11 +533,18 @@ AS
             AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
             AND    p.TFM_STATUS     = 'LOADED');
 
-        -- Tasks: cascade FAILED from parent project
+        -- Tasks: cascade FAILED from parent project. The parent project only
+        -- reaches FAILED with a real Fusion error, so the child carries that
+        -- same real parent error in the prescribed linked-record form.
         UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL tsk
         SET    tsk.TFM_STATUS           = 'FAILED',
                tsk.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(tsk.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent project ' || tsk.PROJECT_NUMBER || ' was rejected by Fusion.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT p.ERROR_TEXT FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+                    WHERE  p.RUN_ID         = p_run_id
+                    AND    p.PROJECT_NUMBER = tsk.PROJECT_NUMBER
+                    AND    p.TFM_STATUS     = 'FAILED'
+                    AND    ROWNUM = 1)),
                tsk.RESULTS_UPDATED_DATE = SYSDATE,
                tsk.LAST_UPDATED_DATE    = SYSDATE
         WHERE  tsk.RUN_ID     = p_run_id
@@ -596,11 +555,18 @@ AS
             AND    p.PROJECT_NUMBER = tsk.PROJECT_NUMBER
             AND    p.TFM_STATUS     = 'FAILED');
 
-        -- Team Members: cascade FAILED from parent project
+        -- Team Members: cascade FAILED from parent project. The parent project
+        -- only reaches FAILED with a real Fusion error, so the child carries that
+        -- same real parent error in the prescribed linked-record form.
         UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL tm
         SET    tm.TFM_STATUS           = 'FAILED',
                tm.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(tm.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent project ' || tm.PROJECT_NAME || ' was rejected by Fusion.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT p.ERROR_TEXT FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+                    WHERE  p.RUN_ID       = p_run_id
+                    AND    p.PROJECT_NAME = tm.PROJECT_NAME
+                    AND    p.TFM_STATUS   = 'FAILED'
+                    AND    ROWNUM = 1)),
                tm.RESULTS_UPDATED_DATE = SYSDATE,
                tm.LAST_UPDATED_DATE    = SYSDATE
         WHERE  tm.RUN_ID     = p_run_id
@@ -611,11 +577,18 @@ AS
             AND    p.PROJECT_NAME = tm.PROJECT_NAME
             AND    p.TFM_STATUS   = 'FAILED');
 
-        -- Txn Controls: cascade FAILED from parent project
+        -- Txn Controls: cascade FAILED from parent project. The parent project
+        -- only reaches FAILED with a real Fusion error, so the child carries that
+        -- same real parent error in the prescribed linked-record form.
         UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL tc
         SET    tc.TFM_STATUS           = 'FAILED',
                tc.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(tc.ERROR_TEXT,
-                   '[FUSION_ERROR] Parent project ' || tc.PROJECT_NUMBER || ' was rejected by Fusion.'),
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT p.ERROR_TEXT FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+                    WHERE  p.RUN_ID         = p_run_id
+                    AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
+                    AND    p.TFM_STATUS     = 'FAILED'
+                    AND    ROWNUM = 1)),
                tc.RESULTS_UPDATED_DATE = SYSDATE,
                tc.LAST_UPDATED_DATE    = SYSDATE
         WHERE  tc.RUN_ID     = p_run_id

@@ -175,19 +175,23 @@
                     AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSE
-                    -- UNBALANCED (or any non-SUCCESS base status) = FAILED
+                ELSIF r.error_msg IS NOT NULL THEN
+                    -- UNBALANCED (or any non-SUCCESS base status) WITH a real
+                    -- Fusion-returned message = FAILED on that returned message.
                     UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
                     SET    TFM_STATUS           = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                    '[FUSION_ERROR] ' || NVL(r.error_msg,
-                                                      'Journal imported but not postable (unbalanced).')),
+                                                    '[FUSION_ERROR] ' || r.error_msg),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID     = p_run_id
                     AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
+                ELSE
+                    -- Non-SUCCESS base status but no Fusion error message returned.
+                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 END IF;
 
             ELSIF r.source_type = 'INTERFACE' THEN
@@ -205,19 +209,23 @@
                     AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSE
-                    -- Any other status (NEW, E, EFxx) = FAILED
+                ELSIF r.error_msg IS NOT NULL THEN
+                    -- Any other status (NEW, E, EFxx) WITH a real Fusion-returned
+                    -- rejection message = FAILED on that returned message.
                     UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
                     SET    TFM_STATUS           = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] Journal not imported. GL_INTERFACE status: ' || r.import_status
-                                                     || CASE WHEN r.error_msg IS NOT NULL THEN ' - ' || r.error_msg END),
+                                                     '[FUSION_ERROR] ' || r.error_msg),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID     = p_run_id
                     AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
+                ELSE
+                    -- Non-P interface status but no Fusion error message returned.
+                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 END IF;
             END IF;
         END LOOP;

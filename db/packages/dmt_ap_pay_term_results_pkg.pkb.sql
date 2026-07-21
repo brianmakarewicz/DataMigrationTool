@@ -249,18 +249,7 @@
             BEGIN
                 -- Look up TermId from map
                 IF NOT l_term_map.EXISTS(r.SOURCE_GROUP_ID) THEN
-                    l_errmsg := 'No TermId mapping found for SOURCE_GROUP_ID=' || r.SOURCE_GROUP_ID;
-                    UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
-                    SET    TFM_STATUS = 'FAILED',
-                           ERROR_TEXT = '[FUSION_ERROR] ' || l_errmsg,
-                           RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-
-                    UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL
-                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-                    WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
-
-                    l_line_failed := l_line_failed + 1;
+                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
                     CONTINUE;
                 END IF;
 
@@ -354,21 +343,12 @@
             END;
         END LOOP;
 
-        -- Mark orphan lines (parent header FAILED) as FAILED too
-        UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
-        SET    TFM_STATUS = 'FAILED',
-               ERROR_TEXT = NVL(ERROR_TEXT, '') || '[FUSION_ERROR] Parent payment term header was not loaded.',
-               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    NOT EXISTS (
-            SELECT 1 FROM DMT_AP_PAY_TERM_HDR_TFM_TBL h
-            WHERE  h.RUN_ID  = p_run_id
-            AND    h.SOURCE_GROUP_ID  = DMT_AP_PAY_TERM_LINE_TFM_TBL.SOURCE_GROUP_ID
-            AND    h.TFM_STATUS       = 'LOADED'
-        );
+        -- Orphan lines (parent header not LOADED) have no real Fusion error to
+        -- carry: the parent may have been left GENERATED, or there may be no
+        -- parent header row at all. No composed cascade; leave these lines
+        -- GENERATED for the honest sweep to mark UNACCOUNTED.
 
-        -- Echo orphan failures to STG
+        -- Echo line failures to STG
         UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (

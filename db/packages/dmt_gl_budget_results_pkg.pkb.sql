@@ -135,8 +135,14 @@
                 l_bal_dr(l_key) := NVL(r.dr_amount, 0);
                 l_bal_cr(l_key) := NVL(r.cr_amount, 0);
             ELSIF r.rec_type = 'IFACE' THEN
-                l_ierr(l_key) := SUBSTR(CASE WHEN l_ierr.EXISTS(l_key) THEN l_ierr(l_key) || ' ' END
-                                        || NVL(r.error_message, 'Row not loaded to cube.'), 1, 4000);
+                -- Only record a REAL Fusion-returned error message. When the
+                -- interface row carries no message we have nothing reportable, so
+                -- we do NOT compose a placeholder — the cell will fall to the
+                -- unaccounted branch below and stay GENERATED for the honest sweep.
+                IF r.error_message IS NOT NULL THEN
+                    l_ierr(l_key) := SUBSTR(CASE WHEN l_ierr.EXISTS(l_key) THEN l_ierr(l_key) || ' ' END
+                                            || r.error_message, 1, 4000);
+                END IF;
             END IF;
         END LOOP;
 
