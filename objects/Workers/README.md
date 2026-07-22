@@ -3,6 +3,17 @@
 ## Status
 E2E LOADED — ALL 10 COMPONENTS (3L/0F, prefix 9210, 2026-04-04 DB-20)
 
+## FOLLOW-UP (generator forward-fix, tracked from run 234, 2026-07-21)
+On run 234 the good worker's WorkTerms line raised "When multiple changes exist for a single
+day, only one can be identified as the latest change." The WorkTerms section is emitting a
+duplicate effective-date change, which fails the whole worker (all sections load as one
+Worker.dat), so nothing persisted. Fix the Worker generator so the WorkTerms line does not
+produce two changes on the same effective date. This is a SEPARATE forward-fix that makes the
+data LOAD; it is out of scope for the reconciler honesty fix. Note: the run-234 worker error
+carries a real SourceSystemId (`...-WKR-G1_TRM`), so it is a row-level error, not a file-level
+one — the file-level broadcast added in this PR is aimed at the whole-file rejections seen in
+PayrollRelationship and TalentProfiles, not this WorkTerms case.
+
 ## Pipeline
 - Module: HCM
 - HDL File: Worker.dat

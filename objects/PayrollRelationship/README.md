@@ -3,6 +3,17 @@
 ## Status
 NOT BUILT (HDL)
 
+## FOLLOW-UP (generator forward-fix, tracked from run 234, 2026-07-21)
+The HDL generator emits the business object / file name `PayrollRelationship`, which is
+NOT a loadable top-level HDL object. Fusion rejects the whole file before any row is read:
+"The PayrollRelationship file name isn't valid. You need to use the name of a top-level
+supported business object as the file name." The loadable object is **`AssignedPayroll`**
+(the `.dat` must be named `AssignedPayroll.dat`; HDL derives the object from the file name).
+Fix the generator to emit `AssignedPayroll`. This is a SEPARATE forward-fix that makes the
+data LOAD; it is out of scope for the reconciler honesty fix (PR that added file-level error
+attribution). Until then, run-234 rows are now honestly FAILED with the real Fusion file
+message rather than left stuck at GENERATED.
+
 ## Pipeline
 - Module: HCM
 - HDL File: PayrollRelationship.dat
