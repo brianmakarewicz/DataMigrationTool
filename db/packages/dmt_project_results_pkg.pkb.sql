@@ -162,6 +162,22 @@ AS
                 l_report_id := NULL;
         END;
 
+        -- If nothing was captured yet, capture it now — the reconcile path
+        -- (RECONCILE_ONE) does NOT pre-capture the report child, so relying on a
+        -- prior loader capture leaves every rejected row unaccounted (run 234/235
+        -- "RT Project Bad-1"). This mirrors DMT_BILLING_EVENT_RESULTS_PKG and
+        -- DMT_GRANTS_RESULTS_PKG, which capture the report child lazily inside
+        -- their own reconcile. CAPTURE_REPORT_ESS_JOB is idempotent and returns
+        -- the report request id (or NULL if this run genuinely produced no report,
+        -- in which case the caller downloads nothing and rows stay unaccounted —
+        -- never a fabricated FAILED).
+        IF l_report_id IS NULL THEN
+            l_report_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+                p_run_id        => p_run_id,
+                p_import_ess_id => p_import_ess_id,
+                p_cemli_code    => C_CEMLI);
+        END IF;
+
         RETURN l_report_id;
     END resolve_report_ess_id;
 
