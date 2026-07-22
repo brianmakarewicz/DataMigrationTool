@@ -409,6 +409,9 @@
         l_sfx       VARCHAR2(200);
         l_rest      VARCHAR2(4000);
         l_pos       PLS_INTEGER;
+        l_ds_resp   CLOB;
+        l_load_succ NUMBER;         -- data set ObjectSuccessCount; NULL if unreadable
+        l_zero_load BOOLEAN;        -- TRUE only when Fusion loaded ZERO objects
     BEGIN
         -- Build the row<->message match predicate against jt.src_ref (the HDL
         -- SourceSystemId) and t.<p_key_column>.
@@ -492,15 +495,44 @@
                     DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
         END;
 
+        -- Read the data set's actual object-load success count. A remaining row may
+        -- be promoted to LOADED only when Fusion loaded at least one object. If the
+        -- data set loaded ZERO objects, nothing succeeded this run, so NO row may be
+        -- marked LOADED — even the un-errored remainder. (This is the fabrication that
+        -- stamped a Worker/Assignment LOADED when the whole file was rejected and only
+        -- some errors matched a row.) If the count can't be read, we leave it unknown
+        -- and preserve the status-based behaviour rather than mass-fail good loads.
+        BEGIN
+            l_ds_resp := REST_HTTP(
+                p_url    => get_url() || C_HCM_REST_PATH || '/' || p_request_id,
+                p_method => 'GET',
+                p_run_id => p_run_id);
+            l_load_succ := TO_NUMBER(
+                REGEXP_SUBSTR(l_ds_resp, '"ObjectSuccessCount"\s*:\s*([0-9]+)', 1, 1, NULL, 1));
+        EXCEPTION
+            WHEN OTHERS THEN
+                l_load_succ := NULL;
+        END;
+        l_zero_load := (l_load_succ IS NOT NULL AND l_load_succ = 0);
+
         -- Step 2: Handle remaining GENERATED rows based on data set status
         -- Only mark LOADED if we have positive evidence of success.
+        -- If the data set loaded ZERO objects, mark nothing LOADED.
         -- If data set was ORA_COMPLETED, remaining rows are successes.
         -- If data set was ORA_IN_ERROR and we found specific error rows,
         --   remaining rows MAY be successes (partial success) — mark LOADED.
         -- If data set was ORA_IN_ERROR and we found NO error rows, we have no
         --   per-record evidence either way — LEAVE the rows GENERATED (unaccounted).
         --   We never fabricate a FAILED for an outcome we did not observe.
-        IF p_dataset_status IN ('ORA_COMPLETED', 'ORA_SUCCESS', 'SUCCESS') THEN
+        IF l_zero_load THEN
+            -- Fusion loaded 0 objects. No remaining row may be promoted to LOADED;
+            -- rows without a matched per-row error stay GENERATED for the honest
+            -- UNACCOUNTED sweep. Never assert a success the data set did not report.
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Data set ' || p_request_id || ' reports ObjectSuccessCount=0; ' ||
+                'not marking any remaining GENERATED row LOADED.',
+                'INFO', C_PKG, l_proc);
+        ELSIF p_dataset_status IN ('ORA_COMPLETED', 'ORA_SUCCESS', 'SUCCESS') THEN
             -- All remaining are confirmed successes
             EXECUTE IMMEDIATE
                 'UPDATE DMT_OWNER.' || p_tfm_table ||
@@ -509,7 +541,8 @@
                 USING p_run_id;
             l_ok_count := SQL%ROWCOUNT;
         ELSIF p_dataset_status IN ('ORA_IN_ERROR', 'ERROR', 'WARNING') AND l_err_count > 0 THEN
-            -- Partial success: specific rows failed, rest are OK
+            -- Partial success: specific rows failed, rest are OK (and the data set
+            -- reported at least one successful object load, so l_zero_load is FALSE)
             EXECUTE IMMEDIATE
                 'UPDATE DMT_OWNER.' || p_tfm_table ||
                 ' SET TFM_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||

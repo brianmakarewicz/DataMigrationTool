@@ -109,12 +109,11 @@
             END IF;
         END LOOP;
 
-        -- Absence = LOADED: rows not returned by BIP (not in error) are considered LOADED
-        IF l_loaded = 0 AND l_failed = 0 THEN
-            UPDATE DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL SET TFM_STATUS='LOADED', RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-            l_loaded := SQL%ROWCOUNT;
-        END IF;
+        -- Absence from the BIP report is NOT success. A row is LOADED only when its
+        -- SCENARIO comes back with an explicit success import_status above. Rows that
+        -- BIP did not confirm (and that carry no real Fusion error) are left GENERATED
+        -- so the honest accounting sweep marks them UNACCOUNTED. Never auto-promote
+        -- unconfirmed rows to LOADED.
 
         UPDATE DMT_OWNER.DMT_PLAN_BUDGET_STG_TBL SET STG_STATUS='LOADED', LAST_UPDATED_DATE=SYSDATE
         WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL WHERE RUN_ID=p_run_id AND TFM_STATUS='LOADED');
