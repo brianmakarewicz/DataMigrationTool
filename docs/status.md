@@ -1,5 +1,29 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-07-21/22 -- Resolve run-234 UNACCOUNTED honestly
+**What was done:** Located the real Fusion outcome for all 23 UNACCOUNTED records from the first
+honest scorecard (run 234) and landed 10 merged PRs (#222-#231) plus 1 open (#227 needs a human
+BIP redeploy). Full detail: `docs/sessions/2026-07-21_unaccounted-resolution.md`. Highlights:
+never fabricate LOADED (#222); real error -> FAILED (#223); Projects capture-the-report-child +
+parse fix, validated end-to-end run 238 (#224/#229); Grants award-import-report (#225, capture
+follow-up pending); HCM file-level error attribution (#226); Customers site-use error tier (#227);
+Expenditures xref project/task resolution + reverted a dead GL_DATE patch (#228/#230); funnel
+`ALL_UNACCOUNTED` dark-red flag (#231).
+**Accounting model settled:** true job-level crash (Expenditures ORA-01008; AR AutoInvoice abort)
+-> leave records UNACCOUNTED + dark-red tile, never fabricate or patch data; job success + per-row
+reject -> capture the report/log and mark each rejected row FAILED with its real error.
+**Docs updated this close-out:** project CLAUDE.md (added THE MISSION section; fixed stale "hourly
+reviewer" -> event-driven; pointed to the Object Status Matrix + "update every session"); the
+Object Status Matrix in `docs/DMT_REBUILD_PLAN.html` section 0 (Projects/Expenditures/Grants/
+ARInvoices/Requisitions/PayrollRelationships/TalentProfiles/Customers rows).
+**What's next:** finish the Grants report-capture end-to-end (same fix as #229); run a full
+regression to validate every merged reconciler + produce the complete scorecard; Customers BIP
+redeploy (human); wire the APEX funnel tile to `ALL_UNACCOUNTED`.
+**Blocker:** `dmt2-local` DB healthy internally (via `docker exec`) but host DB port 1523
+forwarding is wedged; `wsl --shutdown` + container restart issued, host Oracle ports (1521/1523)
+still not forwarding at close. The Python deploy script + regression harness need host 1523, so the
+full-regression validation is deferred until the port returns. Stale run 154 QUEUED to clear.
+
 ## Session -- 2026-07-14
 **What was done:** Requirements-design review of the canonical design doc
 (`workspace/DMT2/docs/DMT_DESIGN.html`); artifact republished. Related edits to

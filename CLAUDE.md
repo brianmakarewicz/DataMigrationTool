@@ -7,16 +7,54 @@ install (1,055 objects, verified on local Docker).
 **Master plan:** `docs/DMT_REBUILD_PLAN.html` (in this repo) — phases, build order,
 per-stage test plan, roadmap, risks. Read the "Build Order of Operations" section before building.
 
+**Object Status Matrix (single source of truth for per-object live status):** section 0 of
+`docs/DMT_REBUILD_PLAN.html` (`#objstatus`) — one row per object with its good/bad example,
+verify checkbox, and blocker. **Update this matrix at the close of every session** whenever an
+object's live result or accounting status changed (a cell edit in place — it is a status table,
+not a dated log). It is the fastest read of where each object actually stands.
+
+## THE MISSION — what this tool is FOR (read before deciding what "done" means)
+
+DMT2 **runs the Fusion import processes** for each object and then **accurately reports the
+row-level outcome of every record** it sent: each record either **succeeded** (found in its
+Fusion base table → LOADED) or **failed with a real Fusion error** (→ FAILED, carrying that
+error). Nothing else counts as done.
+
+The deliverable is **honest accounting, not clean data.** Concretely:
+
+- **The job is to get each object's process running end-to-end** so that GOOD rows import to
+  the base table AND BAD rows are reported with their real Fusion rejection message.
+- **The job is NOT to fix every bad row.** A bad row that Fusion rejects is a SUCCESS for this
+  tool — it was correctly imported-attempted and its real error was captured and reported. Do
+  not "fix" test data to make a rejection disappear; that hides the very thing the tool exists
+  to report.
+- **Never fabricate an outcome.** LOADED only with a real base-table row; FAILED only with a
+  real Fusion error string; otherwise the record is UNACCOUNTED (a defect in OUR code — we have
+  not yet found where Fusion recorded the outcome), never a made-up verdict. Drive UNACCOUNTED
+  to zero by FINDING the real outcome, never by inventing one.
+- **Two honest failure shapes (get them right):**
+  1. **Job succeeded but rejected some rows per-record** → capture the import/report job's
+     output and mark each rejected row FAILED with its real message. (This is most objects.)
+  2. **The job itself crashed at the job level** (e.g. a Fusion `ORA-01008` inside the costing
+     proc; an AutoInvoice job-level abort) → Fusion produced NO per-row verdict, so every record
+     is honestly left UNACCOUNTED and the object's tile renders **dark red**. Do NOT patch data
+     to force the job to "succeed" — that hides an unaccounted-because-the-job-failed condition.
+     Getting that job to run is a separate, later concern from accounting its records honestly.
+- **"Getting an object running" ≠ making its data perfect.** It means the pipeline reaches
+  Fusion, the good rows land in the base table, and the bad rows come back with real errors.
+
 ## Current posture (2026-07-07)
 
 - **Docker-only.** No ATP exists yet — all work runs against the local Docker instance
   (`dmt2-local`, port **1523**). The new Always Free ATP comes later.
 - **GitHub repo:** https://github.com/brianmakarewicz/DataMigrationTool — main is protected
   (pull request + 1 approval required, no force pushes). ALL changes go through PRs.
-- **PR workflow:** this machine authors branches/PRs as brainmakeassistant. An hourly
-  automated reviewer (cloud routine "Hourly PR review & approve — DataMigrationTool")
-  reviews as brianmakarewicz and approves+merges clean PRs with an AUTOMATED APPROVAL
-  banner, or requests changes with file/line findings. Never merge without its review.
+- **PR workflow:** this machine authors branches/PRs as brainmakeassistant. The reviewer is
+  the GitHub Actions workflow `.github/workflows/pr-review.yml`, which fires **on every PR
+  open / synchronize (push) / reopen / ready_for_review — event-driven, NOT hourly and NOT on
+  a timer.** It reviews as brianmakarewicz and approves+merges clean PRs with an AUTOMATED
+  APPROVAL banner (usually within minutes of opening or pushing), or requests changes with
+  file/line findings. Never merge without its review; never wait for an "hourly" cycle.
 - **Fusion BIP folder for this stack:** `/Custom/DMT2/` (never `/Custom/DMT/` — that belongs to the frozen stack).
 - **FBL file delivery:** decision deferred (blocks the 6 FBL config objects only — Phase 4).
 - **Frozen stack:** bugs may still be fixed on the old ATP; every such fix must be ported here.
