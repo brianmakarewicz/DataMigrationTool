@@ -182,10 +182,18 @@
             s.PERSON_ID,
             s.HCM_ASSIGNMENT_NAME,
             s.HCM_ASSIGNMENT_ID,
-            DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25),
+            -- PROJECT_NUMBER is a REFERENCE key, not an isolation key, so it must
+            -- never be blindly prefixed. Resolve it through the cross-reference:
+            -- if this tool loaded a project with this source number, use that
+            -- loaded project's actual (prefixed) number so the cost charges the
+            -- project we created this run; if no loaded project matches, the
+            -- resolver returns the raw value (a pre-existing Fusion project like
+            -- PCS10037). Blindly prefixing turned PCS10037 into a nonexistent
+            -- 10115PCS10037 and Fusion's onestop costing failed (ORA-01008).
+            DMT_XREF_PKG.PROJECT_NUMBER(s.PROJECT_NUMBER),
             s.PROJECT_NAME,
             s.PROJECT_ID,
-            s.TASK_NUMBER,
+            DMT_XREF_PKG.TASK_NUMBER(s.TASK_NUMBER),
             s.TASK_NAME,
             s.TASK_ID,
             s.EXPENDITURE_TYPE,
@@ -221,7 +229,13 @@
             s.UNMATCHED_NEGATIVE_TXN_FLAG,
             s.REVERSED_ORIG_TXN_REFERENCE,
             s.EXPENDITURE_COMMENT,
-            s.GL_DATE,
+            -- GL_DATE (the accounting date) must be populated: Fusion's onestop
+            -- costing binds it at the update_xface_id step, and a null there
+            -- throws ORA-01008 (not all variables bound) and aborts the whole
+            -- costing job. The gold fixture always populates it. When the source
+            -- doesn't supply one, default to the expenditure item date (already
+            -- validated to fall in an open period).
+            NVL(s.GL_DATE, s.EXPENDITURE_ITEM_DATE),
             s.DENOM_CURRENCY_CODE,
             s.DENOM_CURRENCY,
             s.DENOM_RAW_COST,
