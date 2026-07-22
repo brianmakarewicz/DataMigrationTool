@@ -117,8 +117,65 @@ AS
     END FETCH_BIP_RESULTS;
 
     -- --------------------------------------------------------
+    -- Private: resolve the CHILD Import Projects report job id.
+    --
+    -- Fusion's ImportProjectJobDef (the "import" ESS job the loader
+    -- passes as p_import_ess_id) is only an async submit wrapper. Its
+    -- own ESS output is an essentially empty XML (~4 bytes). The real
+    -- per-row accept/reject report lives in a SEPARATE child job,
+    -- ImportProjectReportJob, which the wrapper spawns. Reading the
+    -- wrapper always yields zero errors and leaves every rejected row
+    -- unaccounted (run 234, "10115RT Project Bad-1").
+    --
+    -- The loader calls DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB before
+    -- reconciliation; that resolves the child request id (via the
+    -- seeded REPORT_JOB_DEF = 'ImportProjectReportJob') and stores it
+    -- in DMT_ESS_JOB_TBL with PARENT_REQUEST_ID = the wrapper import id
+    -- and JOB_SHORT_NAME / JOB_DEFINITION = 'ImportProjectReportJob'.
+    -- This helper reads that persisted linkage back. Returns the child
+    -- request id, or NULL if none was captured — in which case the
+    -- caller must NOT invent a report: it downloads nothing and the
+    -- affected rows stay unaccounted (never a fabricated FAILED).
+    -- --------------------------------------------------------
+    FUNCTION resolve_report_ess_id (
+        p_run_id        IN NUMBER,
+        p_import_ess_id IN NUMBER
+    ) RETURN NUMBER IS
+        l_report_id NUMBER;
+    BEGIN
+        IF p_import_ess_id IS NULL THEN
+            RETURN NULL;
+        END IF;
+
+        BEGIN
+            SELECT REQUEST_ID
+            INTO   l_report_id
+            FROM   DMT_OWNER.DMT_ESS_JOB_TBL
+            WHERE  PARENT_REQUEST_ID = p_import_ess_id
+            AND    (RUN_ID = p_run_id OR RUN_ID IS NULL)
+            AND    UPPER(NVL(JOB_SHORT_NAME, JOB_DEFINITION)) LIKE '%IMPORTPROJECTREPORTJOB%'
+            AND    REQUEST_ID <> p_import_ess_id
+            ORDER  BY REQUEST_ID DESC
+            FETCH FIRST 1 ROW ONLY;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                l_report_id := NULL;
+        END;
+
+        RETURN l_report_id;
+    END resolve_report_ess_id;
+
+    -- --------------------------------------------------------
     -- Private: apply Import Report per-row errors to the four TFM
     -- tables, routing by error_source. Writes TFM only.
+    --
+    -- p_import_ess_id is the WRAPPER import job. We first resolve the
+    -- child ImportProjectReportJob (see resolve_report_ess_id) and
+    -- download the report XML from THAT job — the wrapper's own XML is
+    -- empty. If no child was captured, we do NOT fall back to the
+    -- (empty) wrapper: there is no real report to read, so we match
+    -- nothing and the rows stay GENERATED (unaccounted), never a
+    -- fabricated FAILED.
     -- --------------------------------------------------------
     PROCEDURE apply_import_report (
         p_run_id        IN  NUMBER,
@@ -129,20 +186,46 @@ AS
         l_ir_errors DMT_IMPORT_REPORT_PKG.t_error_list;
         l_ir_xml    CLOB;
         l_src       VARCHAR2(100);
+        l_report_id NUMBER;
     BEGIN
         x_matched := 0;
         IF p_import_ess_id IS NULL THEN
             RETURN;
         END IF;
 
+        -- Resolve the child report job. If it was not captured, there is
+        -- no real per-row report to read (the wrapper's XML is empty),
+        -- so we stop here rather than reading the wrapper and finding
+        -- "0 errors" — which would leave a genuine rejection unaccounted.
+        l_report_id := resolve_report_ess_id(p_run_id, p_import_ess_id);
+
+        IF l_report_id IS NULL THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id  => p_run_id,
+                p_message => C_PROC || ': No ImportProjectReportJob child captured for import ESS ' ||
+                             p_import_ess_id || '. The wrapper job holds no per-row report; skipping'
+                             || ' Import Report parse (rows left unaccounted, not fabricated FAILED).',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id  => p_run_id,
+            p_message => C_PROC || ': Reading Import Projects report from child job ' || l_report_id ||
+                         ' (wrapper import ESS ' || p_import_ess_id || ').',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
         BEGIN
-            l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_import_ess_id);
+            l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(l_report_id);
         EXCEPTION
             WHEN OTHERS THEN
                 DMT_UTIL_PKG.LOG(
                     p_run_id  => p_run_id,
-                    p_message => C_PROC || ': Failed to download ESS output XML for request ' ||
-                                 p_import_ess_id || ': ' || SQLERRM,
+                    p_message => C_PROC || ': Failed to download ESS output XML for report request ' ||
+                                 l_report_id || ': ' || SQLERRM,
                     p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
                     p_package   => C_PKG,
                     p_procedure => C_PROC);
