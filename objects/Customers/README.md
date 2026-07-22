@@ -156,6 +156,58 @@ stamped `RT-CUST` refs demonstrably created in the base while DMT-stamped ones d
 not. Confidence in "unregistered source system = the hold cause" is high; the live
 LEG1 re-run is the confirming test still to do.
 
+## Party Site Uses reconciliation — interim key + deferred forward-fix (2026-07-21)
+
+Run 234 (prefix 10115) left all four Party Site Use records UNACCOUNTED even though
+two loaded, one failed for a real reason, and one was held. Two reconciler/report
+defects, both now addressed for run-234 accounting (branch
+`fix/customers-siteuse-error-tier`). Full evidence: `docs/findings/run234_Customers.md`.
+
+### What was fixed
+1. **Base-tier match now uses an interim key.** The site use's own external reference
+   (`SITEUSE_ORIG_SYSTEM_REF`) is written NULL into Fusion, so
+   `HZ_ORIG_SYS_REFERENCES` has no `HZ_PARTY_SITE_USES` row to match — the old base
+   query could never resolve even for genuinely loaded uses. The BIP report and the
+   reconciler now match a loaded site use by its **parent site's registered reference
+   plus the site_use_type** (`SITE_ORIG_SYSTEM_REFERENCE || '/' || SITE_USE_TYPE`).
+   Verified unique per prefix live (10115: `G2/BILL_TO`→100002550113684,
+   `G3/BILL_TO`→100002550113683). Both columns are present on every TFM row and every
+   interface row, so there is no wrong-row risk.
+2. **Error tier added for Party Site Uses.** The BIP report had no error-tier branch
+   for `HZ_IMP_PARTYSITEUSES_T`, so a failed (`E`) or held (`W`) site use fell straight
+   through to UNACCOUNTED. Added a row-precise branch keyed on the interface row's own
+   `IMPORT_STATUS_CODE` (filtered by `LOAD_REQUEST_ID`), emitting the same interim key
+   and the batch-level `HZ_IMP_ERRORS` `MESSAGE_NAME` list as context. Record 364
+   (`INVALID_USE`, status `E`) now reports FAILED with the real `HZ_API_INVALID_LOOKUP`
+   batch signal; record 361 (status `W`, parent held for CDM duplicate review) reports
+   its real held/warning status. Neither is fabricated — each is the row's own live
+   Fusion status.
+
+**A BIP catalog re-deploy is required.** The `DMT_CUST_RECON_DM.xdm` change is committed
+in the repo but NOT deployed to live Fusion BIP by this work. Per project rule, BIP
+objects are never overwritten — the human must do a versioned deploy of the updated data
+model to `/Custom/DMT2/Customers/`.
+
+### DEFERRED forward-fix (not in this branch) — FBDI generator NULL site-use reference
+The root cause of the NULL is upstream of the FBDI generator: the transformer
+(`DMT_CUST_TRANSFORM_PKG`) leaves `SITEUSE_ORIG_SYSTEM` and `SITEUSE_ORIG_SYSTEM_REF`
+NULL on the TFM row. The generator (`dmt_cust_fbdi_gen_pkg`, `gen_party_site_uses_csv`)
+already writes both columns positionally from the TFM, so the CSV carries NULL. The
+proper forward-fix is to have the transformer populate `SITEUSE_ORIG_SYSTEM` (a
+TCA-registered orig system such as `LEG1`) and `SITEUSE_ORIG_SYSTEM_REF` so TCA
+registers the site use in `HZ_ORIG_SYS_REFERENCES`; then the base-tier match can key on
+the site use's own reference and the interim parent-ref key can be retired. That change
+touches the transformer and risks altering the golden FBDI output, so it is **deferred**
+to its own branch rather than bundled into this reconciler fix. Do the same review for
+`AccountSiteUses` (`CUST_SITEUSE_ORIG_SYSTEM` / `CUST_SITEUSE_ORIG_SYS_REF`).
+
+### Follow-up: error tier for the other deep record types
+The BIP report still lacks an error-tier branch for Locations, PartySites, AccountSites
+and AccountSiteUses (only Parties, Accounts and now PartySiteUses are error-covered). A
+`W`/`E` interface row for those types would still sweep to UNACCOUNTED. Adding those
+branches is low-risk (same shape as the PartySiteUses branch) but was left out of this
+focused fix; track as a follow-up.
+
 ## Known Issues
 - **RESOLVED 2026-07-11 — `batchId is null` is fixed; 20/20 customers reached the
   HZ base tables (`hz_cust_accounts`).** The customer bulk import needs an
