@@ -38,6 +38,7 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_OBJECT_FUNNEL_V"
     ("CEMLI_CODE", "SUB_OBJECT", "SUB_ORDER", "RUN_ID",
      "STAGED", "PREVALIDATION_FAILED", "TRANSFORMED", "TRANSFORM_FAILED",
      "GENERATED", "LOADED", "LOAD_FAILED", "UNACCOUNTED", "IN_PROGRESS", "UNRECONCILED",
+     "ALL_UNACCOUNTED",
      "PIPELINE_CODES", "SCENARIO_NAME", "PREFIX", "SUBMITTED_DATE", "COMPLETED_DATE", "RUN_STATUS") AS
   WITH reached_tfm AS (
     -- the set of source records that reached TFM this run (one row per TFM record).
@@ -81,6 +82,19 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_OBJECT_FUNNEL_V"
     NVL(d.UNACCOUNTED_ROWS, 0)                                            AS UNACCOUNTED,
     NVL(d.IN_PROGRESS_ROWS, 0)                                            AS IN_PROGRESS,
     NVL(d.UNRECONCILED_ROWS, 0)                                           AS UNRECONCILED,
+    -- ALL_UNACCOUNTED (2026-07-22): object-level tile severity. 'Y' when EVERY
+    -- staged record for this sub-object ended UNACCOUNTED — i.e. the load/import/
+    -- cost job failed at the job level and produced no per-row verdict for anyone
+    -- (nothing LOADED, nothing LOAD_FAILED, no pre-TFM failure). This is the
+    -- signature of a true job crash (e.g. Expenditures ORA-01008, AR AutoInvoice
+    -- abort): the UI colors the whole tile DARK red. 'N' with UNACCOUNTED > 0 is a
+    -- PARTIAL case (some accounted, some not) → lighter red. Derived, not stored.
+    CASE
+      WHEN NVL(d.UNACCOUNTED_ROWS, 0) > 0
+       AND NVL(d.UNACCOUNTED_ROWS, 0) =
+           NVL(d.TOTAL_ROWS, 0) + NVL(e.PREVAL_CNT, 0) + NVL(e.TRANSFORM_CNT, 0)
+      THEN 'Y' ELSE 'N'
+    END                                                                  AS ALL_UNACCOUNTED,
     m.PIPELINE_CODES,
     m.SCENARIO_NAME,
     m.PREFIX,
