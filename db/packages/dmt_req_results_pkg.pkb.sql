@@ -350,34 +350,45 @@ AS
                     error_msg      VARCHAR2(4000) PATH 'ERROR_MESSAGE'
             ) x
         ) LOOP
+            -- A row that receives a real Fusion error message IS failed: set
+            -- TFM_STATUS='FAILED' alongside the error text. Without this the row
+            -- kept the real [FUSION_ERROR] text but stayed GENERATED and was swept
+            -- to UNACCOUNTED (the Requisition BADHDR gap). Guard against a genuine
+            -- LOADED so a confirmed success is never downgraded.
             IF UPPER(e.interface_type) = 'HEADER' THEN
                 UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
-                SET    ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                SET    TFM_STATUS           = 'FAILED',
+                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                  '[FUSION_ERROR] [HDR] ' || e.error_msg),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_HEADER_KEY  = e.interface_key;
+                AND    INTERFACE_HEADER_KEY  = e.interface_key
+                AND    TFM_STATUS            NOT IN ('LOADED','FAILED');
                 l_err_hdr := l_err_hdr + SQL%ROWCOUNT;
 
             ELSIF UPPER(e.interface_type) = 'LINE' THEN
                 UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL
-                SET    ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                SET    TFM_STATUS           = 'FAILED',
+                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                  '[FUSION_ERROR] [LINE] ' || e.error_msg),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_LINE_KEY    = e.interface_key;
+                AND    INTERFACE_LINE_KEY    = e.interface_key
+                AND    TFM_STATUS            NOT IN ('LOADED','FAILED');
                 l_err_line := l_err_line + SQL%ROWCOUNT;
 
             ELSIF UPPER(e.interface_type) = 'DISTRIBUTION' THEN
                 UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL
-                SET    ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                SET    TFM_STATUS           = 'FAILED',
+                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                  '[FUSION_ERROR] [DIST] ' || e.error_msg),
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_DISTRIBUTION_KEY = e.interface_key;
+                AND    INTERFACE_DISTRIBUTION_KEY = e.interface_key
+                AND    TFM_STATUS            NOT IN ('LOADED','FAILED');
                 l_err_dist := l_err_dist + SQL%ROWCOUNT;
             END IF;
         END LOOP;
