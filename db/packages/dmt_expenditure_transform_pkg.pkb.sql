@@ -164,14 +164,14 @@
             s.DOCUMENT_ID,
             s.DOC_ENTRY_NAME,
             s.DOC_ENTRY_ID,
-            -- BATCH_NAME must be UNIQUE per row and per prefix, or Import Costs
-            -- rejects the good rows on PJC_UNIQUE_BATCH_NAME (they collide on an
-            -- empty/duplicate batch, across each other and across ALL-mode reruns).
-            -- The source rarely supplies one, so synthesise a deterministic unique
-            -- batch: the prefixed ORIG_TRANSACTION_REFERENCE (already unique per row
-            -- and stamped with the run prefix below), falling back to any batch the
-            -- source did provide. This mirrors the gold fixture, where BATCH_NAME =
-            -- ORIG_TRANSACTION_REFERENCE = ${PREFIX}RT-EXP-*.
+            -- BATCH_NAME is (re)stamped by dmt_loader_pkg to the run's single
+            -- work-queue-id just before FBDI generation, so all of this run's rows share
+            -- ONE globally-unique batch: that groups them and lets the Expenditure Batch
+            -- filter (arg 8) import exactly this run's rows, isolated from other runs'
+            -- pending interface rows. (An earlier design used a per-row-unique batch on
+            -- the theory that a shared batch collided on PJC_UNIQUE_BATCH_NAME -- proven
+            -- false 2026-07-22: a unique-per-run work-queue-id batch does not collide.)
+            -- This per-row value is only a fallback if the loader stamp is ever skipped.
             NVL(s.BATCH_NAME,
                 DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.ORIG_TRANSACTION_REFERENCE)),
             s.BATCH_ENDING_DATE,

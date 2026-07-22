@@ -466,6 +466,9 @@
         l_job_pkg      VARCHAR2(300);
         l_job_def      VARCHAR2(200);
         l_param_list   VARCHAR2(4000);
+        l_param_xml    VARCHAR2(8000);
+        l_rest         VARCHAR2(4000);
+        l_pos          PLS_INTEGER;
         l_response     CLOB;
         l_import_ess_id VARCHAR2(100);
         l_tag_start    INTEGER;
@@ -488,6 +491,26 @@
         -- ParameterList: caller-supplied (e.g. book code 'US CORP') or default.
         l_param_list := NVL(p_param_list, 'NEW,N,' || TO_CHAR(p_run_id));
 
+        -- submitESSJobRequest takes the ParameterList as a REPEATED element -- one
+        -- <typ:paramList> per positional argument. Emitting the whole list as a single
+        -- element makes Fusion read it as argument #1 only, so any multi-argument job
+        -- (e.g. Expenditures' ImportProcessParallelEssJob, 13 args) fails inside the job
+        -- with ORA-01008 "not all variables bound". Split on '~' and emit one element
+        -- per token. A value with no '~' -> exactly one element, so single-argument
+        -- callers (GL Budgets' Run Name, Assets' book code) are unchanged.
+        l_param_xml := NULL;
+        l_rest      := l_param_list;
+        LOOP
+            l_pos := INSTR(l_rest, '~');
+            IF l_pos = 0 THEN
+                l_param_xml := l_param_xml || '<typ:paramList>' || l_rest || '</typ:paramList>';
+                EXIT;
+            END IF;
+            l_param_xml := l_param_xml
+                || '<typ:paramList>' || SUBSTR(l_rest, 1, l_pos - 1) || '</typ:paramList>';
+            l_rest := SUBSTR(l_rest, l_pos + 1);
+        END LOOP;
+
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'SUBMIT_IMPORT_JOB start. Package: ' || l_job_pkg ||
@@ -505,7 +528,7 @@
                 '<typ:submitESSJobRequest>' ||
                 '<typ:jobPackageName>'    || l_job_pkg || '</typ:jobPackageName>' ||
                 '<typ:jobDefinitionName>' || l_job_def || '</typ:jobDefinitionName>' ||
-                '<typ:paramList>' || l_param_list || '</typ:paramList>' ||
+                l_param_xml ||
                 '</typ:submitESSJobRequest>' ||
                 '</soapenv:Body></soapenv:Envelope>'),
             p_run_id => p_run_id);
@@ -1029,6 +1052,10 @@
         l_ess_user           VARCHAR2(100) := NULL;  -- per-CEMLI Fusion user override
         l_ess_pass           VARCHAR2(100) := NULL;
         l_param_list         VARCHAR2(500) := 'NEW,N';  -- default for suppliers
+        l_ex_batch           VARCHAR2(60);   -- Expenditures: the run's work-queue-id, used
+                                             -- as the single Expenditure Batch name (CSV col +
+                                             -- import filter arg 8) so a run's rows import in
+                                             -- isolation from other runs' pending interface rows.
         l_load_status        VARCHAR2(50);  -- Fusion status from Load ESS poll
         -- CEMLI-specific ParameterLists set below after ERP options lookup
         -- Object type label extracted from CEMLI code (e.g. 'Suppliers').
@@ -1468,9 +1495,36 @@
                 l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_exp_src_name);
                 l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_exp_doc_name);
 
-                l_param_list := 'IMPORT_AND_PROCESS~' || l_exp_bu_id
-                    || '~ALL~#NULL~#NULL~' || l_exp_src_id || '~' || l_exp_doc_id
-                    || '~#NULL~#NULL~#NULL';
+                -- Expenditure Batch (arg 8): the run's work-queue-id -- one batch name
+                -- for ALL of this run's rows. Globally unique (a sequence) so it never
+                -- collides on PJC_UNIQUE_BATCH_NAME, and it isolates this run's rows from
+                -- any other pending interface rows at costing time (an empty filter would
+                -- process every pending row across runs). The SAME value is stamped onto
+                -- BATCH_NAME in every generated CSV row at the load step below.
+                -- g_work_queue_id is NULL for non-partitioned objects, so read the queue id.
+                SELECT TO_CHAR(MAX(QUEUE_ID)) INTO l_ex_batch
+                FROM   DMT_OWNER.DMT_WORK_QUEUE_TBL
+                WHERE  RUN_ID = p_run_id AND CEMLI_CODE = p_cemli_code;
+
+                -- 13-arg ImportProcessParallelEssJob ParameterList (proven live, UI run
+                -- 9777408). '~'-delimited; SUBMIT_IMPORT_JOB emits one <paramList> element
+                -- per token. Positions:
+                --   1 BU name  2 BU id  3 IMPORT_AND_PROCESS  4 PREV_NOT_IMPORTED  5 (null)
+                --   6 txn-source id  7 document (null)  8 Expenditure Batch (work-queue-id)
+                --   9-12 (null)  13 ORA_PJC_DETAIL (spawns the BIP detail report child)
+                -- Replaces the earlier 10-arg onestop/ImportAndProcessTxnsJob form, which
+                -- ORA-01008'd on this pod regardless of content (wrong job + single-element
+                -- paramList). Document id (arg 7) is intentionally null, matching the run.
+                l_param_list := l_exp_bu_name
+                    || '~' || l_exp_bu_id
+                    || '~IMPORT_AND_PROCESS'
+                    || '~PREV_NOT_IMPORTED'
+                    || '~'
+                    || '~' || l_exp_src_id
+                    || '~'
+                    || '~' || l_ex_batch
+                    || '~~~~'
+                    || '~ORA_PJC_DETAIL';
             END;
         -- Requisitions: the ParameterList is built per batch inside the
         -- grouped-by-BATCH_ID block below (position 2 = the batch id,
@@ -2804,6 +2858,15 @@
                 l_ex_user      VARCHAR2(100);
                 l_ex_pass      VARCHAR2(100);
             BEGIN
+                -- Stamp the run's single work-queue-id batch onto every row's BATCH_NAME
+                -- so the generated CSV carries it, and it matches the Expenditure Batch
+                -- filter (arg 8, l_ex_batch) submitted with ImportProcessParallelEssJob.
+                -- One shared, globally-unique batch groups the run's rows and isolates
+                -- them from other runs' pending interface rows at costing time.
+                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                SET    BATCH_NAME = l_ex_batch
+                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
                 -- Generate one FBDI zip for all STAGED expenditure rows this run
                 -- (rows move STAGED -> GENERATED).
                 DMT_EXPENDITURE_FBDI_GEN_PKG.GENERATE_FBDI(
@@ -2862,12 +2925,13 @@
                     RETURN FALSE;
                 END IF;
 
-                -- Step 2: submit Import and Process Cost Transactions as a
-                -- SEPARATE ESS request, reusing #216's validated 10-arg
-                -- ParameterList. l_job_name is the comma form (onestop,
-                -- ImportAndProcessTxnsJob) resolved by get_erp_options.
+                -- Step 2: submit ImportProcessParallelEssJob (the "Import Costs" costing
+                -- job) as a SEPARATE ESS request with the 13-arg ParameterList built
+                -- above. l_job_name is the comma form (onestop,ImportProcessParallelEssJob)
+                -- resolved by get_erp_options. SUBMIT_IMPORT_JOB emits each of the 13
+                -- '~'-delimited args as its own <paramList> element.
                 DMT_UTIL_PKG.LOG(p_run_id,
-                    'Submitting Import and Process Cost Transactions (separate ESS request). ParamList: '
+                    'Submitting Import Costs / ImportProcessParallelEssJob (separate ESS request). ParamList: '
                     || l_param_list, 'INFO', C_PKG, l_obj || ' > ' || C_PROC);
 
                 l_ex_import_id := SUBMIT_IMPORT_JOB(
