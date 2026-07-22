@@ -229,13 +229,14 @@
             s.UNMATCHED_NEGATIVE_TXN_FLAG,
             s.REVERSED_ORIG_TXN_REFERENCE,
             s.EXPENDITURE_COMMENT,
-            -- GL_DATE (the accounting date) must be populated: Fusion's onestop
-            -- costing binds it at the update_xface_id step, and a null there
-            -- throws ORA-01008 (not all variables bound) and aborts the whole
-            -- costing job. The gold fixture always populates it. When the source
-            -- doesn't supply one, default to the expenditure item date (already
-            -- validated to fall in an open period).
-            NVL(s.GL_DATE, s.EXPENDITURE_ITEM_DATE),
+            -- GL_DATE passes through as-supplied. (An earlier change defaulted it
+            -- to the expenditure item date on the theory that a null GL_DATE caused
+            -- the onestop costing job's ORA-01008 — but run 236 populated GL_DATE
+            -- and the costing job still ERRORed, so that was not the cause. We do
+            -- NOT patch data to make the job "succeed": if the costing job fails at
+            -- the job level, its records are honestly left unaccounted, never hidden
+            -- behind a speculative data default.)
+            s.GL_DATE,
             s.DENOM_CURRENCY_CODE,
             s.DENOM_CURRENCY,
             s.DENOM_RAW_COST,
