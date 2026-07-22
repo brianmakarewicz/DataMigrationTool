@@ -340,20 +340,28 @@ AS
 
             ELSIF r.source_type = 'INTERFACE' THEN
                 -- Tier 1: interface row. The BASE tier is the ONLY source of LOADED.
-                -- A row reaching here is not in the base table. We may only mark it
-                -- FAILED when the interface carries a REAL Fusion rejection message:
-                -- a reject-class status AND a non-null error_msg. In that case we
-                -- write the actual returned error_msg. If the interface returned only
-                -- a status label and no message (including a "success" status like 'P'
-                -- with no base row), we have NO real Fusion error -- do NOT fabricate a
-                -- FAILED. Leave the row GENERATED so the Import Report fallback below
-                -- or the shared honest sweep accounts for it (sweep -> UNACCOUNTED).
-                IF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R')
-                   AND r.error_msg IS NOT NULL THEN
+                -- A row reaching here is not in the base table.
+                --
+                -- Mechanism 2 (two-location read), DRAFT 2026-07-22. PJC_TXN_XFACE_STAGE_ALL
+                -- has no error-message column, so its per-row TRANSACTION_STATUS_CODE
+                -- ('P' = processed/success; anything else = not processed) is the only
+                -- Fusion-recorded outcome for a row not in the base table. A non-'P'
+                -- status IS a real interface-recorded outcome and is reportable -- so
+                -- mark it FAILED with [INTERFACE_ERROR]. If Fusion also returned a
+                -- report error_msg for this row, concatenate both (report first, then
+                -- the interface finding), each source-tagged. APPEND_ERROR is
+                -- append-only, so a later [IMPORT_REPORT] pass still adds to this.
+                -- A 'P' status with no base row is NOT marked here -- LOADED needs the
+                -- base tier's positive id; leave it for the honest sweep.
+                IF r.fusion_status NOT IN ('P','PROCESSED','SUCCESS','COMPLETED','Y') THEN
                     UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] ' || r.error_msg),
+                               CASE WHEN r.error_msg IS NOT NULL
+                                    THEN '[FUSION_ERROR] ' || r.error_msg || ' '
+                                    ELSE '' END ||
+                               '[INTERFACE_ERROR] interface status ''' || r.fusion_status ||
+                               ''' (loaded to the interface but not processed to base)'),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID            = p_run_id

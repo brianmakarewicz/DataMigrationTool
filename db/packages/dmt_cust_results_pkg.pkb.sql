@@ -257,15 +257,21 @@
                 l_loaded := l_loaded + l_rc;
 
             ELSIF r.error_msg IS NOT NULL THEN
-                -- Rejected by Fusion: reportable error text from HZ_IMP_ERRORS.
-                -- Handle all seven record types so no real reject text is ever
-                -- discarded (the error tier only emits Parties/Accounts today,
-                -- but the deeper tiers are covered for forward compatibility).
+                -- Mechanism 2 (two-location read), DRAFT 2026-07-22.
+                -- The V2 data model emits, per record type, that interface row's own
+                -- outcome from IMPORT_STATUS_CODE (S=created -> NULL here; E=rejected,
+                -- W=held -> a real "not created in base -- interface status 'X'"
+                -- message with the batch-level HZ_IMP_ERRORS.MESSAGE_NAME appended as
+                -- context). This is the row's own Fusion-recorded outcome, so it is
+                -- tagged [INTERFACE_ERROR]. APPEND_ERROR keeps ERROR_TEXT append-only,
+                -- so if the import-report pass already wrote an error the two
+                -- concatenate. Handle all seven record types so no real interface
+                -- status is ever discarded.
                 CASE r.record_type
                 WHEN 'Parties' THEN
                     UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
                     SET TFM_STATUS='FAILED',
-                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
+                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[INTERFACE_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND PARTY_ORIG_SYSTEM_REFERENCE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
@@ -273,7 +279,7 @@
                 WHEN 'Locations' THEN
                     UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL
                     SET TFM_STATUS='FAILED',
-                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
+                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[INTERFACE_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND LOCATION_ORIG_SYSTEM_REFERENCE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
@@ -281,7 +287,7 @@
                 WHEN 'PartySites' THEN
                     UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL
                     SET TFM_STATUS='FAILED',
-                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
+                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[INTERFACE_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND SITE_ORIG_SYSTEM_REFERENCE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
@@ -292,7 +298,7 @@
                     -- TFM row instead of sweeping to UNACCOUNTED.
                     UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
                     SET TFM_STATUS='FAILED',
-                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
+                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[INTERFACE_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id
                     AND SITE_ORIG_SYSTEM_REFERENCE||'/'||SITE_USE_TYPE=r.orig_system_reference
@@ -301,7 +307,7 @@
                 WHEN 'Accounts' THEN
                     UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL
                     SET TFM_STATUS='FAILED',
-                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
+                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[INTERFACE_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND CUST_ORIG_SYSTEM_REFERENCE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
@@ -309,7 +315,7 @@
                 WHEN 'AccountSites' THEN
                     UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL
                     SET TFM_STATUS='FAILED',
-                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
+                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[INTERFACE_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND CUST_SITE_ORIG_SYS_REF=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
@@ -317,7 +323,7 @@
                 WHEN 'AccountSiteUses' THEN
                     UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL
                     SET TFM_STATUS='FAILED',
-                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
+                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[INTERFACE_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND CUST_SITEUSE_ORIG_SYS_REF=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
@@ -327,6 +333,68 @@
                 l_failed := l_failed + l_rc;
             END IF;
         END LOOP;
+
+        -- ================================================================
+        -- Mechanism 1 — SAME-FBDI parent/child cascade (DMT_DESIGN.html §5
+        -- "Cascade to children" + the [FUSION_ERROR] tag rule). DRAFT 2026-07-22.
+        --
+        -- Within the one Customers FBDI the HZ records form a hierarchy:
+        --   Party Site  --(SITE_ORIG_SYSTEM_REFERENCE)-->  Party Site Use
+        --   Account Site --(CUST_SITE_ORIG_SYS_REF)----->  Account Site Use
+        -- A child still GENERATED (neither base-confirmed LOADED nor given its OWN
+        -- interface error above) inherits its directly-linked parent's outcome ONLY
+        -- when that parent is FAILED and carries a REAL error string. The single
+        -- permitted composed form (§5) is the fixed prefix
+        --   '[FUSION_ERROR]The parent record has the following Fusion error: '
+        -- followed by the parent's real ERROR_TEXT, and the parent's key for source
+        -- attribution. If the parent has no real error, the child STAYS GENERATED and
+        -- the shared sweep marks it [UNACCOUNTED] -- never a generic "parent failed".
+        --
+        -- This resolves run-240 G1: party site 10121RT-PSITE-G1 is FAILED (held/
+        -- rejected at the interface), so its two child site uses inherit that exact
+        -- interface finding instead of sweeping to UNACCOUNTED.
+        -- ================================================================
+        -- Party Site Uses inherit from their parent Party Site.
+        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL u
+        SET    u.TFM_STATUS = 'FAILED',
+               u.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(u.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: '
+                   || (SELECT p.ERROR_TEXT FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL p
+                       WHERE p.RUN_ID = p_run_id
+                       AND   p.SITE_ORIG_SYSTEM_REFERENCE = u.SITE_ORIG_SYSTEM_REFERENCE
+                       AND   p.TFM_STATUS = 'FAILED'
+                       AND   p.ERROR_TEXT IS NOT NULL
+                       AND   ROWNUM = 1)
+                   || ' (via parent party site ' || u.SITE_ORIG_SYSTEM_REFERENCE || ')'),
+               u.RESULTS_UPDATED_DATE = SYSDATE, u.LAST_UPDATED_DATE = SYSDATE
+        WHERE  u.RUN_ID = p_run_id
+        AND    u.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL p
+                       WHERE p.RUN_ID = p_run_id
+                       AND   p.SITE_ORIG_SYSTEM_REFERENCE = u.SITE_ORIG_SYSTEM_REFERENCE
+                       AND   p.TFM_STATUS = 'FAILED'
+                       AND   p.ERROR_TEXT IS NOT NULL);
+
+        -- Account Site Uses inherit from their parent Account Site.
+        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL u
+        SET    u.TFM_STATUS = 'FAILED',
+               u.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(u.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: '
+                   || (SELECT p.ERROR_TEXT FROM DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL p
+                       WHERE p.RUN_ID = p_run_id
+                       AND   p.CUST_SITE_ORIG_SYS_REF = u.CUST_SITE_ORIG_SYS_REF
+                       AND   p.TFM_STATUS = 'FAILED'
+                       AND   p.ERROR_TEXT IS NOT NULL
+                       AND   ROWNUM = 1)
+                   || ' (via parent account site ' || u.CUST_SITE_ORIG_SYS_REF || ')'),
+               u.RESULTS_UPDATED_DATE = SYSDATE, u.LAST_UPDATED_DATE = SYSDATE
+        WHERE  u.RUN_ID = p_run_id
+        AND    u.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL p
+                       WHERE p.RUN_ID = p_run_id
+                       AND   p.CUST_SITE_ORIG_SYS_REF = u.CUST_SITE_ORIG_SYS_REF
+                       AND   p.TFM_STATUS = 'FAILED'
+                       AND   p.ERROR_TEXT IS NOT NULL);
 
         -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor given
         -- a real Fusion error is left GENERATED (unaccounted) — no fabricated FAILED.)

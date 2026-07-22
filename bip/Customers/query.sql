@@ -116,9 +116,18 @@ FROM (
     FROM   hz_imp_partysites_t ips
     WHERE  ips.load_request_id = :P_LOAD_REQUEST_ID
     UNION ALL
-    -- PartySiteUses: interface HZ_IMP_PARTYSITEUSES_T, keyed on SITEUSE_ORIG_SYSTEM_REF
-    -- (the reconciler's PartySiteUses FAILED branch matches this column).
-    SELECT 'PartySiteUses', ipu.siteuse_orig_system_ref, CAST(NULL AS NUMBER),
+    -- PartySiteUses: interface HZ_IMP_PARTYSITEUSES_T. The site use's own
+    -- SITEUSE_ORIG_SYSTEM_REF is written NULL into Fusion, so key on the parent
+    -- site reference + site_use_type interim key the reconciler matches
+    -- (SITE_ORIG_SYSTEM_REFERENCE || '/' || SITE_USE_TYPE). Also, TCA does not
+    -- register the site use in HZ_ORIG_SYS_REFERENCES, so the base tier above can
+    -- never confirm it -- but the interface row carries the real Fusion
+    -- PARTY_SITE_USE_ID once created (import_status_code 'S'). Return that as the
+    -- fusion_id on 'S' so a created site use is honestly LOADED with a real base id;
+    -- non-'S' returns the interface-status error text.
+    SELECT 'PartySiteUses',
+           ipu.site_orig_system_reference || '/' || ipu.site_use_type,
+           CASE WHEN ipu.import_status_code = 'S' THEN ipu.party_site_use_id ELSE CAST(NULL AS NUMBER) END,
            CASE WHEN ipu.import_status_code = 'S' THEN NULL
                 ELSE 'Not created in base -- interface status ''' || ipu.import_status_code || ''''
                      || CASE ipu.import_status_code
