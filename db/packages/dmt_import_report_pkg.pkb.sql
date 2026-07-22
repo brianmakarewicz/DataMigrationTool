@@ -38,6 +38,7 @@
         l_ch_tag   VARCHAR2(200);
         l_ch_val   VARCHAR2(4000);
         l_rec      t_import_error;
+        l_has_key  BOOLEAN;   -- a definitive per-row key (interface id) was found
         -- Positional iteration is bounded by EXISTSNODE probes, not by
         -- extract('count(...)'): count() is not a node-set XPath and
         -- raises ORA-31012 on current DB versions (found by the Stage B5
@@ -70,8 +71,11 @@
 
             l_tag := l_group.getRootElement();
 
-            -- Only process groups whose tag contains 'ERROR'
-            IF UPPER(l_tag) NOT LIKE '%ERROR%' THEN
+            -- Only process error-list containers: tag contains 'ERROR' (e.g.
+            -- LIST_PROJECT_ERROR) or 'STAG_ERR' (ImportProcessParallelEssJob's
+            -- LIST_G_STAG_ERR, whose per-row errors don't spell out 'ERROR').
+            IF UPPER(l_tag) NOT LIKE '%ERROR%'
+               AND UPPER(l_tag) NOT LIKE '%STAG_ERR%' THEN
                 CONTINUE;
             END IF;
 
@@ -90,6 +94,7 @@
 
                 l_msg   := NULL;
                 l_ident := NULL;
+                l_has_key := FALSE;
                 l_rec.object_type := l_item.getRootElement();
 
                 -- Walk child elements of this error item
@@ -113,8 +118,15 @@
                         WHEN OTHERS THEN l_ch_val := NULL;
                     END;
 
-                    -- Classify the field: message vs identifier
-                    IF UPPER(l_ch_tag) LIKE '%MSG%'
+                    -- Classify the field. An interface transaction id (e.g.
+                    -- TXN_INTERFACE_ID_10 in the STAG_ERR report) is the DEFINITIVE
+                    -- per-row key -- it carries our ORIG_TRANSACTION_REFERENCE and the
+                    -- reconciler matches on it -- so use it alone and don't let other
+                    -- NAME/NUMBER fields (project, org, person) pollute the key.
+                    IF UPPER(l_ch_tag) LIKE '%INTERFACE_ID%' THEN
+                        l_ident   := l_ch_val;
+                        l_has_key := TRUE;
+                    ELSIF UPPER(l_ch_tag) LIKE '%MSG%'
                        OR UPPER(l_ch_tag) LIKE '%MESSAGE%'
                        OR UPPER(l_ch_tag) LIKE '%ERR_TEXT%'
                        OR UPPER(l_ch_tag) LIKE '%ERROR_TEXT%'
@@ -124,11 +136,12 @@
                         ELSE
                             l_msg := l_ch_val;
                         END IF;
-                    ELSIF UPPER(l_ch_tag) LIKE '%NUMBER%'
-                          OR UPPER(l_ch_tag) LIKE '%NAME%'
-                          OR UPPER(l_ch_tag) LIKE '%REFERENCE%'
-                          OR UPPER(l_ch_tag) LIKE '%KEY%'
-                          OR UPPER(l_ch_tag) LIKE '%ID' THEN
+                    ELSIF NOT l_has_key
+                          AND ( UPPER(l_ch_tag) LIKE '%NUMBER%'
+                             OR UPPER(l_ch_tag) LIKE '%NAME%'
+                             OR UPPER(l_ch_tag) LIKE '%REFERENCE%'
+                             OR UPPER(l_ch_tag) LIKE '%KEY%'
+                             OR UPPER(l_ch_tag) LIKE '%ID' ) THEN
                         IF l_ident IS NOT NULL THEN
                             l_ident := l_ident || '/' || l_ch_val;
                         ELSE

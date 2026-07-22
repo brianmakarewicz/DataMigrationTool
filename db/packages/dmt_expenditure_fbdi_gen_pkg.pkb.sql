@@ -128,7 +128,15 @@ AS
                     || '"' || NVL(TO_CHAR(NON_LABOR_RESOURCE_ORG_ID), '') || '"' || ','
                    ELSE '' END
                 || '"' || NVL(TO_CHAR(QUANTITY), '') || '"' || ','
-                || '"' || REPLACE(NVL(UNIT_OF_MEASURE_NAME,''), '"', '""') || '"' || ','
+                -- UNIT_OF_MEASURE_NAME (the UOM display name) and UNIT_OF_MEASURE (the UOM
+                -- code) are two separate columns. Fusion validates the NAME strictly, so a
+                -- UOM code sitting in the name column (e.g. 'DOLLARS') fails
+                -- PJC_TXN_UOM_NAME_IS_INVALID for every row. Gold sends ONLY the code and
+                -- leaves the name blank, so emit the name only when there is no code
+                -- (never both) -- proven 2026-07-22 (run 240 report).
+                || '"' || REPLACE(CASE WHEN UNIT_OF_MEASURE IS NOT NULL
+                                       THEN '' ELSE NVL(UNIT_OF_MEASURE_NAME,'') END,
+                                  '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(UNIT_OF_MEASURE,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(WORK_TYPE,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(WORK_TYPE_ID), '') || '"' || ','
