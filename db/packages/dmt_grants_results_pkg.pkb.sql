@@ -174,11 +174,194 @@ AS
     END FETCH_BIP_RESULTS;
 
     -- --------------------------------------------------------
+    -- find_report_ess_id
+    -- Resolve the child Award Batch Import Report ESS request
+    -- (ImportAwardReportJob) that Fusion spawns alongside the
+    -- AwardMassImportJob. The report holds the per-award rejection
+    -- messages that survive the interface-table purge.
+    --
+    -- Mirrors DMT_BILLING_EVENT_RESULTS_PKG.find_report_ess_id:
+    -- first look for a child already captured in DMT_ESS_JOB_TBL
+    -- (PARENT_REQUEST_ID = the import ESS id, a REPORT job), then
+    -- fall back to capturing it now via CAPTURE_REPORT_ESS_JOB (which
+    -- needs REPORT_JOB_DEF seeded for 'Grants'). Non-blocking: any
+    -- failure logs a WARN and returns NULL.
+    -- --------------------------------------------------------
+    FUNCTION find_report_ess_id (
+        p_run_id        IN NUMBER,
+        p_import_ess_id IN NUMBER
+    ) RETURN NUMBER IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'find_report_ess_id';
+        l_result NUMBER;
+    BEGIN
+        -- Already captured in the ESS hierarchy?
+        BEGIN
+            SELECT REQUEST_ID INTO l_result
+            FROM   DMT_OWNER.DMT_ESS_JOB_TBL
+            WHERE  PARENT_REQUEST_ID = p_import_ess_id
+            AND    UPPER(JOB_DEFINITION) LIKE '%REPORT%'
+            FETCH FIRST 1 ROW ONLY;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                l_result := NULL;
+        END;
+
+        IF l_result IS NOT NULL THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': Found report ESS ' || l_result ||
+                ' in hierarchy (child of import ' || p_import_ess_id || ').',
+                C_PKG, C_PROC);
+            RETURN l_result;
+        END IF;
+
+        -- Not captured yet — capture it now (needs REPORT_JOB_DEF seeded).
+        l_result := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+            p_run_id        => p_run_id,
+            p_import_ess_id => p_import_ess_id,
+            p_cemli_code    => C_CEMLI);
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ': Report ESS id = ' || NVL(TO_CHAR(l_result), 'NULL') ||
+            ' (captured from import ESS ' || p_import_ess_id || ').',
+            C_PKG, C_PROC);
+
+        RETURN l_result;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': Failed to find Report child ESS: ' || SQLERRM,
+                C_PKG, C_PROC);
+            RETURN NULL;
+    END find_report_ess_id;
+
+    -- --------------------------------------------------------
+    -- apply_award_import_report
+    -- Read the Award Batch Import Report XML and mark each rejected
+    -- award FAILED with its REAL Fusion message.
+    --
+    -- The report's per-award failure rows live in LIST_G_4/G_4:
+    --   PARENT_AWARD_NUMBER -> the award number (TFM key)
+    --   PROCESSED_MESSAGE   -> the real Fusion rejection message
+    -- This is a FAILURE-ONLY list (the report runs with
+    -- REPORT_SUCCESS_RECORDS=N), so every G_4 row is a real rejection.
+    -- We only ever transition GENERATED -> FAILED here, and only when
+    -- PROCESSED_MESSAGE is non-empty (never fabricate an error). Awards
+    -- absent from the list are left untouched (base tier may have set
+    -- them LOADED; otherwise they stay GENERATED for the honest sweep).
+    --
+    -- Returns the count of TFM rows marked FAILED.
+    -- --------------------------------------------------------
+    FUNCTION apply_award_import_report (
+        p_run_id        IN NUMBER,
+        p_import_ess_id IN NUMBER
+    ) RETURN NUMBER IS
+        C_PROC          CONSTANT VARCHAR2(30) := 'apply_award_import_report';
+        l_report_ess_id NUMBER;
+        l_xml_clob      CLOB;
+        l_xml           XMLTYPE;
+        l_matched       NUMBER := 0;
+    BEGIN
+        IF p_import_ess_id IS NULL THEN
+            RETURN 0;
+        END IF;
+
+        l_report_ess_id := find_report_ess_id(p_run_id, p_import_ess_id);
+        IF l_report_ess_id IS NULL THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': No Award Batch Import Report child found for import ESS ' ||
+                p_import_ess_id || '. Nothing to attribute from the report.',
+                C_PKG, C_PROC);
+            RETURN 0;
+        END IF;
+
+        BEGIN
+            l_xml_clob := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(l_report_ess_id);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_PROC || ': Failed to download report XML from ESS ' ||
+                    l_report_ess_id || ': ' || SQLERRM,
+                    C_PKG, C_PROC);
+                RETURN 0;
+        END;
+
+        IF l_xml_clob IS NULL OR DBMS_LOB.GETLENGTH(l_xml_clob) = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': Report ESS ' || l_report_ess_id || ' returned empty output.',
+                C_PKG, C_PROC);
+            RETURN 0;
+        END IF;
+
+        BEGIN
+            l_xml := XMLTYPE(l_xml_clob);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_PROC || ': Report output for ESS ' || l_report_ess_id ||
+                    ' is not valid XML: ' || SQLERRM,
+                    C_PKG, C_PROC);
+                IF DBMS_LOB.ISTEMPORARY(l_xml_clob) = 1 THEN
+                    DBMS_LOB.FREETEMPORARY(l_xml_clob);
+                END IF;
+                RETURN 0;
+        END;
+
+        -- Attribute each rejected award to its TFM row with the real message.
+        FOR r IN (
+            SELECT x.award_number,
+                   x.processed_message
+            FROM   XMLTABLE('/DATA_DS/LIST_G_4/G_4' PASSING l_xml
+                COLUMNS
+                    award_number      VARCHAR2(300)  PATH 'PARENT_AWARD_NUMBER',
+                    processed_message VARCHAR2(4000) PATH 'PROCESSED_MESSAGE'
+            ) x
+            WHERE  x.award_number IS NOT NULL
+            AND    x.processed_message IS NOT NULL
+        ) LOOP
+            UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL
+            SET    TFM_STATUS = 'FAILED',
+                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                       '[FUSION_ERROR] ' || r.processed_message),
+                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+            WHERE  RUN_ID = p_run_id AND AWARD_NUMBER = r.award_number
+            AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+            l_matched := l_matched + SQL%ROWCOUNT;
+        END LOOP;
+
+        IF DBMS_LOB.ISTEMPORARY(l_xml_clob) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(l_xml_clob);
+        END IF;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ': Award Batch Import Report (ESS ' || l_report_ess_id ||
+            ') parsed; ' || l_matched || ' award(s) marked FAILED with a real Fusion message.',
+            C_PKG, C_PROC);
+
+        RETURN l_matched;
+    EXCEPTION
+        WHEN OTHERS THEN
+            -- Never abort reconciliation on a report-read problem: log and
+            -- return what we matched. Unmatched rows stay GENERATED (honest).
+            BEGIN
+                IF l_xml_clob IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml_clob) = 1 THEN
+                    DBMS_LOB.FREETEMPORARY(l_xml_clob);
+                END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': report parse/apply failed (' || SQLERRM ||
+                '); ' || l_matched || ' rows matched before the error.',
+                C_PKG, C_PROC);
+            RETURN l_matched;
+    END apply_award_import_report;
+
+    -- --------------------------------------------------------
     -- PARSE_AND_UPDATE
     -- --------------------------------------------------------
     PROCEDURE PARSE_AND_UPDATE (
         p_run_id IN NUMBER,
-        p_xml_data       IN CLOB
+        p_xml_data       IN CLOB,
+        p_import_ess_id  IN NUMBER DEFAULT NULL
     ) IS
         C_PROC       CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
         l_xml        XMLTYPE;
@@ -196,15 +379,23 @@ AS
         -- VARCHAR2(32767) truncation). Returns NULL when there are no rows.
         l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
         IF l_xml IS NULL THEN
-            -- No reportBytes = 0 rows from both interface and base tables. We
-            -- could determine neither a base-table LOADED nor a real Fusion
-            -- per-record error, so we do NOT fabricate a FAILED. The GENERATED
-            -- rows are left as-is (unaccounted); the accounting gate reports the
-            -- object not-DONE and the funnel surfaces them as unreconciled.
+            -- No reportBytes = 0 rows from both interface and base tables. This
+            -- is the expected shape after a successful AwardMassImportJob:
+            -- Fusion PURGES the award interface/error tables right after import,
+            -- so the base+interface BIP report is empty. An empty interface read
+            -- is NOT "absent" — the per-award rejection messages survive only in
+            -- Fusion's own Award Batch Import Report. Read THAT before giving up.
             DMT_UTIL_PKG.LOG(p_run_id,
-                C_PROC || ': No <reportBytes> in BIP response. GENERATED rows left unaccounted (not marked FAILED).',
+                C_PROC || ': No <reportBytes> in BIP response (interface purged). '
+                || 'Reading the Award Batch Import Report for per-award errors.',
                 C_PKG, C_PROC);
-            RETURN;
+
+            l_failed := apply_award_import_report(p_run_id, p_import_ess_id);
+
+            -- Cascade any FAILED award to its 14 child TFM tables + echo to STG,
+            -- then finish. Awards with neither a base-table LOADED nor a real
+            -- report error stay GENERATED (honest unaccounted) — never fabricated.
+            GOTO cascade_and_echo;
         END IF;
 
         -- Process header rows from BIP XML — two-tier reconciliation
@@ -265,6 +456,13 @@ AS
                 END IF;
             END IF;
         END LOOP;
+
+        -- Award Batch Import Report pass: any award the base/interface BIP did
+        -- not confirm LOADED and did not already fail gets its REAL Fusion
+        -- rejection message from Fusion's own Award Batch Import Report (the
+        -- errors that survive the interface-table purge). Only GENERATED rows
+        -- with a non-empty PROCESSED_MESSAGE become FAILED — never fabricated.
+        l_failed := l_failed + apply_award_import_report(p_run_id, p_import_ess_id);
 
         -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor
         -- given a real Fusion error is left GENERATED (unaccounted). The
@@ -452,7 +650,7 @@ AS
             C_PKG, C_PROC);
 
         l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id, p_import_ess_id);
-        PARSE_AND_UPDATE(p_run_id, l_xml);
+        PARSE_AND_UPDATE(p_run_id, l_xml, p_import_ess_id);
 
         IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
             DBMS_LOB.FREETEMPORARY(l_xml);
