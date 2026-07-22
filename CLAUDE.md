@@ -104,6 +104,24 @@ Ports in use elsewhere: 1521 (rt-oracle-free), 1522 (old dmt-local). DMT2 = **15
 6. Read `objects/{Name}/README.md` before working on any CEMLI.
 7. APEX work is deferred until the full regression scenario passes on the engine (see plan, Stage F).
 
+## Session git hygiene (MANDATORY — prevents stale-drift rot)
+
+Learned the hard way on 2026-07-22: this working dir was found 33 commits behind `origin/main`,
+parked on an abandoned branch, carrying a large uncommitted refactor that `origin/main` had
+already superseded. It rotted for a week because it was left dirty and never synced.
+
+1. **Sync at session START, before any work:** `git checkout main && git fetch && git merge
+   --ff-only origin/main`, then confirm `git status` is clean. If the tree is not on `main`,
+   not clean, or `main` is behind `origin/main`, TRIAGE THAT FIRST.
+2. **Never end a session with uncommitted TRACKED changes.** Commit them to a short-lived
+   branch and open a PR, or discard them (snapshot the diff to a `.patch` first so the discard
+   is recoverable). A dirty tree at close is the failure mode; do not defer it to "next session."
+3. One canonical working dir on `main`. Treat `.claude/worktrees/` copies as disposable and
+   delete them once their PRs merge.
+
+A SessionStart hook (`scripts/hooks/dmt_git_sync_check.py`, wired in `~/.claude/settings.json`)
+warns automatically when this repo's `main` is behind `origin/main` or the tree is dirty.
+
 ## Blind tranche-review protocol (MANDATORY)
 
 Every completed tranche gets a **blind subagent review** before the next tranche starts.
