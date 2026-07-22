@@ -1,10 +1,65 @@
 # Reconciler enhancement — read the Fusion INTERFACE record for still-UNACCOUNTED rows
 
-**Branch:** `fix/reconcile-interface-errors` (off `origin/main`)
-**Status:** DESIGN + DRAFT only. Nothing deployed, nothing merged. Owner reviews first.
+**Branch:** `fix/reconcile-parent-cascade-interface-errors` (off `origin/main`)
+**Status:** DESIGN + DRAFT only. Nothing deployed to live Fusion, nothing merged. Owner reviews first.
 **Owner directive (2026-07-22):** "account for errors in both locations, concatenate them if
 they both exist, and write them to the TFM table." Never fabricate — only write outcomes
 Fusion actually recorded.
+
+**HARD RULE (owner override, 2026-07-22, `DMT_DESIGN.html` section 5).** A row is marked FAILED
+ONLY when a REAL Fusion error MESSAGE string exists for THAT specific record — the exact text
+Fusion returned (e.g. `HZ_IMP_ERRORS.ERROR_MSG_TEXT` / `MESSAGE_NAME`, or an import-report
+per-row message). No status code, no observation, no "not imported"-style sentence composed by
+us. If there is no real, row-attributable message, the row STAYS UNACCOUNTED. The only permitted
+composed form is the parent-cascade prefix, and it too requires a REAL parent message.
+
+### What that means after checking the live data (decisive)
+
+`HZ_IMP_ERRORS` on this pod has **no per-row key** — its columns are `BATCH_ID`,
+`INTERFACE_TABLE_NAME`, `ERROR_ID/SEQ_ID`, `MESSAGE_NAME`, `ERROR_MSG_TEXT`, `TOKEN1..5`, but
+**nothing that ties an error row to a specific interface record** (no orig-system-reference, no
+interface row id). And `ERROR_MSG_TEXT` is **NULL** for every batch-5001 (run-240) row. For the
+run-240 party site uses interface there are 72 `HZ_API_INVALID_LOOKUP` + 5 `HZ_IMP_ACTION_MISMATCH`
+error rows for the whole batch — you cannot say which one belongs to our G1/INVALID_USE record
+without guessing. Attaching a batch message to a specific row would itself be a fabrication.
+
+Therefore, under the hard rule:
+
+- **Projects task `NOPROJ999.1` (run 241): STAYS UNACCOUNTED.** Its only signal is interface
+  `IMPORT_STATUS='SUBMITTED'` — a status, not a message. Its parent project was never in the load,
+  so there is no parent record with a real message to cascade. Fusion produced no per-row message.
+- **Customers run-240 site uses `E`/`W`: STAY UNACCOUNTED.** Their interface status codes are real,
+  but `HZ_IMP_ERRORS` gives no row-attributable message text on this pod. No real message → no FAILED.
+- **Customers run-240 site uses `S` (G2/G3): LOADED.** This is unaffected by the rule — the
+  interface row carries the real Fusion `PARTY_SITE_USE_ID`. That is a base id (positive proof),
+  not a composed message, so LOADED with a real id is correct and stays.
+
+The interface-status "read" mechanism the earlier draft added is REMOVED wherever it composed a
+status sentence. What remains legitimate: (1) base-table LOADED from a real id, (2) import-report
+per-row messages (`[IMPORT_REPORT]`, keyed to the specific row), (3) real row-attributable
+Fusion message text where one genuinely exists, and (4) parent-cascade only when the parent
+carries a real message. Everything else stays UNACCOUNTED, which is the honest signal to extend
+a report or fix a load path later.
+
+### What the shipped code now does (after the hard rule)
+
+- **Projects** (`dmt_project_results_pkg`): interface-status branches for Projects, Tasks,
+  TeamMembers, TxnControls no longer compose a status sentence. A project still FAILS only on a
+  real import-report `error_msg`. Tasks/TeamMembers/TxnControls with only a status are left
+  GENERATED → swept `[UNACCOUNTED]`. **Task `NOPROJ999.1` stays UNACCOUNTED.**
+- **Customers** (`dmt_cust_results_pkg` + `DMT_CUST_RECON_V2_DM.xdm` + `query.sql`): the
+  composed "Not created in base — interface status 'E' … batch messages …" text is REMOVED
+  from the data model. The interface tier now emits only one honest signal — a created site use
+  (`import_status_code='S'`) with its real Fusion `PARTY_SITE_USE_ID` → LOADED with a real id.
+  The reconciler's error branches write a real message verbatim (`[FUSION_ERROR]`) if one is ever
+  returned; none is on this pod. **Run-240 G2/G3 site uses → LOADED (real id); G1 `E`/`W` site
+  uses and their children → UNACCOUNTED.** The parent-cascade stays but does not fire (parent has
+  no real message).
+- **Expenditures** (`dmt_expenditure_results_pkg`): reverted to FAILED only on a real
+  report/interface `error_msg`; a bare non-`P` status is left GENERATED → `[UNACCOUNTED]`.
+
+The sections below describe the fuller earlier draft (the interface-status "read" mechanism);
+they are retained for context but the composed-status parts were pared back to the hard rule above.
 
 ---
 

@@ -464,33 +464,28 @@ AS
                         AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
                         l_prj_loaded := l_prj_loaded + SQL%ROWCOUNT;
                     ELSIF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                        -- Mechanism 2 (two-location read), DRAFT 2026-07-22.
-                        -- SUBMITTED = loaded to the interface but not imported
-                        -- (e.g. parent project missing). This interface status IS a
-                        -- real, Fusion-recorded per-row outcome for a row that is not
-                        -- in the base table and has no import-report line -- so it is
-                        -- reportable, not an absence. If Fusion also returned a report
-                        -- error_msg, concatenate both (report first, then the
-                        -- interface finding) so ERROR_TEXT carries every real outcome
-                        -- Fusion recorded, each source-tagged. APPEND_ERROR keeps it
-                        -- append-only, so a prior [IMPORT_REPORT] error is preserved.
-                        UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
-                        SET    TFM_STATUS           = 'FAILED',
-                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                   CASE WHEN r.error_msg IS NOT NULL
-                                        THEN '[FUSION_ERROR] ' || r.error_msg || ' '
-                                        ELSE '' END ||
-                                   '[INTERFACE_ERROR] interface status ''' || r.import_status ||
-                                   ''' (loaded to the interface but not imported)'),
-                               RESULTS_UPDATED_DATE = SYSDATE,
-                               LAST_UPDATED_DATE    = SYSDATE
-                        WHERE  RUN_ID         = p_run_id
-                        AND    PROJECT_NUMBER = r.project_number
-                        AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                        l_prj_failed := l_prj_failed + SQL%ROWCOUNT;
+                        -- HARD RULE (owner override 2026-07-22, DMT_DESIGN.html section 5):
+                        -- FAILED requires a REAL Fusion error MESSAGE for THIS record.
+                        -- Only when the report returned a real error_msg do we write it,
+                        -- exactly as returned, tagged [FUSION_ERROR] with nothing composed
+                        -- around it. A bare interface status (e.g. SUBMITTED) is NOT a
+                        -- message -- we do NOT compose a status sentence; the row is left
+                        -- GENERATED for the honest sweep to mark UNACCOUNTED.
+                        IF r.error_msg IS NOT NULL THEN
+                            UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+                            SET    TFM_STATUS           = 'FAILED',
+                                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                       '[FUSION_ERROR] ' || r.error_msg),
+                                   RESULTS_UPDATED_DATE = SYSDATE,
+                                   LAST_UPDATED_DATE    = SYSDATE
+                            WHERE  RUN_ID         = p_run_id
+                            AND    PROJECT_NUMBER = r.project_number
+                            AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
+                            l_prj_failed := l_prj_failed + SQL%ROWCOUNT;
+                        END IF;
                     ELSE
-                        -- Unrecognized interface status. Leave GENERATED for the honest
-                        -- sweep to mark UNACCOUNTED (we do not invent a status label).
+                        -- Unrecognized interface status and no real Fusion message.
+                        -- Leave GENERATED for the honest sweep to mark UNACCOUNTED.
                         NULL;
                     END IF;
                 END IF;
@@ -498,25 +493,12 @@ AS
             -- ---- TASKS ----
             ELSIF r.object_type = 'TASKS' THEN
                 IF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                    -- Mechanism 2 (two-location read), DRAFT 2026-07-22.
-                    -- PJF_PROJ_ELEMENTS_XFACE has no error-message column, so the
-                    -- interface's per-row IMPORT_STATUS is the only Fusion-recorded
-                    -- outcome for a task not in the base table and not in the import
-                    -- report (e.g. NOPROJ999.1 = SUBMITTED, parent project absent).
-                    -- Report it as [INTERFACE_ERROR] rather than leaving it to become
-                    -- UNACCOUNTED. Keyed on this task's own project_number + task_name.
-                    UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[INTERFACE_ERROR] interface status ''' || r.import_status ||
-                               ''' (loaded to the interface but not imported)'),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID         = p_run_id
-                    AND    TASK_NAME      = r.task_name
-                    AND    PROJECT_NUMBER = r.project_number
-                    AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                    l_tsk_failed := l_tsk_failed + SQL%ROWCOUNT;
+                    -- HARD RULE (owner override 2026-07-22): PJF_PROJ_ELEMENTS_XFACE has
+                    -- no error-message column, so a not-imported task (e.g. NOPROJ999.1 =
+                    -- SUBMITTED, parent project absent) has only a STATUS, not a real
+                    -- Fusion message. We do NOT compose a status sentence. Leave the row
+                    -- GENERATED for the honest sweep to mark UNACCOUNTED.
+                    NULL;
                 ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
                     UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
@@ -536,22 +518,10 @@ AS
             -- ---- TEAM MEMBERS ----
             ELSIF r.object_type = 'TEAMMEMBERS' THEN
                 IF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                    -- Mechanism 2 (two-location read), DRAFT 2026-07-22. Same as Tasks:
-                    -- PJF_PROJECT_PARTIES_INT has no error-message column, so the
-                    -- interface IMPORT_STATUS is the row's only Fusion-recorded outcome.
-                    -- Keyed on this member's own project_name + team_member_name.
-                    UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[INTERFACE_ERROR] interface status ''' || r.import_status ||
-                               ''' (loaded to the interface but not imported)'),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID           = p_run_id
-                    AND    TEAM_MEMBER_NAME = r.team_member_name
-                    AND    PROJECT_NAME     = r.project_name
-                    AND    TFM_STATUS       NOT IN ('LOADED','FAILED');
-                    l_tm_failed := l_tm_failed + SQL%ROWCOUNT;
+                    -- HARD RULE (owner override 2026-07-22): PJF_PROJECT_PARTIES_INT has
+                    -- no error-message column -- only a status. We do NOT compose a status
+                    -- sentence. Leave GENERATED for the sweep to mark UNACCOUNTED.
+                    NULL;
                 ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
                     UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
@@ -572,23 +542,10 @@ AS
             ELSIF r.object_type = 'TXNCONTROLS' THEN
                 -- PJC_TXN_CONTROLS_STAGE has LOAD_STATUS but no IMPORT_STATUS.
                 IF NVL(r.import_status, r.load_status) IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                    -- Mechanism 2 (two-location read), DRAFT 2026-07-22. PJC_TXN_CONTROLS_STAGE
-                    -- has only LOAD_STATUS (no import status, no error-message column), so
-                    -- its per-row status is the only Fusion-recorded outcome. Keyed on
-                    -- this control's own project_number + txn_ctrl_reference.
-                    UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[INTERFACE_ERROR] interface status ''' ||
-                               NVL(r.import_status, r.load_status) ||
-                               ''' (loaded to the interface but not imported)'),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID             = p_run_id
-                    AND    TXN_CTRL_REFERENCE = r.txn_ctrl_reference
-                    AND    PROJECT_NUMBER     = r.project_number
-                    AND    TFM_STATUS         NOT IN ('LOADED','FAILED');
-                    l_tc_failed := l_tc_failed + SQL%ROWCOUNT;
+                    -- HARD RULE (owner override 2026-07-22): PJC_TXN_CONTROLS_STAGE has only
+                    -- a status (no error-message column). We do NOT compose a status
+                    -- sentence. Leave GENERATED for the sweep to mark UNACCOUNTED.
+                    NULL;
                 ELSIF NVL(r.import_status, r.load_status) IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P','COMPLETE') THEN
                     UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',

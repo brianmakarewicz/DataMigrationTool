@@ -342,26 +342,19 @@ AS
                 -- Tier 1: interface row. The BASE tier is the ONLY source of LOADED.
                 -- A row reaching here is not in the base table.
                 --
-                -- Mechanism 2 (two-location read), DRAFT 2026-07-22. PJC_TXN_XFACE_STAGE_ALL
-                -- has no error-message column, so its per-row TRANSACTION_STATUS_CODE
-                -- ('P' = processed/success; anything else = not processed) is the only
-                -- Fusion-recorded outcome for a row not in the base table. A non-'P'
-                -- status IS a real interface-recorded outcome and is reportable -- so
-                -- mark it FAILED with [INTERFACE_ERROR]. If Fusion also returned a
-                -- report error_msg for this row, concatenate both (report first, then
-                -- the interface finding), each source-tagged. APPEND_ERROR is
-                -- append-only, so a later [IMPORT_REPORT] pass still adds to this.
-                -- A 'P' status with no base row is NOT marked here -- LOADED needs the
-                -- base tier's positive id; leave it for the honest sweep.
-                IF r.fusion_status NOT IN ('P','PROCESSED','SUCCESS','COMPLETED','Y') THEN
+                -- HARD RULE (owner override 2026-07-22, DMT_DESIGN.html section 5):
+                -- PJC_TXN_XFACE_STAGE_ALL has no error-message column, so a non-'P'
+                -- status is only a STATUS, not a real Fusion message. We do NOT compose
+                -- a status sentence. We mark FAILED only when the report returned a REAL
+                -- error_msg for this row, written exactly as returned. Otherwise (status
+                -- only, including 'P' with no base row) leave GENERATED for the honest
+                -- sweep to mark UNACCOUNTED.
+                IF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R')
+                   AND r.error_msg IS NOT NULL THEN
                     UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               CASE WHEN r.error_msg IS NOT NULL
-                                    THEN '[FUSION_ERROR] ' || r.error_msg || ' '
-                                    ELSE '' END ||
-                               '[INTERFACE_ERROR] interface status ''' || r.fusion_status ||
-                               ''' (loaded to the interface but not processed to base)'),
+                                                     '[FUSION_ERROR] ' || r.error_msg),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID            = p_run_id
