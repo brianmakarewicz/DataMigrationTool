@@ -3,6 +3,18 @@
 ## Status
 E2E LOADED (1 GOOD + 2 BAD, 1 correctly rejected, 2026-04-04)
 
+## FOLLOW-UP (generator forward-fix, tracked from run 234, 2026-07-21)
+On run 234 the whole Talent Profile file was rejected because the ProfileItem METADATA line
+emits attributes the V2 ProfileItem object does not accept: `TalentProfileId(SourceSystemId)`,
+`ContentTypeName`, `ContentItemName`, `Rating` (Fusion: "the <attr> attribute is unknown for
+V2 version of the ProfileItem business object"). Because the metadata is invalid, Fusion
+rejects the entire file, so the parent profiles never load either. Align the ProfileItem
+generator with the proven gold fixture (`gold_regression/objects/TalentProfiles/`): attach
+items by `ProfileCode`, and supply `QualifierId1` (evaluator-type qualifier) + `QualifierId2`
+(the profile's person id). This is a SEPARATE forward-fix that makes the data LOAD; it is out
+of scope for the reconciler honesty fix. Until then, run-234 rows are now honestly FAILED with
+the real Fusion metadata message rather than left stuck at GENERATED.
+
 ## Pipeline
 - Module: HCM
 - HDL File: TalentProfile.dat

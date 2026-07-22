@@ -405,6 +405,7 @@
         l_err_count NUMBER := 0;
         l_ok_count  NUMBER := 0;
         l_gen_count NUMBER := 0;
+        l_file_count NUMBER := 0;    -- rows FAILED by a file/dataset-level (null-key) message
         l_match     VARCHAR2(4000);
         l_sfx       VARCHAR2(200);
         l_rest      VARCHAR2(4000);
@@ -494,6 +495,56 @@
                     'JSON_TABLE error parse failed: ' || SQLERRM,
                     DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
         END;
+
+        -- Step 1b: Broadcast FILE / DATASET-LEVEL errors to every still-GENERATED row.
+        -- Some HDL failures are reported at file or metadata scope, not against a single
+        -- record: the whole .dat is rejected before any row is read (bad file/object name,
+        -- an invalid METADATA line). Those messages carry SourceSystemId = null, so the
+        -- per-row match in Step 1 never touches a row and the rows would otherwise stay
+        -- GENERATED with empty ERROR_TEXT — a real Fusion failure left un-transcribed.
+        -- A whole-file rejection means every generated row of the object failed, so we
+        -- attribute the real null-keyed message(s) to each row that Step 1 did not already
+        -- fail. This is honest: the message text is Fusion's own, and the whole file
+        -- bounced. We only touch rows still GENERATED, so row-level matches from Step 1 are
+        -- preserved and never double-appended. (If a data set carries BOTH row-level and
+        -- file-level messages, the row-level ones already landed on their rows in Step 1;
+        -- the file-level ones fill in any row still without an error.)
+        -- Guarded by msg IS NOT NULL so we never stamp an empty [FUSION_ERROR].
+        BEGIN
+            EXECUTE IMMEDIATE
+                'UPDATE DMT_OWNER.' || p_tfm_table || ' t ' ||
+                'SET t.TFM_STATUS = ''FAILED'', ' ||
+                '    t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, ' ||
+                '        ''[FUSION_ERROR] '' || (' ||
+                '        SELECT LISTAGG(jt.msg, ''; '') WITHIN GROUP (ORDER BY jt.msg) ' ||
+                '        FROM JSON_TABLE(:json, ''$.items[*]'' ' ||
+                '            COLUMNS (src_ref VARCHAR2(200) PATH ''$.SourceSystemId'', ' ||
+                '                     msg VARCHAR2(4000) PATH ''$.MessageText'')) jt ' ||
+                '        WHERE jt.src_ref IS NULL AND jt.msg IS NOT NULL)), ' ||
+                '    t.LAST_UPDATED_DATE = SYSDATE ' ||
+                'WHERE t.RUN_ID = :iid ' ||
+                'AND   t.TFM_STATUS = ''GENERATED'' ' ||
+                'AND   EXISTS ( ' ||
+                '    SELECT 1 FROM JSON_TABLE(:json2, ''$.items[*]'' ' ||
+                '        COLUMNS (src_ref VARCHAR2(200) PATH ''$.SourceSystemId'', ' ||
+                '                 msg VARCHAR2(4000) PATH ''$.MessageText'')) jt ' ||
+                '    WHERE jt.src_ref IS NULL AND jt.msg IS NOT NULL)'
+                USING l_json, p_run_id, l_json;
+            l_file_count := SQL%ROWCOUNT;
+        EXCEPTION
+            WHEN OTHERS THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'File-level error broadcast failed: ' || SQLERRM,
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+        END;
+
+        IF l_file_count > 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Broadcast file/dataset-level HDL error(s) to ' || l_file_count ||
+                ' GENERATED row(s) in ' || p_tfm_table ||
+                ' (whole-file rejection, SourceSystemId=null messages).',
+                'INFO', C_PKG, l_proc);
+        END IF;
 
         -- Read the data set's actual object-load success count. A remaining row may
         -- be promoted to LOADED only when Fusion loaded at least one object. If the
@@ -593,7 +644,9 @@
         COMMIT;
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            'RECONCILE_HDL complete. LOADED: ' || l_ok_count || ' | FAILED: ' || l_err_count,
+            'RECONCILE_HDL complete. LOADED: ' || l_ok_count ||
+            ' | FAILED (row-level): ' || l_err_count ||
+            ' | FAILED (file-level): ' || l_file_count,
             'INFO', C_PKG, l_proc);
 
     EXCEPTION
