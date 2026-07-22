@@ -2,8 +2,10 @@
 
 ## Session -- 2026-07-21/22 -- Resolve run-234 UNACCOUNTED honestly
 **What was done:** Located the real Fusion outcome for all 23 UNACCOUNTED records from the first
-honest scorecard (run 234) and landed 10 merged PRs (#222-#231) plus 1 open (#227 needs a human
-BIP redeploy). Full detail: `docs/sessions/2026-07-21_unaccounted-resolution.md`. Highlights:
+honest scorecard (run 234) and landed 11 merged PRs (#222-#232). All are merged; #227's remaining
+work is a HUMAN versioned BIP redeploy (not the PR). Evidence for every claim is committed under
+`docs/findings/` (run234_*, run235_*, run238_projects_capture_validation). Full detail:
+`docs/sessions/2026-07-21_unaccounted-resolution.md`. Highlights:
 never fabricate LOADED (#222); real error -> FAILED (#223); Projects capture-the-report-child +
 parse fix, validated end-to-end run 238 (#224/#229); Grants award-import-report (#225, capture
 follow-up pending); HCM file-level error attribution (#226); Customers site-use error tier (#227);
@@ -16,9 +18,20 @@ reject -> capture the report/log and mark each rejected row FAILED with its real
 reviewer" -> event-driven; pointed to the Object Status Matrix + "update every session"); the
 Object Status Matrix in `docs/DMT_REBUILD_PLAN.html` section 0 (Projects/Expenditures/Grants/
 ARInvoices/Requisitions/PayrollRelationships/TalentProfiles/Customers rows).
-**What's next:** finish the Grants report-capture end-to-end (same fix as #229); run a full
+**What's next:** finish the Grants report-capture end-to-end (same fix as #229 — better: add the
+capture once in `DMT_QUEUE_WORKER_PKG.RECONCILE_ONE` so it fixes every object); run a full
 regression to validate every merged reconciler + produce the complete scorecard; Customers BIP
-redeploy (human); wire the APEX funnel tile to `ALL_UNACCOUNTED`.
+redeploy (human) + the forward FBDI fix to stamp `SITEUSE_ORIG_SYSTEM/_REF`; wire the APEX funnel
+tile to `ALL_UNACCOUNTED`; fix the two HDL generators (PayrollRelationships -> `AssignedPayroll`;
+TalentProfiles ProfileItem attributes) + Worker WorkTerms duplicate-date so those HCM objects LOAD.
+**Also tracked (from the blind review):** (1) reconcile committed-vs-deployed package drift — the
+deployed bodies of `DMT_PROJECT_RESULTS_PKG`, `DMT_LOADER_PKG`, `DMT_ESS_UTIL_PKG` are ahead of the
+committed files and a committed report path still reads `/Custom/DMT/`; git-first requires syncing
+these. (2) The matrix Workers row is ☑ from the older run-162 live proof, but the run-234 worker
+chain loaded ZERO (a false LOADED that #222 fixed) — re-verify Workers on the next full run.
+**Run-238 caveat:** the Projects run-238 result was observed live in-session and recorded in
+`docs/findings/run238_projects_capture_validation.md`, but was not re-queried after the DB port
+wedged; re-confirm on the next full regression run.
 **Blocker:** `dmt2-local` DB healthy internally (via `docker exec`) but host DB port 1523
 forwarding is wedged; `wsl --shutdown` + container restart issued, host Oracle ports (1521/1523)
 still not forwarding at close. The Python deploy script + regression harness need host 1523, so the
