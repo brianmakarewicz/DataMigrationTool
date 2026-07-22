@@ -102,7 +102,16 @@
                     IF l_child IS NULL THEN CONTINUE; END IF;
 
                     l_ch_tag := l_child.getRootElement();
-                    l_ch_val := l_child.extract('/' || l_ch_tag || '/text()').getStringVal();
+                    -- An empty element (e.g. <PROJECT_ERROR/>, <PRJ_ERR_SRC_REFERENCE/>)
+                    -- has no text node, so extract('/tag/text()') returns a NULL
+                    -- XMLType and .getStringVal() on it throws ORA-30625 (method
+                    -- dispatch on NULL SELF), aborting the whole report parse. Guard
+                    -- it: a missing text node is simply an empty value.
+                    BEGIN
+                        l_ch_val := l_child.extract('/' || l_ch_tag || '/text()').getStringVal();
+                    EXCEPTION
+                        WHEN OTHERS THEN l_ch_val := NULL;
+                    END;
 
                     -- Classify the field: message vs identifier
                     IF UPPER(l_ch_tag) LIKE '%MSG%'
