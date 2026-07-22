@@ -28,10 +28,24 @@ FROM (
     WHERE  r.owner_table_name = 'HZ_PARTY_SITES'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
-    SELECT 'PartySiteUses', r.orig_system_reference, r.owner_table_id, NULL
-    FROM   hz_orig_sys_references r
-    WHERE  r.owner_table_name = 'HZ_PARTY_SITE_USES'
-    AND    r.orig_system_reference LIKE :P_PREFIX || '%'
+    -- PartySiteUses BASE tier -- INTERIM KEY (2026-07-21, run234_Customers findings).
+    -- The site-use's own external reference (SITEUSE_ORIG_SYSTEM_REF) is written NULL
+    -- into Fusion, so HZ_ORIG_SYS_REFERENCES has no HZ_PARTY_SITE_USES row to match.
+    -- Until the FBDI generator forward-fix lands, resolve a loaded site use by its
+    -- PARENT party site's registered reference plus the site_use_type: join the base
+    -- HZ_PARTY_SITE_USES row to its parent site in HZ_ORIG_SYS_REFERENCES
+    -- (owner_table_name='HZ_PARTY_SITES', owner_table_id = party_site_id) and emit
+    -- the interim key parent_ref || '/' || site_use_type. This pair is unique per
+    -- prefix (verified live for prefix 10115: G2/BILL_TO and G3/BILL_TO each resolve
+    -- to exactly one base party_site_use_id). The reconciler keys PartySiteUses on the
+    -- same parent_ref || '/' || site_use_type interim key.
+    SELECT 'PartySiteUses', pr.orig_system_reference || '/' || su.site_use_type,
+           su.party_site_use_id, NULL
+    FROM   hz_party_site_uses su
+    JOIN   hz_orig_sys_references pr
+      ON   pr.owner_table_name = 'HZ_PARTY_SITES'
+     AND   pr.owner_table_id  = su.party_site_id
+    WHERE  pr.orig_system_reference LIKE :P_PREFIX || '%'
     UNION ALL
     SELECT 'Accounts', r.orig_system_reference, r.owner_table_id, NULL
     FROM   hz_orig_sys_references r
@@ -85,6 +99,31 @@ FROM (
            END
     FROM   hz_imp_accounts_t ia
     WHERE  ia.load_request_id = :P_LOAD_REQUEST_ID
+    UNION ALL
+    -- PartySiteUses NOT-LOADED tier (2026-07-21, run234_Customers findings).
+    -- Previously absent -- a site use that failed (E) or is held (W) had no error-tier
+    -- branch, so it fell through to UNACCOUNTED. Row-precise on the interface row's own
+    -- IMPORT_STATUS_CODE (filtered by LOAD_REQUEST_ID); emits the INTERIM KEY
+    -- site_orig_system_reference || '/' || site_use_type so it joins the reconciler's
+    -- PartySiteUses key. The batch-level HZ_IMP_ERRORS MESSAGE_NAME list is appended as
+    -- context (batch 5001 is reused across prefixes, so it is not row-attributable --
+    -- the row's own status code is the primary, honest signal, not fabricated).
+    SELECT 'PartySiteUses',
+           isu.site_orig_system_reference || '/' || isu.site_use_type,
+           CAST(NULL AS NUMBER),
+           CASE WHEN isu.import_status_code = 'S' THEN NULL
+                ELSE 'Not created in base -- interface status ''' || isu.import_status_code || ''''
+                     || CASE isu.import_status_code
+                          WHEN 'W' THEN ' (held/warning -- e.g. parent held for Fusion CDM potential-duplicate review)'
+                          WHEN 'E' THEN ' (rejected by import)'
+                          ELSE '' END
+                     || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = isu.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITEUSES_T'),
+                             ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+                                                        FROM hz_imp_errors e WHERE e.batch_id = isu.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITEUSES_T'),
+                             '')
+           END
+    FROM   hz_imp_partysiteuses_t isu
+    WHERE  isu.load_request_id = :P_LOAD_REQUEST_ID
 )
 WHERE  fusion_id IS NOT NULL OR error_message IS NOT NULL
       ]]></sql>

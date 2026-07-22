@@ -217,10 +217,18 @@
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'PartySiteUses' THEN
+                    -- INTERIM KEY (2026-07-21, run234_Customers findings): the site
+                    -- use's own SITEUSE_ORIG_SYSTEM_REF is written NULL into Fusion, so
+                    -- the report cannot key on it. Match on the parent site reference +
+                    -- site_use_type pair the report emits as ORIG_SYSTEM_REFERENCE
+                    -- (SITE_ORIG_SYSTEM_REFERENCE || '/' || SITE_USE_TYPE). Both columns
+                    -- are present on every TFM row and the pair is unique per run
+                    -- prefix, so no wrong-row match.
                     UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
                     SET TFM_STATUS='LOADED', FUSION_PARTY_SITE_USE_ID=TO_NUMBER(r.fusion_id),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-                    WHERE RUN_ID=p_run_id AND SITEUSE_ORIG_SYSTEM_REF=r.orig_system_reference
+                    WHERE RUN_ID=p_run_id
+                    AND SITE_ORIG_SYSTEM_REFERENCE||'/'||SITE_USE_TYPE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'Accounts' THEN
@@ -279,11 +287,15 @@
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'PartySiteUses' THEN
+                    -- INTERIM KEY (2026-07-21): same parent-ref + site_use_type key as
+                    -- the base tier above, so W/E interface rows attribute to the right
+                    -- TFM row instead of sweeping to UNACCOUNTED.
                     UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-                    WHERE RUN_ID=p_run_id AND SITEUSE_ORIG_SYSTEM_REF=r.orig_system_reference
+                    WHERE RUN_ID=p_run_id
+                    AND SITE_ORIG_SYSTEM_REFERENCE||'/'||SITE_USE_TYPE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'Accounts' THEN
