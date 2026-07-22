@@ -49,8 +49,28 @@ BLOCKED — demo instance grants module setup incomplete. Code and pipeline work
 - `GmsAwardKeywordsInterface.ctl`
 - `GmsAwardCertsInterface.ctl`
 
+## Reconciliation — Award Batch Import Report (per-award errors)
+`AwardMassImportJob` can SUCCEED as a job while rejecting every award (Success 0 / Error N).
+Fusion PURGES the award interface/error tables right after import, so the base+interface BIP
+report returns zero rows and the per-award rejection messages survive ONLY in Fusion's own
+**Award Batch Import Report** — a SEPARATE child ESS request (`ImportAwardReportJob`, data model
+`AwardBatchImportReportDm`), spawned alongside the import job.
+
+- DMT_ERP_INTERFACE_OPTIONS_TBL row 57 (Grants) now seeds `REPORT_JOB_DEF='ImportAwardReportJob'`,
+  so the generic loader routine `DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB` captures that report
+  child into DMT_ESS_JOB_TBL (PARENT_REQUEST_ID = the AwardMassImportJob request id). Mirrors
+  Projects (`ImportProjectReportJob`) and BillingEvents (`ImportBillingEventReportJob`).
+- `DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH` reads that captured child via `GET_ESS_OUTPUT_XML`
+  and parses `/DATA_DS/LIST_G_4/G_4`: `PARENT_AWARD_NUMBER` -> the award number (TFM key),
+  `PROCESSED_MESSAGE` -> the real Fusion rejection message. Each matched award is set FAILED
+  with `[FUSION_ERROR] <message>`. This is a FAILURE-ONLY list (report runs REPORT_SUCCESS_RECORDS=N).
+- LOADED is still confirmed ONLY by the base table (GMS_AWARD_HEADERS_B) via the DMT BIP report.
+  Awards neither base-confirmed nor in the report's failure list stay GENERATED (honest UNACCOUNTED).
+- Report request for the run-234 evidence chain: ESS 9773862 (child of import ESS 9773857).
+
 ## Known Issues
 - ~~BIP reconciliation uses "absence=LOADED" pattern: Fusion purges interface table rows after successful import.~~ **RESOLVED 2026-04-02:** Switched to two-tier BIP (interface + base table). No more absence=LOADED.
+- ~~Per-award rejection errors were unreadable after import (interface purged) — object left UNACCOUNTED.~~ **RESOLVED (run-234 fix):** reconciler now reads the Award Batch Import Report child (see above).
 
 ## Lessons Learned
 - **Never assume absence=LOADED without positive verification.** Two-tier BIP pattern queries both interface AND base tables. If neither has the row, it's FAILED, not silently LOADED.
