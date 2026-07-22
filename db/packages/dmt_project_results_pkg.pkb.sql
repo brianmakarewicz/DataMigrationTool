@@ -162,6 +162,22 @@ AS
                 l_report_id := NULL;
         END;
 
+        -- If nothing was captured yet, capture it now — the reconcile path
+        -- (RECONCILE_ONE) does NOT pre-capture the report child, so relying on a
+        -- prior loader capture leaves every rejected row unaccounted (run 234/235
+        -- "RT Project Bad-1"). This mirrors DMT_BILLING_EVENT_RESULTS_PKG and
+        -- DMT_GRANTS_RESULTS_PKG, which capture the report child lazily inside
+        -- their own reconcile. CAPTURE_REPORT_ESS_JOB is idempotent and returns
+        -- the report request id (or NULL if this run genuinely produced no report,
+        -- in which case the caller downloads nothing and rows stay unaccounted —
+        -- never a fabricated FAILED).
+        IF l_report_id IS NULL THEN
+            l_report_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+                p_run_id        => p_run_id,
+                p_import_ess_id => p_import_ess_id,
+                p_cemli_code    => C_CEMLI);
+        END IF;
+
         RETURN l_report_id;
     END resolve_report_ess_id;
 
@@ -279,13 +295,22 @@ AS
                 x_matched := x_matched + SQL%ROWCOUNT;
 
             ELSE
+                -- The report's per-project identifier can be a composite of the
+                -- project name and number joined by '/' (ImportProjectReportDm emits
+                -- ERROR_PROJECT_NAME then ERROR_PROJECT_NUMBER, and the generic parser
+                -- concatenates the identifier-like fields). Match the exact value OR
+                -- the project number as a '/'-delimited token inside it, so
+                -- "10118RT Project Bad-1/10118RTPRJ-BAD1" still resolves to the row
+                -- keyed 10118RTPRJ-BAD1 (and never to the good projects).
                 UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                AND    PROJECT_NUMBER = l_ir_errors(i).row_identifier;
+                AND    (PROJECT_NUMBER = l_ir_errors(i).row_identifier
+                        OR INSTR('/' || l_ir_errors(i).row_identifier || '/',
+                                 '/' || PROJECT_NUMBER || '/') > 0);
                 x_matched := x_matched + SQL%ROWCOUNT;
             END IF;
         END LOOP;
