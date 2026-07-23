@@ -197,6 +197,11 @@
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Inventory Transactions'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -213,6 +218,11 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Inventory Transactions'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND s.STG_STATUS != 'TRANSFORMED';
 
         -- ── Lots: STG → TFM (if any exist) ──
@@ -240,6 +250,11 @@
         FROM DMT_OWNER.DMT_INV_TRX_LOTS_STG_TBL s
         WHERE s.STG_STATUS IN ('NEW', 'RETRY')
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Transaction Lots'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_LOTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -250,6 +265,11 @@
         UPDATE DMT_OWNER.DMT_INV_TRX_LOTS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW', 'RETRY')
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Transaction Lots'
+            AND    e.STG_SEQUENCE_ID = DMT_INV_TRX_LOTS_STG_TBL.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_LOTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = DMT_INV_TRX_LOTS_STG_TBL.STG_SEQUENCE_ID
@@ -278,6 +298,11 @@
         FROM DMT_OWNER.DMT_INV_TRX_SERIALS_STG_TBL s
         WHERE s.STG_STATUS IN ('NEW', 'RETRY')
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Transaction Serials'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_SERIALS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -288,6 +313,11 @@
         UPDATE DMT_OWNER.DMT_INV_TRX_SERIALS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW', 'RETRY')
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Transaction Serials'
+            AND    e.STG_SEQUENCE_ID = DMT_INV_TRX_SERIALS_STG_TBL.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_TRX_SERIALS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = DMT_INV_TRX_SERIALS_STG_TBL.STG_SEQUENCE_ID

@@ -104,6 +104,11 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Salaries'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1
             FROM   DMT_OWNER.DMT_SALARY_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -119,6 +124,11 @@
             FROM   DMT_OWNER.DMT_SALARY_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Salaries'
+            AND    e.STG_SEQUENCE_ID = STG_SEQUENCE_ID)
         AND (
             (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')

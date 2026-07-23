@@ -79,6 +79,11 @@
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Banks'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_CE_BANK_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -95,6 +100,11 @@
             OR (p_run_mode = 'ALL')
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Banks'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_CE_BANK_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -191,6 +201,11 @@
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Bank Branches'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_CE_BRANCH_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -207,6 +222,11 @@
             OR (p_run_mode = 'ALL')
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Bank Branches'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_CE_BRANCH_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -317,6 +337,11 @@
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Bank Accounts'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_CE_BANK_ACCT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -333,6 +358,11 @@
             OR (p_run_mode = 'ALL')
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Bank Accounts'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_CE_BANK_ACCT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID

@@ -152,6 +152,11 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Parties'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -177,6 +182,11 @@
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Parties'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -333,6 +343,11 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Locations'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -358,6 +373,11 @@
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Locations'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -488,6 +508,11 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Party Sites'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -513,6 +538,11 @@
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Party Sites'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -626,6 +656,11 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Party Site Uses'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -651,6 +686,11 @@
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Party Site Uses'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -770,6 +810,11 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Accounts'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -795,6 +840,11 @@
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Accounts'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -918,6 +968,11 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Account Sites'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -943,6 +998,11 @@
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Account Sites'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -1060,6 +1120,11 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Account Site Uses'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -1085,6 +1150,11 @@
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Account Site Uses'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID

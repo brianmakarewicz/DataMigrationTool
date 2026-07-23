@@ -76,6 +76,11 @@
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Units of Measure'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
+        AND NOT EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_UOM_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
@@ -92,6 +97,11 @@
             OR (p_run_mode = 'ALL')
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.SUB_OBJECT = 'Units of Measure'
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         AND    EXISTS (
             SELECT 1 FROM DMT_OWNER.DMT_INV_UOM_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID

@@ -63,7 +63,12 @@
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
-             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+          AND NOT EXISTS (
+              SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+              WHERE  e.RUN_ID = p_run_id
+              AND    e.SUB_OBJECT = 'Asset Headers'
+              AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID);
 
         l_ok := SQL%ROWCOUNT;
 
@@ -126,7 +131,12 @@
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
-             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+          AND NOT EXISTS (
+              SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+              WHERE  e.RUN_ID = p_run_id
+              AND    e.SUB_OBJECT = 'Asset Assignments'
+              AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID);
 
         l_ok := SQL%ROWCOUNT;
 
@@ -183,7 +193,12 @@
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
-             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+          AND NOT EXISTS (
+              SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+              WHERE  e.RUN_ID = p_run_id
+              AND    e.SUB_OBJECT = 'Asset Books'
+              AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID);
 
         l_ok := SQL%ROWCOUNT;
 
@@ -196,7 +211,12 @@
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id
-             OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
+             OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL))
+          AND NOT EXISTS (
+              SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+              WHERE  e.RUN_ID = p_run_id
+              AND    e.SUB_OBJECT = 'Asset Books'
+              AND    e.STG_SEQUENCE_ID = STG_SEQUENCE_ID);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BOOKS complete. Rows: ' || l_ok, C_PKG, 'TRANSFORM_BOOKS');
     EXCEPTION

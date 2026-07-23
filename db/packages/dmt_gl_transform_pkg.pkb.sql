@@ -102,6 +102,11 @@
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
         -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
         -- generated file's row order reproducible (byte-stable golden compare).
+          AND NOT EXISTS (
+              SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+              WHERE  e.RUN_ID = p_run_id
+              AND    e.SUB_OBJECT = 'GL Journals'
+              AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID)
         ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok := SQL%ROWCOUNT;
@@ -115,7 +120,12 @@
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id
-             OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
+             OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL))
+          AND NOT EXISTS (
+              SELECT 1 FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+              WHERE  e.RUN_ID = p_run_id
+              AND    e.SUB_OBJECT = 'GL Journals'
+              AND    e.STG_SEQUENCE_ID = STG_SEQUENCE_ID);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
