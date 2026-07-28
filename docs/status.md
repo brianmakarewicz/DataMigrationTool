@@ -1,5 +1,48 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-07-22 -- Fix Expenditures; ignore this-run STG errors in transform (ON HOLD)
+
+**What was done:**
+- **Expenditures fixed and merged (PR #235).** The import was crashing inside Fusion with an
+  ORA-01008 error. Root cause: our one SOAP call sent all the job's parameters as a single
+  comma-joined string in one XML element, but this job needs each parameter in its own element.
+  We also had it pointed at the wrong Fusion job. Fixed both: the loader now emits one parameter
+  element per argument, and Expenditures now runs `ImportProcessParallelEssJob` with its correct
+  13 arguments. Re-ran it clean: 4 records loaded, 2 failed with real Fusion errors, 0 unaccounted.
+- **Started the foundational fix the user asked for:** every process that pulls rows from the
+  staging tables into the transform tables must skip rows that were marked failed *earlier in the
+  same run*. A subagent added that skip to all 38 transform packages (144 places); deployed to the
+  local database with 0 invalid objects. This lives on branch `fix/transform-skip-this-run-errors`
+  (not merged).
+- **Added a Projects pre-check** that rejects a task when no matching project header is in the same
+  file, writing the real message "this task will not be processed because it has no related project
+  in the file." On branch `fix/reconcile-parent-cascade-interface-errors` (not merged).
+
+**Why it's on hold — the open design decision:** the two pieces above don't line up in ALL mode.
+The Projects pre-check only fires on rows still marked NEW or RETRY, but an ALL-mode re-run
+reprocesses rows of *any* status (staging rows are never reset — we re-run with a new prefix). So
+on the re-run, the orphan task (already marked failed by a prior run) is skipped by the pre-check,
+no error is written for this run, the transform has nothing to skip on, and the task orphans again.
+Run 244 confirmed this: task NOPROJ999.1 came back UNACCOUNTED with no pre-check error written.
+**The fix requires making the pre-check scenario- and run-mode-aware** (so it flags the orphan on
+exactly the rows the transform will process) — a signature change to `VALIDATE_PRE_TRANSFORM`
+touching the validators and their caller. **User put this on hold before that change.**
+
+**State at close:** nothing merged; local Docker DB has both fixes deployed but the two branches
+are separate and each is missing the other's changes. Working copy is on
+`fix/transform-skip-this-run-errors`; local `main` is 1 commit behind `origin/main`. Local staging
+tables hold rows from ~10 prior test runs across six scenarios in mixed statuses — this is BY DESIGN
+and safe to keep. Runs are scoped by scenario, and NEW mode only picks up NEW/RETRY rows, so old
+rows never leak into a new run. Retain the history for audit; do NOT reset it.
+
+**What's next (when resumed):** (1) decide the pre-check scoping — make `VALIDATE_PRE_TRANSFORM`
+take the scenario and run mode so the orphan check fires on the rows the transform will process;
+(2) reconcile the two branches onto a fresh `origin/main` and open PRs in the right order
+(transform-skip first, then the Projects pre-check); (3) re-run Projects in ALL mode to confirm
+NOPROJ999.1 comes back rejected (not orphaned); (4) full 36-object regression to confirm the wide
+38-package change didn't regress anything; (5) Customers BIP data model still needs the human-gated
+live redeploy before a Customers re-run can verify.
+
 ## Session -- 2026-07-21/22 -- Resolve run-234 UNACCOUNTED honestly
 **What was done:** Located the real Fusion outcome for all 23 UNACCOUNTED records from the first
 honest scorecard (run 234) and landed 11 merged PRs (#222-#232). All are merged; #227's remaining
