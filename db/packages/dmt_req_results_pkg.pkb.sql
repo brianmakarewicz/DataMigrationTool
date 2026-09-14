@@ -506,6 +506,39 @@ AS
         AND    d.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    d.ERROR_TEXT       IS NOT NULL;
 
+        -- ============================================================
+        -- STEP 5c: Parent-cascade for a header that did NOT import.
+        -- A header still not LOADED/FAILED whose child line carries a REAL
+        -- Fusion error did not import BECAUSE that child was rejected. This
+        -- is the header's FOUND outcome (absent from the base table; a child
+        -- it owns was rejected by Fusion) -- not a composed status guess. Mark
+        -- it FAILED carrying the child's real Fusion error so the record is
+        -- honestly accounted instead of swept to UNACCOUNTED. Only headers
+        -- with no real error of their own reach here (Step 2 already wrote
+        -- header-level G_ERRORS); line/dist rejections have already settled
+        -- onto the line (Steps 2/3a/5).
+        -- ============================================================
+        UPDATE DMT_POR_REQ_HEADERS_TFM_TBL h
+        SET    h.TFM_STATUS            = 'FAILED',
+               h.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(h.ERROR_TEXT,
+                   '[FUSION_ERROR] Requisition not imported; a child record was rejected by Fusion: ' ||
+                   (SELECT ln.ERROR_TEXT FROM DMT_POR_REQ_LINES_TFM_TBL ln
+                    WHERE  ln.RUN_ID              = p_run_id
+                    AND    ln.INTERFACE_HEADER_KEY = h.INTERFACE_HEADER_KEY
+                    AND    ln.TFM_STATUS          = 'FAILED'
+                    AND    ln.ERROR_TEXT          IS NOT NULL
+                    AND    ROWNUM = 1)),
+               h.RESULTS_UPDATED_DATE = SYSDATE,
+               h.LAST_UPDATED_DATE = SYSDATE
+        WHERE  h.RUN_ID    = p_run_id
+        AND    h.TFM_STATUS           NOT IN ('LOADED','FAILED')
+        AND    EXISTS (
+            SELECT 1 FROM DMT_POR_REQ_LINES_TFM_TBL ln
+            WHERE  ln.RUN_ID              = p_run_id
+            AND    ln.INTERFACE_HEADER_KEY = h.INTERFACE_HEADER_KEY
+            AND    ln.TFM_STATUS          = 'FAILED'
+            AND    ln.ERROR_TEXT          IS NOT NULL);
+
         <<echo_to_stg>>
         -- ============================================================
         -- STEP 5: Echo outcomes back to STG tables (all 3 types)
