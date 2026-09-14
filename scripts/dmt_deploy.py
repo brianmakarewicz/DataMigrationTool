@@ -35,7 +35,10 @@ def connect():
     if not m:
         sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
     user, password, dsn = m.groups()
-    return oracledb.connect(user=user, password=password, dsn=dsn)
+    import os as _os
+    _w = _os.environ.get('DMT2_WALLET')
+    _kw = dict(config_dir=_w, wallet_location=_w, wallet_password=_os.environ.get('DMT2_WALLET_PW')) if _w else {}
+    return oracledb.connect(user=user, password=password, dsn=dsn, **_kw)
 CODE_RE = re.compile(r'^\s*CREATE\s+OR\s+REPLACE\s+'
                      r'(EDITIONABLE\s+|NONEDITIONABLE\s+)?'
                      r'(PACKAGE\s+BODY|PACKAGE|VIEW|PROCEDURE|FUNCTION|TRIGGER|TYPE\s+BODY|TYPE)\b',

@@ -80,7 +80,10 @@ def connect():
     if not m:
         sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
     user, password, dsn = m.groups()
-    return oracledb.connect(user=user, password=password, dsn=dsn)
+    import os as _os
+    _w = _os.environ.get('DMT2_WALLET')
+    _kw = dict(config_dir=_w, wallet_location=_w, wallet_password=_os.environ.get('DMT2_WALLET_PW')) if _w else {}
+    return oracledb.connect(user=user, password=password, dsn=dsn, **_kw)
 
 
 def is_bad_key(display_key):
