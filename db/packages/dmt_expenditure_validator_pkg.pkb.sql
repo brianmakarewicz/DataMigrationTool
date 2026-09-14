@@ -8,7 +8,7 @@ AS
 -- Upstream dependency: PROJECT_NUMBER must be LOADED in projects STG.
 --
 -- Pre-validation rejections are recorded in the run-stamped error table
--- DMT_OWNER.DMT_STG_TFM_ERROR_TBL (design §7); the STG rows keep their
+-- DMT_STG_TFM_ERROR_TBL (design §7); the STG rows keep their
 -- status only (no message) and are flagged FAILED afterwards by the
 -- standard FLAG_STG_FAILED helper. No validator writes ERROR_TEXT on a
 -- *_STG_TBL row.
@@ -28,11 +28,11 @@ AS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL
+        UPDATE DMT_PJC_EXPENDITURES_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Project Expenditures'
@@ -67,7 +67,7 @@ AS
         ELSE
             SELECT PREFIX
             INTO   l_dep_prefix
-            FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+            FROM   DMT_PIPELINE_RUN_TBL
             WHERE  RUN_ID = p_run_id;
         END IF;
 
@@ -79,22 +79,22 @@ AS
             -- LOADED is a TFM-only status (STG never carries it, design §5), so the
             -- "have projects migrated?" gate reads the projects TFM table.
             SELECT COUNT(*) INTO l_any_loaded
-            FROM   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+            FROM   DMT_PJF_PROJECTS_TFM_TBL
             WHERE  TFM_STATUS = 'LOADED' AND ROWNUM = 1;
 
             IF l_any_loaded > 0 AND DMT_UTIL_PKG.GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN
-                INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                 SELECT p_run_id, 'Expenditures', 'Project Expenditures', e.STG_SEQUENCE_ID,
                        '[PRE_VALIDATION] Project ''' || e.PROJECT_NUMBER ||
                        ''' is not loaded — expenditure record skipped.'
-                FROM   DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL e
+                FROM   DMT_PJC_EXPENDITURES_STG_TBL e
                 WHERE  e.STG_STATUS IN ('NEW', 'RETRY')
                 AND    e.PROJECT_NUMBER IS NOT NULL
                 AND    NOT EXISTS (
                            SELECT 1
-                           FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL p
-                           JOIN   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL pt
+                           FROM   DMT_PJF_PROJECTS_STG_TBL p
+                           JOIN   DMT_PJF_PROJECTS_TFM_TBL pt
                                   ON pt.STG_SEQUENCE_ID = p.STG_SEQUENCE_ID
                            WHERE  p.PROJECT_NUMBER = e.PROJECT_NUMBER
                            AND    pt.TFM_STATUS    = 'LOADED'

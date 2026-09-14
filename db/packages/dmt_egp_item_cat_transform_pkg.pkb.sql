@@ -12,7 +12,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_prefix;
     EXCEPTION
@@ -40,12 +40,12 @@
             p_procedure      => 'TRANSFORM');
 
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_STG_TBL
+            UPDATE DMT_EGP_ITEM_CAT_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
-        INSERT INTO DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL (
+        INSERT INTO DMT_EGP_ITEM_CAT_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     -- Business columns
@@ -84,7 +84,7 @@
 
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_EGP_ITEM_CAT_STG_TBL s
+        FROM DMT_EGP_ITEM_CAT_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -98,14 +98,14 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL t
+            SELECT 1 FROM DMT_EGP_ITEM_CAT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
 
         l_ok_count := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_STG_TBL s
+        UPDATE DMT_EGP_ITEM_CAT_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -118,7 +118,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL t
+            SELECT 1 FROM DMT_EGP_ITEM_CAT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );

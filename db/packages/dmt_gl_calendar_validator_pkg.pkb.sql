@@ -24,11 +24,11 @@
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_GL_CALENDAR_STG_TBL
+        UPDATE DMT_GL_CALENDAR_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'GL Calendar'
@@ -91,7 +91,7 @@
             p_procedure      => 'VALIDATE_POST_TRANSFORM');
 
         -- Check PERIOD_SET_NAME is not null
-        UPDATE DMT_OWNER.DMT_GL_CALENDAR_TFM_TBL
+        UPDATE DMT_GL_CALENDAR_TFM_TBL
         SET    TFM_STATUS        = 'FAILED',
                ERROR_TEXT        = NVL2(ERROR_TEXT, ERROR_TEXT || ' | ', '')
                                    || '[POST_VALIDATION] PERIOD_SET_NAME is required.',
@@ -103,7 +103,7 @@
         l_fail_count := l_fail_count + SQL%ROWCOUNT;
 
         -- Check START_DATE <= END_DATE (only for rows still STAGED)
-        UPDATE DMT_OWNER.DMT_GL_CALENDAR_TFM_TBL
+        UPDATE DMT_GL_CALENDAR_TFM_TBL
         SET    TFM_STATUS        = 'FAILED',
                ERROR_TEXT        = NVL2(ERROR_TEXT, ERROR_TEXT || ' | ', '')
                                    || '[POST_VALIDATION] START_DATE must be on or before END_DATE.',

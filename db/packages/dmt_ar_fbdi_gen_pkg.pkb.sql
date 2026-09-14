@@ -450,7 +450,7 @@ AS
                 || '""' || ','
                 || '""' || ','
                 || '""' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_RA_LINES_TFM_TBL t
+            FROM   DMT_RA_LINES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_bu_name IS NULL OR t.BU_NAME = p_bu_name)
@@ -620,12 +620,12 @@ AS
                 || '""' || ','
                 || '""' || ','
                 || '""' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_RA_DISTS_TFM_TBL d
+            FROM   DMT_RA_DISTS_TFM_TBL d
             WHERE  d.RUN_ID = p_run_id
             AND    d.TFM_STATUS = 'STAGED'
             AND    (p_bu_name IS NULL OR d.BU_NAME = p_bu_name)
             AND    (p_batch_source_name IS NULL OR EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL l
+            SELECT 1 FROM DMT_RA_LINES_TFM_TBL l
             WHERE  l.RUN_ID        = d.RUN_ID
             AND    l.INTERFACE_LINE_CONTEXT = d.INTERFACE_LINE_CONTEXT
             AND    l.INTERFACE_LINE_ATTRIBUTE1 = d.INTERFACE_LINE_ATTRIBUTE1
@@ -703,7 +703,7 @@ AS
 
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns two CSVs.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'ARInvoices', 'RaInterfaceLinesAll.csv',         0, l_lines_csv, l_fbdi_csv_id);
         -- Distributions are optional in AR FBDI: only register (and thus zip) the file when it has rows.
         IF l_dists_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_dists_csv) > 0 THEN
@@ -712,19 +712,19 @@ AS
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'ARInvoices', x_filename, l_zip, l_bytes);
 
         -- Update lines TFM rows to GENERATED and stamp the LINES file's FBDI_CSV_ID.
-        UPDATE DMT_OWNER.DMT_RA_LINES_TFM_TBL
+        UPDATE DMT_RA_LINES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_bu_name IS NULL OR BU_NAME = p_bu_name)
         AND    (p_batch_source_name IS NULL OR BATCH_SOURCE_NAME = p_batch_source_name);
 
         -- Update dists TFM rows to GENERATED and stamp the DISTS file's FBDI_CSV_ID.
-        UPDATE DMT_OWNER.DMT_RA_DISTS_TFM_TBL
+        UPDATE DMT_RA_DISTS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_bu_name IS NULL OR BU_NAME = p_bu_name)
         AND    (p_batch_source_name IS NULL OR EXISTS (
-                   SELECT 1 FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL l
+                   SELECT 1 FROM DMT_RA_LINES_TFM_TBL l
                    WHERE  l.RUN_ID        = DMT_RA_DISTS_TFM_TBL.RUN_ID
                    AND    l.INTERFACE_LINE_CONTEXT = DMT_RA_DISTS_TFM_TBL.INTERFACE_LINE_CONTEXT
                    AND    l.INTERFACE_LINE_ATTRIBUTE1 = DMT_RA_DISTS_TFM_TBL.INTERFACE_LINE_ATTRIBUTE1

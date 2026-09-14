@@ -118,7 +118,7 @@ AS
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -257,7 +257,7 @@ AS
 
                         FOR i IN 1..l_ir_errors.COUNT LOOP
                             IF l_ir_errors(i).row_identifier IS NOT NULL THEN
-                                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                                 SET    TFM_STATUS               = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error (no details)')),
@@ -328,7 +328,7 @@ AS
         ) LOOP
             IF r.source_type = 'BASE' THEN
                 -- Tier 2: Found in base table = positively LOADED
-                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                 SET    TFM_STATUS                       = 'LOADED',
                        FUSION_EXPENDITURE_ITEM_ID   = r.fusion_id,
                        RESULTS_UPDATED_DATE         = SYSDATE,
@@ -350,7 +350,7 @@ AS
                 -- or the shared honest sweep accounts for it (sweep -> UNACCOUNTED).
                 IF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R')
                    AND r.error_msg IS NOT NULL THEN
-                    UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                    UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_msg),
@@ -373,7 +373,7 @@ AS
                 l_ir_xml     CLOB;
             BEGIN
                 SELECT COUNT(*) INTO l_still_gen
-                FROM   DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                FROM   DMT_PJC_EXPENDITURES_TFM_TBL
                 WHERE  RUN_ID = p_run_id
                 AND    TFM_STATUS         = 'GENERATED';
 
@@ -405,7 +405,7 @@ AS
 
                         FOR i IN 1..l_ir_errors.COUNT LOOP
                             IF l_ir_errors(i).row_identifier IS NOT NULL THEN
-                                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                                 SET    TFM_STATUS               = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error (no details)')),
@@ -441,21 +441,21 @@ AS
 
         <<echo_to_stg>>
         -- Echo outcomes back to STG
-        UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL stg
+        UPDATE DMT_PJC_EXPENDITURES_STG_TBL stg
         SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_PJC_EXPENDITURES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL stg
+        UPDATE DMT_PJC_EXPENDITURES_STG_TBL stg
         SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL t
+                   (SELECT t.ERROR_TEXT FROM DMT_PJC_EXPENDITURES_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_PJC_EXPENDITURES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries

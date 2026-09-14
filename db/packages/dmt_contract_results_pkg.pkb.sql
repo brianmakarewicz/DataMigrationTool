@@ -114,7 +114,7 @@ AS
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -256,7 +256,7 @@ AS
             IF r.source_type = 'BASE' THEN
                 -- Positive base-table confirmation. Key on the prefixed document
                 -- number the loader wrote, which equals the base SEGMENT1.
-                UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                        FUSION_DOCUMENT_NUM  = r.document_num,
@@ -269,7 +269,7 @@ AS
 
             ELSIF r.source_type = 'INTERFACE' THEN
                 IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                            FUSION_DOCUMENT_NUM  = r.document_num,
@@ -280,7 +280,7 @@ AS
                     AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_msg),

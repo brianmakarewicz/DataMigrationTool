@@ -37,17 +37,17 @@
     BEGIN
         -- Record the rejection in the run-stamped error table; the STG row keeps
         -- its status only (no message), flagged FAILED later by FLAG_STG_FAILED (§7).
-        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
                (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
         SELECT p_run_id, 'SupplierAddresses', 'Supplier Addresses', a.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] Supplier ''' || a.VENDOR_NAME ||
                ''' has no LOADED TFM row in any run — address skipped.'
-        FROM   DMT_OWNER.DMT_POZ_SUP_ADDR_STG_TBL a
+        FROM   DMT_POZ_SUP_ADDR_STG_TBL a
         WHERE  a.STG_STATUS = 'NEW'
         AND    NOT EXISTS (
                    SELECT 1
-                   FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
-                   JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
+                   FROM   DMT_POZ_SUPPLIERS_STG_TBL s
+                   JOIN   DMT_POZ_SUPPLIERS_TFM_TBL t
                           ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
                    WHERE  s.VENDOR_NAME = a.VENDOR_NAME
                    AND    t.TFM_STATUS      = 'LOADED'
@@ -75,17 +75,17 @@
     BEGIN
         -- Record the rejection in the run-stamped error table; FLAG_STG_FAILED (§7)
         -- flags the STG row FAILED afterwards (status only, no message).
-        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
                (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
         SELECT p_run_id, 'SupplierSites', 'Supplier Sites', si.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] Supplier ''' || si.VENDOR_NAME ||
                ''' has no LOADED TFM row in any run — site skipped.'
-        FROM   DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL si
+        FROM   DMT_POZ_SUP_SITE_STG_TBL si
         WHERE  si.STG_STATUS = 'NEW'
         AND    NOT EXISTS (
                    SELECT 1
-                   FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
-                   JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
+                   FROM   DMT_POZ_SUPPLIERS_STG_TBL s
+                   JOIN   DMT_POZ_SUPPLIERS_TFM_TBL t
                           ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
                    WHERE  s.VENDOR_NAME = si.VENDOR_NAME
                    AND    t.TFM_STATUS      = 'LOADED'
@@ -114,18 +114,18 @@
     BEGIN
         -- Record the rejection in the run-stamped error table; FLAG_STG_FAILED (§7)
         -- flags the STG row FAILED afterwards (status only, no message).
-        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
                (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
         SELECT p_run_id, 'SupplierSiteAssignments', 'Site Assignments', a.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] Site ''' || a.VENDOR_NAME ||
                ' / ' || a.VENDOR_SITE_CODE ||
                ''' has no LOADED TFM row in any run — site assignment skipped.'
-        FROM   DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL a
+        FROM   DMT_POZ_SUP_SITE_ASSN_STG_TBL a
         WHERE  a.STG_STATUS = 'NEW'
         AND    NOT EXISTS (
                    SELECT 1
-                   FROM   DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL sis
-                   JOIN   DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL t
+                   FROM   DMT_POZ_SUP_SITE_STG_TBL sis
+                   JOIN   DMT_POZ_SUP_SITE_TFM_TBL t
                           ON t.STG_SEQUENCE_ID = sis.STG_SEQUENCE_ID
                    WHERE  sis.VENDOR_NAME      = a.VENDOR_NAME
                    AND    sis.VENDOR_SITE_CODE = a.VENDOR_SITE_CODE
@@ -154,17 +154,17 @@
     BEGIN
         -- Record the rejection in the run-stamped error table; FLAG_STG_FAILED (§7)
         -- flags the STG row FAILED afterwards (status only, no message).
-        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
                (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
         SELECT p_run_id, 'SupplierContacts', 'Supplier Contacts', c.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] Supplier ''' || c.VENDOR_NAME ||
                ''' has no LOADED TFM row in any run — contact skipped.'
-        FROM   DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL c
+        FROM   DMT_POZ_SUP_CONTACTS_STG_TBL c
         WHERE  c.STG_STATUS = 'NEW'
         AND    NOT EXISTS (
                    SELECT 1
-                   FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
-                   JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
+                   FROM   DMT_POZ_SUPPLIERS_STG_TBL s
+                   JOIN   DMT_POZ_SUPPLIERS_TFM_TBL t
                           ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
                    WHERE  s.VENDOR_NAME = c.VENDOR_NAME
                    AND    t.TFM_STATUS      = 'LOADED'
@@ -194,11 +194,11 @@
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_POZ_SUP_ADDR_STG_TBL
+        UPDATE DMT_POZ_SUP_ADDR_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Supplier Addresses'
@@ -206,11 +206,11 @@
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL
+        UPDATE DMT_POZ_SUP_SITE_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Supplier Sites'
@@ -218,11 +218,11 @@
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL
+        UPDATE DMT_POZ_SUP_SITE_ASSN_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Site Assignments'
@@ -230,11 +230,11 @@
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL
+        UPDATE DMT_POZ_SUP_CONTACTS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Supplier Contacts'
@@ -271,10 +271,10 @@
 
         -- Summary counts — from the run-stamped error table, never from STG.
         l_sup_failed := 0;  -- Suppliers has no upstream pre-validation dependency
-        SELECT COUNT(*) INTO l_addr_failed FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Addresses';
-        SELECT COUNT(*) INTO l_site_failed FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Sites';
-        SELECT COUNT(*) INTO l_assn_failed FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Site Assignments';
-        SELECT COUNT(*) INTO l_cont_failed FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Contacts';
+        SELECT COUNT(*) INTO l_addr_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Addresses';
+        SELECT COUNT(*) INTO l_site_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Sites';
+        SELECT COUNT(*) INTO l_assn_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Site Assignments';
+        SELECT COUNT(*) INTO l_cont_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Contacts';
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

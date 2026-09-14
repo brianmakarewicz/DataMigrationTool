@@ -57,7 +57,7 @@
                    ATTRIBUTE_CATEGORY,
                    ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4,
                    ATTRIBUTE5, ATTRIBUTE6, ATTRIBUTE7, ATTRIBUTE8
-            FROM   DMT_OWNER.DMT_GL_CALENDAR_TFM_TBL
+            FROM   DMT_GL_CALENDAR_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -117,7 +117,7 @@
         x_filename := 'GlAccountingCalendar_' || TO_CHAR(p_run_id) || '.zip';
 
         SELECT COUNT(*) INTO l_row_count
-        FROM   DMT_OWNER.DMT_GL_CALENDAR_TFM_TBL
+        FROM   DMT_GL_CALENDAR_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         IF l_row_count = 0 THEN
@@ -135,8 +135,8 @@
         l_csv := gen_calendar_csv(p_run_id);
 
         -- Store CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -146,20 +146,20 @@
 
         -- Build zip
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
-        DMT_OWNER.UTL_ZIP.add1file(l_zip, 'GlAccountingCalendar.csv', clob_to_blob(l_csv));
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        UTL_ZIP.add1file(l_zip, 'GlAccountingCalendar.csv', clob_to_blob(l_csv));
+        UTL_ZIP.finish_zip(l_zip);
 
         -- Store zip artefact
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+        INSERT INTO DMT_FBDI_ZIP_TBL (
             FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
+            DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
             'GL_CALENDAR', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
 
         -- Update TFM rows: STAGED -> GENERATED
-        UPDATE DMT_OWNER.DMT_GL_CALENDAR_TFM_TBL
+        UPDATE DMT_GL_CALENDAR_TFM_TBL
         SET    TFM_STATUS        = 'GENERATED',
                FBDI_CSV_ID       = l_csv_id,
                LAST_UPDATED_DATE = l_now

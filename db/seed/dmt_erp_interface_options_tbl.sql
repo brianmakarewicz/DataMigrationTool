@@ -461,10 +461,6 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-exception when dup_val_on_index then null;
-end;
-/
-begin
   insert into "DMT_ERP_INTERFACE_OPTIONS_TBL" ("ERP_INTERFACE_OPTIONS_ID","ERP_FAMILY","BUSINESS_OBJECT","UCM_ACCOUNT","LOAD_JOB_NAME","IMPORT_JOB_NAME","POST_LOAD_JOB_NAME","LOAD_INTERFACE_FLAG","LOADER_TYPE","SERVICE_NAME","CEMLI_CODE","SOURCE_ERP_OPTIONS_ID","REPORT_JOB_DEF","FUSION_USERNAME","FUSION_PASSWORD") values ('19','FIN','taxRate','fin/tax/import',NULL,'/oracle/apps/ess/financials/tax/report;LaunchTaxConfigContentUpload',NULL,'Y','SQLLOADER',NULL,NULL,'19',NULL,NULL,NULL);
 exception when dup_val_on_index then null;
 end;

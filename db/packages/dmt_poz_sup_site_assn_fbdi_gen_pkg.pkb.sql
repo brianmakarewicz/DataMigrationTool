@@ -65,7 +65,7 @@
         DBMS_LOB.CREATETEMPORARY(l_csv, TRUE);
         FOR r IN (
             SELECT *
-            FROM   DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL
+            FROM   DMT_POZ_SUP_SITE_ASSN_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS         = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -113,12 +113,12 @@
 
         -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
         -- build the zip from that persisted row via the shared helper pair.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'SupplierSiteAssignments', C_CSV_FILE, l_row_count, l_csv, l_csv_id);
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'SupplierSiteAssignments', x_filename, x_fbdi_zip, l_bytes);
         DBMS_LOB.FREETEMPORARY(l_csv);
 
-        UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL
+        UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL
         SET    TFM_STATUS             = 'GENERATED',
                FBDI_CSV_ID       = l_csv_id,
                LAST_UPDATED_DATE = SYSDATE

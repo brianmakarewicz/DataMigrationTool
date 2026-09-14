@@ -19,11 +19,11 @@
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_INV_UOM_STG_TBL
+        UPDATE DMT_INV_UOM_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Units of Measure'
@@ -80,7 +80,7 @@
             p_procedure      => 'VALIDATE_POST_TRANSFORM');
 
         -- Check UOM_CODE is not null
-        UPDATE DMT_OWNER.DMT_INV_UOM_TFM_TBL
+        UPDATE DMT_INV_UOM_TFM_TBL
         SET    TFM_STATUS        = 'FAILED',
                ERROR_TEXT        = NVL2(ERROR_TEXT, ERROR_TEXT || ' | ', '')
                                    || '[POST_VALIDATION] UOM_CODE is required.',
@@ -92,7 +92,7 @@
         l_fail_count := l_fail_count + SQL%ROWCOUNT;
 
         -- Check UOM_CLASS is not null (only for rows still STAGED)
-        UPDATE DMT_OWNER.DMT_INV_UOM_TFM_TBL
+        UPDATE DMT_INV_UOM_TFM_TBL
         SET    TFM_STATUS        = 'FAILED',
                ERROR_TEXT        = NVL2(ERROR_TEXT, ERROR_TEXT || ' | ', '')
                                    || '[POST_VALIDATION] UOM_CLASS is required.',

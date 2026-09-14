@@ -30,13 +30,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_FND_VS_SET_STG_TBL
+            UPDATE DMT_FND_VS_SET_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_FND_VS_SET_TFM_TBL (
+        INSERT INTO DMT_FND_VS_SET_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     SOURCE_GROUP_ID,
@@ -71,7 +71,7 @@
 
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_FND_VS_SET_STG_TBL s
+        FROM DMT_FND_VS_SET_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -79,7 +79,7 @@
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_FND_VS_SET_TFM_TBL t
+            SELECT 1 FROM DMT_FND_VS_SET_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -88,7 +88,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_FND_VS_SET_STG_TBL s
+        UPDATE DMT_FND_VS_SET_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -98,7 +98,7 @@
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_FND_VS_SET_TFM_TBL t
+            SELECT 1 FROM DMT_FND_VS_SET_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -145,13 +145,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_FND_VS_VALUE_STG_TBL
+            UPDATE DMT_FND_VS_VALUE_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_FND_VS_VALUE_TFM_TBL (
+        INSERT INTO DMT_FND_VS_VALUE_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     SOURCE_GROUP_ID,
@@ -184,7 +184,7 @@
 
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_FND_VS_VALUE_STG_TBL s
+        FROM DMT_FND_VS_VALUE_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -192,7 +192,7 @@
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_FND_VS_VALUE_TFM_TBL t
+            SELECT 1 FROM DMT_FND_VS_VALUE_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -201,7 +201,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_FND_VS_VALUE_STG_TBL s
+        UPDATE DMT_FND_VS_VALUE_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -211,7 +211,7 @@
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_FND_VS_VALUE_TFM_TBL t
+            SELECT 1 FROM DMT_FND_VS_VALUE_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );

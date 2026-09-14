@@ -52,7 +52,7 @@
                 || '"' || REPLACE(NVL(ATTRIBUTE3,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE4,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE5,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL t
+            FROM DMT_PLAN_BUDGET_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
@@ -94,11 +94,11 @@
 
         -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
         -- build the zip from that persisted row.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'PlanningBudgets', 'EpbcsDataImport.csv', 0, l_csv, l_fbdi_csv_id);
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'PlanningBudgets', x_filename, l_zip, l_bytes);
 
-        UPDATE DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL
+        UPDATE DMT_PLAN_BUDGET_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 

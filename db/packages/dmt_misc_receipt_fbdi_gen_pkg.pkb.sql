@@ -72,7 +72,7 @@ AS
         DBMS_LOB.CREATETEMPORARY(l_csv, TRUE);
 
         FOR r IN (
-            SELECT * FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL
+            SELECT * FROM DMT_INV_TRX_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -386,7 +386,7 @@ AS
             C_PROC || ' start.', C_PKG, C_PROC);
 
         SELECT COUNT(*) INTO l_row_count
-        FROM   DMT_OWNER.DMT_INV_TRX_TFM_TBL
+        FROM   DMT_INV_TRX_TFM_TBL
         WHERE  RUN_ID = p_run_id
         AND    TFM_STATUS     = 'STAGED';
 
@@ -420,7 +420,7 @@ AS
         BEGIN
             DBMS_LOB.CREATETEMPORARY(l_lots_csv, TRUE);
             FOR lr IN (
-                SELECT * FROM DMT_OWNER.DMT_INV_TRX_LOTS_TFM_TBL
+                SELECT * FROM DMT_INV_TRX_LOTS_TFM_TBL
                 WHERE  RUN_ID = p_run_id
                 ORDER BY TFM_SEQUENCE_ID
             ) LOOP
@@ -463,10 +463,10 @@ AS
             FOR sr IN (
                 SELECT s.FM_SERIAL_NUMBER, s.TO_SERIAL_NUMBER,
                        p.INV_LOTSERIAL_INTERFACE_NUM, p.SOURCE_CODE, p.SOURCE_LINE_ID
-                FROM   DMT_OWNER.DMT_INV_TRX_SERIALS_TFM_TBL s
-                JOIN   DMT_OWNER.DMT_INV_TRX_SERIALS_STG_TBL ss
+                FROM   DMT_INV_TRX_SERIALS_TFM_TBL s
+                JOIN   DMT_INV_TRX_SERIALS_STG_TBL ss
                     ON ss.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                JOIN   DMT_OWNER.DMT_INV_TRX_TFM_TBL p
+                JOIN   DMT_INV_TRX_TFM_TBL p
                     ON p.RUN_ID  = s.RUN_ID
                    AND p.STG_SEQUENCE_ID = TO_NUMBER(ss.SOURCE_ID)
                 WHERE  s.RUN_ID = p_run_id
@@ -499,7 +499,7 @@ AS
         x_fbdi_csv_id := NULL;
 
         -- Mark TFM rows as GENERATED
-        UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL
+        UPDATE DMT_INV_TRX_TFM_TBL
         SET    TFM_STATUS        = 'GENERATED',
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id

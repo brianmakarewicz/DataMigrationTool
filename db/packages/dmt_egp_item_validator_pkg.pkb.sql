@@ -19,11 +19,11 @@
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_EGP_ITEM_STG_TBL
+        UPDATE DMT_EGP_ITEM_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Item Master'
@@ -80,7 +80,7 @@
             p_procedure      => 'VALIDATE_POST_TRANSFORM');
 
         -- Check ITEM_NUMBER is not null
-        UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+        UPDATE DMT_EGP_ITEM_TFM_TBL
         SET    TFM_STATUS        = 'FAILED',
                ERROR_TEXT        = NVL2(ERROR_TEXT, ERROR_TEXT || ' | ', '')
                                    || '[POST_VALIDATION] ITEM_NUMBER is required.',
@@ -92,7 +92,7 @@
         l_fail_count := l_fail_count + SQL%ROWCOUNT;
 
         -- Check ORGANIZATION_CODE is not null
-        UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+        UPDATE DMT_EGP_ITEM_TFM_TBL
         SET    TFM_STATUS        = 'FAILED',
                ERROR_TEXT        = NVL2(ERROR_TEXT, ERROR_TEXT || ' | ', '')
                                    || '[POST_VALIDATION] ORGANIZATION_CODE is required.',
@@ -104,7 +104,7 @@
         l_fail_count := l_fail_count + SQL%ROWCOUNT;
 
         -- Check TRANSACTION_TYPE is valid if provided
-        UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+        UPDATE DMT_EGP_ITEM_TFM_TBL
         SET    TFM_STATUS        = 'FAILED',
                ERROR_TEXT        = NVL2(ERROR_TEXT, ERROR_TEXT || ' | ', '')
                                    || '[POST_VALIDATION] TRANSACTION_TYPE must be CREATE, UPDATE, or null.',

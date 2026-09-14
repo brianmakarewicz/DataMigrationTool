@@ -5,5 +5,7 @@ GRANT SELECT ON "DMT_CONFIG_TBL" TO "DMT_LOOKUP";
 GRANT SELECT ON "DMT_LOG_ID_SEQ" TO "DMT_LOOKUP";
 GRANT INSERT ON "DMT_LOG_TBL" TO "DMT_LOOKUP";
 GRANT SELECT ON "DMT_LOG_TBL" TO "DMT_LOOKUP";
-GRANT INHERIT PRIVILEGES ON "DMT_OWNER" TO "PUBLIC";
+-- Schema-relative: grant on the CONNECTED owner, not a literal schema name.
+begin execute immediate 'GRANT INHERIT PRIVILEGES ON "' || USER || '" TO PUBLIC'; exception when others then null; end;
+/
 whenever sqlerror exit failure rollback

@@ -75,14 +75,14 @@ EXEMPT = [
 ]
 
 # The template's fixed UPDATE-block region, with the two variable lines removed.
-# An UPDATE block runs from "UPDATE DMT_OWNER.<table>" through its closing ");".
+# An UPDATE block runs from "UPDATE <table>" through its closing ");".
 # Lines that may vary (dropped before comparison):
-#   * the UPDATE DMT_OWNER.<STG table> line          (EDIT-TABLE)
+#   * the UPDATE <STG table> line          (EDIT-TABLE)
 #   * the   AND SUB_OBJECT = '<display name>'  line   (EDIT-SCOPE)
 FIXED_BLOCK_LINES = [
     "        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE",
     "        WHERE  STG_STATUS IN ('NEW','RETRY')",
-    "        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL",
+    "        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL",
     "                                   WHERE RUN_ID = p_run_id",
     "                                  );",
 ]

@@ -56,17 +56,17 @@ AS
         -- resolves to at least that object's REST verification.
         BEGIN
             SELECT OBJECT_TYPE INTO l_resolved_type
-            FROM   DMT_OWNER.DMT_REST_LOOKUP_TBL
+            FROM   DMT_REST_LOOKUP_TBL
             WHERE  OBJECT_TYPE = p_object_type AND ENABLED = 'Y';
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
                 BEGIN
                     SELECT rl.OBJECT_TYPE INTO l_resolved_type
-                    FROM   DMT_OWNER.DMT_REST_LOOKUP_TBL rl
+                    FROM   DMT_REST_LOOKUP_TBL rl
                     WHERE  rl.ENABLED = 'Y'
                     AND    rl.OBJECT_TYPE = (
                                SELECT MIN(c.CEMLI_CODE)
-                               FROM   DMT_OWNER.DMT_V_CEMLI_TFM_TABLES c
+                               FROM   DMT_V_CEMLI_TFM_TABLES c
                                WHERE  c.DISPLAY_NAME = p_object_type);
                 EXCEPTION
                     WHEN NO_DATA_FOUND THEN
@@ -77,7 +77,7 @@ AS
 
         SELECT REST_ENDPOINT, QUERY_FILTER, DISPLAY_FIELDS, DISPLAY_LABELS, AUTH_TYPE
         INTO   l_cfg_endpoint, l_cfg_filter, l_cfg_fields, l_cfg_labels, l_cfg_auth
-        FROM   DMT_OWNER.DMT_REST_LOOKUP_TBL
+        FROM   DMT_REST_LOOKUP_TBL
         WHERE  OBJECT_TYPE = l_resolved_type
         AND    ENABLED = 'Y';
 
@@ -102,7 +102,7 @@ AS
         -- object code ('Requisitions') via the catalog for the credential lookup.
         BEGIN
             SELECT MIN(CEMLI_CODE) INTO l_obj_code
-            FROM   DMT_OWNER.DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = p_object_type;
+            FROM   DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = p_object_type;
         EXCEPTION WHEN OTHERS THEN l_obj_code := NULL;
         END;
         l_obj_code := NVL(l_obj_code, l_resolved_type);

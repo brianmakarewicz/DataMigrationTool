@@ -105,7 +105,7 @@
     -- Resolve CEMLI display name from pipeline run
     BEGIN
       SELECT PIPELINE_CODES INTO v_cemli
-        FROM DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM DMT_PIPELINE_RUN_TBL
        WHERE RUN_ID = p_run_id;
     EXCEPTION WHEN OTHERS THEN
       v_cemli := NVL(p_cemli_code, 'Unknown');
@@ -158,7 +158,7 @@
              SUM(GENERATED_ROWS)   AS GENERATED_ROWS,
              SUM(TOTAL_ROWS) - SUM(LOADED_ROWS) - SUM(FAILED_ROWS) - SUM(GENERATED_ROWS)
                                    AS STAGED_ROWS
-      FROM DMT_OWNER.DMT_OBJECT_DETAIL_V
+      FROM DMT_OBJECT_DETAIL_V
       WHERE CEMLI_CODE = p_cemli_code
         AND RUN_ID     = p_run_id
       GROUP BY SUB_OBJECT, SUB_ORDER
@@ -241,7 +241,7 @@
     BEGIN
       SELECT LOAD_ESS_JOB_ID, IMPORT_ESS_JOB_ID, POSTRUN_ESS_JOB_ID
         INTO v_load_id, v_import_id, v_postrun_id
-        FROM DMT_OWNER.DMT_WORK_QUEUE_TBL
+        FROM DMT_WORK_QUEUE_TBL
        WHERE RUN_ID     = p_run_id
          AND CEMLI_CODE = p_cemli_code
          AND ROWNUM     = 1;
@@ -291,7 +291,7 @@
     IF v_cemli IS NULL THEN
       BEGIN
         SELECT CEMLI_CODE INTO v_cemli
-          FROM DMT_OWNER.DMT_RECORD_DETAIL_V
+          FROM DMT_RECORD_DETAIL_V
          WHERE INTEGRATION_ID = p_run_id
            AND SUB_OBJECT     = p_sub_object
            AND ROWNUM = 1;
@@ -378,7 +378,7 @@
       SELECT TFM_SEQUENCE_ID, DISPLAY_KEY, LOOKUP_KEY, TFM_STATUS,
              RECONCILIATION_STATUS, ERROR_CATEGORY, ERROR_TEXT,
              TO_CHAR(RESULTS_UPDATED_DATE, 'YYYY-MM-DD HH24:MI') UPD
-      FROM DMT_OWNER.DMT_RECORD_DETAIL_V
+      FROM DMT_RECORD_DETAIL_V
       WHERE INTEGRATION_ID = p_run_id
         AND SUB_OBJECT     = p_sub_object
         AND (p_status IS NULL OR TFM_STATUS = p_status)

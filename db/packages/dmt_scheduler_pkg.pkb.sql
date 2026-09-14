@@ -24,7 +24,7 @@ AS
 
         SELECT LISTAGG(CEMLI_CODE, ',') WITHIN GROUP (ORDER BY SORT_ORDER)
         INTO   l_seq
-        FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+        FROM   DMT_PIPELINE_DEF_TBL
         WHERE  PIPELINE_CODE = l_pipeline
         AND    EXEC_PROC IS NOT NULL;
 
@@ -42,7 +42,7 @@ AS
     BEGIN
         SELECT DEPENDS_ON
         INTO   l_deps
-        FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+        FROM   DMT_PIPELINE_DEF_TBL
         WHERE  CEMLI_CODE = p_cemli_code;
 
         RETURN l_deps;
@@ -121,7 +121,7 @@ AS
             IF l_dep IS NULL THEN CONTINUE; END IF;
 
             SELECT COUNT(*) INTO l_cnt
-            FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+            FROM   DMT_PIPELINE_DEF_TBL
             WHERE  CEMLI_CODE = l_dep;
 
             IF l_cnt = 0 THEN
@@ -185,7 +185,7 @@ AS
         -- section 6, "Prefix — decided spec (2026-07-06)").
         BEGIN
             SELECT NVL(CONFIG_VALUE, 'Y') INTO l_use_prefix
-            FROM   DMT_OWNER.DMT_CONFIG_TBL
+            FROM   DMT_CONFIG_TBL
             WHERE  CONFIG_KEY = 'USE_PREFIX'
             FOR UPDATE WAIT 30;
         EXCEPTION
@@ -208,13 +208,13 @@ AS
         -- .INIT_RUN does — one prefix per run from the single sequence, or
         -- NULL when the administrator disabled prefixing for cutover.
         IF l_use_prefix = 'Y' THEN
-            SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
+            SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
         ELSE
             l_prefix := NULL;
         END IF;
 
         -- Create PIPELINE_RUN row
-        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+        INSERT INTO DMT_PIPELINE_RUN_TBL (
             PIPELINE_CODES, RUN_TYPE, SUBMITTED_BY,
             CEMLI_SEQUENCE, SCENARIO_NAME, RUN_MODE,
             PREFIX, ON_FAILURE_POLICY
@@ -252,7 +252,7 @@ AS
                 FROM DMT_CEMLI_SPLIT_CFG
                 WHERE CEMLI_CODE = l_cemli AND CHILD_PARTITION_COLUMN IS NULL;
 
-                INSERT INTO DMT_OWNER.DMT_WORK_QUEUE_TBL (
+                INSERT INTO DMT_WORK_QUEUE_TBL (
                     RUN_ID, PIPELINE, CEMLI_CODE, SORT_ORDER, DEPENDS_ON,
                     WORK_STATUS, PARTITION_KEY, PARTITION_LABEL
                 ) VALUES (
@@ -292,7 +292,7 @@ AS
                     FROM DMT_CEMLI_SPLIT_CFG
                     WHERE CEMLI_CODE = l_cemli AND CHILD_PARTITION_COLUMN IS NULL;
 
-                    INSERT INTO DMT_OWNER.DMT_WORK_QUEUE_TBL (
+                    INSERT INTO DMT_WORK_QUEUE_TBL (
                         RUN_ID, PIPELINE, CEMLI_CODE, SORT_ORDER, DEPENDS_ON,
                         WORK_STATUS, PARTITION_KEY, PARTITION_LABEL
                     ) VALUES (

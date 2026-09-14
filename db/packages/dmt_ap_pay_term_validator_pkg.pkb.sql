@@ -26,11 +26,11 @@ AS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_AP_PAY_TERM_HDR_STG_TBL
+        UPDATE DMT_AP_PAY_TERM_HDR_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Payment Term Headers'
@@ -38,11 +38,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_AP_PAY_TERM_LINE_STG_TBL
+        UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Payment Term Lines'
@@ -105,7 +105,7 @@ AS
             p_package        => C_PKG,
             p_procedure      => 'VALIDATE_POST_TRANSFORM');
 
-        UPDATE DMT_OWNER.DMT_AP_PAY_TERM_LINE_TFM_TBL ln
+        UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL ln
         SET    ln.TFM_STATUS        = 'FAILED',
                ln.ERROR_TEXT        = NVL2(ln.ERROR_TEXT,
                                          ln.ERROR_TEXT || ' | ',
@@ -117,7 +117,7 @@ AS
         AND    ln.TFM_STATUS     = 'STAGED'
         AND    NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_AP_PAY_TERM_HDR_TFM_TBL h
+            FROM   DMT_AP_PAY_TERM_HDR_TFM_TBL h
             WHERE  h.RUN_ID  = p_run_id
             AND    h.SOURCE_GROUP_ID  = ln.SOURCE_GROUP_ID
             AND    h.TFM_STATUS       = 'STAGED'

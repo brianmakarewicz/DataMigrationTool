@@ -78,7 +78,7 @@
         l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
         l_username := DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
         l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
-        SELECT REPORT_CATALOG_PATH INTO l_rpt_path FROM DMT_OWNER.DMT_BIP_REPORT_TBL WHERE CEMLI_CODE = C_CEMLI;
+        SELECT REPORT_CATALOG_PATH INTO l_rpt_path FROM DMT_BIP_REPORT_TBL WHERE CEMLI_CODE = C_CEMLI;
 
         DBMS_LOB.CREATETEMPORARY(l_env, TRUE);
         DBMS_LOB.APPEND(l_env, TO_CLOB(
@@ -160,7 +160,7 @@
                    NVL(SEGMENT22,'#')||'|'||NVL(SEGMENT23,'#')||'|'||NVL(SEGMENT24,'#')||'|'||
                    NVL(SEGMENT25,'#')||'|'||NVL(SEGMENT26,'#')||'|'||NVL(SEGMENT27,'#')||'|'||
                    NVL(SEGMENT28,'#')||'|'||NVL(SEGMENT29,'#')||'|'||NVL(SEGMENT30,'#') AS account_key
-            FROM   DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+            FROM   DMT_GL_BUDGET_INT_TFM_TBL
             WHERE  RUN_ID = p_run_id AND TFM_STATUS NOT IN ('LOADED','FAILED')
         ) LOOP
             l_key := cell_key(TO_CHAR(t.LEDGER_ID), t.BUDGET_NAME, t.PERIOD_NAME, t.CURRENCY_CODE, t.account_key);
@@ -180,7 +180,7 @@
                                   ' <> expected ' || l_exp_dr || '/' || l_exp_cr ||
                                   ' (budget cells may aggregate duplicate lines).';
                     END IF;
-                    UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+                    UPDATE DMT_GL_BUDGET_INT_TFM_TBL
                     SET    TFM_STATUS = 'LOADED',
                            ERROR_TEXT = CASE WHEN l_note IS NULL THEN ERROR_TEXT
                                              ELSE DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, l_note) END,
@@ -191,7 +191,7 @@
 
             ELSIF l_ierr.EXISTS(l_key) THEN
                 -- Row still in the interface with an error = FAILED.
-                UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+                UPDATE DMT_GL_BUDGET_INT_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || l_ierr(l_key)),
                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
@@ -206,11 +206,11 @@
         END LOOP;
 
         -- Fan cell outcome back to the STG source rows.
-        UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_STG_TBL SET STG_STATUS='LOADED', LAST_UPDATED_DATE=SYSDATE
-        WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+        UPDATE DMT_GL_BUDGET_INT_STG_TBL SET STG_STATUS='LOADED', LAST_UPDATED_DATE=SYSDATE
+        WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_GL_BUDGET_INT_TFM_TBL
                                   WHERE RUN_ID=p_run_id AND TFM_STATUS='LOADED');
-        UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_STG_TBL SET STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE
-        WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+        UPDATE DMT_GL_BUDGET_INT_STG_TBL SET STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE
+        WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_GL_BUDGET_INT_TFM_TBL
                                   WHERE RUN_ID=p_run_id AND TFM_STATUS='FAILED');
 
         DMT_UTIL_PKG.LOG(p_run_id,

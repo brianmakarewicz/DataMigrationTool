@@ -22,7 +22,7 @@ AS
     BEGIN
         SELECT EXEC_PROC, EXEC_MODE, RECON_PROC, RECON_HAS_CEMLI_ARG
         INTO   x_exec_proc, x_exec_mode, x_recon_proc, x_recon_has_cemli_arg
-        FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+        FROM   DMT_PIPELINE_DEF_TBL
         WHERE  CEMLI_CODE = p_cemli_code;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
@@ -81,7 +81,7 @@ AS
         p_load_ess_id      IN NUMBER   DEFAULT NULL,
         p_import_ess_id    IN NUMBER   DEFAULT NULL,
         p_work_queue_id    IN NUMBER   DEFAULT NULL,
-        x_keys             OUT NOCOPY  DMT_OWNER.DMT_PARTITION_KEY_TBL
+        x_keys             OUT NOCOPY  DMT_PARTITION_KEY_TBL
     ) IS
     BEGIN
         IF p_proc IS NULL
@@ -176,7 +176,7 @@ AS
 
         FOR r IN (
             SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'TFM_STATUS') AS STATUS_COLUMN, ROW_FILTER
-            FROM   DMT_OWNER.DMT_CEMLI_CATALOG_TBL
+            FROM   DMT_CEMLI_CATALOG_TBL
             WHERE  CEMLI_CODE = p_cemli_code
             AND    TFM_TABLE IS NOT NULL
             ORDER BY SORT_ORDER
@@ -202,7 +202,7 @@ AS
                 || 'SUM(CASE WHEN ' || r.STATUS_COLUMN || ' = ''FAILED'''
                 || '          AND ERROR_TEXT IS NOT NULL'
                 || '          AND DBMS_LOB.GETLENGTH(ERROR_TEXT) > 0 THEN 1 ELSE 0 END) '
-                || 'FROM DMT_OWNER.' || r.TFM_TABLE
+                || 'FROM ' || r.TFM_TABLE
                 || ' WHERE RUN_ID = :run_id'
                 || CASE WHEN p_work_queue_id IS NOT NULL
                         THEN ' AND WORK_QUEUE_ID = :wq' END
@@ -261,7 +261,7 @@ AS
     BEGIN
         FOR r IN (
             SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'TFM_STATUS') AS STATUS_COLUMN, ROW_FILTER
-            FROM   DMT_OWNER.DMT_CEMLI_CATALOG_TBL
+            FROM   DMT_CEMLI_CATALOG_TBL
             WHERE  CEMLI_CODE = p_cemli_code
             AND    TFM_TABLE IS NOT NULL
             ORDER BY SORT_ORDER
@@ -270,9 +270,9 @@ AS
             assert_catalog_identifier(r.STATUS_COLUMN, 'STATUS_COLUMN');
 
             l_sql :=
-                'UPDATE DMT_OWNER.' || r.TFM_TABLE
+                'UPDATE ' || r.TFM_TABLE
                 || ' SET ' || r.STATUS_COLUMN || ' = ''UNACCOUNTED'','
-                || ' ERROR_TEXT = DMT_OWNER.DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, ''[UNACCOUNTED]'')'
+                || ' ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, ''[UNACCOUNTED]'')'
                 || ' WHERE RUN_ID = :run_id'
                 || ' AND ' || r.STATUS_COLUMN || ' = ''GENERATED'''
                 || CASE WHEN p_work_queue_id IS NOT NULL
@@ -379,7 +379,7 @@ AS
         l_exec_mode   VARCHAR2(10);
         l_recon_proc  VARCHAR2(200);
         l_recon_cemli VARCHAR2(1);
-        l_ignore_keys DMT_OWNER.DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
+        l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
         SELECT * INTO l_run_rec FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = l_rec.RUN_ID;
@@ -439,7 +439,7 @@ AS
                 BEGIN
                     SELECT CHILD_PARTITION_COLUMN, TFM_TABLE
                     INTO   l_child_col, l_tfm_table
-                    FROM   DMT_OWNER.DMT_CEMLI_SPLIT_CFG
+                    FROM   DMT_CEMLI_SPLIT_CFG
                     WHERE  CEMLI_CODE = l_rec.CEMLI_CODE;
                 EXCEPTION WHEN NO_DATA_FOUND THEN
                     l_child_col := NULL;
@@ -460,7 +460,7 @@ AS
                     BEGIN
                         SELECT PARTITION_KEYS_PROC
                         INTO   l_keys_proc
-                        FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+                        FROM   DMT_PIPELINE_DEF_TBL
                         WHERE  CEMLI_CODE = l_rec.CEMLI_CODE;
                     EXCEPTION WHEN NO_DATA_FOUND THEN
                         l_keys_proc := NULL;
@@ -490,7 +490,7 @@ AS
                     --    the human-readable PARTITION_LABEL for logs/UI.
                     DECLARE
                         l_cnt    PLS_INTEGER := 0;
-                        l_keys   DMT_OWNER.DMT_PARTITION_KEY_TBL;
+                        l_keys   DMT_PARTITION_KEY_TBL;
                         l_label  VARCHAR2(4000);
                     BEGIN
                         invoke_registered(
@@ -616,7 +616,7 @@ AS
         l_exec_mode   VARCHAR2(10);
         l_recon_proc  VARCHAR2(200);
         l_recon_cemli VARCHAR2(1);
-        l_ignore_keys DMT_OWNER.DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
+        l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
 
@@ -678,7 +678,7 @@ AS
                 -- Work-queue-ID core: only reconcile categories THIS item generated.
                 -- Scoping by WORK_QUEUE_ID stops one Items batch's reconcile from
                 -- touching another still-in-flight batch's category rows.
-                SELECT COUNT(*) INTO l_cat_gen FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+                SELECT COUNT(*) INTO l_cat_gen FROM DMT_EGP_ITEM_CAT_TFM_TBL
                 WHERE RUN_ID = l_rec.RUN_ID AND TFM_STATUS = 'GENERATED'
                 AND   WORK_QUEUE_ID = p_queue_id;
                 IF l_cat_gen > 0 THEN
@@ -865,7 +865,7 @@ AS
     BEGIN
         BEGIN
             SELECT POSTRUN_JOB INTO l_job
-            FROM   DMT_OWNER.DMT_PIPELINE_DEF_TBL
+            FROM   DMT_PIPELINE_DEF_TBL
             WHERE  CEMLI_CODE = p_cemli_code;
         EXCEPTION WHEN NO_DATA_FOUND THEN l_job := NULL;
         END;
@@ -896,7 +896,7 @@ AS
             ELSE
                 BEGIN
                     SELECT MAX(BOOK_TYPE_CODE) INTO l_book
-                    FROM   DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
+                    FROM   DMT_FA_ASSET_BOOK_TFM_TBL
                     WHERE  RUN_ID = p_run_id;
                 EXCEPTION WHEN OTHERS THEN l_book := NULL;
                 END;

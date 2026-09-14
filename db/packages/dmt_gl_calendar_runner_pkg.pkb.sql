@@ -86,7 +86,7 @@
 
         -- Final counts
         SELECT COUNT(*) INTO l_row_count
-        FROM   DMT_OWNER.DMT_GL_CALENDAR_TFM_TBL
+        FROM   DMT_GL_CALENDAR_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         DMT_UTIL_PKG.LOG(

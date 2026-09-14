@@ -54,7 +54,7 @@
             SELECT VALUE_SET_CODE, DESCRIPTION, MODULE_ID, VALIDATION_TYPE,
                    VALUE_DATA_TYPE, MAXIMUM_SIZE, FORMAT_TYPE, PROTECTED_FLAG,
                    SECURITY_ENABLED_FLAG
-            FROM   DMT_OWNER.DMT_FND_VS_SET_TFM_TBL
+            FROM   DMT_FND_VS_SET_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -94,7 +94,7 @@
         FOR r IN (
             SELECT VALUE_SET_CODE, VALUE, DESCRIPTION, ENABLED_FLAG,
                    EFFECTIVE_START_DATE, EFFECTIVE_END_DATE, INDEPENDENT_VALUE, TAG
-            FROM   DMT_OWNER.DMT_FND_VS_VALUE_TFM_TBL
+            FROM   DMT_FND_VS_VALUE_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -145,11 +145,11 @@
 
         -- Count STAGED rows for each object type
         SELECT COUNT(*) INTO l_set_count
-        FROM   DMT_OWNER.DMT_FND_VS_SET_TFM_TBL
+        FROM   DMT_FND_VS_SET_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         SELECT COUNT(*) INTO l_value_count
-        FROM   DMT_OWNER.DMT_FND_VS_VALUE_TFM_TBL
+        FROM   DMT_FND_VS_VALUE_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         -- If both are empty, nothing to generate
@@ -170,8 +170,8 @@
         l_values_csv := gen_values_csv(p_run_id);
 
         -- Store set CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_set_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_set_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -180,8 +180,8 @@
         );
 
         -- Store value CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_value_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_value_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -193,29 +193,29 @@
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
 
         IF l_set_count > 0 AND DBMS_LOB.GETLENGTH(l_sets_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'ValueSetCode.csv',
+            UTL_ZIP.add1file(l_zip, 'ValueSetCode.csv',
                 clob_to_blob(l_sets_csv));
         END IF;
 
         IF l_value_count > 0 AND DBMS_LOB.GETLENGTH(l_values_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'ValueSetValue.csv',
+            UTL_ZIP.add1file(l_zip, 'ValueSetValue.csv',
                 clob_to_blob(l_values_csv));
         END IF;
 
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        UTL_ZIP.finish_zip(l_zip);
 
         -- Store zip artefact (reference the set CSV ID as the primary)
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+        INSERT INTO DMT_FBDI_ZIP_TBL (
             FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
+            DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
             'FND_VS', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
 
         -- Update set TFM rows: STAGED -> GENERATED
         IF l_set_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_FND_VS_SET_TFM_TBL
+            UPDATE DMT_FND_VS_SET_TFM_TBL
             SET    TFM_STATUS       = 'GENERATED',
                    FBDI_CSV_ID      = l_set_csv_id,
                    LAST_UPDATED_DATE = l_now
@@ -224,7 +224,7 @@
 
         -- Update value TFM rows: STAGED -> GENERATED
         IF l_value_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_FND_VS_VALUE_TFM_TBL
+            UPDATE DMT_FND_VS_VALUE_TFM_TBL
             SET    TFM_STATUS       = 'GENERATED',
                    FBDI_CSV_ID      = l_value_csv_id,
                    LAST_UPDATED_DATE = l_now

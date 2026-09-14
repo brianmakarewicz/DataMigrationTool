@@ -9,7 +9,7 @@ AS
 -- Accepted architecture (design section 7):
 --   - Validation runs on STG rows (pre) / TFM rows (post).
 --   - A pre-validation rejection is recorded in the run-stamped error
---     table DMT_OWNER.DMT_STG_TFM_ERROR_TBL; the STG row keeps its status
+--     table DMT_STG_TFM_ERROR_TBL; the STG row keeps its status
 --     only (no message) and is flagged FAILED by FLAG_STG_FAILED. No
 --     validator writes ERROR_TEXT on a *_STG_TBL row.
 --   - A failing TFM row is tagged with TFM_STATUS = 'FAILED' and its
@@ -32,11 +32,11 @@ AS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_WORKER_STG_TBL
+        UPDATE DMT_WORKER_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Workers'
@@ -74,7 +74,7 @@ AS
 
         -- Record the rejection in the run-stamped error table; the STG row keeps
         -- its status only (no message), flagged FAILED later by FLAG_STG_FAILED (§7).
-        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
                (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
         SELECT p_run_id, 'Workers', 'Workers', w.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] ' ||
@@ -83,7 +83,7 @@ AS
                     ELSE 'ACTION_CODE ' || w.ACTION_CODE ||
                          ' is not a supported worker action (HIRE, ADD_CWK).'
                END
-        FROM   DMT_OWNER.DMT_WORKER_STG_TBL w
+        FROM   DMT_WORKER_STG_TBL w
         WHERE  w.STG_STATUS = 'NEW'
         AND (  w.PERSON_NUMBER IS NULL
             OR NVL(w.ACTION_CODE, 'X') NOT IN ('HIRE', 'ADD_CWK') );
@@ -96,18 +96,18 @@ AS
         -- with no matching assignment row cannot be loaded — it is a validation
         -- failure, not a fabricated placeholder. Only workers that passed R1/R2
         -- above (still NEW, valid action, non-null person) are checked here.
-        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
                (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
         SELECT p_run_id, 'Workers', 'Workers', w.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] No assignment row found for this worker '
                || '(PERSON_NUMBER=' || w.PERSON_NUMBER
                || '); an assignment number is required and cannot be fabricated.'
-        FROM   DMT_OWNER.DMT_WORKER_STG_TBL w
+        FROM   DMT_WORKER_STG_TBL w
         WHERE  w.STG_STATUS = 'NEW'
         AND    w.PERSON_NUMBER IS NOT NULL
         AND    NVL(w.ACTION_CODE, 'X') IN ('HIRE', 'ADD_CWK')
         AND    NOT EXISTS (
-                   SELECT 1 FROM DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+                   SELECT 1 FROM DMT_ASSIGNMENT_STG_TBL a
                    WHERE  a.PERSON_NUMBER = w.PERSON_NUMBER
                    AND    a.ASSIGNMENT_NUMBER IS NOT NULL
                    -- Match the HDL-gen join exactly: a worker only passes R3 if it

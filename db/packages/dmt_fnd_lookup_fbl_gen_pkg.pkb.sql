@@ -48,7 +48,7 @@
 
         FOR r IN (
             SELECT LOOKUP_TYPE, MEANING, DESCRIPTION, MODULE_TYPE, MODULE_KEY
-            FROM   DMT_OWNER.DMT_FND_LOOKUP_TYPE_TFM_TBL
+            FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -84,7 +84,7 @@
         FOR r IN (
             SELECT LOOKUP_TYPE, LOOKUP_CODE, DISPLAY_SEQUENCE, ENABLED_FLAG,
                    START_DATE_ACTIVE, END_DATE_ACTIVE, MEANING, DESCRIPTION, TAG
-            FROM   DMT_OWNER.DMT_FND_LOOKUP_VALUE_TFM_TBL
+            FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -136,11 +136,11 @@
 
         -- Count STAGED rows for each object type
         SELECT COUNT(*) INTO l_type_count
-        FROM   DMT_OWNER.DMT_FND_LOOKUP_TYPE_TFM_TBL
+        FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         SELECT COUNT(*) INTO l_value_count
-        FROM   DMT_OWNER.DMT_FND_LOOKUP_VALUE_TFM_TBL
+        FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         -- If both are empty, nothing to generate
@@ -161,8 +161,8 @@
         l_values_csv := gen_values_csv(p_run_id);
 
         -- Store type CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_type_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_type_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -171,8 +171,8 @@
         );
 
         -- Store value CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_value_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_value_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -184,29 +184,29 @@
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
 
         IF l_type_count > 0 AND DBMS_LOB.GETLENGTH(l_types_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'LookupType.csv',
+            UTL_ZIP.add1file(l_zip, 'LookupType.csv',
                 clob_to_blob(l_types_csv));
         END IF;
 
         IF l_value_count > 0 AND DBMS_LOB.GETLENGTH(l_values_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'LookupCode.csv',
+            UTL_ZIP.add1file(l_zip, 'LookupCode.csv',
                 clob_to_blob(l_values_csv));
         END IF;
 
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        UTL_ZIP.finish_zip(l_zip);
 
         -- Store zip artefact (reference the type CSV ID as the primary)
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+        INSERT INTO DMT_FBDI_ZIP_TBL (
             FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
+            DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
             'FND_LOOKUP', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
 
         -- Update type TFM rows: STAGED -> GENERATED
         IF l_type_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_FND_LOOKUP_TYPE_TFM_TBL
+            UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
             SET    TFM_STATUS       = 'GENERATED',
                    FBDI_CSV_ID      = l_type_csv_id,
                    LAST_UPDATED_DATE = l_now
@@ -215,7 +215,7 @@
 
         -- Update value TFM rows: STAGED -> GENERATED
         IF l_value_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_FND_LOOKUP_VALUE_TFM_TBL
+            UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
             SET    TFM_STATUS       = 'GENERATED',
                    FBDI_CSV_ID      = l_value_csv_id,
                    LAST_UPDATED_DATE = l_now

@@ -212,7 +212,7 @@ AS
                 || '"' || REPLACE(NVL(EXT_BANK_ACCOUNT_IBAN_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(REQUESTER_EMAIL_ADDRESS,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(INTERCOMPANY_CROSSCHARGE_FLAG,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
+            FROM   DMT_AP_INVOICES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_operating_unit IS NULL OR t.OPERATING_UNIT = p_operating_unit)
@@ -242,7 +242,7 @@ AS
         FOR r IN (
             SELECT
                 '"' || TO_CHAR(  -- INVOICE_ID = header's TFM_SEQUENCE_ID (matches gen_headers_csv)
-                    (SELECT h.TFM_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
+                    (SELECT h.TFM_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL h
                      WHERE h.RUN_ID = l.RUN_ID AND h.INVOICE_ID = l.INVOICE_ID
                      AND ROWNUM = 1)
                 ) || '"' || ','
@@ -409,12 +409,12 @@ AS
                 || '"' || REPLACE(NVL(PJC_FUNDING_SOURCE_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(REQUESTER_EMAIL_ADDRESS,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(RCV_TRANSACTION_ID), '') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL l
+            FROM   DMT_AP_INVOICE_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.TFM_STATUS = 'STAGED'
             AND    (p_operating_unit IS NULL OR l.INVOICE_ID IN (
             SELECT h.INVOICE_ID
-            FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
+            FROM   DMT_AP_INVOICES_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.TFM_STATUS IN ('STAGED','GENERATED')
             AND    h.OPERATING_UNIT = p_operating_unit))
@@ -486,7 +486,7 @@ AS
 
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns two CSVs.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         -- Each file is registered (and thus zipped) only when it has rows, matching the
         -- pre-remodel per-file guards (the early-return above only bails when BOTH are empty).
         IF l_hdr_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_hdr_csv) > 0 THEN
@@ -499,19 +499,19 @@ AS
 
         -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
         -- Headers: filter directly by OPERATING_UNIT.
-        UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+        UPDATE DMT_AP_INVOICES_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_operating_unit IS NULL OR OPERATING_UNIT = p_operating_unit);
 
         -- Lines: filter via header chain (INVOICE_ID). Chain predicate points at the
         -- HEADER file's id (just stamped above); SET stamps the LINES file's id.
-        UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL
+        UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_operating_unit IS NULL OR INVOICE_ID IN (
             SELECT h.INVOICE_ID
-            FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
+            FROM   DMT_AP_INVOICES_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.FBDI_CSV_ID = l_fbdi_csv_id));
 

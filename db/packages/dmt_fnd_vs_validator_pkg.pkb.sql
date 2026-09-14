@@ -26,11 +26,11 @@ AS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_FND_VS_SET_STG_TBL
+        UPDATE DMT_FND_VS_SET_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Value Sets'
@@ -38,11 +38,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_FND_VS_VALUE_STG_TBL
+        UPDATE DMT_FND_VS_VALUE_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Value Set Values'
@@ -108,7 +108,7 @@ AS
             p_procedure      => 'VALIDATE_POST_TRANSFORM');
 
         -- Mark orphan value rows whose VALUE_SET_CODE has no matching set row
-        UPDATE DMT_OWNER.DMT_FND_VS_VALUE_TFM_TBL v
+        UPDATE DMT_FND_VS_VALUE_TFM_TBL v
         SET    v.TFM_STATUS        = 'FAILED',
                v.ERROR_TEXT        = NVL2(v.ERROR_TEXT,
                                         v.ERROR_TEXT || ' | ',
@@ -120,7 +120,7 @@ AS
         AND    v.TFM_STATUS     = 'STAGED'
         AND    NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_FND_VS_SET_TFM_TBL t
+            FROM   DMT_FND_VS_SET_TFM_TBL t
             WHERE  t.RUN_ID  = p_run_id
             AND    t.VALUE_SET_CODE  = v.VALUE_SET_CODE
             AND    t.TFM_STATUS      = 'STAGED'

@@ -137,26 +137,26 @@ BEGIN
         FOR rec IN (
             SELECT QUEUE_ID, PIPELINE, CEMLI_CODE, WORK_STATUS, PARTITION_LABEL,
                    COALESCE(q.LOAD_ESS_JOB_ID,
-                       TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_OWNER.DMT_ESS_JOB_TBL ej
+                       TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_ESS_JOB_TBL ej
                                 WHERE ej.RUN_ID = q.RUN_ID AND ej.CEMLI_CODE = q.CEMLI_CODE
                                   AND ej.DEPTH_LEVEL = 0
                                   AND ej.JOB_SHORT_NAME = 'InterfaceLoaderController'))) AS LOAD_ESS_JOB_ID,
                    COALESCE(q.IMPORT_ESS_JOB_ID,
-                       TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_OWNER.DMT_ESS_JOB_TBL ej
+                       TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_ESS_JOB_TBL ej
                                 WHERE ej.RUN_ID = q.RUN_ID AND ej.CEMLI_CODE = q.CEMLI_CODE
                                   AND ej.DEPTH_LEVEL = 0
                                   AND ej.JOB_SHORT_NAME <> 'InterfaceLoaderController'))) AS IMPORT_ESS_JOB_ID,
                    ERROR_MESSAGE, RUN_ID,
                    -- Rolled-up outcome counts for the palette (loaded / failed / unaccounted).
-                   (SELECT NVL(SUM(cs.ROW_COUNT),0) FROM DMT_OWNER.DMT_V_CEMLI_STATUS cs
+                   (SELECT NVL(SUM(cs.ROW_COUNT),0) FROM DMT_V_CEMLI_STATUS cs
                      WHERE cs.RUN_ID = q.RUN_ID AND cs.CEMLI_CODE = q.CEMLI_CODE) AS TOT_ROWS,
                    (SELECT NVL(SUM(CASE WHEN cs.TFM_STATUS = 'LOADED' THEN cs.ROW_COUNT END),0)
-                      FROM DMT_OWNER.DMT_V_CEMLI_STATUS cs
+                      FROM DMT_V_CEMLI_STATUS cs
                      WHERE cs.RUN_ID = q.RUN_ID AND cs.CEMLI_CODE = q.CEMLI_CODE) AS LOADED_ROWS,
                    (SELECT NVL(SUM(CASE WHEN cs.TFM_STATUS = 'FAILED' THEN cs.ROW_COUNT END),0)
-                      FROM DMT_OWNER.DMT_V_CEMLI_STATUS cs
+                      FROM DMT_V_CEMLI_STATUS cs
                      WHERE cs.RUN_ID = q.RUN_ID AND cs.CEMLI_CODE = q.CEMLI_CODE) AS FAILED_ROWS,
-                   (SELECT NVL(SUM(cs.UNRECONCILED_COUNT),0) FROM DMT_OWNER.DMT_V_CEMLI_STATUS cs
+                   (SELECT NVL(SUM(cs.UNRECONCILED_COUNT),0) FROM DMT_V_CEMLI_STATUS cs
                      WHERE cs.RUN_ID = q.RUN_ID AND cs.CEMLI_CODE = q.CEMLI_CODE) AS UNACC_ROWS,
                    TO_CHAR(STARTED_AT, 'HH24:MI:SS') STARTED,
                    TO_CHAR(COMPLETED_AT, 'HH24:MI:SS') COMPLETED

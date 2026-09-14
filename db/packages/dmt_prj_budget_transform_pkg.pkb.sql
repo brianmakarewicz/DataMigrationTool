@@ -20,10 +20,10 @@
         -- run prefix (same pattern as DMT_EXPENDITURE_TRANSFORM_PKG).
         SELECT PREFIX
         INTO   l_dep_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
 
-        INSERT INTO DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL (
+        INSERT INTO DMT_PRJ_BUDGET_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,
             AWARD_NUMBER, FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
             TASK_NAME, TASK_NUMBER,
@@ -68,7 +68,7 @@
             s.ATTRIBUTE26, s.ATTRIBUTE27, s.ATTRIBUTE28, s.ATTRIBUTE29, s.ATTRIBUTE30,
             s.PLAN_VERSION_NUMBER, s.PROCESSING_MODE,
             'STAGED'
-        FROM   DMT_OWNER.DMT_PRJ_BUDGET_STG_TBL s
+        FROM   DMT_PRJ_BUDGET_STG_TBL s
         WHERE  (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -80,7 +80,7 @@
 
         l_ok := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_PRJ_BUDGET_STG_TBL
+        UPDATE DMT_PRJ_BUDGET_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
             (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))

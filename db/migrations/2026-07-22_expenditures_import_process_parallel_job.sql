@@ -15,7 +15,7 @@
 -- =========================================================================
 set define off
 
-update DMT_OWNER.DMT_ERP_INTERFACE_OPTIONS_TBL
+update DMT_ERP_INTERFACE_OPTIONS_TBL
 set    IMPORT_JOB_NAME = '/oracle/apps/ess/projects/costing/transactions/onestop;ImportProcessParallelEssJob'
 where  CEMLI_CODE = 'Expenditures'
 and    IMPORT_JOB_NAME <> '/oracle/apps/ess/projects/costing/transactions/onestop;ImportProcessParallelEssJob';

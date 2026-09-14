@@ -107,7 +107,7 @@ AS
         -- First check if already captured in the hierarchy
         BEGIN
             SELECT REQUEST_ID INTO l_result
-            FROM   DMT_OWNER.DMT_ESS_JOB_TBL
+            FROM   DMT_ESS_JOB_TBL
             WHERE  PARENT_REQUEST_ID = p_import_ess_id
             AND    UPPER(JOB_DEFINITION) LIKE '%REPORT%'
             FETCH FIRST 1 ROW ONLY;
@@ -237,7 +237,7 @@ AS
                 -- error to write: leave the row GENERATED for the honest sweep to
                 -- mark UNACCOUNTED.
                 IF l_err_msgs IS NOT NULL THEN
-                    UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                    UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[FUSION_ERROR] ' || l_err_msgs),
@@ -250,7 +250,7 @@ AS
                 END IF;
 
             ELSIF r.import_status IN ('COMPLETE', 'COMPLETED', 'IMPORTED', 'Y', 'PROCESSED', 'SUCCESS', 'P') THEN
-                UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
@@ -265,7 +265,7 @@ AS
                 -- and we record it; otherwise we have only a composed status label,
                 -- so leave the row GENERATED for the honest sweep to mark UNACCOUNTED.
                 IF l_err_msgs IS NOT NULL THEN
-                    UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                    UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[FUSION_ERROR] ' || l_err_msgs),
@@ -340,7 +340,7 @@ AS
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -358,7 +358,7 @@ AS
         -- Look up prefix for Tier 2 base table matching
         BEGIN
             SELECT PREFIX INTO l_prefix
-            FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+            FROM   DMT_PIPELINE_RUN_TBL
             WHERE  RUN_ID = p_run_id;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -495,7 +495,7 @@ AS
         ) LOOP
             IF r.source_type = 'BASE' THEN
                 -- Tier 2: Found in base table = positively LOADED
-                UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        FUSION_EVENT_ID      = r.fusion_id,
                        RESULTS_UPDATED_DATE = SYSDATE,
@@ -508,7 +508,7 @@ AS
             ELSIF r.source_type = 'INTERFACE' THEN
                 -- Tier 1: Interface table row — check tfm_status
                 IF r.fusion_status IN ('COMPLETE','COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
-                    UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                    UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_EVENT_ID      = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -523,7 +523,7 @@ AS
                     -- message gives us no real Fusion error to write: leave the row
                     -- GENERATED for the honest sweep to mark UNACCOUNTED.
                     IF r.error_msg IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                        UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
                         SET    TFM_STATUS               = 'FAILED',
                                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                          '[FUSION_ERROR] ' || r.error_msg),
@@ -557,7 +557,7 @@ AS
         <<import_report_fallback>>
 
         SELECT COUNT(*) INTO l_still_gen
-        FROM   DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+        FROM   DMT_PJB_BILL_EVENTS_TFM_TBL
         WHERE  RUN_ID = p_run_id
         AND    TFM_STATUS         = 'GENERATED';
 
@@ -634,21 +634,21 @@ AS
         -- ====================================================
         -- Echo outcomes back to STG
         -- ====================================================
-        UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL stg
+        UPDATE DMT_PJB_BILL_EVENTS_STG_TBL stg
         SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_PJB_BILL_EVENTS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL stg
+        UPDATE DMT_PJB_BILL_EVENTS_STG_TBL stg
         SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL t
+                   (SELECT t.ERROR_TEXT FROM DMT_PJB_BILL_EVENTS_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_PJB_BILL_EVENTS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries

@@ -10,7 +10,7 @@ UNION ALL SELECT 'PurchaseOrders',       'DMT_PO_LINES_INT_TFM_TBL',       'PO L
 UNION ALL SELECT 'PurchaseOrders',       'DMT_PO_LINE_LOCS_INT_TFM_TBL',   'PO Line Locations',        3, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'PurchaseOrders',       'DMT_PO_DISTS_INT_TFM_TBL',       'PO Distributions',         4, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'BlanketPOs',           'DMT_PO_HEADERS_INT_TFM_TBL',     'Blanket PO Headers',       1, 'TFM_STATUS', 'STYLE_DISPLAY_NAME = ''Blanket Purchase Agreement''' FROM DUAL
-UNION ALL SELECT 'BlanketPOs',           'DMT_PO_LINES_INT_TFM_TBL',       'Blanket PO Lines',         2, 'TFM_STATUS', 'INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = ''Blanket Purchase Agreement'')' FROM DUAL
+UNION ALL SELECT 'BlanketPOs',           'DMT_PO_LINES_INT_TFM_TBL',       'Blanket PO Lines',         2, 'TFM_STATUS', 'INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE STYLE_DISPLAY_NAME = ''Blanket Purchase Agreement'')' FROM DUAL
 UNION ALL SELECT 'Contracts',            'DMT_PO_HEADERS_INT_TFM_TBL',     'Contract Headers',         1, 'TFM_STATUS', 'STYLE_DISPLAY_NAME = ''Contract Purchase Agreement''' FROM DUAL
 UNION ALL SELECT 'APInvoices',           'DMT_AP_INVOICES_INT_TFM_TBL',    'AP Invoice Headers',       1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'APInvoices',           'DMT_AP_INVOICE_LINES_INT_TFM_TBL','AP Invoice Lines',        2, 'TFM_STATUS', NULL FROM DUAL

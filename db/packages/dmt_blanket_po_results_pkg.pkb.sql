@@ -114,7 +114,7 @@ AS
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -256,7 +256,7 @@ AS
             IF r.source_type = 'BASE' THEN
                 -- Positive base-table confirmation. Key on the prefixed document
                 -- number the loader wrote, which equals the base SEGMENT1.
-                UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                        FUSION_DOCUMENT_NUM  = r.document_num,
@@ -269,7 +269,7 @@ AS
 
             ELSIF r.source_type = 'INTERFACE' THEN
                 IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                            FUSION_DOCUMENT_NUM  = r.document_num,
@@ -280,7 +280,7 @@ AS
                     AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_msg),
@@ -301,14 +301,14 @@ AS
         -- scoped to blanket-style rows in the shared PO tables — see design §7.)
 
         -- Cascade LOADED to lines (no locs/dists for blanket POs)
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
+        UPDATE DMT_PO_LINES_INT_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'LOADED',
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
         AND    ln.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            SELECT 1 FROM DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID      = p_run_id
             AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
             AND    h.TFM_STATUS              = 'LOADED'
@@ -318,11 +318,11 @@ AS
         -- FAILED with a real Fusion error (from the INTERFACE ERROR/REJECTED
         -- path above), so the line carries that same real parent error in the
         -- prescribed linked-record form.
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
+        UPDATE DMT_PO_LINES_INT_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT h.ERROR_TEXT FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+                   (SELECT h.ERROR_TEXT FROM DMT_PO_HEADERS_INT_TFM_TBL h
                     WHERE  h.RUN_ID = p_run_id
                     AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
                     AND    h.TFM_STATUS = 'FAILED'
@@ -333,7 +333,7 @@ AS
         WHERE  ln.RUN_ID    = p_run_id
         AND    ln.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            SELECT 1 FROM DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID      = p_run_id
             AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
             AND    h.TFM_STATUS              = 'FAILED'

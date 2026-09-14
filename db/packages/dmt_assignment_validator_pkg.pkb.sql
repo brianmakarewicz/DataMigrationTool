@@ -27,11 +27,11 @@ AS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_WORK_REL_STG_TBL
+        UPDATE DMT_WORK_REL_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Work Relationships'
@@ -39,11 +39,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_ASSIGNMENT_STG_TBL
+        UPDATE DMT_ASSIGNMENT_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Assignments'
@@ -72,11 +72,11 @@ AS
             p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 
         -- R1: assignment number required (business key — not fabricated).
-        INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
                (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
         SELECT p_run_id, 'Assignments', 'Assignments', a.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] ASSIGNMENT_NUMBER is required.'
-        FROM   DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+        FROM   DMT_ASSIGNMENT_STG_TBL a
         WHERE  a.STG_STATUS = 'NEW'
         AND    a.ASSIGNMENT_NUMBER IS NULL;
         l_bad := SQL%ROWCOUNT;

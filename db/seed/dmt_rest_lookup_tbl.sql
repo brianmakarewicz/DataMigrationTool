@@ -145,7 +145,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('GLBudgets','/fscmRestApi/resources/11.13.18.05/generalLedgerJournals','JournalHeaderId={KEY}','FUSION_JE_HEADER_ID','JournalHeaderId,JournalBatchName,JournalName,LedgerName,Period,Status','Header ID,Batch,Journal,Ledger,Period,Status','ERP','Y','GL Budget Balances — same journal endpoint as GL Balances');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('GLBudgets','/fscmRestApi/resources/11.13.18.05/generalLedgerJournals','JournalHeaderId={KEY}','FUSION_JE_HEADER_ID','JournalHeaderId,JournalBatchName,JournalName,LedgerName,Period,Status','Header ID,Batch,Journal,Ledger,Period,Status','ERP','Y','GL Budget Balances - same journal endpoint as GL Balances');
 exception when dup_val_on_index then null;
 end;
 /
@@ -261,12 +261,12 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Accounts','/fscmRestApi/resources/11.13.18.05/hubOrganizations','PartyName={KEY}','ACCOUNT_NAME','PartyId,PartyName,PartyNumber,Status,CreationDate','Party ID,Name,Number,Status,Created','ERP','Y','Customer accounts — queries parent org by account name');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Accounts','/fscmRestApi/resources/11.13.18.05/hubOrganizations','PartyName={KEY}','ACCOUNT_NAME','PartyId,PartyName,PartyNumber,Status,CreationDate','Party ID,Name,Number,Status,Created','ERP','Y','Customer accounts - queries parent org by account name');
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('AR Lines','/fscmRestApi/resources/11.13.18.05/receivablesInvoices','TransactionNumber={KEY}','TRX_NUMBER','CustomerTransactionId,TransactionNumber,TransactionDate,BillToCustomerName,TransactionAmount,TransactionStatus','Trx ID,Number,Date,Customer,Amount,Status','ERP','Y','AR invoice lines — queries parent transaction by TRX_NUMBER');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('AR Lines','/fscmRestApi/resources/11.13.18.05/receivablesInvoices','TransactionNumber={KEY}','TRX_NUMBER','CustomerTransactionId,TransactionNumber,TransactionDate,BillToCustomerName,TransactionAmount,TransactionStatus','Trx ID,Number,Date,Customer,Amount,Status','ERP','Y','AR invoice lines - queries parent transaction by TRX_NUMBER');
 exception when dup_val_on_index then null;
 end;
 /
@@ -276,32 +276,32 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Asset Headers','/fscmRestApi/resources/11.13.18.05/fixedAssets','AssetNumber={KEY}','ASSET_NUMBER','AssetId,AssetNumber,Description,AssetType,CurrentCost,DatePlacedInService','Asset ID,Number,Description,Type,Cost,In-Service Date','ERP','Y','Asset headers — same config as Assets CEMLI entry');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Asset Headers','/fscmRestApi/resources/11.13.18.05/fixedAssets','AssetNumber={KEY}','ASSET_NUMBER','AssetId,AssetNumber,Description,AssetType,CurrentCost,DatePlacedInService','Asset ID,Number,Description,Type,Cost,In-Service Date','ERP','Y','Asset headers - same config as Assets CEMLI entry');
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Expenditure Items','/fscmRestApi/resources/11.13.18.05/projectExpenditureItems','OrigTransactionReference={KEY}','ORIG_TRANSACTION_REFERENCE','ExpenditureItemId,ProjectNumber,TaskNumber,ExpenditureType,ItemDate,Quantity,Amount','Item ID,Project,Task,Type,Date,Qty,Amount','ERP','Y','Expenditure items — filters by OrigTransactionReference');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Expenditure Items','/fscmRestApi/resources/11.13.18.05/projectExpenditureItems','OrigTransactionReference={KEY}','ORIG_TRANSACTION_REFERENCE','ExpenditureItemId,ProjectNumber,TaskNumber,ExpenditureType,ItemDate,Quantity,Amount','Item ID,Project,Task,Type,Date,Qty,Amount','ERP','Y','Expenditure items - filters by OrigTransactionReference');
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Salary Bases','/hcmRestApi/resources/11.13.18.05/salaryBases','SalaryBasisName={KEY}','SALARY_BASIS_NAME','SalaryBasisId,SalaryBasisName,SalaryBasisCode,ElementName,InputValueName','Basis ID,Name,Code,Element,Input Value','HCM','Y','Same as SalaryBases CEMLI entry — SUB_OBJECT display name');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Salary Bases','/hcmRestApi/resources/11.13.18.05/salaryBases','SalaryBasisName={KEY}','SALARY_BASIS_NAME','SalaryBasisId,SalaryBasisName,SalaryBasisCode,ElementName,InputValueName','Basis ID,Name,Code,Element,Input Value','HCM','Y','Same as SalaryBases CEMLI entry - SUB_OBJECT display name');
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Talent Profiles','/hcmRestApi/resources/11.13.18.05/talentProfiles','PersonNumber={KEY}','PERSON_NUMBER','ProfileId,ProfileCode,PersonNumber,ProfileTypeCode,ProfileStatusCode,ProfileUsageCode','Profile ID,Code,Person,Type,Status,Usage','HCM','Y','Same as TalentProfiles CEMLI entry — SUB_OBJECT display name');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Talent Profiles','/hcmRestApi/resources/11.13.18.05/talentProfiles','PersonNumber={KEY}','PERSON_NUMBER','ProfileId,ProfileCode,PersonNumber,ProfileTypeCode,ProfileStatusCode,ProfileUsageCode','Profile ID,Code,Person,Type,Status,Usage','HCM','Y','Same as TalentProfiles CEMLI entry - SUB_OBJECT display name');
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Performance Evaluations','/hcmRestApi/resources/11.13.18.05/goalPlans','PersonNumber={KEY}','PERSON_NUMBER','GoalPlanId,GoalPlanName,GoalPlanTypeCode,PersonNumber,StartDate,EndDate','Plan ID,Name,Type,Person,Start,End','HCM','Y','Same as PerfEvaluations CEMLI entry — SUB_OBJECT display name');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Performance Evaluations','/hcmRestApi/resources/11.13.18.05/goalPlans','PersonNumber={KEY}','PERSON_NUMBER','GoalPlanId,GoalPlanName,GoalPlanTypeCode,PersonNumber,StartDate,EndDate','Plan ID,Name,Type,Person,Start,End','HCM','Y','Same as PerfEvaluations CEMLI entry - SUB_OBJECT display name');
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Work Schedules','/hcmRestApi/resources/11.13.18.05/workPatterns','PersonNumber={KEY}','PERSON_NUMBER','WorkPatternAssignmentId,PersonNumber,AssignmentNumber,WorkPatternType,DateFrom,RepeatCycle','Pattern ID,Person,Assignment,Type,From Date,Repeat','HCM','Y','Same as WorkSchedules CEMLI entry — SUB_OBJECT display name');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Work Schedules','/hcmRestApi/resources/11.13.18.05/workPatterns','PersonNumber={KEY}','PERSON_NUMBER','WorkPatternAssignmentId,PersonNumber,AssignmentNumber,WorkPatternType,DateFrom,RepeatCycle','Pattern ID,Person,Assignment,Type,From Date,Repeat','HCM','Y','Same as WorkSchedules CEMLI entry - SUB_OBJECT display name');
 exception when dup_val_on_index then null;
 end;
 /

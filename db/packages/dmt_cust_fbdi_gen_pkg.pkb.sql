@@ -74,7 +74,7 @@ AS
         l_prefix VARCHAR2(30);
     BEGIN
         SELECT PREFIX INTO l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_prefix;
     EXCEPTION
@@ -114,7 +114,7 @@ AS
         l_wqid     NUMBER := DMT_LOADER_PKG.g_gen_queue_id;
     BEGIN
         -- Party site-uses: SITEUSE_ORIG_SYSTEM_REF is the reconciliation key.
-        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
+        UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL
         SET    SITEUSE_ORIG_SYSTEM_REF =
                    DMT_UTIL_PKG.PREFIXED(l_prefix,
                        TO_CHAR(TFM_SEQUENCE_ID) || '-' || TO_CHAR(l_wqid))
@@ -125,7 +125,7 @@ AS
 
         -- Account site-uses: CUST_SITEUSE_ORIG_SYS_REF is the reconciliation key
         -- (same site-use-has-no-natural-reference pattern as the party tier).
-        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL
+        UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL
         SET    CUST_SITEUSE_ORIG_SYS_REF =
                    DMT_UTIL_PKG.PREFIXED(l_prefix,
                        TO_CHAR(TFM_SEQUENCE_ID) || '-' || TO_CHAR(l_wqid))
@@ -188,7 +188,7 @@ AS
                 || '"' || REPLACE(NVL(ATTRIBUTE18,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE19,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE20,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL t
+            FROM   DMT_HZ_PARTIES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
@@ -264,7 +264,7 @@ AS
                 || '"' || REPLACE(NVL(ATTRIBUTE18,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE19,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE20,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL t
+            FROM   DMT_HZ_LOCATIONS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
@@ -328,7 +328,7 @@ AS
                 || '"' || REPLACE(NVL(ATTRIBUTE18,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE19,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE20,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL t
+            FROM   DMT_HZ_PARTY_SITES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
@@ -387,7 +387,7 @@ AS
                 || '"' || REPLACE(NVL(ATTRIBUTE18,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE19,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE20,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL t
+            FROM   DMT_HZ_PARTY_SITE_USES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
@@ -446,7 +446,7 @@ AS
                 || '"' || REPLACE(NVL(ATTRIBUTE19,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE20,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(ACCOUNT_TERMINATION_DATE, 'YYYY/MM/DD'), '') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL t
+            FROM   DMT_HZ_ACCOUNTS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
@@ -510,7 +510,7 @@ AS
                 || '"' || REPLACE(NVL(ATTRIBUTE18,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE19,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE20,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL t
+            FROM   DMT_HZ_ACCT_SITES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
@@ -571,7 +571,7 @@ AS
                 || '"' || REPLACE(NVL(ATTRIBUTE18,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE19,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE20,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL t
+            FROM   DMT_HZ_ACCT_SITE_USES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
@@ -661,7 +661,7 @@ AS
 
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns seven CSVs.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         -- Parties (primary) is always present (early-return guards it); each of the other
         -- six child files is registered/zipped only when it has rows, matching the
         -- pre-remodel per-file guards (a batch may legitimately have no account sites yet, etc.).
@@ -687,37 +687,37 @@ AS
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Customers', x_filename, l_zip, l_bytes);
 
         -- Update all 7 TFM tables to GENERATED and stamp EACH file's own FBDI_CSV_ID
-        UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
+        UPDATE DMT_HZ_PARTIES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
-        UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL
+        UPDATE DMT_HZ_LOCATIONS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_locations_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
-        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL
+        UPDATE DMT_HZ_PARTY_SITES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_psites_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
-        UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
+        UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_psite_uses_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
-        UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL
+        UPDATE DMT_HZ_ACCOUNTS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_accounts_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
-        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL
+        UPDATE DMT_HZ_ACCT_SITES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_acct_sites_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
-        UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL
+        UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_acct_suses_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);

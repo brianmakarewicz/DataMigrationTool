@@ -109,7 +109,7 @@ AS
 
         BEGIN
             SELECT REPORT_CATALOG_PATH INTO l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -223,7 +223,7 @@ AS
             ) x
         ) LOOP
             IF r.result_status = 'LOADED' THEN
-                UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL
+                UPDATE DMT_INV_TRX_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_ID            = r.fusion_id,
                        RESULTS_UPDATED_DATE = SYSDATE,
@@ -234,7 +234,7 @@ AS
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.result_status = 'FAILED' THEN
-                UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL
+                UPDATE DMT_INV_TRX_TFM_TBL
                 SET    TFM_STATUS           = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                            '[FUSION_ERROR] ' || r.error_code || ': ' || r.error_explanation),
@@ -248,21 +248,21 @@ AS
         END LOOP;
 
         -- Echo to STG
-        UPDATE DMT_OWNER.DMT_INV_TRX_STG_TBL stg
+        UPDATE DMT_INV_TRX_STG_TBL stg
         SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_INV_TRX_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
 
-        UPDATE DMT_OWNER.DMT_INV_TRX_STG_TBL stg
+        UPDATE DMT_INV_TRX_STG_TBL stg
         SET    stg.STG_STATUS     = 'FAILED',
                stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
+                   (SELECT t.ERROR_TEXT FROM DMT_INV_TRX_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_INV_TRX_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         DMT_UTIL_PKG.LOG(p_run_id,

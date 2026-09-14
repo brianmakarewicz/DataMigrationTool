@@ -196,7 +196,7 @@ end;
 /
 commit;
 
--- Decided admin config keys (DMT_DESIGN.html sections 2, 5, 6) — added 2026-07-07
+-- Decided admin config keys (DMT_DESIGN.html sections 2, 5, 6) - added 2026-07-07
 -- after the blind infrastructure-tranche review found them missing from the seed.
 begin
   insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('ESS_POLL_TIMEOUT_MINUTES','30','Max minutes to poll an ESS job before marking GENERATED rows FAILED [LOAD_ERROR]; reconciliation still runs after (design section 2)',sysdate,'DMT_OWNER');

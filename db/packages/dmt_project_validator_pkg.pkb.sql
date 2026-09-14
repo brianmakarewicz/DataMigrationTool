@@ -29,11 +29,11 @@ AS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL
+        UPDATE DMT_PJF_PROJECTS_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Projects'
@@ -41,11 +41,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_PJF_TASKS_STG_TBL
+        UPDATE DMT_PJF_TASKS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Project Tasks'
@@ -53,11 +53,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_STG_TBL
+        UPDATE DMT_PJF_TEAM_MEMBERS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Team Members'
@@ -65,11 +65,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_STG_TBL
+        UPDATE DMT_PJC_TXN_CONTROLS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Txn Controls'

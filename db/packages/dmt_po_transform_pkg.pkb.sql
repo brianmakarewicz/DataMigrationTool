@@ -15,7 +15,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_prefix;
     EXCEPTION
@@ -32,7 +32,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_dep_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_dep_prefix;
     EXCEPTION
@@ -70,13 +70,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL
+            UPDATE DMT_PO_HEADERS_INT_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL (
+        INSERT INTO DMT_PO_HEADERS_INT_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -207,7 +207,7 @@
                     s.BUYER_MANAGED_TRANSPORT_FLAG,
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL s
+        FROM DMT_PO_HEADERS_INT_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -218,7 +218,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
+            SELECT 1 FROM DMT_PO_HEADERS_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -228,7 +228,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL s
+        UPDATE DMT_PO_HEADERS_INT_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -241,7 +241,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
+            SELECT 1 FROM DMT_PO_HEADERS_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -288,13 +288,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_PO_LINES_INT_STG_TBL
+            UPDATE DMT_PO_LINES_INT_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL (
+        INSERT INTO DMT_PO_LINES_INT_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -353,8 +353,8 @@
                     NULL,
                     TO_CHAR(p_run_id) || '_LN_' || TO_CHAR(s.STG_SEQUENCE_ID),
                     (SELECT ht.INTERFACE_HEADER_KEY
-                     FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL ht
-                     JOIN   DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL hs
+                     FROM   DMT_PO_HEADERS_INT_TFM_TBL ht
+                     JOIN   DMT_PO_HEADERS_INT_STG_TBL hs
                        ON   hs.STG_SEQUENCE_ID = ht.STG_SEQUENCE_ID
                      WHERE  ht.RUN_ID = p_run_id
                      AND    hs.INTERFACE_HEADER_KEY = s.INTERFACE_HEADER_KEY
@@ -405,7 +405,7 @@
                     s.SOURCE_AGREEMENT_LINE,
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_PO_LINES_INT_STG_TBL s
+        FROM DMT_PO_LINES_INT_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -416,13 +416,13 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL t
+            SELECT 1 FROM DMT_PO_LINES_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
         AND (p_doc_type_filter IS NULL
              OR EXISTS (
-                SELECT 1 FROM DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL h
+                SELECT 1 FROM DMT_PO_HEADERS_INT_STG_TBL h
                 WHERE  h.INTERFACE_HEADER_KEY = s.INTERFACE_HEADER_KEY
                 AND    h.STYLE_DISPLAY_NAME   = p_doc_type_filter
                 AND    (p_scenario_id IS NULL
@@ -434,7 +434,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_STG_TBL s
+        UPDATE DMT_PO_LINES_INT_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -447,7 +447,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL t
+            SELECT 1 FROM DMT_PO_LINES_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -494,13 +494,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL
+            UPDATE DMT_PO_LINE_LOCS_INT_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL (
+        INSERT INTO DMT_PO_LINE_LOCS_INT_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -566,8 +566,8 @@
                     NULL,
                     TO_CHAR(p_run_id) || '_LOC_' || TO_CHAR(s.STG_SEQUENCE_ID),
                     (SELECT lt.INTERFACE_LINE_KEY
-                     FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL lt
-                     JOIN   DMT_OWNER.DMT_PO_LINES_INT_STG_TBL ls
+                     FROM   DMT_PO_LINES_INT_TFM_TBL lt
+                     JOIN   DMT_PO_LINES_INT_STG_TBL ls
                        ON   ls.STG_SEQUENCE_ID = lt.STG_SEQUENCE_ID
                      WHERE  lt.RUN_ID = p_run_id
                      AND    ls.INTERFACE_LINE_KEY = s.INTERFACE_LINE_KEY
@@ -625,7 +625,7 @@
                     s.PROMISED_DELIVERY_DATE,
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL s
+        FROM DMT_PO_LINE_LOCS_INT_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -636,7 +636,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL t
+            SELECT 1 FROM DMT_PO_LINE_LOCS_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -645,7 +645,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL s
+        UPDATE DMT_PO_LINE_LOCS_INT_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -658,7 +658,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL t
+            SELECT 1 FROM DMT_PO_LINE_LOCS_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -705,13 +705,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL
+            UPDATE DMT_PO_DISTS_INT_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL (
+        INSERT INTO DMT_PO_DISTS_INT_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -777,8 +777,8 @@
                     NULL,
                     TO_CHAR(p_run_id) || '_DIST_' || TO_CHAR(s.STG_SEQUENCE_ID),
                     (SELECT llt.INTERFACE_LINE_LOCATION_KEY
-                     FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL llt
-                     JOIN   DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL lls
+                     FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL llt
+                     JOIN   DMT_PO_LINE_LOCS_INT_STG_TBL lls
                        ON   lls.STG_SEQUENCE_ID = llt.STG_SEQUENCE_ID
                      WHERE  llt.RUN_ID = p_run_id
                      AND    lls.INTERFACE_LINE_LOCATION_KEY = s.INTERFACE_LINE_LOCATION_KEY
@@ -835,7 +835,7 @@
                     s.PJC_FUNDING_SOURCE,
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL s
+        FROM DMT_PO_DISTS_INT_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -846,7 +846,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL t
+            SELECT 1 FROM DMT_PO_DISTS_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -855,7 +855,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL s
+        UPDATE DMT_PO_DISTS_INT_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -868,7 +868,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL t
+            SELECT 1 FROM DMT_PO_DISTS_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );

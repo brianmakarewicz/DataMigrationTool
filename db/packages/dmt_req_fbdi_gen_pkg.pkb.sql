@@ -146,7 +146,7 @@ AS
                 || '"' || REPLACE(NVL(ATTRIBUTE_CATEGORY,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(SOLDTO_LE_NAME,''), '"', '""') || '"' || ','
                 || '"N"' || CHR(10) AS csv_line  -- col 69: EXTERNALLY_MANAGED_FLAG = N
-            FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL t
+            FROM   DMT_POR_REQ_HEADERS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR t.BATCH_ID = p_batch_id)
@@ -288,11 +288,11 @@ AS
                 || '"' || REPLACE(NVL(FINAL_DISCHARGE_LOC_CODE,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(UNIT_OF_MEASURE,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(SECONDARY_UNIT_OF_MEASURE,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
+            FROM   DMT_POR_REQ_LINES_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR EXISTS (
-                        SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                        SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL h
                         WHERE h.RUN_ID = l.RUN_ID
                           AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
                           AND h.BATCH_ID = p_batch_id))
@@ -434,13 +434,13 @@ AS
                 || '"' || REPLACE(NVL(CHARGE_ACCOUNT_SEGMENT30,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(PJC_WORK_TYPE,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(BUDGET_DATE,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
+            FROM   DMT_POR_REQ_DISTS_TFM_TBL d
             WHERE  d.RUN_ID = p_run_id
             AND    d.TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR EXISTS (
                         SELECT 1
-                        FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
-                        JOIN DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                        FROM DMT_POR_REQ_LINES_TFM_TBL l
+                        JOIN DMT_POR_REQ_HEADERS_TFM_TBL h
                           ON h.RUN_ID = l.RUN_ID
                          AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
                         WHERE l.RUN_ID = d.RUN_ID
@@ -513,7 +513,7 @@ AS
 
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns three CSVs.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Requisitions', 'PorReqHeadersInterfaceAll.csv', 0, l_hdr_csv, l_fbdi_csv_id);
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Requisitions', 'PorReqLinesInterfaceAll.csv',   0, l_lines_csv, l_lines_csv_id);
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'Requisitions', 'PorReqDistsInterfaceAll.csv',   0, l_dists_csv, l_dists_csv_id);
@@ -525,32 +525,32 @@ AS
         -- Headers filter by BATCH_ID directly; lines/dists filter through their header.
         -- Work-queue-ID core (2026-07-20): stamp WORK_QUEUE_ID = the generating child
         -- work-queue item's id so reconcile scopes its sweep to this item's rows only.
-        UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
+        UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
                WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         -- Lines -> lines csv id
-        UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
+        UPDATE DMT_POR_REQ_LINES_TFM_TBL l
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id,
                WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR EXISTS (
-                    SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                    SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL h
                     WHERE h.RUN_ID = l.RUN_ID
                       AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
                       AND h.BATCH_ID = p_batch_id));
 
         -- Distributions -> dists csv id
-        UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
+        UPDATE DMT_POR_REQ_DISTS_TFM_TBL d
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id,
                WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR EXISTS (
                     SELECT 1
-                    FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
-                    JOIN DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                    FROM DMT_POR_REQ_LINES_TFM_TBL l
+                    JOIN DMT_POR_REQ_HEADERS_TFM_TBL h
                       ON h.RUN_ID = l.RUN_ID
                      AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
                     WHERE l.RUN_ID = d.RUN_ID

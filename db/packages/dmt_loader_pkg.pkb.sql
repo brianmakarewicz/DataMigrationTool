@@ -205,7 +205,7 @@
         INTO   x_ucm_account,
                l_raw_job_name,
                x_interface_details_id
-        FROM   DMT_OWNER.DMT_ERP_INTERFACE_OPTIONS_TBL
+        FROM   DMT_ERP_INTERFACE_OPTIONS_TBL
         WHERE  CEMLI_CODE = p_cemli_code;
 
         -- FUN_ERP_INTERFACE_OPTIONS stores IMPORT_JOB_NAME with semicolon as delimiter
@@ -1108,9 +1108,9 @@
             -- Stamp the parameter list on the zip row. Keyed on FBDI_ZIP_ID, looked
             -- up from the primary csv id the generator returned (the ZIP table no
             -- longer carries FBDI_CSV_ID).
-            UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
+            UPDATE DMT_FBDI_ZIP_TBL
             SET    PARAMETER_LIST  = p_param_list
-            WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_OWNER.DMT_FBDI_CSV_TBL
+            WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
                                   WHERE FBDI_CSV_ID = p_fbdi_csv_id);
             COMMIT;
 
@@ -1194,7 +1194,7 @@
                     -- Distinct BU count across this run's AR rows -- position 1 of the
                     -- Master param list.
                     SELECT COUNT(DISTINCT BU_NAME) INTO l_bu_count
-                    FROM   DMT_OWNER.DMT_RA_LINES_TFM_TBL
+                    FROM   DMT_RA_LINES_TFM_TBL
                     WHERE  RUN_ID = p_run_id;
 
                     -- Master param list: tilde(~)-separated with #NULL for empty
@@ -1342,7 +1342,7 @@
                 BEGIN
                     -- Work-queue-ID core: only reconcile categories THIS item generated
                     -- (scope by WORK_QUEUE_ID so a multi-batch load does not cross-touch).
-                    SELECT COUNT(*) INTO l_cat_gen2 FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+                    SELECT COUNT(*) INTO l_cat_gen2 FROM DMT_EGP_ITEM_CAT_TFM_TBL
                     WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                     AND   (g_work_queue_id IS NULL OR WORK_QUEUE_ID = g_work_queue_id);
                     IF l_cat_gen2 > 0 THEN
@@ -1469,7 +1469,7 @@
                        COUNT(DISTINCT USER_TRANSACTION_SOURCE),
                        COUNT(DISTINCT DOCUMENT_NAME)
                 INTO   l_exp_src_name, l_exp_doc_name, l_exp_src_cnt, l_exp_doc_cnt
-                FROM   DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL
+                FROM   DMT_PJC_EXPENDITURES_STG_TBL
                 WHERE  (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
                 AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW','RETRY'))
                         OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
@@ -1503,7 +1503,7 @@
                 -- BATCH_NAME in every generated CSV row at the load step below.
                 -- g_work_queue_id is NULL for non-partitioned objects, so read the queue id.
                 SELECT TO_CHAR(MAX(QUEUE_ID)) INTO l_ex_batch
-                FROM   DMT_OWNER.DMT_WORK_QUEUE_TBL
+                FROM   DMT_WORK_QUEUE_TBL
                 WHERE  RUN_ID = p_run_id AND CEMLI_CODE = p_cemli_code;
 
                 -- 13-arg ImportProcessParallelEssJob ParameterList (proven live, UI run
@@ -1797,7 +1797,7 @@
                 DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('PurchaseOrders', l_po_user, l_po_pass);
                 FOR bu_rec IN (
                     SELECT DISTINCT PRC_BU_NAME
-                    FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    FROM   DMT_PO_HEADERS_INT_TFM_TBL
                     WHERE  RUN_ID = p_run_id
                     AND    TFM_STATUS = 'STAGED'
                     ORDER BY PRC_BU_NAME
@@ -1855,24 +1855,24 @@
                         DECLARE
                             l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.';
                         BEGIN
-                            UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                            UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                             SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
                             WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND PRC_BU_NAME=bu_rec.PRC_BU_NAME;
-                            UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL
+                            UPDATE DMT_PO_LINES_INT_TFM_TBL
                             SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
                             WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=bu_rec.PRC_BU_NAME);
-                            UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL
+                            AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=bu_rec.PRC_BU_NAME);
+                            UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL
                             SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
                             WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL WHERE RUN_ID=p_run_id
-                                AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=bu_rec.PRC_BU_NAME));
-                            UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL
+                            AND INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_PO_LINES_INT_TFM_TBL WHERE RUN_ID=p_run_id
+                                AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=bu_rec.PRC_BU_NAME));
+                            UPDATE DMT_PO_DISTS_INT_TFM_TBL
                             SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
                             WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND INTERFACE_LINE_LOCATION_KEY IN (SELECT INTERFACE_LINE_LOCATION_KEY FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL WHERE RUN_ID=p_run_id
-                                AND INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL WHERE RUN_ID=p_run_id
-                                AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=bu_rec.PRC_BU_NAME)));
+                            AND INTERFACE_LINE_LOCATION_KEY IN (SELECT INTERFACE_LINE_LOCATION_KEY FROM DMT_PO_LINE_LOCS_INT_TFM_TBL WHERE RUN_ID=p_run_id
+                                AND INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_PO_LINES_INT_TFM_TBL WHERE RUN_ID=p_run_id
+                                AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=bu_rec.PRC_BU_NAME)));
                             COMMIT;
                         END;
                         CONTINUE;
@@ -1914,7 +1914,7 @@
             BEGIN
                 FOR grp_rec IN (
                     SELECT DISTINCT BU_NAME, BATCH_SOURCE_NAME
-                    FROM   DMT_OWNER.DMT_RA_LINES_TFM_TBL
+                    FROM   DMT_RA_LINES_TFM_TBL
                     WHERE  RUN_ID = p_run_id
                     AND    TFM_STATUS = 'STAGED'
                     ORDER BY BU_NAME, BATCH_SOURCE_NAME
@@ -1965,11 +1965,11 @@
                         DECLARE
                             l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ar_load_id || ' logs for details.';
                         BEGIN
-                            UPDATE DMT_OWNER.DMT_RA_LINES_TFM_TBL
+                            UPDATE DMT_RA_LINES_TFM_TBL
                             SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
                             WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
                             AND BU_NAME=grp_rec.BU_NAME AND BATCH_SOURCE_NAME=grp_rec.BATCH_SOURCE_NAME;
-                            UPDATE DMT_OWNER.DMT_RA_DISTS_TFM_TBL
+                            UPDATE DMT_RA_DISTS_TFM_TBL
                             SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
                             WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
                             AND BU_NAME=grp_rec.BU_NAME;
@@ -1983,7 +1983,7 @@
                         l_gen_count  NUMBER;
                     BEGIN
                         SELECT COUNT(*) INTO l_gen_count
-                        FROM   DMT_OWNER.DMT_RA_LINES_TFM_TBL
+                        FROM   DMT_RA_LINES_TFM_TBL
                         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                         AND    BU_NAME = grp_rec.BU_NAME AND BATCH_SOURCE_NAME = grp_rec.BATCH_SOURCE_NAME;
                         IF l_gen_count > 0 THEN
@@ -2041,13 +2041,13 @@
                 -- GENERATED rows for this batch, with a reportable error.
                 PROCEDURE mark_batch_failed(p_bid IN NUMBER, p_msg IN VARCHAR2) IS
                 BEGIN
-                    UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL         SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL       SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL  SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_HZ_PARTIES_TFM_TBL         SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_HZ_LOCATIONS_TFM_TBL       SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_HZ_PARTY_SITES_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_HZ_ACCOUNTS_TFM_TBL        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_HZ_ACCT_SITES_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+                    UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL  SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
                     COMMIT;
                 END mark_batch_failed;
             BEGIN
@@ -2055,7 +2055,7 @@
                     SELECT BATCH_ID,
                            MIN(PARTY_ORIG_SYSTEM)            AS SOURCE_SYSTEM,
                            COUNT(DISTINCT PARTY_ORIG_SYSTEM) AS SRC_COUNT
-                    FROM   DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
+                    FROM   DMT_HZ_PARTIES_TFM_TBL
                     WHERE  RUN_ID = p_run_id
                     AND    TFM_STATUS = 'STAGED'
                     AND    BATCH_ID IS NOT NULL
@@ -2171,24 +2171,24 @@
                 -- their header's BATCH_ID (they have no batch column).
                 PROCEDURE mark_batch_failed(p_bid IN VARCHAR2, p_msg IN VARCHAR2) IS
                 BEGIN
-                    UPDATE DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
+                    UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
                     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
                     WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
 
-                    UPDATE DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
+                    UPDATE DMT_POR_REQ_LINES_TFM_TBL l
                     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
                     WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                      AND EXISTS (SELECT 1 FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                      AND EXISTS (SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL h
                                   WHERE h.RUN_ID=l.RUN_ID
                                     AND h.INTERFACE_HEADER_KEY=l.INTERFACE_HEADER_KEY
                                     AND h.BATCH_ID=p_bid);
 
-                    UPDATE DMT_OWNER.DMT_POR_REQ_DISTS_TFM_TBL d
+                    UPDATE DMT_POR_REQ_DISTS_TFM_TBL d
                     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
                     WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
                       AND EXISTS (SELECT 1
-                                  FROM DMT_OWNER.DMT_POR_REQ_LINES_TFM_TBL l
-                                  JOIN DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL h
+                                  FROM DMT_POR_REQ_LINES_TFM_TBL l
+                                  JOIN DMT_POR_REQ_HEADERS_TFM_TBL h
                                     ON h.RUN_ID=l.RUN_ID AND h.INTERFACE_HEADER_KEY=l.INTERFACE_HEADER_KEY
                                   WHERE l.RUN_ID=d.RUN_ID
                                     AND l.INTERFACE_LINE_KEY=d.INTERFACE_LINE_KEY
@@ -2210,7 +2210,7 @@
                     SELECT BATCH_ID,
                            MIN(REQ_BU_NAME)            AS REQ_BU_NAME,
                            COUNT(DISTINCT REQ_BU_NAME) AS BU_COUNT
-                    FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
+                    FROM   DMT_POR_REQ_HEADERS_TFM_TBL
                     WHERE  RUN_ID = p_run_id
                     AND    TFM_STATUS = 'STAGED'
                     AND    BATCH_ID IS NOT NULL
@@ -2340,13 +2340,13 @@
                 -- Each has its own BATCH_ID column, so filter directly (no join).
                 PROCEDURE mark_batch_failed(p_bid IN VARCHAR2, p_msg IN VARCHAR2) IS
                 BEGIN
-                    UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+                    UPDATE DMT_EGP_ITEM_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg),
                         LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=TO_NUMBER(p_bid);
 
-                    UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+                    UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg),
                         LAST_UPDATED_DATE=SYSDATE
@@ -2368,13 +2368,13 @@
                 -- keeps the legacy all-batches loop.
                 FOR grp_rec IN (
                     SELECT TO_CHAR(BATCH_ID) AS BATCH_ID
-                    FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+                    FROM   DMT_EGP_ITEM_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
                     AND    (g_partition_key IS NULL
                             OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
                     UNION
                     SELECT TO_CHAR(BATCH_ID)
-                    FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+                    FROM   DMT_EGP_ITEM_CAT_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
                     AND    (g_partition_key IS NULL
                             OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
@@ -2466,7 +2466,7 @@
                 DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('BlanketPOs', l_po_user, l_po_pass);
                 FOR bu_rec IN (
                     SELECT DISTINCT PRC_BU_NAME
-                    FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    FROM   DMT_PO_HEADERS_INT_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
                     AND    STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
                     ORDER BY PRC_BU_NAME
@@ -2499,7 +2499,7 @@
                         x_load_ess_id => l_bu_load_id, x_import_ess_id => l_bu_import_id, x_success => l_bu_ok);
 
                     IF NOT l_bu_ok THEN
-                        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                         SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                             '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.'),
                             LAST_UPDATED_DATE=SYSDATE
@@ -2511,7 +2511,7 @@
                 END LOOP;
 
                 IF l_bu_count = 0 THEN
-                    SELECT COUNT(*) INTO l_any_staged FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    SELECT COUNT(*) INTO l_any_staged FROM DMT_PO_HEADERS_INT_TFM_TBL
                     WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
                     AND STYLE_DISPLAY_NAME='Blanket Purchase Agreement' AND ROWNUM=1;
                     IF l_any_staged = 0 THEN
@@ -2546,7 +2546,7 @@
                 DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('Contracts', l_po_user, l_po_pass);
                 FOR bu_rec IN (
                     SELECT DISTINCT PRC_BU_NAME
-                    FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    FROM   DMT_PO_HEADERS_INT_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
                     AND    STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'
                     ORDER BY PRC_BU_NAME
@@ -2579,7 +2579,7 @@
                         x_load_ess_id => l_bu_load_id, x_import_ess_id => l_bu_import_id, x_success => l_bu_ok);
 
                     IF NOT l_bu_ok THEN
-                        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                         SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                             '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.'),
                             LAST_UPDATED_DATE=SYSDATE
@@ -2591,7 +2591,7 @@
                 END LOOP;
 
                 IF l_bu_count = 0 THEN
-                    SELECT COUNT(*) INTO l_any_staged FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    SELECT COUNT(*) INTO l_any_staged FROM DMT_PO_HEADERS_INT_TFM_TBL
                     WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
                     AND STYLE_DISPLAY_NAME='Contract Purchase Agreement' AND ROWNUM=1;
                     IF l_any_staged = 0 THEN
@@ -2622,7 +2622,7 @@
             BEGIN
                 FOR ou_rec IN (
                     SELECT DISTINCT OPERATING_UNIT
-                    FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                    FROM   DMT_AP_INVOICES_INT_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
                     ORDER BY OPERATING_UNIT
                 ) LOOP
@@ -2653,7 +2653,7 @@
                         -- (GET_LOOKUP raises only when the BU itself is unknown).
                         l_ap_bu_id  := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', ou_rec.OPERATING_UNIT);
                         l_ap_ledger := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_PRIMARY_LEDGER_ID', ou_rec.OPERATING_UNIT);
-                        SELECT SOURCE INTO l_ap_source FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                        SELECT SOURCE INTO l_ap_source FROM DMT_AP_INVOICES_INT_TFM_TBL
                         WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT AND TFM_STATUS='GENERATED' AND ROWNUM=1;
                         l_ou_param := ',' || l_ap_bu_id || ',N,' || TO_CHAR(SYSDATE,'YYYY-MM-DD') ||
                             ',#NULL,#NULL,1000,' || l_ap_source || ',' || TO_CHAR(p_run_id) ||
@@ -2669,13 +2669,13 @@
                         DECLARE
                             l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ou_load_id || ' logs for details.';
                         BEGIN
-                            UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                            UPDATE DMT_AP_INVOICES_INT_TFM_TBL
                             SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
                             WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND OPERATING_UNIT=ou_rec.OPERATING_UNIT;
-                            UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL
+                            UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL
                             SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
                             WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND INVOICE_ID IN (SELECT INVOICE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT);
+                            AND INVOICE_ID IN (SELECT INVOICE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT);
                             COMMIT;
                         END;
                         CONTINUE;
@@ -2684,7 +2684,7 @@
                     -- Check for rows still at GENERATED after BIP
                     DECLARE l_gen_count NUMBER;
                     BEGIN
-                        SELECT COUNT(*) INTO l_gen_count FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                        SELECT COUNT(*) INTO l_gen_count FROM DMT_AP_INVOICES_INT_TFM_TBL
                         WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND OPERATING_UNIT=ou_rec.OPERATING_UNIT;
                         IF l_gen_count > 0 THEN
                             DMT_UTIL_PKG.LOG(p_run_id,
@@ -2695,7 +2695,7 @@
                 END LOOP;
 
                 IF l_ou_count = 0 THEN
-                    SELECT COUNT(*) INTO l_any_staged FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                    SELECT COUNT(*) INTO l_any_staged FROM DMT_AP_INVOICES_INT_TFM_TBL
                     WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED' AND ROWNUM=1;
                     IF l_any_staged = 0 THEN
                         DMT_UTIL_PKG.LOG(p_run_id, 'No STAGED AP invoice headers found. Skipping APInvoices.',
@@ -2740,7 +2740,7 @@
                     x_fbdi_csv_id  => l_gb_csv_id);
 
                 SELECT COUNT(*) INTO l_gb_rows
-                FROM   DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+                FROM   DMT_GL_BUDGET_INT_TFM_TBL
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
 
                 IF l_gb_zip IS NULL OR DBMS_LOB.GETLENGTH(l_gb_zip) = 0 OR l_gb_rows = 0 THEN
@@ -2764,8 +2764,8 @@
                     p_log_context       => l_obj);
                 DBMS_LOB.FREETEMPORARY(l_gb_zip);
 
-                UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = l_param_list
-                WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_OWNER.DMT_FBDI_CSV_TBL
+                UPDATE DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = l_param_list
+                WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
                                       WHERE FBDI_CSV_ID = l_gb_csv_id);
                 COMMIT;
 
@@ -2775,7 +2775,7 @@
                         'GL Budget Load ESS ' || l_gb_load_id || ' returned ' || l_gb_status ||
                         '. Marking GENERATED rows FAILED.',
                         DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+                    UPDATE DMT_GL_BUDGET_INT_TFM_TBL
                     SET    TFM_STATUS = 'FAILED',
                            ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[LOAD_ERROR] Load to GL_BUDGET_INTERFACE failed. Check ESS job ' || l_gb_load_id || '.'),
@@ -2788,7 +2788,7 @@
                 -- Step 2: submit Validate and Load Budgets standalone per Run Name.
                 FOR rn IN (
                     SELECT DISTINCT RUN_NAME
-                    FROM   DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+                    FROM   DMT_GL_BUDGET_INT_TFM_TBL
                     WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                     AND    RUN_NAME IS NOT NULL
                     ORDER BY RUN_NAME
@@ -2810,7 +2810,7 @@
                 -- Scope reconciliation to a single ledger when the run uses one.
                 SELECT COUNT(DISTINCT LEDGER_ID), MAX(LEDGER_ID)
                 INTO   l_gb_ledgers, l_gb_ledger
-                FROM   DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+                FROM   DMT_GL_BUDGET_INT_TFM_TBL
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED' AND LEDGER_ID IS NOT NULL;
                 IF l_gb_ledgers <> 1 THEN l_gb_ledger := NULL; END IF;
 
@@ -2863,7 +2863,7 @@
                 -- filter (arg 8, l_ex_batch) submitted with ImportProcessParallelEssJob.
                 -- One shared, globally-unique batch groups the run's rows and isolates
                 -- them from other runs' pending interface rows at costing time.
-                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                 SET    BATCH_NAME = l_ex_batch
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
@@ -2873,7 +2873,7 @@
                     p_run_id, l_ex_zip, l_ex_filename, l_ex_csv_id);
 
                 SELECT COUNT(*) INTO l_ex_rows
-                FROM   DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                FROM   DMT_PJC_EXPENDITURES_TFM_TBL
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
 
                 IF l_ex_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ex_zip) = 0 OR l_ex_rows = 0 THEN
@@ -2903,8 +2903,8 @@
                     p_password          => l_ex_pass);
                 DBMS_LOB.FREETEMPORARY(l_ex_zip);
 
-                UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = l_param_list
-                WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_OWNER.DMT_FBDI_CSV_TBL
+                UPDATE DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = l_param_list
+                WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
                                       WHERE FBDI_CSV_ID = l_ex_csv_id);
                 COMMIT;
 
@@ -2915,7 +2915,7 @@
                         'Expenditure Load ESS ' || l_ex_load_id || ' returned ' || l_ex_status ||
                         '. No rows staged. Marking GENERATED rows FAILED.',
                         DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                    UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                     SET    TFM_STATUS = 'FAILED',
                            ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[LOAD_ERROR] Load to PJC_TXN_XFACE_STAGE_ALL failed. Check ESS job ' || l_ex_load_id || '.'),
@@ -2995,7 +2995,7 @@
             BEGIN
                 FOR led_rec IN (
                     SELECT DISTINCT LEDGER_NAME
-                    FROM   DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+                    FROM   DMT_GL_INTERFACE_TFM_TBL
                     WHERE  RUN_ID = p_run_id
                     AND    TFM_STATUS = 'STAGED'
                     AND    LEDGER_NAME IS NOT NULL
@@ -3036,7 +3036,7 @@
                     -- Get source from TFM data — not hardcoded 'Spreadsheet'
                     BEGIN
                         SELECT USER_JE_SOURCE_NAME INTO l_gl_source
-                        FROM   DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+                        FROM   DMT_GL_INTERFACE_TFM_TBL
                         WHERE  RUN_ID = p_run_id
                         AND    LEDGER_NAME = led_rec.LEDGER_NAME
                         AND    TFM_STATUS = 'GENERATED'
@@ -3068,7 +3068,7 @@
                         x_success       => l_gl_ok);
 
                     IF NOT l_gl_ok THEN
-                        UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+                        UPDATE DMT_GL_INTERFACE_TFM_TBL
                         SET    TFM_STATUS = 'FAILED',
                                ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                    '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_gl_load_id || ' logs for details.'),
@@ -3203,7 +3203,7 @@
         DBMS_LOB.FREETEMPORARY(l_zip);
 
         -- Stamp Load ESS job ID + parameter list on the ZIP row.
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
+        UPDATE DMT_FBDI_ZIP_TBL
         SET    PARAMETER_LIST  = l_param_list
         WHERE  RUN_ID  = p_run_id
         AND    OBJECT_TYPE     = SUBSTR(p_cemli_code, INSTR(p_cemli_code, '-') + 1);
@@ -3233,36 +3233,36 @@
                 l_err_msg VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_load_ess_id || ' logs for details.';
             BEGIN
                 IF    p_cemli_code = 'Suppliers' THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_POZ_SUPPLIERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'SupplierAddresses' THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_POZ_SUP_ADDR_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'SupplierSites' THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_POZ_SUP_SITE_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'SupplierContacts' THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'Projects' THEN
-                    UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_PJF_PROJECTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'BillingEvents' THEN
-                    UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'Expenditures' THEN
-                    UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_PJC_EXPENDITURES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'Grants' THEN
-                    UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 -- Items: handled in grouped loop above.
                 ELSIF p_cemli_code = 'MiscReceipts' THEN
-                    UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_INV_TRX_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 -- Requisitions: handled in grouped loop above.
                 -- GLBalances: handled in grouped loop above.
                 ELSIF p_cemli_code = 'GLBudgets' THEN
-                    UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_GL_BUDGET_INT_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'PlanningBudgets' THEN
-                    UPDATE DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_PLAN_BUDGET_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'ProjectBudgets' THEN
-                    UPDATE DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_PRJ_BUDGET_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 ELSIF p_cemli_code = 'Assets' THEN
-                    UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                    UPDATE DMT_FA_ASSET_HDR_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
                 END IF;
                 COMMIT;
             END;
@@ -3319,7 +3319,7 @@
         END IF;
 
         -- Stamp Import ESS job ID on the ZIP row.
-        UPDATE DMT_OWNER.DMT_FBDI_ZIP_TBL
+        UPDATE DMT_FBDI_ZIP_TBL
         SET    PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
         WHERE  RUN_ID    = p_run_id
         AND    OBJECT_TYPE       = SUBSTR(p_cemli_code, INSTR(p_cemli_code, '-') + 1);
@@ -3443,49 +3443,49 @@
         BEGIN
             -- Use the CEMLI-specific TFM table to count GENERATED rows
             IF    p_cemli_code = 'Suppliers' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUPPLIERS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'SupplierAddresses' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUP_ADDR_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'SupplierSites' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUP_SITE_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUP_SITE_ASSN_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'SupplierContacts' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_POZ_SUP_CONTACTS_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUP_CONTACTS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'Projects' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_PJF_PROJECTS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'BillingEvents' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_PJB_BILL_EVENTS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'Expenditures' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_PJC_EXPENDITURES_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'Grants' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_GMS_AWD_HEADERS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             -- Items: handled in grouped loop above.
             ELSIF p_cemli_code = 'MiscReceipts' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_INV_TRX_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             -- Requisitions: handled in grouped loop above.
             -- GLBalances: handled in grouped loop above.
             ELSIF p_cemli_code = 'GLBudgets' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_GL_BUDGET_INT_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'PlanningBudgets' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_PLAN_BUDGET_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'ProjectBudgets' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_PRJ_BUDGET_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             ELSIF p_cemli_code = 'Assets' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
+                SELECT COUNT(*) INTO l_still_generated FROM DMT_FA_ASSET_HDR_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
             END IF;
 
@@ -3516,91 +3516,91 @@
         BEGIN
             IF    p_cemli_code = 'Suppliers' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL
+                FROM DMT_POZ_SUPPLIERS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'SupplierAddresses' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL
+                FROM DMT_POZ_SUP_ADDR_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'SupplierSites' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL
+                FROM DMT_POZ_SUP_SITE_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL
+                FROM DMT_POZ_SUP_SITE_ASSN_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'SupplierContacts' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_POZ_SUP_CONTACTS_TFM_TBL
+                FROM DMT_POZ_SUP_CONTACTS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code IN ('PurchaseOrders', 'BlanketPOs', 'Contracts') THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                FROM DMT_PO_HEADERS_INT_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'Customers' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
+                FROM DMT_HZ_PARTIES_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'ARInvoices' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_RA_LINES_TFM_TBL
+                FROM DMT_RA_LINES_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'APInvoices' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                FROM DMT_AP_INVOICES_INT_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'Projects' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+                FROM DMT_PJF_PROJECTS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'BillingEvents' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+                FROM DMT_PJB_BILL_EVENTS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'Expenditures' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                FROM DMT_PJC_EXPENDITURES_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'Grants' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL
+                FROM DMT_GMS_AWD_HEADERS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'Items' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+                FROM DMT_EGP_ITEM_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
                 -- Also count bundled categories failures
                 SELECT l_failed_count + COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+                FROM DMT_EGP_ITEM_CAT_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'MiscReceipts' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL
+                FROM DMT_INV_TRX_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'Requisitions' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL
+                FROM DMT_POR_REQ_HEADERS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'GLBalances' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+                FROM DMT_GL_INTERFACE_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'GLBudgets' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL
+                FROM DMT_GL_BUDGET_INT_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'PlanningBudgets' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_PLAN_BUDGET_TFM_TBL
+                FROM DMT_PLAN_BUDGET_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'ProjectBudgets' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_PRJ_BUDGET_TFM_TBL
+                FROM DMT_PRJ_BUDGET_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSIF p_cemli_code = 'Assets' THEN
                 SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
+                FROM DMT_FA_ASSET_HDR_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
             ELSE
                 l_failed_count := 0;
@@ -3834,10 +3834,10 @@
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
 
-        SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
-        SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
+        SELECT DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
+        SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
 
-        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+        INSERT INTO DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
             SCENARIO_NAME, RUN_MODE
@@ -3891,10 +3891,10 @@
         resolve_scenario(p_scenario_name, v_scenario_id);
 
         -- Derive integration ID and prefix from sequences
-        SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
-        SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
+        SELECT DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
+        SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
 
-        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+        INSERT INTO DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
             SCENARIO_NAME, RUN_MODE
@@ -4269,10 +4269,10 @@
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
 
-        SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
-        SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
+        SELECT DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
+        SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
 
-        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+        INSERT INTO DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
             SCENARIO_NAME, RUN_MODE
@@ -5228,10 +5228,10 @@
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
 
-        SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
-        SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
+        SELECT DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
+        SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
 
-        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+        INSERT INTO DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
             SCENARIO_NAME, RUN_MODE
@@ -5256,7 +5256,7 @@
 
         -- Check if any projects reached LOADED. If zero, skip all downstream objects.
         SELECT COUNT(*) INTO l_projects_loaded
-        FROM   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+        FROM   DMT_PJF_PROJECTS_TFM_TBL
         WHERE  RUN_ID = l_run_id
         AND    TFM_STATUS = 'LOADED';
 
@@ -5302,10 +5302,10 @@
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
 
-        SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
-        SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
+        SELECT DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
+        SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
 
-        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+        INSERT INTO DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
             SCENARIO_NAME, RUN_MODE
@@ -5389,10 +5389,10 @@
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
 
-        SELECT DMT_OWNER.DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
-        SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
+        SELECT DMT_PIPELINE_RUN_SEQ.NEXTVAL INTO l_run_id FROM DUAL;
+        SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL) INTO l_prefix FROM DUAL;
 
-        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+        INSERT INTO DMT_PIPELINE_RUN_TBL (
             RUN_ID, INTEGRATION_ID, PIPELINE_CODES, RUN_TYPE,
             SUBMITTED_BY, RUN_STATUS, PREFIX, CEMLI_SEQUENCE,
             SCENARIO_NAME, RUN_MODE

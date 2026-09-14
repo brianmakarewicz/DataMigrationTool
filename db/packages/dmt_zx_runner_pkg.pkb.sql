@@ -98,11 +98,11 @@
 
         -- Final counts for the log
         SELECT COUNT(*) INTO l_regime_count
-        FROM   DMT_OWNER.DMT_ZX_REGIME_TFM_TBL
+        FROM   DMT_ZX_REGIME_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         SELECT COUNT(*) INTO l_rate_count
-        FROM   DMT_OWNER.DMT_ZX_RATE_TFM_TBL
+        FROM   DMT_ZX_RATE_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         DMT_UTIL_PKG.LOG(

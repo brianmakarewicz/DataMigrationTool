@@ -21,8 +21,8 @@
     -- --------------------------------------------------------
     FUNCTION GET_PARTITION_KEYS (
         p_run_id IN NUMBER
-    ) RETURN DMT_OWNER.DMT_PARTITION_KEY_TBL IS
-        l_keys DMT_OWNER.DMT_PARTITION_KEY_TBL;
+    ) RETURN DMT_PARTITION_KEY_TBL IS
+        l_keys DMT_PARTITION_KEY_TBL;
     BEGIN
         -- One JSON object per distinct batch, keyed by the partition column name
         -- (JSON_OBJECT escapes the value correctly). Composite keys would add more
@@ -31,13 +31,13 @@
         BULK COLLECT INTO l_keys
         FROM (
             SELECT BATCH_ID
-            FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+            FROM   DMT_EGP_ITEM_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS = 'STAGED'
             AND    BATCH_ID IS NOT NULL
             UNION
             SELECT BATCH_ID
-            FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+            FROM   DMT_EGP_ITEM_CAT_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS = 'STAGED'
             AND    BATCH_ID IS NOT NULL
@@ -147,7 +147,7 @@
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -290,7 +290,7 @@
         ) LOOP
             IF r.status = 'PROCESSED' THEN
                 -- Success: item positively present in EGP_SYSTEM_ITEMS_B.
-                UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+                UPDATE DMT_EGP_ITEM_TFM_TBL
                 SET    TFM_STATUS              = 'LOADED',
                        FUSION_INVENTORY_ITEM_ID = r.inventory_item_id,
                        RESULTS_UPDATED_DATE    = SYSDATE,
@@ -302,7 +302,7 @@
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSE
                 -- Rejected: no row in the base table for this item.
-                UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+                UPDATE DMT_EGP_ITEM_TFM_TBL
                 SET    TFM_STATUS              = 'FAILED',
                        ERROR_TEXT              = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_message),
@@ -318,14 +318,14 @@
 
         -- Echo outcomes back to STG table
         -- LOADED
-        UPDATE DMT_OWNER.DMT_EGP_ITEM_STG_TBL stg
+        UPDATE DMT_EGP_ITEM_STG_TBL stg
         SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_EGP_ITEM_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_EGP_ITEM_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         -- FAILED
-        UPDATE DMT_OWNER.DMT_EGP_ITEM_STG_TBL stg
+        UPDATE DMT_EGP_ITEM_STG_TBL stg
         SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    -- An item can transform into several TFM rows for one staging row
@@ -335,14 +335,14 @@
                    (SELECT ie.ERROR_TEXT
                     FROM  (SELECT t.ERROR_TEXT,
                                   ROW_NUMBER() OVER (ORDER BY t.TFM_SEQUENCE_ID) rn
-                           FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL t
+                           FROM   DMT_EGP_ITEM_TFM_TBL t
                            WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                            AND    t.RUN_ID     = p_run_id
                            AND    t.TFM_STATUS = 'FAILED') ie
                     WHERE ie.rn = 1)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_EGP_ITEM_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_EGP_ITEM_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         DMT_UTIL_PKG.LOG(

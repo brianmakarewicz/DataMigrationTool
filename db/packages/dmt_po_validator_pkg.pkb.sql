@@ -7,7 +7,7 @@ AS
 -- PurchaseOrders pre- and post-transform validation.
 --
 -- Pre-validation rejections are recorded in the run-stamped error table
--- DMT_OWNER.DMT_STG_TFM_ERROR_TBL (design §7); the STG rows keep their
+-- DMT_STG_TFM_ERROR_TBL (design §7); the STG rows keep their
 -- status only (no message) and are flagged FAILED afterwards by the
 -- standard FLAG_STG_FAILED helper. No validator writes ERROR_TEXT on a
 -- *_STG_TBL row.
@@ -27,11 +27,11 @@ AS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL
+        UPDATE DMT_PO_HEADERS_INT_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT(s). The PO header STG table is
         --   shared by all three PO styles, so match every header label the catalog
@@ -41,11 +41,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_STG_TBL
+        UPDATE DMT_PO_LINES_INT_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — shared PO lines STG table: match both line labels
         --   the catalog registers (PurchaseOrders / BlanketPOs).>>
@@ -54,11 +54,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL
+        UPDATE DMT_PO_LINE_LOCS_INT_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'PO Line Locations'
@@ -66,11 +66,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL
+        UPDATE DMT_PO_DISTS_INT_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'PO Distributions'
@@ -140,7 +140,7 @@ AS
         ELSE
             SELECT PREFIX
             INTO   l_dep_prefix
-            FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+            FROM   DMT_PIPELINE_RUN_TBL
             WHERE  RUN_ID = p_run_id;
         END IF;
 
@@ -152,21 +152,21 @@ AS
             l_any_loaded NUMBER;
         BEGIN
             SELECT COUNT(*) INTO l_any_loaded
-            FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL
+            FROM   DMT_POZ_SUPPLIERS_TFM_TBL
             WHERE  TFM_STATUS = 'LOADED' AND ROWNUM = 1;
 
             IF l_any_loaded > 0 AND DMT_UTIL_PKG.GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN
-                INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                 SELECT p_run_id, l_cemli_code, l_so_hdr, h.STG_SEQUENCE_ID,
                        '[PRE_VALIDATION] Supplier ''' || h.VENDOR_NAME ||
                        ''' is not loaded — PO record skipped.'
-                FROM   DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL h
+                FROM   DMT_PO_HEADERS_INT_STG_TBL h
                 WHERE  h.STG_STATUS IN ('NEW', 'RETRY')
                 AND    NOT EXISTS (
                            SELECT 1
-                           FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
-                           JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
+                           FROM   DMT_POZ_SUPPLIERS_STG_TBL s
+                           JOIN   DMT_POZ_SUPPLIERS_TFM_TBL t
                                   ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
                            WHERE  s.VENDOR_NAME = h.VENDOR_NAME
                            AND    t.TFM_STATUS   = 'LOADED'
@@ -178,17 +178,17 @@ AS
                 -- Only styles that register a lines sub-object (PurchaseOrders,
                 -- BlanketPOs) have lines; contracts are header-only and are skipped.
                 IF l_so_ln IS NOT NULL THEN
-                    INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+                    INSERT INTO DMT_STG_TFM_ERROR_TBL
                            (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                     SELECT p_run_id, l_cemli_code, l_so_ln, ln.STG_SEQUENCE_ID,
                            '[PRE_VALIDATION] Parent PO header ''' || ln.INTERFACE_HEADER_KEY ||
                            ''' failed upstream validation — line skipped.'
-                    FROM   DMT_OWNER.DMT_PO_LINES_INT_STG_TBL ln
+                    FROM   DMT_PO_LINES_INT_STG_TBL ln
                     WHERE  ln.STG_STATUS IN ('NEW', 'RETRY')
                     AND    EXISTS (
                                SELECT 1
-                               FROM   DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL h
-                               JOIN   DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+                               FROM   DMT_PO_HEADERS_INT_STG_TBL h
+                               JOIN   DMT_STG_TFM_ERROR_TBL e
                                       ON e.STG_SEQUENCE_ID = h.STG_SEQUENCE_ID
                                      AND e.RUN_ID          = p_run_id
                                      AND e.SUB_OBJECT      = l_so_hdr
@@ -203,17 +203,17 @@ AS
                 -- blanket agreements and contracts have neither, so they are skipped.
                 IF l_cemli_code = 'PurchaseOrders' THEN
                     -- Step 3: line locations for any line rejected this run.
-                    INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+                    INSERT INTO DMT_STG_TFM_ERROR_TBL
                            (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                     SELECT p_run_id, l_cemli_code, 'PO Line Locations', loc.STG_SEQUENCE_ID,
                            '[PRE_VALIDATION] Parent PO line ''' || loc.INTERFACE_LINE_KEY ||
                            ''' failed upstream validation — line location skipped.'
-                    FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL loc
+                    FROM   DMT_PO_LINE_LOCS_INT_STG_TBL loc
                     WHERE  loc.STG_STATUS IN ('NEW', 'RETRY')
                     AND    EXISTS (
                                SELECT 1
-                               FROM   DMT_OWNER.DMT_PO_LINES_INT_STG_TBL ln
-                               JOIN   DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+                               FROM   DMT_PO_LINES_INT_STG_TBL ln
+                               JOIN   DMT_STG_TFM_ERROR_TBL e
                                       ON e.STG_SEQUENCE_ID = ln.STG_SEQUENCE_ID
                                      AND e.RUN_ID          = p_run_id
                                      AND e.SUB_OBJECT      = l_so_ln
@@ -222,17 +222,17 @@ AS
                     l_loc_failed := SQL%ROWCOUNT;
 
                     -- Step 4: distributions for any line location rejected this run.
-                    INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+                    INSERT INTO DMT_STG_TFM_ERROR_TBL
                            (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                     SELECT p_run_id, l_cemli_code, 'PO Distributions', d.STG_SEQUENCE_ID,
                            '[PRE_VALIDATION] Parent PO line location ''' || d.INTERFACE_LINE_LOCATION_KEY ||
                            ''' failed upstream validation — distribution skipped.'
-                    FROM   DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL d
+                    FROM   DMT_PO_DISTS_INT_STG_TBL d
                     WHERE  d.STG_STATUS IN ('NEW', 'RETRY')
                     AND    EXISTS (
                                SELECT 1
-                               FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL loc
-                               JOIN   DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+                               FROM   DMT_PO_LINE_LOCS_INT_STG_TBL loc
+                               JOIN   DMT_STG_TFM_ERROR_TBL e
                                       ON e.STG_SEQUENCE_ID = loc.STG_SEQUENCE_ID
                                      AND e.RUN_ID          = p_run_id
                                      AND e.SUB_OBJECT      = 'PO Line Locations'

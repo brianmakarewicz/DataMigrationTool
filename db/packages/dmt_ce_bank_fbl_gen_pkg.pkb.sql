@@ -49,7 +49,7 @@
                    TAX_REGISTRATION_NUMBER, END_DATE,
                    ATTRIBUTE_CATEGORY, ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3,
                    ATTRIBUTE4, ATTRIBUTE5
-            FROM   DMT_OWNER.DMT_CE_BANK_TFM_TBL
+            FROM   DMT_CE_BANK_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -96,7 +96,7 @@
                    BRANCH_NUMBER, BIC_CODE, ALTERNATE_NAME, DESCRIPTION,
                    EFT_SWIFT_CODE, COUNTRY_CODE, ADDRESS_LINE1, CITY,
                    STATE, POSTAL_CODE, END_DATE
-            FROM   DMT_OWNER.DMT_CE_BRANCH_TFM_TBL
+            FROM   DMT_CE_BRANCH_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -148,7 +148,7 @@
                    SECONDARY_ACCOUNT_REFERENCE, END_DATE,
                    ATTRIBUTE_CATEGORY, ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3,
                    ATTRIBUTE4, ATTRIBUTE5
-            FROM   DMT_OWNER.DMT_CE_BANK_ACCT_TFM_TBL
+            FROM   DMT_CE_BANK_ACCT_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -213,15 +213,15 @@
         x_filename := 'CeBanks_' || TO_CHAR(p_run_id) || '.zip';
 
         SELECT COUNT(*) INTO l_bank_count
-        FROM   DMT_OWNER.DMT_CE_BANK_TFM_TBL
+        FROM   DMT_CE_BANK_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         SELECT COUNT(*) INTO l_branch_count
-        FROM   DMT_OWNER.DMT_CE_BRANCH_TFM_TBL
+        FROM   DMT_CE_BRANCH_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         SELECT COUNT(*) INTO l_acct_count
-        FROM   DMT_OWNER.DMT_CE_BANK_ACCT_TFM_TBL
+        FROM   DMT_CE_BANK_ACCT_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         IF l_bank_count = 0 AND l_branch_count = 0 AND l_acct_count = 0 THEN
@@ -241,8 +241,8 @@
         l_acct_csv   := gen_accounts_csv(p_run_id);
 
         -- Store bank CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_bank_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_bank_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -251,8 +251,8 @@
         );
 
         -- Store branch CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_branch_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_branch_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -261,8 +261,8 @@
         );
 
         -- Store account CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_acct_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_acct_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -274,34 +274,34 @@
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
 
         IF l_bank_count > 0 AND DBMS_LOB.GETLENGTH(l_bank_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'CeBank.csv',
+            UTL_ZIP.add1file(l_zip, 'CeBank.csv',
                 clob_to_blob(l_bank_csv));
         END IF;
 
         IF l_branch_count > 0 AND DBMS_LOB.GETLENGTH(l_branch_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'CeBranch.csv',
+            UTL_ZIP.add1file(l_zip, 'CeBranch.csv',
                 clob_to_blob(l_branch_csv));
         END IF;
 
         IF l_acct_count > 0 AND DBMS_LOB.GETLENGTH(l_acct_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'CeAccount.csv',
+            UTL_ZIP.add1file(l_zip, 'CeAccount.csv',
                 clob_to_blob(l_acct_csv));
         END IF;
 
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        UTL_ZIP.finish_zip(l_zip);
 
         -- Store zip artefact
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+        INSERT INTO DMT_FBDI_ZIP_TBL (
             FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
+            DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
             'CE_BANK', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
 
         -- Update bank TFM: STAGED -> GENERATED
         IF l_bank_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_CE_BANK_TFM_TBL
+            UPDATE DMT_CE_BANK_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_bank_csv_id,
                    LAST_UPDATED_DATE = l_now
@@ -310,7 +310,7 @@
 
         -- Update branch TFM: STAGED -> GENERATED
         IF l_branch_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_CE_BRANCH_TFM_TBL
+            UPDATE DMT_CE_BRANCH_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_branch_csv_id,
                    LAST_UPDATED_DATE = l_now
@@ -319,7 +319,7 @@
 
         -- Update account TFM: STAGED -> GENERATED
         IF l_acct_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_CE_BANK_ACCT_TFM_TBL
+            UPDATE DMT_CE_BANK_ACCT_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_acct_csv_id,
                    LAST_UPDATED_DATE = l_now

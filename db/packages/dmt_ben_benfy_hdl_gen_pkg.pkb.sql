@@ -51,7 +51,7 @@ AS
     FUNCTION has_rows(p_tbl VARCHAR2, p_iid NUMBER) RETURN BOOLEAN IS
         l_cnt NUMBER;
     BEGIN
-        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM DMT_OWNER.' || p_tbl ||
+        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_tbl ||
             ' WHERE RUN_ID = :1 AND TFM_STATUS = ''STAGED'' AND ROWNUM = 1'
             INTO l_cnt USING p_iid;
         RETURN l_cnt > 0;
@@ -92,7 +92,7 @@ AS
 
             FOR r IN (
                 SELECT t.*
-                FROM   DMT_OWNER.DMT_BEN_BENFY_TFM_TBL t
+                FROM   DMT_BEN_BENFY_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
@@ -113,17 +113,17 @@ AS
         -- ============================================================
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
         IF DBMS_LOB.GETLENGTH(l_dat) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PersonBenefitBalance.dat',
+            UTL_ZIP.add1file(l_zip, 'PersonBenefitBalance.dat',
                 clob_to_blob(l_dat));
         END IF;
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        UTL_ZIP.finish_zip(l_zip);
 
         -- ============================================================
         -- Store in DMT_FBDI_CSV_TBL + DMT_FBDI_ZIP_TBL
         -- ============================================================
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_csv_id FROM DUAL;
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_csv_id FROM DUAL;
 
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -131,11 +131,11 @@ AS
             'PersonBenefitBalance.dat', l_row_count, l_dat, l_now
         );
 
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+        INSERT INTO DMT_FBDI_ZIP_TBL (
             FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
+            DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
             'BeneficiaryDesignations', x_filename,
             DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
@@ -143,7 +143,7 @@ AS
         -- ============================================================
         -- Update TFM table(s) to GENERATED and stamp FBDI_CSV_ID
         -- ============================================================
-        UPDATE DMT_OWNER.DMT_BEN_BENFY_TFM_TBL
+        UPDATE DMT_BEN_BENFY_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
