@@ -1434,7 +1434,7 @@ def main():
                 'Administrative', DATE '2025-06-15',
                 :bu, :qty, '7',
                 'USD', :amt,
-                'Time Card', 'Time Card', 'Straight Time',
+                'External Time Entry System', 'Time Card', 'Straight Time',
                 :ref, :src
             )
         """, {"bu": BU, "pnum": proj_num, "tnum": task_num,
@@ -1461,7 +1461,7 @@ def main():
             'BadValue', DATE '2025-06-15',
             :bu, 8, '7',
             'USD', 999.99,
-            'Time Card', 'Time Card', 'Straight Time',
+            'External Time Entry System', 'Time Card', 'Straight Time',
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
     """, {"bu": BU}, label="BAD Expenditure (LABOR): invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
