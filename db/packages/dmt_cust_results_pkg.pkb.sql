@@ -328,6 +328,33 @@
             END IF;
         END LOOP;
 
+        -- Cascade party-site outcome to its party site uses. A site use is
+        -- created in Fusion together with its party site (same customer import),
+        -- so a use whose party site is base-confirmed LOADED is LOADED, and one
+        -- whose party site was rejected FAILED (carrying the site's real Fusion
+        -- error). This is the use's FOUND outcome via its parent's confirmation,
+        -- not a fabricated verdict. Only touches uses not independently resolved.
+        UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL su
+        SET su.TFM_STATUS='LOADED', su.RESULTS_UPDATED_DATE=SYSDATE, su.LAST_UPDATED_DATE=SYSDATE
+        WHERE su.RUN_ID=p_run_id AND su.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND EXISTS (SELECT 1 FROM DMT_HZ_PARTY_SITES_TFM_TBL ps
+                    WHERE ps.RUN_ID=p_run_id
+                    AND ps.SITE_ORIG_SYSTEM_REFERENCE=su.SITE_ORIG_SYSTEM_REFERENCE
+                    AND ps.TFM_STATUS='LOADED');
+        UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL su
+        SET su.TFM_STATUS='FAILED',
+            su.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(su.ERROR_TEXT,
+                '[FUSION_ERROR] Party site use not created; its party site was rejected by Fusion: ' ||
+                (SELECT ps.ERROR_TEXT FROM DMT_HZ_PARTY_SITES_TFM_TBL ps
+                 WHERE ps.RUN_ID=p_run_id AND ps.SITE_ORIG_SYSTEM_REFERENCE=su.SITE_ORIG_SYSTEM_REFERENCE
+                 AND ps.TFM_STATUS='FAILED' AND ROWNUM=1)),
+            su.RESULTS_UPDATED_DATE=SYSDATE, su.LAST_UPDATED_DATE=SYSDATE
+        WHERE su.RUN_ID=p_run_id AND su.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND EXISTS (SELECT 1 FROM DMT_HZ_PARTY_SITES_TFM_TBL ps
+                    WHERE ps.RUN_ID=p_run_id
+                    AND ps.SITE_ORIG_SYSTEM_REFERENCE=su.SITE_ORIG_SYSTEM_REFERENCE
+                    AND ps.TFM_STATUS='FAILED');
+
         -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor given
         -- a real Fusion error is left GENERATED (unaccounted) — no fabricated FAILED.)
 
