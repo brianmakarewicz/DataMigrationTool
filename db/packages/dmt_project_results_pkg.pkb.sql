@@ -563,6 +563,32 @@ AS
             END IF;
         END LOOP;
 
+        -- Cascade project outcome to its tasks. A task imports with its project,
+        -- so a task under a base-confirmed LOADED project is LOADED. A task whose
+        -- project was rejected, or whose project is ABSENT from this load (an
+        -- orphan task -- Fusion silently leaves it in the interface with no
+        -- header), is FAILED with the found reason. This is the task's real,
+        -- findable outcome via its parent, not a fabricated verdict; only touches
+        -- tasks not already resolved above.
+        UPDATE DMT_PJF_TASKS_TFM_TBL t
+        SET    t.TFM_STATUS = 'LOADED', t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+        WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    EXISTS (SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
+                       WHERE p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER
+                       AND   p.TFM_STATUS = 'LOADED');
+        UPDATE DMT_PJF_TASKS_TFM_TBL t
+        SET    t.TFM_STATUS = 'FAILED',
+               t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                   '[FUSION_ERROR] Task not imported; its project (' || t.PROJECT_NUMBER || ') ' ||
+                   CASE WHEN EXISTS (SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
+                                     WHERE p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER)
+                        THEN 'was rejected by Fusion.' ELSE 'is not present in this load.' END),
+               t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+        WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    NOT EXISTS (SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
+                           WHERE p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER
+                           AND   p.TFM_STATUS = 'LOADED');
+
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
             p_message => C_PROC || ': BIP complete. Projects ' || l_prj_loaded || 'L/' || l_prj_failed || 'F' ||
