@@ -1,5 +1,49 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-14 -- Deploy DMT2 to the queryapp ATP (DMT2_OWNER) + drive the regression
+
+**Headline:** DMT2 is now deployed and running on the **queryapp ATP** as a NEW schema **DMT2_OWNER**
+(alongside the frozen ConversionTool `DMT_OWNER`, same PDB). Branch `feat/schema-relative-code`,
+PR #236, 13 commits, tree clean. Enabled by making the DB code **schema-relative** (stripped the
+hardcoded `DMT_OWNER.` qualifier, ~2,880 refs, so it installs into any owner; backward-compatible
+on Docker). Full `install.sql` clean (0 invalid); scenario loaded; ACL + credentials set.
+
+**Connection:** `DMT2_OWNER` / `Migr8_Dmt2#2026Qz` @ `queryapp_tp` (wallet
+`C:\Users\Monroe\workspace\data-migration-tool\wallet`, set `TNS_ADMIN`). No APEX UI deployed
+(engine/DB only). Harness env: `DMT2_CONN`, `DMT2_WALLET`, `DMT2_WALLET_PW`.
+
+**Fixes made (all committed + deployed), each honest (real load or real Fusion error):**
+1. `ENUMERATE_ESS_FILES` FK bug (ORA-02291 -- passed Fusion request id where local ESS_JOB_ID pk
+   needed; starved reconciliation) -- took P2P from 0 to 10 accounted.
+2. Parent->child accounting cascades: Requisitions (line/dist->header), Customers (party-site->
+   site-use), Projects (project->task incl. orphan), MiscReceipts (transaction->lot).
+3. HDL reconcile: when a data set loads 0 objects with real messages, mark still-GENERATED rows
+   FAILED with the data set's real errors (Workers/Assignments).
+4. Grants: fixed Award-Batch-Import-Report XPath (`//G_4`) -> 3 awards FAILED with real errors.
+5. Expenditures: scenario source 'Time Card'->'External Time Entry System' + capture per-txn
+   rejections from `//G_STAG_ERR`.
+
+**Regression -- latest full run RUN_ID 120, prefix 10004 (fresh).** Good records LOAD cleanly for
+PurchaseOrders, APInvoices, Customers, GLBalances, Projects, GLBudgets, Assets, BillingEvents,
+ProjectBudgets (intended-good in, bad->FAILED). HCM 14/14 accounted; Projects 5/5.
+
+**Open items (NOT reconciler defects):**
+- **Suppliers family FALSE-NEGATIVE (top priority for "all P2P", WAS MID-FIX).** Good suppliers DO
+  load (verified in `POZ_SUPPLIERS_V`: `10004RT Supplier Good-1`=vendor_id 300000331468949) but the
+  supplier pipeline **double-submits within a run**; the 2nd submit hits "record already exists" and
+  `DMT_POZ_SUP_RESULTS_PKG` marks the row FAILED on that duplicate instead of confirming the
+  base-table load. That cascades Addresses/Sites/Assignments/Contacts to fail. FIX: in the supplier
+  reconciler ERROR branch (per sub-object, ~line 168 of `dmt_poz_sup_results_pkg.pkb.sql`; XMLTABLE
+  `/DATA_DS/G_1` cols vendor_name/segment1/vendor_id/status/error_msg), treat a duplicate
+  ("already exists") as LOADED, and/or stop the double-submit. Flips 5 P2P objects to good->LOADED.
+- **ARInvoices** -- AutoInvoiceMasterEss crashes at job level ("consolidated billing is enabled...").
+  3 lines UNACCOUNTED (mission-honest job crash). Needs consolidated billing disabled on the demo
+  (Fusion setup) or the correct consolidated-billing AutoInvoice job.
+- **MiscReceipts serial** -- 1 row, no parent-transaction link in the source data; needs a
+  transform/schema change or Fusion serial verification.
+- **Expenditures / Grants / Workers-Assignments** -- now honestly FAILED with real Fusion errors
+  (instance config / bad-data), captured correctly.
+
 ## Session -- 2026-07-21/22 -- Resolve run-234 UNACCOUNTED honestly
 **What was done:** Located the real Fusion outcome for all 23 UNACCOUNTED records from the first
 honest scorecard (run 234) and landed 11 merged PRs (#222-#232). All are merged; #227's remaining
