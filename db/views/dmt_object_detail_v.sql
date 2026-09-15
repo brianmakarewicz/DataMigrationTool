@@ -395,12 +395,42 @@ FROM
 JOIN DMT_PIPELINE_RUN_TBL m
     ON  m.RUN_ID = sc.RUN_ID
 LEFT JOIN (
-    SELECT RUN_ID, CEMLI_CODE,
-           MAX(LOAD_ESS_JOB_ID)    AS LOAD_ESS_JOB_ID,
-           MAX(IMPORT_ESS_JOB_ID)  AS IMPORT_ESS_JOB_ID,
-           MAX(POSTRUN_ESS_JOB_ID) AS POSTRUN_ESS_JOB_ID
-    FROM   DMT_WORK_QUEUE_TBL
-    GROUP BY RUN_ID, CEMLI_CODE
+    -- Prefer the ESS job IDs the queue captured (simple single-load objects such
+    -- as the supplier family). Fall back to the ACTUAL submitted ESS jobs for
+    -- partitioned objects (ARInvoices, PurchaseOrders, GLBalances, APInvoices,
+    -- Items, Requisitions, ...), whose partitioned load path never writes the IDs
+    -- back to the work queue -- so the queue columns are null for them and the
+    -- object-detail panel showed "-". Load is always the FBDI
+    -- InterfaceLoaderController; Import is the object's one other depth-0 job
+    -- (AutoInvoiceImportEss, ImportSPOJob, JournalImportLauncher, ...). Latest
+    -- retry wins (numeric MAX of the request id), then cast to match the
+    -- VARCHAR2 queue columns.
+    SELECT COALESCE(wq.RUN_ID, ej.RUN_ID)               AS RUN_ID,
+           COALESCE(wq.CEMLI_CODE, ej.CEMLI_CODE)       AS CEMLI_CODE,
+           COALESCE(wq.LOAD_ESS_JOB_ID,   ej.LOAD_ESS_JOB_ID)   AS LOAD_ESS_JOB_ID,
+           COALESCE(wq.IMPORT_ESS_JOB_ID, ej.IMPORT_ESS_JOB_ID) AS IMPORT_ESS_JOB_ID,
+           COALESCE(wq.POSTRUN_ESS_JOB_ID, ej.POSTRUN_ESS_JOB_ID) AS POSTRUN_ESS_JOB_ID
+    FROM (
+        SELECT RUN_ID, CEMLI_CODE,
+               MAX(LOAD_ESS_JOB_ID)    AS LOAD_ESS_JOB_ID,
+               MAX(IMPORT_ESS_JOB_ID)  AS IMPORT_ESS_JOB_ID,
+               MAX(POSTRUN_ESS_JOB_ID) AS POSTRUN_ESS_JOB_ID
+        FROM   DMT_WORK_QUEUE_TBL
+        GROUP BY RUN_ID, CEMLI_CODE
+    ) wq
+    FULL OUTER JOIN (
+        SELECT RUN_ID, CEMLI_CODE,
+               TO_CHAR(MAX(CASE WHEN JOB_SHORT_NAME =  'InterfaceLoaderController'
+                                THEN REQUEST_ID END)) AS LOAD_ESS_JOB_ID,
+               TO_CHAR(MAX(CASE WHEN JOB_SHORT_NAME <> 'InterfaceLoaderController'
+                                THEN REQUEST_ID END)) AS IMPORT_ESS_JOB_ID,
+               CAST(NULL AS VARCHAR2(30))             AS POSTRUN_ESS_JOB_ID
+        FROM   DMT_ESS_JOB_TBL
+        WHERE  DEPTH_LEVEL = 0
+        GROUP BY RUN_ID, CEMLI_CODE
+    ) ej
+      ON  wq.RUN_ID = ej.RUN_ID
+      AND wq.CEMLI_CODE = ej.CEMLI_CODE
 ) q
     ON  q.RUN_ID = sc.RUN_ID
     AND q.CEMLI_CODE     = sc.CEMLI_CODE
