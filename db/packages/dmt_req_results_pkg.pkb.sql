@@ -355,27 +355,10 @@ AS
             -- kept the real [FUSION_ERROR] text but stayed GENERATED and was swept
             -- to UNACCOUNTED (the Requisition BADHDR gap). Guard against a genuine
             -- LOADED so a confirmed success is never downgraded.
-            IF UPPER(e.interface_type) = 'HEADER'
-               AND UPPER(e.error_msg) LIKE '%ALREADY EXISTS%' THEN
-                -- "A requisition with the number ... already exists" means the
-                -- record IS in Fusion (loaded on a prior run with the same number).
-                -- That is a confirmed base-table presence, not a failure — mark
-                -- LOADED, not FAILED. Same honest handling as the supplier family.
-                -- Allow a duplicate-caused FAILED to be corrected to LOADED on
-                -- re-reconcile: only rows whose Fusion error is "already exists"
-                -- reach this branch, and those records ARE in the base table. A
-                -- header that failed for a real reason carries a different error
-                -- and never enters here, so it is never wrongly promoted.
-                UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
-                SET    TFM_STATUS           = 'LOADED',
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_HEADER_KEY  = e.interface_key
-                AND    TFM_STATUS            != 'LOADED';
-                l_loaded := l_loaded + SQL%ROWCOUNT;
-
-            ELSIF UPPER(e.interface_type) = 'HEADER' THEN
+            IF UPPER(e.interface_type) = 'HEADER' THEN
+                -- A Fusion error is always an error (design rule 2026-09-15):
+                -- an "already exists" rejection is a failure, not a success.
+                -- LOADED comes only from a real base-table hit in STEP 1 above.
                 UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
                 SET    TFM_STATUS           = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,

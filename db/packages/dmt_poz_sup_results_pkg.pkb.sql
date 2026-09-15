@@ -165,23 +165,10 @@
                     AND    (SEGMENT1 = r.segment1 OR (SEGMENT1 IS NULL AND r.segment1 IS NULL))
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
-                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
-                    -- Duplicate ("already exists") means the supplier IS in the
-                    -- Fusion base table -- it loaded (including a within-run
-                    -- re-submit). Base-table presence is the authoritative LOADED
-                    -- signal (design: LOADED only with a real base-table row), so
-                    -- record LOADED rather than letting the duplicate mark it FAILED.
-                    UPDATE DMT_POZ_SUPPLIERS_TFM_TBL
-                    SET    TFM_STATUS               = 'LOADED',
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    VENDOR_NAME          = r.vendor_name
-                    AND    (SEGMENT1 = r.segment1 OR (SEGMENT1 IS NULL AND r.segment1 IS NULL))
-                    AND    TFM_STATUS              != 'LOADED';
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- never reinterpret the message (e.g. "already exists") as a
+                    -- success. LOADED comes only from a real base-table hit above.
                     UPDATE DMT_POZ_SUPPLIERS_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
@@ -221,16 +208,9 @@
                     AND    PARTY_SITE_NAME      = r.party_site_name
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
-                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
-                    -- Duplicate = record is in the Fusion base table (loaded, incl. a
-                    -- within-run re-submit) -> LOADED, not FAILED.
-                    UPDATE DMT_POZ_SUP_ADDR_TFM_TBL
-                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  RUN_ID = p_run_id AND VENDOR_NAME = r.vendor_name
-                    AND    PARTY_SITE_NAME = r.party_site_name AND TFM_STATUS != 'LOADED';
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- "already exists" is a rejection, not a success.
                     UPDATE DMT_POZ_SUP_ADDR_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
@@ -284,14 +264,9 @@
                     AND    VENDOR_SITE_CODE     = r.vendor_site_code
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
-                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
-                    UPDATE DMT_POZ_SUP_SITE_TFM_TBL
-                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  RUN_ID = p_run_id AND VENDOR_NAME = r.vendor_name
-                    AND    VENDOR_SITE_CODE = r.vendor_site_code AND TFM_STATUS != 'LOADED';
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- "already exists" is a rejection, not a success.
                     UPDATE DMT_POZ_SUP_SITE_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
@@ -333,15 +308,9 @@
                     AND    BUSINESS_UNIT_NAME   = r.bu_name
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
-                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
-                    UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL
-                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  RUN_ID = p_run_id AND VENDOR_NAME = r.vendor_name
-                    AND    VENDOR_SITE_CODE = r.vendor_site_code AND BUSINESS_UNIT_NAME = r.bu_name
-                    AND    TFM_STATUS != 'LOADED';
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- "already exists" is a rejection, not a success.
                     UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
@@ -384,14 +353,9 @@
                     AND    LAST_NAME            = r.last_name
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
-                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
-                    UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL
-                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  RUN_ID = p_run_id AND VENDOR_NAME = r.vendor_name
-                    AND    FIRST_NAME = r.first_name AND LAST_NAME = r.last_name AND TFM_STATUS != 'LOADED';
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- "already exists" is a rejection, not a success.
                     UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
