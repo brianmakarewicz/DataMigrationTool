@@ -270,6 +270,37 @@ AS
                             END IF;
                         END LOOP;
 
+                        -- Targeted parse: the Import and Process Cost Transactions
+                        -- report lists per-transaction validation rejections in
+                        -- LIST_G_STAG_ERR/G_STAG_ERR with fields suffixed _10
+                        -- (TXN_INTERFACE_ID_10 = the transaction reference,
+                        -- MESSAGE_NAME_10 = the real Fusion error code). The generic
+                        -- parser above does not recognise that layout, so match these
+                        -- directly to their TFM row with the real Fusion message.
+                        BEGIN
+                            FOR e IN (
+                                SELECT x.ref, x.msg
+                                FROM   XMLTABLE('//G_STAG_ERR' PASSING XMLTYPE(l_ir_xml)
+                                        COLUMNS ref VARCHAR2(240) PATH 'TXN_INTERFACE_ID_10',
+                                                msg VARCHAR2(400)  PATH 'MESSAGE_NAME_10') x
+                                WHERE  x.ref IS NOT NULL
+                            ) LOOP
+                                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+                                SET    TFM_STATUS           = 'FAILED',
+                                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                           '[FUSION_ERROR] ' || NVL(e.msg, 'Cost transaction rejected')),
+                                       RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                                WHERE  RUN_ID = p_run_id
+                                AND    ORIG_TRANSACTION_REFERENCE = e.ref
+                                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                                l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
+                            END LOOP;
+                        EXCEPTION WHEN OTHERS THEN
+                            DMT_UTIL_PKG.LOG(p_run_id => p_run_id,
+                                p_message => C_PROC || ': G_STAG_ERR targeted parse failed: ' || SQLERRM,
+                                p_log_type => DMT_UTIL_PKG.C_LOG_WARN, p_package => C_PKG, p_procedure => C_PROC);
+                        END;
+
                         DMT_UTIL_PKG.LOG(
                             p_run_id => p_run_id,
                             p_message        => 'Import Report parsed (BIP 0-row fallback): ' || l_ir_errors.COUNT ||
