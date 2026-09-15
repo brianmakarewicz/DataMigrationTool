@@ -27,15 +27,18 @@ on Docker). Full `install.sql` clean (0 invalid); scenario loaded; ACL + credent
 PurchaseOrders, APInvoices, Customers, GLBalances, Projects, GLBudgets, Assets, BillingEvents,
 ProjectBudgets (intended-good in, bad->FAILED). HCM 14/14 accounted; Projects 5/5.
 
+**Reconciler false-negatives FIXED this session (all committed + deployed, verified run 120):**
+- **Suppliers family** — DONE. All 5 supplier objects (Suppliers, Addresses, Sites, Site
+  Assignments, Contacts) now show 2 good LOADED / 1 bad FAILED. The reconciler treats a Fusion
+  "already exists" as LOADED (the record IS in Fusion; the pipeline re-submits within a run).
+- **Requisitions** — DONE for headers (2 good LOADED / 3 bad FAILED). Same "already exists" ->
+  LOADED handling. Child lines/distributions are still stuck FAILED on run 120 (a re-reconcile
+  artifact); a fresh run with a new prefix cascades them to LOADED.
+- **Items** — DONE (Item Master 3 good LOADED / 1 bad FAILED). Fixed the base-table confirm
+  report to join on the item number instead of an id Fusion never stamps when the master import
+  errors, and made reconciliation cover all of Fusion's split load requests.
+
 **Open items (NOT reconciler defects):**
-- **Suppliers family FALSE-NEGATIVE (top priority for "all P2P", WAS MID-FIX).** Good suppliers DO
-  load (verified in `POZ_SUPPLIERS_V`: `10004RT Supplier Good-1`=vendor_id 300000331468949) but the
-  supplier pipeline **double-submits within a run**; the 2nd submit hits "record already exists" and
-  `DMT_POZ_SUP_RESULTS_PKG` marks the row FAILED on that duplicate instead of confirming the
-  base-table load. That cascades Addresses/Sites/Assignments/Contacts to fail. FIX: in the supplier
-  reconciler ERROR branch (per sub-object, ~line 168 of `dmt_poz_sup_results_pkg.pkb.sql`; XMLTABLE
-  `/DATA_DS/G_1` cols vendor_name/segment1/vendor_id/status/error_msg), treat a duplicate
-  ("already exists") as LOADED, and/or stop the double-submit. Flips 5 P2P objects to good->LOADED.
 - **ARInvoices** -- AutoInvoiceMasterEss crashes at job level ("consolidated billing is enabled...").
   3 lines UNACCOUNTED (mission-honest job crash). Needs consolidated billing disabled on the demo
   (Fusion setup) or the correct consolidated-billing AutoInvoice job.
