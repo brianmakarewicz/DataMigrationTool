@@ -608,9 +608,9 @@
                     EXECUTE IMMEDIATE
                         'UPDATE ' || p_tfm_table ||
                         ' SET TFM_STATUS = ''FAILED'','
-                        ' ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, :m),'
-                        ' LAST_UPDATED_DATE = SYSDATE'
-                        ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
+                        || ' ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, :m),'
+                        || ' LAST_UPDATED_DATE = SYSDATE'
+                        || ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
                         USING l_fail_msg, p_run_id;
                     l_n := SQL%ROWCOUNT;
                     l_file_count := l_file_count + l_n;
