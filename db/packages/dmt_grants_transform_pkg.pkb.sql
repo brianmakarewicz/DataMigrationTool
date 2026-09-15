@@ -14,7 +14,7 @@
         l_prefix VARCHAR2(30);
     BEGIN
         SELECT PREFIX INTO l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_prefix;
     EXCEPTION
@@ -34,7 +34,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_dep_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_dep_prefix;
     EXCEPTION
@@ -63,13 +63,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_STG_TBL
+            UPDATE DMT_GMS_AWD_HEADERS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_HEADERS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
                     AWARD_NAME, AWARD_NUMBER, SOURCE_TEMPLATE_NUMBER,
                     BUSINESS_UNIT, LEGAL_ENTITY, CONTRACT_TYPE,
@@ -144,7 +144,7 @@
                     s.BILL_TO_SITE_LOCATION, s.BILL_TO_CONTACT_NAME, s.BILL_TO_CONTACT_EMAIL,
                     s.SHIP_TO_SITE_LOCATION, s.BILL_SET_NUMBER, s.GENERATED_INVOICE_STATUS,
                     s.INV_TRX_TYPE_NAME, s.BILL_TO_ACCT_NUMBER, s.SHIP_TO_ACCT_NUMBER, s.PREPAY_TRX_TYPE_NAME
-        FROM DMT_OWNER.DMT_GMS_AWD_HEADERS_STG_TBL s
+        FROM DMT_GMS_AWD_HEADERS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -155,7 +155,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -164,7 +164,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_HEADERS_STG_TBL s
+        UPDATE DMT_GMS_AWD_HEADERS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -177,7 +177,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -223,13 +223,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_FUNDING_STG_TBL
+            UPDATE DMT_GMS_AWD_FUNDING_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_FUNDING_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_FUNDING_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
                     AWARD_NUMBER, BUDGET_PERIOD_NAME, FUNDING_SOURCE_NAME,
                     ISSUE_TYPE, ISSUE_NUMBER, ISSUE_DATE, ISSUE_DESCRIPTION,
@@ -240,7 +240,7 @@
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), s.BUDGET_PERIOD_NAME, s.FUNDING_SOURCE_NAME,
                     s.ISSUE_TYPE, s.ISSUE_NUMBER, s.ISSUE_DATE, s.ISSUE_DESCRIPTION,
                     s.DIRECT_FUNDING_AMOUNT, s.INDIRECT_FUNDING_AMOUNT, s.FUNDING_SOURCE_NUMBER
-        FROM DMT_OWNER.DMT_GMS_AWD_FUNDING_STG_TBL s
+        FROM DMT_GMS_AWD_FUNDING_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -251,7 +251,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_FUNDING_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_FUNDING_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -260,7 +260,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_FUNDING_STG_TBL s
+        UPDATE DMT_GMS_AWD_FUNDING_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -273,7 +273,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_FUNDING_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_FUNDING_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -315,13 +315,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_PROJECTS_STG_TBL
+            UPDATE DMT_GMS_AWD_PROJECTS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_PROJECTS_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_PROJECTS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
                     AWARD_NUMBER, FUNDING_SOURCE_NAME, PROJECT_NUMBER,
                     AWARD_PRJ_BRD_SCHEDULE, FIXED_DATE, ATTRIBUTE_CATEGORY,
@@ -350,7 +350,7 @@
                     s.ATTRIBUTE_DATE6, s.ATTRIBUTE_DATE7, s.ATTRIBUTE_DATE8, s.ATTRIBUTE_DATE9, s.ATTRIBUTE_DATE10,
                     s.ATTRIBUTE_TIMESTAMP1, s.ATTRIBUTE_TIMESTAMP2, s.ATTRIBUTE_TIMESTAMP3, s.ATTRIBUTE_TIMESTAMP4, s.ATTRIBUTE_TIMESTAMP5,
                     s.ATTRIBUTE_TIMESTAMP6, s.ATTRIBUTE_TIMESTAMP7, s.ATTRIBUTE_TIMESTAMP8, s.ATTRIBUTE_TIMESTAMP9, s.ATTRIBUTE_TIMESTAMP10
-        FROM DMT_OWNER.DMT_GMS_AWD_PROJECTS_STG_TBL s
+        FROM DMT_GMS_AWD_PROJECTS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -361,7 +361,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_PROJECTS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_PROJECTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -370,7 +370,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PROJECTS_STG_TBL s
+        UPDATE DMT_GMS_AWD_PROJECTS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -383,7 +383,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_PROJECTS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_PROJECTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -425,13 +425,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_PERSONNEL_STG_TBL
+            UPDATE DMT_GMS_AWD_PERSONNEL_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_PERSONNEL_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_PERSONNEL_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
                     AWARD_NUMBER, PROJECT_NUMBER, INTERNAL, PERSON_EMAIL, PERSON_NAME, PERSON_NUMBER,
                     ROLE, START_DATE, END_DATE, CREDIT_PERCENTAGE, ATTRIBUTE_CATEGORY,
@@ -460,7 +460,7 @@
                     s.ATTRIBUTE_DATE6, s.ATTRIBUTE_DATE7, s.ATTRIBUTE_DATE8, s.ATTRIBUTE_DATE9, s.ATTRIBUTE_DATE10,
                     s.ATTRIBUTE_TIMESTAMP1, s.ATTRIBUTE_TIMESTAMP2, s.ATTRIBUTE_TIMESTAMP3, s.ATTRIBUTE_TIMESTAMP4, s.ATTRIBUTE_TIMESTAMP5,
                     s.ATTRIBUTE_TIMESTAMP6, s.ATTRIBUTE_TIMESTAMP7, s.ATTRIBUTE_TIMESTAMP8, s.ATTRIBUTE_TIMESTAMP9, s.ATTRIBUTE_TIMESTAMP10
-        FROM DMT_OWNER.DMT_GMS_AWD_PERSONNEL_STG_TBL s
+        FROM DMT_GMS_AWD_PERSONNEL_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -471,7 +471,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_PERSONNEL_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_PERSONNEL_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -480,7 +480,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PERSONNEL_STG_TBL s
+        UPDATE DMT_GMS_AWD_PERSONNEL_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -493,7 +493,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_PERSONNEL_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_PERSONNEL_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -533,13 +533,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_SRC_STG_TBL
+            UPDATE DMT_GMS_AWD_FUND_SRC_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_FUND_SRC_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_FUND_SRC_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
                     AWARD_NUMBER, FUNDING_SOURCE_NAME, FUNDING_SOURCE_NUMBER,
                     COST_SHARE_REQ_BY_SPONSOR, COST_SHARE_APPROVED_BY_EMAIL,
@@ -550,7 +550,7 @@
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), s.FUNDING_SOURCE_NAME, s.FUNDING_SOURCE_NUMBER,
                     s.COST_SHARE_REQ_BY_SPONSOR, s.COST_SHARE_APPROVED_BY_EMAIL,
                     s.COST_SHARE_APPROVED_BY_NAME, s.COST_SHARE_APPROVED_BY_NUMBER, s.COST_SHARE_APPROVAL_DATE
-        FROM DMT_OWNER.DMT_GMS_AWD_FUND_SRC_STG_TBL s
+        FROM DMT_GMS_AWD_FUND_SRC_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -561,7 +561,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_FUND_SRC_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_FUND_SRC_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -570,7 +570,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_SRC_STG_TBL s
+        UPDATE DMT_GMS_AWD_FUND_SRC_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -583,7 +583,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_FUND_SRC_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_FUND_SRC_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -625,20 +625,20 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL
+            UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
                     AWARD_NUMBER, PROJECT_NUMBER, FUNDING_SOURCE_NAME, FUNDING_SOURCE_NUMBER, ENABLE_BURDENING_FLAG
         )
         SELECT
                     s.STG_SEQUENCE_ID, p_run_id,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25), s.FUNDING_SOURCE_NAME, s.FUNDING_SOURCE_NUMBER, s.ENABLE_BURDENING_FLAG
-        FROM DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL s
+        FROM DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -649,7 +649,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -658,7 +658,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL s
+        UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -671,7 +671,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -713,18 +713,18 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_KEYWORDS_STG_TBL
+            UPDATE DMT_GMS_AWD_KEYWORDS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_KEYWORDS_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_KEYWORDS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, PROJECT_NUMBER, KEYWORD_NAME
         )
         SELECT
                     s.STG_SEQUENCE_ID, p_run_id, DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25), s.KEYWORD_NAME
-        FROM DMT_OWNER.DMT_GMS_AWD_KEYWORDS_STG_TBL s
+        FROM DMT_GMS_AWD_KEYWORDS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -735,7 +735,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_KEYWORDS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_KEYWORDS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -744,7 +744,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_KEYWORDS_STG_TBL s
+        UPDATE DMT_GMS_AWD_KEYWORDS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -757,7 +757,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_KEYWORDS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_KEYWORDS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -797,18 +797,18 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_STG_TBL
+            UPDATE DMT_GMS_AWD_BDGT_PRDS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_BDGT_PRDS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, BUDGET_PERIOD, START_DATE, END_DATE
         )
         SELECT
                     s.STG_SEQUENCE_ID, p_run_id, DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), s.BUDGET_PERIOD, s.START_DATE, s.END_DATE
-        FROM DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_STG_TBL s
+        FROM DMT_GMS_AWD_BDGT_PRDS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -819,7 +819,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -828,7 +828,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_STG_TBL s
+        UPDATE DMT_GMS_AWD_BDGT_PRDS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -841,7 +841,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -883,13 +883,13 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_CERTS_STG_TBL
+            UPDATE DMT_GMS_AWD_CERTS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_CERTS_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_CERTS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
                     AWARD_NUMBER, PROJECT_NUMBER, CERTIFICATION_NAME, CERTIFICATION_DATE,
                     CERTIFIED_BY, CERT_STATUS, APPROVAL_DATE, EXPIRATION_DATE,
@@ -900,7 +900,7 @@
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25), s.CERTIFICATION_NAME, s.CERTIFICATION_DATE,
                     s.CERTIFIED_BY, s.CERT_STATUS, s.APPROVAL_DATE, s.EXPIRATION_DATE,
                     s.EXPEDITED_REVIEW, s.FULL_REVIEW, s.ASSURANCE_NUMBER, s.EXEMPTION_NUMBER, s.COMMENTS
-        FROM DMT_OWNER.DMT_GMS_AWD_CERTS_STG_TBL s
+        FROM DMT_GMS_AWD_CERTS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -911,7 +911,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_CERTS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_CERTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -920,7 +920,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_CERTS_STG_TBL s
+        UPDATE DMT_GMS_AWD_CERTS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -933,7 +933,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_CERTS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_CERTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -973,18 +973,18 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_CFDAS_STG_TBL
+            UPDATE DMT_GMS_AWD_CFDAS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_CFDAS_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_CFDAS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, CFDA
         )
         SELECT
                     s.STG_SEQUENCE_ID, p_run_id, DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), s.CFDA
-        FROM DMT_OWNER.DMT_GMS_AWD_CFDAS_STG_TBL s
+        FROM DMT_GMS_AWD_CFDAS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -995,7 +995,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_CFDAS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_CFDAS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -1004,7 +1004,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_CFDAS_STG_TBL s
+        UPDATE DMT_GMS_AWD_CFDAS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -1017,7 +1017,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_CFDAS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_CFDAS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -1059,18 +1059,18 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_STG_TBL
+            UPDATE DMT_GMS_AWD_FUND_ALLOC_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_FUND_ALLOC_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, PROJECT_NUMBER, ISSUE_NUMBER, FUNDING_AMOUNT
         )
         SELECT
                     s.STG_SEQUENCE_ID, p_run_id, DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25), s.ISSUE_NUMBER, s.FUNDING_AMOUNT
-        FROM DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_STG_TBL s
+        FROM DMT_GMS_AWD_FUND_ALLOC_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -1081,7 +1081,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -1090,7 +1090,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_STG_TBL s
+        UPDATE DMT_GMS_AWD_FUND_ALLOC_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -1103,7 +1103,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -1145,18 +1145,18 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_STG_TBL
+            UPDATE DMT_GMS_AWD_ORG_CREDITS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_ORG_CREDITS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, PROJECT_NUMBER, ORGANIZATION, CREDIT_PERCENTAGE
         )
         SELECT
                     s.STG_SEQUENCE_ID, p_run_id, DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25), s.ORGANIZATION, s.CREDIT_PERCENTAGE
-        FROM DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_STG_TBL s
+        FROM DMT_GMS_AWD_ORG_CREDITS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -1167,7 +1167,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -1176,7 +1176,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_STG_TBL s
+        UPDATE DMT_GMS_AWD_ORG_CREDITS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -1189,7 +1189,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -1231,18 +1231,18 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL
+            UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, PROJECT_NUMBER, TASK_NUMBER, BURDEN_SCHEDULE, FIXED_DATE
         )
         SELECT
                     s.STG_SEQUENCE_ID, p_run_id, DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25), s.TASK_NUMBER, s.BURDEN_SCHEDULE, s.FIXED_DATE
-        FROM DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL s
+        FROM DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -1253,7 +1253,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -1262,7 +1262,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL s
+        UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -1275,7 +1275,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -1317,18 +1317,18 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_REFERENCES_STG_TBL
+            UPDATE DMT_GMS_AWD_REFERENCES_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_REFERENCES_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_REFERENCES_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, PROJECT_NUMBER, REFERENCE_TYPE, VALUE, COMMENTS
         )
         SELECT
                     s.STG_SEQUENCE_ID, p_run_id, DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25), s.REFERENCE_TYPE, s.VALUE, s.COMMENTS
-        FROM DMT_OWNER.DMT_GMS_AWD_REFERENCES_STG_TBL s
+        FROM DMT_GMS_AWD_REFERENCES_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -1339,7 +1339,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_REFERENCES_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_REFERENCES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -1348,7 +1348,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_REFERENCES_STG_TBL s
+        UPDATE DMT_GMS_AWD_REFERENCES_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -1361,7 +1361,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_REFERENCES_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_REFERENCES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -1401,20 +1401,20 @@
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
-            UPDATE DMT_OWNER.DMT_GMS_AWD_TERMS_STG_TBL
+            UPDATE DMT_GMS_AWD_TERMS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_TERMS_TFM_TBL (
+        INSERT INTO DMT_GMS_AWD_TERMS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
                     AWARD_NUMBER, TERM_CATEGORY_NAME, TERM_NAME, TERM_DESCRIPTION, TERM_OPERAND, TERM_VALUE
         )
         SELECT
                     s.STG_SEQUENCE_ID, p_run_id,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.AWARD_NUMBER, 120), s.TERM_CATEGORY_NAME, s.TERM_NAME, s.TERM_DESCRIPTION, s.TERM_OPERAND, s.TERM_VALUE
-        FROM DMT_OWNER.DMT_GMS_AWD_TERMS_STG_TBL s
+        FROM DMT_GMS_AWD_TERMS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -1425,7 +1425,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_TERMS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_TERMS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -1434,7 +1434,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_GMS_AWD_TERMS_STG_TBL s
+        UPDATE DMT_GMS_AWD_TERMS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -1447,7 +1447,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_GMS_AWD_TERMS_TFM_TBL t
+            SELECT 1 FROM DMT_GMS_AWD_TERMS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );

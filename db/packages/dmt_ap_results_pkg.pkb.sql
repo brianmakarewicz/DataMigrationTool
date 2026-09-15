@@ -114,7 +114,7 @@ AS
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -245,7 +245,7 @@ AS
             ) x
         ) LOOP
             IF r.import_status IN ('Y','PROCESSED','SUCCESS','COMPLETED') THEN
-                UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                UPDATE DMT_AP_INVOICES_INT_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        FUSION_INVOICE_ID    = TO_NUMBER(r.invoice_id),
                        RESULTS_UPDATED_DATE = SYSDATE,
@@ -255,7 +255,7 @@ AS
                 AND    TFM_STATUS              != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSIF r.import_status IN ('N','ERROR','REJECTED','FAILED','FAILURE') THEN
-                UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                UPDATE DMT_AP_INVOICES_INT_TFM_TBL
                 SET    TFM_STATUS               = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                  '[FUSION_ERROR] ' || r.error_msg),
@@ -281,14 +281,14 @@ AS
         END LOOP;
 
         -- Cascade LOADED to child TFM table (lines via INVOICE_ID)
-        UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
+        UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'LOADED',
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
         AND    ln.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
+            SELECT 1 FROM DMT_AP_INVOICES_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.INVOICE_ID     = ln.INVOICE_ID
             AND    h.TFM_STATUS         = 'LOADED');
@@ -296,11 +296,11 @@ AS
         -- Cascade FAILED to child TFM table (lines via INVOICE_ID). The parent
         -- header only reaches FAILED with a real Fusion error, so the line
         -- carries that same real parent error in the prescribed linked-record form.
-        UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
+        UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT h.ERROR_TEXT FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
+                   (SELECT h.ERROR_TEXT FROM DMT_AP_INVOICES_INT_TFM_TBL h
                     WHERE  h.RUN_ID = p_run_id
                     AND    h.INVOICE_ID = ln.INVOICE_ID
                     AND    h.TFM_STATUS = 'FAILED'
@@ -310,48 +310,48 @@ AS
         WHERE  ln.RUN_ID    = p_run_id
         AND    ln.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
+            SELECT 1 FROM DMT_AP_INVOICES_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.INVOICE_ID     = ln.INVOICE_ID
             AND    h.TFM_STATUS         = 'FAILED');
 
         -- Echo outcomes back to STG tables (2 types: headers + lines)
         -- Headers — LOADED
-        UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL stg
+        UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
         SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         -- Headers — FAILED
-        UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL stg
+        UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
         SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
+                   (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICES_INT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- Lines — LOADED
-        UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL stg
+        UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
         SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         -- Lines — FAILED
-        UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL stg
+        UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
         SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
+                   (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries
@@ -411,7 +411,7 @@ AS
             l_error_msg VARCHAR2(4000);
         BEGIN
             SELECT COUNT(*) INTO l_remaining
-            FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+            FROM   DMT_AP_INVOICES_INT_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS = 'GENERATED';
 
@@ -426,7 +426,7 @@ AS
 
                 FOR r IN (
                     SELECT TFM_SEQUENCE_ID, INVOICE_NUM
-                    FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                    FROM   DMT_AP_INVOICES_INT_TFM_TBL
                     WHERE  RUN_ID = p_run_id
                     AND    TFM_STATUS = 'GENERATED'
                 ) LOOP
@@ -443,7 +443,7 @@ AS
                             BEGIN
                                 -- Parse first field value (InvoiceId)
                                 l_fusion_id := JSON_VALUE(l_rest_json, '$.fields[0].value');
-                                UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                                UPDATE DMT_AP_INVOICES_INT_TFM_TBL
                                 SET    TFM_STATUS               = 'LOADED',
                                        FUSION_INVOICE_ID    = TO_NUMBER(l_fusion_id),
                                        RESULTS_UPDATED_DATE = SYSDATE,
@@ -465,7 +465,7 @@ AS
                             DECLARE
                                 l_sqlerrm VARCHAR2(4000) := SQLERRM;
                             BEGIN
-                                UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+                                UPDATE DMT_AP_INVOICES_INT_TFM_TBL
                                 SET    TFM_STATUS               = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[FUSION_ERROR] Base table verification failed: ' || l_sqlerrm),
@@ -478,13 +478,13 @@ AS
                 END LOOP;
 
                 -- Cascade to lines based on header outcomes
-                UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
+                UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
                 SET    ln.TFM_STATUS = 'LOADED', ln.RESULTS_UPDATED_DATE = SYSDATE,
                        ln.LAST_UPDATED_DATE = SYSDATE
                 WHERE  ln.RUN_ID = p_run_id
                 AND    ln.TFM_STATUS != 'LOADED'
                 AND    EXISTS (
-                    SELECT 1 FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL h
+                    SELECT 1 FROM DMT_AP_INVOICES_INT_TFM_TBL h
                     WHERE  h.RUN_ID = p_run_id
                     AND    h.INVOICE_ID = ln.INVOICE_ID AND h.TFM_STATUS = 'LOADED');
 
@@ -495,35 +495,35 @@ AS
                 -- UNACCOUNTED.
 
                 -- Echo to STG
-                UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL stg
+                UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
                 SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
                 WHERE  stg.STG_SEQUENCE_ID IN (
-                    SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
+                    SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
                     WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-                UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL stg
+                UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
                 SET    stg.STG_STATUS = 'FAILED',
                        stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                           (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
+                           (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICES_INT_TFM_TBL t
                             WHERE t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                             AND t.RUN_ID = p_run_id)),
                        stg.LAST_UPDATED_DATE = SYSDATE
                 WHERE  stg.STG_SEQUENCE_ID IN (
-                    SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
+                    SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
                     WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-                UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL stg
+                UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
                 SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
                 WHERE  stg.STG_SEQUENCE_ID IN (
-                    SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
+                    SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
                     WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-                UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL stg
+                UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
                 SET    stg.STG_STATUS = 'FAILED',
                        stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                           (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
+                           (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
                             WHERE t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                             AND t.RUN_ID = p_run_id)),
                        stg.LAST_UPDATED_DATE = SYSDATE
                 WHERE  stg.STG_SEQUENCE_ID IN (
-                    SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
+                    SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
                     WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
                 DMT_UTIL_PKG.LOG(

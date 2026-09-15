@@ -16,11 +16,11 @@
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL
+        UPDATE DMT_POZ_SUP_CONTACTS_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Supplier Contacts'
@@ -36,13 +36,13 @@
             'VALIDATE_BATCH start (stub -- all records passed through).',
             'INFO', 'DMT_POZ_SUP_CONT_VALIDATOR_PKG', 'VALIDATE_BATCH');
 
-        UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL
+        UPDATE DMT_POZ_SUP_CONTACTS_STG_TBL
         SET    STG_STATUS = 'VALIDATED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS = 'NEW';
         l_valid := SQL%ROWCOUNT;
 
         SELECT COUNT(*) INTO l_invalid
-        FROM   DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL
+        FROM   DMT_POZ_SUP_CONTACTS_STG_TBL
         WHERE  STG_STATUS = 'INVALID';
 
         DMT_UTIL_PKG.LOG(p_run_id,

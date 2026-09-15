@@ -64,7 +64,7 @@ AS
 
         l_step := 'reading run prefix for run ' || p_run_id;
         SELECT PREFIX INTO l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
 
         -- Shared transport: resolves REPORT_CATALOG_PATH from
@@ -150,7 +150,7 @@ AS
         BEGIN
             SELECT REQUEST_ID
             INTO   l_report_id
-            FROM   DMT_OWNER.DMT_ESS_JOB_TBL
+            FROM   DMT_ESS_JOB_TBL
             WHERE  PARENT_REQUEST_ID = p_import_ess_id
             AND    (RUN_ID = p_run_id OR RUN_ID IS NULL)
             AND    UPPER(NVL(JOB_SHORT_NAME, JOB_DEFINITION)) LIKE '%IMPORTPROJECTREPORTJOB%'
@@ -262,7 +262,7 @@ AS
             l_src := UPPER(NVL(l_ir_errors(i).error_source, ''));
 
             IF l_src LIKE '%TASK%' THEN
-                UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
+                UPDATE DMT_PJF_TASKS_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
@@ -273,7 +273,7 @@ AS
                 x_matched := x_matched + SQL%ROWCOUNT;
 
             ELSIF l_src LIKE '%TEAM%' OR l_src LIKE '%PART%' OR l_src LIKE '%MEMBER%' THEN
-                UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
+                UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
@@ -284,7 +284,7 @@ AS
                 x_matched := x_matched + SQL%ROWCOUNT;
 
             ELSIF l_src LIKE '%TXN%' OR l_src LIKE '%CONTROL%' THEN
-                UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
+                UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
@@ -302,7 +302,7 @@ AS
                 -- the project number as a '/'-delimited token inside it, so
                 -- "10118RT Project Bad-1/10118RTPRJ-BAD1" still resolves to the row
                 -- keyed 10118RTPRJ-BAD1 (and never to the good projects).
-                UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+                UPDATE DMT_PJF_PROJECTS_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
@@ -442,7 +442,7 @@ AS
             IF r.object_type = 'PROJECTS' THEN
                 IF r.source_type = 'BASE' THEN
                     -- Tier 2: found in base table = positively LOADED.
-                    UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+                    UPDATE DMT_PJF_PROJECTS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            FUSION_PROJECT_ID    = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -454,7 +454,7 @@ AS
 
                 ELSIF r.source_type = 'INTERFACE' THEN
                     IF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
-                        UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+                        UPDATE DMT_PJF_PROJECTS_TFM_TBL
                         SET    TFM_STATUS           = 'LOADED',
                                FUSION_PROJECT_ID    = r.fusion_id,
                                RESULTS_UPDATED_DATE = SYSDATE,
@@ -471,7 +471,7 @@ AS
                         -- leave the row GENERATED for the honest sweep to mark
                         -- UNACCOUNTED.
                         IF r.error_msg IS NOT NULL THEN
-                            UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+                            UPDATE DMT_PJF_PROJECTS_TFM_TBL
                             SET    TFM_STATUS           = 'FAILED',
                                    ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                        '[FUSION_ERROR] ' || r.error_msg),
@@ -498,7 +498,7 @@ AS
                     -- honest sweep to mark UNACCOUNTED.
                     NULL;
                 ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
-                    UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
+                    UPDATE DMT_PJF_TASKS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
@@ -521,7 +521,7 @@ AS
                     -- the honest sweep to mark UNACCOUNTED.
                     NULL;
                 ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
-                    UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
+                    UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
@@ -545,7 +545,7 @@ AS
                     -- the honest sweep to mark UNACCOUNTED.
                     NULL;
                 ELSIF NVL(r.import_status, r.load_status) IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P','COMPLETE') THEN
-                    UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
+                    UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
@@ -563,6 +563,35 @@ AS
             END IF;
         END LOOP;
 
+        -- Cascade project outcome to its tasks. A task imports with its project,
+        -- so a task under a base-confirmed LOADED project is LOADED. A task whose
+        -- project GENUINELY FAILED (TFM_STATUS='FAILED' with a real Fusion error)
+        -- inherits that parent's ACTUAL Fusion error string -- we propagate the
+        -- linked record's real error, never compose a "parent was rejected"
+        -- sentence (record-accounting rule 2(b); a Fusion error is always an
+        -- error). A task whose project is still unresolved (GENERATED) or is
+        -- ABSENT from this load has no real Fusion error to propagate, so it is
+        -- left GENERATED for the honest sweep to mark UNACCOUNTED -- never a
+        -- fabricated FAILED. Only touches tasks not already resolved above.
+        UPDATE DMT_PJF_TASKS_TFM_TBL t
+        SET    t.TFM_STATUS = 'LOADED', t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+        WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    EXISTS (SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
+                       WHERE p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER
+                       AND   p.TFM_STATUS = 'LOADED');
+        UPDATE DMT_PJF_TASKS_TFM_TBL t
+        SET    t.TFM_STATUS = 'FAILED',
+               t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                   '[FUSION_ERROR] via project ' || t.PROJECT_NUMBER || ': ' ||
+                   (SELECT p.ERROR_TEXT FROM DMT_PJF_PROJECTS_TFM_TBL p
+                    WHERE p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER
+                    AND   p.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
+               t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+        WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    EXISTS (SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
+                       WHERE p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER
+                       AND   p.TFM_STATUS = 'FAILED' AND p.ERROR_TEXT IS NOT NULL);
+
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
             p_message => C_PROC || ': BIP complete. Projects ' || l_prj_loaded || 'L/' || l_prj_failed || 'F' ||
@@ -576,13 +605,13 @@ AS
         -- Import Report fallback: if any TFM rows are still GENERATED,
         -- match per-row errors from the ESS Import Report XML.
         -- ================================================================
-        SELECT (SELECT COUNT(*) FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+        SELECT (SELECT COUNT(*) FROM DMT_PJF_PROJECTS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED')
-             + (SELECT COUNT(*) FROM DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
+             + (SELECT COUNT(*) FROM DMT_PJF_TASKS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED')
-             + (SELECT COUNT(*) FROM DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
+             + (SELECT COUNT(*) FROM DMT_PJF_TEAM_MEMBERS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED')
-             + (SELECT COUNT(*) FROM DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
+             + (SELECT COUNT(*) FROM DMT_PJC_TXN_CONTROLS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED')
         INTO l_still_gen FROM DUAL;
 
@@ -603,40 +632,40 @@ AS
         -- table after successful import (no BIP row returned).
         -- ================================================================
         -- Tasks: cascade LOADED from parent project
-        UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL tsk
+        UPDATE DMT_PJF_TASKS_TFM_TBL tsk
         SET    tsk.TFM_STATUS           = 'LOADED',
                tsk.RESULTS_UPDATED_DATE = SYSDATE,
                tsk.LAST_UPDATED_DATE    = SYSDATE
         WHERE  tsk.RUN_ID     = p_run_id
         AND    tsk.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID         = p_run_id
             AND    p.PROJECT_NUMBER = tsk.PROJECT_NUMBER
             AND    p.TFM_STATUS     = 'LOADED');
 
         -- Team Members: cascade LOADED from parent project
-        UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL tm
+        UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL tm
         SET    tm.TFM_STATUS           = 'LOADED',
                tm.RESULTS_UPDATED_DATE = SYSDATE,
                tm.LAST_UPDATED_DATE    = SYSDATE
         WHERE  tm.RUN_ID     = p_run_id
         AND    tm.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID       = p_run_id
             AND    p.PROJECT_NAME = tm.PROJECT_NAME
             AND    p.TFM_STATUS   = 'LOADED');
 
         -- Txn Controls: cascade LOADED from parent project
-        UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL tc
+        UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL tc
         SET    tc.TFM_STATUS           = 'LOADED',
                tc.RESULTS_UPDATED_DATE = SYSDATE,
                tc.LAST_UPDATED_DATE    = SYSDATE
         WHERE  tc.RUN_ID     = p_run_id
         AND    tc.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID         = p_run_id
             AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
             AND    p.TFM_STATUS     = 'LOADED');
@@ -644,11 +673,11 @@ AS
         -- Tasks: cascade FAILED from parent project. The parent project only
         -- reaches FAILED with a real Fusion error, so the child carries that
         -- same real parent error in the prescribed linked-record form.
-        UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL tsk
+        UPDATE DMT_PJF_TASKS_TFM_TBL tsk
         SET    tsk.TFM_STATUS           = 'FAILED',
                tsk.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(tsk.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT p.ERROR_TEXT FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+                   (SELECT p.ERROR_TEXT FROM DMT_PJF_PROJECTS_TFM_TBL p
                     WHERE  p.RUN_ID         = p_run_id
                     AND    p.PROJECT_NUMBER = tsk.PROJECT_NUMBER
                     AND    p.TFM_STATUS     = 'FAILED'
@@ -658,7 +687,7 @@ AS
         WHERE  tsk.RUN_ID     = p_run_id
         AND    tsk.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID         = p_run_id
             AND    p.PROJECT_NUMBER = tsk.PROJECT_NUMBER
             AND    p.TFM_STATUS     = 'FAILED');
@@ -666,11 +695,11 @@ AS
         -- Team Members: cascade FAILED from parent project. The parent project
         -- only reaches FAILED with a real Fusion error, so the child carries that
         -- same real parent error in the prescribed linked-record form.
-        UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL tm
+        UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL tm
         SET    tm.TFM_STATUS           = 'FAILED',
                tm.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(tm.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT p.ERROR_TEXT FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+                   (SELECT p.ERROR_TEXT FROM DMT_PJF_PROJECTS_TFM_TBL p
                     WHERE  p.RUN_ID       = p_run_id
                     AND    p.PROJECT_NAME = tm.PROJECT_NAME
                     AND    p.TFM_STATUS   = 'FAILED'
@@ -680,7 +709,7 @@ AS
         WHERE  tm.RUN_ID     = p_run_id
         AND    tm.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID       = p_run_id
             AND    p.PROJECT_NAME = tm.PROJECT_NAME
             AND    p.TFM_STATUS   = 'FAILED');
@@ -688,11 +717,11 @@ AS
         -- Txn Controls: cascade FAILED from parent project. The parent project
         -- only reaches FAILED with a real Fusion error, so the child carries that
         -- same real parent error in the prescribed linked-record form.
-        UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL tc
+        UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL tc
         SET    tc.TFM_STATUS           = 'FAILED',
                tc.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(tc.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT p.ERROR_TEXT FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+                   (SELECT p.ERROR_TEXT FROM DMT_PJF_PROJECTS_TFM_TBL p
                     WHERE  p.RUN_ID         = p_run_id
                     AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
                     AND    p.TFM_STATUS     = 'FAILED'
@@ -702,7 +731,7 @@ AS
         WHERE  tc.RUN_ID     = p_run_id
         AND    tc.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL p
+            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
             WHERE  p.RUN_ID         = p_run_id
             AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
             AND    p.TFM_STATUS     = 'FAILED');

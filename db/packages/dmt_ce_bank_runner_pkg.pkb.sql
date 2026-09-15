@@ -97,15 +97,15 @@
 
         -- Final counts
         SELECT COUNT(*) INTO l_bank_count
-        FROM   DMT_OWNER.DMT_CE_BANK_TFM_TBL
+        FROM   DMT_CE_BANK_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         SELECT COUNT(*) INTO l_branch_count
-        FROM   DMT_OWNER.DMT_CE_BRANCH_TFM_TBL
+        FROM   DMT_CE_BRANCH_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         SELECT COUNT(*) INTO l_acct_count
-        FROM   DMT_OWNER.DMT_CE_BANK_ACCT_TFM_TBL
+        FROM   DMT_CE_BANK_ACCT_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         DMT_UTIL_PKG.LOG(

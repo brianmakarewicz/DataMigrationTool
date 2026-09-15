@@ -54,7 +54,7 @@
 
         l_step := 'reading run prefix for run ' || p_run_id;
         SELECT PREFIX INTO l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
 
         -- Shared transport: resolves REPORT_CATALOG_PATH from
@@ -166,7 +166,7 @@
                 -- imported-but-unbalanced journal will never post, so it is FAILED with
                 -- the balance error (the BAD regression row lands here).
                 IF r.import_status = 'SUCCESS' THEN
-                    UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+                    UPDATE DMT_GL_INTERFACE_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            FUSION_JE_HEADER_ID  = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -178,7 +178,7 @@
                 ELSIF r.error_msg IS NOT NULL THEN
                     -- UNBALANCED (or any non-SUCCESS base status) WITH a real
                     -- Fusion-returned message = FAILED on that returned message.
-                    UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+                    UPDATE DMT_GL_INTERFACE_TFM_TBL
                     SET    TFM_STATUS           = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                     '[FUSION_ERROR] ' || r.error_msg),
@@ -200,7 +200,7 @@
                 --   NEW = Not yet processed by JournalImport
                 --   E/EFxx = Error (rejected by Fusion)
                 IF r.import_status = 'P' THEN
-                    UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+                    UPDATE DMT_GL_INTERFACE_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            FUSION_JE_HEADER_ID  = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -212,7 +212,7 @@
                 ELSIF r.error_msg IS NOT NULL THEN
                     -- Any other status (NEW, E, EFxx) WITH a real Fusion-returned
                     -- rejection message = FAILED on that returned message.
-                    UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+                    UPDATE DMT_GL_INTERFACE_TFM_TBL
                     SET    TFM_STATUS           = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_msg),

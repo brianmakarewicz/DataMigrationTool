@@ -175,7 +175,7 @@ AS
                 || '"' || REPLACE(NVL(FIRST_PTY_REG_NUM,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(THIRD_PTY_REG_NUM,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(BUYER_MANAGED_TRANSPORT_FLAG,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    (p_prc_bu_name IS NULL OR t.PRC_BU_NAME = p_prc_bu_name)
@@ -301,12 +301,12 @@ AS
                 || '"' || REPLACE(NVL(SOURCE_AGREEMENT_PRC_BU_NAME,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(SOURCE_AGREEMENT,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(SOURCE_AGREEMENT_LINE), '') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
+            FROM   DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.TFM_STATUS = 'STAGED'
             AND    (p_prc_bu_name IS NULL OR l.INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
-            FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.TFM_STATUS IN ('STAGED','GENERATED')
             AND    h.PRC_BU_NAME = p_prc_bu_name))
@@ -426,17 +426,17 @@ AS
                 || '"' || NVL(TO_CHAR(PROMISED_SHIP_DATE, 'YYYY/MM/DD'), '') || '"' || ','
                 || '"' || NVL(TO_CHAR(REQUESTED_DELIVERY_DATE, 'YYYY/MM/DD'), '') || '"' || ','
                 || '"' || NVL(TO_CHAR(PROMISED_DELIVERY_DATE, 'YYYY/MM/DD'), '') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL ll
+            FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL ll
             WHERE  ll.RUN_ID = p_run_id
             AND    ll.TFM_STATUS = 'STAGED'
             AND    (p_prc_bu_name IS NULL OR ll.INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
-            FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
+            FROM   DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.TFM_STATUS IN ('STAGED','GENERATED')
             AND    l.INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
-            FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.TFM_STATUS IN ('STAGED','GENERATED')
             AND    h.PRC_BU_NAME = p_prc_bu_name)))
@@ -586,22 +586,22 @@ AS
                 || '"' || NVL(TO_CHAR(BUDGET_DATE, 'YYYY/MM/DD'), '') || '"' || ','
                 || '"' || REPLACE(NVL(PJC_CONTRACT_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(PJC_FUNDING_SOURCE,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL d
+            FROM   DMT_PO_DISTS_INT_TFM_TBL d
             WHERE  d.RUN_ID = p_run_id
             AND    d.TFM_STATUS = 'STAGED'
             AND    (p_prc_bu_name IS NULL OR d.INTERFACE_LINE_LOCATION_KEY IN (
             SELECT ll.INTERFACE_LINE_LOCATION_KEY
-            FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL ll
+            FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL ll
             WHERE  ll.RUN_ID = p_run_id
             AND    ll.TFM_STATUS IN ('STAGED','GENERATED')
             AND    ll.INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
-            FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
+            FROM   DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.TFM_STATUS IN ('STAGED','GENERATED')
             AND    l.INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
-            FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.TFM_STATUS IN ('STAGED','GENERATED')
             AND    h.PRC_BU_NAME = p_prc_bu_name))))
@@ -681,7 +681,7 @@ AS
 
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns four CSVs.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'PurchaseOrders', 'PoHeadersInterfaceOrder.csv',       0, l_hdr_csv, l_fbdi_csv_id);
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'PurchaseOrders', 'PoLinesInterfaceOrder.csv',         0, l_lines_csv, l_lines_csv_id);
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'PurchaseOrders', 'PoLineLocationsInterfaceOrder.csv', 0, l_locs_csv, l_locs_csv_id);
@@ -690,38 +690,38 @@ AS
 
         -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
         -- Headers: filter directly by PRC_BU_NAME.
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
 
         -- Lines -> lines csv id; join predicate scopes on the PARENT (headers) csv id.
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL
+        UPDATE DMT_PO_LINES_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
-            FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.FBDI_CSV_ID = l_fbdi_csv_id));
 
         -- Line locations -> locs csv id; join predicate scopes on the PARENT (lines) csv id.
-        UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL
+        UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_locs_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
-            FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
+            FROM   DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.FBDI_CSV_ID = l_lines_csv_id));
 
         -- Distributions -> dists csv id; join predicate scopes on the PARENT (locs) csv id.
-        UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL
+        UPDATE DMT_PO_DISTS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_prc_bu_name IS NULL OR INTERFACE_LINE_LOCATION_KEY IN (
             SELECT ll.INTERFACE_LINE_LOCATION_KEY
-            FROM   DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL ll
+            FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL ll
             WHERE  ll.RUN_ID = p_run_id
             AND    ll.FBDI_CSV_ID = l_locs_csv_id));
 

@@ -109,7 +109,7 @@ AS
 
         BEGIN
             SELECT REPORT_CATALOG_PATH INTO l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -223,7 +223,7 @@ AS
             ) x
         ) LOOP
             IF r.result_status = 'LOADED' THEN
-                UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL
+                UPDATE DMT_INV_TRX_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_ID            = r.fusion_id,
                        RESULTS_UPDATED_DATE = SYSDATE,
@@ -234,7 +234,7 @@ AS
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.result_status = 'FAILED' THEN
-                UPDATE DMT_OWNER.DMT_INV_TRX_TFM_TBL
+                UPDATE DMT_INV_TRX_TFM_TBL
                 SET    TFM_STATUS           = 'FAILED',
                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                            '[FUSION_ERROR] ' || r.error_code || ': ' || r.error_explanation),
@@ -247,22 +247,49 @@ AS
             END IF;
         END LOOP;
 
+        -- Cascade transaction outcome to its lot detail. A lot line is child
+        -- detail of an inventory transaction and loads with it in the same FBDI,
+        -- linked by the lot/serial interface number. A lot whose transaction is
+        -- base-confirmed LOADED is LOADED; whose transaction was rejected is
+        -- FAILED carrying the transaction's real error. Found outcome via the
+        -- parent, not a fabricated verdict. (Serial detail carries no stored
+        -- parent-transaction key in the TFM table and cannot be linked here
+        -- without a transform change; it is left for the honest sweep.)
+        UPDATE DMT_INV_TRX_LOTS_TFM_TBL l
+        SET    l.TFM_STATUS='LOADED', l.RESULTS_UPDATED_DATE=SYSDATE, l.LAST_UPDATED_DATE=SYSDATE
+        WHERE  l.RUN_ID=p_run_id AND l.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    EXISTS (SELECT 1 FROM DMT_INV_TRX_TFM_TBL t WHERE t.RUN_ID=p_run_id
+                       AND t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER
+                       AND t.TFM_STATUS='LOADED');
+        UPDATE DMT_INV_TRX_LOTS_TFM_TBL l
+        SET    l.TFM_STATUS='FAILED',
+               l.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(l.ERROR_TEXT,
+                   '[FUSION_ERROR] Lot not created; its inventory transaction was rejected by Fusion: ' ||
+                   (SELECT t.ERROR_TEXT FROM DMT_INV_TRX_TFM_TBL t WHERE t.RUN_ID=p_run_id
+                    AND t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER
+                    AND t.TFM_STATUS='FAILED' AND ROWNUM=1)),
+               l.RESULTS_UPDATED_DATE=SYSDATE, l.LAST_UPDATED_DATE=SYSDATE
+        WHERE  l.RUN_ID=p_run_id AND l.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    EXISTS (SELECT 1 FROM DMT_INV_TRX_TFM_TBL t WHERE t.RUN_ID=p_run_id
+                       AND t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER
+                       AND t.TFM_STATUS='FAILED');
+
         -- Echo to STG
-        UPDATE DMT_OWNER.DMT_INV_TRX_STG_TBL stg
+        UPDATE DMT_INV_TRX_STG_TBL stg
         SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_INV_TRX_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
 
-        UPDATE DMT_OWNER.DMT_INV_TRX_STG_TBL stg
+        UPDATE DMT_INV_TRX_STG_TBL stg
         SET    stg.STG_STATUS     = 'FAILED',
                stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
+                   (SELECT t.ERROR_TEXT FROM DMT_INV_TRX_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_INV_TRX_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_INV_TRX_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         DMT_UTIL_PKG.LOG(p_run_id,

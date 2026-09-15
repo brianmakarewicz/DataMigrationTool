@@ -7,7 +7,7 @@ AS
 -- ARInvoices pre- and post-transform validation.
 --
 -- Pre-validation rejections are recorded in the run-stamped error table
--- DMT_OWNER.DMT_STG_TFM_ERROR_TBL (design §7); the STG rows keep their
+-- DMT_STG_TFM_ERROR_TBL (design §7); the STG rows keep their
 -- status only (no message) and are flagged FAILED afterwards by the
 -- standard FLAG_STG_FAILED helper. No validator writes ERROR_TEXT on a
 -- *_STG_TBL row.
@@ -27,11 +27,11 @@ AS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_RA_LINES_STG_TBL
+        UPDATE DMT_RA_LINES_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'AR Lines'
@@ -39,11 +39,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_RA_DISTS_STG_TBL
+        UPDATE DMT_RA_DISTS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'AR Distributions'
@@ -89,7 +89,7 @@ AS
         ELSE
             SELECT PREFIX
             INTO   l_dep_prefix
-            FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+            FROM   DMT_PIPELINE_RUN_TBL
             WHERE  RUN_ID = p_run_id;
         END IF;
 
@@ -105,23 +105,23 @@ AS
             l_any_loaded NUMBER;
         BEGIN
             SELECT COUNT(*) INTO l_any_loaded
-            FROM   DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL
+            FROM   DMT_HZ_ACCOUNTS_TFM_TBL
             WHERE  TFM_STATUS = 'LOADED' AND ROWNUM = 1;
 
             IF l_any_loaded > 0 AND DMT_UTIL_PKG.GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN
-                INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                 SELECT p_run_id, 'ARInvoices', 'AR Lines', ln.STG_SEQUENCE_ID,
                        '[PRE_VALIDATION] Customer account ''' ||
                        ln.BILL_CUSTOMER_ACCOUNT_NUMBER ||
                        ''' is not loaded — AR invoice line skipped.'
-                FROM   DMT_OWNER.DMT_RA_LINES_STG_TBL ln
+                FROM   DMT_RA_LINES_STG_TBL ln
                 WHERE  ln.STG_STATUS IN ('NEW', 'RETRY')
                 AND    ln.BILL_CUSTOMER_ACCOUNT_NUMBER IS NOT NULL
                 AND    NOT EXISTS (
                            SELECT 1
-                           FROM   DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL c
-                           JOIN   DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL t
+                           FROM   DMT_HZ_ACCOUNTS_STG_TBL c
+                           JOIN   DMT_HZ_ACCOUNTS_TFM_TBL t
                                   ON t.STG_SEQUENCE_ID = c.STG_SEQUENCE_ID
                            WHERE  c.ACCOUNT_NUMBER = ln.BILL_CUSTOMER_ACCOUNT_NUMBER
                            AND    t.TFM_STATUS     = 'LOADED'
@@ -130,19 +130,19 @@ AS
 
                 -- Step 2: Cascade to distributions for any line rejected this run.
                 -- Distributions link to lines via INTERFACE_LINE_CONTEXT + INTERFACE_LINE_ATTRIBUTE1.
-                INSERT INTO DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                 SELECT p_run_id, 'ARInvoices', 'AR Distributions', d.STG_SEQUENCE_ID,
                        '[PRE_VALIDATION] Parent AR invoice line (context=''' ||
                        d.INTERFACE_LINE_CONTEXT || ''', attr1=''' ||
                        d.INTERFACE_LINE_ATTRIBUTE1 ||
                        ''') failed upstream validation — distribution skipped.'
-                FROM   DMT_OWNER.DMT_RA_DISTS_STG_TBL d
+                FROM   DMT_RA_DISTS_STG_TBL d
                 WHERE  d.STG_STATUS IN ('NEW', 'RETRY')
                 AND    EXISTS (
                            SELECT 1
-                           FROM   DMT_OWNER.DMT_RA_LINES_STG_TBL ln
-                           JOIN   DMT_OWNER.DMT_STG_TFM_ERROR_TBL e
+                           FROM   DMT_RA_LINES_STG_TBL ln
+                           JOIN   DMT_STG_TFM_ERROR_TBL e
                                   ON e.STG_SEQUENCE_ID = ln.STG_SEQUENCE_ID
                                  AND e.RUN_ID          = p_run_id
                                  AND e.SUB_OBJECT      = 'AR Lines'

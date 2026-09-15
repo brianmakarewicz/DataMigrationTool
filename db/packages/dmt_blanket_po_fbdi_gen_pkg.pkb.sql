@@ -109,7 +109,7 @@ AS
 
         FOR r IN (
             SELECT t.*
-            FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    t.STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
@@ -345,12 +345,12 @@ AS
 
         FOR r IN (
             SELECT l.*
-            FROM   DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL l
+            FROM   DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.TFM_STATUS = 'STAGED'
             AND    l.INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
-            FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
             AND    h.TFM_STATUS IN ('STAGED','GENERATED')
@@ -597,7 +597,7 @@ AS
 
         -- FBDI CSV<->ZIP remodel: register each physical CSV as its own row, then
         -- build the zip from those persisted rows. One zip owns two CSVs.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'BlanketPOs', 'PoHeadersInterfaceBlanket.csv', 0, l_hdr_csv, l_fbdi_csv_id);
         -- Lines are optional: only register (and thus zip) the file when it has rows.
         IF l_lines_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_lines_csv) > 0 THEN
@@ -607,7 +607,7 @@ AS
 
         -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
         -- Headers: filter by STYLE_DISPLAY_NAME and PRC_BU_NAME.
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
@@ -615,12 +615,12 @@ AS
 
         -- Lines -> lines csv id; join predicate scopes on the PARENT (headers) csv id
         -- (only lines belonging to blanket headers just stamped above).
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL
+        UPDATE DMT_PO_LINES_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
-            FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.FBDI_CSV_ID = l_fbdi_csv_id);
 

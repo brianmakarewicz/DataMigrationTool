@@ -24,11 +24,11 @@ AS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
-        UPDATE DMT_OWNER.DMT_CE_BANK_STG_TBL
+        UPDATE DMT_CE_BANK_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
                                    AND SUB_OBJECT = 'Banks'
@@ -36,11 +36,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_CE_BRANCH_STG_TBL
+        UPDATE DMT_CE_BRANCH_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Bank Branches'
@@ -48,11 +48,11 @@ AS
                                   );
 
         -- <<EDIT-TABLE>>
-        UPDATE DMT_OWNER.DMT_CE_BANK_ACCT_STG_TBL
+        UPDATE DMT_CE_BANK_ACCT_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW','RETRY')
-        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_OWNER.DMT_STG_TFM_ERROR_TBL
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Bank Accounts'
@@ -116,7 +116,7 @@ AS
             p_procedure      => 'VALIDATE_POST_TRANSFORM');
 
         -- Check 1: Orphan branches (SOURCE_GROUP_ID must match a bank)
-        UPDATE DMT_OWNER.DMT_CE_BRANCH_TFM_TBL br
+        UPDATE DMT_CE_BRANCH_TFM_TBL br
         SET    br.TFM_STATUS        = 'FAILED',
                br.ERROR_TEXT        = NVL2(br.ERROR_TEXT,
                                          br.ERROR_TEXT || ' | ',
@@ -128,7 +128,7 @@ AS
         AND    br.TFM_STATUS     = 'STAGED'
         AND    NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_CE_BANK_TFM_TBL bk
+            FROM   DMT_CE_BANK_TFM_TBL bk
             WHERE  bk.RUN_ID  = p_run_id
             AND    bk.SOURCE_GROUP_ID  = br.SOURCE_GROUP_ID
             AND    bk.TFM_STATUS       = 'STAGED'
@@ -137,7 +137,7 @@ AS
         l_orphan_branches := SQL%ROWCOUNT;
 
         -- Check 2: Orphan accounts (SOURCE_LINE_ID must match a branch SOURCE_LINE_ID)
-        UPDATE DMT_OWNER.DMT_CE_BANK_ACCT_TFM_TBL acct
+        UPDATE DMT_CE_BANK_ACCT_TFM_TBL acct
         SET    acct.TFM_STATUS        = 'FAILED',
                acct.ERROR_TEXT        = NVL2(acct.ERROR_TEXT,
                                             acct.ERROR_TEXT || ' | ',
@@ -149,7 +149,7 @@ AS
         AND    acct.TFM_STATUS     = 'STAGED'
         AND    NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_CE_BRANCH_TFM_TBL br
+            FROM   DMT_CE_BRANCH_TFM_TBL br
             WHERE  br.RUN_ID = p_run_id
             AND    br.SOURCE_LINE_ID  = acct.SOURCE_LINE_ID
             AND    br.TFM_STATUS      = 'STAGED'

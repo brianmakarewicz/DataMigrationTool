@@ -114,7 +114,7 @@ AS
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -255,7 +255,7 @@ AS
             IF r.source_type = 'BASE' THEN
                 -- Positive base-table confirmation. Key on the prefixed document
                 -- number the loader wrote, which equals the base SEGMENT1.
-                UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                        FUSION_DOCUMENT_NUM  = r.document_num,
@@ -263,12 +263,17 @@ AS
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    DOCUMENT_NUM          = r.document_num
-                AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
+                -- Positive presence in PO_HEADERS_ALL is the strongest proof of a
+                -- load (Rule #1) and overrides any prior error verdict: the PO can
+                -- come back with a "document number must be unique" interface error
+                -- yet still exist in the base table (a within-run re-submit created
+                -- it once). So confirm LOADED even over a prior FAILED.
+                AND    TFM_STATUS              != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'INTERFACE' THEN
                 IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                            FUSION_DOCUMENT_NUM  = r.document_num,
@@ -279,7 +284,7 @@ AS
                     AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_msg),
@@ -300,40 +305,40 @@ AS
 
         -- Cascade LOADED to child TFM tables (lines/locs/dists)
         -- Lines: match on INTERFACE_HEADER_KEY
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
+        UPDATE DMT_PO_LINES_INT_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'LOADED',
                ln.RESULTS_UPDATED_DATE = SYSDATE,
                ln.LAST_UPDATED_DATE = SYSDATE
         WHERE  ln.RUN_ID    = p_run_id
         AND    ln.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            SELECT 1 FROM DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID      = p_run_id
             AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
             AND    h.TFM_STATUS              = 'LOADED');
 
         -- Line locations: match via line's INTERFACE_LINE_KEY
-        UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
+        UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL loc
         SET    loc.TFM_STATUS            = 'LOADED',
                loc.RESULTS_UPDATED_DATE = SYSDATE,
                loc.LAST_UPDATED_DATE = SYSDATE
         WHERE  loc.RUN_ID    = p_run_id
         AND    loc.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
+            SELECT 1 FROM DMT_PO_LINES_INT_TFM_TBL ln
             WHERE  ln.RUN_ID    = p_run_id
             AND    ln.INTERFACE_LINE_KEY = loc.INTERFACE_LINE_KEY
             AND    ln.TFM_STATUS            = 'LOADED');
 
         -- Distributions: match via loc's INTERFACE_LINE_LOCATION_KEY
-        UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL d
+        UPDATE DMT_PO_DISTS_INT_TFM_TBL d
         SET    d.TFM_STATUS            = 'LOADED',
                d.RESULTS_UPDATED_DATE = SYSDATE,
                d.LAST_UPDATED_DATE = SYSDATE
         WHERE  d.RUN_ID    = p_run_id
         AND    d.TFM_STATUS           != 'LOADED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
+            SELECT 1 FROM DMT_PO_LINE_LOCS_INT_TFM_TBL loc
             WHERE  loc.RUN_ID              = p_run_id
             AND    loc.INTERFACE_LINE_LOCATION_KEY = d.INTERFACE_LINE_LOCATION_KEY
             AND    loc.TFM_STATUS                      = 'LOADED');
@@ -342,11 +347,11 @@ AS
         -- The parent PO header only reaches FAILED with a real Fusion error
         -- (from the INTERFACE ERROR/REJECTED path above), so the line carries
         -- that same real parent error in the prescribed linked-record form.
-        UPDATE DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
+        UPDATE DMT_PO_LINES_INT_TFM_TBL ln
         SET    ln.TFM_STATUS            = 'FAILED',
                ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT h.ERROR_TEXT FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+                   (SELECT h.ERROR_TEXT FROM DMT_PO_HEADERS_INT_TFM_TBL h
                     WHERE  h.RUN_ID = p_run_id
                     AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
                     AND    h.TFM_STATUS = 'FAILED'
@@ -356,18 +361,18 @@ AS
         WHERE  ln.RUN_ID    = p_run_id
         AND    ln.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL h
+            SELECT 1 FROM DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID      = p_run_id
             AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
             AND    h.TFM_STATUS              = 'FAILED');
 
         -- The parent line only reaches FAILED carrying the header's real Fusion
         -- error (set just above), so the location carries that same real error.
-        UPDATE DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
+        UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL loc
         SET    loc.TFM_STATUS            = 'FAILED',
                loc.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(loc.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT ln.ERROR_TEXT FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
+                   (SELECT ln.ERROR_TEXT FROM DMT_PO_LINES_INT_TFM_TBL ln
                     WHERE  ln.RUN_ID = p_run_id
                     AND    ln.INTERFACE_LINE_KEY = loc.INTERFACE_LINE_KEY
                     AND    ln.TFM_STATUS = 'FAILED'
@@ -377,18 +382,18 @@ AS
         WHERE  loc.RUN_ID    = p_run_id
         AND    loc.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_LINES_INT_TFM_TBL ln
+            SELECT 1 FROM DMT_PO_LINES_INT_TFM_TBL ln
             WHERE  ln.RUN_ID    = p_run_id
             AND    ln.INTERFACE_LINE_KEY = loc.INTERFACE_LINE_KEY
             AND    ln.TFM_STATUS            = 'FAILED');
 
         -- The parent location only reaches FAILED carrying the real Fusion error
         -- cascaded from the header, so the distribution carries that same error.
-        UPDATE DMT_OWNER.DMT_PO_DISTS_INT_TFM_TBL d
+        UPDATE DMT_PO_DISTS_INT_TFM_TBL d
         SET    d.TFM_STATUS            = 'FAILED',
                d.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT loc.ERROR_TEXT FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
+                   (SELECT loc.ERROR_TEXT FROM DMT_PO_LINE_LOCS_INT_TFM_TBL loc
                     WHERE  loc.RUN_ID = p_run_id
                     AND    loc.INTERFACE_LINE_LOCATION_KEY = d.INTERFACE_LINE_LOCATION_KEY
                     AND    loc.TFM_STATUS = 'FAILED'
@@ -398,7 +403,7 @@ AS
         WHERE  d.RUN_ID    = p_run_id
         AND    d.TFM_STATUS           != 'FAILED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PO_LINE_LOCS_INT_TFM_TBL loc
+            SELECT 1 FROM DMT_PO_LINE_LOCS_INT_TFM_TBL loc
             WHERE  loc.RUN_ID              = p_run_id
             AND    loc.INTERFACE_LINE_LOCATION_KEY = d.INTERFACE_LINE_LOCATION_KEY
             AND    loc.TFM_STATUS                      = 'FAILED');

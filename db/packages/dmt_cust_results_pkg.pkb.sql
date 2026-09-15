@@ -59,7 +59,7 @@
 
         l_step := 'reading run prefix for run ' || p_run_id;
         SELECT PREFIX INTO l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
 
         -- Shared transport: resolves REPORT_CATALOG_PATH from
@@ -196,21 +196,21 @@
                 -- Positive proof: the record landed in its Fusion BASE table.
                 CASE r.record_type
                 WHEN 'Parties' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
+                    UPDATE DMT_HZ_PARTIES_TFM_TBL
                     SET TFM_STATUS='LOADED', FUSION_PARTY_ID=TO_NUMBER(r.fusion_id),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND PARTY_ORIG_SYSTEM_REFERENCE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'Locations' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL
+                    UPDATE DMT_HZ_LOCATIONS_TFM_TBL
                     SET TFM_STATUS='LOADED', FUSION_LOCATION_ID=TO_NUMBER(r.fusion_id),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND LOCATION_ORIG_SYSTEM_REFERENCE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'PartySites' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL
+                    UPDATE DMT_HZ_PARTY_SITES_TFM_TBL
                     SET TFM_STATUS='LOADED', FUSION_PARTY_SITE_ID=TO_NUMBER(r.fusion_id),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND SITE_ORIG_SYSTEM_REFERENCE=r.orig_system_reference
@@ -224,7 +224,7 @@
                     -- (SITE_ORIG_SYSTEM_REFERENCE || '/' || SITE_USE_TYPE). Both columns
                     -- are present on every TFM row and the pair is unique per run
                     -- prefix, so no wrong-row match.
-                    UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
+                    UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL
                     SET TFM_STATUS='LOADED', FUSION_PARTY_SITE_USE_ID=TO_NUMBER(r.fusion_id),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id
@@ -232,21 +232,21 @@
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'Accounts' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL
+                    UPDATE DMT_HZ_ACCOUNTS_TFM_TBL
                     SET TFM_STATUS='LOADED', FUSION_CUST_ACCOUNT_ID=TO_NUMBER(r.fusion_id),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND CUST_ORIG_SYSTEM_REFERENCE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'AccountSites' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL
+                    UPDATE DMT_HZ_ACCT_SITES_TFM_TBL
                     SET TFM_STATUS='LOADED', FUSION_CUST_ACCT_SITE_ID=TO_NUMBER(r.fusion_id),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND CUST_SITE_ORIG_SYS_REF=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'AccountSiteUses' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL
+                    UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL
                     SET TFM_STATUS='LOADED', FUSION_SITE_USE_ID=TO_NUMBER(r.fusion_id),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
                     WHERE RUN_ID=p_run_id AND CUST_SITEUSE_ORIG_SYS_REF=r.orig_system_reference
@@ -263,7 +263,7 @@
                 -- but the deeper tiers are covered for forward compatibility).
                 CASE r.record_type
                 WHEN 'Parties' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL
+                    UPDATE DMT_HZ_PARTIES_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
@@ -271,7 +271,7 @@
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'Locations' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_LOCATIONS_TFM_TBL
+                    UPDATE DMT_HZ_LOCATIONS_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
@@ -279,7 +279,7 @@
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'PartySites' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_PARTY_SITES_TFM_TBL
+                    UPDATE DMT_HZ_PARTY_SITES_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
@@ -290,7 +290,7 @@
                     -- INTERIM KEY (2026-07-21): same parent-ref + site_use_type key as
                     -- the base tier above, so W/E interface rows attribute to the right
                     -- TFM row instead of sweeping to UNACCOUNTED.
-                    UPDATE DMT_OWNER.DMT_HZ_PARTY_SITE_USES_TFM_TBL
+                    UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
@@ -299,7 +299,7 @@
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'Accounts' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL
+                    UPDATE DMT_HZ_ACCOUNTS_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
@@ -307,7 +307,7 @@
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'AccountSites' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_ACCT_SITES_TFM_TBL
+                    UPDATE DMT_HZ_ACCT_SITES_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
@@ -315,7 +315,7 @@
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
                 WHEN 'AccountSiteUses' THEN
-                    UPDATE DMT_OWNER.DMT_HZ_ACCT_SITE_USES_TFM_TBL
+                    UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL
                     SET TFM_STATUS='FAILED',
                         ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                         RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
@@ -327,6 +327,33 @@
                 l_failed := l_failed + l_rc;
             END IF;
         END LOOP;
+
+        -- Cascade party-site outcome to its party site uses. A site use is
+        -- created in Fusion together with its party site (same customer import),
+        -- so a use whose party site is base-confirmed LOADED is LOADED, and one
+        -- whose party site was rejected FAILED (carrying the site's real Fusion
+        -- error). This is the use's FOUND outcome via its parent's confirmation,
+        -- not a fabricated verdict. Only touches uses not independently resolved.
+        UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL su
+        SET su.TFM_STATUS='LOADED', su.RESULTS_UPDATED_DATE=SYSDATE, su.LAST_UPDATED_DATE=SYSDATE
+        WHERE su.RUN_ID=p_run_id AND su.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND EXISTS (SELECT 1 FROM DMT_HZ_PARTY_SITES_TFM_TBL ps
+                    WHERE ps.RUN_ID=p_run_id
+                    AND ps.SITE_ORIG_SYSTEM_REFERENCE=su.SITE_ORIG_SYSTEM_REFERENCE
+                    AND ps.TFM_STATUS='LOADED');
+        UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL su
+        SET su.TFM_STATUS='FAILED',
+            su.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(su.ERROR_TEXT,
+                '[FUSION_ERROR] Party site use not created; its party site was rejected by Fusion: ' ||
+                (SELECT ps.ERROR_TEXT FROM DMT_HZ_PARTY_SITES_TFM_TBL ps
+                 WHERE ps.RUN_ID=p_run_id AND ps.SITE_ORIG_SYSTEM_REFERENCE=su.SITE_ORIG_SYSTEM_REFERENCE
+                 AND ps.TFM_STATUS='FAILED' AND ROWNUM=1)),
+            su.RESULTS_UPDATED_DATE=SYSDATE, su.LAST_UPDATED_DATE=SYSDATE
+        WHERE su.RUN_ID=p_run_id AND su.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND EXISTS (SELECT 1 FROM DMT_HZ_PARTY_SITES_TFM_TBL ps
+                    WHERE ps.RUN_ID=p_run_id
+                    AND ps.SITE_ORIG_SYSTEM_REFERENCE=su.SITE_ORIG_SYSTEM_REFERENCE
+                    AND ps.TFM_STATUS='FAILED');
 
         -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor given
         -- a real Fusion error is left GENERATED (unaccounted) — no fabricated FAILED.)

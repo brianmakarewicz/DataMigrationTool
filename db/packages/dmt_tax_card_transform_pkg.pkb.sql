@@ -13,7 +13,7 @@ AS
     BEGIN
         SELECT PREFIX
         INTO   l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_prefix;
     EXCEPTION
@@ -41,7 +41,7 @@ AS
         l_prefix := get_prefix(p_run_id);
 
         -- CalculationCard
-        INSERT INTO DMT_OWNER.DMT_TAX_CARD_TFM_TBL (
+        INSERT INTO DMT_TAX_CARD_TFM_TBL (
             TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
@@ -57,7 +57,7 @@ AS
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_TAX_CARD_TFM_SEQ.NEXTVAL,
+            DMT_TAX_CARD_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
@@ -70,7 +70,7 @@ AS
             s.COMPONENT_GROUP_NAME,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_TAX_CARD_STG_TBL s
+        FROM DMT_TAX_CARD_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -82,18 +82,18 @@ AS
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_TAX_CARD_TFM_TBL t
+            FROM   DMT_TAX_CARD_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
 
         l_ok_count := l_ok_count + SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_TAX_CARD_STG_TBL
+        UPDATE DMT_TAX_CARD_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_TAX_CARD_TFM_TBL
+            FROM   DMT_TAX_CARD_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
@@ -104,7 +104,7 @@ AS
           );
 
         -- CardComponent
-        INSERT INTO DMT_OWNER.DMT_TAX_CARD_COMP_TFM_TBL (
+        INSERT INTO DMT_TAX_CARD_COMP_TFM_TBL (
             TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
@@ -121,7 +121,7 @@ AS
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_TAX_CARD_COMP_TFM_SEQ.NEXTVAL,
+            DMT_TAX_CARD_COMP_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
@@ -135,7 +135,7 @@ AS
             s.TAX_REPORTING_UNIT,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_TAX_CARD_COMP_STG_TBL s
+        FROM DMT_TAX_CARD_COMP_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -147,18 +147,18 @@ AS
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_TAX_CARD_COMP_TFM_TBL t
+            FROM   DMT_TAX_CARD_COMP_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
 
         l_ok_count := l_ok_count + SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_TAX_CARD_COMP_STG_TBL
+        UPDATE DMT_TAX_CARD_COMP_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_TAX_CARD_COMP_TFM_TBL
+            FROM   DMT_TAX_CARD_COMP_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (

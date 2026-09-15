@@ -43,7 +43,7 @@
         -- Column order matches EgpSystemItemsInterface.ctl exactly (399 data columns)
         FOR r IN (
             SELECT *
-            FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+            FROM   DMT_EGP_ITEM_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id))
@@ -915,13 +915,13 @@
 
         -- Count items rows (scoped to the batch when p_batch_id is passed)
         SELECT COUNT(*) INTO l_item_count
-        FROM   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+        FROM   DMT_EGP_ITEM_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));
 
         -- Count categories rows (may be 0 if no categories data)
         SELECT COUNT(*) INTO l_cat_count
-        FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+        FROM   DMT_EGP_ITEM_CAT_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));
 
@@ -952,7 +952,7 @@
         -- and, when present, the categories CSV (seq 2). Each record type's TFM rows
         -- are stamped with THAT file's own FBDI_CSV_ID. Scoping to p_batch_id is
         -- preserved on the generators, counts, and TFM updates.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         IF l_item_count > 0 THEN
             DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Items', 'EgpSystemItemsInterface.csv', l_item_count, l_item_csv, l_csv_id);
         END IF;
@@ -967,7 +967,7 @@
         -- its sweep to only this item's rows. NULL is left when no item context is set
         -- (standalone/legacy callers) -- WORK_QUEUE_ID stays nullable this phase.
         IF l_item_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_EGP_ITEM_TFM_TBL
+            UPDATE DMT_EGP_ITEM_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_csv_id,
                    WORK_QUEUE_ID     = DMT_LOADER_PKG.g_work_queue_id,
@@ -978,7 +978,7 @@
 
         -- Mark categories TFM rows as GENERATED (only this batch's rows)
         IF l_cat_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+            UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_cat_csv_id,
                    WORK_QUEUE_ID     = DMT_LOADER_PKG.g_work_queue_id,

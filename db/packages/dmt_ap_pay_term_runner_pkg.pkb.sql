@@ -89,11 +89,11 @@
 
         -- Final counts
         SELECT COUNT(*) INTO l_hdr_count
-        FROM   DMT_OWNER.DMT_AP_PAY_TERM_HDR_TFM_TBL
+        FROM   DMT_AP_PAY_TERM_HDR_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         SELECT COUNT(*) INTO l_line_count
-        FROM   DMT_OWNER.DMT_AP_PAY_TERM_LINE_TFM_TBL
+        FROM   DMT_AP_PAY_TERM_LINE_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         DMT_UTIL_PKG.LOG(

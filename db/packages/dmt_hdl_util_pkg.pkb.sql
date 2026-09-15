@@ -455,7 +455,7 @@
 
         -- Count GENERATED rows before reconciliation
         EXECUTE IMMEDIATE
-            'SELECT COUNT(*) FROM DMT_OWNER.' || p_tfm_table ||
+            'SELECT COUNT(*) FROM ' || p_tfm_table ||
             ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
             INTO l_gen_count USING p_run_id;
 
@@ -471,7 +471,7 @@
 
         BEGIN
             EXECUTE IMMEDIATE
-                'UPDATE DMT_OWNER.' || p_tfm_table || ' t ' ||
+                'UPDATE ' || p_tfm_table || ' t ' ||
                 'SET t.TFM_STATUS = ''FAILED'', ' ||
                 '    t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, ' ||
                 '        ''[FUSION_ERROR] '' || (' ||
@@ -512,7 +512,7 @@
         -- Guarded by msg IS NOT NULL so we never stamp an empty [FUSION_ERROR].
         BEGIN
             EXECUTE IMMEDIATE
-                'UPDATE DMT_OWNER.' || p_tfm_table || ' t ' ||
+                'UPDATE ' || p_tfm_table || ' t ' ||
                 'SET t.TFM_STATUS = ''FAILED'', ' ||
                 '    t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, ' ||
                 '        ''[FUSION_ERROR] '' || (' ||
@@ -576,17 +576,60 @@
         --   per-record evidence either way — LEAVE the rows GENERATED (unaccounted).
         --   We never fabricate a FAILED for an outcome we did not observe.
         IF l_zero_load THEN
-            -- Fusion loaded 0 objects. No remaining row may be promoted to LOADED;
-            -- rows without a matched per-row error stay GENERATED for the honest
-            -- UNACCOUNTED sweep. Never assert a success the data set did not report.
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'Data set ' || p_request_id || ' reports ObjectSuccessCount=0; ' ||
-                'not marking any remaining GENERATED row LOADED.',
-                'INFO', C_PKG, l_proc);
+            -- Fusion loaded 0 objects: every remaining GENERATED row of this table
+            -- verifiably did NOT load. That is positive non-load evidence (from the
+            -- data set's own ObjectSuccessCount=0), not an unknown outcome. When the
+            -- data set also carries real Fusion error message(s), mark those rows
+            -- FAILED and attach the data set's OWN messages as the reason. This is
+            -- honest: the non-load is verified and the message text is Fusion's own
+            -- (framed as the data set's message, so no specific per-row error is
+            -- invented). If the data set reported NO message at all, we have no error
+            -- string to cite, so those rows are left GENERATED for the honest sweep.
+            DECLARE
+                l_ds_msgs  VARCHAR2(3000);
+                l_fail_msg VARCHAR2(4000);
+                l_n        NUMBER := 0;
+            BEGIN
+                BEGIN
+                    SELECT SUBSTR(LISTAGG(msg, ' | ') WITHIN GROUP (ORDER BY msg), 1, 1800)
+                    INTO   l_ds_msgs
+                    FROM  (SELECT DISTINCT jt.msg
+                           FROM JSON_TABLE(l_json, '$.items[*]'
+                                COLUMNS (msg VARCHAR2(4000) PATH '$.MessageText')) jt
+                           WHERE jt.msg IS NOT NULL);
+                EXCEPTION WHEN OTHERS THEN l_ds_msgs := NULL;
+                END;
+
+                IF l_ds_msgs IS NOT NULL THEN
+                    l_fail_msg := '[FUSION_ERROR] HDL data set ' || p_request_id
+                        || ' completed in error (' || NVL(p_dataset_status, '?')
+                        || ') and loaded 0 objects; this record was not loaded. '
+                        || 'Data set message(s): ' || l_ds_msgs;
+                    EXECUTE IMMEDIATE
+                        'UPDATE ' || p_tfm_table ||
+                        ' SET TFM_STATUS = ''FAILED'','
+                        || ' ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, :m),'
+                        || ' LAST_UPDATED_DATE = SYSDATE'
+                        || ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
+                        USING l_fail_msg, p_run_id;
+                    l_n := SQL%ROWCOUNT;
+                    l_file_count := l_file_count + l_n;
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Data set ' || p_request_id || ' ObjectSuccessCount=0; marked '
+                        || l_n || ' remaining GENERATED row(s) FAILED with the data '
+                        || 'set''s real Fusion message(s) (verified not loaded).',
+                        'INFO', C_PKG, l_proc);
+                ELSE
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Data set ' || p_request_id || ' reports ObjectSuccessCount=0 '
+                        || 'with no message text; leaving remaining GENERATED rows for '
+                        || 'the honest UNACCOUNTED sweep.', 'INFO', C_PKG, l_proc);
+                END IF;
+            END;
         ELSIF p_dataset_status IN ('ORA_COMPLETED', 'ORA_SUCCESS', 'SUCCESS') THEN
             -- All remaining are confirmed successes
             EXECUTE IMMEDIATE
-                'UPDATE DMT_OWNER.' || p_tfm_table ||
+                'UPDATE ' || p_tfm_table ||
                 ' SET TFM_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
                 ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
                 USING p_run_id;
@@ -595,7 +638,7 @@
             -- Partial success: specific rows failed, rest are OK (and the data set
             -- reported at least one successful object load, so l_zero_load is FALSE)
             EXECUTE IMMEDIATE
-                'UPDATE DMT_OWNER.' || p_tfm_table ||
+                'UPDATE ' || p_tfm_table ||
                 ' SET TFM_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
                 ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
                 USING p_run_id;
@@ -620,18 +663,18 @@
         -- Step 3: Echo to STG tables
         BEGIN
             EXECUTE IMMEDIATE
-                'UPDATE DMT_OWNER.' || p_stg_table ||
+                'UPDATE ' || p_stg_table ||
                 ' SET STG_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
                 ' WHERE STG_STATUS = ''TRANSFORMED'' AND STG_SEQUENCE_ID IN ' ||
-                '(SELECT STG_SEQUENCE_ID FROM DMT_OWNER.' || p_tfm_table ||
+                '(SELECT STG_SEQUENCE_ID FROM ' || p_tfm_table ||
                 ' WHERE RUN_ID = :iid AND TFM_STATUS = ''LOADED'')'
                 USING p_run_id;
 
             EXECUTE IMMEDIATE
-                'UPDATE DMT_OWNER.' || p_stg_table ||
+                'UPDATE ' || p_stg_table ||
                 ' SET STG_STATUS = ''FAILED'', LAST_UPDATED_DATE = SYSDATE ' ||
                 ' WHERE STG_STATUS = ''TRANSFORMED'' AND STG_SEQUENCE_ID IN ' ||
-                '(SELECT STG_SEQUENCE_ID FROM DMT_OWNER.' || p_tfm_table ||
+                '(SELECT STG_SEQUENCE_ID FROM ' || p_tfm_table ||
                 ' WHERE RUN_ID = :iid AND TFM_STATUS = ''FAILED'')'
                 USING p_run_id;
         EXCEPTION
@@ -715,7 +758,7 @@
         -- Worker cursor: LOADED rows with NULL FUSION_PERSON_ID
         CURSOR c_workers IS
             SELECT TFM_SEQUENCE_ID, PERSON_NUMBER
-            FROM DMT_OWNER.DMT_WORKER_TFM_TBL
+            FROM DMT_WORKER_TFM_TBL
             WHERE RUN_ID = p_run_id
               AND TFM_STATUS = 'LOADED'
               AND FUSION_PERSON_ID IS NULL;
@@ -726,7 +769,7 @@
         -- more than one assignment), instead of blindly taking assignments[0].
         CURSOR c_assignments IS
             SELECT TFM_SEQUENCE_ID, PERSON_NUMBER, ASSIGNMENT_NUMBER
-            FROM DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL
+            FROM DMT_ASSIGNMENT_TFM_TBL
             WHERE RUN_ID = p_run_id
               AND TFM_STATUS = 'LOADED'
               AND FUSION_ASSIGNMENT_ID IS NULL;
@@ -735,8 +778,8 @@
         -- Requires FUSION_PERSON_ID from the worker TFM to be populated first
         CURSOR c_salaries IS
             SELECT s.TFM_SEQUENCE_ID, s.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_SALARY_TFM_TBL s
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_SALARY_TFM_TBL s
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = s.PERSON_NUMBER
               AND w.RUN_ID = s.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -763,8 +806,8 @@
         -- PayrollRelationships -> PAY_PAY_RELATIONSHIPS_DN.PAYROLL_RELATIONSHIP_ID
         CURSOR c_payroll_rels IS
             SELECT p.TFM_SEQUENCE_ID, p.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_PAY_REL_TFM_TBL p
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_PAY_REL_TFM_TBL p
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = p.PERSON_NUMBER
               AND w.RUN_ID = p.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -776,8 +819,8 @@
         -- TalentProfiles -> HRT_PROFILES_B.PROFILE_ID
         CURSOR c_talent_profiles IS
             SELECT tp.TFM_SEQUENCE_ID, tp.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_TALENT_PROF_TFM_TBL tp
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_TALENT_PROF_TFM_TBL tp
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = tp.PERSON_NUMBER
               AND w.RUN_ID = tp.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -789,8 +832,8 @@
         -- Absences -> ANC_PER_ABS_ENTRIES.PER_ABSENCE_ENTRY_ID
         CURSOR c_absences IS
             SELECT a.TFM_SEQUENCE_ID, a.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_ABSENCE_TFM_TBL a
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_ABSENCE_TFM_TBL a
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = a.PERSON_NUMBER
               AND w.RUN_ID = a.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -802,8 +845,8 @@
         -- TaxCards -> the DIR card id
         CURSOR c_tax_cards IS
             SELECT tc.TFM_SEQUENCE_ID, tc.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_TAX_CARD_TFM_TBL tc
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_TAX_CARD_TFM_TBL tc
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = tc.PERSON_NUMBER
               AND w.RUN_ID = tc.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -815,8 +858,8 @@
         -- W2Balances -> the person balance id
         CURSOR c_w2_balances IS
             SELECT b.TFM_SEQUENCE_ID, b.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_W2_BAL_TFM_TBL b
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_W2_BAL_TFM_TBL b
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = b.PERSON_NUMBER
               AND w.RUN_ID = b.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -828,8 +871,8 @@
         -- WorkSchedules -> the assigned work schedule id
         CURSOR c_work_schedules IS
             SELECT ws.TFM_SEQUENCE_ID, ws.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_WORK_SCHED_TFM_TBL ws
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_WORK_SCHED_TFM_TBL ws
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = ws.PERSON_NUMBER
               AND w.RUN_ID = ws.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -841,8 +884,8 @@
         -- PerfEvaluations -> the performance evaluation id
         CURSOR c_perf_evals IS
             SELECT pe.TFM_SEQUENCE_ID, pe.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_PERF_EVAL_TFM_TBL pe
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_PERF_EVAL_TFM_TBL pe
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = pe.PERSON_NUMBER
               AND w.RUN_ID = pe.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -854,8 +897,8 @@
         -- Benefits participants -> the enrolled participant id
         CURSOR c_ben_partics IS
             SELECT bp.TFM_SEQUENCE_ID, bp.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_BEN_PARTIC_TFM_TBL bp
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_BEN_PARTIC_TFM_TBL bp
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = bp.PERSON_NUMBER
               AND w.RUN_ID = bp.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -867,8 +910,8 @@
         -- Benefits beneficiaries -> the beneficiary id
         CURSOR c_ben_benfys IS
             SELECT bb.TFM_SEQUENCE_ID, bb.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_BEN_BENFY_TFM_TBL bb
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_BEN_BENFY_TFM_TBL bb
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = bb.PERSON_NUMBER
               AND w.RUN_ID = bb.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -880,8 +923,8 @@
         -- Benefits dependents -> the dependent id
         CURSOR c_ben_depends IS
             SELECT bd.TFM_SEQUENCE_ID, bd.PERSON_NUMBER, w.FUSION_PERSON_ID
-            FROM DMT_OWNER.DMT_BEN_DEPEND_TFM_TBL bd
-            LEFT JOIN DMT_OWNER.DMT_WORKER_TFM_TBL w
+            FROM DMT_BEN_DEPEND_TFM_TBL bd
+            LEFT JOIN DMT_WORKER_TFM_TBL w
               ON  w.PERSON_NUMBER = bd.PERSON_NUMBER
               AND w.RUN_ID = bd.RUN_ID
               AND w.TFM_STATUS = 'LOADED'
@@ -918,7 +961,7 @@
                         JSON_VALUE(l_response, '$.items[0].PersonId'));
 
                     IF l_person_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_WORKER_TFM_TBL
+                        UPDATE DMT_WORKER_TFM_TBL
                         SET FUSION_PERSON_ID = l_person_id,
                             LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -996,7 +1039,7 @@
                     END;
 
                     IF l_asgn_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_ASSIGNMENT_TFM_TBL
+                        UPDATE DMT_ASSIGNMENT_TFM_TBL
                         SET FUSION_ASSIGNMENT_ID = l_asgn_id,
                             LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -1051,7 +1094,7 @@
                         JSON_VALUE(l_response, '$.items[0].SalaryId'));
 
                     IF l_salary_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_SALARY_TFM_TBL
+                        UPDATE DMT_SALARY_TFM_TBL
                         SET FUSION_SALARY_ID = l_salary_id,
                             LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -1101,7 +1144,7 @@
                         JSON_VALUE(l_response, '$.items[0].PayrollRelationshipId'));
 
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_PAY_REL_TFM_TBL
+                        UPDATE DMT_PAY_REL_TFM_TBL
                         SET FUSION_PAYROLL_RELATIONSHIP_ID = l_fusion_id,
                             LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -1140,7 +1183,7 @@
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].ProfileId'));
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_TALENT_PROF_TFM_TBL
+                        UPDATE DMT_TALENT_PROF_TFM_TBL
                         SET FUSION_PROFILE_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;
@@ -1177,7 +1220,7 @@
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].PersonAbsenceEntryId'));
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_ABSENCE_TFM_TBL
+                        UPDATE DMT_ABSENCE_TFM_TBL
                         SET FUSION_ABSENCE_ENTRY_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;
@@ -1214,7 +1257,7 @@
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].DeductionCardId'));
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_TAX_CARD_TFM_TBL
+                        UPDATE DMT_TAX_CARD_TFM_TBL
                         SET FUSION_DIR_CARD_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;
@@ -1250,7 +1293,7 @@
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].BalanceId'));
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_W2_BAL_TFM_TBL
+                        UPDATE DMT_W2_BAL_TFM_TBL
                         SET FUSION_BALANCE_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;
@@ -1286,7 +1329,7 @@
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].WorkScheduleId'));
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_WORK_SCHED_TFM_TBL
+                        UPDATE DMT_WORK_SCHED_TFM_TBL
                         SET FUSION_SCHEDULE_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;
@@ -1322,7 +1365,7 @@
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].EvaluationId'));
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_PERF_EVAL_TFM_TBL
+                        UPDATE DMT_PERF_EVAL_TFM_TBL
                         SET FUSION_EVALUATION_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;
@@ -1358,7 +1401,7 @@
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].ParticipantId'));
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_BEN_PARTIC_TFM_TBL
+                        UPDATE DMT_BEN_PARTIC_TFM_TBL
                         SET FUSION_PARTICIPANT_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;
@@ -1394,7 +1437,7 @@
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].BeneficiaryId'));
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_BEN_BENFY_TFM_TBL
+                        UPDATE DMT_BEN_BENFY_TFM_TBL
                         SET FUSION_BENEFICIARY_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;
@@ -1430,7 +1473,7 @@
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].DependentId'));
                     IF l_fusion_id IS NOT NULL THEN
-                        UPDATE DMT_OWNER.DMT_BEN_DEPEND_TFM_TBL
+                        UPDATE DMT_BEN_DEPEND_TFM_TBL
                         SET FUSION_DEPENDENT_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
                         WHERE TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                         l_ok_count := l_ok_count + 1;

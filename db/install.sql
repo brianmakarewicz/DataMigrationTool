@@ -12,7 +12,12 @@
 set define off
 set serveroutput on
 whenever sqlerror exit failure rollback
-alter session set current_schema = DMT_OWNER;
+-- Schema-relative install: objects are created unqualified in the CONNECTED
+-- user's own schema. Run connected AS the target owner (DMT_OWNER on Docker,
+-- DMT2_OWNER on the queryapp ATP). Do NOT force a literal current_schema here,
+-- or a differently-named owner's objects would land in the wrong schema.
+begin execute immediate 'alter session set current_schema = ' || USER; end;
+/
 
 
 prompt == Sequences ==

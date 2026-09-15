@@ -458,7 +458,7 @@
                 l_short     := SUBSTR(r.job_def, INSTR(r.job_def, '/', -1) + 1);
                 l_state_txt := state_text(l_state);
 
-                INSERT INTO DMT_OWNER.DMT_ESS_JOB_TBL (
+                INSERT INTO DMT_ESS_JOB_TBL (
                     RUN_ID, REQUEST_ID, PARENT_REQUEST_ID,
                     JOB_DEFINITION, JOB_SHORT_NAME, STATE, STATE_TEXT,
                     SUBMITTER, START_TIME, END_TIME,
@@ -856,7 +856,7 @@
             END CASE;
 
             BEGIN
-                INSERT INTO DMT_OWNER.DMT_ESS_JOB_FILE_TBL (
+                INSERT INTO DMT_ESS_JOB_FILE_TBL (
                     ESS_JOB_ID, REQUEST_ID, FILE_TYPE, FILE_NAME, CONTENT_TYPE
                 ) VALUES (
                     p_ess_job_id, p_request_id, l_ftype,
@@ -902,7 +902,7 @@
 
         FOR r IN (
             SELECT ESS_JOB_ID, REQUEST_ID
-            FROM DMT_OWNER.DMT_ESS_JOB_TBL
+            FROM DMT_ESS_JOB_TBL
             WHERE RUN_ID = p_run_id
               AND DEPTH_LEVEL >= 0  -- all jobs including top-level (Import jobs at depth 0 have output)
         ) LOOP
@@ -1071,12 +1071,13 @@
         l_xml       XMLTYPE;
         l_report_id NUMBER;
         l_import_depth NUMBER;
+        l_report_ess_job_id NUMBER;   -- local PK of the report job row (FK target)
     BEGIN
         -- Look up the report job definition for this CEMLI.
         -- If not seeded, this CEMLI has no report child â€” return immediately.
         BEGIN
             SELECT REPORT_JOB_DEF INTO l_report_job_def
-            FROM   DMT_OWNER.DMT_ERP_INTERFACE_OPTIONS_TBL
+            FROM   DMT_ERP_INTERFACE_OPTIONS_TBL
             WHERE  CEMLI_CODE = p_cemli_code
             AND    REPORT_JOB_DEF IS NOT NULL;
         EXCEPTION
@@ -1145,7 +1146,7 @@
         -- Look up the import job's depth level so we can nest the report one level deeper
         BEGIN
             SELECT NVL(DEPTH_LEVEL, 0) INTO l_import_depth
-            FROM   DMT_OWNER.DMT_ESS_JOB_TBL
+            FROM   DMT_ESS_JOB_TBL
             WHERE  REQUEST_ID = p_import_ess_id
             FETCH FIRST 1 ROW ONLY;
         EXCEPTION
@@ -1157,7 +1158,7 @@
         DECLARE
             l_state_txt VARCHAR2(30) := state_text(12); -- 12 = SUCCEEDED
         BEGIN
-            INSERT INTO DMT_OWNER.DMT_ESS_JOB_TBL (
+            INSERT INTO DMT_ESS_JOB_TBL (
                 RUN_ID, REQUEST_ID, PARENT_REQUEST_ID,
                 JOB_DEFINITION, JOB_SHORT_NAME, STATE, STATE_TEXT,
                 CEMLI_CODE, DEPTH_LEVEL
@@ -1170,17 +1171,24 @@
                 12, l_state_txt,
                 p_cemli_code,
                 l_import_depth + 1
-            );
+            )
+            RETURNING ESS_JOB_ID INTO l_report_ess_job_id;
         EXCEPTION
-            WHEN DUP_VAL_ON_INDEX THEN NULL; -- already captured
+            WHEN DUP_VAL_ON_INDEX THEN
+                -- already captured — resolve the existing local PK for the FK
+                SELECT ESS_JOB_ID INTO l_report_ess_job_id
+                FROM   DMT_ESS_JOB_TBL WHERE REQUEST_ID = l_report_id;
         END;
 
         COMMIT;
 
-        -- Enumerate output files for the report job
+        -- Enumerate output files for the report job. ENUMERATE_ESS_FILES inserts
+        -- into DMT_ESS_JOB_FILE_TBL whose FK targets DMT_ESS_JOB_TBL.ESS_JOB_ID
+        -- (the LOCAL pk), not the Fusion request id — pass the local pk captured
+        -- above (was previously passing l_report_id, causing an FK violation).
         BEGIN
             ENUMERATE_ESS_FILES(
-                p_ess_job_id => l_report_id,
+                p_ess_job_id => l_report_ess_job_id,
                 p_request_id => l_report_id);
         EXCEPTION
             WHEN OTHERS THEN

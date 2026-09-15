@@ -28,7 +28,7 @@
     -- engine. Replaces the retired dynamic SELECT DISTINCT in EXECUTE_ONE.
     FUNCTION GET_PARTITION_KEYS (
         p_run_id IN NUMBER
-    ) RETURN DMT_OWNER.DMT_PARTITION_KEY_TBL;
+    ) RETURN DMT_PARTITION_KEY_TBL;
 
     -- Main entry point for pipeline: call after POLL_ESS_JOB completes.
     PROCEDURE RECONCILE_BATCH (

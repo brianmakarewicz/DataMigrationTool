@@ -22,13 +22,13 @@
     -- --------------------------------------------------------
     FUNCTION GET_PARTITION_KEYS (
         p_run_id IN NUMBER
-    ) RETURN DMT_OWNER.DMT_PARTITION_KEY_TBL IS
-        l_keys DMT_OWNER.DMT_PARTITION_KEY_TBL;
+    ) RETURN DMT_PARTITION_KEY_TBL IS
+        l_keys DMT_PARTITION_KEY_TBL;
     BEGIN
         -- One JSON object per distinct book, keyed by the partition column name.
         SELECT DISTINCT JSON_OBJECT('BOOK_TYPE_CODE' VALUE TO_CHAR(BOOK_TYPE_CODE))
         BULK COLLECT INTO l_keys
-        FROM   DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
+        FROM   DMT_FA_ASSET_BOOK_TFM_TBL
         WHERE  RUN_ID = p_run_id
         AND    TFM_STATUS = 'STAGED'
         AND    BOOK_TYPE_CODE IS NOT NULL;
@@ -140,7 +140,7 @@
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -158,7 +158,7 @@
         -- Look up prefix for Tier 2 base table matching (PostMassAdditions purges interface rows)
         BEGIN
             SELECT PREFIX INTO l_prefix
-            FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+            FROM   DMT_PIPELINE_RUN_TBL
             WHERE  RUN_ID = p_run_id;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -302,7 +302,7 @@
         ) LOOP
             IF r.source_type = 'BASE' THEN
                 -- Tier 2: Found in FA_ADDITIONS_B = positively LOADED
-                UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
+                UPDATE DMT_FA_ASSET_HDR_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        FUSION_ASSET_ID      = r.fusion_id,
                        RESULTS_UPDATED_DATE = SYSDATE,
@@ -315,7 +315,7 @@
             ELSIF r.source_type = 'INTERFACE' THEN
                 -- Tier 1: Still in FA_MASS_ADDITIONS — check posting_status
                 IF r.import_status IN ('POSTED','POST','Y','PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
+                    UPDATE DMT_FA_ASSET_HDR_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_ASSET_ID      = r.fusion_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -326,7 +326,7 @@
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.error_msg IS NOT NULL THEN
                     -- Not posted, WITH a real Fusion-returned rejection message = FAILED.
-                    UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL
+                    UPDATE DMT_FA_ASSET_HDR_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_msg),
@@ -357,24 +357,24 @@
 
         <<cascade_and_echo>>
         -- Cascade to book TFM — match header tfm_status
-        UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL bk
+        UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS            = 'LOADED',
                bk.LAST_UPDATED_DATE = SYSDATE
         WHERE  bk.RUN_ID    = p_run_id
         AND    bk.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
+            SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
             WHERE  hdr.RUN_ID  = bk.RUN_ID
             AND    hdr.ASSET_NUMBER    = bk.ASSET_NUMBER
             AND    hdr.TFM_STATUS          = 'LOADED');
 
         -- The parent header only reaches FAILED with a real Fusion error, so the
         -- book row carries that same real parent error in the linked-record form.
-        UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL bk
+        UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS            = 'FAILED',
                bk.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT hdr.ERROR_TEXT FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
+                   (SELECT hdr.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
                     WHERE  hdr.RUN_ID = bk.RUN_ID
                     AND    hdr.ASSET_NUMBER = bk.ASSET_NUMBER
                     AND    hdr.TFM_STATUS = 'FAILED'
@@ -383,30 +383,30 @@
         WHERE  bk.RUN_ID    = p_run_id
         AND    bk.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
+            SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
             WHERE  hdr.RUN_ID  = bk.RUN_ID
             AND    hdr.ASSET_NUMBER    = bk.ASSET_NUMBER
             AND    hdr.TFM_STATUS          = 'FAILED');
 
         -- Cascade to assignment TFM — match header tfm_status
-        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL asn
+        UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
         SET    asn.TFM_STATUS            = 'LOADED',
                asn.LAST_UPDATED_DATE = SYSDATE
         WHERE  asn.RUN_ID    = p_run_id
         AND    asn.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
+            SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
             WHERE  hdr.RUN_ID  = asn.RUN_ID
             AND    hdr.ASSET_NUMBER    = asn.ASSET_NUMBER
             AND    hdr.TFM_STATUS          = 'LOADED');
 
         -- The parent header only reaches FAILED with a real Fusion error, so the
         -- assignment row carries that same real parent error in the linked-record form.
-        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL asn
+        UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
         SET    asn.TFM_STATUS            = 'FAILED',
                asn.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT hdr.ERROR_TEXT FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
+                   (SELECT hdr.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
                     WHERE  hdr.RUN_ID = asn.RUN_ID
                     AND    hdr.ASSET_NUMBER = asn.ASSET_NUMBER
                     AND    hdr.TFM_STATUS = 'FAILED'
@@ -415,27 +415,27 @@
         WHERE  asn.RUN_ID    = p_run_id
         AND    asn.TFM_STATUS            = 'GENERATED'
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL hdr
+            SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
             WHERE  hdr.RUN_ID  = asn.RUN_ID
             AND    hdr.ASSET_NUMBER    = asn.ASSET_NUMBER
             AND    hdr.TFM_STATUS          = 'FAILED');
 
         -- Echo outcomes back to STG
-        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL stg
+        UPDATE DMT_FA_ASSET_HDR_STG_TBL stg
         SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_FA_ASSET_HDR_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL stg
+        UPDATE DMT_FA_ASSET_HDR_STG_TBL stg
         SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL t
+                   (SELECT t.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_FA_ASSET_HDR_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries

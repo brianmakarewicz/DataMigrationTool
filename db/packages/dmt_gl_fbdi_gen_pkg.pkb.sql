@@ -212,7 +212,7 @@
                 || '""' || ','
                 || '""' || ','
                 || '""' || CHR(10) AS csv_line
-            FROM DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL t
+            FROM DMT_GL_INTERFACE_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED'
             AND    (p_ledger_name IS NULL OR t.LEDGER_NAME = p_ledger_name)
             ORDER BY t.TFM_SEQUENCE_ID
@@ -255,7 +255,7 @@
         l_csv := gen_gl_csv(p_run_id, p_ledger_name);
 
         SELECT COUNT(*) INTO l_row_count
-        FROM DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+        FROM DMT_GL_INTERFACE_TFM_TBL
         WHERE RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND   (p_ledger_name IS NULL OR LEDGER_NAME = p_ledger_name);
 
@@ -279,11 +279,11 @@
 
         -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
         -- build the zip from that persisted row.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'GLBalances', 'GlInterface.csv', 0, l_csv, l_fbdi_csv_id);
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'GLBalances', x_filename, l_zip, l_bytes);
 
-        UPDATE DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL
+        UPDATE DMT_GL_INTERFACE_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_ledger_name IS NULL OR LEDGER_NAME = p_ledger_name);

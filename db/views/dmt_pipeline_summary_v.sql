@@ -56,7 +56,7 @@ run_cemlis AS (
     SELECT
         r.RUN_ID,
         TRIM(REGEXP_SUBSTR(r.CEMLI_SEQUENCE, '[^,]+', 1, lvl.n)) AS CEMLI_CODE
-    FROM DMT_OWNER.DMT_PIPELINE_RUN_TBL r
+    FROM DMT_PIPELINE_RUN_TBL r
     CROSS JOIN (
         SELECT LEVEL AS n FROM DUAL CONNECT BY LEVEL <= 50
     ) lvl
@@ -93,7 +93,7 @@ driver AS (
             ELSE INITCAP(r.PIPELINE_CODES)
         END             AS PIPELINE,
         -1              AS SORT_ORDER
-    FROM DMT_OWNER.DMT_PIPELINE_RUN_TBL r
+    FROM DMT_PIPELINE_RUN_TBL r
 ),
 -- Pivot TFM status counts (unchanged from original)
 pivoted AS (
@@ -107,7 +107,7 @@ pivoted AS (
         SUM(CASE WHEN cs.TFM_STATUS NOT IN ('LOADED','FAILED','GENERATED')
                                               THEN cs.ROW_COUNT ELSE 0 END) AS IN_PROGRESS_ROWS,
         SUM(NVL(cs.UNRECONCILED_COUNT, 0))                                  AS UNRECONCILED_ROWS
-    FROM   DMT_OWNER.DMT_V_CEMLI_STATUS cs
+    FROM   DMT_V_CEMLI_STATUS cs
     WHERE  cs.CEMLI_CODE <> '__PIPELINE__'
     GROUP BY cs.CEMLI_CODE, cs.RUN_ID
 )
@@ -202,12 +202,12 @@ SELECT
     -- ids are always captured. Load = the depth-0 InterfaceLoaderController; Import = the
     -- depth-0 import launcher (JournalImportLauncher, ImportProjectJobDef, etc.).
     COALESCE(q.LOAD_ESS_JOB_ID,
-        TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_OWNER.DMT_ESS_JOB_TBL ej
+        TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_ESS_JOB_TBL ej
                  WHERE ej.RUN_ID = d.RUN_ID AND ej.CEMLI_CODE = d.CEMLI_CODE
                    AND ej.DEPTH_LEVEL = 0
                    AND ej.JOB_SHORT_NAME = 'InterfaceLoaderController')))  AS LOAD_ESS_JOB_ID,
     COALESCE(q.IMPORT_ESS_JOB_ID,
-        TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_OWNER.DMT_ESS_JOB_TBL ej
+        TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_ESS_JOB_TBL ej
                  WHERE ej.RUN_ID = d.RUN_ID AND ej.CEMLI_CODE = d.CEMLI_CODE
                    AND ej.DEPTH_LEVEL = 0
                    AND ej.JOB_SHORT_NAME <> 'InterfaceLoaderController')))  AS IMPORT_ESS_JOB_ID,
@@ -215,15 +215,15 @@ SELECT
     z.FILENAME                        AS ZIP_FILENAME
 FROM
     driver d
-JOIN DMT_OWNER.DMT_PIPELINE_RUN_TBL m
+JOIN DMT_PIPELINE_RUN_TBL m
     ON  m.RUN_ID = d.RUN_ID
 LEFT JOIN pivoted p
     ON  p.RUN_ID     = d.RUN_ID
     AND p.CEMLI_CODE = d.CEMLI_CODE
-LEFT JOIN DMT_OWNER.DMT_FBDI_ZIP_TBL z
+LEFT JOIN DMT_FBDI_ZIP_TBL z
     ON  z.RUN_ID      = d.RUN_ID
     AND z.OBJECT_TYPE  = d.CEMLI_CODE
-LEFT JOIN DMT_OWNER.DMT_WORK_QUEUE_TBL q
+LEFT JOIN DMT_WORK_QUEUE_TBL q
     ON  q.RUN_ID      = d.RUN_ID
     AND q.CEMLI_CODE   = d.CEMLI_CODE
 ORDER BY

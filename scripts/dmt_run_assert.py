@@ -78,7 +78,7 @@ def page52(code):
     for tbl, disp, col, filt in catalog.get(code, []):
         sql = (f"SELECT NVL(SUM(CASE WHEN {col}='LOADED' THEN 1 ELSE 0 END),0), "
                f"NVL(SUM(CASE WHEN {col}='FAILED' THEN 1 ELSE 0 END),0), COUNT(*) "
-               f"FROM DMT_OWNER.{tbl} WHERE RUN_ID=:1")
+               f"FROM {tbl} WHERE RUN_ID=:1")
         if filt:
             sql += " AND " + filt
         try:

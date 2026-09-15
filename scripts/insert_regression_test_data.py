@@ -81,7 +81,10 @@ def connect():
     if not m:
         sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
     user, password, dsn = m.groups()
-    return oracledb.connect(user=user, password=password, dsn=dsn)
+    import os as _os
+    _w = _os.environ.get('DMT2_WALLET')
+    _kw = dict(config_dir=_w, wallet_location=_w, wallet_password=_os.environ.get('DMT2_WALLET_PW')) if _w else {}
+    return oracledb.connect(user=user, password=password, dsn=dsn, **_kw)
 
 ok_count = 0
 err_count = 0
@@ -101,7 +104,7 @@ def run_sql(cur, sql, params=None, label=""):
 
 def tag_scenario(cur, table, scenario_id, status_col="STG_STATUS"):
     """Update rows with no SCENARIO_ID and status NEW to the given scenario."""
-    sql = f"""UPDATE DMT_OWNER.{table}
+    sql = f"""UPDATE {table}
               SET SCENARIO_ID = :sid
               WHERE {status_col} = 'NEW' AND SCENARIO_ID IS NULL"""
     try:
@@ -298,15 +301,15 @@ def main():
                 # Derive STG table name: replace _TFM_ with _STG_
                 stg_tbl = tbl.replace("_TFM_", "_STG_")
                 cur.execute(
-                    f"""DELETE FROM DMT_OWNER.{tbl}
+                    f"""DELETE FROM {tbl}
                         WHERE STG_SEQUENCE_ID IN (
-                            SELECT STG_SEQUENCE_ID FROM DMT_OWNER.{stg_tbl}
+                            SELECT STG_SEQUENCE_ID FROM {stg_tbl}
                             WHERE SCENARIO_ID = :sid OR SOURCE_ID LIKE 'RT-%'
                         )""",
                     {"sid": scenario_id})
             else:
                 cur.execute(
-                    f"DELETE FROM DMT_OWNER.{tbl} WHERE SCENARIO_ID = :sid OR SOURCE_ID LIKE 'RT-%'",
+                    f"DELETE FROM {tbl} WHERE SCENARIO_ID = :sid OR SOURCE_ID LIKE 'RT-%'",
                     {"sid": scenario_id})
             n = cur.rowcount
             if n > 0:
@@ -329,7 +332,7 @@ def main():
         ("RT Supplier Good-2", "RT-SUP-G2"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL (
+            INSERT INTO DMT_POZ_SUPPLIERS_STG_TBL (
                 IMPORT_ACTION, VENDOR_NAME, SEGMENT1,
                 ORGANIZATION_TYPE_LOOKUP_CODE, BUSINESS_RELATIONSHIP,
                 VENDOR_TYPE_LOOKUP_CODE, SOURCE_ID
@@ -343,7 +346,7 @@ def main():
 
     # BAD: invalid ORGANIZATION_TYPE (should fail Fusion validation)
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL (
+        INSERT INTO DMT_POZ_SUPPLIERS_STG_TBL (
             IMPORT_ACTION, VENDOR_NAME, SEGMENT1,
             ORGANIZATION_TYPE_LOOKUP_CODE, BUSINESS_RELATIONSHIP,
             VENDOR_TYPE_LOOKUP_CODE, SOURCE_ID
@@ -357,7 +360,7 @@ def main():
     # Pre-existing Fusion supplier — exists in Fusion, not migrated by DMT.
     # Marked LOADED so BPA/CPA pre-validation passes.
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL (
+        INSERT INTO DMT_POZ_SUPPLIERS_STG_TBL (
             VENDOR_NAME, SEGMENT1, STG_STATUS, SOURCE_ID
         ) VALUES (
             :vname, :vnum, 'LOADED', 'FUSION_PREEXISTING'
@@ -377,7 +380,7 @@ def main():
         ("RT Supplier Good-2", "RT Good-2 HQ", "200 Good Ave",  "Los Angeles", "CA", "90001"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_POZ_SUP_ADDR_STG_TBL (
+            INSERT INTO DMT_POZ_SUP_ADDR_STG_TBL (
                 IMPORT_ACTION, VENDOR_NAME, PARTY_SITE_NAME,
                 COUNTRY, ADDRESS_LINE1, CITY, STATE, POSTAL_CODE,
                 RFQ_OR_BIDDING_PURPOSE_FLAG, SOURCE_ID
@@ -393,7 +396,7 @@ def main():
 
     # BAD: address for non-existent supplier
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_POZ_SUP_ADDR_STG_TBL (
+        INSERT INTO DMT_POZ_SUP_ADDR_STG_TBL (
             IMPORT_ACTION, VENDOR_NAME, PARTY_SITE_NAME,
             COUNTRY, ADDRESS_LINE1, CITY, STATE, POSTAL_CODE,
             RFQ_OR_BIDDING_PURPOSE_FLAG, SOURCE_ID
@@ -416,7 +419,7 @@ def main():
         ("RT Supplier Good-2", "RT Good-2 HQ", "RT-SITE-G2"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL (
+            INSERT INTO DMT_POZ_SUP_SITE_STG_TBL (
                 IMPORT_ACTION, VENDOR_NAME,
                 PROCUREMENT_BUSINESS_UNIT_NAME, PARTY_SITE_NAME,
                 VENDOR_SITE_CODE, PURCHASING_SITE_FLAG, PAY_SITE_FLAG,
@@ -431,7 +434,7 @@ def main():
         label=f"GOOD Site: {vname} / {site_code}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL (
+        INSERT INTO DMT_POZ_SUP_SITE_STG_TBL (
             IMPORT_ACTION, VENDOR_NAME,
             PROCUREMENT_BUSINESS_UNIT_NAME, PARTY_SITE_NAME,
             VENDOR_SITE_CODE, PURCHASING_SITE_FLAG, PAY_SITE_FLAG,
@@ -445,7 +448,7 @@ def main():
 
     # Pre-existing site for Allied Manufacturing
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL (
+        INSERT INTO DMT_POZ_SUP_SITE_STG_TBL (
             VENDOR_NAME, VENDOR_SITE_CODE, PROCUREMENT_BUSINESS_UNIT_NAME,
             PARTY_SITE_NAME, STG_STATUS, SOURCE_ID
         ) VALUES (
@@ -466,7 +469,7 @@ def main():
         ("RT Supplier Good-2", "RT-SITE-G2"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL (
+            INSERT INTO DMT_POZ_SUP_SITE_ASSN_STG_TBL (
                 IMPORT_ACTION, VENDOR_NAME, VENDOR_SITE_CODE,
                 PROCUREMENT_BUSINESS_UNIT_NAME, BUSINESS_UNIT_NAME,
                 SOURCE_ID
@@ -479,7 +482,7 @@ def main():
         label=f"GOOD Assignment: {vname} / {site_code}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL (
+        INSERT INTO DMT_POZ_SUP_SITE_ASSN_STG_TBL (
             IMPORT_ACTION, VENDOR_NAME, VENDOR_SITE_CODE,
             PROCUREMENT_BUSINESS_UNIT_NAME, BUSINESS_UNIT_NAME,
             SOURCE_ID
@@ -491,7 +494,7 @@ def main():
 
     # Pre-existing site assignment for Allied Manufacturing
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_STG_TBL (
+        INSERT INTO DMT_POZ_SUP_SITE_ASSN_STG_TBL (
             VENDOR_NAME, VENDOR_SITE_CODE,
             PROCUREMENT_BUSINESS_UNIT_NAME, BUSINESS_UNIT_NAME,
             STG_STATUS, SOURCE_ID
@@ -513,7 +516,7 @@ def main():
         ("RT Supplier Good-2", "Bob",   "Good",  "bob@good2.test"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL (
+            INSERT INTO DMT_POZ_SUP_CONTACTS_STG_TBL (
                 IMPORT_ACTION, VENDOR_NAME,
                 FIRST_NAME, LAST_NAME, EMAIL_ADDRESS,
                 PRIMARY_ADMIN_CONTACT, SOURCE_ID
@@ -527,7 +530,7 @@ def main():
         label=f"GOOD Contact: {fname} {lname}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_POZ_SUP_CONTACTS_STG_TBL (
+        INSERT INTO DMT_POZ_SUP_CONTACTS_STG_TBL (
             IMPORT_ACTION, VENDOR_NAME,
             FIRST_NAME, LAST_NAME, EMAIL_ADDRESS,
             PRIMARY_ADMIN_CONTACT, SOURCE_ID
@@ -557,7 +560,7 @@ def main():
         ("Zorptell Dynamics", "RT-CUST-G3"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_HZ_PARTIES_STG_TBL (
+            INSERT INTO DMT_HZ_PARTIES_STG_TBL (
                 PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
                 INSERT_UPDATE_FLAG, PARTY_TYPE,
                 ORGANIZATION_NAME, SOURCE_ID
@@ -569,7 +572,7 @@ def main():
         label=f"GOOD Party: {org_name}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_HZ_PARTIES_STG_TBL (
+        INSERT INTO DMT_HZ_PARTIES_STG_TBL (
             PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
             INSERT_UPDATE_FLAG, PARTY_TYPE,
             ORGANIZATION_NAME, SOURCE_ID
@@ -590,7 +593,7 @@ def main():
         ("RT-LOC-G3", "300 Good Street","Chicago",     "IL", "60601"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL (
+            INSERT INTO DMT_HZ_LOCATIONS_STG_TBL (
                 LOCATION_ORIG_SYSTEM, LOCATION_ORIG_SYSTEM_REFERENCE,
                 INSERT_UPDATE_FLAG, COUNTRY,
                 ADDRESS1, CITY, STATE, POSTAL_CODE, SOURCE_ID
@@ -604,7 +607,7 @@ def main():
 
     # BAD: missing COUNTRY (required)
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_HZ_LOCATIONS_STG_TBL (
+        INSERT INTO DMT_HZ_LOCATIONS_STG_TBL (
             LOCATION_ORIG_SYSTEM, LOCATION_ORIG_SYSTEM_REFERENCE,
             INSERT_UPDATE_FLAG, COUNTRY,
             ADDRESS1, CITY, STATE, POSTAL_CODE, SOURCE_ID
@@ -627,7 +630,7 @@ def main():
         ("RT-CUST-G3", "RT-PSITE-G3", "RT-LOC-G3", "RT Good-3 Office"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL (
+            INSERT INTO DMT_HZ_PARTY_SITES_STG_TBL (
                 PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
                 SITE_ORIG_SYSTEM, SITE_ORIG_SYSTEM_REFERENCE,
                 LOCATION_ORIG_SYSTEM, LOCATION_ORIG_SYSTEM_REFERENCE,
@@ -644,7 +647,7 @@ def main():
 
     # BAD: party site referencing non-existent party
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_HZ_PARTY_SITES_STG_TBL (
+        INSERT INTO DMT_HZ_PARTY_SITES_STG_TBL (
             PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
             SITE_ORIG_SYSTEM, SITE_ORIG_SYSTEM_REFERENCE,
             LOCATION_ORIG_SYSTEM, LOCATION_ORIG_SYSTEM_REFERENCE,
@@ -670,7 +673,7 @@ def main():
         ("RT-CUST-G3", "RT-PSITE-G3", "BILL_TO"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL (
+            INSERT INTO DMT_HZ_PARTY_SITE_USES_STG_TBL (
                 PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
                 SITE_ORIG_SYSTEM, SITE_ORIG_SYSTEM_REFERENCE,
                 SITE_USE_TYPE, PRIMARY_FLAG,
@@ -686,7 +689,7 @@ def main():
 
     # BAD: invalid site use type
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_HZ_PARTY_SITE_USES_STG_TBL (
+        INSERT INTO DMT_HZ_PARTY_SITE_USES_STG_TBL (
             PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
             SITE_ORIG_SYSTEM, SITE_ORIG_SYSTEM_REFERENCE,
             SITE_USE_TYPE, PRIMARY_FLAG,
@@ -711,7 +714,7 @@ def main():
         ("RT-ACCT-G3", "RT-CUST-G3", "RTG003", "RT Customer Good-3"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL (
+            INSERT INTO DMT_HZ_ACCOUNTS_STG_TBL (
                 CUST_ORIG_SYSTEM, CUST_ORIG_SYSTEM_REFERENCE,
                 PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
                 ACCOUNT_NUMBER, INSERT_UPDATE_FLAG,
@@ -728,7 +731,7 @@ def main():
 
     # BAD: account referencing non-existent party
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL (
+        INSERT INTO DMT_HZ_ACCOUNTS_STG_TBL (
             CUST_ORIG_SYSTEM, CUST_ORIG_SYSTEM_REFERENCE,
             PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
             ACCOUNT_NUMBER, INSERT_UPDATE_FLAG,
@@ -753,7 +756,7 @@ def main():
         ("RT-ASITE-G3", "RT-ACCT-G3", "RT-PSITE-G3"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL (
+            INSERT INTO DMT_HZ_ACCT_SITES_STG_TBL (
                 CUST_ORIG_SYSTEM, CUST_ORIG_SYSTEM_REFERENCE,
                 CUST_SITE_ORIG_SYSTEM, CUST_SITE_ORIG_SYS_REF,
                 SITE_ORIG_SYSTEM, SITE_ORIG_SYSTEM_REFERENCE,
@@ -771,7 +774,7 @@ def main():
 
     # BAD: account site referencing non-existent account
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_HZ_ACCT_SITES_STG_TBL (
+        INSERT INTO DMT_HZ_ACCT_SITES_STG_TBL (
             CUST_ORIG_SYSTEM, CUST_ORIG_SYSTEM_REFERENCE,
             CUST_SITE_ORIG_SYSTEM, CUST_SITE_ORIG_SYS_REF,
             SITE_ORIG_SYSTEM, SITE_ORIG_SYSTEM_REFERENCE,
@@ -797,7 +800,7 @@ def main():
         ("RT-SITEUSE-G3", "RT-ASITE-G3", "BILL_TO"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL (
+            INSERT INTO DMT_HZ_ACCT_SITE_USES_STG_TBL (
                 CUST_SITE_ORIG_SYSTEM, CUST_SITE_ORIG_SYS_REF,
                 CUST_SITEUSE_ORIG_SYSTEM, CUST_SITEUSE_ORIG_SYS_REF,
                 SITE_USE_CODE, PRIMARY_FLAG,
@@ -814,7 +817,7 @@ def main():
 
     # BAD: invalid site use code
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_HZ_ACCT_SITE_USES_STG_TBL (
+        INSERT INTO DMT_HZ_ACCT_SITE_USES_STG_TBL (
             CUST_SITE_ORIG_SYSTEM, CUST_SITE_ORIG_SYS_REF,
             CUST_SITEUSE_ORIG_SYSTEM, CUST_SITEUSE_ORIG_SYS_REF,
             SITE_USE_CODE, PRIMARY_FLAG,
@@ -843,7 +846,7 @@ def main():
         "DMT_HZ_ACCT_SITE_USES_STG_TBL",
     ):
         run_sql(cur, f"""
-            UPDATE DMT_OWNER.{_cust_tbl}
+            UPDATE {_cust_tbl}
             SET    BATCH_ID = :bid
             WHERE  SCENARIO_ID = :sid AND BATCH_ID IS NULL
         """, {"bid": CUST_BATCH_ID, "sid": scenario_id},
@@ -864,7 +867,7 @@ def main():
         ("RT-PO-G2", "RT-PO-002", "RT Supplier Good-2", "RT-SUP-G2", "RT-SITE-G2"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL (
+            INSERT INTO DMT_PO_HEADERS_INT_STG_TBL (
                 INTERFACE_HEADER_KEY, ACTION, DOCUMENT_TYPE_CODE,
                 BATCH_ID,
                 STYLE_DISPLAY_NAME, PRC_BU_NAME, REQ_BU_NAME,
@@ -887,7 +890,7 @@ def main():
         label=f"GOOD PO Header: {po_num} (user BATCH_ID 8001)")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL (
+        INSERT INTO DMT_PO_HEADERS_INT_STG_TBL (
             INTERFACE_HEADER_KEY, ACTION, DOCUMENT_TYPE_CODE,
             STYLE_DISPLAY_NAME, PRC_BU_NAME, REQ_BU_NAME,
             SOLDTO_LE_NAME, BILLTO_BU_NAME,
@@ -915,7 +918,7 @@ def main():
         ("RT-POL-BAD1", "RT-PO-BAD1", 1, 1, 50.00, "BAD: orphan line"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PO_LINES_INT_STG_TBL (
+            INSERT INTO DMT_PO_LINES_INT_STG_TBL (
                 INTERFACE_LINE_KEY, INTERFACE_HEADER_KEY,
                 ACTION, LINE_NUM, LINE_TYPE,
                 ITEM_DESCRIPTION, QUANTITY, UNIT_OF_MEASURE, UNIT_PRICE,
@@ -946,7 +949,7 @@ def main():
         ("RT-POLL-BAD1", "RT-POL-BAD1", 1, 1, None),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PO_LINE_LOCS_INT_STG_TBL (
+            INSERT INTO DMT_PO_LINE_LOCS_INT_STG_TBL (
                 INTERFACE_LINE_LOCATION_KEY, INTERFACE_LINE_KEY,
                 SHIPMENT_NUM, QUANTITY,
                 DESTINATION_TYPE_CODE, SHIP_TO_LOCATION,
@@ -972,7 +975,7 @@ def main():
         ("RT-POD-BAD1", "RT-POLL-BAD1", 1, 1),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PO_DISTS_INT_STG_TBL (
+            INSERT INTO DMT_PO_DISTS_INT_STG_TBL (
                 INTERFACE_DISTRIBUTION_KEY, INTERFACE_LINE_LOCATION_KEY,
                 DISTRIBUTION_NUM, QUANTITY_ORDERED,
                 CHARGE_ACCOUNT_SEGMENT1, CHARGE_ACCOUNT_SEGMENT2,
@@ -1003,7 +1006,7 @@ def main():
         (800002, "RT-APINV-G2", 2750.00),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL (
+            INSERT INTO DMT_AP_INVOICES_INT_STG_TBL (
                 INVOICE_ID, OPERATING_UNIT, SOURCE,
                 INVOICE_NUM, INVOICE_AMOUNT, INVOICE_DATE,
                 VENDOR_NAME, VENDOR_NUM, VENDOR_SITE_CODE,
@@ -1021,7 +1024,7 @@ def main():
         label=f"GOOD AP Invoice: {inv_num} (${amount})")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL (
+        INSERT INTO DMT_AP_INVOICES_INT_STG_TBL (
             INVOICE_ID, OPERATING_UNIT, SOURCE,
             INVOICE_NUM, INVOICE_AMOUNT, INVOICE_DATE,
             VENDOR_NAME, VENDOR_NUM, VENDOR_SITE_CODE,
@@ -1049,7 +1052,7 @@ def main():
         (800099, 1, 0,       "BAD: zero amount line",  "101.10.65110.110.000.000"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL (
+            INSERT INTO DMT_AP_INVOICE_LINES_INT_STG_TBL (
                 INVOICE_ID, LINE_NUMBER, LINE_TYPE_LOOKUP_CODE,
                 AMOUNT, DESCRIPTION,
                 DIST_CODE_CONCATENATED, ACCOUNTING_DATE, SOURCE_ID
@@ -1075,7 +1078,7 @@ def main():
         ("RT-AR-G2", CUST_ACCT_NO, 1800.00, "RT maintenance contract"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_RA_LINES_STG_TBL (
+            INSERT INTO DMT_RA_LINES_STG_TBL (
                 BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
                 TERM_NAME, TRX_DATE, GL_DATE,
                 TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER,
@@ -1096,7 +1099,7 @@ def main():
         label=f"GOOD AR Invoice: {trx_num}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_RA_LINES_STG_TBL (
+        INSERT INTO DMT_RA_LINES_STG_TBL (
             BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
             TERM_NAME, TRX_DATE, GL_DATE,
             TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER,
@@ -1135,7 +1138,7 @@ def main():
     ]
     for gl_status, ledger, acct_dt, cat, source, seg3, dr, cr, ref4, ref10, period in gl_lines:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_GL_INTERFACE_STG_TBL (
+            INSERT INTO DMT_GL_INTERFACE_STG_TBL (
                 JOURNAL_STATUS, LEDGER_NAME, ACCOUNTING_DATE,
                 CURRENCY_CODE, ACTUAL_FLAG,
                 USER_JE_CATEGORY_NAME, USER_JE_SOURCE_NAME,
@@ -1176,7 +1179,7 @@ def main():
         ("60540", "120", 1000.00),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_GL_BUDGET_INT_STG_TBL (
+            INSERT INTO DMT_GL_BUDGET_INT_STG_TBL (
                 RUN_NAME, LEDGER_ID, BUDGET_NAME, PERIOD_NAME,
                 CURRENCY_CODE, JOURNAL_STATUS,
                 SEGMENT1, SEGMENT2, SEGMENT3,
@@ -1194,7 +1197,7 @@ def main():
         label=f"GOOD GL Budget: 06-26/{seg3}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_GL_BUDGET_INT_STG_TBL (
+        INSERT INTO DMT_GL_BUDGET_INT_STG_TBL (
             RUN_NAME, LEDGER_ID, BUDGET_NAME, PERIOD_NAME,
             CURRENCY_CODE, JOURNAL_STATUS,
             SEGMENT1, SEGMENT2, SEGMENT3,
@@ -1221,7 +1224,7 @@ def main():
         ("Forecast", "Version 1", "US1 Entity", "68010", "Jul-25", 60000.00),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PLAN_BUDGET_STG_TBL (
+            INSERT INTO DMT_PLAN_BUDGET_STG_TBL (
                 SCENARIO, VERSION, ENTITY, ACCOUNT,
                 PERIOD, AMOUNT, CURRENCY, SOURCE_ID
             ) VALUES (
@@ -1234,7 +1237,7 @@ def main():
         label=f"GOOD Planning: {period}/{account}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PLAN_BUDGET_STG_TBL (
+        INSERT INTO DMT_PLAN_BUDGET_STG_TBL (
             SCENARIO, VERSION, ENTITY, ACCOUNT,
             PERIOD, AMOUNT, CURRENCY, SOURCE_ID
         ) VALUES (
@@ -1260,7 +1263,7 @@ def main():
         ("RT Project Good-2", "RTPRJ002", "RT test project two"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL (
+            INSERT INTO DMT_PJF_PROJECTS_STG_TBL (
                 PROJECT_NAME, PROJECT_NUMBER,
                 SOURCE_TEMPLATE_NUMBER,
                 ORGANIZATION_NAME, DESCRIPTION,
@@ -1278,7 +1281,7 @@ def main():
         label=f"GOOD Project: {pname}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL (
+        INSERT INTO DMT_PJF_PROJECTS_STG_TBL (
             PROJECT_NAME, PROJECT_NUMBER,
             SOURCE_TEMPLATE_NUMBER,
             ORGANIZATION_NAME, DESCRIPTION,
@@ -1305,7 +1308,7 @@ def main():
         ("RT Project Good-2", "RTPRJ002", "RT Build Phase",   "RTPRJ002.1"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PJF_TASKS_STG_TBL (
+            INSERT INTO DMT_PJF_TASKS_STG_TBL (
                 PROJECT_NAME, PROJECT_NUMBER,
                 TASK_NAME, TASK_NUMBER,
                 PLANNING_START_DATE, PLANNING_END_DATE,
@@ -1322,7 +1325,7 @@ def main():
         label=f"GOOD Task: {tnum}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PJF_TASKS_STG_TBL (
+        INSERT INTO DMT_PJF_TASKS_STG_TBL (
             PROJECT_NAME, PROJECT_NUMBER,
             TASK_NAME, TASK_NUMBER,
             PLANNING_START_DATE, PLANNING_END_DATE,
@@ -1348,7 +1351,7 @@ def main():
         ("RT Project Good-2", "Mandy Steward", "mandy.steward_esew-dev28@oraclepdemos.com", "Project Manager"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PJF_TEAM_MEMBERS_STG_TBL (
+            INSERT INTO DMT_PJF_TEAM_MEMBERS_STG_TBL (
                 PROJECT_NAME, TEAM_MEMBER_NAME, TEAM_MEMBER_EMAIL,
                 PROJECT_ROLE_NAME, START_DATE_ACTIVE,
                 TRACK_TIME_FLAG, SOURCE_ID
@@ -1372,7 +1375,7 @@ def main():
         ("RT Project Good-2", "RTPRJ002", "Professional Services"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PJC_TXN_CONTROLS_STG_TBL (
+            INSERT INTO DMT_PJC_TXN_CONTROLS_STG_TBL (
                 TXN_CTRL_REFERENCE, PROJECT_NAME, PROJECT_NUMBER,
                 EXPENDITURE_TYPE, CHARGEABLE_FLAG,
                 START_DATE_ACTIVE, SOURCE_ID
@@ -1417,7 +1420,7 @@ def main():
         ("RTPRJ002", "RTPRJ002.1", 16, 2500.00),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL (
+            INSERT INTO DMT_PJC_EXPENDITURES_STG_TBL (
                 TRANSACTION_TYPE, BUSINESS_UNIT,
                 PROJECT_NUMBER, TASK_NUMBER,
                 EXPENDITURE_TYPE, EXPENDITURE_ITEM_DATE,
@@ -1431,7 +1434,7 @@ def main():
                 'Administrative', DATE '2025-06-15',
                 :bu, :qty, '7',
                 'USD', :amt,
-                'Time Card', 'Time Card', 'Straight Time',
+                'External Time Entry System', 'Time Card', 'Straight Time',
                 :ref, :src
             )
         """, {"bu": BU, "pnum": proj_num, "tnum": task_num,
@@ -1444,7 +1447,7 @@ def main():
     # carries a valid document trio and person so the rejection is attributed to
     # the bad expenditure type, not to a missing document.
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL (
+        INSERT INTO DMT_PJC_EXPENDITURES_STG_TBL (
             TRANSACTION_TYPE, BUSINESS_UNIT,
             PROJECT_NUMBER, TASK_NUMBER,
             EXPENDITURE_TYPE, EXPENDITURE_ITEM_DATE,
@@ -1458,7 +1461,7 @@ def main():
             'BadValue', DATE '2025-06-15',
             :bu, 8, '7',
             'USD', 999.99,
-            'Time Card', 'Time Card', 'Straight Time',
+            'External Time Entry System', 'Time Card', 'Straight Time',
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
     """, {"bu": BU}, label="BAD Expenditure (LABOR): invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
@@ -1486,7 +1489,7 @@ def main():
         ("RT-BE-G2", "C10001", "1", "PCS10001", None, "Percent Spent Billing", 1.00),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL (
+            INSERT INTO DMT_PJB_BILL_EVENTS_STG_TBL (
                 SOURCENAME, SOURCEREF, ORGANIZATION_NAME,
                 CONTRACT_TYPE_NAME, CONTRACT_NUMBER, CONTRACT_LINE_NUMBER,
                 EVENT_TYPE_NAME, EVENT_DESC,
@@ -1505,7 +1508,7 @@ def main():
         label=f"GOOD Billing Event: {src_ref}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL (
+        INSERT INTO DMT_PJB_BILL_EVENTS_STG_TBL (
             SOURCENAME, SOURCEREF, ORGANIZATION_NAME,
             CONTRACT_TYPE_NAME, CONTRACT_NUMBER, CONTRACT_LINE_NUMBER,
             EVENT_TYPE_NAME, EVENT_DESC,
@@ -1540,7 +1543,7 @@ def main():
         # PLAN_VERSION_STATUS is mandatory on the refreshed instance
         # (PJO_XFACE_NO_VER_STATUS rejection in run 115, import job 9697704).
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PRJ_BUDGET_STG_TBL (
+            INSERT INTO DMT_PRJ_BUDGET_STG_TBL (
                 FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
                 PLAN_VERSION_NAME, PLAN_VERSION_STATUS, PERIOD_NAME, PLANNING_CURRENCY,
                 TOTAL_TC_RAW_COST, SRC_BUDGET_LINE_REFERENCE, SOURCE_ID
@@ -1554,7 +1557,7 @@ def main():
         label=f"GOOD Project Budget: {pnum}/{period}")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PRJ_BUDGET_STG_TBL (
+        INSERT INTO DMT_PRJ_BUDGET_STG_TBL (
             FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
             PLAN_VERSION_NAME, PLAN_VERSION_STATUS, PERIOD_NAME, PLANNING_CURRENCY,
             TOTAL_TC_RAW_COST, SRC_BUDGET_LINE_REFERENCE, SOURCE_ID
@@ -1581,7 +1584,7 @@ def main():
         ("RT Grant Good-2", "RTGNT002", "Environmental Protection Agency"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_GMS_AWD_HEADERS_STG_TBL (
+            INSERT INTO DMT_GMS_AWD_HEADERS_STG_TBL (
                 AWARD_NAME, AWARD_NUMBER,
                 SOURCE_TEMPLATE_NUMBER,
                 BUSINESS_UNIT, LEGAL_ENTITY,
@@ -1604,7 +1607,7 @@ def main():
     # Insert personnel (PI required for each award)
     for awd_num in ("RTGNT001", "RTGNT002"):
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_GMS_AWD_PERSONNEL_STG_TBL (
+            INSERT INTO DMT_GMS_AWD_PERSONNEL_STG_TBL (
                 AWARD_NUMBER, INTERNAL, PERSON_EMAIL,
                 PERSON_NAME, PERSON_NUMBER, ROLE,
                 START_DATE, CREDIT_PERCENTAGE, SOURCE_ID
@@ -1618,7 +1621,7 @@ def main():
     tag_scenario(cur, "DMT_GMS_AWD_PERSONNEL_STG_TBL", scenario_id)
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_GMS_AWD_HEADERS_STG_TBL (
+        INSERT INTO DMT_GMS_AWD_HEADERS_STG_TBL (
             AWARD_NAME, AWARD_NUMBER,
             SOURCE_TEMPLATE_NUMBER,
             BUSINESS_UNIT, LEGAL_ENTITY,
@@ -1657,7 +1660,7 @@ def main():
         ("RT-ASSET-BAD1", "BAD: invalid expense account"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL (
+            INSERT INTO DMT_FA_ASSET_HDR_STG_TBL (
                 ASSET_NUMBER, DESCRIPTION,
                 ASSET_CATEGORY_SEGMENT1, ASSET_CATEGORY_SEGMENT2,
                 ASSET_TYPE, MANUFACTURER_NAME, SERIAL_NUMBER, MODEL_NUMBER,
@@ -1685,7 +1688,7 @@ def main():
         ("RT-ASSET-BAD1", "US CORP", 1000.00, 36),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_FA_ASSET_BOOK_STG_TBL (
+            INSERT INTO DMT_FA_ASSET_BOOK_STG_TBL (
                 ASSET_NUMBER, BOOK_TYPE_CODE,
                 COST, ORIGINAL_COST, SALVAGE_VALUE,
                 LIFE_IN_MONTHS, DEPRECIATION_METHOD,
@@ -1715,7 +1718,7 @@ def main():
         ("RT-ASSET-BAD1", "15160", "USA", "NEW YORK", "NEW YORK"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_FA_ASSET_ASSIGN_STG_TBL (
+            INSERT INTO DMT_FA_ASSET_ASSIGN_STG_TBL (
                 ASSET_NUMBER, UNITS_ASSIGNED,
                 LOCATION_SEGMENT1, LOCATION_SEGMENT2, LOCATION_SEGMENT3,
                 EXPENSE_ACCOUNT_SEGMENT1, EXPENSE_ACCOUNT_SEGMENT2,
@@ -1754,7 +1757,7 @@ def main():
         ("DMT-RT-BAD-001",    "DMT Bad Item Invalid Org",    "ZZZ",      "Each", 1, 1, 8101, "BAD: invalid org code [BAD-LKP] batch 8101"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_EGP_ITEM_STG_TBL (
+            INSERT INTO DMT_EGP_ITEM_STG_TBL (
                 TRANSACTION_TYPE, ORGANIZATION_CODE, ITEM_NUMBER, BATCH_ID,
                 DESCRIPTION, PRIMARY_UOM_CODE, ITEM_CLASS_NAME,
                 INVENTORY_ITEM_STATUS_CODE, CURRENT_PHASE_CODE, ITEM_TYPE,
@@ -1810,7 +1813,7 @@ def main():
          "BAD: nonexistent item + fake category set [BAD-UPS]"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_EGP_ITEM_CAT_STG_TBL (
+            INSERT INTO DMT_EGP_ITEM_CAT_STG_TBL (
                 TRANSACTION_TYPE, ORGANIZATION_CODE, ITEM_NUMBER, BATCH_ID,
                 CATEGORY_SET_NAME, CATEGORY_CODE, CATEGORY_NAME,
                 SOURCE_SYSTEM_CODE, SOURCE_SYSTEM_REFERENCE,
@@ -1848,7 +1851,7 @@ def main():
         ("FAKE-ITEM-REGRESSION-BAD", 1, "BAD: nonexistent item [BAD-REQ]"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_INV_TRX_STG_TBL (
+            INSERT INTO DMT_INV_TRX_STG_TBL (
                 ORGANIZATION_NAME, ITEM_NUMBER, SUBINVENTORY_CODE,
                 TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
                 TRANSACTION_DATE,
@@ -1865,10 +1868,10 @@ def main():
     # Lot-controlled item: RA-100-4935-LOT in Seattle
     # Parent txn needs INV_LOTSERIAL_INTERFACE_NUM to link to child lot row
     # Get STG sequence for the parent so we can reference it from the lot child
-    cur.execute("SELECT DMT_OWNER.DMT_INV_TRX_STG_SEQ.NEXTVAL FROM DUAL")
+    cur.execute("SELECT DMT_INV_TRX_STG_SEQ.NEXTVAL FROM DUAL")
     lot_parent_seq = cur.fetchone()[0]
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_INV_TRX_STG_TBL (
+        INSERT INTO DMT_INV_TRX_STG_TBL (
             STG_SEQUENCE_ID,
             ORGANIZATION_NAME, ITEM_NUMBER, SUBINVENTORY_CODE,
             TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
@@ -1889,7 +1892,7 @@ def main():
     # Lot child row — INVENTORY_LOT_INTERFACE_NUMBER must match parent's INV_LOTSERIAL_INTERFACE_NUM
     # SOURCE_ID = parent STG_SEQUENCE_ID (for generator join)
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_INV_TRX_LOTS_STG_TBL (
+        INSERT INTO DMT_INV_TRX_LOTS_STG_TBL (
             INVENTORY_LOT_INTERFACE_NUMBER, SOURCE_CODE, SOURCE_LINE_ID,
             LOT_NUMBER, TRANSACTION_QUANTITY,
             SOURCE_ID, STAGE_DATE, STG_STATUS
@@ -1902,10 +1905,10 @@ def main():
     label="  -> Lot child: DMT-REG-LOT-001, qty 3")
 
     # Serial-controlled item: AS88000 in Seattle (serial_number_control_code=5, at receipt)
-    cur.execute("SELECT DMT_OWNER.DMT_INV_TRX_STG_SEQ.NEXTVAL FROM DUAL")
+    cur.execute("SELECT DMT_INV_TRX_STG_SEQ.NEXTVAL FROM DUAL")
     ser_parent_seq = cur.fetchone()[0]
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_INV_TRX_STG_TBL (
+        INSERT INTO DMT_INV_TRX_STG_TBL (
             STG_SEQUENCE_ID,
             ORGANIZATION_NAME, ITEM_NUMBER, SUBINVENTORY_CODE,
             TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
@@ -1925,7 +1928,7 @@ def main():
 
     # Serial child row — SOURCE_ID = parent STG_SEQUENCE_ID (for generator join)
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_INV_TRX_SERIALS_STG_TBL (
+        INSERT INTO DMT_INV_TRX_SERIALS_STG_TBL (
             FM_SERIAL_NUMBER, TO_SERIAL_NUMBER,
             SOURCE_ID, STAGE_DATE, STG_STATUS
         ) VALUES (
@@ -1964,7 +1967,7 @@ def main():
          "BAD DIST: valid hdr+line, bad charge acct", "BAD Requisition: [DIST] error batch 7002"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL (
+            INSERT INTO DMT_POR_REQ_HEADERS_STG_TBL (
                 INTERFACE_HEADER_KEY, INTERFACE_SOURCE_CODE,
                 BATCH_ID,
                 REQ_BU_NAME, PRC_BU_NAME,
@@ -1997,7 +2000,7 @@ def main():
         ("RT-REQL-BADDIST", "RT-REQ-BADDIST",   2, 75.00,  "Good line bad dist", "ECH"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_POR_REQ_LINES_STG_TBL (
+            INSERT INTO DMT_POR_REQ_LINES_STG_TBL (
                 INTERFACE_LINE_KEY, INTERFACE_HEADER_KEY,
                 DESTINATION_TYPE_CODE, DELIVER_TO_LOCATION_CODE,
                 ITEM_DESCRIPTION, CATEGORY_NAME,
@@ -2034,7 +2037,7 @@ def main():
         ("RT-REQD-BADDIST", "RT-REQL-BADDIST", "999", "99", "99999", "999", "999", "999"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_POR_REQ_DISTS_STG_TBL (
+            INSERT INTO DMT_POR_REQ_DISTS_STG_TBL (
                 INTERFACE_DISTRIBUTION_KEY, INTERFACE_LINE_KEY,
                 DISTRIBUTION_NUMBER, PERCENT,
                 CHARGE_ACCOUNT_SEGMENT1, CHARGE_ACCOUNT_SEGMENT2,
@@ -2067,7 +2070,7 @@ def main():
     # reference fails as INVALID SUPPLIER. The 1099 nature is carried by the
     # line's TYPE_1099 field, not by the supplier, so the test intent is preserved.
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL (
+        INSERT INTO DMT_AP_INVOICES_INT_STG_TBL (
             INVOICE_ID, OPERATING_UNIT, SOURCE,
             INVOICE_NUM, INVOICE_AMOUNT, INVOICE_DATE,
             VENDOR_NAME, VENDOR_NUM, VENDOR_SITE_CODE,
@@ -2085,7 +2088,7 @@ def main():
     label="GOOD 1099 Invoice Header: RT-1099-G1")
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL (
+        INSERT INTO DMT_AP_INVOICE_LINES_INT_STG_TBL (
             INVOICE_ID, LINE_NUMBER, LINE_TYPE_LOOKUP_CODE,
             AMOUNT, DESCRIPTION,
             DIST_CODE_CONCATENATED, ACCOUNTING_DATE,
@@ -2105,7 +2108,7 @@ def main():
     # ====================================================================
     print("\n=== 39. Blanket POs ===")
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL (
+        INSERT INTO DMT_PO_HEADERS_INT_STG_TBL (
             INTERFACE_HEADER_KEY, ACTION, DOCUMENT_TYPE_CODE,
             STYLE_DISPLAY_NAME, PRC_BU_NAME, REQ_BU_NAME,
             SOLDTO_LE_NAME, BILLTO_BU_NAME,
@@ -2125,7 +2128,7 @@ def main():
     tag_scenario(cur, "DMT_PO_HEADERS_INT_STG_TBL", scenario_id)
 
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PO_LINES_INT_STG_TBL (
+        INSERT INTO DMT_PO_LINES_INT_STG_TBL (
             INTERFACE_LINE_KEY, INTERFACE_HEADER_KEY,
             ACTION, LINE_NUM, LINE_TYPE,
             ITEM_DESCRIPTION, AMOUNT, UNIT_OF_MEASURE, UNIT_PRICE,
@@ -2141,7 +2144,7 @@ def main():
 
     # BAD Blanket PO: nonexistent supplier [BAD-UPS]
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL (
+        INSERT INTO DMT_PO_HEADERS_INT_STG_TBL (
             INTERFACE_HEADER_KEY, ACTION, DOCUMENT_TYPE_CODE,
             STYLE_DISPLAY_NAME, PRC_BU_NAME, REQ_BU_NAME,
             SOLDTO_LE_NAME, BILLTO_BU_NAME,
@@ -2165,7 +2168,7 @@ def main():
     # ====================================================================
     print("\n=== 40. Contracts ===")
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL (
+        INSERT INTO DMT_PO_HEADERS_INT_STG_TBL (
             INTERFACE_HEADER_KEY, ACTION, DOCUMENT_TYPE_CODE,
             STYLE_DISPLAY_NAME, PRC_BU_NAME, REQ_BU_NAME,
             SOLDTO_LE_NAME, BILLTO_BU_NAME,
@@ -2186,7 +2189,7 @@ def main():
 
     # BAD Contract: nonexistent supplier [BAD-UPS]
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL (
+        INSERT INTO DMT_PO_HEADERS_INT_STG_TBL (
             INTERFACE_HEADER_KEY, ACTION, DOCUMENT_TYPE_CODE,
             STYLE_DISPLAY_NAME, PRC_BU_NAME, REQ_BU_NAME,
             SOLDTO_LE_NAME, BILLTO_BU_NAME,
@@ -2228,7 +2231,7 @@ def main():
         ("RT-WKR-B1", "TERMINATE", None,         "BAD Worker: TERMINATE action [BAD-REQ]"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_WORKER_STG_TBL (
+            INSERT INTO DMT_WORKER_STG_TBL (
                 PERSON_NUMBER, START_DATE, EFFECTIVE_START_DATE,
                 ACTION_CODE, LEGAL_ENTITY_NAME, DATE_OF_BIRTH,
                 SOURCE_ID, STG_STATUS
@@ -2242,7 +2245,7 @@ def main():
 
     # GLOBAL name for the GOOD worker only (bad worker never reaches Fusion)
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_PERSON_NAME_STG_TBL (
+        INSERT INTO DMT_PERSON_NAME_STG_TBL (
             PERSON_NUMBER, EFFECTIVE_START_DATE, NAME_TYPE,
             LEGISLATION_CODE, LAST_NAME, FIRST_NAME,
             SOURCE_ID, STG_STATUS
@@ -2264,7 +2267,7 @@ def main():
     # ====================================================================
     print("\n=== 42. Assignments (HCM) ===")
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_WORK_REL_STG_TBL (
+        INSERT INTO DMT_WORK_REL_STG_TBL (
             PERSON_NUMBER, DATE_START, EFFECTIVE_START_DATE,
             LEGAL_EMPLOYER_NAME, ACTION_CODE, WORKER_TYPE, PRIMARY_FLAG,
             SOURCE_ID, STG_STATUS
@@ -2285,7 +2288,7 @@ def main():
         ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "Y", "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_ASSIGNMENT_STG_TBL (
+            INSERT INTO DMT_ASSIGNMENT_STG_TBL (
                 PERSON_NUMBER, ASSIGNMENT_NAME, ASSIGNMENT_NUMBER,
                 EFFECTIVE_START_DATE, ASSIGNMENT_STATUS_TYPE_CODE,
                 BUSINESS_UNIT_NAME, ACTION_CODE, JOB_CODE, DEPARTMENT_NAME,
@@ -2319,7 +2322,7 @@ def main():
         ("RT-WKR-BSAL","ET-RT-WKR-BSAL","NONEXISTENT_BASIS", "80000", "BAD Salary: invalid basis + person [BAD-LKP]"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_SALARY_STG_TBL (
+            INSERT INTO DMT_SALARY_STG_TBL (
                 PERSON_NUMBER, ASSIGNMENT_NUMBER, EFFECTIVE_START_DATE,
                 SALARY_AMOUNT, SALARY_BASIS_NAME, ACTION_CODE,
                 DATE_FROM, SALARY_APPROVED, SOURCE_ID, STG_STATUS
@@ -2347,7 +2350,7 @@ def main():
         ("RT-WKR-BPAY", "NONEXISTENT LDG",           "BAD Payroll Relationship: invalid LDG + distinct person [BAD-LKP]"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_PAY_REL_STG_TBL (
+            INSERT INTO DMT_PAY_REL_STG_TBL (
                 PERSON_NUMBER, EFFECTIVE_START_DATE, LEGAL_EMPLOYER_NAME,
                 PAYROLL_NAME, PAYROLL_STATUS_CODE, LEGISLATIVE_DATA_GROUP_NAME,
                 SOURCE_ID, STG_STATUS
@@ -2376,7 +2379,7 @@ def main():
         ("RT-WKR-BPROF", "RT-WKR-BPROF_PROF", "INVALID", "BAD Talent Profile: invalid status + distinct person [BAD-LKP]"),
     ]:
         run_sql(cur, """
-            INSERT INTO DMT_OWNER.DMT_TALENT_PROF_STG_TBL (
+            INSERT INTO DMT_TALENT_PROF_STG_TBL (
                 PERSON_NUMBER, PROFILE_CODE, PROFILE_TYPE_CODE,
                 PROFILE_STATUS_CODE, PROFILE_USAGE_CODE, SOURCE_ID, STG_STATUS
             ) VALUES (
@@ -2388,7 +2391,7 @@ def main():
 
     # One competency item for the GOOD profile
     run_sql(cur, """
-        INSERT INTO DMT_OWNER.DMT_TALENT_PROF_ITEM_STG_TBL (
+        INSERT INTO DMT_TALENT_PROF_ITEM_STG_TBL (
             PERSON_NUMBER, CONTENT_TYPE_NAME, CONTENT_ITEM_NAME,
             DATE_FROM, PROFILE_CODE, SOURCE_ID, STG_STATUS
         ) VALUES (
@@ -2474,7 +2477,7 @@ def main():
     for tbl, stcol in tables:
         try:
             cur.execute(
-                f"SELECT COUNT(*) FROM DMT_OWNER.{tbl} WHERE SCENARIO_ID = :sid",
+                f"SELECT COUNT(*) FROM {tbl} WHERE SCENARIO_ID = :sid",
                 {"sid": scenario_id})
             cnt = cur.fetchone()[0]
             total += cnt

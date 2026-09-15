@@ -14,7 +14,7 @@
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM start.', C_PKG, 'TRANSFORM');
 
-        INSERT INTO DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL (
+        INSERT INTO DMT_GL_BUDGET_INT_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,
             RUN_NAME, STATUS_FBDI, LEDGER_ID,
             BUDGET_NAME, PERIOD_NAME, CURRENCY_CODE,
@@ -44,7 +44,7 @@
             s.SEGMENT26, s.SEGMENT27, s.SEGMENT28, s.SEGMENT29, s.SEGMENT30,
             s.BUDGET_AMOUNT, s.LEDGER_NAME,
             'STAGED'
-        FROM   DMT_OWNER.DMT_GL_BUDGET_INT_STG_TBL s
+        FROM   DMT_GL_BUDGET_INT_STG_TBL s
         WHERE  (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -56,7 +56,7 @@
 
         l_ok := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_GL_BUDGET_INT_STG_TBL
+        UPDATE DMT_GL_BUDGET_INT_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
             (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))

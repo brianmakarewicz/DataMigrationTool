@@ -118,7 +118,7 @@ AS
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -257,7 +257,7 @@ AS
 
                         FOR i IN 1..l_ir_errors.COUNT LOOP
                             IF l_ir_errors(i).row_identifier IS NOT NULL THEN
-                                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                                 SET    TFM_STATUS               = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error (no details)')),
@@ -269,6 +269,37 @@ AS
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
                             END IF;
                         END LOOP;
+
+                        -- Targeted parse: the Import and Process Cost Transactions
+                        -- report lists per-transaction validation rejections in
+                        -- LIST_G_STAG_ERR/G_STAG_ERR with fields suffixed _10
+                        -- (TXN_INTERFACE_ID_10 = the transaction reference,
+                        -- MESSAGE_NAME_10 = the real Fusion error code). The generic
+                        -- parser above does not recognise that layout, so match these
+                        -- directly to their TFM row with the real Fusion message.
+                        BEGIN
+                            FOR e IN (
+                                SELECT x.ref, x.msg
+                                FROM   XMLTABLE('//G_STAG_ERR' PASSING XMLTYPE(l_ir_xml)
+                                        COLUMNS ref VARCHAR2(240) PATH 'TXN_INTERFACE_ID_10',
+                                                msg VARCHAR2(400)  PATH 'MESSAGE_NAME_10') x
+                                WHERE  x.ref IS NOT NULL
+                            ) LOOP
+                                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+                                SET    TFM_STATUS           = 'FAILED',
+                                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                           '[FUSION_ERROR] ' || NVL(e.msg, 'Cost transaction rejected')),
+                                       RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                                WHERE  RUN_ID = p_run_id
+                                AND    ORIG_TRANSACTION_REFERENCE = e.ref
+                                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                                l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
+                            END LOOP;
+                        EXCEPTION WHEN OTHERS THEN
+                            DMT_UTIL_PKG.LOG(p_run_id => p_run_id,
+                                p_message => C_PROC || ': G_STAG_ERR targeted parse failed: ' || SQLERRM,
+                                p_log_type => DMT_UTIL_PKG.C_LOG_WARN, p_package => C_PKG, p_procedure => C_PROC);
+                        END;
 
                         DMT_UTIL_PKG.LOG(
                             p_run_id => p_run_id,
@@ -328,7 +359,7 @@ AS
         ) LOOP
             IF r.source_type = 'BASE' THEN
                 -- Tier 2: Found in base table = positively LOADED
-                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                 SET    TFM_STATUS                       = 'LOADED',
                        FUSION_EXPENDITURE_ITEM_ID   = r.fusion_id,
                        RESULTS_UPDATED_DATE         = SYSDATE,
@@ -350,7 +381,7 @@ AS
                 -- or the shared honest sweep accounts for it (sweep -> UNACCOUNTED).
                 IF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R')
                    AND r.error_msg IS NOT NULL THEN
-                    UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                    UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_msg),
@@ -373,7 +404,7 @@ AS
                 l_ir_xml     CLOB;
             BEGIN
                 SELECT COUNT(*) INTO l_still_gen
-                FROM   DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                FROM   DMT_PJC_EXPENDITURES_TFM_TBL
                 WHERE  RUN_ID = p_run_id
                 AND    TFM_STATUS         = 'GENERATED';
 
@@ -405,7 +436,7 @@ AS
 
                         FOR i IN 1..l_ir_errors.COUNT LOOP
                             IF l_ir_errors(i).row_identifier IS NOT NULL THEN
-                                UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL
+                                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                                 SET    TFM_STATUS               = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                            '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error (no details)')),
@@ -439,23 +470,54 @@ AS
         -- surfaces it as UNRECONCILED — no fabricated FAILED.)
         l_not_recon := 0;
 
+        -- Reached when the base BIP report was present but matched nothing (the
+        -- cost transactions did not post). Capture per-transaction rejections from
+        -- the Import and Process Cost Transactions report (LIST_G_STAG_ERR/G_STAG_ERR,
+        -- fields suffixed _10) so rejected rows get their real Fusion error instead
+        -- of being left UNACCOUNTED. Only touches rows not already resolved.
+        IF p_import_ess_id IS NOT NULL THEN
+            DECLARE l_ir2 CLOB;
+            BEGIN
+                l_ir2 := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_import_ess_id);
+                IF l_ir2 IS NOT NULL AND DBMS_LOB.GETLENGTH(l_ir2) > 0 THEN
+                    FOR e IN (
+                        SELECT x.ref, x.msg
+                        FROM   XMLTABLE('//G_STAG_ERR' PASSING XMLTYPE(l_ir2)
+                                COLUMNS ref VARCHAR2(240) PATH 'TXN_INTERFACE_ID_10',
+                                        msg VARCHAR2(400)  PATH 'MESSAGE_NAME_10') x
+                        WHERE  x.ref IS NOT NULL
+                    ) LOOP
+                        UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                   '[FUSION_ERROR] ' || NVL(e.msg, 'Cost transaction rejected')),
+                               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                        WHERE  RUN_ID = p_run_id
+                        AND    ORIG_TRANSACTION_REFERENCE = e.ref
+                        AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                    END LOOP;
+                END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END IF;
+
         <<echo_to_stg>>
         -- Echo outcomes back to STG
-        UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL stg
+        UPDATE DMT_PJC_EXPENDITURES_STG_TBL stg
         SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_PJC_EXPENDITURES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_OWNER.DMT_PJC_EXPENDITURES_STG_TBL stg
+        UPDATE DMT_PJC_EXPENDITURES_STG_TBL stg
         SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL t
+                   (SELECT t.ERROR_TEXT FROM DMT_PJC_EXPENDITURES_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_PJC_EXPENDITURES_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_PJC_EXPENDITURES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         -- NO COMMIT — orchestrator controls transaction boundaries

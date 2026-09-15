@@ -16,7 +16,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_prefix;
     EXCEPTION
@@ -33,7 +33,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_dep_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_dep_prefix;
     EXCEPTION
@@ -73,7 +73,7 @@
         -- p_scenario_id predicate.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL (
+        INSERT INTO DMT_PJF_PROJECTS_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -288,7 +288,7 @@
 
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL s
+        FROM DMT_PJF_PROJECTS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -299,7 +299,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL t
+            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -312,7 +312,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL s
+        UPDATE DMT_PJF_PROJECTS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -325,7 +325,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL t
+            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -379,7 +379,7 @@
         -- p_scenario_id predicate.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_PJF_TASKS_TFM_TBL (
+        INSERT INTO DMT_PJF_TASKS_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -518,7 +518,7 @@
 
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_PJF_TASKS_STG_TBL s
+        FROM DMT_PJF_TASKS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -529,7 +529,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_TASKS_TFM_TBL t
+            SELECT 1 FROM DMT_PJF_TASKS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -542,7 +542,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_PJF_TASKS_STG_TBL s
+        UPDATE DMT_PJF_TASKS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -555,7 +555,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_TASKS_TFM_TBL t
+            SELECT 1 FROM DMT_PJF_TASKS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -609,7 +609,7 @@
         -- p_scenario_id predicate.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL (
+        INSERT INTO DMT_PJF_TEAM_MEMBERS_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -656,7 +656,7 @@
 
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_PJF_TEAM_MEMBERS_STG_TBL s
+        FROM DMT_PJF_TEAM_MEMBERS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -667,7 +667,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL t
+            SELECT 1 FROM DMT_PJF_TEAM_MEMBERS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -680,7 +680,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_STG_TBL s
+        UPDATE DMT_PJF_TEAM_MEMBERS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -693,7 +693,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL t
+            SELECT 1 FROM DMT_PJF_TEAM_MEMBERS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -747,7 +747,7 @@
         -- p_scenario_id predicate.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL (
+        INSERT INTO DMT_PJC_TXN_CONTROLS_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -802,7 +802,7 @@
 
                     'STAGED',
                     SYSDATE
-        FROM DMT_OWNER.DMT_PJC_TXN_CONTROLS_STG_TBL s
+        FROM DMT_PJC_TXN_CONTROLS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -813,7 +813,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL t
+            SELECT 1 FROM DMT_PJC_TXN_CONTROLS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -826,7 +826,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_STG_TBL s
+        UPDATE DMT_PJC_TXN_CONTROLS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -839,7 +839,7 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL t
+            SELECT 1 FROM DMT_PJC_TXN_CONTROLS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );

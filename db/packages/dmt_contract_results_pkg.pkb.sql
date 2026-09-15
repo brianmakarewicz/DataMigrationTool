@@ -114,7 +114,7 @@ AS
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -256,7 +256,7 @@ AS
             IF r.source_type = 'BASE' THEN
                 -- Positive base-table confirmation. Key on the prefixed document
                 -- number the loader wrote, which equals the base SEGMENT1.
-                UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                        FUSION_DOCUMENT_NUM  = r.document_num,
@@ -264,12 +264,17 @@ AS
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    DOCUMENT_NUM          = r.document_num
-                AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
+                -- Positive presence in PO_HEADERS_ALL is the strongest proof of a
+                -- load (Rule #1) and overrides any prior error verdict: the agreement
+                -- can come back with a "document number must be unique" interface
+                -- error yet still exist in the base table (a within-run re-submit
+                -- created it once). So confirm LOADED even over a prior FAILED.
+                AND    TFM_STATUS              != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'INTERFACE' THEN
                 IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
                            FUSION_DOCUMENT_NUM  = r.document_num,
@@ -280,7 +285,7 @@ AS
                     AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_msg),

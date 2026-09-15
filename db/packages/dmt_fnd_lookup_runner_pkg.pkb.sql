@@ -98,11 +98,11 @@
 
         -- Final counts for the log
         SELECT COUNT(*) INTO l_type_count
-        FROM   DMT_OWNER.DMT_FND_LOOKUP_TYPE_TFM_TBL
+        FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         SELECT COUNT(*) INTO l_value_count
-        FROM   DMT_OWNER.DMT_FND_LOOKUP_VALUE_TFM_TBL
+        FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         DMT_UTIL_PKG.LOG(

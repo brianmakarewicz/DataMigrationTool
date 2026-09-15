@@ -15,7 +15,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_prefix;
     EXCEPTION
@@ -32,7 +32,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_dep_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_dep_prefix;
     EXCEPTION
@@ -62,7 +62,7 @@
 
         l_prefix := get_prefix(p_run_id);
 
-        INSERT INTO DMT_OWNER.DMT_WORKER_TFM_TBL (
+        INSERT INTO DMT_WORKER_TFM_TBL (
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -105,7 +105,7 @@
             s.DATE_OF_DEATH,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_WORKER_STG_TBL s
+        FROM DMT_WORKER_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -117,7 +117,7 @@
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL t
+            FROM   DMT_WORKER_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -129,11 +129,11 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_WORKER_STG_TBL
+        UPDATE DMT_WORKER_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL
+            FROM   DMT_WORKER_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
@@ -181,7 +181,7 @@
 
         l_prefix := get_prefix(p_run_id);
 
-        INSERT INTO DMT_OWNER.DMT_PERSON_NAME_TFM_TBL (
+        INSERT INTO DMT_PERSON_NAME_TFM_TBL (
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -238,7 +238,7 @@
             s.NAME_INFORMATION26, s.NAME_INFORMATION27, s.NAME_INFORMATION28, s.NAME_INFORMATION29, s.NAME_INFORMATION30,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_PERSON_NAME_STG_TBL s
+        FROM DMT_PERSON_NAME_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -250,7 +250,7 @@
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_PERSON_NAME_TFM_TBL t
+            FROM   DMT_PERSON_NAME_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -262,11 +262,11 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_PERSON_NAME_STG_TBL
+        UPDATE DMT_PERSON_NAME_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_PERSON_NAME_TFM_TBL
+            FROM   DMT_PERSON_NAME_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
@@ -314,7 +314,7 @@
 
         l_prefix := get_prefix(p_run_id);
 
-        INSERT INTO DMT_OWNER.DMT_PERSON_EMAIL_TFM_TBL (
+        INSERT INTO DMT_PERSON_EMAIL_TFM_TBL (
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -343,7 +343,7 @@
             s.TO_DATE,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_PERSON_EMAIL_STG_TBL s
+        FROM DMT_PERSON_EMAIL_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -355,7 +355,7 @@
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_PERSON_EMAIL_TFM_TBL t
+            FROM   DMT_PERSON_EMAIL_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -367,11 +367,11 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_PERSON_EMAIL_STG_TBL
+        UPDATE DMT_PERSON_EMAIL_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_PERSON_EMAIL_TFM_TBL
+            FROM   DMT_PERSON_EMAIL_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
@@ -419,7 +419,7 @@
 
         l_prefix := get_prefix(p_run_id);
 
-        INSERT INTO DMT_OWNER.DMT_PERSON_PHONE_TFM_TBL (
+        INSERT INTO DMT_PERSON_PHONE_TFM_TBL (
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -454,7 +454,7 @@
             s.TO_DATE,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_PERSON_PHONE_STG_TBL s
+        FROM DMT_PERSON_PHONE_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -466,7 +466,7 @@
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_PERSON_PHONE_TFM_TBL t
+            FROM   DMT_PERSON_PHONE_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -478,11 +478,11 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_PERSON_PHONE_STG_TBL
+        UPDATE DMT_PERSON_PHONE_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_PERSON_PHONE_TFM_TBL
+            FROM   DMT_PERSON_PHONE_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
@@ -530,7 +530,7 @@
 
         l_prefix := get_prefix(p_run_id);
 
-        INSERT INTO DMT_OWNER.DMT_PERSON_ADDR_TFM_TBL (
+        INSERT INTO DMT_PERSON_ADDR_TFM_TBL (
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -587,7 +587,7 @@
             s.ADD_INFORMATION29, s.ADD_INFORMATION30,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_PERSON_ADDR_STG_TBL s
+        FROM DMT_PERSON_ADDR_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -599,7 +599,7 @@
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_PERSON_ADDR_TFM_TBL t
+            FROM   DMT_PERSON_ADDR_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -611,11 +611,11 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_PERSON_ADDR_STG_TBL
+        UPDATE DMT_PERSON_ADDR_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_PERSON_ADDR_TFM_TBL
+            FROM   DMT_PERSON_ADDR_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
@@ -663,7 +663,7 @@
 
         l_prefix := get_prefix(p_run_id);
 
-        INSERT INTO DMT_OWNER.DMT_PERSON_NID_TFM_TBL (
+        INSERT INTO DMT_PERSON_NID_TFM_TBL (
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -696,7 +696,7 @@
             s.PRIMARY_FLAG,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_PERSON_NID_STG_TBL s
+        FROM DMT_PERSON_NID_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -708,7 +708,7 @@
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_PERSON_NID_TFM_TBL t
+            FROM   DMT_PERSON_NID_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -720,11 +720,11 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_PERSON_NID_STG_TBL
+        UPDATE DMT_PERSON_NID_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_PERSON_NID_TFM_TBL
+            FROM   DMT_PERSON_NID_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
@@ -772,7 +772,7 @@
 
         l_prefix := get_prefix(p_run_id);
 
-        INSERT INTO DMT_OWNER.DMT_PERSON_LEGISL_TFM_TBL (
+        INSERT INTO DMT_PERSON_LEGISL_TFM_TBL (
             STG_SEQUENCE_ID,
             RUN_ID,
             FBDI_CSV_ID,
@@ -819,7 +819,7 @@
             s.PER_INFORMATION26, s.PER_INFORMATION27, s.PER_INFORMATION28, s.PER_INFORMATION29, s.PER_INFORMATION30,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_PERSON_LEGISL_STG_TBL s
+        FROM DMT_PERSON_LEGISL_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -831,7 +831,7 @@
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_PERSON_LEGISL_TFM_TBL t
+            FROM   DMT_PERSON_LEGISL_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
@@ -843,11 +843,11 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_PERSON_LEGISL_STG_TBL
+        UPDATE DMT_PERSON_LEGISL_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_PERSON_LEGISL_TFM_TBL
+            FROM   DMT_PERSON_LEGISL_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (

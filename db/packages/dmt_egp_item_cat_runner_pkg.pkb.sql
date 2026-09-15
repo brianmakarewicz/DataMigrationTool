@@ -86,7 +86,7 @@
         COMMIT;
 
         SELECT COUNT(*) INTO l_row_count
-        FROM   DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+        FROM   DMT_EGP_ITEM_CAT_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         DMT_UTIL_PKG.LOG(

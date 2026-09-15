@@ -60,7 +60,7 @@
                    REGIME_TYPE_FLAG, HAS_SUB_REGIME_FLAG, PARENT_REGIME_CODE,
                    ATTRIBUTE_CATEGORY, ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3,
                    ATTRIBUTE4, ATTRIBUTE5
-            FROM   DMT_OWNER.DMT_ZX_REGIME_TFM_TBL
+            FROM   DMT_ZX_REGIME_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -111,7 +111,7 @@
                    EFFECTIVE_FROM, EFFECTIVE_TO, ACTIVE_FLAG, DESCRIPTION,
                    DEFAULT_RATE_FLAG, ATTRIBUTE_CATEGORY,
                    ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
-            FROM   DMT_OWNER.DMT_ZX_RATE_TFM_TBL
+            FROM   DMT_ZX_RATE_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -172,11 +172,11 @@
 
         -- Count STAGED rows for each object type
         SELECT COUNT(*) INTO l_regime_count
-        FROM   DMT_OWNER.DMT_ZX_REGIME_TFM_TBL
+        FROM   DMT_ZX_REGIME_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         SELECT COUNT(*) INTO l_rate_count
-        FROM   DMT_OWNER.DMT_ZX_RATE_TFM_TBL
+        FROM   DMT_ZX_RATE_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         -- If both are empty, nothing to generate
@@ -197,8 +197,8 @@
         l_rates_csv   := gen_rates_csv(p_run_id);
 
         -- Store regime CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_regime_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_regime_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -207,8 +207,8 @@
         );
 
         -- Store rate CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_rate_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_rate_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -220,29 +220,29 @@
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
 
         IF l_regime_count > 0 AND DBMS_LOB.GETLENGTH(l_regimes_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'TaxRegime.csv',
+            UTL_ZIP.add1file(l_zip, 'TaxRegime.csv',
                 clob_to_blob(l_regimes_csv));
         END IF;
 
         IF l_rate_count > 0 AND DBMS_LOB.GETLENGTH(l_rates_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'TaxRate.csv',
+            UTL_ZIP.add1file(l_zip, 'TaxRate.csv',
                 clob_to_blob(l_rates_csv));
         END IF;
 
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        UTL_ZIP.finish_zip(l_zip);
 
         -- Store zip artefact (reference the regime CSV ID as the primary)
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+        INSERT INTO DMT_FBDI_ZIP_TBL (
             FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
+            DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
             'ZX_TAX', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
 
         -- Update regime TFM rows: STAGED -> GENERATED
         IF l_regime_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_ZX_REGIME_TFM_TBL
+            UPDATE DMT_ZX_REGIME_TFM_TBL
             SET    TFM_STATUS       = 'GENERATED',
                    FBDI_CSV_ID      = l_regime_csv_id,
                    LAST_UPDATED_DATE = l_now
@@ -251,7 +251,7 @@
 
         -- Update rate TFM rows: STAGED -> GENERATED
         IF l_rate_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_ZX_RATE_TFM_TBL
+            UPDATE DMT_ZX_RATE_TFM_TBL
             SET    TFM_STATUS       = 'GENERATED',
                    FBDI_CSV_ID      = l_rate_csv_id,
                    LAST_UPDATED_DATE = l_now

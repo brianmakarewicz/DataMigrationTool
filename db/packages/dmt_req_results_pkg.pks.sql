@@ -25,7 +25,7 @@ AS
     -- one child work item per token, treated as opaque by the engine.
     FUNCTION GET_PARTITION_KEYS (
         p_run_id IN NUMBER
-    ) RETURN DMT_OWNER.DMT_PARTITION_KEY_TBL;
+    ) RETURN DMT_PARTITION_KEY_TBL;
 
     -- Main entry point: call after POLL_ESS_JOB completes.
     -- p_load_ess_id: the ESS job ID used as P_BATCH_ID in the BIP report

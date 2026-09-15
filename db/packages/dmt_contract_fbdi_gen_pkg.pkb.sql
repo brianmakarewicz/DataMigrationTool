@@ -65,7 +65,7 @@ AS
 
         FOR r IN (
             SELECT t.*
-            FROM   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             AND    t.STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'
@@ -275,13 +275,13 @@ AS
 
         -- FBDI CSV<->ZIP remodel: register the physical CSV as its own row, then
         -- build the zip from that persisted row.
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Contracts', 'PoHeadersInterfaceContract.csv', 0, l_hdr_csv, l_fbdi_csv_id);
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Contracts', x_filename, l_zip, l_bytes);
 
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
         -- Headers only: filter by STYLE_DISPLAY_NAME and PRC_BU_NAME.
-        UPDATE DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL
+        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'

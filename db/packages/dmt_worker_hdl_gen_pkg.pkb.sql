@@ -82,7 +82,7 @@ AS
     FUNCTION has_rows(p_tbl VARCHAR2, p_iid NUMBER) RETURN BOOLEAN IS
         l_cnt NUMBER;
     BEGIN
-        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM DMT_OWNER.' || p_tbl ||
+        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_tbl ||
             ' WHERE RUN_ID = :1 AND TFM_STATUS = ''STAGED'' AND ROWNUM = 1'
             INTO l_cnt USING p_iid;
         RETURN l_cnt > 0;
@@ -139,7 +139,7 @@ AS
 
         FOR r IN (
             SELECT t.*
-            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL t
+            FROM   DMT_WORKER_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
@@ -164,11 +164,11 @@ AS
 
             FOR r IN (
                 SELECT t.*,
-                       (SELECT w.START_DATE FROM DMT_OWNER.DMT_WORKER_TFM_TBL w
+                       (SELECT w.START_DATE FROM DMT_WORKER_TFM_TBL w
                         WHERE w.RUN_ID = t.RUN_ID
                         AND w.PERSON_NUMBER = t.PERSON_NUMBER
                         AND ROWNUM = 1) AS WORKER_START_DATE
-                FROM   DMT_OWNER.DMT_PERSON_NAME_TFM_TBL t
+                FROM   DMT_PERSON_NAME_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
@@ -196,7 +196,7 @@ AS
 
         FOR r IN (
             SELECT t.*
-            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL t
+            FROM   DMT_WORKER_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
@@ -244,10 +244,10 @@ AS
             SELECT w.PERSON_NUMBER, w.START_DATE,
                    a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME, a.ACTION_CODE,
                    a.PRIMARY_ASSIGNMENT_FLAG
-            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL w
-            JOIN   DMT_OWNER.DMT_WORKER_STG_TBL ws
+            FROM   DMT_WORKER_TFM_TBL w
+            JOIN   DMT_WORKER_STG_TBL ws
                    ON  ws.STG_SEQUENCE_ID = w.STG_SEQUENCE_ID
-            JOIN   DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+            JOIN   DMT_ASSIGNMENT_STG_TBL a
                    ON  a.PERSON_NUMBER = ws.PERSON_NUMBER
                    AND a.ASSIGNMENT_NUMBER IS NOT NULL
                    AND NVL(a.STG_STATUS, 'NEW') <> 'FAILED'
@@ -284,10 +284,10 @@ AS
                    a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME, a.ACTION_CODE,
                    a.ASSIGNMENT_STATUS_TYPE_CODE, a.BUSINESS_UNIT_NAME,
                    a.PRIMARY_ASSIGNMENT_FLAG
-            FROM   DMT_OWNER.DMT_WORKER_TFM_TBL w
-            JOIN   DMT_OWNER.DMT_WORKER_STG_TBL ws
+            FROM   DMT_WORKER_TFM_TBL w
+            JOIN   DMT_WORKER_STG_TBL ws
                    ON  ws.STG_SEQUENCE_ID = w.STG_SEQUENCE_ID
-            JOIN   DMT_OWNER.DMT_ASSIGNMENT_STG_TBL a
+            JOIN   DMT_ASSIGNMENT_STG_TBL a
                    ON  a.PERSON_NUMBER = ws.PERSON_NUMBER
                    AND a.ASSIGNMENT_NUMBER IS NOT NULL
                    AND NVL(a.STG_STATUS, 'NEW') <> 'FAILED'
@@ -321,11 +321,11 @@ AS
 
             FOR r IN (
                 SELECT t.*,
-                       (SELECT w.START_DATE FROM DMT_OWNER.DMT_WORKER_TFM_TBL w
+                       (SELECT w.START_DATE FROM DMT_WORKER_TFM_TBL w
                         WHERE w.RUN_ID = t.RUN_ID
                         AND w.PERSON_NUMBER = t.PERSON_NUMBER
                         AND ROWNUM = 1) AS WORKER_START_DATE
-                FROM   DMT_OWNER.DMT_PERSON_EMAIL_TFM_TBL t
+                FROM   DMT_PERSON_EMAIL_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
@@ -351,15 +351,15 @@ AS
 
             FOR r IN (
                 SELECT t.*,
-                       (SELECT n.LEGISLATION_CODE FROM DMT_OWNER.DMT_PERSON_NID_TFM_TBL n
+                       (SELECT n.LEGISLATION_CODE FROM DMT_PERSON_NID_TFM_TBL n
                         WHERE n.RUN_ID = t.RUN_ID
                         AND n.PERSON_NUMBER = t.PERSON_NUMBER
                         AND ROWNUM = 1) AS PHONE_LEGIS_CODE,
-                       (SELECT w.START_DATE FROM DMT_OWNER.DMT_WORKER_TFM_TBL w
+                       (SELECT w.START_DATE FROM DMT_WORKER_TFM_TBL w
                         WHERE w.RUN_ID = t.RUN_ID
                         AND w.PERSON_NUMBER = t.PERSON_NUMBER
                         AND ROWNUM = 1) AS WORKER_START_DATE
-                FROM   DMT_OWNER.DMT_PERSON_PHONE_TFM_TBL t
+                FROM   DMT_PERSON_PHONE_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
@@ -388,7 +388,7 @@ AS
 
             FOR r IN (
                 SELECT t.*
-                FROM   DMT_OWNER.DMT_PERSON_ADDR_TFM_TBL t
+                FROM   DMT_PERSON_ADDR_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
@@ -422,7 +422,7 @@ AS
 
             FOR r IN (
                 SELECT t.*
-                FROM   DMT_OWNER.DMT_PERSON_NID_TFM_TBL t
+                FROM   DMT_PERSON_NID_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
@@ -448,7 +448,7 @@ AS
 
             FOR r IN (
                 SELECT t.*
-                FROM   DMT_OWNER.DMT_PERSON_LEGISL_TFM_TBL t
+                FROM   DMT_PERSON_LEGISL_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
@@ -471,17 +471,17 @@ AS
         -- ============================================================
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
         IF DBMS_LOB.GETLENGTH(l_dat) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'Worker.dat',
+            UTL_ZIP.add1file(l_zip, 'Worker.dat',
                 clob_to_blob(l_dat));
         END IF;
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        UTL_ZIP.finish_zip(l_zip);
 
         -- ============================================================
         -- Store in DMT_FBDI_CSV_TBL + DMT_FBDI_ZIP_TBL
         -- ============================================================
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_csv_id FROM DUAL;
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_csv_id FROM DUAL;
 
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -489,11 +489,11 @@ AS
             'Worker.dat', l_row_count, l_dat, l_now
         );
 
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+        INSERT INTO DMT_FBDI_ZIP_TBL (
             FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
+            DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
             'Workers', x_filename,
             DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
@@ -501,31 +501,31 @@ AS
         -- ============================================================
         -- Update all 7 TFM tables to GENERATED and stamp FBDI_CSV_ID
         -- ============================================================
-        UPDATE DMT_OWNER.DMT_WORKER_TFM_TBL
+        UPDATE DMT_WORKER_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        UPDATE DMT_OWNER.DMT_PERSON_NAME_TFM_TBL
+        UPDATE DMT_PERSON_NAME_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        UPDATE DMT_OWNER.DMT_PERSON_EMAIL_TFM_TBL
+        UPDATE DMT_PERSON_EMAIL_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        UPDATE DMT_OWNER.DMT_PERSON_PHONE_TFM_TBL
+        UPDATE DMT_PERSON_PHONE_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        UPDATE DMT_OWNER.DMT_PERSON_ADDR_TFM_TBL
+        UPDATE DMT_PERSON_ADDR_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        UPDATE DMT_OWNER.DMT_PERSON_NID_TFM_TBL
+        UPDATE DMT_PERSON_NID_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        UPDATE DMT_OWNER.DMT_PERSON_LEGISL_TFM_TBL
+        UPDATE DMT_PERSON_LEGISL_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 

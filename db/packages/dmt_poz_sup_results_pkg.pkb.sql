@@ -53,7 +53,7 @@
 
         l_step := 'reading run prefix for run ' || p_run_id;
         SELECT PREFIX INTO l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
 
         -- Shared transport: resolves REPORT_CATALOG_PATH from
@@ -155,7 +155,7 @@
                 ) x
             ) LOOP
                 IF r.fusion_status IN ('PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL
+                    UPDATE DMT_POZ_SUPPLIERS_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_VENDOR_ID     = r.vendor_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -166,7 +166,10 @@
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- never reinterpret the message (e.g. "already exists") as a
+                    -- success. LOADED comes only from a real base-table hit above.
+                    UPDATE DMT_POZ_SUPPLIERS_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -195,7 +198,7 @@
                 ) x
             ) LOOP
                 IF r.fusion_status IN ('PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL
+                    UPDATE DMT_POZ_SUP_ADDR_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_PARTY_SITE_ID = r.party_site_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -206,7 +209,9 @@
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_ADDR_TFM_TBL
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- "already exists" is a rejection, not a success.
+                    UPDATE DMT_POZ_SUP_ADDR_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -243,7 +248,7 @@
                     -- recorded as an appended [RECONCILE_ERROR] note so it is
                     -- never silent. Id backfill lands with the Contract v1
                     -- report rework (tracked work item).
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL
+                    UPDATE DMT_POZ_SUP_SITE_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_VENDOR_SITE_ID = r.vendor_site_id,
                            ERROR_TEXT           = CASE
@@ -260,7 +265,9 @@
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- "already exists" is a rejection, not a success.
+                    UPDATE DMT_POZ_SUP_SITE_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -290,7 +297,7 @@
                 ) x
             ) LOOP
                 IF r.fusion_status IN ('PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL
+                    UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_ASSIGNMENT_ID = r.assignment_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -302,7 +309,9 @@
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_SITE_ASSN_TFM_TBL
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- "already exists" is a rejection, not a success.
+                    UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -333,7 +342,7 @@
                 ) x
             ) LOOP
                 IF r.fusion_status IN ('PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_TFM_TBL
+                    UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_CONTACT_ID    = r.contact_id,
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -345,7 +354,9 @@
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_OWNER.DMT_POZ_SUP_CONTACTS_TFM_TBL
+                    -- A Fusion error is always an error (design rule 2026-09-15):
+                    -- "already exists" is a rejection, not a success.
+                    UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
                            ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || r.error_msg),
                            RESULTS_UPDATED_DATE = SYSDATE,

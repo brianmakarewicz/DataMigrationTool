@@ -54,7 +54,7 @@
                    START_DATE_ACTIVE, END_DATE_ACTIVE, PAY_TERM_TYPE,
                    CUTOFF_DAY, RANK, ATTRIBUTE_CATEGORY,
                    ATTRIBUTE1, ATTRIBUTE2, ATTRIBUTE3, ATTRIBUTE4, ATTRIBUTE5
-            FROM   DMT_OWNER.DMT_AP_PAY_TERM_HDR_TFM_TBL
+            FROM   DMT_AP_PAY_TERM_HDR_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -99,7 +99,7 @@
             SELECT SOURCE_GROUP_ID, SEQUENCE_NUM, DUE_PERCENT, DUE_AMOUNT,
                    DUE_DAYS, DUE_DATE, DISCOUNT_PERCENT, DISCOUNT_DAYS,
                    DISCOUNT_PERCENT_2, DISCOUNT_DAYS_2
-            FROM   DMT_OWNER.DMT_AP_PAY_TERM_LINE_TFM_TBL
+            FROM   DMT_AP_PAY_TERM_LINE_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS     = 'STAGED'
             ORDER BY TFM_SEQUENCE_ID
@@ -149,11 +149,11 @@
         x_filename := 'PayTerms_' || TO_CHAR(p_run_id) || '.zip';
 
         SELECT COUNT(*) INTO l_hdr_count
-        FROM   DMT_OWNER.DMT_AP_PAY_TERM_HDR_TFM_TBL
+        FROM   DMT_AP_PAY_TERM_HDR_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         SELECT COUNT(*) INTO l_line_count
-        FROM   DMT_OWNER.DMT_AP_PAY_TERM_LINE_TFM_TBL
+        FROM   DMT_AP_PAY_TERM_LINE_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         IF l_hdr_count = 0 AND l_line_count = 0 THEN
@@ -172,8 +172,8 @@
         l_line_csv := gen_lines_csv(p_run_id);
 
         -- Store header CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_hdr_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_hdr_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -182,8 +182,8 @@
         );
 
         -- Store line CSV artefact
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_line_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO l_line_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -195,29 +195,29 @@
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
 
         IF l_hdr_count > 0 AND DBMS_LOB.GETLENGTH(l_hdr_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PayTermHeader.csv',
+            UTL_ZIP.add1file(l_zip, 'PayTermHeader.csv',
                 clob_to_blob(l_hdr_csv));
         END IF;
 
         IF l_line_count > 0 AND DBMS_LOB.GETLENGTH(l_line_csv) > 0 THEN
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, 'PayTermLine.csv',
+            UTL_ZIP.add1file(l_zip, 'PayTermLine.csv',
                 clob_to_blob(l_line_csv));
         END IF;
 
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        UTL_ZIP.finish_zip(l_zip);
 
         -- Store zip artefact
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+        INSERT INTO DMT_FBDI_ZIP_TBL (
             FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
-            DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
+            DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
             'AP_PAY_TERM', x_filename, DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
 
         -- Update header TFM: STAGED -> GENERATED
         IF l_hdr_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_AP_PAY_TERM_HDR_TFM_TBL
+            UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_hdr_csv_id,
                    LAST_UPDATED_DATE = l_now
@@ -226,7 +226,7 @@
 
         -- Update line TFM: STAGED -> GENERATED
         IF l_line_count > 0 THEN
-            UPDATE DMT_OWNER.DMT_AP_PAY_TERM_LINE_TFM_TBL
+            UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_line_csv_id,
                    LAST_UPDATED_DATE = l_now

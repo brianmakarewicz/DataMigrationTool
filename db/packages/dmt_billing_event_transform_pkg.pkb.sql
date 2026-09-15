@@ -34,14 +34,14 @@
         -- Read main prefix for SOURCEREF (business key for reconciliation)
         BEGIN
             SELECT PREFIX INTO l_prefix
-            FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+            FROM   DMT_PIPELINE_RUN_TBL
             WHERE  RUN_ID = p_run_id;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN l_prefix := NULL;
         END;
 
         -- Bulk INSERT into TFM from eligible STG rows
-        INSERT INTO DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL (
+        INSERT INTO DMT_PJB_BILL_EVENTS_TFM_TBL (
             TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
@@ -84,7 +84,7 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_SEQ.NEXTVAL,
+            DMT_PJB_BILL_EVENTS_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,  -- FBDI_CSV_ID: populated by FBDI generator
@@ -124,7 +124,7 @@
             s.PREPAYMENT_REQ_EVENT_NUM,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL s
+        FROM DMT_PJB_BILL_EVENTS_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -136,7 +136,7 @@
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL t
+            FROM   DMT_PJB_BILL_EVENTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -144,11 +144,11 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Update STG stg_status to TRANSFORMED for rows that were inserted into TFM
-        UPDATE DMT_OWNER.DMT_PJB_BILL_EVENTS_STG_TBL
+        UPDATE DMT_PJB_BILL_EVENTS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_PJB_BILL_EVENTS_TFM_TBL
+            FROM   DMT_PJB_BILL_EVENTS_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (

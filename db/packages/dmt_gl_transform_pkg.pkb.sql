@@ -8,7 +8,7 @@
         l_prefix VARCHAR2(30);
     BEGIN
         SELECT PREFIX INTO l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_prefix;
     EXCEPTION
@@ -35,7 +35,7 @@
 
         l_prefix := get_prefix(p_run_id);
 
-        INSERT INTO DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL (
+        INSERT INTO DMT_GL_INTERFACE_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,
             JOURNAL_STATUS, LEDGER_NAME, ACCOUNTING_DATE, CURRENCY_CODE,
             DATE_CREATED, CREATED_BY, ACTUAL_FLAG,
@@ -89,7 +89,7 @@
             -- we generate a prefix-scoped, per-line id.
             NVL(s.REFERENCE21, l_prefix || '-' || s.STG_SEQUENCE_ID),
             'STAGED'
-        FROM   DMT_OWNER.DMT_GL_INTERFACE_STG_TBL s
+        FROM   DMT_GL_INTERFACE_STG_TBL s
         WHERE  (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -106,7 +106,7 @@
 
         l_ok := SQL%ROWCOUNT;
 
-        UPDATE DMT_OWNER.DMT_GL_INTERFACE_STG_TBL
+        UPDATE DMT_GL_INTERFACE_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
             (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))

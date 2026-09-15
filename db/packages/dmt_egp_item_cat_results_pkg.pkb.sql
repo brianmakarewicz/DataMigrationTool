@@ -112,7 +112,7 @@
         BEGIN
             SELECT REPORT_CATALOG_PATH
             INTO   l_rpt_path
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
@@ -255,7 +255,7 @@
             ) x
         ) LOOP
             IF r.status = 'PROCESSED' THEN
-                UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+                UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
                 SET    TFM_STATUS              = 'LOADED',
                        RESULTS_UPDATED_DATE    = SYSDATE,
                        LAST_UPDATED_DATE       = SYSDATE
@@ -266,7 +266,7 @@
                 AND    TFM_STATUS         != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSE
-                UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL
+                UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
                 SET    TFM_STATUS              = 'FAILED',
                        ERROR_TEXT              = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                                      '[FUSION_ERROR] ' || r.error_message),
@@ -282,22 +282,22 @@
         END LOOP;
 
         -- Echo outcomes back to STG table
-        UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_STG_TBL stg
+        UPDATE DMT_EGP_ITEM_CAT_STG_TBL stg
         SET    stg.STG_STATUS            = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_EGP_ITEM_CAT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
 
-        UPDATE DMT_OWNER.DMT_EGP_ITEM_CAT_STG_TBL stg
+        UPDATE DMT_EGP_ITEM_CAT_STG_TBL stg
         SET    stg.STG_STATUS            = 'FAILED',
                stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL t
+                   (SELECT t.ERROR_TEXT FROM DMT_EGP_ITEM_CAT_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_OWNER.DMT_EGP_ITEM_CAT_TFM_TBL t
+            SELECT t.STG_SEQUENCE_ID FROM DMT_EGP_ITEM_CAT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         DMT_UTIL_PKG.LOG(

@@ -22,8 +22,8 @@
         END IF;
         SELECT t.PROJECT_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL s
-        JOIN   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL t
+        FROM   DMT_PJF_PROJECTS_STG_TBL s
+        JOIN   DMT_PJF_PROJECTS_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.PROJECT_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -42,8 +42,8 @@
         END IF;
         SELECT t.PROJECT_NAME
         INTO   l_value
-        FROM   DMT_OWNER.DMT_PJF_PROJECTS_STG_TBL s
-        JOIN   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL t
+        FROM   DMT_PJF_PROJECTS_STG_TBL s
+        JOIN   DMT_PJF_PROJECTS_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.PROJECT_NAME = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -65,8 +65,8 @@
         END IF;
         SELECT t.TASK_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_PJF_TASKS_STG_TBL s
-        JOIN   DMT_OWNER.DMT_PJF_TASKS_TFM_TBL t
+        FROM   DMT_PJF_TASKS_STG_TBL s
+        JOIN   DMT_PJF_TASKS_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.TASK_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -92,8 +92,8 @@
         END IF;
         SELECT t.DOCUMENT_NUM
         INTO   l_value
-        FROM   DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL s
-        JOIN   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
+        FROM   DMT_PO_HEADERS_INT_STG_TBL s
+        JOIN   DMT_PO_HEADERS_INT_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.DOCUMENT_NUM = p_source_value
         AND    t.STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'
@@ -117,8 +117,8 @@
         END IF;
         SELECT t.DOCUMENT_NUM
         INTO   l_value
-        FROM   DMT_OWNER.DMT_PO_HEADERS_INT_STG_TBL s
-        JOIN   DMT_OWNER.DMT_PO_HEADERS_INT_TFM_TBL t
+        FROM   DMT_PO_HEADERS_INT_STG_TBL s
+        JOIN   DMT_PO_HEADERS_INT_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.DOCUMENT_NUM = p_source_value
         AND    t.STYLE_DISPLAY_NAME = 'Purchase Order'
@@ -141,8 +141,8 @@
         END IF;
         SELECT t.REQUISITION_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_POR_REQ_HEADERS_STG_TBL s
-        JOIN   DMT_OWNER.DMT_POR_REQ_HEADERS_TFM_TBL t
+        FROM   DMT_POR_REQ_HEADERS_STG_TBL s
+        JOIN   DMT_POR_REQ_HEADERS_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.REQUISITION_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -167,8 +167,8 @@
         END IF;
         SELECT t.VENDOR_NAME
         INTO   l_value
-        FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
-        JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
+        FROM   DMT_POZ_SUPPLIERS_STG_TBL s
+        JOIN   DMT_POZ_SUPPLIERS_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.VENDOR_NAME = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -187,8 +187,8 @@
         END IF;
         SELECT t.SEGMENT1
         INTO   l_value
-        FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
-        JOIN   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
+        FROM   DMT_POZ_SUPPLIERS_STG_TBL s
+        JOIN   DMT_POZ_SUPPLIERS_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.SEGMENT1 = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -207,8 +207,8 @@
         END IF;
         SELECT t.VENDOR_SITE_CODE
         INTO   l_value
-        FROM   DMT_OWNER.DMT_POZ_SUP_SITE_STG_TBL s
-        JOIN   DMT_OWNER.DMT_POZ_SUP_SITE_TFM_TBL t
+        FROM   DMT_POZ_SUP_SITE_STG_TBL s
+        JOIN   DMT_POZ_SUP_SITE_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.VENDOR_SITE_CODE = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -232,8 +232,8 @@
         END IF;
         SELECT t.PARTY_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_HZ_PARTIES_STG_TBL s
-        JOIN   DMT_OWNER.DMT_HZ_PARTIES_TFM_TBL t
+        FROM   DMT_HZ_PARTIES_STG_TBL s
+        JOIN   DMT_HZ_PARTIES_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.PARTY_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -252,8 +252,8 @@
         END IF;
         SELECT t.ACCOUNT_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_HZ_ACCOUNTS_STG_TBL s
-        JOIN   DMT_OWNER.DMT_HZ_ACCOUNTS_TFM_TBL t
+        FROM   DMT_HZ_ACCOUNTS_STG_TBL s
+        JOIN   DMT_HZ_ACCOUNTS_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.ACCOUNT_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -275,8 +275,8 @@
         END IF;
         SELECT t.INVOICE_NUM
         INTO   l_value
-        FROM   DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL s
-        JOIN   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
+        FROM   DMT_AP_INVOICES_INT_STG_TBL s
+        JOIN   DMT_AP_INVOICES_INT_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.INVOICE_NUM = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -298,8 +298,8 @@
         END IF;
         SELECT t.TRX_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_RA_LINES_STG_TBL s
-        JOIN   DMT_OWNER.DMT_RA_LINES_TFM_TBL t
+        FROM   DMT_RA_LINES_STG_TBL s
+        JOIN   DMT_RA_LINES_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.TRX_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -321,8 +321,8 @@
         END IF;
         SELECT t.ITEM_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_EGP_ITEM_STG_TBL s
-        JOIN   DMT_OWNER.DMT_EGP_ITEM_TFM_TBL t
+        FROM   DMT_EGP_ITEM_STG_TBL s
+        JOIN   DMT_EGP_ITEM_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.ITEM_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -344,8 +344,8 @@
         END IF;
         SELECT t.ASSET_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_FA_ASSET_HDR_STG_TBL s
-        JOIN   DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL t
+        FROM   DMT_FA_ASSET_HDR_STG_TBL s
+        JOIN   DMT_FA_ASSET_HDR_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.ASSET_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -367,8 +367,8 @@
         END IF;
         SELECT t.AWARD_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_GMS_AWD_HEADERS_STG_TBL s
-        JOIN   DMT_OWNER.DMT_GMS_AWD_HEADERS_TFM_TBL t
+        FROM   DMT_GMS_AWD_HEADERS_STG_TBL s
+        JOIN   DMT_GMS_AWD_HEADERS_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.AWARD_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -390,8 +390,8 @@
         END IF;
         SELECT t.REFERENCE1
         INTO   l_value
-        FROM   DMT_OWNER.DMT_GL_INTERFACE_STG_TBL s
-        JOIN   DMT_OWNER.DMT_GL_INTERFACE_TFM_TBL t
+        FROM   DMT_GL_INTERFACE_STG_TBL s
+        JOIN   DMT_GL_INTERFACE_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.REFERENCE1 = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -413,8 +413,8 @@
         END IF;
         SELECT t.BUDGET_NAME
         INTO   l_value
-        FROM   DMT_OWNER.DMT_GL_BUDGET_INT_STG_TBL s
-        JOIN   DMT_OWNER.DMT_GL_BUDGET_INT_TFM_TBL t
+        FROM   DMT_GL_BUDGET_INT_STG_TBL s
+        JOIN   DMT_GL_BUDGET_INT_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.BUDGET_NAME = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -438,8 +438,8 @@
         END IF;
         SELECT t.PERSON_NUMBER
         INTO   l_value
-        FROM   DMT_OWNER.DMT_WORKER_STG_TBL s
-        JOIN   DMT_OWNER.DMT_WORKER_TFM_TBL t
+        FROM   DMT_WORKER_STG_TBL s
+        JOIN   DMT_WORKER_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.PERSON_NUMBER = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -461,8 +461,8 @@
         END IF;
         SELECT t.NAME
         INTO   l_value
-        FROM   DMT_OWNER.DMT_AP_PAY_TERM_HDR_STG_TBL s
-        JOIN   DMT_OWNER.DMT_AP_PAY_TERM_HDR_TFM_TBL t
+        FROM   DMT_AP_PAY_TERM_HDR_STG_TBL s
+        JOIN   DMT_AP_PAY_TERM_HDR_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.NAME = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -484,8 +484,8 @@
         END IF;
         SELECT t.UOM_CODE
         INTO   l_value
-        FROM   DMT_OWNER.DMT_INV_UOM_STG_TBL s
-        JOIN   DMT_OWNER.DMT_INV_UOM_TFM_TBL t
+        FROM   DMT_INV_UOM_STG_TBL s
+        JOIN   DMT_INV_UOM_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.UOM_CODE = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -507,8 +507,8 @@
         END IF;
         SELECT t.PERIOD_SET_NAME
         INTO   l_value
-        FROM   DMT_OWNER.DMT_GL_CALENDAR_STG_TBL s
-        JOIN   DMT_OWNER.DMT_GL_CALENDAR_TFM_TBL t
+        FROM   DMT_GL_CALENDAR_STG_TBL s
+        JOIN   DMT_GL_CALENDAR_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.PERIOD_SET_NAME = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -530,8 +530,8 @@
         END IF;
         SELECT t.LOOKUP_TYPE
         INTO   l_value
-        FROM   DMT_OWNER.DMT_FND_LOOKUP_TYPE_STG_TBL s
-        JOIN   DMT_OWNER.DMT_FND_LOOKUP_TYPE_TFM_TBL t
+        FROM   DMT_FND_LOOKUP_TYPE_STG_TBL s
+        JOIN   DMT_FND_LOOKUP_TYPE_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.LOOKUP_TYPE = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -553,8 +553,8 @@
         END IF;
         SELECT t.VALUE_SET_CODE
         INTO   l_value
-        FROM   DMT_OWNER.DMT_FND_VS_SET_STG_TBL s
-        JOIN   DMT_OWNER.DMT_FND_VS_SET_TFM_TBL t
+        FROM   DMT_FND_VS_SET_STG_TBL s
+        JOIN   DMT_FND_VS_SET_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.VALUE_SET_CODE = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -578,8 +578,8 @@
         END IF;
         SELECT t.TAX_REGIME_CODE
         INTO   l_value
-        FROM   DMT_OWNER.DMT_ZX_REGIME_STG_TBL s
-        JOIN   DMT_OWNER.DMT_ZX_REGIME_TFM_TBL t
+        FROM   DMT_ZX_REGIME_STG_TBL s
+        JOIN   DMT_ZX_REGIME_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.TAX_REGIME_CODE = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -598,8 +598,8 @@
         END IF;
         SELECT t.TAX_RATE_CODE
         INTO   l_value
-        FROM   DMT_OWNER.DMT_ZX_RATE_STG_TBL s
-        JOIN   DMT_OWNER.DMT_ZX_RATE_TFM_TBL t
+        FROM   DMT_ZX_RATE_STG_TBL s
+        JOIN   DMT_ZX_RATE_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.TAX_RATE_CODE = p_source_value
         AND    t.TFM_STATUS = 'LOADED'
@@ -621,8 +621,8 @@
         END IF;
         SELECT t.BANK_NAME
         INTO   l_value
-        FROM   DMT_OWNER.DMT_CE_BANK_STG_TBL s
-        JOIN   DMT_OWNER.DMT_CE_BANK_TFM_TBL t
+        FROM   DMT_CE_BANK_STG_TBL s
+        JOIN   DMT_CE_BANK_TFM_TBL t
                ON t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
         WHERE  s.BANK_NAME = p_source_value
         AND    t.TFM_STATUS = 'LOADED'

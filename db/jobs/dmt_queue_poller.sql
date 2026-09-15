@@ -10,7 +10,7 @@ begin
     dbms_scheduler.create_job(
       job_name            => '"DMT_QUEUE_POLLER"',
       job_type            => 'PLSQL_BLOCK',
-      job_action          => 'BEGIN DMT_OWNER.DMT_QUEUE_PKG.HEARTBEAT_TICK; END;',
+      job_action          => 'BEGIN DMT_QUEUE_PKG.HEARTBEAT_TICK; END;',
       number_of_arguments => 0,
       start_date          => systimestamp,
       repeat_interval     => 'FREQ=SECONDLY;INTERVAL=60',

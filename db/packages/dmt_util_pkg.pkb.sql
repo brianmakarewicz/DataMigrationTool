@@ -97,7 +97,7 @@
     -- SET_FUSION_URL
     -- --------------------------------------------------------
     PROCEDURE SET_FUSION_URL (p_url IN VARCHAR2) IS
-        l_old_url   DMT_OWNER.DMT_CONFIG_TBL.CONFIG_VALUE%TYPE;
+        l_old_url   DMT_CONFIG_TBL.CONFIG_VALUE%TYPE;
         l_old_host  VARCHAR2(500);
         l_new_host  VARCHAR2(500);
     BEGIN
@@ -111,7 +111,7 @@
         -- Retrieve existing URL (if any)
         BEGIN
             SELECT CONFIG_VALUE INTO l_old_url
-            FROM   DMT_OWNER.DMT_CONFIG_TBL
+            FROM   DMT_CONFIG_TBL
             WHERE  CONFIG_KEY = 'FUSION_URL';
         EXCEPTION
             WHEN NO_DATA_FOUND THEN l_old_url := NULL;
@@ -125,7 +125,7 @@
                     host => l_old_host,
                     ace  => xs$ace_type(
                                 privilege_list => xs$name_list('connect', 'resolve'),
-                                principal_name => 'DMT_OWNER',
+                                principal_name => USER,  -- connected schema (schema-relative)
                                 principal_type => xs_acl.ptype_db
                             )
                 );
@@ -140,7 +140,7 @@
                 host => l_new_host,
                 ace  => xs$ace_type(
                             privilege_list => xs$name_list('connect', 'resolve'),
-                            principal_name => 'DMT_OWNER',
+                            principal_name => USER,  -- connected schema (schema-relative)
                             principal_type => xs_acl.ptype_db
                         )
             );
@@ -151,7 +151,7 @@
         END;
 
         -- Upsert config row
-        MERGE INTO DMT_OWNER.DMT_CONFIG_TBL t
+        MERGE INTO DMT_CONFIG_TBL t
         USING DUAL ON (t.CONFIG_KEY = 'FUSION_URL')
         WHEN MATCHED THEN
             UPDATE SET t.CONFIG_VALUE       = p_url,
@@ -169,10 +169,10 @@
     -- GET_CONFIG
     -- --------------------------------------------------------
     FUNCTION GET_CONFIG (p_key IN VARCHAR2) RETURN VARCHAR2 IS
-        l_value DMT_OWNER.DMT_CONFIG_TBL.CONFIG_VALUE%TYPE;
+        l_value DMT_CONFIG_TBL.CONFIG_VALUE%TYPE;
     BEGIN
         SELECT CONFIG_VALUE INTO l_value
-        FROM   DMT_OWNER.DMT_CONFIG_TBL
+        FROM   DMT_CONFIG_TBL
         WHERE  CONFIG_KEY = p_key;
         RETURN l_value;
     EXCEPTION
@@ -188,7 +188,7 @@
         p_description IN VARCHAR2 DEFAULT NULL
     ) IS
     BEGIN
-        MERGE INTO DMT_OWNER.DMT_CONFIG_TBL t
+        MERGE INTO DMT_CONFIG_TBL t
         USING DUAL ON (t.CONFIG_KEY = p_key)
         WHEN MATCHED THEN
             UPDATE SET t.CONFIG_VALUE       = p_value,
@@ -216,7 +216,7 @@
     ) IS
         PRAGMA AUTONOMOUS_TRANSACTION;
     BEGIN
-        INSERT INTO DMT_OWNER.DMT_LOG_TBL (
+        INSERT INTO DMT_LOG_TBL (
             LOG_ID,
             RUN_ID,
             QUEUE_ID,
@@ -226,7 +226,7 @@
             PROCEDURE_NAME,
             MESSAGE
         ) VALUES (
-            DMT_OWNER.DMT_LOG_ID_SEQ.NEXTVAL,
+            DMT_LOG_ID_SEQ.NEXTVAL,
             NVL(p_run_id, g_ctx_run_id),
             g_ctx_queue_id,
             SYSDATE,
@@ -256,7 +256,7 @@
     ) IS
         PRAGMA AUTONOMOUS_TRANSACTION;
     BEGIN
-        INSERT INTO DMT_OWNER.DMT_LOG_TBL (
+        INSERT INTO DMT_LOG_TBL (
             LOG_ID,
             RUN_ID,
             QUEUE_ID,
@@ -267,7 +267,7 @@
             MESSAGE,
             SQLERRM_TEXT
         ) VALUES (
-            DMT_OWNER.DMT_LOG_ID_SEQ.NEXTVAL,
+            DMT_LOG_ID_SEQ.NEXTVAL,
             NVL(p_run_id, g_ctx_run_id),
             g_ctx_queue_id,
             SYSDATE,
@@ -580,7 +580,7 @@
             BEGIN
                 SELECT FUSION_USERNAME, FUSION_PASSWORD
                 INTO   x_username, x_password
-                FROM   DMT_OWNER.DMT_ERP_INTERFACE_OPTIONS_TBL
+                FROM   DMT_ERP_INTERFACE_OPTIONS_TBL
                 WHERE  CEMLI_CODE = p_cemli_code;
             EXCEPTION
                 WHEN NO_DATA_FOUND THEN
@@ -608,7 +608,7 @@
     BEGIN
         BEGIN
             SELECT j.CEMLI_CODE INTO l_cemli
-            FROM   DMT_OWNER.DMT_ESS_JOB_TBL j
+            FROM   DMT_ESS_JOB_TBL j
             WHERE  j.REQUEST_ID = p_request_id
             AND    ROWNUM = 1;
         EXCEPTION
@@ -675,8 +675,8 @@
         x_fbdi_csv_id OUT NUMBER
     ) IS
     BEGIN
-        SELECT DMT_OWNER.DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO x_fbdi_csv_id FROM DUAL;
-        INSERT INTO DMT_OWNER.DMT_FBDI_CSV_TBL (
+        SELECT DMT_FBDI_CSV_ID_SEQ.NEXTVAL INTO x_fbdi_csv_id FROM DUAL;
+        INSERT INTO DMT_FBDI_CSV_TBL (
             FBDI_CSV_ID, FBDI_ZIP_ID, FILE_SEQ, RUN_ID, OBJECT_TYPE,
             FILENAME, ROW_COUNT, CSV_CONTENT, CREATED_DATE
         ) VALUES (
@@ -704,19 +704,19 @@
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
         FOR r IN (
             SELECT FILENAME, CSV_CONTENT
-            FROM   DMT_OWNER.DMT_FBDI_CSV_TBL
+            FROM   DMT_FBDI_CSV_TBL
             WHERE  FBDI_ZIP_ID = p_fbdi_zip_id
             ORDER BY FILE_SEQ
         ) LOOP
-            DMT_OWNER.UTL_ZIP.add1file(l_zip, r.FILENAME, CLOB_TO_BLOB(r.CSV_CONTENT));
+            UTL_ZIP.add1file(l_zip, r.FILENAME, CLOB_TO_BLOB(r.CSV_CONTENT));
         END LOOP;
-        DMT_OWNER.UTL_ZIP.finish_zip(l_zip);
+        UTL_ZIP.finish_zip(l_zip);
 
         -- The zip's CSV members live in DMT_FBDI_CSV_TBL keyed by FBDI_ZIP_ID; the
         -- loader stamps PARAMETER_LIST by FBDI_ZIP_ID (looked up from the primary
         -- csv id), so the zip row no longer carries a FBDI_CSV_ID pointer.
         x_zip_bytes := DBMS_LOB.GETLENGTH(l_zip);
-        INSERT INTO DMT_OWNER.DMT_FBDI_ZIP_TBL (
+        INSERT INTO DMT_FBDI_ZIP_TBL (
             FBDI_ZIP_ID, RUN_ID, OBJECT_TYPE, FILENAME,
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
@@ -906,7 +906,7 @@
         IF l_path IS NULL THEN
             BEGIN
                 SELECT REPORT_CATALOG_PATH INTO l_path
-                FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+                FROM   DMT_BIP_REPORT_TBL
                 WHERE  CEMLI_CODE = p_cemli_code;
             EXCEPTION WHEN NO_DATA_FOUND THEN
                 RAISE_APPLICATION_ERROR(-20032,
@@ -1098,7 +1098,7 @@
         BEGIN
             SELECT DEEP_LINK_OBJ_TYPE, DEEP_LINK_KEY_TEMPLATE
             INTO   v_obj_type, v_key_tmpl
-            FROM   DMT_OWNER.DMT_BIP_REPORT_TBL
+            FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = p_cemli_code;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN RETURN NULL;
@@ -1250,7 +1250,7 @@
         -- per-DM, atomically, only after that DM returns rows (below) -- an
         -- upfront delete of the canonical types would leave a type empty and
         -- committed if its DM later returned nothing.
-        DELETE FROM DMT_OWNER.DMT_LOOKUP_TBL WHERE LOOKUP_TYPE IN ('BU','LEDGER');
+        DELETE FROM DMT_LOOKUP_TBL WHERE LOOKUP_TYPE IN ('BU','LEDGER');
         COMMIT;
 
         l_dms.EXTEND(4);
@@ -1285,7 +1285,7 @@
             -- Atomic per-DM replace: delete ONLY the types this DM produces, then
             -- insert this refresh's rows. A failure on one DM can never wipe
             -- another DM's good rows (which an upfront delete-all could).
-            DELETE FROM DMT_OWNER.DMT_LOOKUP_TBL
+            DELETE FROM DMT_LOOKUP_TBL
             WHERE LOOKUP_TYPE IN (
                 SELECT DISTINCT x.lookup_type
                 FROM XMLTABLE('/DATA_DS/G_LKP' PASSING l_xml
@@ -1295,7 +1295,7 @@
             -- Insert the canonical rows. One row per (LOOKUP_TYPE, LOOKUP_VALUE)
             -- -- ROW_NUMBER de-dups defensively so a repeated source name can
             -- never violate the unique key.
-            INSERT INTO DMT_OWNER.DMT_LOOKUP_TBL (LOOKUP_TYPE, LOOKUP_VALUE, RETURN_VALUE)
+            INSERT INTO DMT_LOOKUP_TBL (LOOKUP_TYPE, LOOKUP_VALUE, RETURN_VALUE)
             SELECT lookup_type, lookup_value, return_value
             FROM (
                 SELECT x.lookup_type, x.lookup_value, x.return_value,
@@ -1354,7 +1354,7 @@
     BEGIN
         SELECT RETURN_VALUE
         INTO   l_return
-        FROM   DMT_OWNER.DMT_LOOKUP_TBL
+        FROM   DMT_LOOKUP_TBL
         WHERE  LOOKUP_TYPE = p_type
           AND  LOOKUP_VALUE = p_value;
         RETURN l_return;
@@ -1468,7 +1468,7 @@
         -- no exception scope of its own. Accumulate failures and halt if any.
         FOR c IN (
             SELECT DISTINCT q.CEMLI_CODE
-            FROM   DMT_OWNER.DMT_WORK_QUEUE_TBL q
+            FROM   DMT_WORK_QUEUE_TBL q
             WHERE  q.RUN_ID = p_run_id
         ) LOOP
             l_step := 'resolving credentials for ' || c.CEMLI_CODE;

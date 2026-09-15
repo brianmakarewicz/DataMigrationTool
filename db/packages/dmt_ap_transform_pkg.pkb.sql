@@ -15,7 +15,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_prefix;
     EXCEPTION
@@ -32,7 +32,7 @@
     BEGIN
         SELECT PREFIX
         INTO   l_dep_prefix
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
         RETURN l_dep_prefix;
     EXCEPTION
@@ -67,7 +67,7 @@
         BEGIN
             SELECT PIPELINE_CODES, PREFIX
             INTO   l_orch_code, l_prefix
-            FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+            FROM   DMT_PIPELINE_RUN_TBL
             WHERE  RUN_ID = p_run_id;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN RETURN NULL;
@@ -114,7 +114,7 @@
         l_sup_prefix := get_upstream_prefix(p_run_id, 'Suppliers');
 
         -- Bulk INSERT into TFM from eligible STG rows
-        INSERT INTO DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL (
+        INSERT INTO DMT_AP_INVOICES_INT_TFM_TBL (
             TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
@@ -226,7 +226,7 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_AP_INVOICES_INT_TFM_SEQ.NEXTVAL,
+            DMT_AP_INVOICES_INT_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,  -- FBDI_CSV_ID: populated by FBDI generator
@@ -324,7 +324,7 @@
             s.INTERCOMPANY_CROSSCHARGE_FLAG,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL s
+        FROM DMT_AP_INVOICES_INT_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -337,7 +337,7 @@
         AND (p_inv_type_filter IS NULL OR s.INVOICE_TYPE_LOOKUP_CODE LIKE p_inv_type_filter)
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL t
+            FROM   DMT_AP_INVOICES_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -345,11 +345,11 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Update STG stg_status to TRANSFORMED for rows that were inserted into TFM
-        UPDATE DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL
+        UPDATE DMT_AP_INVOICES_INT_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_AP_INVOICES_INT_TFM_TBL
+            FROM   DMT_AP_INVOICES_INT_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (
@@ -400,7 +400,7 @@
             p_procedure      => 'TRANSFORM_LINES');
 
         -- Bulk INSERT into TFM from eligible STG rows
-        INSERT INTO DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL (
+        INSERT INTO DMT_AP_INVOICE_LINES_INT_TFM_TBL (
             TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
             RUN_ID,
@@ -527,7 +527,7 @@
             LAST_UPDATED_DATE
         )
         SELECT
-            DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_SEQ.NEXTVAL,
+            DMT_AP_INVOICE_LINES_INT_TFM_SEQ.NEXTVAL,
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,  -- FBDI_CSV_ID: populated by FBDI generator
@@ -637,7 +637,7 @@
             s.RCV_TRANSACTION_ID,
             'STAGED',
             SYSDATE
-        FROM DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL s
+        FROM DMT_AP_INVOICE_LINES_INT_STG_TBL s
         WHERE (
             (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
             OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
@@ -649,13 +649,13 @@
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND (p_inv_type_filter IS NULL OR EXISTS (
                 SELECT 1
-                FROM   DMT_OWNER.DMT_AP_INVOICES_INT_STG_TBL h
+                FROM   DMT_AP_INVOICES_INT_STG_TBL h
                 WHERE  h.INVOICE_ID = s.INVOICE_ID
                 AND    h.INVOICE_TYPE_LOOKUP_CODE LIKE p_inv_type_filter
             ))
         AND NOT EXISTS (
             SELECT 1
-            FROM   DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL t
+            FROM   DMT_AP_INVOICE_LINES_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
@@ -663,11 +663,11 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Update STG stg_status to TRANSFORMED for rows that were inserted into TFM
-        UPDATE DMT_OWNER.DMT_AP_INVOICE_LINES_INT_STG_TBL
+        UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (
             SELECT STG_SEQUENCE_ID
-            FROM   DMT_OWNER.DMT_AP_INVOICE_LINES_INT_TFM_TBL
+            FROM   DMT_AP_INVOICE_LINES_INT_TFM_TBL
             WHERE  RUN_ID = p_run_id
         )
         AND (

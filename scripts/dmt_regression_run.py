@@ -80,7 +80,10 @@ def connect():
     if not m:
         sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
     user, password, dsn = m.groups()
-    return oracledb.connect(user=user, password=password, dsn=dsn)
+    import os as _os
+    _w = _os.environ.get('DMT2_WALLET')
+    _kw = dict(config_dir=_w, wallet_location=_w, wallet_password=_os.environ.get('DMT2_WALLET_PW')) if _w else {}
+    return oracledb.connect(user=user, password=password, dsn=dsn, **_kw)
 
 
 def is_bad_key(display_key):
@@ -100,7 +103,7 @@ def submit_run(pipelines, scenario, run_mode, on_failure):
     cur = conn.cursor()
     run_id_var = cur.var(oracledb.NUMBER)
     try:
-        cur.callproc('DMT_OWNER.DMT_SCHEDULER_PKG.SUBMIT_PIPELINE',
+        cur.callproc('DMT_SCHEDULER_PKG.SUBMIT_PIPELINE',
                      [pipelines, scenario, run_mode, on_failure, 'REGRESSION_AGENT', run_id_var])
         run_id = int(run_id_var.getvalue())
         print(f"  SUBMIT_PIPELINE ok -> RUN_ID={run_id}")
@@ -131,29 +134,29 @@ def fallback_submit(pipelines, scenario, run_mode, on_failure):
         if code.upper().startswith('STANDALONE:'):
             seq, label = code[11:], 'STANDALONE'
         else:
-            seq = cur.callfunc('DMT_OWNER.DMT_SCHEDULER_PKG.GET_CEMLI_SEQUENCE',
+            seq = cur.callfunc('DMT_SCHEDULER_PKG.GET_CEMLI_SEQUENCE',
                                oracledb.STRING, [code])
             label = code.upper()
             if not seq:
                 raise SystemExit(f"Unknown pipeline code: {code}")
         for cemli in [c.strip() for c in seq.split(',') if c.strip()]:
-            deps = cur.callfunc('DMT_OWNER.DMT_SCHEDULER_PKG.GET_CEMLI_DEPENDENCIES',
+            deps = cur.callfunc('DMT_SCHEDULER_PKG.GET_CEMLI_DEPENDENCIES',
                                 oracledb.STRING, [label, cemli])
             # Only the legacy in-zip split (no CHILD_PARTITION_COLUMN) takes
             # PARTITION_KEY='ALL'; spawn-per-partition objects get NULL so the
             # scheduler's parent-detection/spawn branch fires.
-            cur.execute("SELECT COUNT(*) FROM DMT_OWNER.DMT_CEMLI_SPLIT_CFG "
+            cur.execute("SELECT COUNT(*) FROM DMT_CEMLI_SPLIT_CFG "
                         "WHERE CEMLI_CODE = :1 AND CHILD_PARTITION_COLUMN IS NULL", [cemli])
             is_split = cur.fetchone()[0] > 0
             plan.append((label, cemli, deps, is_split))
             all_cemlis.append(cemli)
 
-    cur.execute("SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL) FROM DUAL")
+    cur.execute("SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL) FROM DUAL")
     prefix = cur.fetchone()[0]
 
     run_id_var = cur.var(oracledb.NUMBER)
     cur.execute("""
-        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+        INSERT INTO DMT_PIPELINE_RUN_TBL (
             PIPELINE_CODES, RUN_TYPE, SUBMITTED_BY,
             CEMLI_SEQUENCE, SCENARIO_NAME, RUN_MODE, PREFIX, ON_FAILURE_POLICY
         ) VALUES (:pc, 'PIPELINE', 'REGRESSION_AGENT', :seq, :sc, :rm, :pfx, :onf)
@@ -163,7 +166,7 @@ def fallback_submit(pipelines, scenario, run_mode, on_failure):
     run_id = int(run_id_var.getvalue()[0])
 
     cur.executemany("""
-        INSERT INTO DMT_OWNER.DMT_WORK_QUEUE_TBL (
+        INSERT INTO DMT_WORK_QUEUE_TBL (
             RUN_ID, PIPELINE, CEMLI_CODE, SORT_ORDER, DEPENDS_ON,
             WORK_STATUS, PARTITION_KEY, PARTITION_LABEL
         ) VALUES (:1, :2, :3, :4, :5, :6, :7, :8)
@@ -183,7 +186,7 @@ def fallback_submit(pipelines, scenario, run_mode, on_failure):
 
 def ensure_poller(conn):
     cur = conn.cursor()
-    cur.callproc('DMT_OWNER.DMT_QUEUE_PKG.ENSURE_POLLER_RUNNING')
+    cur.callproc('DMT_QUEUE_PKG.ENSURE_POLLER_RUNNING')
     print("  Poller enabled (DMT_QUEUE_POLLER).")
 
 

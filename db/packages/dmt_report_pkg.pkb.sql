@@ -16,7 +16,7 @@
                l_rec.submitted_date, l_rec.completed_date,
                l_rec.cemli_sequence, l_rec.current_cemli, l_rec.current_step,
                l_rec.prefix, l_rec.error_message
-        FROM   DMT_OWNER.DMT_PIPELINE_RUN_TBL
+        FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
 
         RETURN l_rec;
@@ -39,11 +39,11 @@
                    s.STG_STATUS,
                    s.ERROR_TEXT,
                    s.STAGE_DATE
-            FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_STG_TBL s
+            FROM   DMT_POZ_SUPPLIERS_STG_TBL s
             WHERE  s.STG_STATUS = 'FAILED'
             AND    s.STG_SEQUENCE_ID IN (
                 SELECT t.STG_SEQUENCE_ID
-                FROM   DMT_OWNER.DMT_POZ_SUPPLIERS_TFM_TBL t
+                FROM   DMT_POZ_SUPPLIERS_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id)
             ORDER  BY s.STG_SEQUENCE_ID;
     END GET_SUPPLIER_ERRORS;

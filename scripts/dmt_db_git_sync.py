@@ -45,7 +45,7 @@ def deployed_text(cur, name, otype):
         row = cur.fetchone()
         if not row:
             return None
-        return f"{HEADER}CREATE OR REPLACE VIEW DMT_OWNER.{name} AS\n{row[0]}\n/\n"
+        return f"{HEADER}CREATE OR REPLACE VIEW {name} AS\n{row[0]}\n/\n"
     else:  # PROCEDURE / FUNCTION / PACKAGE etc.
         cur.execute("""SELECT text FROM all_source WHERE owner='DMT_OWNER' AND name=:1 AND type=:2
                        ORDER BY line""", [name, otype])

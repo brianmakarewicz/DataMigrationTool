@@ -489,8 +489,8 @@
                 || '""' || ','
                 || '""' || ','
                 || '""' || CHR(10) AS csv_line
-            FROM DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL h
-            JOIN DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL b
+            FROM DMT_FA_ASSET_HDR_TFM_TBL h
+            JOIN DMT_FA_ASSET_BOOK_TFM_TBL b
             ON b.ASSET_NUMBER = h.ASSET_NUMBER
             AND b.RUN_ID = h.RUN_ID
             AND b.TFM_STATUS = 'STAGED'
@@ -584,7 +584,7 @@
             FROM (
                 SELECT
                     (SELECT MIN(b.TFM_SEQUENCE_ID)
-                     FROM   DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL b
+                     FROM   DMT_FA_ASSET_BOOK_TFM_TBL b
                      WHERE  b.ASSET_NUMBER = d.ASSET_NUMBER
                      AND    b.RUN_ID = d.RUN_ID
                      AND    b.TFM_STATUS = 'STAGED') AS MASS_ADDITION_ID,
@@ -596,10 +596,10 @@
                     d.EXPENSE_ACCOUNT_SEGMENT4, d.EXPENSE_ACCOUNT_SEGMENT5, d.EXPENSE_ACCOUNT_SEGMENT6,
                     d.EXPENSE_ACCOUNT_SEGMENT7, d.EXPENSE_ACCOUNT_SEGMENT8, d.EXPENSE_ACCOUNT_SEGMENT9,
                     d.EXPENSE_ACCOUNT_SEGMENT10
-                FROM DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL d
+                FROM DMT_FA_ASSET_ASSIGN_TFM_TBL d
                 WHERE d.RUN_ID = p_run_id AND d.TFM_STATUS = 'STAGED'
                 AND (p_book IS NULL OR EXISTS (
-                        SELECT 1 FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL b2
+                        SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b2
                         WHERE b2.ASSET_NUMBER = d.ASSET_NUMBER
                         AND   b2.RUN_ID = d.RUN_ID
                         AND   b2.TFM_STATUS = 'STAGED'
@@ -652,7 +652,7 @@
         -- build the zip from those persisted rows. One zip owns two CSVs:
         --   1 FaMassAdditions.csv  = header TFM + book TFM rows (both stamped csv 1)
         --   2 FaMassaddDistributions.csv = assignment TFM rows (stamped csv 2)
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Assets', 'FaMassAdditions.csv',          0, l_ma_csv, l_fbdi_csv_id);
         -- Distributions are optional: only register (and thus zip) the file when it has rows.
         IF l_dist_csv IS NOT NULL AND DBMS_LOB.GETLENGTH(l_dist_csv) > 0 THEN
@@ -666,20 +666,20 @@
         -- FaMassaddDistributions.csv (csv 2). Book guard preserved exactly.
         -- Work-queue-ID core (2026-07-20): stamp WORK_QUEUE_ID = the generating per-book
         -- child work-queue item's id so reconcile scopes its sweep to this book's rows.
-        UPDATE DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id,
+        UPDATE DMT_FA_ASSET_BOOK_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id,
                WORK_QUEUE_ID=DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE=l_now
         WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED' AND (p_book IS NULL OR BOOK_TYPE_CODE=p_book);
-        UPDATE DMT_OWNER.DMT_FA_ASSET_HDR_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id,
+        UPDATE DMT_FA_ASSET_HDR_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_fbdi_csv_id,
                WORK_QUEUE_ID=DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE=l_now
         WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
         AND (p_book IS NULL OR ASSET_NUMBER IN (
-              SELECT ASSET_NUMBER FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
+              SELECT ASSET_NUMBER FROM DMT_FA_ASSET_BOOK_TFM_TBL
               WHERE RUN_ID=p_run_id AND BOOK_TYPE_CODE=p_book));
-        UPDATE DMT_OWNER.DMT_FA_ASSET_ASSIGN_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_dist_csv_id,
+        UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL SET TFM_STATUS='GENERATED', FBDI_CSV_ID=l_dist_csv_id,
                WORK_QUEUE_ID=DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE=l_now
         WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
         AND (p_book IS NULL OR ASSET_NUMBER IN (
-              SELECT ASSET_NUMBER FROM DMT_OWNER.DMT_FA_ASSET_BOOK_TFM_TBL
+              SELECT ASSET_NUMBER FROM DMT_FA_ASSET_BOOK_TFM_TBL
               WHERE RUN_ID=p_run_id AND BOOK_TYPE_CODE=p_book));
 
         IF l_ma_csv IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_ma_csv) = 1 THEN DBMS_LOB.FREETEMPORARY(l_ma_csv); END IF;

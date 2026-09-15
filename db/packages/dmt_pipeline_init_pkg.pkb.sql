@@ -14,7 +14,7 @@
     BEGIN
         -- Prefix configuration (default Y: always use prefix)
         SELECT NVL(MAX(config_value), 'Y') INTO l_use_prefix
-        FROM   DMT_OWNER.DMT_CONFIG_TBL
+        FROM   DMT_CONFIG_TBL
         WHERE  config_key = 'USE_PREFIX';
 
         -- Generate prefix (unless explicitly disabled).
@@ -22,7 +22,7 @@
         -- single sequence DMT_RUN_PREFIX_SEQ (design section 6) —
         -- same semantics as DMT_SCHEDULER_PKG.create_run_and_queue.
         IF l_use_prefix = 'Y' THEN
-            SELECT TO_CHAR(DMT_OWNER.DMT_RUN_PREFIX_SEQ.NEXTVAL)
+            SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL)
             INTO   x_prefix
             FROM   DUAL;
         ELSE
@@ -36,7 +36,7 @@
         -- DMT_PIPELINE_RUN_STATUS_CK, CEMLI_SEQUENCE NOT NULL was missing,
         -- and DMT_INTEGRATION_ID_SEQ does not exist in the rebuilt schema.
         -- RUN_ID comes from the column default DMT_PIPELINE_RUN_SEQ.)
-        INSERT INTO DMT_OWNER.DMT_PIPELINE_RUN_TBL (
+        INSERT INTO DMT_PIPELINE_RUN_TBL (
             PIPELINE_CODES, RUN_TYPE, SUBMITTED_BY,
             CEMLI_SEQUENCE, SCENARIO_NAME, PREFIX
         ) VALUES (

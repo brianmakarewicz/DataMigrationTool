@@ -230,7 +230,7 @@ AS
                 || '"' || REPLACE(NVL(BUDGETARY_CONTROL_FLAG,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(SOURCE_TEMPLATE_NAME,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(CASCADE_OPTION,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL t
+            FROM   DMT_PJF_PROJECTS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
@@ -376,7 +376,7 @@ AS
                 || '"' || NVL(TO_CHAR(BASELINE_LABOR_COST_AMOUNT), '') || '"' || ','
                 || '"' || NVL(TO_CHAR(BASELINE_LABOR_BILLED_AMOUNT), '') || '"' || ','
                 || '"' || NVL(TO_CHAR(BASELINE_EXPENSE_COST_AMOUNT), '') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_PJF_TASKS_TFM_TBL t
+            FROM   DMT_PJF_TASKS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
@@ -415,7 +415,7 @@ AS
                 || '"' || REPLACE(NVL(ASSIGNMENT_TYPE,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(BILLABLE_PERCENT), '') || '"' || ','
                 || '"' || REPLACE(NVL(BILLABLE_PERCENT_REASON_CODE,''), '"', '""') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL t
+            FROM   DMT_PJF_TEAM_MEMBERS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
@@ -458,7 +458,7 @@ AS
                 || '"' || REPLACE(NVL(CAPITALIZABLE_FLAG,''), '"', '""') || '"' || ','
                 || '"' || NVL(TO_CHAR(START_DATE_ACTIVE, 'YYYY/MM/DD'), '') || '"' || ','
                 || '"' || NVL(TO_CHAR(END_DATE_ACTIVE, 'YYYY/MM/DD'), '') || '"' || CHR(10) AS csv_line
-            FROM   DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL t
+            FROM   DMT_PJC_TXN_CONTROLS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
@@ -538,7 +538,7 @@ AS
         -- build the zip from those persisted rows. One zip owns four CSVs, and each
         -- record type's TFM rows are stamped with THAT file's own FBDI_CSV_ID.
         -- Empty child CSVs are not registered (nothing to zip, no STAGED rows to stamp).
-        SELECT DMT_OWNER.DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Projects', 'PjfProjectsAllXface.csv', 0, l_projects_csv, l_fbdi_csv_id);
         IF DBMS_LOB.GETLENGTH(l_tasks_csv) > 0 THEN
             DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'Projects', 'PjfProjElementsXface.csv', 0, l_tasks_csv, l_tasks_csv_id);
@@ -552,19 +552,19 @@ AS
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Projects', x_filename, l_zip, l_bytes);
 
         -- Update all 4 TFM tables to GENERATED and stamp EACH file's own FBDI_CSV_ID
-        UPDATE DMT_OWNER.DMT_PJF_PROJECTS_TFM_TBL
+        UPDATE DMT_PJF_PROJECTS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        UPDATE DMT_OWNER.DMT_PJF_TASKS_TFM_TBL
+        UPDATE DMT_PJF_TASKS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_tasks_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        UPDATE DMT_OWNER.DMT_PJF_TEAM_MEMBERS_TFM_TBL
+        UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_team_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        UPDATE DMT_OWNER.DMT_PJC_TXN_CONTROLS_TFM_TBL
+        UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_txn_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
