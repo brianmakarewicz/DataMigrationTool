@@ -37,6 +37,12 @@ ProjectBudgets (intended-good in, bad->FAILED). HCM 14/14 accounted; Projects 5/
 - **Items** — DONE (Item Master 3 good LOADED / 1 bad FAILED). Fixed the base-table confirm
   report to join on the item number instead of an id Fusion never stamps when the master import
   errors, and made reconciliation cover all of Fusion's split load requests.
+- **PurchaseOrders / BlanketPOs / Contracts** — DONE (POs 2 good LOADED / 1 bad FAILED;
+  Blanket 1/1; Contracts 1/1). The base-table confirm report was keyed on the Fusion import
+  request id, which a within-run re-submit breaks, so a good PO that was actually in the base
+  table got reported as a duplicate failure. Now it confirms the PO by its document number.
+- **Fresh run 122 (prefix 10006) launched** to validate all fixes end-to-end, including the
+  child lines/distributions cascading to LOADED from a clean start.
 
 **Open items (NOT reconciler defects):**
 - **ARInvoices** -- AutoInvoiceMasterEss crashes at job level ("consolidated billing is enabled...").
