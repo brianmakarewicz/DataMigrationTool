@@ -15,7 +15,16 @@ import os, sys, json, glob, datetime, oracledb
 
 MAPDIR = os.environ.get("EXPERTMAP_DIR",
     r"C:\Users\Monroe\AppData\Local\Temp\claude\C--Users-Monroe\c70b5852-eb81-4686-8ce4-7aa3786df67b\scratchpad\expertmap")
-SCENARIO = "RegressionTestExpanded"
+SCENARIO = os.environ.get("EXPANDED_SCENARIO", "RegressionTestExpanded")
+
+# Curated corrective pass: drop rows that HARD-CRASH an object's transform (so a
+# working object gets a fair run) instead of failing gracefully per-record.
+CURATE = os.environ.get("EXPANDED_CURATE") == "1"
+# rows missing any of these NOT-NULL business keys crash the transform (ORA-01400)
+REQUIRED_NONNULL = {"DMT_POZ_SUPPLIERS_STG_TBL": ["VENDOR_NAME"]}
+# objects whose expert rows crash the whole object at job level when mixed with
+# the baseline (Expenditures single-transaction-source filter -> ORA-20058)
+SKIP_OBJECTS_WHEN_CURATED = {"Expenditures"}
 
 
 def connect():
@@ -61,10 +70,19 @@ def load_one(cur, sid, obj, table, rows):
         cur.execute(f"SELECT NVL(MAX(STG_SEQUENCE_ID),0) FROM {table}")
         base = int(cur.fetchone()[0])
     src_prefix = f"RTX-EXP-{obj}"
-    # idempotent: clear prior expert rows for this object in this table
-    cur.execute(f"DELETE FROM {table} WHERE SOURCE_ID LIKE :p", p=f"{src_prefix}-%")
+    # idempotent: clear prior expert rows for this object IN THIS SCENARIO only
+    # (scoping by source_id alone collides with sibling scenarios sharing the
+    # RTX-EXP- prefix whose STG rows have TFM children -> ORA-02292).
+    cur.execute(f"DELETE FROM {table} WHERE SCENARIO_ID=:s AND SOURCE_ID LIKE :p",
+                s=sid, p=f"{src_prefix}-%")
+    req = REQUIRED_NONNULL.get(table, [])
     inserted = 0
     for i, row in enumerate(rows, 1):
+        if CURATE and req:
+            up = {k.upper(): v for k, v in row.items()}
+            if any(up.get(c) in (None, "") for c in req):
+                print(f"  {obj} row {i}: skipped (curate) -- missing required {req}")
+                continue
         vals = {}
         for k, v in row.items():
             K = k.upper()
@@ -103,6 +121,9 @@ def main():
         except Exception as e:
             print(f"  !! {jf}: {e}"); continue
         obj = data.get("object") or os.path.splitext(os.path.basename(jf))[0]
+        if CURATE and obj in SKIP_OBJECTS_WHEN_CURATED:
+            print(f"  {obj}: skipped entirely (curate -- job-level source conflict)")
+            continue
         if "tables" in data:
             for t, rows in data["tables"].items():
                 total += load_one(cur, sid, obj, t.upper(), rows or [])

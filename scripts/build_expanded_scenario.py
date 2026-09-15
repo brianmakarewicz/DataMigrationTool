@@ -13,7 +13,7 @@ Env: DMT2_CONN / DMT2_WALLET / DMT2_WALLET_PW (same as the rest of the toolchain
 import os, sys, oracledb
 
 ORIG_SCENARIO = "RegressionTest"
-NEW_SCENARIO  = "RegressionTestExpanded"
+NEW_SCENARIO  = os.environ.get("EXPANDED_SCENARIO", "RegressionTestExpanded")
 
 
 def connect():
@@ -65,8 +65,10 @@ def main():
         names = [c[0] for c in cn]
         if "SCENARIO_ID" not in names or "SOURCE_ID" not in names:
             continue  # not a scenario-scoped source table
-        # idempotent: clear any prior expanded copy for this table
-        cur.execute(f"DELETE FROM {t} WHERE SCENARIO_ID=:s OR SOURCE_ID LIKE 'RTX-%'", s=new)
+        # idempotent: clear any prior copy for THIS scenario only (scoping by
+        # source_id would collide with sibling expanded scenarios that share the
+        # RTX- prefix and whose STG rows have TFM children -> ORA-02292).
+        cur.execute(f"DELETE FROM {t} WHERE SCENARIO_ID=:s", s=new)
         # STG_SEQUENCE_ID is an identity col on some tables and a plain PK on
         # others. For plain PKs we must mint fresh unique values, so compute a
         # base above the current max and assign base+ROWNUM.
@@ -87,7 +89,11 @@ def main():
             if name == "SCENARIO_ID":
                 sel.append(str(new))
             elif name == "SOURCE_ID":
-                sel.append("'RTX-'||SUBSTR(SOURCE_ID,4)")  # RT-xxx -> RTX-xxx
+                # Only rewrite genuine 'RT-...' ids; leave NULL and any other
+                # value untouched (a NULL turned into 'RTX-' broke objects that
+                # TO_NUMBER the source id, e.g. MiscReceipts -> ORA-01722).
+                sel.append("CASE WHEN SOURCE_ID LIKE 'RT-%' "
+                           "THEN 'RTX-'||SUBSTR(SOURCE_ID,4) ELSE SOURCE_ID END")
             elif name == "STG_STATUS":
                 sel.append("'NEW'")
             else:
