@@ -221,6 +221,15 @@
                     AND    PARTY_SITE_NAME      = r.party_site_name
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
+                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
+                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
+                    -- Duplicate = record is in the Fusion base table (loaded, incl. a
+                    -- within-run re-submit) -> LOADED, not FAILED.
+                    UPDATE DMT_POZ_SUP_ADDR_TFM_TBL
+                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                    WHERE  RUN_ID = p_run_id AND VENDOR_NAME = r.vendor_name
+                    AND    PARTY_SITE_NAME = r.party_site_name AND TFM_STATUS != 'LOADED';
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
                     UPDATE DMT_POZ_SUP_ADDR_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
@@ -275,6 +284,13 @@
                     AND    VENDOR_SITE_CODE     = r.vendor_site_code
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
+                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
+                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
+                    UPDATE DMT_POZ_SUP_SITE_TFM_TBL
+                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                    WHERE  RUN_ID = p_run_id AND VENDOR_NAME = r.vendor_name
+                    AND    VENDOR_SITE_CODE = r.vendor_site_code AND TFM_STATUS != 'LOADED';
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
                     UPDATE DMT_POZ_SUP_SITE_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
@@ -316,6 +332,14 @@
                     AND    VENDOR_SITE_CODE     = r.vendor_site_code
                     AND    BUSINESS_UNIT_NAME   = r.bu_name
                     AND    TFM_STATUS              != 'LOADED';
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
+                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
+                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
+                    UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL
+                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                    WHERE  RUN_ID = p_run_id AND VENDOR_NAME = r.vendor_name
+                    AND    VENDOR_SITE_CODE = r.vendor_site_code AND BUSINESS_UNIT_NAME = r.bu_name
+                    AND    TFM_STATUS != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
                     UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL
@@ -359,6 +383,13 @@
                     AND    FIRST_NAME           = r.first_name
                     AND    LAST_NAME            = r.last_name
                     AND    TFM_STATUS              != 'LOADED';
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
+                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
+                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
+                    UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL
+                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                    WHERE  RUN_ID = p_run_id AND VENDOR_NAME = r.vendor_name
+                    AND    FIRST_NAME = r.first_name AND LAST_NAME = r.last_name AND TFM_STATUS != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
                     UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL
