@@ -470,6 +470,37 @@ AS
         -- surfaces it as UNRECONCILED — no fabricated FAILED.)
         l_not_recon := 0;
 
+        -- Reached when the base BIP report was present but matched nothing (the
+        -- cost transactions did not post). Capture per-transaction rejections from
+        -- the Import and Process Cost Transactions report (LIST_G_STAG_ERR/G_STAG_ERR,
+        -- fields suffixed _10) so rejected rows get their real Fusion error instead
+        -- of being left UNACCOUNTED. Only touches rows not already resolved.
+        IF p_import_ess_id IS NOT NULL THEN
+            DECLARE l_ir2 CLOB;
+            BEGIN
+                l_ir2 := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_import_ess_id);
+                IF l_ir2 IS NOT NULL AND DBMS_LOB.GETLENGTH(l_ir2) > 0 THEN
+                    FOR e IN (
+                        SELECT x.ref, x.msg
+                        FROM   XMLTABLE('//G_STAG_ERR' PASSING XMLTYPE(l_ir2)
+                                COLUMNS ref VARCHAR2(240) PATH 'TXN_INTERFACE_ID_10',
+                                        msg VARCHAR2(400)  PATH 'MESSAGE_NAME_10') x
+                        WHERE  x.ref IS NOT NULL
+                    ) LOOP
+                        UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                   '[FUSION_ERROR] ' || NVL(e.msg, 'Cost transaction rejected')),
+                               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                        WHERE  RUN_ID = p_run_id
+                        AND    ORIG_TRANSACTION_REFERENCE = e.ref
+                        AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                    END LOOP;
+                END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END IF;
+
         <<echo_to_stg>>
         -- Echo outcomes back to STG
         UPDATE DMT_PJC_EXPENDITURES_STG_TBL stg
