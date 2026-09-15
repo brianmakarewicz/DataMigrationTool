@@ -51060,8 +51060,8 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_sql_clob=>'DECLARE l_request_id NUMBER := TO_NUMBER(apex_application.g_x01); l_file_name VARCHAR2(500) := apex_application.g_x02; l_action VARCHAR2(20) := NVL(apex_application.g_x03, ''DOWNLOAD''); BEGIN IF l_action = ''LIST'' THEN APEX_JSON.open_object; APEX_JSON.'
 ||'open_array(''files''); FOR f IN ( SELECT ESS_FILE_ID, REQUEST_ID, FILE_TYPE, FILE_NAME, CONTENT_TYPE FROM DMT_ESS_JOB_FILE_TBL WHERE REQUEST_ID = l_request_id ORDER BY FILE_NAME ) LOOP APEX_JSON.open_object; APEX_JSON.write(''file_id'', f.ESS_F'
 ||'ILE_ID); APEX_JSON.write(''request_id'', f.REQUEST_ID); APEX_JSON.write(''file_type'', f.FILE_TYPE); APEX_JSON.write(''file_name'', f.FILE_NAME); APEX_JSON.write(''content_type'', f.CONTENT_TYPE); APEX_JSON.close_object; END LOOP; APEX_JSON.close_array; APEX'
-||'_JSON.close_object; ELSIF l_action = ''ENUMERATE'' THEN DMT_ESS_UTIL_PKG.ENUMERATE_ESS_FILES( p_ess_job_id => NULL, p_request_id => l_request_id ); APEX_JSON.open_object; APEX_JSON.write(''status'', ''OK''); APEX_JSON.close_object; ELSE DMT_OWNER'
-||'.DMT_ESS_UTIL_PKG.DOWNLOAD_ESS_FILE_V2_TO_BROWSER( p_request_id => l_request_id, p_file_name => l_file_name ); END IF; EXCEPTION WHEN OTHERS THEN APEX_JSON.open_object; APEX_JSON.write(''error'', SQLERRM); APEX_JSON.close_object; END;'
+||'_JSON.close_object; ELSIF l_action = ''ENUMERATE'' THEN DMT_ESS_UTIL_PKG.ENUMERATE_ESS_FILES( p_ess_job_id => NULL, p_request_id => l_request_id ); APEX_JSON.open_object; APEX_JSON.write(''status'', ''OK''); APEX_JSON.close_object; ELSE '
+||'DMT_ESS_UTIL_PKG.DOWNLOAD_ESS_FILE_V2_TO_BROWSER( p_request_id => l_request_id, p_file_name => l_file_name ); END IF; EXCEPTION WHEN OTHERS THEN APEX_JSON.open_object; APEX_JSON.write(''error'', SQLERRM); APEX_JSON.close_object; END;'
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 ,p_internal_uid=>999000058001
