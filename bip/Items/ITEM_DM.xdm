@@ -20,8 +20,8 @@ SELECT
     NULL AS error_message
 FROM   egp_system_items_interface i
 LEFT JOIN egp_system_items_b b
-       ON b.inventory_item_id = i.inventory_item_id
-      AND b.organization_id   = i.organization_id
+       ON b.item_number      = i.item_number
+      AND b.organization_id  = i.organization_id
 WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
 AND    i.organization_code IS NOT NULL
       ]]></sql>

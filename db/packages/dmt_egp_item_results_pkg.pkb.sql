@@ -311,7 +311,11 @@
                 WHERE  RUN_ID      = p_run_id
                 AND    ITEM_NUMBER         = r.item_number
                 AND    ORGANIZATION_CODE   = r.organization_code
-                AND    TFM_STATUS         != 'FAILED';
+                -- Never downgrade a confirmed LOADED. The item load can split
+                -- across several load-controller requests; an item confirmed
+                -- present by one sub-load must not be flipped to FAILED because
+                -- a later sub-load's report doesn't carry it.
+                AND    TFM_STATUS      NOT IN ('LOADED','FAILED');
                 l_failed := l_failed + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -374,6 +378,7 @@
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml CLOB;
+        l_any BOOLEAN := FALSE;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -381,11 +386,34 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id);
-        PARSE_AND_UPDATE(p_run_id, l_xml);
+        -- One Item Import can spread its interface rows across SEVERAL
+        -- InterfaceLoaderController requests (Fusion chunks the FBDI load), and
+        -- the base-table report is filtered by a single load_request_id. So we
+        -- reconcile once per load-controller request recorded for this run's
+        -- Items load; a single p_load_ess_id would see only some of the items.
+        FOR lr IN (
+            SELECT DISTINCT REQUEST_ID
+            FROM   DMT_ESS_JOB_TBL
+            WHERE  RUN_ID         = p_run_id
+            AND    CEMLI_CODE     = 'Items'
+            AND    JOB_SHORT_NAME = 'InterfaceLoaderController'
+            AND    REQUEST_ID IS NOT NULL
+        ) LOOP
+            l_any := TRUE;
+            l_xml := FETCH_BIP_RESULTS(p_run_id, lr.REQUEST_ID);
+            PARSE_AND_UPDATE(p_run_id, l_xml);
+            IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(l_xml);
+            END IF;
+        END LOOP;
 
-        IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
-            DBMS_LOB.FREETEMPORARY(l_xml);
+        -- Fallback: if no load-controller request was recorded, use the id passed in.
+        IF NOT l_any AND p_load_ess_id IS NOT NULL THEN
+            l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id);
+            PARSE_AND_UPDATE(p_run_id, l_xml);
+            IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(l_xml);
+            END IF;
         END IF;
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
