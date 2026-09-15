@@ -576,13 +576,56 @@
         --   per-record evidence either way — LEAVE the rows GENERATED (unaccounted).
         --   We never fabricate a FAILED for an outcome we did not observe.
         IF l_zero_load THEN
-            -- Fusion loaded 0 objects. No remaining row may be promoted to LOADED;
-            -- rows without a matched per-row error stay GENERATED for the honest
-            -- UNACCOUNTED sweep. Never assert a success the data set did not report.
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'Data set ' || p_request_id || ' reports ObjectSuccessCount=0; ' ||
-                'not marking any remaining GENERATED row LOADED.',
-                'INFO', C_PKG, l_proc);
+            -- Fusion loaded 0 objects: every remaining GENERATED row of this table
+            -- verifiably did NOT load. That is positive non-load evidence (from the
+            -- data set's own ObjectSuccessCount=0), not an unknown outcome. When the
+            -- data set also carries real Fusion error message(s), mark those rows
+            -- FAILED and attach the data set's OWN messages as the reason. This is
+            -- honest: the non-load is verified and the message text is Fusion's own
+            -- (framed as the data set's message, so no specific per-row error is
+            -- invented). If the data set reported NO message at all, we have no error
+            -- string to cite, so those rows are left GENERATED for the honest sweep.
+            DECLARE
+                l_ds_msgs  VARCHAR2(3000);
+                l_fail_msg VARCHAR2(4000);
+                l_n        NUMBER := 0;
+            BEGIN
+                BEGIN
+                    SELECT SUBSTR(LISTAGG(msg, ' | ') WITHIN GROUP (ORDER BY msg), 1, 1800)
+                    INTO   l_ds_msgs
+                    FROM  (SELECT DISTINCT jt.msg
+                           FROM JSON_TABLE(l_json, '$.items[*]'
+                                COLUMNS (msg VARCHAR2(4000) PATH '$.MessageText')) jt
+                           WHERE jt.msg IS NOT NULL);
+                EXCEPTION WHEN OTHERS THEN l_ds_msgs := NULL;
+                END;
+
+                IF l_ds_msgs IS NOT NULL THEN
+                    l_fail_msg := '[FUSION_ERROR] HDL data set ' || p_request_id
+                        || ' completed in error (' || NVL(p_dataset_status, '?')
+                        || ') and loaded 0 objects; this record was not loaded. '
+                        || 'Data set message(s): ' || l_ds_msgs;
+                    EXECUTE IMMEDIATE
+                        'UPDATE ' || p_tfm_table ||
+                        ' SET TFM_STATUS = ''FAILED'','
+                        ' ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, :m),'
+                        ' LAST_UPDATED_DATE = SYSDATE'
+                        ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
+                        USING l_fail_msg, p_run_id;
+                    l_n := SQL%ROWCOUNT;
+                    l_file_count := l_file_count + l_n;
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Data set ' || p_request_id || ' ObjectSuccessCount=0; marked '
+                        || l_n || ' remaining GENERATED row(s) FAILED with the data '
+                        || 'set''s real Fusion message(s) (verified not loaded).',
+                        'INFO', C_PKG, l_proc);
+                ELSE
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Data set ' || p_request_id || ' reports ObjectSuccessCount=0 '
+                        || 'with no message text; leaving remaining GENERATED rows for '
+                        || 'the honest UNACCOUNTED sweep.', 'INFO', C_PKG, l_proc);
+                END IF;
+            END;
         ELSIF p_dataset_status IN ('ORA_COMPLETED', 'ORA_SUCCESS', 'SUCCESS') THEN
             -- All remaining are confirmed successes
             EXECUTE IMMEDIATE
