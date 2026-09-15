@@ -7,13 +7,13 @@ CREATE OR REPLACE PACKAGE BODY DMT_LOOKUP.DMT_LKP_REFRESH_PKG AS
     C_PKG CONSTANT VARCHAR2(30) := 'DMT_LKP_REFRESH_PKG';
 
     -- --------------------------------------------------------
-    -- Private: Fusion base URL from DMT_OWNER config
+    -- Private: Fusion base URL from the owner config (resolved via DMT_LOOKUP synonym)
     -- --------------------------------------------------------
     FUNCTION fusion_base RETURN VARCHAR2 IS
         v_url VARCHAR2(500);
     BEGIN
         SELECT config_value INTO v_url
-        FROM DMT_OWNER.DMT_CONFIG_TBL
+        FROM DMT_CONFIG_TBL
         WHERE config_key = 'FUSION_URL';
         RETURN RTRIM(v_url, '/');
     END fusion_base;
@@ -75,8 +75,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_LOOKUP.DMT_LKP_REFRESH_PKG AS
     BEGIN
         l_url := fusion_base || '/xmlpserver/services/v2/SecurityService';
 
-        SELECT config_value INTO l_user FROM DMT_OWNER.DMT_CONFIG_TBL WHERE config_key = 'FUSION_USERNAME';
-        SELECT config_value INTO l_pass FROM DMT_OWNER.DMT_CONFIG_TBL WHERE config_key = 'FUSION_PASSWORD';
+        SELECT config_value INTO l_user FROM DMT_CONFIG_TBL WHERE config_key = 'FUSION_USERNAME';
+        SELECT config_value INTO l_pass FROM DMT_CONFIG_TBL WHERE config_key = 'FUSION_PASSWORD';
 
         l_env :=
             '<soapenv:Envelope'||
@@ -122,8 +122,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_LOOKUP.DMT_LKP_REFRESH_PKG AS
     BEGIN
         l_url := fusion_base || '/xmlpserver/services/v2/ReportService';
 
-        SELECT config_value INTO l_user FROM DMT_OWNER.DMT_CONFIG_TBL WHERE config_key = 'FUSION_USERNAME';
-        SELECT config_value INTO l_pass FROM DMT_OWNER.DMT_CONFIG_TBL WHERE config_key = 'FUSION_PASSWORD';
+        SELECT config_value INTO l_user FROM DMT_CONFIG_TBL WHERE config_key = 'FUSION_USERNAME';
+        SELECT config_value INTO l_pass FROM DMT_CONFIG_TBL WHERE config_key = 'FUSION_PASSWORD';
 
         l_env :=
             '<soapenv:Envelope'||
@@ -271,8 +271,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_LOOKUP.DMT_LKP_REFRESH_PKG AS
 
         COMMIT;
 
-        INSERT INTO DMT_OWNER.DMT_LOG_TBL (LOG_ID, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, LOG_TYPE, LOG_DATE)
-        VALUES (DMT_OWNER.DMT_LOG_ID_SEQ.NEXTVAL, C_PKG, 'parse_and_merge',
+        INSERT INTO DMT_LOG_TBL (LOG_ID, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, LOG_TYPE, LOG_DATE)
+        VALUES (DMT_LOG_ID_SEQ.NEXTVAL, C_PKG, 'parse_and_merge',
                 'REFRESH ' || p_lookup_type || ': merged ' || l_count || ' rows',
                 'INFO', SYSDATE);
         COMMIT;
@@ -296,8 +296,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_LOOKUP.DMT_LKP_REFRESH_PKG AS
             AND (p_lookup_type IS NULL OR lookup_type = p_lookup_type)
             ORDER BY lookup_type;
     BEGIN
-        INSERT INTO DMT_OWNER.DMT_LOG_TBL (LOG_ID, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, LOG_TYPE, LOG_DATE)
-        VALUES (DMT_OWNER.DMT_LOG_ID_SEQ.NEXTVAL, C_PKG, 'REFRESH_FUSION_VALUES',
+        INSERT INTO DMT_LOG_TBL (LOG_ID, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, LOG_TYPE, LOG_DATE)
+        VALUES (DMT_LOG_ID_SEQ.NEXTVAL, C_PKG, 'REFRESH_FUSION_VALUES',
                 'Starting refresh. Type filter: ' || NVL(p_lookup_type, 'ALL'),
                 'INFO', SYSDATE);
         COMMIT;
@@ -317,8 +317,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_LOOKUP.DMT_LKP_REFRESH_PKG AS
                     DECLARE
                         l_errmsg VARCHAR2(4000) := SQLERRM;
                     BEGIN
-                        INSERT INTO DMT_OWNER.DMT_LOG_TBL (LOG_ID, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, LOG_TYPE, LOG_DATE)
-                        VALUES (DMT_OWNER.DMT_LOG_ID_SEQ.NEXTVAL, C_PKG, 'REFRESH_FUSION_VALUES',
+                        INSERT INTO DMT_LOG_TBL (LOG_ID, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, LOG_TYPE, LOG_DATE)
+                        VALUES (DMT_LOG_ID_SEQ.NEXTVAL, C_PKG, 'REFRESH_FUSION_VALUES',
                                 'ERROR refreshing ' || r.lookup_type || ': ' || l_errmsg,
                                 'ERROR', SYSDATE);
                         COMMIT;
@@ -326,8 +326,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_LOOKUP.DMT_LKP_REFRESH_PKG AS
             END;
         END LOOP;
 
-        INSERT INTO DMT_OWNER.DMT_LOG_TBL (LOG_ID, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, LOG_TYPE, LOG_DATE)
-        VALUES (DMT_OWNER.DMT_LOG_ID_SEQ.NEXTVAL, C_PKG, 'REFRESH_FUSION_VALUES', 'Refresh complete.', 'INFO', SYSDATE);
+        INSERT INTO DMT_LOG_TBL (LOG_ID, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, LOG_TYPE, LOG_DATE)
+        VALUES (DMT_LOG_ID_SEQ.NEXTVAL, C_PKG, 'REFRESH_FUSION_VALUES', 'Refresh complete.', 'INFO', SYSDATE);
         COMMIT;
 
     END REFRESH_FUSION_VALUES;

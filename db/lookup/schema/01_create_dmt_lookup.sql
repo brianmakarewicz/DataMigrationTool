@@ -44,6 +44,15 @@ GRANT EXECUTE ON SYS.DBMS_LOB TO DMT_LOOKUP;
 GRANT SELECT ON &owner_schema..DMT_CONFIG_TBL TO DMT_LOOKUP;
 GRANT SELECT ON &owner_schema..DMT_LOG_TBL TO DMT_LOOKUP;
 GRANT INSERT ON &owner_schema..DMT_LOG_TBL TO DMT_LOOKUP;
+GRANT SELECT ON &owner_schema..DMT_LOG_ID_SEQ TO DMT_LOOKUP;
+
+-- Synonyms in DMT_LOOKUP so DMT_LKP_REFRESH_PKG can reach the owner's config,
+-- log table and log sequence by UNQUALIFIED name (schema-relative -- the package
+-- no longer hardcodes the owner). Created in DMT_LOOKUP by ADMIN (needs CREATE
+-- ANY SYNONYM); one DMT_LOOKUP per owner, so each points at its own owner.
+CREATE OR REPLACE SYNONYM DMT_LOOKUP.DMT_CONFIG_TBL  FOR &owner_schema..DMT_CONFIG_TBL;
+CREATE OR REPLACE SYNONYM DMT_LOOKUP.DMT_LOG_TBL     FOR &owner_schema..DMT_LOG_TBL;
+CREATE OR REPLACE SYNONYM DMT_LOOKUP.DMT_LOG_ID_SEQ  FOR &owner_schema..DMT_LOG_ID_SEQ;
 
 -- Owner access to DMT_LOOKUP tables (for EBS DB link pass-through)
 GRANT SELECT, INSERT, UPDATE, DELETE ON DMT_LOOKUP.DMT_LKP_EBS_VALUES TO &owner_schema.;

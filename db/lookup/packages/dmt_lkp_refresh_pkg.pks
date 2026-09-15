@@ -4,7 +4,7 @@ CREATE OR REPLACE PACKAGE DMT_LOOKUP.DMT_LKP_REFRESH_PKG AS
 -- Calls pre-deployed BIP data models on Fusion to fetch
 -- reference values and MERGEs them into DMT_LKP_FUSION_VALUES.
 -- Uses BIP v2 SOAP runDataModel (static catalog path).
--- Logs to DMT_OWNER.DMT_LOG_TBL.
+-- Logs to the owner DMT_LOG_TBL (resolved via a DMT_LOOKUP synonym; schema-relative).
 -- ============================================================
 
     -- Refresh Fusion values for one lookup type (or all if NULL)

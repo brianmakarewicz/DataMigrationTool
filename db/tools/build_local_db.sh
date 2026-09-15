@@ -72,6 +72,12 @@ grant select on DMT_LOG_ID_SEQ to DMT_LOOKUP;
 grant select, insert on DMT_LOG_TBL to DMT_LOOKUP;
 exit" | "$SQLCL" -S dmt_owner/"$DMT_LOCAL_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1
 
+echo "Creating DMT_LOOKUP synonyms to the owner's config/log/seq (schema-relative refresh pkg) ..."
+echo "create or replace synonym DMT_CONFIG_TBL for DMT_OWNER.DMT_CONFIG_TBL;
+create or replace synonym DMT_LOG_TBL for DMT_OWNER.DMT_LOG_TBL;
+create or replace synonym DMT_LOG_ID_SEQ for DMT_OWNER.DMT_LOG_ID_SEQ;
+exit" | "$SQLCL" -S dmt_lookup/"$LKP_LOCAL_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1
+
 echo "Running db_full/install_dmt_lookup.sql as DMT_LOOKUP ..."
 echo exit | "$SQLCL" dmt_lookup/"$LKP_LOCAL_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1 @install_dmt_lookup.sql \
   | tee /tmp/dmt2_lookup_install.log
