@@ -41,8 +41,21 @@ ProjectBudgets (intended-good in, bad->FAILED). HCM 14/14 accounted; Projects 5/
   Blanket 1/1; Contracts 1/1). The base-table confirm report was keyed on the Fusion import
   request id, which a within-run re-submit breaks, so a good PO that was actually in the base
   table got reported as a duplicate failure. Now it confirms the PO by its document number.
-- **Fresh run 122 (prefix 10006) launched** to validate all fixes end-to-end, including the
-  child lines/distributions cascading to LOADED from a clean start.
+- **Fresh run 122 (prefix 10006) — DEFINITIVE VALIDATION, all P2P fixes hold end-to-end
+  including child cascades.** Good records load, bad records fail with real errors, zero
+  UNACCOUNTED except two honest cases:
+  - PurchaseOrders: Headers 2L/1F, Lines 3L/1F, Locations 2L/1F, Distributions 2L/1F.
+  - Suppliers family (5 objects) 2L/1F each; Items (Master) 3L/1F; Requisitions Headers 2L/3F,
+    Lines 2L/2F, Dists 2L/2F; BlanketPOs 1L/1F; Contracts 1L/1F; APInvoices 2L/2F.
+  - Financials: GLBalances, GLBudgets, Assets all good LOADED. Projects: Projects, Tasks,
+    Team Members, Txn Controls, BillingEvents all good LOADED. O2C: Customers core tiers LOADED.
+  - Honest remaining: ARInvoices 3 UNACCOUNTED (consolidated-billing job crash);
+    Expenditures/Grants/HCM FAILED with real errors; Customers Account Sites and Items Item
+    Categories 0 LOADED (consistent across 3 runs -- need separate investigation).
+  - ONE open ruling for the owner: a requisition rejected for a bad HEADER (REQ-BADHDR) leaves
+    its otherwise-valid line + distribution UNACCOUNTED (2 records). The reconciler deliberately
+    does not compose a "parent header rejected" cascade (the error_attribution rule). Deciding
+    whether to propagate the header's real rejection error to those children is the owner's call.
 
 **Open items (NOT reconciler defects):**
 - **ARInvoices** -- AutoInvoiceMasterEss crashes at job level ("consolidated billing is enabled...").
