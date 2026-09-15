@@ -50044,13 +50044,13 @@ wwv_flow_imp_page.create_page_plug(
 '  l_url  VARCHAR2(4000);',
 'BEGIN',
 '  BEGIN',
-'    EXECUTE IMMEDIATE ''SELECT FILENAME FROM DMT_OWNER.DMT_FBDI_CSV_TBL WHERE INTEGRATION_ID=:1 AND OBJECT_TYPE=:2 AND ROWNUM=1'' INTO l_csv USING l_run, l_cem;',
+'    EXECUTE IMMEDIATE ''SELECT FILENAME FROM DMT_FBDI_CSV_TBL WHERE INTEGRATION_ID=:1 AND OBJECT_TYPE=:2 AND ROWNUM=1'' INTO l_csv USING l_run, l_cem;',
 '  EXCEPTION WHEN OTHERS THEN l_csv := NULL; END;',
 '  BEGIN',
-'    EXECUTE IMMEDIATE ''SELECT FILENAME FROM DMT_OWNER.DMT_FBDI_ZIP_TBL WHERE INTEGRATION_ID=:1 AND OBJECT_TYPE=:2 AND ROWNUM=1'' INTO l_zip USING l_run, l_cem;',
+'    EXECUTE IMMEDIATE ''SELECT FILENAME FROM DMT_FBDI_ZIP_TBL WHERE INTEGRATION_ID=:1 AND OBJECT_TYPE=:2 AND ROWNUM=1'' INTO l_zip USING l_run, l_cem;',
 '  EXCEPTION WHEN OTHERS THEN l_zip := NULL; END;',
 '  BEGIN',
-'    EXECUTE IMMEDIATE ''SELECT LOAD_ESS_JOB_ID, IMPORT_ESS_JOB_ID FROM DMT_OWNER.DMT_OBJECT_DETAIL_V WHERE INTEGRATION_ID=:1 AND CEMLI_CODE=:2 AND ROWNUM=1'' INTO l_load, l_imp USING l_run, l_cem;',
+'    EXECUTE IMMEDIATE ''SELECT LOAD_ESS_JOB_ID, IMPORT_ESS_JOB_ID FROM DMT_OBJECT_DETAIL_V WHERE INTEGRATION_ID=:1 AND CEMLI_CODE=:2 AND ROWNUM=1'' INTO l_load, l_imp USING l_run, l_cem;',
 '  EXCEPTION WHEN OTHERS THEN l_load := NULL; l_imp := NULL; END;',
 '',
 '  HTP.P(''<div style="background:#fff;border:1px solid #e3e6ea;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px 24px;margin:0 0 24px;">'');',
@@ -50103,7 +50103,7 @@ wwv_flow_imp_page.create_page_plug(
 'BEGIN',
 '  IF v_cemli IS NULL THEN htp.p(''<p style="color:#888">No object selected.</p>''); RETURN; END IF;',
 '',
-'  FOR m IN (SELECT scenario_name, prefix, run_status FROM DMT_OWNER.DMT_OBJECT_FUNNEL_V',
+'  FOR m IN (SELECT scenario_name, prefix, run_status FROM DMT_OBJECT_FUNNEL_V',
 '             WHERE run_id=v_run AND cemli_code=v_cemli AND ROWNUM=1) LOOP',
 '    htp.p(''<div style="color:#5f6b7a;font-size:12px;margin-bottom:8px">Run ''||v_run||'' &middot; ''',
 '      ||APEX_ESCAPE.HTML(NVL(m.scenario_name,''(no scenario)''))||'' &middot; prefix ''',
@@ -50127,7 +50127,7 @@ wwv_flow_imp_page.create_page_plug(
 '',
 '  FOR rec IN (SELECT sub_object, staged, prevalidation_failed, transformed, transform_failed,',
 '                     generated, loaded, load_failed, in_progress, unreconciled',
-'                FROM DMT_OWNER.DMT_OBJECT_FUNNEL_V',
+'                FROM DMT_OBJECT_FUNNEL_V',
 '               WHERE run_id=v_run AND cemli_code=v_cemli',
 '               ORDER BY sub_order, sub_object) LOOP',
 '    v_rows := v_rows + 1;',
@@ -50172,7 +50172,7 @@ wwv_flow_imp_page.create_page_plug(
 '  v_upd_date  VARCHAR2(100);',
 '  CURSOR c_tables IS',
 '    SELECT TFM_TABLE, DISPLAY_NAME, STATUS_COLUMN, ROW_FILTER',
-'    FROM DMT_OWNER.DMT_V_CEMLI_TFM_TABLES',
+'    FROM DMT_V_CEMLI_TFM_TABLES',
 '    WHERE CEMLI_CODE = v_cemli',
 '    ORDER BY SORT_ORDER;',
 'BEGIN',
@@ -50182,7 +50182,7 @@ wwv_flow_imp_page.create_page_plug(
 '  END IF;',
 '  FOR rec IN c_tables LOOP',
 '    -- Count failed rows first',
-'    v_sql := ''SELECT COUNT(*) FROM DMT_OWNER.'' || rec.TFM_TABLE ||',
+'    v_sql := ''SELECT COUNT(*) FROM '' || rec.TFM_TABLE ||',
 '      '' WHERE RUN_ID = :1 AND '' || rec.STATUS_COLUMN || '' = ''''FAILED'''''';',
 '    IF rec.ROW_FILTER IS NOT NULL THEN',
 '      v_sql := v_sql || '' AND '' || rec.ROW_FILTER;',
@@ -50208,7 +50208,7 @@ wwv_flow_imp_page.create_page_plug(
 '      v_sql := ''SELECT TFM_SEQUENCE_ID, STG_SEQUENCE_ID, '' ||',
 '        ''SUBSTR(ERROR_TEXT,1,500), '' ||',
 '        ''TO_CHAR(LAST_UPDATED_DATE,''''YYYY-MM-DD HH24:MI'''') '' ||',
-'        ''FROM DMT_OWNER.'' || rec.TFM_TABLE ||',
+'        ''FROM '' || rec.TFM_TABLE ||',
 '        '' WHERE RUN_ID = :1 AND '' || rec.STATUS_COLUMN || '' = ''''FAILED'''''';',
 '      IF rec.ROW_FILTER IS NOT NULL THEN',
 '        v_sql := v_sql || '' AND '' || rec.ROW_FILTER;',
@@ -50315,10 +50315,10 @@ wwv_flow_imp_page.create_page_plug(
 '    ||''</tr></thead><tbody>'');',
 '  FOR r IN (',
 '    SELECT REQUEST_ID, PARENT_REQUEST_ID, JOB_SHORT_NAME, STATE_TEXT, START_TIME, END_TIME, NVL(DEPTH_LEVEL,0) DEPTH_LEVEL',
-'    FROM DMT_OWNER.DMT_ESS_JOB_TBL',
+'    FROM DMT_ESS_JOB_TBL',
 '    WHERE REQUEST_ID = l_root',
 '       OR PARENT_REQUEST_ID = l_root',
-'       OR PARENT_REQUEST_ID IN (SELECT REQUEST_ID FROM DMT_OWNER.DMT_ESS_JOB_TBL WHERE PARENT_REQUEST_ID = l_root)',
+'       OR PARENT_REQUEST_ID IN (SELECT REQUEST_ID FROM DMT_ESS_JOB_TBL WHERE PARENT_REQUEST_ID = l_root)',
 '    ORDER BY DEPTH_LEVEL, REQUEST_ID',
 '  ) LOOP',
 '    l_cnt := l_cnt + 1;',
@@ -50518,7 +50518,7 @@ wwv_flow_imp_page.create_page_plug(
 'FROM DMT_LOG_TBL l',
 'WHERE (:P54_RUN_ID IS NULL OR l.INTEGRATION_ID = :P54_RUN_ID)',
 '  AND (:P54_CEMLI_CODE IS NULL OR l.QUEUE_ID IN (',
-'         SELECT q.QUEUE_ID FROM DMT_OWNER.DMT_WORK_QUEUE_TBL q',
+'         SELECT q.QUEUE_ID FROM DMT_WORK_QUEUE_TBL q',
 '         WHERE q.RUN_ID = :P54_RUN_ID AND q.CEMLI_CODE = :P54_CEMLI_CODE))',
 'ORDER BY l.LOG_DATE DESC'))
 ,p_plug_source_type=>'NATIVE_IR'
@@ -50729,7 +50729,7 @@ wwv_flow_imp_page.create_page_plug(
 '                                                HTP.P(''<div style="padding:24px;color:#888;">No parameters specified.</div>'');',
 '                                                    RETURN;',
 '                                                      END IF;',
-'  BEGIN SELECT MIN(CEMLI_CODE) INTO l_cemli FROM DMT_OWNER.DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = l_sub; EXCEPTION WHEN OTHERS THEN l_cemli := NULL; END; l_cemli := NVL(l_cemli, l_sub);',
+'  BEGIN SELECT MIN(CEMLI_CODE) INTO l_cemli FROM DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = l_sub; EXCEPTION WHEN OTHERS THEN l_cemli := NULL; END; l_cemli := NVL(l_cemli, l_sub);',
 '                                                        HTP.P(''<div style="margin-bottom:12px;"><a href="f?p='' || l_app || '':52:'' || l_sess || ''::NO::P52_RUN_ID,P52_CEMLI_CODE:'' || l_int || '','' || l_cemli || ''" style="font-size:13px;color:#666;">&larr; Back to Object Detail<'
 ||'/a></div>'');',
 '                                                          HTP.P(''<div style="display:flex;gap:24px;padding:12px 0;border-bottom:1px solid #444;margin-bottom:16px;">'');',
@@ -50819,7 +50819,7 @@ wwv_flow_imp_page.create_page_plug(
 '',
 '  FOR rec IN (',
 '    SELECT TFM_SEQUENCE_ID, DISPLAY_KEY, LOOKUP_KEY, TFM_STATUS, RECONCILIATION_STATUS, ERROR_CATEGORY, ERROR_TEXT, TO_CHAR(RESULTS_UPDATED_DATE,''YYYY-MM-DD HH24:MI'') UPD',
-'    FROM DMT_OWNER.DMT_RECORD_DETAIL_V',
+'    FROM DMT_RECORD_DETAIL_V',
 '    WHERE INTEGRATION_ID = l_int AND SUB_OBJECT = l_sub',
 '    AND (l_stat IS NULL OR TFM_STATUS = l_stat)',
 '    ORDER BY TFM_SEQUENCE_ID',
@@ -50895,7 +50895,7 @@ wwv_flow_imp_page.create_page_process(
 '        APEX_JSON.open_array(''files'');',
 '        FOR f IN (',
 '            SELECT ESS_FILE_ID, REQUEST_ID, FILE_TYPE, FILE_NAME, CONTENT_TYPE',
-'            FROM   DMT_OWNER.DMT_ESS_JOB_FILE_TBL',
+'            FROM   DMT_ESS_JOB_FILE_TBL',
 '            WHERE  ESS_JOB_ID = l_request_id',
 '        ) LOOP',
 '            APEX_JSON.open_object;',
@@ -50909,7 +50909,7 @@ wwv_flow_imp_page.create_page_process(
 '        APEX_JSON.close_array;',
 '        APEX_JSON.close_object;',
 '    ELSE',
-'        DMT_OWNER.DMT_ESS_UTIL_PKG.DOWNLOAD_ESS_FILE_TO_BROWSER(',
+'        DMT_ESS_UTIL_PKG.DOWNLOAD_ESS_FILE_TO_BROWSER(',
 '            p_request_id => l_request_id,',
 '            p_file_name  => l_file_name',
 '        );',
@@ -50991,7 +50991,7 @@ wwv_flow_imp_page.create_page_plug(
 '    RETURN;',
 '  END IF;',
 '  FOR rec IN (SELECT JOB_SHORT_NAME, STATE_TEXT, DURATION_SECS',
-'              FROM DMT_OWNER.DMT_ESS_JOB_DETAIL_V',
+'              FROM DMT_ESS_JOB_DETAIL_V',
 '              WHERE REQUEST_ID = l_req AND ROWNUM = 1) LOOP',
 '    HTP.P(''<h3 style="font-size:15px;font-weight:600;margin:0 0 12px;">ESS Job '' || l_req || ''</h3>'');',
 '    HTP.P(''<div style="display:flex;gap:24px;padding:8px 0;border-bottom:1px solid #e0e0e0;margin-bottom:12px;">'');',
@@ -51003,7 +51003,7 @@ wwv_flow_imp_page.create_page_plug(
 '  HTP.P(''<h4 style="font-size:13px;font-weight:600;margin:16px 0 8px;">Output Files</h4>'');',
 '  HTP.P(''<div id="essFileList">'');',
 '  FOR f IN (SELECT REQUEST_ID, FILE_TYPE, FILE_NAME',
-'            FROM DMT_OWNER.DMT_ESS_JOB_FILE_TBL',
+'            FROM DMT_ESS_JOB_FILE_TBL',
 '            WHERE REQUEST_ID = l_req ORDER BY FILE_NAME) LOOP',
 '    l_cnt := l_cnt + 1;',
 '    HTP.P(''<div style="display:flex;align-items:center;gap:12px;padding:8px;border:1px solid #e0e0e0;border-radius:4px;margin-bottom:6px;">'');',
@@ -51058,10 +51058,10 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_type=>'NATIVE_PLSQL'
 ,p_process_name=>'DOWNLOAD_ESS_FILE_V2'
 ,p_process_sql_clob=>'DECLARE l_request_id NUMBER := TO_NUMBER(apex_application.g_x01); l_file_name VARCHAR2(500) := apex_application.g_x02; l_action VARCHAR2(20) := NVL(apex_application.g_x03, ''DOWNLOAD''); BEGIN IF l_action = ''LIST'' THEN APEX_JSON.open_object; APEX_JSON.'
-||'open_array(''files''); FOR f IN ( SELECT ESS_FILE_ID, REQUEST_ID, FILE_TYPE, FILE_NAME, CONTENT_TYPE FROM DMT_OWNER.DMT_ESS_JOB_FILE_TBL WHERE REQUEST_ID = l_request_id ORDER BY FILE_NAME ) LOOP APEX_JSON.open_object; APEX_JSON.write(''file_id'', f.ESS_F'
+||'open_array(''files''); FOR f IN ( SELECT ESS_FILE_ID, REQUEST_ID, FILE_TYPE, FILE_NAME, CONTENT_TYPE FROM DMT_ESS_JOB_FILE_TBL WHERE REQUEST_ID = l_request_id ORDER BY FILE_NAME ) LOOP APEX_JSON.open_object; APEX_JSON.write(''file_id'', f.ESS_F'
 ||'ILE_ID); APEX_JSON.write(''request_id'', f.REQUEST_ID); APEX_JSON.write(''file_type'', f.FILE_TYPE); APEX_JSON.write(''file_name'', f.FILE_NAME); APEX_JSON.write(''content_type'', f.CONTENT_TYPE); APEX_JSON.close_object; END LOOP; APEX_JSON.close_array; APEX'
-||'_JSON.close_object; ELSIF l_action = ''ENUMERATE'' THEN DMT_OWNER.DMT_ESS_UTIL_PKG.ENUMERATE_ESS_FILES( p_ess_job_id => NULL, p_request_id => l_request_id ); APEX_JSON.open_object; APEX_JSON.write(''status'', ''OK''); APEX_JSON.close_object; ELSE DMT_OWNER'
-||'.DMT_ESS_UTIL_PKG.DOWNLOAD_ESS_FILE_V2_TO_BROWSER( p_request_id => l_request_id, p_file_name => l_file_name ); END IF; EXCEPTION WHEN OTHERS THEN APEX_JSON.open_object; APEX_JSON.write(''error'', SQLERRM); APEX_JSON.close_object; END;'
+||'_JSON.close_object; ELSIF l_action = ''ENUMERATE'' THEN DMT_ESS_UTIL_PKG.ENUMERATE_ESS_FILES( p_ess_job_id => NULL, p_request_id => l_request_id ); APEX_JSON.open_object; APEX_JSON.write(''status'', ''OK''); APEX_JSON.close_object; ELSE '
+||'DMT_ESS_UTIL_PKG.DOWNLOAD_ESS_FILE_V2_TO_BROWSER( p_request_id => l_request_id, p_file_name => l_file_name ); END IF; EXCEPTION WHEN OTHERS THEN APEX_JSON.open_object; APEX_JSON.write(''error'', SQLERRM); APEX_JSON.close_object; END;'
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
 ,p_internal_uid=>999000058001
