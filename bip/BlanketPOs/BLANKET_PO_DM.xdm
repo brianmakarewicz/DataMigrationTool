@@ -39,8 +39,11 @@ SELECT
     CAST(NULL AS VARCHAR2(30))          AS vendor_num,
     CAST(NULL AS VARCHAR2(4000))        AS error_message
 FROM   po_headers_all b
-WHERE  b.request_id = :P_IMPORT_ESS_ID
-AND    :P_IMPORT_ESS_ID IS NOT NULL
+WHERE  b.segment1 IN (
+           SELECT h2.document_num
+           FROM   po_headers_interface h2
+           WHERE  h2.load_request_id = :P_BATCH_ID
+       )
 AND    b.type_lookup_code = 'BLANKET'
       ]]></sql>
     </dataSet>

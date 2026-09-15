@@ -264,7 +264,12 @@ AS
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    DOCUMENT_NUM          = r.document_num
-                AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
+                -- Positive presence in PO_HEADERS_ALL is the strongest proof of a
+                -- load (Rule #1) and overrides any prior error verdict: the agreement
+                -- can come back with a "document number must be unique" interface
+                -- error yet still exist in the base table (a within-run re-submit
+                -- created it once). So confirm LOADED even over a prior FAILED.
+                AND    TFM_STATUS              != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'INTERFACE' THEN
