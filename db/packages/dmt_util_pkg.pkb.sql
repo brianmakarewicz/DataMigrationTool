@@ -125,7 +125,7 @@
                     host => l_old_host,
                     ace  => xs$ace_type(
                                 privilege_list => xs$name_list('connect', 'resolve'),
-                                principal_name => 'DMT_OWNER',
+                                principal_name => USER,  -- connected schema (schema-relative)
                                 principal_type => xs_acl.ptype_db
                             )
                 );
@@ -140,7 +140,7 @@
                 host => l_new_host,
                 ace  => xs$ace_type(
                             privilege_list => xs$name_list('connect', 'resolve'),
-                            principal_name => 'DMT_OWNER',
+                            principal_name => USER,  -- connected schema (schema-relative)
                             principal_type => xs_acl.ptype_db
                         )
             );
