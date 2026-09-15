@@ -310,7 +310,7 @@ AS
         FOR r IN (
             SELECT x.award_number,
                    x.processed_message
-            FROM   XMLTABLE('/DATA_DS/LIST_G_4/G_4' PASSING l_xml
+            FROM   XMLTABLE('//G_4' PASSING l_xml
                 COLUMNS
                     award_number      VARCHAR2(300)  PATH 'PARENT_AWARD_NUMBER',
                     processed_message VARCHAR2(4000) PATH 'PROCESSED_MESSAGE'
