@@ -165,6 +165,22 @@
                     AND    (SEGMENT1 = r.segment1 OR (SEGMENT1 IS NULL AND r.segment1 IS NULL))
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
+                ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE')
+                      AND UPPER(r.error_msg) LIKE '%ALREADY EXISTS%' THEN
+                    -- Duplicate ("already exists") means the supplier IS in the
+                    -- Fusion base table -- it loaded (including a within-run
+                    -- re-submit). Base-table presence is the authoritative LOADED
+                    -- signal (design: LOADED only with a real base-table row), so
+                    -- record LOADED rather than letting the duplicate mark it FAILED.
+                    UPDATE DMT_POZ_SUPPLIERS_TFM_TBL
+                    SET    TFM_STATUS               = 'LOADED',
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID       = p_run_id
+                    AND    VENDOR_NAME          = r.vendor_name
+                    AND    (SEGMENT1 = r.segment1 OR (SEGMENT1 IS NULL AND r.segment1 IS NULL))
+                    AND    TFM_STATUS              != 'LOADED';
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
                     UPDATE DMT_POZ_SUPPLIERS_TFM_TBL
                     SET    TFM_STATUS               = 'FAILED',
