@@ -2,170 +2,68 @@
 
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_RECON_CONTRACT_PKG" AS
 -- ============================================================
--- DMT_RECON_CONTRACT_PKG body — the one shared Contract v1 parser.
--- See the package spec for the contract and outcome rules.
+-- DMT_RECON_CONTRACT_PKG body — the one shared Contract v1 FETCH.
+-- See the package spec for the contract and the FETCH/APPLY split (Option A).
+-- This package contains NO dynamic SQL and names NO TFM table.
 -- ============================================================
 
     -- --------------------------------------------------------
-    -- APPLY_PAGE — apply one page of parsed report rows to the TFM table.
-    -- Dynamic against p_tfm_table / p_fusion_id_col (from the registry) so the
-    -- same code serves every Contract v1 object. Returns the LOADED/FAILED
-    -- counts for this page and the last RECORD_KEY seen (the keyset cursor).
+    -- FETCH — run the object's Contract v1 report and return its parsed rows.
     -- --------------------------------------------------------
-    PROCEDURE apply_page (
-        p_run_id        IN  NUMBER,
-        p_tfm_table     IN  VARCHAR2,
-        p_fusion_id_col IN  VARCHAR2,
-        p_report_xml    IN  XMLTYPE,
-        x_last_key      OUT VARCHAR2,
-        x_row_count     OUT NUMBER,
-        x_loaded        OUT NUMBER,
-        x_failed        OUT NUMBER
-    ) IS
-        l_loaded  NUMBER := 0;
-        l_failed  NUMBER := 0;
-        l_rows    NUMBER := 0;
-        l_last    VARCHAR2(1000);
-        -- One LOADED update and one FAILED update, both dynamic on the registry-
-        -- named table + Fusion-id column. RECORD_KEY is matched to RECON_KEY.
-        l_load_sql VARCHAR2(2000) :=
-            'UPDATE ' || p_tfm_table ||
-            ' SET TFM_STATUS = ''LOADED'', ' || p_fusion_id_col || ' = :fid, ' ||
-            '     RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE ' ||
-            ' WHERE RUN_ID = :iid AND RECON_KEY = :rk ' ||
-            '   AND TFM_STATUS NOT IN (''LOADED'',''FAILED'')';
-        l_fail_sql VARCHAR2(2000) :=
-            'UPDATE ' || p_tfm_table ||
-            ' SET TFM_STATUS = ''FAILED'', ' ||
-            '     ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, ''[FUSION_ERROR] '' || :msg), ' ||
-            '     RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE ' ||
-            ' WHERE RUN_ID = :iid AND RECON_KEY = :rk ' ||
-            '   AND TFM_STATUS NOT IN (''LOADED'',''FAILED'')';
-        l_n NUMBER;
-    BEGIN
-        FOR r IN (
-            SELECT x.object_type,
-                   x.record_key,
-                   UPPER(x.source_type)   AS source_type,
-                   UPPER(x.fusion_status) AS fusion_status,
-                   x.fusion_id,
-                   x.error_message
-            FROM   XMLTABLE('/DATA_DS/G_1' PASSING p_report_xml
-                COLUMNS
-                    object_type     VARCHAR2(100)  PATH 'OBJECT_TYPE',
-                    record_key      VARCHAR2(1000) PATH 'RECORD_KEY',
-                    source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
-                    fusion_status   VARCHAR2(20)   PATH 'FUSION_STATUS',
-                    fusion_id       NUMBER         PATH 'FUSION_ID',
-                    error_message   VARCHAR2(4000) PATH 'ERROR_MESSAGE'
-            ) x
-            ORDER BY x.record_key
-        ) LOOP
-            l_rows := l_rows + 1;
-            l_last := r.record_key;
-
-            IF r.source_type = 'BASE'
-               AND r.fusion_status = 'SUCCESS'
-               AND r.fusion_id IS NOT NULL THEN
-                -- Positive proof: the object's business key was found in its Fusion
-                -- base table with a real id. This is the ONLY path to LOADED.
-                EXECUTE IMMEDIATE l_load_sql
-                    USING r.fusion_id, p_run_id, r.record_key;
-                l_loaded := l_loaded + SQL%ROWCOUNT;
-
-            ELSIF r.fusion_status = 'ERROR' AND r.error_message IS NOT NULL THEN
-                -- A real, specific Fusion error for this record -> FAILED with the
-                -- exact message (no composed sentence).
-                EXECUTE IMMEDIATE l_fail_sql
-                    USING r.error_message, p_run_id, r.record_key;
-                l_failed := l_failed + SQL%ROWCOUNT;
-
-            ELSE
-                -- INTERFACE/SUCCESS (corroborating, never sufficient), or a
-                -- non-terminal status with no real error: leave the row for the
-                -- shared [UNACCOUNTED] sweep. Never fabricate an outcome.
-                NULL;
-            END IF;
-        END LOOP;
-
-        x_row_count := l_rows;
-        x_last_key  := l_last;
-        x_loaded    := l_loaded;
-        x_failed    := l_failed;
-    END apply_page;
-
-    -- --------------------------------------------------------
-    -- RECONCILE (full) — see spec.
-    -- --------------------------------------------------------
-    PROCEDURE RECONCILE (
+    FUNCTION FETCH (
         p_cemli_code    IN  VARCHAR2,
         p_run_id        IN  NUMBER,
         p_load_ess_id   IN  NUMBER   DEFAULT NULL,
         p_import_ess_id IN  NUMBER   DEFAULT NULL,
-        x_loaded        OUT NUMBER,
-        x_failed        OUT NUMBER
-    ) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE';
+        p_row_cap       IN  NUMBER   DEFAULT NULL
+    ) RETURN T_RECON_TBL IS
+        C_PROC CONSTANT VARCHAR2(30) := 'FETCH';
         l_contract_ver  NUMBER;
-        l_tfm_table     VARCHAR2(100);
-        l_fusion_id_col VARCHAR2(100);
         l_prefix        VARCHAR2(30);
         l_chunk_size    NUMBER;
         l_after_key     VARCHAR2(1000) := NULL;
         l_xml           XMLTYPE;
         l_err           NUMBER;
         l_page          PLS_INTEGER := 0;
-        l_page_rows     NUMBER;
+        l_page_rows     PLS_INTEGER;
         l_last_key      VARCHAR2(1000);
-        l_pg_loaded     NUMBER;
-        l_pg_failed     NUMBER;
-        l_gen_count     NUMBER;
         l_max_pages     PLS_INTEGER;
-        l_total_rows    NUMBER := 0;
+        l_out           T_RECON_TBL;
+        l_n             PLS_INTEGER := 0;
     BEGIN
-        x_loaded := 0;
-        x_failed := 0;
-
-        -- Registry: the object must be Contract v1 with a TFM table + id column.
+        -- Registry: the object must be Contract v1. Only the CONTRACT_VERSION is
+        -- read here (plus PREFIX from the run); the report catalog path is
+        -- resolved inside RUN_BIP_REPORT from DMT_BIP_REPORT_TBL. This package
+        -- never reads TFM_TABLE / FUSION_ID_COLUMN and never builds SQL from them.
         BEGIN
-            SELECT CONTRACT_VERSION, TFM_TABLE, FUSION_ID_COLUMN
-            INTO   l_contract_ver, l_tfm_table, l_fusion_id_col
+            SELECT CONTRACT_VERSION
+            INTO   l_contract_ver
             FROM   DMT_BIP_REPORT_TBL
             WHERE  CEMLI_CODE = p_cemli_code;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
                 RAISE_APPLICATION_ERROR(-20090,
-                    'DMT_RECON_CONTRACT_PKG.RECONCILE: no DMT_BIP_REPORT_TBL row for CEMLI '
+                    'DMT_RECON_CONTRACT_PKG.FETCH: no DMT_BIP_REPORT_TBL row for CEMLI '
                     || p_cemli_code);
         END;
 
         IF NVL(l_contract_ver, 0) <> 1 THEN
             RAISE_APPLICATION_ERROR(-20091,
-                'DMT_RECON_CONTRACT_PKG.RECONCILE: CEMLI ' || p_cemli_code ||
+                'DMT_RECON_CONTRACT_PKG.FETCH: CEMLI ' || p_cemli_code ||
                 ' is not registered as CONTRACT_VERSION = 1 (found ' ||
                 NVL(TO_CHAR(l_contract_ver), 'NULL') || ').');
-        END IF;
-
-        IF l_tfm_table IS NULL OR l_fusion_id_col IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20092,
-                'DMT_RECON_CONTRACT_PKG.RECONCILE: CEMLI ' || p_cemli_code ||
-                ' is Contract v1 but TFM_TABLE / FUSION_ID_COLUMN is not registered.');
         END IF;
 
         -- Run prefix (Contract v1 P_PREFIX) and page size.
         SELECT PREFIX INTO l_prefix FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = p_run_id;
         l_chunk_size := TO_NUMBER(NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_CHUNK_SIZE'), '5000'));
 
-        -- Page-count cap derived from the run's generated-row count: a misbehaving
-        -- report cannot loop forever. +2 pages of slack, floor of 2.
-        EXECUTE IMMEDIATE
-            'SELECT COUNT(*) FROM ' || l_tfm_table || ' WHERE RUN_ID = :iid'
-            INTO l_gen_count USING p_run_id;
-        l_max_pages := GREATEST(2, CEIL(NVL(l_gen_count, 0) / GREATEST(l_chunk_size, 1)) + 2);
+        -- Page-count cap derived from the expected row count: a misbehaving report
+        -- cannot loop forever. +2 pages of slack, floor of 2.
+        l_max_pages := GREATEST(2, CEIL(NVL(p_row_cap, 0) / GREATEST(l_chunk_size, 1)) + 2);
 
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' start. CEMLI: ' || p_cemli_code ||
-            ' | TFM: ' || l_tfm_table || ' | FusionIdCol: ' || l_fusion_id_col ||
             ' | ChunkSize: ' || l_chunk_size || ' | MaxPages: ' || l_max_pages ||
             ' | LoadReqId: ' || NVL(TO_CHAR(p_load_ess_id), '(null)'),
             'INFO', C_PKG, C_PROC);
@@ -191,39 +89,61 @@
             -- never a silent retry, never a zero-row "success").
             IF l_err <> DMT_UTIL_PKG.C_SUCCESS THEN
                 RAISE_APPLICATION_ERROR(-20093,
-                    'DMT_RECON_CONTRACT_PKG.RECONCILE: Contract v1 report failed for CEMLI '
+                    'DMT_RECON_CONTRACT_PKG.FETCH: Contract v1 report failed for CEMLI '
                     || p_cemli_code || ' on page ' || l_page || ' (detail in DMT_LOG_TBL).');
             END IF;
 
             -- A NULL page = zero rows. On the first page this is the "zero report
-            -- rows is never success" case: warn, leave rows unaccounted, stop.
+            -- rows is never success" case: warn and return whatever we have (empty
+            -- on page 1). The caller's no-rows policy decides the outcome.
             IF l_xml IS NULL THEN
                 IF l_page = 1 THEN
                     DMT_UTIL_PKG.LOG(p_run_id,
                         C_PROC || ': Contract v1 report returned ZERO rows for CEMLI '
-                        || p_cemli_code || '. Rows left unaccounted (never a silent success).',
+                        || p_cemli_code || '. Returning empty set (caller applies '
+                        || 'the never-a-silent-success rule).',
                         DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
                 END IF;
                 EXIT;
             END IF;
 
-            apply_page(
-                p_run_id        => p_run_id,
-                p_tfm_table     => l_tfm_table,
-                p_fusion_id_col => l_fusion_id_col,
-                p_report_xml    => l_xml,
-                x_last_key      => l_last_key,
-                x_row_count     => l_page_rows,
-                x_loaded        => l_pg_loaded,
-                x_failed        => l_pg_failed);
-
-            x_loaded     := x_loaded + l_pg_loaded;
-            x_failed     := x_failed + l_pg_failed;
-            l_total_rows := l_total_rows + l_page_rows;
+            -- Parse this page's seven contract columns into the collection.
+            l_page_rows := 0;
+            l_last_key  := NULL;
+            FOR r IN (
+                SELECT x.object_type,
+                       x.record_key,
+                       UPPER(x.source_type)   AS source_type,
+                       UPPER(x.fusion_status) AS fusion_status,
+                       x.fusion_id,
+                       x.error_message,
+                       x.load_request_id
+                FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
+                    COLUMNS
+                        object_type     VARCHAR2(100)  PATH 'OBJECT_TYPE',
+                        record_key      VARCHAR2(1000) PATH 'RECORD_KEY',
+                        source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
+                        fusion_status   VARCHAR2(20)   PATH 'FUSION_STATUS',
+                        fusion_id       NUMBER         PATH 'FUSION_ID',
+                        error_message   VARCHAR2(4000) PATH 'ERROR_MESSAGE',
+                        load_request_id VARCHAR2(100)  PATH 'LOAD_REQUEST_ID'
+                ) x
+                ORDER BY x.record_key
+            ) LOOP
+                l_n := l_n + 1;
+                l_out(l_n).object_type     := r.object_type;
+                l_out(l_n).record_key      := r.record_key;
+                l_out(l_n).source_type     := r.source_type;
+                l_out(l_n).fusion_status   := r.fusion_status;
+                l_out(l_n).fusion_id       := r.fusion_id;
+                l_out(l_n).error_message   := r.error_message;
+                l_out(l_n).load_request_id := r.load_request_id;
+                l_page_rows := l_page_rows + 1;
+                l_last_key  := r.record_key;
+            END LOOP;
 
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ' page ' || l_page || ': rows ' || l_page_rows ||
-                ' | LOADED ' || l_pg_loaded || ' | FAILED ' || l_pg_failed ||
                 ' | lastKey ' || NVL(l_last_key, '(none)'),
                 'INFO', C_PKG, C_PROC);
 
@@ -231,7 +151,7 @@
             EXIT WHEN l_page_rows < l_chunk_size;
 
             -- Safety cap: a report that keeps returning full pages beyond the
-            -- run's own row count is misbehaving; stop and surface it.
+            -- expected row count is misbehaving; stop and surface it.
             IF l_page >= l_max_pages THEN
                 DMT_UTIL_PKG.LOG(p_run_id,
                     C_PROC || ': page cap (' || l_max_pages || ') reached for CEMLI '
@@ -245,9 +165,10 @@
 
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' complete. CEMLI: ' || p_cemli_code ||
-            ' | pages ' || l_page || ' | rows ' || l_total_rows ||
-            ' | LOADED ' || x_loaded || ' | FAILED ' || x_failed,
+            ' | pages ' || l_page || ' | rows ' || l_n,
             'INFO', C_PKG, C_PROC);
+
+        RETURN l_out;
 
     EXCEPTION
         WHEN OTHERS THEN
@@ -255,22 +176,7 @@
                 C_PROC || ' failed for CEMLI ' || p_cemli_code || '.',
                 SQLERRM, C_PKG, C_PROC);
             RAISE;
-    END RECONCILE;
-
-    -- --------------------------------------------------------
-    -- RECONCILE (convenience, no OUT counts).
-    -- --------------------------------------------------------
-    PROCEDURE RECONCILE (
-        p_cemli_code    IN  VARCHAR2,
-        p_run_id        IN  NUMBER,
-        p_load_ess_id   IN  NUMBER   DEFAULT NULL,
-        p_import_ess_id IN  NUMBER   DEFAULT NULL
-    ) IS
-        l_loaded NUMBER;
-        l_failed NUMBER;
-    BEGIN
-        RECONCILE(p_cemli_code, p_run_id, p_load_ess_id, p_import_ess_id, l_loaded, l_failed);
-    END RECONCILE;
+    END FETCH;
 
 END DMT_RECON_CONTRACT_PKG;
 /

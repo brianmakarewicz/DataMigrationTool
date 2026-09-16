@@ -39,18 +39,21 @@ COMMENT ON TABLE "DMT_BIP_REPORT_TBL"  IS 'BIP report registry. One row per CEML
 -- report contract - v1"). ADDITIVE + NULLABLE. Fresh installs get the final
 -- shape from these guarded in-file ALTERs; an existing database converges via
 -- db/migrations/2026-09-16_bip_report_contract_v1_columns.sql (same statements,
--- logged once in DMT_MIGRATION_LOG). These four columns drive the single shared
--- Contract v1 parser (DMT_RECON_CONTRACT_PKG.RECONCILE):
---   CONTRACT_VERSION  1 = the object's recon report conforms to Contract v1 and
---                     the shared parser applies its seven-column response.
---                     NULL/0 = legacy bespoke reconciler (coexists during
---                     per-object migration).
---   TFM_TABLE         the object's TFM table the parser updates.
---   FUSION_ID_COLUMN  the TFM column the parser stamps the Fusion base-table id
---                     into on a BASE/SUCCESS row (e.g. FUSION_PERSON_ID).
---   RECON_KEY_SQL     reserved key-building expression note; the parser matches
---                     the report's RECORD_KEY to TFM.RECON_KEY, and RECON_KEY_SQL
---                     documents how that key is built for this object.
+-- logged once in DMT_MIGRATION_LOG). These four columns describe an object's
+-- Contract v1 registration. CONTRACT_VERSION gates the shared FETCH
+-- (DMT_RECON_CONTRACT_PKG.FETCH); the other three are DOCUMENTATION for the
+-- object's own reconciler (Option A, owner decision on PR #248 — the shared
+-- package never uses TFM_TABLE / FUSION_ID_COLUMN in SQL, so there is no dynamic
+-- SQL against a catalog-sourced identifier). The per-object reconciler applies
+-- the parsed rows with STATIC SQL against its own compile-time-known TFM table.
+--   CONTRACT_VERSION  1 = the object's recon report conforms to Contract v1, so
+--                     the shared FETCH will page + parse it. NULL/0 = legacy
+--                     bespoke reconciler (coexists during per-object migration).
+--   TFM_TABLE         (documentation) the TFM table the object's reconciler updates.
+--   FUSION_ID_COLUMN  (documentation) the TFM column the object's reconciler stamps
+--                     the Fusion base-table id into on a BASE/SUCCESS row.
+--   RECON_KEY_SQL     (documentation) how RECON_KEY is built for the object; the
+--                     reconciler matches the report's RECORD_KEY to TFM.RECON_KEY.
 -- ---------------------------------------------------------------------------
 declare
   procedure add_col(p_col varchar2, p_ddl varchar2) is

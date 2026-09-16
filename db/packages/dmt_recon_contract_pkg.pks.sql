@@ -2,65 +2,82 @@
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_RECON_CONTRACT_PKG" AS
 -- ============================================================
--- DMT_RECON_CONTRACT_PKG  —  the ONE shared Contract v1 reconciliation parser.
+-- DMT_RECON_CONTRACT_PKG  —  the ONE shared Contract v1 reconciliation FETCH.
 -- ============================================================
 -- Written once; every Contract-v1 object's BIP data model conforms to it
 -- (design section 5, "BIP reconciliation report contract - v1"). Given a CEMLI
--- code, it reads that object's registry row from DMT_BIP_REPORT_TBL, runs the
--- object's Contract v1 report over BIP (shared transport DMT_UTIL_PKG.RUN_BIP_
--- REPORT), pages through the result with keyset pagination (P_AFTER_KEY loops
--- until a short page), and applies the SEVEN standard response columns to the
--- object's TFM table:
+-- code, FETCH reads ONLY that object's report catalog path + parameters from
+-- DMT_BIP_REPORT_TBL, runs the object's Contract v1 report over BIP (shared
+-- transport DMT_UTIL_PKG.RUN_BIP_REPORT), pages through the result with keyset
+-- pagination (P_AFTER_KEY loops until a short page), parses every page into a
+-- collection of the SEVEN standard response fields, and RETURNS that collection:
 --
 --   OBJECT_TYPE   RECORD_KEY   SOURCE_TYPE('BASE'|'INTERFACE')
 --   FUSION_STATUS('SUCCESS'|'ERROR')   FUSION_ID   ERROR_MESSAGE   LOAD_REQUEST_ID
 --
--- Outcome rules (identical to the gold-standard GL reconciler, generalized):
---   * BASE / SUCCESS / FUSION_ID NOT NULL  -> the RECON_KEY-matched TFM row is
---     LOADED and FUSION_ID is stamped into the registry-named FUSION_ID_COLUMN.
---   * BASE (or INTERFACE) / ERROR with a real ERROR_MESSAGE -> FAILED, the
---     message appended as '[FUSION_ERROR] ' || message (never composed).
---   * Everything else is left as-is for the shared [UNACCOUNTED] sweep.
---   * Zero report rows is never success (logged warning; rows left unaccounted).
---   * A SOAP fault / transport failure raises immediately (never a silent retry).
+-- The APPLY (turning these rows into LOADED/FAILED on a TFM table) lives in each
+-- object's own reconciler, as STATIC SQL against that object's compile-time-known
+-- TFM table -- see DMT_WORKER_RESULTS_PKG for the template. This split (Option A,
+-- owner decision on PR #248) keeps this shared package free of ANY dynamic SQL:
+-- it never names a TFM table or Fusion-id column and has ZERO EXECUTE IMMEDIATE,
+-- so the design's dynamic-SQL restriction (Coding Standards section) needs no
+-- amendment.
 --
--- The parser reads ONLY the seven standard columns and the per-object
--- registration (CONTRACT_VERSION, TFM_TABLE, FUSION_ID_COLUMN, RECON_KEY_SQL) —
--- so a new object is a registry row plus a conforming data model, no new code.
+-- FETCH-side rules retained here:
+--   * Zero report rows -> returns an EMPTY collection (never a silent success;
+--     the caller applies its own no-rows policy -- zero rows is never LOADED).
+--   * A SOAP fault / transport failure raises immediately (never a silent retry).
+--   * Keyset pagination is bounded by a page-count cap derived from p_row_cap so
+--     a misbehaving report cannot loop forever.
+--
+-- The APPLY-side rules (which each object's reconciler implements statically):
+--   * BASE / SUCCESS / FUSION_ID NOT NULL  -> LOADED, stamp FUSION_ID.
+--   * FUSION_STATUS = ERROR with a real ERROR_MESSAGE -> FAILED, message appended
+--     as '[FUSION_ERROR] ' || message (never composed).
+--   * Everything else is left for the shared unaccounted sweep. INTERFACE/SUCCESS
+--     corroborates but is never sufficient for LOADED.
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(30) := 'DMT_RECON_CONTRACT_PKG';
 
+    -- The seven Contract v1 response fields, one record per report row.
+    TYPE T_RECON_ROW IS RECORD (
+        OBJECT_TYPE     VARCHAR2(100),
+        RECORD_KEY      VARCHAR2(1000),
+        SOURCE_TYPE     VARCHAR2(20),    -- 'BASE' | 'INTERFACE'
+        FUSION_STATUS   VARCHAR2(20),    -- 'SUCCESS' | 'ERROR'
+        FUSION_ID       NUMBER,
+        ERROR_MESSAGE   VARCHAR2(4000),
+        LOAD_REQUEST_ID VARCHAR2(100)
+    );
+
+    -- The full parsed result (all pages), returned by FETCH.
+    TYPE T_RECON_TBL IS TABLE OF T_RECON_ROW INDEX BY PLS_INTEGER;
+
     -- --------------------------------------------------------
-    -- RECONCILE — run the object's Contract v1 report and apply the response.
+    -- FETCH — run the object's Contract v1 report and return its parsed rows.
+    -- Touches NO TFM table; the caller applies the rows statically.
     --
-    --   p_cemli_code    the object registered in DMT_BIP_REPORT_TBL with
-    --                   CONTRACT_VERSION = 1 (else raises -20090).
+    --   p_cemli_code    the object registered in DMT_BIP_REPORT_TBL (its report
+    --                   catalog path is resolved by RUN_BIP_REPORT). CONTRACT_VERSION
+    --                   must be 1 (else raises -20091).
     --   p_run_id        the pipeline run id (Contract v1 P_RUN_ID).
     --   p_load_ess_id   the load job's request id (P_LOAD_REQUEST_ID). For HDL
     --                   objects this is the HDL data set request id.
     --   p_import_ess_id the import job's request id (P_IMPORT_ESS_ID, nullable).
-    --   x_loaded        OUT count of TFM rows marked LOADED this call.
-    --   x_failed        OUT count of TFM rows marked FAILED this call.
+    --   p_row_cap       expected upper bound on rows (usually the run's generated-
+    --                   row count) used only to derive the keyset page-count cap.
+    --                   NULL/0 falls back to a floor of 2 pages of slack.
     --
-    -- Does NOT commit — the caller owns the transaction boundary.
+    -- Returns an empty collection when the report returns zero rows.
     -- --------------------------------------------------------
-    PROCEDURE RECONCILE (
+    FUNCTION FETCH (
         p_cemli_code    IN  VARCHAR2,
         p_run_id        IN  NUMBER,
         p_load_ess_id   IN  NUMBER   DEFAULT NULL,
         p_import_ess_id IN  NUMBER   DEFAULT NULL,
-        x_loaded        OUT NUMBER,
-        x_failed        OUT NUMBER
-    );
-
-    -- Convenience overload (no OUT counts) for callers that only need the effect.
-    PROCEDURE RECONCILE (
-        p_cemli_code    IN  VARCHAR2,
-        p_run_id        IN  NUMBER,
-        p_load_ess_id   IN  NUMBER   DEFAULT NULL,
-        p_import_ess_id IN  NUMBER   DEFAULT NULL
-    );
+        p_row_cap       IN  NUMBER   DEFAULT NULL
+    ) RETURN T_RECON_TBL;
 
 END DMT_RECON_CONTRACT_PKG;
 /

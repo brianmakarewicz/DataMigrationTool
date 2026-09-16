@@ -105,18 +105,98 @@ AS
             p_dataset_status => p_dataset_status,
             p_log_context    => C_CEMLI || ' > PersonLegislativeData');
 
-        -- Contract v1 base-tier positive proof (design section 5) — the shared
-        -- parser. It runs the Workers recon report over BIP, confirms each migrated
-        -- worker in the Fusion base table (PER_ALL_PEOPLE_F) by person number, and
-        -- marks that Worker TFM row LOADED with the real Fusion person id stamped
-        -- into FUSION_PERSON_ID; any BASE/ERROR row is marked FAILED with the real
-        -- Fusion error. This REPLACES the bulk LOOKUP_FUSION_IDS positive path for
-        -- Workers. The single-record REST "Verify in Fusion" button path is
-        -- unchanged. The HDL data set request id is the Contract v1 P_LOAD_REQUEST_ID.
-        DMT_RECON_CONTRACT_PKG.RECONCILE(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id));
+        -- Contract v1 base-tier positive proof (design section 5), Option A shape
+        -- (owner decision on PR #248): the shared package FETCHes the parsed report
+        -- rows (no dynamic SQL, no TFM reference there) and the APPLY is done HERE
+        -- as STATIC SQL against the compile-time-known Worker TFM table. It runs the
+        -- Workers recon report over BIP, confirms each migrated worker in the Fusion
+        -- base table (PER_ALL_PEOPLE_F) by person number, and marks that Worker TFM
+        -- row LOADED with the real Fusion person id stamped into FUSION_PERSON_ID;
+        -- any ERROR row is marked FAILED with the real Fusion error. This REPLACES
+        -- the bulk LOOKUP_FUSION_IDS positive path for Workers. The single-record
+        -- REST "Verify in Fusion" button path is unchanged. The HDL data set request
+        -- id is the Contract v1 P_LOAD_REQUEST_ID. This static-apply block is the
+        -- template the other 13 HDL objects copy.
+        DECLARE
+            l_gen_count NUMBER := 0;
+            l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
+            l_loaded    NUMBER := 0;
+            l_failed    NUMBER := 0;
+        BEGIN
+            -- Generated-row count is done statically here (not in the shared pkg),
+            -- and drives the shared FETCH's keyset page-count cap.
+            SELECT COUNT(*) INTO l_gen_count
+            FROM   DMT_WORKER_TFM_TBL
+            WHERE  RUN_ID = p_run_id;
+
+            l_rows := DMT_RECON_CONTRACT_PKG.FETCH(
+                p_cemli_code  => C_CEMLI,
+                p_run_id      => p_run_id,
+                p_load_ess_id => TO_NUMBER(p_request_id),
+                p_row_cap     => l_gen_count);
+
+            IF l_rows.COUNT = 0 THEN
+                -- Zero report rows is never success (design section 5): leave the
+                -- remaining GENERATED rows for the existing unaccounted sweep.
+                DMT_UTIL_PKG.LOG(
+                    p_run_id => p_run_id,
+                    p_message  => C_PROC || ': Workers recon report returned zero rows; '
+                                  || 'GENERATED rows left for the unaccounted sweep '
+                                  || '(never a silent success).',
+                    p_log_type => DMT_UTIL_PKG.C_LOG_WARN,
+                    p_package  => C_PKG,
+                    p_procedure => C_PROC);
+            ELSE
+                FOR i IN 1 .. l_rows.COUNT LOOP
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        -- Positive proof: person found in PER_ALL_PEOPLE_F with a
+                        -- real id. The ONLY path to LOADED. Static UPDATE.
+                        UPDATE DMT_WORKER_TFM_TBL
+                        SET    TFM_STATUS           = 'LOADED',
+                               FUSION_PERSON_ID     = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_loaded := l_loaded + SQL%ROWCOUNT;
+
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
+                        -- A real, specific Fusion error -> FAILED on the exact
+                        -- message (never composed). Static UPDATE.
+                        UPDATE DMT_WORKER_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_failed := l_failed + SQL%ROWCOUNT;
+
+                    ELSE
+                        -- INTERFACE/SUCCESS (corroborating, never sufficient) or a
+                        -- non-terminal status with no real error: leave the row for
+                        -- the existing unaccounted sweep. Never fabricate an outcome.
+                        NULL;
+                    END IF;
+                END LOOP;
+            END IF;
+
+            DMT_UTIL_PKG.LOG(
+                p_run_id => p_run_id,
+                p_message  => C_PROC || ' Contract v1 base-table apply complete. '
+                              || 'Report rows: ' || l_rows.COUNT
+                              || ' | LOADED: ' || l_loaded
+                              || ' | FAILED: ' || l_failed || '.',
+                p_package  => C_PKG,
+                p_procedure => C_PROC);
+        END;
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
