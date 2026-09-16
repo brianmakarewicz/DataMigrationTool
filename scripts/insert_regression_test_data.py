@@ -2347,10 +2347,16 @@ def main():
     # numbers are distinct HDL records. RT-WKR-G1 gets TWO assignments to prove
     # a single person can carry multiple assignments with distinct keys. The bad
     # row has its own distinct number and a bad BU so it fails cleanly.
-    for pnum, anum, status, bu, primary, label in [
-        ("RT-WKR-G1",   "ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "Y", "GOOD Assignment: RT-WKR-G1 (primary)"),
-        ("RT-WKR-G1",   "ET-RT-WKR-G1B", "ACTIVE_PROCESS", "US1 Business Unit", "N", "GOOD Assignment: RT-WKR-G1 (second — proves multiple assignments/person)"),
-        ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "Y", "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
+    # The two GOOD assignments are on DIFFERENT effective dates: two employment
+    # terms dated the SAME day under one period of service make Fusion HDL reject
+    # the set ("only one change can be the latest change for a day" / duplicate
+    # employment-terms number). Staggering the second (2026/02/01) removes the
+    # same-day collision; the generator also sequences any genuine same-day
+    # siblings (EffectiveSequence + single latest-change) as a general safeguard.
+    for pnum, anum, status, bu, primary, edate, label in [
+        ("RT-WKR-G1",   "ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "Y", "2026/01/01", "GOOD Assignment: RT-WKR-G1 (primary)"),
+        ("RT-WKR-G1",   "ET-RT-WKR-G1B", "ACTIVE_PROCESS", "US1 Business Unit", "N", "2026/02/01", "GOOD Assignment: RT-WKR-G1 (second — proves multiple assignments/person, staggered date)"),
+        ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "Y", "2026/01/01", "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_ASSIGNMENT_STG_TBL (
@@ -2361,13 +2367,13 @@ def main():
                 PRIMARY_ASSIGNMENT_FLAG, SOURCE_ID, STG_STATUS
             ) VALUES (
                 :pnum, :anum, :anum,
-                '2026/01/01', :status,
+                :edate, :status,
                 :bu, 'HIRE', 'JOB071', 'Sales',
                 '40', 'W', 'FR',
                 :primary, :src, 'NEW'
             )
         """, {"pnum": pnum, "anum": anum, "status": status, "bu": bu,
-              "primary": primary, "src": f"RT-{anum}"},
+              "primary": primary, "edate": edate, "src": f"RT-{anum}"},
         label=label)
     tag_scenario(cur, "DMT_WORK_REL_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_ASSIGNMENT_STG_TBL", scenario_id)
