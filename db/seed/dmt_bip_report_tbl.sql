@@ -456,3 +456,54 @@ when not matched then insert
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- BenParticipant (100000038) — Contract v1 registration (design section 5).
+-- Follows the Workers template exactly: the four Contract v1 columns
+-- (CONTRACT_VERSION, TFM_TABLE, FUSION_ID_COLUMN, RECON_KEY_SQL) drive the
+-- shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS. Kept in its own MERGE so this
+-- block also converges the Contract v1 columns on an existing row. BenParticipant
+-- loads via HDL as the PersonBenefitBalance business object, so there is no
+-- interface table (INTERFACE_TABLE = 'N/A (HDL)'); reconciliation is base-tier
+-- only, confirming each record in HRC_INTEGRATION_KEY_MAP
+-- (OBJECT_NAME='PersonBenefitBalance'). RECON_KEY = the prefixed PERSON_NUMBER
+-- concatenated with '_BENENRL' (also the .dat SourceSystemId and the report
+-- RECORD_KEY). The when-not-matched insert makes this self-contained.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000038                                                        bip_report_id,
+           'BenParticipant'                                                 cemli_code,
+           'Participant Enrollment'                                         object_type,
+           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_RPT.xdo'   report_catalog_path,
+           'N/A (HDL)'                                                      interface_table,
+           'BenParticipant HDL base-table reconciliation (Contract v1)'     notes,
+           1                                                                contract_version,
+           'DMT_BEN_PARTIC_TFM_TBL'                                         tfm_table,
+           'FUSION_PARTICIPANT_ID'                                          fusion_id_column,
+           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_BENENRL''' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
