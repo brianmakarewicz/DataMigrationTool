@@ -1416,15 +1416,25 @@ def main():
     #   PERSON_NUMBER           = '7'   (a real Fusion EMP, per run 116)
     #   EXPENDITURE_TYPE        = 'Administrative' (proven good in run 116)
     #   QUANTITY                = hours
-    # Charge to a NON-sponsored project (PCS10002 "US Billable no Burden"): a
-    # sponsored/award project (e.g. the RTPRJ* PRGUS-Sponsored templates) makes
-    # AWARD a required field on every expenditure (PJC_AWARD_NOT_PROVIDED), and
-    # Grants/awards is not configured on this demo pod. A billable project needs
-    # no award, so the good expenditures can cost through. (Sponsored+award is a
-    # separate case to add once Grants is configured.)
-    for proj_num, task_num, qty, amount in [
-        ("PCS10002", "6.0", 8,  1500.00),
-        ("PCS10002", "7.0", 16, 2500.00),
+    # PROVEN-GOOD LABOR EXPENDITURE RECIPE (all prerequisites verified live, run 134
+    # 2026-09-16). A labor cost transaction only posts to PJC_EXP_ITEMS_ALL when
+    # EVERY one of these pod-config facts holds — each was a distinct rejection we
+    # hit and fixed in turn:
+    #   * PROJECT 'PCS10080' — NON-sponsored (a PRGUS-Sponsored project makes AWARD
+    #       mandatory: PJC_AWARD_NOT_PROVIDED, and Grants isn't configured here),
+    #       NON-capital (a capital project aborts the costing job on a labor txn),
+    #       OPEN / accepting transactions (else PJC_NEW_TXNS_NOT_ALLOWED), with a
+    #       date range covering the item date (else PJC_EX_PROJECT_DATE).
+    #   * TASK '3.3' — chargeable.
+    #   * EXPENDITURE_TYPE 'Professional' — a valid type used by the project's own
+    #       existing costs (else PJC_EXP_TYPE_INVALID).
+    #   * PERSON_NUMBER '43' (Sheen, Debbie) — a person WITH a project cost rate on
+    #       PCS10080; a person with no rate errors PJF_PRICE_NO_PERSON_RATE.
+    #   * document trio Timecard / Straight Time (system linkage 'ST') for labor.
+    # (A sponsored+award expenditure case is deferred until Grants is configured.)
+    for proj_num, task_num, eidate, qty, amount in [
+        ("PCS10080", "3.3", "2025-04-18", 8,  1500.00),
+        ("PCS10080", "3.3", "2025-04-17", 16, 2500.00),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_PJC_EXPENDITURES_STG_TBL (
@@ -1438,21 +1448,22 @@ def main():
             ) VALUES (
                 'LABOR', :bu,
                 :pnum, :tnum,
-                'Administrative', DATE '2025-06-15',
-                :exporg, :qty, '7',
+                'Professional', TO_DATE(:eidate,'YYYY-MM-DD'),
+                :exporg, :qty, '43',
                 'USD', :amt,
                 'External Time Entry System', 'Timecard', 'Straight Time',
                 :ref, :src
             )
         """, {"bu": BU, "exporg": EXP_ORG, "pnum": proj_num, "tnum": task_num,
-              "qty": qty, "amt": amount,
-              "ref": f"RT-EXP-{proj_num}-{task_num}", "src": f"RT-EXP-{proj_num}-{task_num}"},
-        label=f"GOOD Expenditure (LABOR): {proj_num}/{task_num}")
+              "eidate": eidate, "qty": qty, "amt": amount,
+              "ref": f"RT-EXP-{proj_num}-{eidate}", "src": f"RT-EXP-{proj_num}-{eidate}"},
+        label=f"GOOD Expenditure (LABOR): {proj_num}/{task_num} {eidate}")
 
-    # BAD: a LABOR row that fails for a real, attributable reason — an
-    # EXPENDITURE_TYPE that is not a valid Fusion lookup ('BadValue'). It still
-    # carries a valid document trio and person so the rejection is attributed to
-    # the bad expenditure type, not to a missing document.
+    # BAD: a LABOR row on the SAME proven-good project/task/person, failing for ONE
+    # real, attributable reason — an EXPENDITURE_TYPE that is not a valid Fusion
+    # lookup ('BadValue'). Everything else is valid, so Fusion rejects it precisely
+    # on the bad expenditure type (PJC_EXP_TYPE_INVALID) — not on a project, date,
+    # or person-rate problem.
     run_sql(cur, """
         INSERT INTO DMT_PJC_EXPENDITURES_STG_TBL (
             TRANSACTION_TYPE, BUSINESS_UNIT,
@@ -1464,16 +1475,14 @@ def main():
             ORIG_TRANSACTION_REFERENCE, SOURCE_ID
         ) VALUES (
             'LABOR', :bu,
-            'PCS10002', '6.0',
-            'BadValue', DATE '2025-06-15',
-            :exporg, 8, '7',
+            'PCS10080', '3.3',
+            'BadValue', TO_DATE('2025-04-18','YYYY-MM-DD'),
+            :exporg, 8, '43',
             'USD', 999.99,
             'External Time Entry System', 'Timecard', 'Straight Time',
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
     """, {"bu": BU, "exporg": EXP_ORG}, label="BAD Expenditure (LABOR): invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
-    # NOTE: the BAD row charges to the same non-sponsored PCS10002/6.0 so its ONLY
-    # rejection reason is the invalid EXPENDITURE_TYPE, not a missing award.
     tag_scenario(cur, "DMT_PJC_EXPENDITURES_STG_TBL", scenario_id)
 
     # ====================================================================
