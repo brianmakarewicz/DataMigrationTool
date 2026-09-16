@@ -1410,7 +1410,7 @@ def main():
     # trio is the Time Card / Straight Time document (system linkage 'ST'),
     # which pairs with a person and an hours quantity (README Option A):
     #   USER_TRANSACTION_SOURCE = 'Time Card'
-    #   DOCUMENT_NAME           = 'Time Card'
+    #   DOCUMENT_NAME           = 'Timecard'  (one word; 'Time Card' is invalid on this pod)
     #   DOC_ENTRY_NAME          = 'Straight Time'  (system linkage 'ST')
     #   PERSON_NUMBER           = '7'   (a real Fusion EMP, per run 116)
     #   EXPENDITURE_TYPE        = 'Administrative' (proven good in run 116)
@@ -1434,7 +1434,7 @@ def main():
                 'Administrative', DATE '2025-06-15',
                 :bu, :qty, '7',
                 'USD', :amt,
-                'External Time Entry System', 'Time Card', 'Straight Time',
+                'External Time Entry System', 'Timecard', 'Straight Time',
                 :ref, :src
             )
         """, {"bu": BU, "pnum": proj_num, "tnum": task_num,
@@ -1461,7 +1461,7 @@ def main():
             'BadValue', DATE '2025-06-15',
             :bu, 8, '7',
             'USD', 999.99,
-            'External Time Entry System', 'Time Card', 'Straight Time',
+            'External Time Entry System', 'Timecard', 'Straight Time',
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
     """, {"bu": BU}, label="BAD Expenditure (LABOR): invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
