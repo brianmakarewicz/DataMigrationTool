@@ -37,15 +37,58 @@ Assertions (per RUN_ID):
                      (via DMT_V_CATALOG_HEALTH). Data-independent — catches a broken
                      catalog row that the page-52 region would silently show as 0.   [C4]
 
-Usage:  python dmt_run_assert.py [RUN_ID]   (default 113)
+Usage:  python dmt_run_assert.py [RUN_ID] [--schema NAME]   (default RUN_ID 113)
+Target schema is a parameter: --schema NAME, else $DMT2_SCHEMA, else DMT2_OWNER.
+Connection convention matches dmt_deploy.py / dmt_regression_run.py: honors
+$DMT2_CONN (user/password@dsn); otherwise builds an ATP connection for the
+target schema from ~/workspace/connections.json (atp_queryapp wallet). No longer
+hardcodes the frozen connect_atp('queryapp','DMT_OWNER') call.
 Exit 0 = all hard assertions pass, 1 = one or more failed.
 """
+import argparse
+import json
+import os
+import re
 import sys
-sys.path.insert(0, r'C:\Users\Monroe\workspace')
-from conn_helper import connect_atp
 
-RUN_ID = int(sys.argv[1]) if len(sys.argv) > 1 else 113
-conn = connect_atp('queryapp', 'DMT_OWNER')
+import oracledb
+
+CONNECTIONS = os.environ.get(
+    'DMT2_CONNECTIONS', r'C:\Users\Monroe\workspace\connections.json')
+DEFAULT_SCHEMA = os.environ.get('DMT2_SCHEMA', 'DMT2_OWNER')
+
+
+def connect(schema):
+    """Connect to the target schema. Prefer $DMT2_CONN (user/password@dsn);
+    otherwise build an ATP connection for `schema` from connections.json."""
+    conn_str = os.environ.get('DMT2_CONN')
+    if conn_str:
+        m = re.match(r'^([^/]+)/(.+)@(?://)?(.+)$', conn_str)
+        if not m:
+            sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
+        user, password, dsn = m.groups()
+        w = os.environ.get('DMT2_WALLET')
+        kw = dict(config_dir=w, wallet_location=w,
+                  wallet_password=os.environ.get('DMT2_WALLET_PW')) if w else {}
+        return oracledb.connect(user=user, password=password, dsn=dsn, **kw)
+    with open(CONNECTIONS, encoding='utf-8') as fh:
+        atp = json.load(fh)['atp_queryapp']
+    schemas = atp.get('schemas', {})
+    if 'password' not in (schemas.get(schema) or {}):
+        sys.exit(f"No password for schema {schema!r} in {CONNECTIONS}; set $DMT2_CONN.")
+    w = atp['wallet_dir']
+    return oracledb.connect(user=schema, password=schemas[schema]['password'],
+                            dsn=atp['dsn'], config_dir=w, wallet_location=w,
+                            wallet_password=atp['wallet_password'])
+
+
+ap = argparse.ArgumentParser(description='DMT run-detail correctness harness')
+ap.add_argument('run_id', nargs='?', type=int, default=113, help='RUN_ID (default 113)')
+ap.add_argument('--schema', default=DEFAULT_SCHEMA,
+                help=f'target schema owner (default {DEFAULT_SCHEMA}; env DMT2_SCHEMA)')
+_args = ap.parse_args()
+RUN_ID = _args.run_id
+conn = connect(_args.schema)
 cur = conn.cursor()
 fails, warns = [], []
 
