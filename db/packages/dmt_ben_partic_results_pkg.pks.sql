@@ -5,10 +5,11 @@ AUTHID DEFINER
 AS
 -- ============================================================
 -- DMT_BEN_PARTIC_RESULTS_PKG
--- Post-load HDL reconciliation for ParticipantEnrollments.
--- Calls DMT_HDL_UTIL_PKG.RECONCILE_HDL for each TFM table.
+-- Post-load HDL reconciliation for BenParticipant (loaded via HDL as the
+-- PersonBenefitBalance business object). Runs the per-record HDL error path and
+-- then the shared Contract v1 base-tier proof (design section 5).
 --
--- CEMLI_CODE: 'ParticipantEnrollments'
+-- CEMLI_CODE: 'BenParticipant'
 -- ============================================================
 
     PROCEDURE RECONCILE_BATCH (
