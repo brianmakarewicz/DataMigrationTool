@@ -63,6 +63,7 @@ AS
             SUBMISSION_DATE,
             ABSENCE_REASON,
             COMMENTS,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -88,6 +89,12 @@ AS
             s.SUBMISSION_DATE,
             s.ABSENCE_REASON,
             s.COMMENTS,
+            -- Contract v1 RECON_KEY (design section 5): the business key = the
+            -- exact SourceSystemId written into PersonAbsenceEntry.dat by
+            -- DMT_ABSENCE_HDL_GEN_PKG (prefixed PERSON_NUMBER || '_ABS'). BIP
+            -- base-table reconciliation matches this against
+            -- HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_ABS',
             'STAGED',
             SYSDATE
         FROM DMT_ABSENCE_STG_TBL s

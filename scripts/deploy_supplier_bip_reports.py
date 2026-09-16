@@ -45,6 +45,7 @@ REPORTS = [
     ("Items",                   "ITEM_DM",           "ITEM_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
+    ("Absences",                "DMT_ABSENCES_RECON_DM", "DMT_ABSENCES_RECON_RPT"),
 ]
 
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"
