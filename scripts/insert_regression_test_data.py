@@ -64,6 +64,7 @@ EXISTING_SUP_SITE = "Allied US1"
 CUST_ACCT_NO = "10060"                       # Computer Service and Rentals
 GL_ACCT_FMT  = "101-10-{acct}-120-000-000"
 ORG_CODE     = "V1"                          # inventory org
+EXP_ORG      = "Maintenance Prg US"           # project expenditure org (valid on pod; BU is not an exp org)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -1432,12 +1433,12 @@ def main():
                 'LABOR', :bu,
                 :pnum, :tnum,
                 'Administrative', DATE '2025-06-15',
-                :bu, :qty, '7',
+                :exporg, :qty, '7',
                 'USD', :amt,
                 'External Time Entry System', 'Timecard', 'Straight Time',
                 :ref, :src
             )
-        """, {"bu": BU, "pnum": proj_num, "tnum": task_num,
+        """, {"bu": BU, "exporg": EXP_ORG, "pnum": proj_num, "tnum": task_num,
               "qty": qty, "amt": amount,
               "ref": f"RT-EXP-{proj_num}", "src": f"RT-EXP-{proj_num}"},
         label=f"GOOD Expenditure (LABOR): {proj_num}/{task_num}")
@@ -1459,12 +1460,12 @@ def main():
             'LABOR', :bu,
             'RTPRJ001', 'RTPRJ001.1',
             'BadValue', DATE '2025-06-15',
-            :bu, 8, '7',
+            :exporg, 8, '7',
             'USD', 999.99,
             'External Time Entry System', 'Timecard', 'Straight Time',
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
-    """, {"bu": BU}, label="BAD Expenditure (LABOR): invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
+    """, {"bu": BU, "exporg": EXP_ORG}, label="BAD Expenditure (LABOR): invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
     tag_scenario(cur, "DMT_PJC_EXPENDITURES_STG_TBL", scenario_id)
 
     # ====================================================================
