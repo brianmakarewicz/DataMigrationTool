@@ -30,7 +30,7 @@
     Matching joins that mapping row to the base table to guarantee FUSION_ID is a
     real base-table id, mirroring the Salaries report's key-map read.
 
-    Verified live 2026-09-16 with --cred fin_impl:
+    Verified live 2026-09-16 with the fin_impl credential:
       HRC_INTEGRATION_KEY_MAP.OBJECT_NAME='PersonBenefitBalance' has 838 rows;
       SURROGATE_ID == BEN_PER_BNFTS_BAL_F.PER_BNFTS_BAL_ID (join proven, PERSON_ID
       resolves), and the seven-column contract SQL below returns BASE/SUCCESS rows.
