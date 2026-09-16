@@ -1,8 +1,0 @@
-# Append-only registries: use git's union merge driver so parallel fan-out PRs
-# (e.g. the HDL Contract v1 reconciliation reports, one registry row per object)
-# auto-concatenate both additions instead of conflicting. Each addition here is a
-# complete, self-contained statement/line appended at end-of-file, so a union
-# merge yields valid content. Do NOT rely on union merge for files where two
-# branches might edit the SAME line semantically.
-db/seed/dmt_bip_report_tbl.sql            merge=union
-scripts/deploy_supplier_bip_reports.py    merge=union

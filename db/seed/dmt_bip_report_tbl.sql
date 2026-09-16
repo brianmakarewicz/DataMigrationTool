@@ -416,8 +416,6 @@ commit;
 
 -- ---------------------------------------------------------------------------
 -- WorkSchedules (100000031) — Contract v1 registration (design section 5).
--- WORKSCHEDULES_ANCHOR (do not remove) — new Contract v1 HDL registrations
--- are appended AFTER this WorkSchedules block (union-merge, append-only at EOF).
 -- Loads via HDL as WorkPattern; base tier HTS_WORK_PATTERNS_VL (WORK_PATTERN_ID)
 -- via HRC_INTEGRATION_KEY_MAP. RECON_KEY = prefixed WORK_SCHEDULE_NAME.
 -- ---------------------------------------------------------------------------
@@ -460,6 +458,56 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- PayrollRelationships (100000033) — Contract v1 registration (design section 5).
+-- HDL load = no interface table; base-tier only from PAY_PAY_RELATIONSHIPS_F via
+-- HRC_INTEGRATION_KEY_MAP (OBJECT_NAME='PayrollRelationship'). RECON_KEY = prefixed
+-- PERSON_NUMBER || '_PAYREL' (also the .dat SourceSystemId and the report
+-- RECORD_KEY). The when-not-matched insert makes this block self-contained;
+-- appended at EOF so the union merge stays append-safe.
+-- Verified live 2026-09-16 (fin_impl): HRC_INTEGRATION_KEY_MAP.SURROGATE_ID ==
+-- PAY_PAY_RELATIONSHIPS_F.PAYROLL_RELATIONSHIP_ID (a real base-table id).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000033                                                                  bip_report_id,
+           'PayrollRelationships'                                                     cemli_code,
+           'Payroll Relationship'                                                     object_type,
+           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_RPT.xdo' report_catalog_path,
+           'N/A (HDL)'                                                                interface_table,
+           'Payroll Relationship HDL base-table reconciliation (Contract v1)'         notes,
+           1                                                                          contract_version,
+           'DMT_PAY_REL_TFM_TBL'                                                      tfm_table,
+           'FUSION_PAYROLL_RELATIONSHIP_ID'                                           fusion_id_column,
+           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_PAYREL''' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+-- WORKSCHEDULES_ANCHOR (do not remove) — new Contract v1 HDL registrations
+-- are appended AFTER this WorkSchedules block (union-merge, append-only at EOF).
+
+-- ---------------------------------------------------------------------------
 -- BenDependent (100000039) — Contract v1 registration (design section 5).
 -- Loads via HDL as the PersonBenefitBalance object (PersonBenefitBalance.dat —
 -- the shared discriminator for all three benefit sub-objects; DependentBenefitBalance
@@ -489,28 +537,6 @@ using (
            'DMT_BEN_DEPEND_TFM_TBL'                                        tfm_table,
            'FUSION_DEPENDENT_ID'                                           fusion_id_column,
            'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_BENDEP''' recon_key_sql
--- PayrollRelationships (100000033) — Contract v1 registration (design section 5).
--- HDL load = no interface table; base-tier only from PAY_PAY_RELATIONSHIPS_F via
--- HRC_INTEGRATION_KEY_MAP (OBJECT_NAME='PayrollRelationship'). RECON_KEY = prefixed
--- PERSON_NUMBER || '_PAYREL' (also the .dat SourceSystemId and the report
--- RECORD_KEY). The when-not-matched insert makes this block self-contained;
--- appended at EOF so the union merge stays append-safe.
--- Verified live 2026-09-16 (fin_impl): HRC_INTEGRATION_KEY_MAP.SURROGATE_ID ==
--- PAY_PAY_RELATIONSHIPS_F.PAYROLL_RELATIONSHIP_ID (a real base-table id).
--- ---------------------------------------------------------------------------
-merge into "DMT_BIP_REPORT_TBL" t
-using (
-    select 100000033                                                                  bip_report_id,
-           'PayrollRelationships'                                                     cemli_code,
-           'Payroll Relationship'                                                     object_type,
-           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_DM.xdm'  dm_catalog_path,
-           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_RPT.xdo' report_catalog_path,
-           'N/A (HDL)'                                                                interface_table,
-           'Payroll Relationship HDL base-table reconciliation (Contract v1)'         notes,
-           1                                                                          contract_version,
-           'DMT_PAY_REL_TFM_TBL'                                                      tfm_table,
-           'FUSION_PAYROLL_RELATIONSHIP_ID'                                           fusion_id_column,
-           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_PAYREL''' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
