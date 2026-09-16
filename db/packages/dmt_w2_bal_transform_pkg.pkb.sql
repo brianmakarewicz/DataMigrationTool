@@ -53,6 +53,7 @@ AS
             CONSOLIDATION_GROUP_NAME,
             EFFECTIVE_DATE,
             LEGISLATIVE_DATA_GROUP_NAME,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -68,6 +69,14 @@ AS
             s.CONSOLIDATION_GROUP_NAME,
             s.EFFECTIVE_DATE,
             s.LEGISLATIVE_DATA_GROUP_NAME,
+            -- RECON_KEY (Contract v1, design section 5): the BalanceInitialization
+            -- .dat SourceSystemId = the prefixed PERSON_NUMBER with the '_BAL' suffix
+            -- (see DMT_W2_BAL_HDL_GEN_PKG: SourceSystemId = PERSON_NUMBER || '_BAL').
+            -- After load this SourceSystemId is what HRC_INTEGRATION_KEY_MAP carries
+            -- as SOURCE_SYSTEM_ID (SOURCE_SYSTEM_OWNER = 'HRC_SQLLOADER'), joined to
+            -- the balance-batch base table PAY_BAL_BATCH_HEADERS by SURROGATE_ID =
+            -- BATCH_ID. One key definition per object.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_BAL',
             'STAGED',
             SYSDATE
         FROM DMT_W2_BAL_STG_TBL s
