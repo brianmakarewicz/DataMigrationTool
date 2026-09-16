@@ -456,3 +456,63 @@ when not matched then insert
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- Assignments (100000032) — Contract v1 registration (design section 5). HDL
+-- load = no interface table. Assignments loads TWO record types into two TFM
+-- tables, so the ONE recon report returns two base tiers (OBJECT_TYPE
+-- discriminator) and the reconciler (DMT_ASSIGNMENT_RESULTS_PKG) applies each to
+-- its matching TFM table statically:
+--   OBJECT_TYPE='WorkRelationship' -> DMT_WORK_REL_TFM_TBL, base tier
+--       PER_PERIODS_OF_SERVICE, FUSION_PERSON_ID = PERSON_ID, RECON_KEY
+--       '<prefixed PERSON_NUMBER>_POS'.
+--   OBJECT_TYPE='Assignment'       -> DMT_ASSIGNMENT_TFM_TBL, base tier
+--       PER_ALL_ASSIGNMENTS_M, FUSION_ASSIGNMENT_ID = ASSIGNMENT_ID, RECON_KEY
+--       '<ASSIGNMENT_NUMBER>_ASG'.
+-- Both tie to their base row through HRC_INTEGRATION_KEY_MAP (verified live
+-- 2026-09-16). The single-valued TFM_TABLE/FUSION_ID_COLUMN/RECON_KEY_SQL
+-- registry columns carry the primary Assignment tier (the shared parser
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS reads only CONTRACT_VERSION + the run PREFIX;
+-- the static APPLY in the reconciler handles both TFM tables). The
+-- when-not-matched insert makes this self-contained.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000032                                                    bip_report_id,
+           'Assignments'                                                cemli_code,
+           'Assignment'                                                 object_type,
+           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_DM.xdm'      dm_catalog_path,
+           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_RPT.xdo'     report_catalog_path,
+           'N/A (HDL)'                                                  interface_table,
+           'Assignment HDL base-table reconciliation (Contract v1). ONE report, '
+             || 'two base tiers via OBJECT_TYPE: WorkRelationship '
+             || '(DMT_WORK_REL_TFM_TBL <- PER_PERIODS_OF_SERVICE) and Assignment '
+             || '(DMT_ASSIGNMENT_TFM_TBL <- PER_ALL_ASSIGNMENTS_M).'    notes,
+           1                                                            contract_version,
+           'DMT_ASSIGNMENT_TFM_TBL'                                     tfm_table,
+           'FUSION_ASSIGNMENT_ID'                                       fusion_id_column,
+           'ASSIGNMENT_NUMBER || ''_ASG'' -- assignment: unprefixed source number + suffix (prefix already in source); WorkRelationship tier uses DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_POS''' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
