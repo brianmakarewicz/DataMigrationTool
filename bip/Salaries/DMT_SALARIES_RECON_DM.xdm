@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <!--
+    DMT_SALARIES_RECON_DM — Contract v1 reconciliation data model for Salaries
+    (design section 5, "BIP reconciliation report contract - v1").
+
+    Returns the BASE tier for the Salary HDL load: one row per migrated salary
+    that is positively confirmed in the Fusion HCM compensation base table
+    CMP_SALARY, with its real Fusion SALARY_ID as FUSION_ID. HDL failures arrive
+    per-record in the HDL response (tagged [FUSION_ERROR] by RECONCILE_HDL before
+    this report runs), so this report's ERROR rows are optional and it returns the
+    BASE tier only — the Salaries reconciler (which fetches these rows via
+    DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically) promotes a Salary
+    TFM row to LOADED only from a BASE / SUCCESS / FUSION_ID-not-null row here.
+
+    RECORD_KEY = the salary's business key = the prefixed PERSON_NUMBER || '_SAL',
+    which is exactly the value written into Salary.dat as SourceSystemId (see
+    DMT_SALARY_HDL_GEN_PKG) and stamped on the Salary TFM row as RECON_KEY (one
+    key definition per object). The load records a mapping row in
+    HRC_INTEGRATION_KEY_MAP keyed by that same SourceSystemId, whose SURROGATE_ID
+    is the Fusion SALARY_ID (verified live 2026-09-16:
+    HRC_INTEGRATION_KEY_MAP.OBJECT_NAME='Salary', SOURCE_SYSTEM_ID == the value we
+    wrote, and SURROGATE_ID == CMP_SALARY.SALARY_ID — a real base-table id). This
+    mirrors the Workers report, which reads HRC_INTEGRATION_KEY_MAP the same way.
+
+    Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
+    P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an
+    HDL load, so BASE-tier matching is by the run prefix (P_PREFIX). LOAD_REQUEST_ID
+    is echoed back unchanged for audit.
+  -->
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="salaries_recon" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT object_type, record_key, source_type, fusion_status,
+       fusion_id, error_message, load_request_id
+FROM (
+    -- BASE tier: positive proof in the HCM compensation base table. The load
+    -- writes one HRC_INTEGRATION_KEY_MAP row per salary (OBJECT_NAME='Salary')
+    -- whose SURROGATE_ID is the CMP_SALARY.SALARY_ID. One row per migrated salary.
+    SELECT 'Salaries'                      AS object_type,
+           m.source_system_id              AS record_key,
+           'BASE'                          AS source_type,
+           'SUCCESS'                       AS fusion_status,
+           MAX(m.surrogate_id)             AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))    AS error_message,
+           :P_LOAD_REQUEST_ID              AS load_request_id
+    FROM   hrc_integration_key_map m
+    WHERE  m.object_name = 'Salary'
+    AND    m.source_system_id LIKE :P_PREFIX || '%'
+    AND    m.source_system_id LIKE '%\_SAL' ESCAPE '\'
+    AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
+    GROUP BY m.source_system_id
+    ORDER BY m.source_system_id
+)
+WHERE ROWNUM <= :P_CHUNK_SIZE
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="salaries_recon">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="3"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="5"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="6"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
