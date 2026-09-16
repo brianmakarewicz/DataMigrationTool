@@ -456,3 +456,56 @@ when not matched then insert
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- PerfEvaluations (100000037) — Contract v1 registration (design section 5).
+-- Loads via HDL as the GoalPlan object (GoalPlan.dat — see
+-- db/packages/dmt_perf_eval_hdl_gen_pkg.pkb.sql); a loaded performance evaluation
+-- lives in Fusion as a goal plan definition. Base tier HRG_GOAL_PLANS_VL
+-- (GOAL_PLAN_ID as FUSION_ID), matched by the run prefix against GOAL_PLAN_NAME.
+-- Verified live 2026-09-16 (--cred fin_impl): object_name 'GoalPlan' exists in
+-- HRC_INTEGRATION_KEY_MAP; HRG_GOAL_PLANS_VL exposes GOAL_PLAN_ID + GOAL_PLAN_NAME;
+-- migrated DMT goal plans carry the run prefix in GOAL_PLAN_NAME (e.g.
+-- 300000331553042 '43426 DMT Goal Plan A'); no HRC_SQLLOADER / '_GOAL'
+-- source_system_id rows exist, so base matching is by prefix, not SourceSystemId.
+-- RECON_KEY = the prefixed DOCUMENT_NAME (= the goal plan name = report RECORD_KEY).
+-- FUSION_ID_COLUMN = FUSION_EVALUATION_ID on DMT_PERF_EVAL_TFM_TBL. The
+-- when-not-matched insert makes this block self-contained.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000037                                                        bip_report_id,
+           'PerfEvaluations'                                                cemli_code,
+           'Performance Evaluation'                                         object_type,
+           '/Custom/DMT2/PerfEvaluations/DMT_PERFEVALUATIONS_RECON_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/PerfEvaluations/DMT_PERFEVALUATIONS_RECON_RPT.xdo' report_catalog_path,
+           'N/A (HDL)'                                                      interface_table,
+           'Performance evaluation HDL base-table reconciliation (Contract v1)' notes,
+           1                                                                contract_version,
+           'DMT_PERF_EVAL_TFM_TBL'                                          tfm_table,
+           'FUSION_EVALUATION_ID'                                           fusion_id_column,
+           'DMT_UTIL_PKG.PREFIXED(run_prefix, DOCUMENT_NAME, 240) -- prefixed goal plan name' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
