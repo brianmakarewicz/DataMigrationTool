@@ -75,6 +75,7 @@
             WORKER_TYPE,
             DATE_START,
             PRIMARY_FLAG,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -91,6 +92,13 @@
             s.WORKER_TYPE,
             s.DATE_START,
             s.PRIMARY_FLAG,
+            -- RECON_KEY = the same value written to the HDL .dat as the
+            -- WorkRelationship SourceSystemId (DMT_ASSIGNMENT_HDL_GEN_PKG:
+            -- prefixed PERSON_NUMBER || '_POS'), and the value the BIP
+            -- reconciliation report returns as RECORD_KEY (object type
+            -- 'WorkRelationship'). One key definition (Contract v1, design
+            -- section 5).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_POS',
             'STAGED',
             SYSDATE
         FROM DMT_WORK_REL_STG_TBL s
@@ -191,6 +199,7 @@
             MANAGER_PERSON_NUMBER,
             MANAGER_ASSIGNMENT_NUMBER,
             PRIMARY_ASSIGNMENT_FLAG,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -224,6 +233,15 @@
             END,
             s.MANAGER_ASSIGNMENT_NUMBER,
             s.PRIMARY_ASSIGNMENT_FLAG,
+            -- RECON_KEY = the same value written to the HDL .dat as the
+            -- Assignment SourceSystemId (DMT_ASSIGNMENT_HDL_GEN_PKG:
+            -- ASSIGNMENT_NUMBER || '_ASG'), and the value the BIP reconciliation
+            -- report returns as RECORD_KEY (object type 'Assignment'). The
+            -- assignment number already carries the run prefix from source, so
+            -- no PREFIXED() call is applied (mirrors the generator, which writes
+            -- ASSIGNMENT_NUMBER verbatim). One key definition (Contract v1,
+            -- design section 5).
+            s.ASSIGNMENT_NUMBER || '_ASG',
             'STAGED',
             SYSDATE
         FROM DMT_ASSIGNMENT_STG_TBL s
