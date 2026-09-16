@@ -372,6 +372,49 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- Absences (100000030) — Contract v1 registration (design section 5). HDL load
+-- = no interface table; base-tier only from ANC_PER_ABS_ENTRIES via
+-- HRC_INTEGRATION_KEY_MAP. RECON_KEY = prefixed PERSON_NUMBER || '_ABS'.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000030                                            bip_report_id,
+           'Absences'                                           cemli_code,
+           'Absence Entry'                                      object_type,
+           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_RPT.xdo'   report_catalog_path,
+           'N/A (HDL)'                                          interface_table,
+           'Absence HDL base-table reconciliation (Contract v1)' notes,
+           1                                                    contract_version,
+           'DMT_ABSENCE_TFM_TBL'                                tfm_table,
+           'FUSION_ABSENCE_ENTRY_ID'                            fusion_id_column,
+           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_ABS''' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- WorkSchedules (100000031) — Contract v1 registration (design section 5).
 -- Loads via HDL as WorkPattern; base tier HTS_WORK_PATTERNS_VL (WORK_PATTERN_ID)
 -- via HRC_INTEGRATION_KEY_MAP. RECON_KEY = prefixed WORK_SCHEDULE_NAME.
