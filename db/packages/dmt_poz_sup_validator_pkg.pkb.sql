@@ -214,6 +214,18 @@
     -- ============================================================
     PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
     BEGIN
+        -- <<EDIT-TABLE>>
+        UPDATE DMT_POZ_SUPPLIERS_STG_TBL
+        -- <<END EDIT-TABLE>>
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_STATUS IN ('NEW','RETRY')
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id
+        -- <<EDIT-SCOPE>>
+                                   AND SUB_OBJECT = 'Suppliers'
+        -- <<END EDIT-SCOPE>>
+                                  );
+
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
         UPDATE DMT_POZ_SUP_ADDR_STG_TBL
@@ -292,7 +304,7 @@
         FLAG_STG_FAILED(p_run_id);
 
         -- Summary counts — from the run-stamped error table, never from STG.
-        l_sup_failed := 0;  -- Suppliers has no upstream pre-validation dependency
+        SELECT COUNT(*) INTO l_sup_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Suppliers';
         SELECT COUNT(*) INTO l_addr_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Addresses';
         SELECT COUNT(*) INTO l_site_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Sites';
         SELECT COUNT(*) INTO l_assn_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Site Assignments';
