@@ -45,6 +45,7 @@ REPORTS = [
     ("Items",                   "ITEM_DM",           "ITEM_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
+    ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),
     ("Salaries",                "DMT_SALARIES_RECON_DM", "DMT_SALARIES_RECON_RPT"),
 ]
 

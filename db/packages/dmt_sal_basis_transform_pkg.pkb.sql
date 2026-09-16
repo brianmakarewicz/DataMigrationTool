@@ -56,6 +56,7 @@ AS
             GRADE_RATE_TYPE,
             LEGISLATIVE_DATA_GROUP_NAME,
             DESCRIPTION,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -66,7 +67,11 @@ AS
             NULL,
             s.EFFECTIVE_START_DATE,
             s.EFFECTIVE_END_DATE,
-            s.SALARY_BASIS_NAME,
+            -- Business key carries the run prefix so it is unique per run and can be
+            -- matched in the Fusion base table. This prefixed name is written to the
+            -- HDL .dat as both SalaryBasisName and SourceSystemId (see
+            -- DMT_SAL_BASIS_HDL_GEN_PKG).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.SALARY_BASIS_NAME, 240),
             s.ELEMENT_NAME,
             s.INPUT_VALUE_NAME,
             s.SALARY_BASIS_CODE,
@@ -74,6 +79,10 @@ AS
             s.GRADE_RATE_TYPE,
             s.LEGISLATIVE_DATA_GROUP_NAME,
             s.DESCRIPTION,
+            -- RECON_KEY = the same prefixed salary basis name written to the HDL .dat
+            -- as SourceSystemId, and the value the BIP reconciliation report returns
+            -- as RECORD_KEY. One key definition (Contract v1, design section 5).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.SALARY_BASIS_NAME, 240),
             'STAGED',
             SYSDATE
         FROM DMT_SAL_BASIS_STG_TBL s
