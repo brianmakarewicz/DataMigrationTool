@@ -54,6 +54,7 @@ AS
             PAYROLL_RELATIONSHIP_NUMBER,
             PAYROLL_STATUS_CODE,
             LEGISLATIVE_DATA_GROUP_NAME,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -70,6 +71,11 @@ AS
             s.PAYROLL_RELATIONSHIP_NUMBER,
             s.PAYROLL_STATUS_CODE,
             s.LEGISLATIVE_DATA_GROUP_NAME,
+            -- RECON_KEY = the PayrollRelationship.dat SourceSystemId business key,
+            -- exactly the value DMT_PAY_REL_HDL_GEN_PKG writes:
+            -- prefixed PERSON_NUMBER || '_PAYREL'. The Contract v1 recon report
+            -- matches HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID against this value.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_PAYREL',
             'STAGED',
             SYSDATE
         FROM DMT_PAY_REL_STG_TBL s

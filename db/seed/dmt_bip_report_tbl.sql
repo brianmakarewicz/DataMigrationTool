@@ -489,6 +489,28 @@ using (
            'DMT_TALENT_PROF_TFM_TBL'                                        tfm_table,
            'FUSION_PROFILE_ID'                                              fusion_id_column,
            'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_TPROF''' recon_key_sql
+-- PayrollRelationships (100000033) — Contract v1 registration (design section 5).
+-- HDL load = no interface table; base-tier only from PAY_PAY_RELATIONSHIPS_F via
+-- HRC_INTEGRATION_KEY_MAP (OBJECT_NAME='PayrollRelationship'). RECON_KEY = prefixed
+-- PERSON_NUMBER || '_PAYREL' (also the .dat SourceSystemId and the report
+-- RECORD_KEY). The when-not-matched insert makes this block self-contained;
+-- appended at EOF so the union merge stays append-safe.
+-- Verified live 2026-09-16 (fin_impl): HRC_INTEGRATION_KEY_MAP.SURROGATE_ID ==
+-- PAY_PAY_RELATIONSHIPS_F.PAYROLL_RELATIONSHIP_ID (a real base-table id).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000033                                                                  bip_report_id,
+           'PayrollRelationships'                                                     cemli_code,
+           'Payroll Relationship'                                                     object_type,
+           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_RPT.xdo' report_catalog_path,
+           'N/A (HDL)'                                                                interface_table,
+           'Payroll Relationship HDL base-table reconciliation (Contract v1)'         notes,
+           1                                                                          contract_version,
+           'DMT_PAY_REL_TFM_TBL'                                                      tfm_table,
+           'FUSION_PAYROLL_RELATIONSHIP_ID'                                           fusion_id_column,
+           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_PAYREL''' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
