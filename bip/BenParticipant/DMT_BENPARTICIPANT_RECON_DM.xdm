@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <!--
+    DMT_BENPARTICIPANT_RECON_DM — Contract v1 reconciliation data model for
+    BenParticipant (design section 5, "BIP reconciliation report contract - v1").
+
+    BenParticipant loads through HCM Data Loader as the PersonBenefitBalance
+    business object (DAT discriminator PersonBenefitBalance; see
+    DMT_BEN_PARTIC_HDL_GEN_PKG). An HDL load has no interface table, so this
+    report returns the BASE tier only: one row per migrated record that Fusion
+    positively confirmed by writing a HRC_INTEGRATION_KEY_MAP entry
+    (OBJECT_NAME = 'PersonBenefitBalance') keyed to our SourceSystemId, with the
+    Fusion-assigned SURROGATE_ID as FUSION_ID. This is the same base-tier proof
+    the Salaries reconciler uses (base-tier only via HRC_INTEGRATION_KEY_MAP);
+    it is more robust than naming the benefit-balance base table directly, which
+    is not reachable by name on this pod (see note below).
+
+    RECORD_KEY = the record's business key = the SourceSystemId written into the
+    PersonBenefitBalance.dat = the BenParticipant TFM row's RECON_KEY. That value
+    is the prefixed PERSON_NUMBER concatenated with '_BENENRL'
+    (DMT_BEN_PARTIC_HDL_GEN_PKG writes PERSON_NUMBER || '_BENENRL', where
+    PERSON_NUMBER is already prefixed on the TFM row). The BenParticipant
+    reconciler fetches these rows via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and
+    applies them statically, promoting a BenParticipant TFM row to LOADED only
+    from a BASE / SUCCESS / FUSION_ID-not-null row here and stamping FUSION_ID
+    into FUSION_PARTICIPANT_ID.
+
+    Verified live 2026-09-16 against the demo Fusion instance (fin_impl /
+    ApplicationDB_FSCM):
+      * OBJECT_NAME 'PersonBenefitBalance' exists in HRC_INTEGRATION_KEY_MAP
+        (838 rows on the pod today).
+      * This exact SELECT (grouped by SOURCE_SYSTEM_ID, MAX(SURROGATE_ID) as
+        FUSION_ID) runs cleanly and returns real base rows when the _BENENRL
+        filter is removed (SURROGATE_ID == the Fusion base id).
+      * With the '%\_BENENRL' filter it returns ZERO rows: our HDL has not yet
+        loaded any BenParticipant records (no SOURCE_SYSTEM_OWNER='HRC_SQLLOADER'
+        / '%_BENENRL' rows). Honest zero-row result — the query is correct;
+        there is simply no base data yet (object is upstream-blocked / unloaded).
+      * The benefit-balance base table itself (BEN_PER_BNFT_BAL* variants) is
+        NOT reachable by name from the BIP reporting user (ORA-00942 on ~40
+        candidates; the user's ALL_TABLES does not even list PER_ALL_PEOPLE_F,
+        which IS directly selectable) — so HRC_INTEGRATION_KEY_MAP is the
+        authoritative, verifiable base-tier source, exactly as for Salaries.
+
+    Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
+    P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base for an HDL
+    load, so BASE-tier matching is by the run prefix (P_PREFIX). LOAD_REQUEST_ID
+    is echoed back unchanged for audit.
+  -->
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="benparticipant_recon" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT object_type, record_key, source_type, fusion_status,
+       fusion_id, error_message, load_request_id
+FROM (
+    -- BASE tier: positive proof in the HCM integration key map. The load writes
+    -- one HRC_INTEGRATION_KEY_MAP row per record (OBJECT_NAME='PersonBenefitBalance')
+    -- whose SURROGATE_ID is the Fusion benefit-balance base id. One row per
+    -- migrated record.
+    SELECT 'BenParticipant'               AS object_type,
+           m.source_system_id             AS record_key,
+           'BASE'                         AS source_type,
+           'SUCCESS'                      AS fusion_status,
+           MAX(m.surrogate_id)            AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))   AS error_message,
+           :P_LOAD_REQUEST_ID             AS load_request_id
+    FROM   hrc_integration_key_map m
+    WHERE  m.object_name = 'PersonBenefitBalance'
+    AND    m.source_system_id LIKE :P_PREFIX || '%'
+    AND    m.source_system_id LIKE '%\_BENENRL' ESCAPE '\'
+    AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
+    GROUP BY m.source_system_id
+    ORDER BY m.source_system_id
+)
+WHERE ROWNUM <= :P_CHUNK_SIZE
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="benparticipant_recon">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="3"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="5"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="6"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
