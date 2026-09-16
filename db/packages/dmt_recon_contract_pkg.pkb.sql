@@ -10,14 +10,14 @@
     -- --------------------------------------------------------
     -- FETCH — run the object's Contract v1 report and return its parsed rows.
     -- --------------------------------------------------------
-    FUNCTION FETCH (
+    FUNCTION FETCH_ROWS (
         p_cemli_code    IN  VARCHAR2,
         p_run_id        IN  NUMBER,
         p_load_ess_id   IN  NUMBER   DEFAULT NULL,
         p_import_ess_id IN  NUMBER   DEFAULT NULL,
         p_row_cap       IN  NUMBER   DEFAULT NULL
     ) RETURN T_RECON_TBL IS
-        C_PROC CONSTANT VARCHAR2(30) := 'FETCH';
+        C_PROC CONSTANT VARCHAR2(30) := 'FETCH_ROWS';
         l_contract_ver  NUMBER;
         l_prefix        VARCHAR2(30);
         l_chunk_size    NUMBER;
@@ -43,13 +43,13 @@
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
                 RAISE_APPLICATION_ERROR(-20090,
-                    'DMT_RECON_CONTRACT_PKG.FETCH: no DMT_BIP_REPORT_TBL row for CEMLI '
+                    'DMT_RECON_CONTRACT_PKG.FETCH_ROWS: no DMT_BIP_REPORT_TBL row for CEMLI '
                     || p_cemli_code);
         END;
 
         IF NVL(l_contract_ver, 0) <> 1 THEN
             RAISE_APPLICATION_ERROR(-20091,
-                'DMT_RECON_CONTRACT_PKG.FETCH: CEMLI ' || p_cemli_code ||
+                'DMT_RECON_CONTRACT_PKG.FETCH_ROWS: CEMLI ' || p_cemli_code ||
                 ' is not registered as CONTRACT_VERSION = 1 (found ' ||
                 NVL(TO_CHAR(l_contract_ver), 'NULL') || ').');
         END IF;
@@ -89,7 +89,7 @@
             -- never a silent retry, never a zero-row "success").
             IF l_err <> DMT_UTIL_PKG.C_SUCCESS THEN
                 RAISE_APPLICATION_ERROR(-20093,
-                    'DMT_RECON_CONTRACT_PKG.FETCH: Contract v1 report failed for CEMLI '
+                    'DMT_RECON_CONTRACT_PKG.FETCH_ROWS: Contract v1 report failed for CEMLI '
                     || p_cemli_code || ' on page ' || l_page || ' (detail in DMT_LOG_TBL).');
             END IF;
 
@@ -176,7 +176,7 @@
                 C_PROC || ' failed for CEMLI ' || p_cemli_code || '.',
                 SQLERRM, C_PKG, C_PROC);
             RAISE;
-    END FETCH;
+    END FETCH_ROWS;
 
 END DMT_RECON_CONTRACT_PKG;
 /

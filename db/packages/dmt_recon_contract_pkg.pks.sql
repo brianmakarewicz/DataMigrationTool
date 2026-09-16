@@ -71,7 +71,7 @@
     --
     -- Returns an empty collection when the report returns zero rows.
     -- --------------------------------------------------------
-    FUNCTION FETCH (
+    FUNCTION FETCH_ROWS (
         p_cemli_code    IN  VARCHAR2,
         p_run_id        IN  NUMBER,
         p_load_ess_id   IN  NUMBER   DEFAULT NULL,

@@ -129,7 +129,7 @@ AS
             FROM   DMT_WORKER_TFM_TBL
             WHERE  RUN_ID = p_run_id;
 
-            l_rows := DMT_RECON_CONTRACT_PKG.FETCH(
+            l_rows := DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
                 p_cemli_code  => C_CEMLI,
                 p_run_id      => p_run_id,
                 p_load_ess_id => TO_NUMBER(p_request_id),
