@@ -92,6 +92,17 @@
     --   'SourceSystemId LIKE p_key_column||''%''' is used (needed for the Worker
     --   family, whose SourceSystemIds are PERSON_NUMBER plus a record suffix).
     -- --------------------------------------------------------
+    --   p_defer_base_proof: Contract v1 base-table proof (design section 5). When
+    --     TRUE, RECONCILE_HDL still applies the per-record HDL error messages
+    --     (marking real [FUSION_ERROR] rows FAILED) and echoes STG, but SKIPS the
+    --     data-set-status LOADED promotion — a row is promoted to LOADED only by the
+    --     object's Contract v1 reconciler (which fetches the report via
+    --     DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies it statically) once the
+    --     record is positively confirmed in the Fusion base table (with its Fusion
+    --     id). This
+    --     replaces the interface-only status guess for Contract-v1 objects. When
+    --     FALSE (default, all other HDL tables), the legacy status-based promotion
+    --     is retained so non-Contract-v1 sub-tables keep working unchanged.
     PROCEDURE RECONCILE_HDL (
         p_run_id  IN NUMBER,
         p_request_id      IN VARCHAR2,
@@ -100,7 +111,8 @@
         p_key_column      IN VARCHAR2 DEFAULT 'SOURCE_REF',
         p_dataset_status  IN VARCHAR2 DEFAULT NULL,  -- ORA_COMPLETED / ORA_IN_ERROR from POLL_HDL
         p_log_context     IN VARCHAR2 DEFAULT NULL,
-        p_key_suffixes    IN VARCHAR2 DEFAULT NULL
+        p_key_suffixes    IN VARCHAR2 DEFAULT NULL,
+        p_defer_base_proof IN BOOLEAN DEFAULT FALSE
     );
 
     -- --------------------------------------------------------
