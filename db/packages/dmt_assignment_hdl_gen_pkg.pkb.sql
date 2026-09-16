@@ -201,9 +201,23 @@ AS
                 DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS));
 
             FOR r IN (
+                -- Within one period of service (one _POS), multiple employment
+                -- terms dated the SAME day must each carry a DISTINCT
+                -- EffectiveSequence, and only the last may be flagged the latest
+                -- change -- else Fusion HDL rejects the set ("only one change can
+                -- be the latest change for a day"). Rank same-(person,date)
+                -- siblings deterministically; siblings on different days each
+                -- rank 1 (their own line's latest change).
                 SELECT a.PERSON_NUMBER, a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME,
                        a.EFFECTIVE_START_DATE, a.ACTION_CODE,
-                       a.PRIMARY_ASSIGNMENT_FLAG
+                       a.PRIMARY_ASSIGNMENT_FLAG,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY a.PERSON_NUMBER, a.EFFECTIVE_START_DATE
+                           ORDER BY a.PRIMARY_ASSIGNMENT_FLAG DESC, a.TFM_SEQUENCE_ID
+                       ) AS eff_seq,
+                       COUNT(*) OVER (
+                           PARTITION BY a.PERSON_NUMBER, a.EFFECTIVE_START_DATE
+                       ) AS eff_cnt
                 FROM   DMT_ASSIGNMENT_TFM_TBL a
                 WHERE  a.RUN_ID = p_run_id
                 AND    a.TFM_STATUS = 'STAGED'
@@ -214,8 +228,8 @@ AS
                           pv(r.PERSON_NUMBER) || '_POS'          || '|' ||  -- PeriodOfServiceId(SourceSystemId)
                           NVL(r.ACTION_CODE, 'HIRE')             || '|' ||
                           pv(r.EFFECTIVE_START_DATE)             || '|' ||  -- EffectiveStartDate
-                          '1'                                    || '|' ||  -- EffectiveSequence
-                          'Y'                                    || '|' ||  -- EffectiveLatestChange
+                          TO_CHAR(r.eff_seq)                     || '|' ||  -- EffectiveSequence (distinct per same-day sibling)
+                          CASE WHEN r.eff_seq = r.eff_cnt THEN 'Y' ELSE 'N' END || '|' ||  -- EffectiveLatestChange: only the last same-day sibling
                           pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
                           pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
                           pv(NVL(r.PRIMARY_ASSIGNMENT_FLAG, 'Y'));    -- PrimaryWorkTermsFlag (source primary flag; one 'Y' per _POS)
@@ -230,7 +244,17 @@ AS
                 DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('Assignment', C_ASSIGNMENT_COLS));
 
             FOR r IN (
-                SELECT t.*
+                -- Same same-(person,date) sequencing as WorkTerms above: distinct
+                -- EffectiveSequence per same-day sibling, only the last is the
+                -- latest change (Fusion rejects two same-day "latest" changes).
+                SELECT t.*,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY t.PERSON_NUMBER, t.EFFECTIVE_START_DATE
+                           ORDER BY t.PRIMARY_ASSIGNMENT_FLAG DESC, t.TFM_SEQUENCE_ID
+                       ) AS eff_seq,
+                       COUNT(*) OVER (
+                           PARTITION BY t.PERSON_NUMBER, t.EFFECTIVE_START_DATE
+                       ) AS eff_cnt
                 FROM   DMT_ASSIGNMENT_TFM_TBL t
                 WHERE  t.RUN_ID = p_run_id
                 AND    t.TFM_STATUS = 'STAGED'
@@ -240,8 +264,8 @@ AS
                           pv(r.ASSIGNMENT_NUMBER) || '_ASG'  || '|' ||  -- SourceSystemId (per assignment)
                           pv(r.ACTION_CODE)                  || '|' ||
                           pv(r.EFFECTIVE_START_DATE)          || '|' ||
-                          '1'                                || '|' ||  -- EffectiveSequence
-                          'Y'                                || '|' ||  -- EffectiveLatestChange
+                          TO_CHAR(r.eff_seq)                 || '|' ||  -- EffectiveSequence (distinct per same-day sibling)
+                          CASE WHEN r.eff_seq = r.eff_cnt THEN 'Y' ELSE 'N' END || '|' ||  -- EffectiveLatestChange: only the last same-day sibling
                           pv(r.ASSIGNMENT_NUMBER) || '_TRM'  || '|' ||  -- WorkTermsAssignmentId(SourceSystemId)
                           pv(r.ASSIGNMENT_NAME)              || '|' ||
                           pv(r.ASSIGNMENT_NUMBER)            || '|' ||
