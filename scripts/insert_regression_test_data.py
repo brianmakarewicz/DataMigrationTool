@@ -23,7 +23,9 @@ Proven runs (source of truth for GOOD data):
   ARInvoices:     E2E LOADED (objects/ARInvoices/README.md)
   GLBalances:     int=100000005             —  2 LOADED, Cat=Adjustment, Src=Spreadsheet, Period=04-26
   Projects:       int=100000034, prefix=9179 —  9 LOADED, Org=Maintenance Prg US, SrcAppCode=NULL
-  Expenditures:   int=100000040, prefix=9184 —  3 LOADED, Type=LABOR, Person=7/10
+  Expenditures:   LABOR, PCS10080/task 3.3/person 43 — 2 GOOD (LOADED) + 6 BAD:
+                  1 invalid type + 5 error-coverage (date/rate/doc/org/award), each
+                  a distinct Fusion rejection; the bad-doc row exercises partitioning
   BillingEvents:  int=100000044, prefix=9188 —  3 LOADED, Contract=C10028/C10001
   Requisitions:   int=100000024, prefix=9169 —  6 LOADED (objects/Requisitions/README.md)
 
@@ -1483,6 +1485,51 @@ def main():
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
     """, {"bu": BU, "exporg": EXP_ORG}, label="BAD Expenditure (LABOR): invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
+
+    # ERROR-COVERAGE SET — one row per DISTINCT Fusion rejection type, each on the
+    # proven-good LABOR base with exactly one field made bad, so the reconciler
+    # attributes the precise per-row error (all confirmed live, ATP run 136
+    # 2026-09-16). This is also the regression's standing test of Expenditures'
+    # (transaction source, document) partitioning: the 'Time Card' row below has a
+    # different document than the others, so the run splits into two ESS submissions
+    # (one per document) instead of crashing on a mixed batch. Each row keeps the
+    # proven-good source/document trio unless it is the field under test.
+    #   E2DATE  item date outside the project's date range  -> PJC_EX_PROJECT_DATE
+    #   E3RATE  a person with no project cost rate          -> PJF_PRICE_NO_PERSON_RATE
+    #   E4DOC   a document name not defined in the pod       -> PJC_TXN_DOC_NAME_IS_INVALID
+    #   E5ORG   an organization name that is not an exp org  -> PJC_TXN_EXPORG_NAME_IS_INVALID
+    #   E6AWARD a sponsored project (award mandatory)        -> PJC_AWARD_NOT_PROVIDED
+    # (No closed-project row: PCS10002's date range rejects first, so it just
+    # duplicates PJC_EX_PROJECT_DATE — not a distinct type on this pod.)
+    for src, proj, task, eidate, person, org, doc in [
+        ("RT-EXP-E2DATE",  "PCS10080", "3.3",        "2010-01-01", "43", EXP_ORG,              "Timecard"),
+        ("RT-EXP-E3RATE",  "PCS10080", "3.3",        "2025-04-18", "7",  EXP_ORG,              "Timecard"),
+        ("RT-EXP-E4DOC",   "PCS10080", "3.3",        "2025-04-18", "43", EXP_ORG,              "Time Card"),
+        ("RT-EXP-E5ORG",   "PCS10080", "3.3",        "2025-04-18", "43", "US1 Business Unit",  "Timecard"),
+        ("RT-EXP-E6AWARD", "RTPRJ001", "RTPRJ001.1", "2025-04-18", "43", EXP_ORG,              "Timecard"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_PJC_EXPENDITURES_STG_TBL (
+                TRANSACTION_TYPE, BUSINESS_UNIT,
+                PROJECT_NUMBER, TASK_NUMBER,
+                EXPENDITURE_TYPE, EXPENDITURE_ITEM_DATE,
+                ORGANIZATION_NAME, QUANTITY, PERSON_NUMBER,
+                DENOM_CURRENCY_CODE, DENOM_RAW_COST,
+                USER_TRANSACTION_SOURCE, DOCUMENT_NAME, DOC_ENTRY_NAME,
+                ORIG_TRANSACTION_REFERENCE, SOURCE_ID
+            ) VALUES (
+                'LABOR', :bu,
+                :pnum, :tnum,
+                'Professional', TO_DATE(:eidate,'YYYY-MM-DD'),
+                :org, 8, :person,
+                'USD', 1500.00,
+                'External Time Entry System', :doc, 'Straight Time',
+                :src, :src
+            )
+        """, {"bu": BU, "pnum": proj, "tnum": task, "eidate": eidate,
+              "org": org, "person": person, "doc": doc, "src": src},
+        label=f"BAD Expenditure (error-coverage): {src}")
+
     tag_scenario(cur, "DMT_PJC_EXPENDITURES_STG_TBL", scenario_id)
 
     # ====================================================================
