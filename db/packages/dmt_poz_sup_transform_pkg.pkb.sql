@@ -233,6 +233,18 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode. ALL/FAILED modes do
+        -- not filter on STG_STATUS, so without this a row the validator rejected
+        -- (e.g. missing mandatory VENDOR_NAME) would still be transformed and
+        -- abort the set-based INSERT (ORA-01400). Excluding rows that have a
+        -- [PRE_VALIDATION] error for this run keeps a bad row out of TFM and the
+        -- object from crashing. (Scoped fix of the ALL-mode-bypass item, §12.)
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
         -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
