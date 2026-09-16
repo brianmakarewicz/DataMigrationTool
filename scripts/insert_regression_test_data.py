@@ -1416,9 +1416,15 @@ def main():
     #   PERSON_NUMBER           = '7'   (a real Fusion EMP, per run 116)
     #   EXPENDITURE_TYPE        = 'Administrative' (proven good in run 116)
     #   QUANTITY                = hours
+    # Charge to a NON-sponsored project (PCS10002 "US Billable no Burden"): a
+    # sponsored/award project (e.g. the RTPRJ* PRGUS-Sponsored templates) makes
+    # AWARD a required field on every expenditure (PJC_AWARD_NOT_PROVIDED), and
+    # Grants/awards is not configured on this demo pod. A billable project needs
+    # no award, so the good expenditures can cost through. (Sponsored+award is a
+    # separate case to add once Grants is configured.)
     for proj_num, task_num, qty, amount in [
-        ("RTPRJ001", "RTPRJ001.1", 8,  1500.00),
-        ("RTPRJ002", "RTPRJ002.1", 16, 2500.00),
+        ("PCS10002", "6.0", 8,  1500.00),
+        ("PCS10002", "7.0", 16, 2500.00),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_PJC_EXPENDITURES_STG_TBL (
@@ -1440,7 +1446,7 @@ def main():
             )
         """, {"bu": BU, "exporg": EXP_ORG, "pnum": proj_num, "tnum": task_num,
               "qty": qty, "amt": amount,
-              "ref": f"RT-EXP-{proj_num}", "src": f"RT-EXP-{proj_num}"},
+              "ref": f"RT-EXP-{proj_num}-{task_num}", "src": f"RT-EXP-{proj_num}-{task_num}"},
         label=f"GOOD Expenditure (LABOR): {proj_num}/{task_num}")
 
     # BAD: a LABOR row that fails for a real, attributable reason — an
@@ -1458,7 +1464,7 @@ def main():
             ORIG_TRANSACTION_REFERENCE, SOURCE_ID
         ) VALUES (
             'LABOR', :bu,
-            'RTPRJ001', 'RTPRJ001.1',
+            'PCS10002', '6.0',
             'BadValue', DATE '2025-06-15',
             :exporg, 8, '7',
             'USD', 999.99,
@@ -1466,6 +1472,8 @@ def main():
             'RT-EXP-BAD1', 'RT-EXP-BAD1'
         )
     """, {"bu": BU, "exporg": EXP_ORG}, label="BAD Expenditure (LABOR): invalid EXPENDITURE_TYPE 'BadValue' [BAD-LKP]")
+    # NOTE: the BAD row charges to the same non-sponsored PCS10002/6.0 so its ONLY
+    # rejection reason is the invalid EXPENDITURE_TYPE, not a missing award.
     tag_scenario(cur, "DMT_PJC_EXPENDITURES_STG_TBL", scenario_id)
 
     # ====================================================================
