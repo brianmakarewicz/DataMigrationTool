@@ -54,6 +54,7 @@ REPORTS = [
     ("BenParticipant",           "DMT_BENPARTICIPANT_RECON_DM", "DMT_BENPARTICIPANT_RECON_RPT"),
     ("BenDependent",            "DMT_BENDEPENDENT_RECON_DM", "DMT_BENDEPENDENT_RECON_RPT"),
     ("BenBeneficiary",           "DMT_BENBENEFICIARY_RECON_DM", "DMT_BENBENEFICIARY_RECON_RPT"),
+    ("W2Balances",              "DMT_W2BALANCES_RECON_DM", "DMT_W2BALANCES_RECON_RPT"),
 ]
 
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"
