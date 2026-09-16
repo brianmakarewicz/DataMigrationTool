@@ -22,9 +22,31 @@
     -- No upstream dependency — all NEW rows pass through.
     -- --------------------------------------------------------
     PROCEDURE VALIDATE_SUPPLIERS (p_run_id IN NUMBER) IS
+        l_failed NUMBER := 0;
     BEGIN
-        -- Suppliers have no upstream dependency — nothing to check.
-        NULL;
+        -- No upstream dependency, but VENDOR_NAME is mandatory: the TFM column is
+        -- NOT NULL, so a null-name STG row would abort the whole set-based
+        -- transform INSERT (ORA-01400) and crash the object. Reject it here as a
+        -- per-row [PRE_VALIDATION] failure so it is accounted FAILED and the
+        -- transform (which excludes pre-validated-failed rows) never sees it.
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'Suppliers', 'Suppliers', s.STG_SEQUENCE_ID,
+               '[PRE_VALIDATION] Supplier is missing the mandatory VENDOR_NAME — row rejected before transform.'
+        FROM   DMT_POZ_SUPPLIERS_STG_TBL s
+        WHERE  s.STG_STATUS = 'NEW'
+        AND    s.VENDOR_NAME IS NULL;
+        l_failed := SQL%ROWCOUNT;
+
+        IF l_failed > 0 THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id   => p_run_id,
+                p_message  => 'VALIDATE_SUPPLIERS: ' || l_failed ||
+                              ' supplier row(s) rejected — missing mandatory VENDOR_NAME.',
+                p_log_type => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package  => C_PKG,
+                p_procedure=> 'VALIDATE_SUPPLIERS');
+        END IF;
     END VALIDATE_SUPPLIERS;
 
     -- --------------------------------------------------------
@@ -192,6 +214,18 @@
     -- ============================================================
     PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
     BEGIN
+        -- <<EDIT-TABLE>>
+        UPDATE DMT_POZ_SUPPLIERS_STG_TBL
+        -- <<END EDIT-TABLE>>
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_STATUS IN ('NEW','RETRY')
+        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id
+        -- <<EDIT-SCOPE>>
+                                   AND SUB_OBJECT = 'Suppliers'
+        -- <<END EDIT-SCOPE>>
+                                  );
+
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
         UPDATE DMT_POZ_SUP_ADDR_STG_TBL
@@ -270,7 +304,7 @@
         FLAG_STG_FAILED(p_run_id);
 
         -- Summary counts — from the run-stamped error table, never from STG.
-        l_sup_failed := 0;  -- Suppliers has no upstream pre-validation dependency
+        SELECT COUNT(*) INTO l_sup_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Suppliers';
         SELECT COUNT(*) INTO l_addr_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Addresses';
         SELECT COUNT(*) INTO l_site_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Sites';
         SELECT COUNT(*) INTO l_assn_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Site Assignments';
