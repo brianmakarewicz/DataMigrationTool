@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <!--
+    DMT_SALARYBASES_RECON_DM — Contract v1 reconciliation data model for SalaryBases
+    (design section 5, "BIP reconciliation report contract - v1").
+
+    Returns the BASE tier for the SalaryBases HDL load: one row per migrated salary
+    basis that is positively confirmed in the Fusion HCM compensation setup base
+    table CMP_SALARY_BASES, with its real Fusion SALARY_BASIS_ID as FUSION_ID. HDL
+    failures arrive per-record in the HDL response (tagged [FUSION_ERROR] by
+    RECONCILE_HDL before this report runs), so this report's ERROR rows are optional
+    and it returns the BASE tier only — the SalaryBases reconciler (which fetches
+    these rows via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically)
+    promotes a SalaryBases TFM row to LOADED only from a BASE / SUCCESS /
+    FUSION_ID-not-null row here.
+
+    RECORD_KEY = the salary basis's business key = the prefixed SALARY_BASIS_NAME,
+    which is exactly the value written into SalaryBasis.dat as SourceSystemId and
+    stamped on the SalaryBases TFM row as RECON_KEY (one key definition per object).
+    Matching is on CMP_SALARY_BASES.NAME, which equals that same value (verified live
+    2026-09-16: SOURCE_SYSTEM_ID / SalaryBasisName we wrote == base NAME, and
+    CMP_SALARY_BASES.SALARY_BASIS_ID == the Fusion-assigned salary basis id).
+
+    Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
+    P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an
+    HDL load, so BASE-tier matching is by the run prefix (P_PREFIX). LOAD_REQUEST_ID
+    is echoed back unchanged for audit.
+  -->
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="salarybases_recon" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT object_type, record_key, source_type, fusion_status,
+       fusion_id, error_message, load_request_id
+FROM (
+    -- BASE tier: positive proof in the compensation setup base table. One row per
+    -- migrated salary basis (GROUP BY name collapses any duplicate rows).
+    SELECT 'SalaryBases'                    AS object_type,
+           b.name                           AS record_key,
+           'BASE'                           AS source_type,
+           'SUCCESS'                        AS fusion_status,
+           MAX(b.salary_basis_id)           AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))     AS error_message,
+           :P_LOAD_REQUEST_ID               AS load_request_id
+    FROM   cmp_salary_bases b
+    WHERE  b.name LIKE :P_PREFIX || '%'
+    AND    (:P_AFTER_KEY IS NULL OR b.name > :P_AFTER_KEY)
+    GROUP BY b.name
+    ORDER BY b.name
+)
+WHERE ROWNUM <= :P_CHUNK_SIZE
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="salarybases_recon">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="3"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="5"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="6"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
