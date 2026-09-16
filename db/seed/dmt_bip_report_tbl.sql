@@ -674,6 +674,60 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- BenBeneficiary (100000040) — Contract v1 registration (design section 5).
+-- Follows the Workers/Salaries template exactly: the four Contract v1 columns
+-- (CONTRACT_VERSION, TFM_TABLE, FUSION_ID_COLUMN, RECON_KEY_SQL) drive the shared
+-- parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS. Kept in its own MERGE so this block
+-- also converges the Contract v1 columns on an existing row. HDL load = no
+-- interface table (INTERFACE_TABLE = 'N/A (HDL)'). The object loads via HDL under
+-- the discriminator PersonBenefitBalance (DMT_BEN_BENFY_HDL_GEN_PKG); base-tier
+-- proof reads the HRC_INTEGRATION_KEY_MAP row (OBJECT_NAME='PersonBenefitBalance')
+-- whose SURROGATE_ID is the Fusion base-table id. RECON_KEY = the prefixed
+-- PERSON_NUMBER || '_BENBNFY' (also the .dat SourceSystemId and the report
+-- RECORD_KEY). Verified live 2026-09-16: HRC_INTEGRATION_KEY_MAP holds
+-- HRC_SQLLOADER-owned '<prefix>...\_BENBNFY' rows whose SURROGATE_ID is a real
+-- Fusion id (e.g. 67936DMTBNFY001_BENBNFY -> 300000331552758). The
+-- when-not-matched insert makes this self-contained.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000040                                                        bip_report_id,
+           'BenBeneficiary'                                                 cemli_code,
+           'Beneficiary Enrollment'                                         object_type,
+           '/Custom/DMT2/BenBeneficiary/DMT_BENBENEFICIARY_RECON_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/BenBeneficiary/DMT_BENBENEFICIARY_RECON_RPT.xdo'   report_catalog_path,
+           'N/A (HDL)'                                                      interface_table,
+           'BenBeneficiary HDL base-table reconciliation (Contract v1)'     notes,
+           1                                                                contract_version,
+           'DMT_BEN_BENFY_TFM_TBL'                                          tfm_table,
+           'FUSION_BENEFICIARY_ID'                                          fusion_id_column,
+           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_BENBNFY''' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- PerfEvaluations (100000037) — Contract v1 registration (design section 5).
 -- Loads via HDL as the GoalPlan object (GoalPlan.dat — see
 -- db/packages/dmt_perf_eval_hdl_gen_pkg.pkb.sql); a loaded performance evaluation
