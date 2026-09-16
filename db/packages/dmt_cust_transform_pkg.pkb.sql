@@ -156,6 +156,18 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). ALL/FAILED modes do not filter on STG_STATUS, so a party the validator
+        -- rejected would still be transformed. Scope to this record type's SUB_OBJECT;
+        -- STG_SEQUENCE_ID restarts per STG table and all 7 customer record types share
+        -- one RUN_ID, so a colliding id from another table could wrongly drop a valid row.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Parties'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
         -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
@@ -337,6 +349,16 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). Scope to this record type's SUB_OBJECT; STG_SEQUENCE_ID restarts per
+        -- STG table and all 7 customer record types share one RUN_ID.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Locations'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
         -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
@@ -492,6 +514,16 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). Scope to this record type's SUB_OBJECT; STG_SEQUENCE_ID restarts per
+        -- STG table and all 7 customer record types share one RUN_ID.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Party Sites'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
         -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
@@ -629,6 +661,16 @@
             SELECT 1 FROM DMT_HZ_PARTY_SITE_USES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
+        )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). Scope to this record type's SUB_OBJECT; STG_SEQUENCE_ID restarts per
+        -- STG table and all 7 customer record types share one RUN_ID.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Party Site Uses'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
@@ -773,6 +815,16 @@
             SELECT 1 FROM DMT_HZ_ACCOUNTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
+        )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). Scope to this record type's SUB_OBJECT; STG_SEQUENCE_ID restarts per
+        -- STG table and all 7 customer record types share one RUN_ID.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Accounts'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
@@ -922,6 +974,16 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). Scope to this record type's SUB_OBJECT; STG_SEQUENCE_ID restarts per
+        -- STG table and all 7 customer record types share one RUN_ID.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Account Sites'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
         -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
@@ -1063,6 +1125,16 @@
             SELECT 1 FROM DMT_HZ_ACCT_SITE_USES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
+        )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). Scope to this record type's SUB_OBJECT; STG_SEQUENCE_ID restarts per
+        -- STG table and all 7 customer record types share one RUN_ID.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Account Site Uses'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.

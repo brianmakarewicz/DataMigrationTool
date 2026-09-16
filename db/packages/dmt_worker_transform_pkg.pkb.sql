@@ -121,6 +121,19 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode. ALL/FAILED modes do
+        -- not filter on STG_STATUS, so without this a row the validator rejected
+        -- (missing PERSON_NUMBER, unsupported ACTION_CODE, no matching Assignment)
+        -- would still be transformed and sent to Fusion. Excluding rows that have
+        -- a [PRE_VALIDATION] error for this run keeps a bad row out of TFM.
+        -- (ALL-mode-bypass item, §12 — same pattern as the other objects.)
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Workers'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so TFM_SEQUENCE_ID (identity) is assigned in staging order.
         -- The HDL generator emits sections ORDER BY TFM_SEQUENCE_ID, so this

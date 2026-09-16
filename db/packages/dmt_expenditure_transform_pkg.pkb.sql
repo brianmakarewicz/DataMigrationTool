@@ -299,6 +299,17 @@
             FROM   DMT_PJC_EXPENDITURES_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
+        )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). ALL/FAILED modes do not filter on STG_STATUS, so an expenditure the
+        -- validator rejected (project not loaded) would still be transformed. Scope to
+        -- this object's SUB_OBJECT since STG_SEQUENCE_ID restarts per STG table.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Project Expenditures'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         );
 
         l_ok_count := SQL%ROWCOUNT;
