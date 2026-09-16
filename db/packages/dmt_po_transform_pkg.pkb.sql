@@ -222,6 +222,18 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). ALL/FAILED modes do not filter on STG_STATUS, so without this a header
+        -- the validator already rejected (supplier not loaded) would still be transformed.
+        -- All three header styles live in this one STG table and are tagged per style, so
+        -- scope to the three header SUB_OBJECTs the PO validator writes.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      IN ('PO Headers','Blanket PO Headers','Contract Headers')
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         AND (p_doc_type_filter IS NULL OR s.STYLE_DISPLAY_NAME = p_doc_type_filter)
         ;
 
@@ -419,6 +431,17 @@
             SELECT 1 FROM DMT_PO_LINES_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
+        )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). A line cascaded to rejection by the validator (parent header failed)
+        -- must stay out of TFM in ALL/FAILED modes too. Both line styles share this STG
+        -- table, so scope to the two line SUB_OBJECTs the PO validator writes.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      IN ('PO Lines','Blanket PO Lines')
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         )
         AND (p_doc_type_filter IS NULL
              OR EXISTS (
@@ -640,6 +663,17 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). A line location cascaded to rejection (parent line failed) must stay
+        -- out of TFM in ALL/FAILED modes. Only standard PurchaseOrders register this
+        -- sub-object, so scope to the single 'PO Line Locations' SUB_OBJECT.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'PO Line Locations'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         ;
 
         l_ok_count := SQL%ROWCOUNT;
@@ -849,6 +883,17 @@
             SELECT 1 FROM DMT_PO_DISTS_INT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
+        )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). A distribution cascaded to rejection (parent line location failed) must
+        -- stay out of TFM in ALL/FAILED modes. Only standard PurchaseOrders register this
+        -- sub-object, so scope to the single 'PO Distributions' SUB_OBJECT.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'PO Distributions'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         )
         ;
 

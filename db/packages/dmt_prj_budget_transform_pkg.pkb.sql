@@ -76,7 +76,19 @@
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
-             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). FAILED mode selects STG_STATUS='FAILED', which is exactly the status a
+        -- validator-rejected row carries, so without this a rejected budget (project not
+        -- loaded) would be transformed. Scope to this object's SUB_OBJECT since
+        -- STG_SEQUENCE_ID restarts per STG table.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Project Budgets'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        );
 
         l_ok := SQL%ROWCOUNT;
 
@@ -89,7 +101,18 @@
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id
-             OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
+             OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL))
+        -- This TRANSFORMED-marking UPDATE is NOT guarded by an EXISTS(TFM row) check
+        -- (unlike the other 8 objects), so it needs the same pre-validation exclusion:
+        -- otherwise a rejected FAILED row that never entered TFM would still be marked
+        -- TRANSFORMED. (ALL-mode-bypass backlog item.)
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = DMT_PRJ_BUDGET_STG_TBL.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Project Budgets'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        );
 
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM complete. Rows: ' || l_ok, C_PKG, 'TRANSFORM');
     EXCEPTION

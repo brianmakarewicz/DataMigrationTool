@@ -414,6 +414,17 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). ALL/FAILED modes do not filter on STG_STATUS, so a line the validator
+        -- rejected (bill-to customer account not loaded) would still be transformed.
+        -- Scope to this STG table's SUB_OBJECT since STG_SEQUENCE_ID restarts per table.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'AR Lines'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         ;
 
         l_ok_count := SQL%ROWCOUNT;
@@ -578,6 +589,16 @@
             SELECT 1 FROM DMT_RA_DISTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
+        )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). A distribution cascaded to rejection (parent AR line failed) must stay
+        -- out of TFM in ALL/FAILED modes too. Scope to this STG table's SUB_OBJECT.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'AR Distributions'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         )
         ;
 

@@ -365,6 +365,20 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
+        -- item). The Grants validator only rejects award-project rows (its sole
+        -- [PRE_VALIDATION] check: upstream project did not load), tagged 'Award Projects'.
+        -- ALL/FAILED modes do not filter on STG_STATUS, so without this that rejected row
+        -- would still be transformed. Scope to 'Award Projects' — the only Grants STG
+        -- table the validator tags; the other Grants transform procs read tables the
+        -- validator never tags, so an exclusion there would be a dead no-op.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Award Projects'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         ;
 
         l_ok_count := SQL%ROWCOUNT;
