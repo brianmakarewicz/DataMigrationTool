@@ -104,6 +104,13 @@ begin
 exception when dup_val_on_index then null;
 end;
 /
+-- Salaries (100000028): base row appended here; the four Contract v1 columns are
+-- set by the Contract v1 MERGE at the END of this file (mirrors Workers 100000027).
+begin
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000028,'Salaries','Salary','/Custom/DMT2/Salaries/DMT_SALARIES_RECON_DM.xdm','/Custom/DMT2/Salaries/DMT_SALARIES_RECON_RPT.xdo','N/A (HDL)',to_date('2026-09-16 00:00:00','YYYY-MM-DD HH24:MI:SS'),'Salary HDL base-table reconciliation (Contract v1)',NULL,NULL);
+exception when dup_val_on_index then null;
+end;
+/
 commit;
 
 -- ----------------------------------------------------------------------
@@ -249,6 +256,54 @@ using (
            'DMT_WORKER_TFM_TBL'                                 tfm_table,
            'FUSION_PERSON_ID'                                   fusion_id_column,
            'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) -- prefixed person number' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Salaries — Contract v1 registration (design section 5). Mirrors the Workers
+-- block above: the four Contract v1 columns (CONTRACT_VERSION, TFM_TABLE,
+-- FUSION_ID_COLUMN, RECON_KEY_SQL) drive the shared parser
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS. Kept in its own MERGE so this block also
+-- converges the Contract v1 columns on an existing row. HDL load = no interface
+-- table (INTERFACE_TABLE = 'N/A (HDL)'); reconciliation is base-tier only from
+-- CMP_SALARY via HRC_INTEGRATION_KEY_MAP. RECON_KEY = the prefixed PERSON_NUMBER
+-- || '_SAL' (also the .dat SourceSystemId and the report RECORD_KEY).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000028                                            bip_report_id,
+           'Salaries'                                           cemli_code,
+           'Salary'                                             object_type,
+           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_RPT.xdo'   report_catalog_path,
+           'N/A (HDL)'                                          interface_table,
+           'Salary HDL base-table reconciliation (Contract v1)' notes,
+           1                                                    contract_version,
+           'DMT_SALARY_TFM_TBL'                                 tfm_table,
+           'FUSION_SALARY_ID'                                   fusion_id_column,
+           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_SAL'' -- prefixed person number + _SAL suffix' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)

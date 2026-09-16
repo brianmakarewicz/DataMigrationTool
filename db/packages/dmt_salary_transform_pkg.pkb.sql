@@ -65,6 +65,7 @@
             DATE_FROM,
             DATE_TO,
             SALARY_APPROVED,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -91,6 +92,12 @@
             s.DATE_FROM,
             s.DATE_TO,
             s.SALARY_APPROVED,
+            -- RECON_KEY = the same value written to the HDL .dat as the Salary
+            -- SourceSystemId (DMT_SALARY_HDL_GEN_PKG: prefixed PERSON_NUMBER || '_SAL'),
+            -- and the value the BIP reconciliation report returns as RECORD_KEY.
+            -- One key definition (Contract v1, design section 5). PERSON_NUMBER above
+            -- is already prefixed, so the '_SAL' suffix completes the key.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_SAL',
             'STAGED',
             SYSDATE
         FROM DMT_SALARY_STG_TBL s
