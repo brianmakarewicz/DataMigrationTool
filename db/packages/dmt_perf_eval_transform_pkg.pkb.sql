@@ -55,6 +55,7 @@ AS
             APPROVAL_STATUS,
             START_DATE,
             END_DATE,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -65,13 +66,16 @@ AS
             NULL,
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.MANAGER_PERSON_NUMBER, 30),
-            s.DOCUMENT_NAME,
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.DOCUMENT_NAME, 240),
             s.DOCUMENT_TYPE,
             s.REVIEW_PERIOD_NAME,
             s.OVERALL_RATING,
             s.APPROVAL_STATUS,
             s.START_DATE,
             s.END_DATE,
+            -- Contract v1 reconciliation key (design section 5): the prefixed goal
+            -- plan name = the base HRG_GOAL_PLANS_VL.GOAL_PLAN_NAME = report RECORD_KEY.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.DOCUMENT_NAME, 240),
             'STAGED',
             SYSDATE
         FROM DMT_PERF_EVAL_STG_TBL s
