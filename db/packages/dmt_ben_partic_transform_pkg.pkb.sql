@@ -56,6 +56,7 @@ AS
             ENROLLMENT_END_DATE,
             ENROLLMENT_STATUS,
             LEGAL_EMPLOYER_NAME,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -74,6 +75,12 @@ AS
             s.ENROLLMENT_END_DATE,
             s.ENROLLMENT_STATUS,
             s.LEGAL_EMPLOYER_NAME,
+            -- Contract v1 RECON_KEY = the .dat SourceSystemId business key that
+            -- DMT_BEN_PARTIC_HDL_GEN_PKG writes for the PersonBenefitBalance
+            -- object: the prefixed PERSON_NUMBER concatenated with '_BENENRL'.
+            -- This is exactly what the recon report returns as RECORD_KEY, so the
+            -- shared parser matches Fusion base rows to this TFM row.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_BENENRL',
             'STAGED',
             SYSDATE
         FROM DMT_BEN_PARTIC_STG_TBL s
