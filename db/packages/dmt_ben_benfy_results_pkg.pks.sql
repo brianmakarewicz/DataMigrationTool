@@ -5,10 +5,11 @@ AUTHID DEFINER
 AS
 -- ============================================================
 -- DMT_BEN_BENFY_RESULTS_PKG
--- Post-load HDL reconciliation for BeneficiaryDesignations.
--- Calls DMT_HDL_UTIL_PKG.RECONCILE_HDL for each TFM table.
+-- Post-load HDL reconciliation for BenBeneficiary.
+-- Calls DMT_HDL_UTIL_PKG.RECONCILE_HDL (per-record FAILED), then applies the
+-- shared Contract v1 base-table proof (design section 5) for LOADED.
 --
--- CEMLI_CODE: 'BeneficiaryDesignations'
+-- CEMLI_CODE: 'BenBeneficiary'
 -- ============================================================
 
     PROCEDURE RECONCILE_BATCH (
