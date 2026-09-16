@@ -53,6 +53,7 @@ AS
             WORK_SCHEDULE_TYPE,
             DESCRIPTION,
             LEGISLATIVE_DATA_GROUP_NAME,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -68,6 +69,11 @@ AS
             s.WORK_SCHEDULE_TYPE,
             s.DESCRIPTION,
             s.LEGISLATIVE_DATA_GROUP_NAME,
+            -- RECON_KEY (Contract v1, design section 5): the prefixed work schedule
+            -- name = HTS_WORK_PATTERNS_VL.WORK_PATTERN_NAME in Fusion = the report's
+            -- RECORD_KEY. WorkSchedules loads as the WorkPattern HDL object, so the
+            -- work schedule name is the work pattern name once loaded.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.WORK_SCHEDULE_NAME, 240),
             'STAGED',
             SYSDATE
         FROM DMT_WORK_SCHED_STG_TBL s
