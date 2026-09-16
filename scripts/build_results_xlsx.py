@@ -11,9 +11,11 @@ Env: DMT2_CONN / DMT2_WALLET / DMT2_WALLET_PW.  Args: <corrective_scenario_name>
 import os, sys, json, glob, shutil, oracledb, openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
-SC = r"C:\Users\Monroe\AppData\Local\Temp\claude\C--Users-Monroe\c70b5852-eb81-4686-8ce4-7aa3786df67b\scratchpad"
-EXPERT_XLSX = os.path.join(SC, "expert", "Data Migration Objects.xlsx")
-MASTER_XLSX = r"C:\Users\Monroe\DMT2_object_list.xlsx"
+# All paths overridable via env so the script isn't tied to one dev machine.
+SC = os.environ.get("EXPANDED_SCRATCH",
+    r"C:\Users\Monroe\AppData\Local\Temp\claude\C--Users-Monroe\c70b5852-eb81-4686-8ce4-7aa3786df67b\scratchpad")
+EXPERT_XLSX = os.environ.get("EXPERT_XLSX", os.path.join(SC, "expert", "Data Migration Objects.xlsx"))
+MASTER_XLSX = os.environ.get("DMT2_MASTER_XLSX", r"C:\Users\Monroe\DMT2_object_list.xlsx")
 OUT_XLSX    = os.path.join(SC, "Data Migration Objects - RESULTS.xlsx")
 CORR_SCEN   = sys.argv[1] if len(sys.argv) > 1 else open("/tmp/corrective_scenario.txt").read().strip()
 

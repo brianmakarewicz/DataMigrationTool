@@ -10,7 +10,8 @@ const { chromium } = require(PW);
 const RUN_ID = process.argv[2];
 const BASE = 'https://g6726c838b72234-queryapp.adb.us-ashburn-1.oraclecloudapps.com/ords';
 const APP = 'r/dmt2/livedmt2';
-const USER = 'DMTADMIN', PASS = 'Dmt2Live#2026';
+const USER = process.env.DMT2_UI_USER, PASS = process.env.DMT2_UI_PASS;
+if (!USER || !PASS) { console.error('Set DMT2_UI_USER and DMT2_UI_PASS env vars'); process.exit(2); }
 
 (async () => {
   const out = { run: RUN_ID, steps: [], badRequests: [] };
