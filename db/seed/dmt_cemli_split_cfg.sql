@@ -30,6 +30,15 @@ using (
     union all select 'Assets', 'DMT_FA_ASSET_BOOK_TFM_TBL', 'BOOK_TYPE_CODE', 'BOOK_TYPE_CODE', 'BOOK_TYPE_CODE = :partition_key', 'TFM_STATUS', 'BOOK_TYPE_CODE' from dual
     union all select 'Items', 'DMT_EGP_ITEM_TFM_TBL', 'BATCH_ID', 'BATCH_ID', 'BATCH_ID = :partition_key', 'TFM_STATUS', 'BATCH_ID' from dual
     union all select 'Requisitions', 'DMT_POR_REQ_HEADERS_TFM_TBL', 'BATCH_ID', 'BATCH_ID', 'BATCH_ID = :partition_key', 'TFM_STATUS', 'BATCH_ID' from dual
+    -- Expenditures is the one COMPOSITE-key spawn object: it partitions by
+    -- (USER_TRANSACTION_SOURCE, DOCUMENT_NAME) because Import and Process Cost
+    -- Transactions takes exactly one transaction source + one document per submit.
+    -- CHILD_PARTITION_COLUMN is the single column the queue worker uses only to
+    -- build each child's human-readable PARTITION_LABEL (JSON_VALUE key); the FULL
+    -- composite key lives in the JSON token GET_PARTITION_KEYS returns and both
+    -- columns are decoded (DECODE_PARTITION_KEY) at generate + load time. The label
+    -- shows the transaction source; the document rides in the opaque key.
+    union all select 'Expenditures', 'DMT_PJC_EXPENDITURES_TFM_TBL', 'USER_TRANSACTION_SOURCE', 'USER_TRANSACTION_SOURCE', 'USER_TRANSACTION_SOURCE = :partition_key', 'TFM_STATUS', 'USER_TRANSACTION_SOURCE' from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set

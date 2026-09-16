@@ -133,7 +133,11 @@ using (
     union all select 'ARReceipts', null, 'ASYNC', null, 'N', null from dual
     union all select 'Projects', 'DMT_LOADER_PKG.RUN_PROJECTS', 'ASYNC', 'DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'BillingEvents', 'DMT_LOADER_PKG.RUN_BILLING_EVENTS', 'ASYNC', 'DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
-    union all select 'Expenditures', 'DMT_LOADER_PKG.RUN_EXPENDITURES', 'ASYNC', 'DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    -- Expenditures spawns one child work item per distinct (USER_TRANSACTION_SOURCE,
+    -- DOCUMENT_NAME) group: Import and Process Cost Transactions takes exactly one
+    -- transaction-source id and one document per submission, so one child = one submit.
+    -- GET_PARTITION_KEYS returns a TWO-column composite JSON token per group.
+    union all select 'Expenditures', 'DMT_LOADER_PKG.RUN_EXPENDITURES', 'ASYNC', 'DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_EXPENDITURE_RESULTS_PKG.GET_PARTITION_KEYS' from dual
     union all select 'Grants', 'DMT_LOADER_PKG.RUN_GRANTS', 'ASYNC', 'DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'ProjectBudgets', 'DMT_LOADER_PKG.RUN_PROJECT_BUDGETS', 'ASYNC', 'DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_GL_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual

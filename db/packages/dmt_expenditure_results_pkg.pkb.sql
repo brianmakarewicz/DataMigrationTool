@@ -14,6 +14,37 @@ AS
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_EXPENDITURE_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'Expenditures';
 
+    -- --------------------------------------------------------
+    -- GET_PARTITION_KEYS — distinct (USER_TRANSACTION_SOURCE, DOCUMENT_NAME)
+    -- tokens for one run, STATIC SQL over the expenditures transform table (this
+    -- object's own table). Spawn-per-partition (work-queue-ID core): one child work
+    -- item per source/document group, because Import and Process Cost Transactions
+    -- takes exactly one transaction-source id (ParameterList position 6) and one
+    -- document per submission, so one submission == one (source, document). Unlike
+    -- the single-column BATCH_ID objects (Requisitions/Items), this key is a
+    -- TWO-column composite; both columns ride in one JSON object and are decoded at
+    -- generate + load time via DECODE_PARTITION_KEY. Called through invoke_registered
+    -- (style KEYS).
+    -- --------------------------------------------------------
+    FUNCTION GET_PARTITION_KEYS (
+        p_run_id IN NUMBER
+    ) RETURN DMT_PARTITION_KEY_TBL IS
+        l_keys DMT_PARTITION_KEY_TBL;
+    BEGIN
+        -- One JSON object per distinct (source, document), keyed by the two
+        -- partition column names. Only STAGED rows with both columns non-null are
+        -- eligible (a null source/document cannot build the import filter).
+        SELECT DISTINCT JSON_OBJECT('USER_TRANSACTION_SOURCE' VALUE USER_TRANSACTION_SOURCE,
+                                    'DOCUMENT_NAME'            VALUE DOCUMENT_NAME)
+        BULK COLLECT INTO l_keys
+        FROM   DMT_PJC_EXPENDITURES_TFM_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'STAGED'
+        AND    USER_TRANSACTION_SOURCE IS NOT NULL
+        AND    DOCUMENT_NAME IS NOT NULL;
+        RETURN l_keys;
+    END GET_PARTITION_KEYS;
+
     -- ============================================================
     -- HARVEST_PROCESSING_ERRORS — pull the PROCESSING/COSTING rejections out of
     -- the "Import and Process Cost Transactions" report XML and mark each
