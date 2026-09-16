@@ -92,7 +92,7 @@ AS
             AND    TFM_STATUS NOT IN ('LOADED','FAILED')
             AND    PROJECT_NUMBER = e.seg1
             AND    TASK_NUMBER    = e.elem
-            AND    TO_CHAR(QUANTITY) = e.qty
+            AND    QUANTITY = TO_NUMBER(e.qty)   -- numeric compare (no NLS-dependent TO_CHAR)
             AND    TO_CHAR(EXPENDITURE_ITEM_DATE,'YYYY-MM-DD') = e.eidate
             AND    EXPENDITURE_TYPE = e.etype
             AND    (PERSON_NUMBER = e.person OR (PERSON_NUMBER IS NULL AND e.person IS NULL));
@@ -114,7 +114,7 @@ AS
             AND    TFM_STATUS NOT IN ('LOADED','FAILED')
             AND    PROJECT_NUMBER = e.seg1
             AND    TASK_NUMBER    = e.elem
-            AND    TO_CHAR(QUANTITY) = e.qty
+            AND    QUANTITY = TO_NUMBER(e.qty)   -- numeric compare (no NLS-dependent TO_CHAR)
             AND    TO_CHAR(EXPENDITURE_ITEM_DATE,'YYYY-MM-DD') = e.eidate
             AND    EXPENDITURE_TYPE = e.etype
             AND    (PERSON_NUMBER = e.person OR (PERSON_NUMBER IS NULL AND e.person IS NULL));
