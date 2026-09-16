@@ -1309,6 +1309,16 @@ l_obj               VARCHAR2(60);             -- short object stem, SUBSTR after
 <section id="backlog">
   <h2>12 · Open items / backlog</h2>
   <p class="lead">Consolidated tracker — update status badges as items land so code and design stay in sync.</p>
+  <div style="border:1px solid #b42318;border-radius:8px;padding:10px 14px;margin:6px 0 14px;background:#fdeceb">
+    <strong style="color:#b42318">PROPOSED 2026-09-16 — interactive backlog view.</strong>
+    <span style="color:#b42318">The 57 items below were re-triaged against the current code tree on 2026-09-16
+    (verdict, time-to-fix cost 1&ndash;10, complexity/risk 1&ndash;10). That reclass is now browsable as a
+    filterable, sortable page with per-item proof and developer detail: open
+    <code style="color:#b42318">docs/backlog.html</code> (<a href="backlog.html" style="color:#b42318">open the interactive backlog</a>).
+    Filter by status and priority, sort by cost or risk, toggle a status-only compact view, and click any row to
+    drill into the full detail. Source of truth for that view: <code style="color:#b42318">docs/backlog_reclass_2026-09-16.md</code>.
+    The static table below is retained until each item's status here is reconciled against the reclass verdicts.</span>
+  </div>
   <table>
     <tr><th>Item</th><th>Area</th><th>Status</th></tr>
     <tr style="color:#b42318"><td style="color:#b42318"><strong style="color:#b42318">P1 · Converge base DDL to the RUN_ID model</strong> — fold <code>phase1_pipeline_redesign.sql</code> into each table's own file (guarded idempotent blocks); create base DDL files for <code>DMT_WORK_QUEUE_TBL</code> / <code>DMT_CEMLI_SPLIT_CFG</code>; retire the migration script; includes reconciling the remaining older run-detail view DDL to git (absorbs the old C5 item) (§3). <strong style="color:#b42318">[VERIFIED DONE 2026-07-13]</strong>: this convergence was already completed during Stage C and is now proven end to end. The migration script <code>phase1_pipeline_redesign.sql</code> exists nowhere in the repo (no reference in any <code>.sql</code>/<code>.sh</code>/<code>.py</code>); <code>DMT_WORK_QUEUE_TBL</code> and <code>DMT_CEMLI_SPLIT_CFG</code> are first-class table files wired into <code>install.sql</code> (lines 399/210, seed 997); the redesigned tables carry their FULL post-migration column set inside the <code>CREATE</code> itself (work-queue = all 19 columns, RUN_ID model, no bare migration <code>ALTER ADD</code>); and the four run-detail views are all committed git files. A full <code>build_local_db.sh --fresh</code> replay from committed files alone builds the entire post-remodel RUN_ID schema cleanly (exit 0, 24 invalid = pre-existing baseline), so git is the sole source of truth and no drift is possible. (The run-detail-view "reconcile to git" concern is moot under the Docker-only posture — there is no ATP holding a newer definition.)</td><td style="color:#b42318">DB</td><td style="color:#b42318"><span style="color:#b42318;font-weight:700">VERIFIED DONE 2026-07-13 — fresh install replays clean</span></td></tr>
