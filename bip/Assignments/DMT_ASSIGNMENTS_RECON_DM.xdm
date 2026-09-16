@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <!--
+    DMT_ASSIGNMENTS_RECON_DM — Contract v1 reconciliation data model for the
+    Assignments HDL object (design section 5, "BIP reconciliation report
+    contract - v1").
+
+    Assignments' RECONCILE_BATCH loads TWO record types into two TFM tables, so
+    this ONE report returns BOTH base tiers via the OBJECT_TYPE discriminator:
+
+      OBJECT_TYPE='WorkRelationship' -> DMT_WORK_REL_TFM_TBL. Base tier
+        PER_PERIODS_OF_SERVICE; FUSION_ID = the real PERSON_ID. RECORD_KEY = the
+        .dat SourceSystemId '<prefixed PERSON_NUMBER>_POS'.
+      OBJECT_TYPE='Assignment' -> DMT_ASSIGNMENT_TFM_TBL. Base tier
+        PER_ALL_ASSIGNMENTS_M; FUSION_ID = the real ASSIGNMENT_ID. RECORD_KEY =
+        the .dat SourceSystemId '<ASSIGNMENT_NUMBER>_ASG' (and its WorkTerms
+        sibling '<ASSIGNMENT_NUMBER>_TRM', also a per_all_assignments_m row) —
+        the same values RECONCILE_HDL matches with the '_TRM,_ASG' suffixes and
+        the assignment TFM row's RECON_KEY.
+
+    The tie from our .dat SourceSystemId to the base row is
+    HRC_INTEGRATION_KEY_MAP (SOURCE_SYSTEM_ID we wrote -> SURROGATE_ID = base id).
+    Verified live 2026-09-16 (fin_impl): object_name='PeriodOfService' surrogate
+    == PER_PERIODS_OF_SERVICE.PERIOD_OF_SERVICE_ID; object_name='Assignment'
+    surrogate == PER_ALL_ASSIGNMENTS_M.ASSIGNMENT_ID (e.g. '10052RT-WKR-G1_ASG'
+    -> ASSIGNMENT_ID 300000331500388, ASSIGNMENT_NUMBER '10052RT-WKR-G1').
+
+    HDL failures arrive per-record in the HDL response (tagged [FUSION_ERROR] by
+    RECONCILE_HDL before this report runs), so this report returns the BASE tier
+    only — the Assignments reconciler promotes a TFM row to LOADED only from a
+    BASE / SUCCESS / FUSION_ID-not-null row here.
+
+    Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
+    P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base tables for an
+    HDL load, so BASE-tier matching is by the run prefix (P_PREFIX). LOAD_REQUEST_ID
+    is echoed back unchanged for audit.
+  -->
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="assignments_recon" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT object_type, record_key, source_type, fusion_status,
+       fusion_id, error_message, load_request_id
+FROM (
+    -- WorkRelationship base tier: positive proof in PER_PERIODS_OF_SERVICE.
+    SELECT 'WorkRelationship'            AS object_type,
+           k.source_system_id            AS record_key,
+           'BASE'                        AS source_type,
+           'SUCCESS'                     AS fusion_status,
+           MAX(pos.person_id)            AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))  AS error_message,
+           :P_LOAD_REQUEST_ID            AS load_request_id
+    FROM   hrc_integration_key_map k,
+           per_periods_of_service   pos
+    WHERE  k.object_name        = 'PeriodOfService'
+    AND    k.source_system_owner = 'HRC_SQLLOADER'
+    AND    k.surrogate_id       = pos.period_of_service_id
+    AND    k.source_system_id LIKE :P_PREFIX || '%'
+    AND    (:P_AFTER_KEY IS NULL OR k.source_system_id > :P_AFTER_KEY)
+    GROUP BY k.source_system_id
+    UNION ALL
+    -- Assignment base tier: positive proof in PER_ALL_ASSIGNMENTS_M. Covers both
+    -- the '_ASG' assignment record and its '_TRM' work-terms sibling (both are
+    -- per_all_assignments_m rows keyed by the source assignment number).
+    SELECT 'Assignment'                  AS object_type,
+           k.source_system_id            AS record_key,
+           'BASE'                        AS source_type,
+           'SUCCESS'                     AS fusion_status,
+           MAX(a.assignment_id)          AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))  AS error_message,
+           :P_LOAD_REQUEST_ID            AS load_request_id
+    FROM   hrc_integration_key_map k,
+           per_all_assignments_m   a
+    WHERE  k.object_name        = 'Assignment'
+    AND    k.source_system_owner = 'HRC_SQLLOADER'
+    AND    k.surrogate_id       = a.assignment_id
+    AND    k.source_system_id LIKE :P_PREFIX || '%'
+    AND    (:P_AFTER_KEY IS NULL OR k.source_system_id > :P_AFTER_KEY)
+    GROUP BY k.source_system_id
+    ORDER BY record_key
+)
+WHERE ROWNUM <= :P_CHUNK_SIZE
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="assignments_recon">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="3"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="5"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="6"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
