@@ -81,6 +81,7 @@
             REGION_OF_BIRTH,
             COUNTRY_OF_BIRTH,
             DATE_OF_DEATH,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -103,6 +104,10 @@
             s.REGION_OF_BIRTH,
             s.COUNTRY_OF_BIRTH,
             s.DATE_OF_DEATH,
+            -- RECON_KEY = the same prefixed person number written to the HDL .dat as
+            -- SourceSystemId, and the value the BIP reconciliation report returns as
+            -- RECORD_KEY. One key definition (Contract v1, design section 5).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
             'STAGED',
             SYSDATE
         FROM DMT_WORKER_STG_TBL s

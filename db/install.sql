@@ -732,6 +732,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_project_validator_pkg.pks.sql
 @@packages/dmt_queue_pkg.pks.sql
 @@packages/dmt_queue_worker_pkg.pks.sql
+@@packages/dmt_recon_contract_pkg.pks.sql
 @@packages/dmt_regression_pkg.pks.sql
 @@packages/dmt_report_pkg.pks.sql
 @@packages/dmt_req_fbdi_gen_pkg.pks.sql
@@ -944,6 +945,7 @@ prompt == Package bodies ==
 @@packages/dmt_project_validator_pkg.pkb.sql
 @@packages/dmt_queue_pkg.pkb.sql
 @@packages/dmt_queue_worker_pkg.pkb.sql
+@@packages/dmt_recon_contract_pkg.pkb.sql
 @@packages/dmt_report_pkg.pkb.sql
 @@packages/dmt_req_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_req_results_pkg.pkb.sql

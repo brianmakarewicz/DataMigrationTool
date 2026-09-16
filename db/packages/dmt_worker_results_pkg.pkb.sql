@@ -29,15 +29,21 @@ AS
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        -- 1. Worker
+        -- 1. Worker — Contract v1 base-table proof (design section 5).
+        -- The per-record HDL error path still runs (real [FUSION_ERROR] rows are
+        -- marked FAILED here), but LOADED promotion is DEFERRED to the shared
+        -- Contract v1 parser below: a Worker row reaches LOADED only when the
+        -- person is positively confirmed in the Fusion base table (PER_ALL_PEOPLE_F)
+        -- with a real person id, which the parser stamps into FUSION_PERSON_ID.
         DMT_HDL_UTIL_PKG.RECONCILE_HDL(
             p_run_id => p_run_id,
-            p_request_id     => p_request_id,
-            p_tfm_table      => 'DMT_WORKER_TFM_TBL',
-            p_stg_table      => 'DMT_WORKER_STG_TBL',
-            p_key_column     => 'PERSON_NUMBER',
-            p_dataset_status => p_dataset_status,
-            p_log_context    => C_CEMLI || ' > Worker');
+            p_request_id       => p_request_id,
+            p_tfm_table        => 'DMT_WORKER_TFM_TBL',
+            p_stg_table        => 'DMT_WORKER_STG_TBL',
+            p_key_column       => 'PERSON_NUMBER',
+            p_dataset_status   => p_dataset_status,
+            p_log_context      => C_CEMLI || ' > Worker',
+            p_defer_base_proof => TRUE);
 
         -- 2. PersonName
         DMT_HDL_UTIL_PKG.RECONCILE_HDL(
@@ -99,11 +105,18 @@ AS
             p_dataset_status => p_dataset_status,
             p_log_context    => C_CEMLI || ' > PersonLegislativeData');
 
-        -- Post-reconciliation: look up Fusion Person IDs for LOADED workers
-        DMT_HDL_UTIL_PKG.LOOKUP_FUSION_IDS(
-            p_run_id => p_run_id,
-            p_object_type    => 'Worker',
-            p_log_context    => C_CEMLI || ' > Worker');
+        -- Contract v1 base-tier positive proof (design section 5) — the shared
+        -- parser. It runs the Workers recon report over BIP, confirms each migrated
+        -- worker in the Fusion base table (PER_ALL_PEOPLE_F) by person number, and
+        -- marks that Worker TFM row LOADED with the real Fusion person id stamped
+        -- into FUSION_PERSON_ID; any BASE/ERROR row is marked FAILED with the real
+        -- Fusion error. This REPLACES the bulk LOOKUP_FUSION_IDS positive path for
+        -- Workers. The single-record REST "Verify in Fusion" button path is
+        -- unchanged. The HDL data set request id is the Contract v1 P_LOAD_REQUEST_ID.
+        DMT_RECON_CONTRACT_PKG.RECONCILE(
+            p_cemli_code  => C_CEMLI,
+            p_run_id      => p_run_id,
+            p_load_ess_id => TO_NUMBER(p_request_id));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

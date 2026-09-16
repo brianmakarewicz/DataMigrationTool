@@ -398,7 +398,8 @@
         p_key_column      IN VARCHAR2 DEFAULT 'SOURCE_REF',
         p_dataset_status  IN VARCHAR2 DEFAULT NULL,
         p_log_context     IN VARCHAR2 DEFAULT NULL,
-        p_key_suffixes    IN VARCHAR2 DEFAULT NULL
+        p_key_suffixes    IN VARCHAR2 DEFAULT NULL,
+        p_defer_base_proof IN BOOLEAN DEFAULT FALSE
     ) IS
         l_json      CLOB;
         l_proc      VARCHAR2(100) := NVL(p_log_context, '') || ' > RECONCILE_HDL';
@@ -566,6 +567,24 @@
         END;
         l_zero_load := (l_load_succ IS NOT NULL AND l_load_succ = 0);
 
+        -- Contract v1 base-table proof (design section 5). When the caller defers
+        -- base proof (p_defer_base_proof = TRUE, e.g. the Worker record), the
+        -- interface-only status guess below is SKIPPED entirely: no row is promoted
+        -- to LOADED and no data-set-level FAILED is broadcast from here. The
+        -- per-record HDL errors from Step 1/1b already landed on their rows; the
+        -- remaining GENERATED rows are settled by the shared parser
+        -- DMT_RECON_CONTRACT_PKG.RECONCILE, which marks a row LOADED only once the
+        -- record is positively confirmed in the Fusion base table (with its Fusion
+        -- id), and leaves anything it cannot confirm for the honest [UNACCOUNTED]
+        -- sweep. This is the "positive success + Fusion IDs" rule made structural.
+        IF p_defer_base_proof THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'RECONCILE_HDL: deferring LOADED promotion to Contract v1 base-table '
+                || 'proof for ' || p_tfm_table || ' (per-record HDL errors already '
+                || 'applied; base tier confirms LOADED + Fusion id).',
+                'INFO', C_PKG, l_proc);
+            NULL;  -- Step 2 promotion skipped; base parser owns LOADED for this table.
+
         -- Step 2: Handle remaining GENERATED rows based on data set status
         -- Only mark LOADED if we have positive evidence of success.
         -- If the data set loaded ZERO objects, mark nothing LOADED.
@@ -575,7 +594,7 @@
         -- If data set was ORA_IN_ERROR and we found NO error rows, we have no
         --   per-record evidence either way — LEAVE the rows GENERATED (unaccounted).
         --   We never fabricate a FAILED for an outcome we did not observe.
-        IF l_zero_load THEN
+        ELSIF l_zero_load THEN
             -- Fusion loaded 0 objects: every remaining GENERATED row of this table
             -- verifiably did NOT load. That is positive non-load evidence (from the
             -- data set's own ObjectSuccessCount=0), not an unknown outcome. When the
