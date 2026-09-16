@@ -13,14 +13,14 @@
     PerfEvaluations loads through the HCM Data Loader as the GoalPlan object
     (GoalPlan.dat, BUILD_DAT_HEADER('GoalPlan',...)); the child ratings load as
     GoalPlanGoal. A loaded performance evaluation therefore lives in Fusion as a
-    goal plan definition. Confirmed live 2026-09-16 (--cred fin_impl):
+    goal plan definition. Confirmed live 2026-09-16 (cred fin_impl):
     HRC_INTEGRATION_KEY_MAP.object_name = 'GoalPlan' exists (72 rows) and
     'GoalPlanGoal' exists (17152 rows).
 
     BASE TABLE: HRG_GOAL_PLANS_VL is the translated view over the base table
     HRG_GOAL_PLANS_B + _TL (the name lives on _TL, exposed by the _VL view).
     GOAL_PLAN_ID is the base id; GOAL_PLAN_NAME is the business key. Verified live
-    2026-09-16 (--cred fin_impl): HRG_GOAL_PLANS_VL has columns GOAL_PLAN_ID and
+    2026-09-16 (cred fin_impl): HRG_GOAL_PLANS_VL has columns GOAL_PLAN_ID and
     GOAL_PLAN_NAME, and migrated DMT goal plans carry the run prefix in
     GOAL_PLAN_NAME, e.g.
         300000331553042  '43426 DMT Goal Plan A'
