@@ -243,6 +243,10 @@
             SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
             WHERE  e.RUN_ID          = p_run_id
             AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            -- STG_SEQUENCE_ID is polymorphic (a different STG table per SUB_OBJECT)
+            -- and all 5 supplier objects share one RUN_ID, so scope to this object
+            -- or a colliding child id would wrongly drop a valid supplier row.
+            AND    e.SUB_OBJECT      = 'Suppliers'
             AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
