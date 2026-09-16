@@ -64,7 +64,9 @@ AS
     -- Private: generate PjcTxnXfaceStageAll.csv CLOB
     -- --------------------------------------------------------
     FUNCTION gen_expenditures_csv (
-        p_run_id IN NUMBER
+        p_run_id     IN NUMBER,
+        p_txn_source IN VARCHAR2 DEFAULT NULL,
+        p_document   IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -211,6 +213,10 @@ AS
             FROM   DMT_PJC_EXPENDITURES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            -- Spawn-per-partition: when a child passes its (source, document), only
+            -- that group's rows go into the CSV; both null = the whole run.
+            AND    (p_txn_source IS NULL OR t.USER_TRANSACTION_SOURCE = p_txn_source)
+            AND    (p_document   IS NULL OR t.DOCUMENT_NAME           = p_document)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -228,7 +234,9 @@ AS
         p_run_id IN  NUMBER,
         x_fbdi_zip       OUT BLOB,
         x_filename       OUT VARCHAR2,
-        x_fbdi_csv_id    OUT NUMBER
+        x_fbdi_csv_id    OUT NUMBER,
+        p_txn_source     IN  VARCHAR2 DEFAULT NULL,
+        p_document       IN  VARCHAR2 DEFAULT NULL
     )
     IS
         l_zip              BLOB;
@@ -247,8 +255,8 @@ AS
 
         x_filename := 'Expenditures_' || TO_CHAR(p_run_id) || '.zip';
 
-        -- Generate CSV
-        l_exp_csv := gen_expenditures_csv(p_run_id);
+        -- Generate CSV (scoped to the partition when a child passes source/document)
+        l_exp_csv := gen_expenditures_csv(p_run_id, p_txn_source, p_document);
 
         -- AD#20: Skip gracefully if no rows generated
         IF (l_exp_csv IS NULL OR DBMS_LOB.GETLENGTH(l_exp_csv) = 0) THEN
@@ -271,10 +279,20 @@ AS
         DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'Expenditures', 'PjcTxnXfaceStageAll.csv', 0, l_exp_csv, l_fbdi_csv_id);
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'Expenditures', x_filename, l_zip, l_bytes);
 
-        -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID
+        -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID. Scope to the same
+        -- partition the CSV was built from, so a child only flips its own rows and
+        -- leaves the other groups STAGED for their own children (spawn-per-partition).
+        -- Stamp WORK_QUEUE_ID = the generating child work item's id
+        -- (DMT_LOADER_PKG.g_work_queue_id) so the accounting gate and the unaccounted
+        -- sweep scope to ONLY this child's rows -- mirrors DMT_EGP_ITEM_FBDI_GEN_PKG.
+        -- Without it a spawn child accounts/sweeps zero rows and settles DONE blind.
+        -- NULL on the standalone/legacy path (no work-item context).
         UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_txn_source IS NULL OR USER_TRANSACTION_SOURCE = p_txn_source)
+        AND    (p_document   IS NULL OR DOCUMENT_NAME           = p_document);
 
         -- Free temporary CLOBs
         DBMS_LOB.FREETEMPORARY(l_exp_csv);

@@ -1449,62 +1449,86 @@
                 l_exp_doc_name   VARCHAR2(240);
                 l_exp_src_id     VARCHAR2(30);
                 l_exp_doc_id     VARCHAR2(30);
-                l_exp_src_cnt    NUMBER;
-                l_exp_doc_cnt    NUMBER;
             BEGIN
                 l_exp_bu_name := DMT_UTIL_PKG.GET_CONFIG('EXPENDITURE_BU_NAME');
                 l_exp_bu_id   := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', l_exp_bu_name);
 
-                -- Source + document NAME carried on this run's staging rows. This
-                -- runs at Step 1 (before transform), so read from STG -- the TFM
-                -- table has no rows yet. All rows in a run must share one
-                -- source/document trio (positions 6/7 are single-value import
-                -- filters), so a mixed run would silently exclude one source's rows;
-                -- COUNT(DISTINCT) lets us fail loudly instead of half-loading.
-                -- Run-mode + scenario scoped to match EXACTLY the rows this run
-                -- loads (same status-set branching as the canonical row-selection
-                -- recipe, so a lingering FAILED row from a prior run can't inject a
-                -- foreign source/document and abort an otherwise-consistent run).
-                SELECT MAX(USER_TRANSACTION_SOURCE), MAX(DOCUMENT_NAME),
-                       COUNT(DISTINCT USER_TRANSACTION_SOURCE),
-                       COUNT(DISTINCT DOCUMENT_NAME)
-                INTO   l_exp_src_name, l_exp_doc_name, l_exp_src_cnt, l_exp_doc_cnt
-                FROM   DMT_PJC_EXPENDITURES_STG_TBL
-                WHERE  (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
-                AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW','RETRY'))
-                        OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
-                        OR (p_run_mode = 'ALL') );
+                -- Spawn-per-partition (work-queue-ID core): Expenditures partitions
+                -- by the COMPOSITE key (USER_TRANSACTION_SOURCE, DOCUMENT_NAME) --
+                -- Import and Process Cost Transactions filters on exactly one of each
+                -- (ParameterList positions 6/7), so one child work item == one
+                -- (source, document) group. A spawned child (g_partition_key set to a
+                -- JSON object like {"USER_TRANSACTION_SOURCE":"...","DOCUMENT_NAME":"..."})
+                -- reads its two names straight from that key -- no STG scan, and no
+                -- "mixed run" guard is needed because partitioning makes a mix
+                -- impossible by construction (the old ORA-20058 guard is retired).
+                -- The un-partitioned PARENT pass (g_partition_key NULL) does NOT
+                -- submit: it transforms once and returns at the transform-only gate
+                -- below, after which the queue worker spawns the children. It still
+                -- reaches this block to build a nominal ParameterList, so read the
+                -- staged source/document informationally (first values seen) without
+                -- failing on a legitimately multi-source parent run.
+                IF g_partition_key IS NOT NULL THEN
+                    l_exp_src_name := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'USER_TRANSACTION_SOURCE');
+                    l_exp_doc_name := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'DOCUMENT_NAME');
+                ELSE
+                    -- Parent pass: informational only (this pass will not submit).
+                    SELECT MAX(USER_TRANSACTION_SOURCE), MAX(DOCUMENT_NAME)
+                    INTO   l_exp_src_name, l_exp_doc_name
+                    FROM   DMT_PJC_EXPENDITURES_STG_TBL
+                    WHERE  (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
+                    AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW','RETRY'))
+                            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+                            OR (p_run_mode = 'ALL') );
+                END IF;
 
-                -- Fail closed with a clear, object-scoped message (not a bare lookup
-                -- error) when the run staged no usable source/document, or carried
-                -- more than one -- either way the import filter cannot be built safely.
-                IF l_exp_src_name IS NULL OR l_exp_doc_name IS NULL THEN
+                -- Keep the no-usable-source/document guard on the CHILD path: a child
+                -- whose decoded key is null cannot build the import filter safely.
+                -- (GET_PARTITION_KEYS excludes null-source/document rows, so a real
+                -- child always has both; this is a defensive backstop.)
+                IF g_partition_key IS NOT NULL
+                   AND (l_exp_src_name IS NULL OR l_exp_doc_name IS NULL) THEN
                     RAISE_APPLICATION_ERROR(-20057,
-                        'Expenditures: no staged rows carry a USER_TRANSACTION_SOURCE '||
-                        'and DOCUMENT_NAME for scenario '||NVL(TO_CHAR(p_scenario_id),'(all)')||
-                        '. Import and Process Cost Transactions needs both to build its '||
-                        'transaction-source/document filter.');
-                END IF;
-                IF l_exp_src_cnt > 1 OR l_exp_doc_cnt > 1 THEN
-                    RAISE_APPLICATION_ERROR(-20058,
-                        'Expenditures: this run mixes '||l_exp_src_cnt||' transaction sources '||
-                        'and '||l_exp_doc_cnt||' documents. The import filter takes exactly one '||
-                        'of each; split the sources into separate runs.');
+                        'Expenditures: partition child carries no USER_TRANSACTION_SOURCE '||
+                        'and DOCUMENT_NAME (key '||g_partition_key||'). Import and Process '||
+                        'Cost Transactions needs both to build its source/document filter.');
                 END IF;
 
-                l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_exp_src_name);
-                l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_exp_doc_name);
+                -- Resolve the source/document ids for the ParameterList. On the CHILD
+                -- path (a real submit) these must resolve, so let GET_LOOKUP raise -20040
+                -- loudly. On the PARENT informational pass the built list is discarded
+                -- (the parent returns transform-only and never submits), so a picked
+                -- MAX() source that happens not to resolve must not crash the parent
+                -- before it can spawn its children -- swallow it there.
+                IF g_partition_key IS NOT NULL THEN
+                    l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_exp_src_name);
+                    l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_exp_doc_name);
+                ELSE
+                    BEGIN
+                        l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_exp_src_name);
+                        l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_exp_doc_name);
+                    EXCEPTION WHEN OTHERS THEN
+                        l_exp_src_id := NULL;
+                        l_exp_doc_id := NULL;
+                    END;
+                END IF;
 
-                -- Expenditure Batch (arg 8): the run's work-queue-id -- one batch name
-                -- for ALL of this run's rows. Globally unique (a sequence) so it never
-                -- collides on PJC_UNIQUE_BATCH_NAME, and it isolates this run's rows from
-                -- any other pending interface rows at costing time (an empty filter would
-                -- process every pending row across runs). The SAME value is stamped onto
-                -- BATCH_NAME in every generated CSV row at the load step below.
-                -- g_work_queue_id is NULL for non-partitioned objects, so read the queue id.
-                SELECT TO_CHAR(MAX(QUEUE_ID)) INTO l_ex_batch
-                FROM   DMT_WORK_QUEUE_TBL
-                WHERE  RUN_ID = p_run_id AND CEMLI_CODE = p_cemli_code;
+                -- Expenditure Batch (arg 8): one batch name per (source, document)
+                -- partition. Globally unique (a work-queue id) so it never collides on
+                -- PJC_UNIQUE_BATCH_NAME, and it isolates THIS child's rows from any other
+                -- pending interface rows (other children, other runs) at costing time (an
+                -- empty filter would process every pending row). The SAME value is stamped
+                -- onto BATCH_NAME in this child's generated CSV rows at the load step below.
+                -- Spawn-per-partition: use g_work_queue_id (THIS child's queue id) so each
+                -- child gets its own batch; the parent pass (g_work_queue_id NULL) falls
+                -- back to the max queue id but never submits (it returns transform-only).
+                IF g_work_queue_id IS NOT NULL THEN
+                    l_ex_batch := TO_CHAR(g_work_queue_id);
+                ELSE
+                    SELECT TO_CHAR(MAX(QUEUE_ID)) INTO l_ex_batch
+                    FROM   DMT_WORK_QUEUE_TBL
+                    WHERE  RUN_ID = p_run_id AND CEMLI_CODE = p_cemli_code;
+                END IF;
 
                 -- 13-arg ImportProcessParallelEssJob ParameterList (proven live, UI run
                 -- 9777408). '~'-delimited; SUBMIT_IMPORT_JOB emits one <paramList> element
@@ -1612,7 +1636,13 @@
         ELSIF p_cemli_code = 'BillingEvents' THEN
             DMT_BILLING_EVENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'Expenditures' THEN
-            DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            -- Spawn-per-partition child (g_partition_key set to a composite
+            -- {source,document} JSON key): already validated by the parent's
+            -- transform-only pass. Re-transforming below would reset STAGED rows,
+            -- so both are skipped for children (mirrors Requisitions/Items).
+            IF g_partition_key IS NULL THEN
+                DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            END IF;
         ELSIF p_cemli_code = 'Grants' THEN
             DMT_GRANTS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'Items' THEN
@@ -1701,7 +1731,12 @@
         ELSIF p_cemli_code = 'BillingEvents' THEN
             DMT_BILLING_EVENT_TRANSFORM_PKG.TRANSFORM_EVENTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
         ELSIF p_cemli_code = 'Expenditures' THEN
-            DMT_EXPENDITURE_TRANSFORM_PKG.TRANSFORM_EXPENDITURES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            -- Spawn-per-partition child (g_partition_key set to a composite
+            -- {source,document} JSON key): already transformed by the parent's
+            -- transform-only pass; re-transforming would reset STAGED rows.
+            IF g_partition_key IS NULL THEN
+                DMT_EXPENDITURE_TRANSFORM_PKG.TRANSFORM_EXPENDITURES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
+            END IF;
         ELSIF p_cemli_code = 'Grants' THEN
             DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
             DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUNDING(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
@@ -2857,24 +2892,40 @@
                 l_ex_rows      NUMBER := 0;
                 l_ex_user      VARCHAR2(100);
                 l_ex_pass      VARCHAR2(100);
+                -- Spawn-per-partition: this block runs as a spawned CHILD scoped to one
+                -- (source, document) group (the parent transformed once and returned at
+                -- the transform-only gate). Decode the child's two partition names so the
+                -- BATCH_NAME stamp, the FBDI generate, and the GENERATED-row count all
+                -- touch ONLY this group's rows. Both null on the legacy/standalone path.
+                l_ex_src       VARCHAR2(240) := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'USER_TRANSACTION_SOURCE');
+                l_ex_doc       VARCHAR2(240) := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'DOCUMENT_NAME');
             BEGIN
                 -- Stamp the run's single work-queue-id batch onto every row's BATCH_NAME
                 -- so the generated CSV carries it, and it matches the Expenditure Batch
                 -- filter (arg 8, l_ex_batch) submitted with ImportProcessParallelEssJob.
                 -- One shared, globally-unique batch groups the run's rows and isolates
-                -- them from other runs' pending interface rows at costing time.
+                -- them from other runs' pending interface rows at costing time. Scoped to
+                -- this partition so a child only stamps its own group's rows.
                 UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                 SET    BATCH_NAME = l_ex_batch
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+                AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
+                AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
 
-                -- Generate one FBDI zip for all STAGED expenditure rows this run
+                -- Generate one FBDI zip for this partition's STAGED expenditure rows
                 -- (rows move STAGED -> GENERATED).
                 DMT_EXPENDITURE_FBDI_GEN_PKG.GENERATE_FBDI(
-                    p_run_id, l_ex_zip, l_ex_filename, l_ex_csv_id);
+                    p_run_id, l_ex_zip, l_ex_filename, l_ex_csv_id,
+                    p_txn_source => l_ex_src, p_document => l_ex_doc);
 
+                -- Count only THIS partition's just-generated rows (the generator scopes
+                -- its STAGED->GENERATED flip by the same source/document), so an empty
+                -- group skips cleanly without seeing another child's rows.
                 SELECT COUNT(*) INTO l_ex_rows
                 FROM   DMT_PJC_EXPENDITURES_TFM_TBL
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
+                AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
 
                 IF l_ex_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ex_zip) = 0 OR l_ex_rows = 0 THEN
                     DMT_UTIL_PKG.LOG(p_run_id,
@@ -2915,12 +2966,17 @@
                         'Expenditure Load ESS ' || l_ex_load_id || ' returned ' || l_ex_status ||
                         '. No rows staged. Marking GENERATED rows FAILED.',
                         DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
+                    -- Fail only THIS partition's in-flight rows. Scoped by
+                    -- (source, document) so a failing child does not flip a sibling
+                    -- child's GENERATED rows to FAILED (spawn-per-partition isolation).
                     UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                     SET    TFM_STATUS = 'FAILED',
                            ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                '[LOAD_ERROR] Load to PJC_TXN_XFACE_STAGE_ALL failed. Check ESS job ' || l_ex_load_id || '.'),
                            LAST_UPDATED_DATE = SYSDATE
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                    AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
+                    AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
                     COMMIT;
                     RETURN FALSE;
                 END IF;
