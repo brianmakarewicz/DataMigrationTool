@@ -47,12 +47,24 @@ AS
     -- ============================================================
     FUNCTION harvest_processing_errors (p_run_id IN NUMBER, p_xml IN CLOB) RETURN NUMBER IS
         l_matched NUMBER := 0;
+        l_hits    NUMBER := 0;
     BEGIN
         IF p_xml IS NULL OR DBMS_LOB.GETLENGTH(p_xml) = 0 THEN
             RETURN 0;
         END IF;
+        -- The report's processing-error groups carry NO ORIG_TRANSACTION_REFERENCE
+        -- (only the Fusion TXN_INTERFACE_ID, which our TFM row lacks and the
+        -- interface table is purged of after costing). We therefore match on the
+        -- fullest business identity the report gives us — project, task, quantity,
+        -- date, expenditure type AND person. Type+person are essential: without
+        -- them a GOOD row and the seed's BAD row (same project/task/qty/date,
+        -- differing only in EXPENDITURE_TYPE) collide and one row would be stamped
+        -- with the other's error — a fabricated verdict (violates Rule 1). To stay
+        -- honest we ALSO refuse to stamp when the key is ambiguous: only update
+        -- when the business key resolves to EXACTLY ONE still-GENERATED TFM row;
+        -- otherwise leave it UNACCOUNTED (logged) rather than guess.
         FOR e IN (
-            SELECT wo.seg1, wo.elem, wo.qty, wo.eidate,
+            SELECT wo.seg1, wo.elem, wo.qty, wo.eidate, wo.etype, wo.person,
                    LISTAGG(md.mname || ' - ' || md.mtext, ' | ')
                        WITHIN GROUP (ORDER BY md.mname) AS msgs
             FROM   XMLTABLE('//G_ERROR_MSG_DETAILS' PASSING XMLTYPE(p_xml)
@@ -66,11 +78,33 @@ AS
                             seg1   VARCHAR2(100) PATH 'SEGMENT1_3_1',
                             elem   VARCHAR2(100) PATH 'ELEMENT_NUMBER_3_1',
                             qty    VARCHAR2(50)  PATH 'QUANTITY_3_1',
-                            eidate VARCHAR2(30)  PATH 'EXPENDITURE_ITEM_DATE_3_1') wo
+                            eidate VARCHAR2(30)  PATH 'EXPENDITURE_ITEM_DATE_3_1',
+                            etype  VARCHAR2(240) PATH 'EXPENDITURE_TYPE_NAME_3_1',
+                            person VARCHAR2(50)  PATH 'PERSON_NUMBER_3_1') wo
               ON   wo.ifid = md.ifid AND wo.mname = md.mname
             WHERE  md.mtype = 'ERROR'
-            GROUP BY wo.seg1, wo.elem, wo.qty, wo.eidate
+            GROUP BY wo.seg1, wo.elem, wo.qty, wo.eidate, wo.etype, wo.person
         ) LOOP
+            -- ambiguity guard: how many still-open TFM rows match this key?
+            SELECT COUNT(*) INTO l_hits
+            FROM   DMT_PJC_EXPENDITURES_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+            AND    PROJECT_NUMBER = e.seg1
+            AND    TASK_NUMBER    = e.elem
+            AND    TO_CHAR(QUANTITY) = e.qty
+            AND    TO_CHAR(EXPENDITURE_ITEM_DATE,'YYYY-MM-DD') = e.eidate
+            AND    EXPENDITURE_TYPE = e.etype
+            AND    (PERSON_NUMBER = e.person OR (PERSON_NUMBER IS NULL AND e.person IS NULL));
+            IF l_hits <> 1 THEN
+                DMT_UTIL_PKG.LOG(p_run_id => p_run_id,
+                    p_message => 'HARVEST_PROCESSING_ERRORS: business key ('||e.seg1||'/'||e.elem||'/'||
+                        e.qty||'/'||e.eidate||'/'||e.etype||'/'||e.person||') matched '||l_hits||
+                        ' open rows — left UNACCOUNTED to avoid a fabricated verdict.',
+                    p_log_type => DMT_UTIL_PKG.C_LOG_WARN, p_package => C_PKG,
+                    p_procedure => 'HARVEST_PROCESSING_ERRORS');
+                CONTINUE;
+            END IF;
             UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
             SET    TFM_STATUS           = 'FAILED',
                    ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
@@ -81,7 +115,9 @@ AS
             AND    PROJECT_NUMBER = e.seg1
             AND    TASK_NUMBER    = e.elem
             AND    TO_CHAR(QUANTITY) = e.qty
-            AND    TO_CHAR(EXPENDITURE_ITEM_DATE,'YYYY-MM-DD') = e.eidate;
+            AND    TO_CHAR(EXPENDITURE_ITEM_DATE,'YYYY-MM-DD') = e.eidate
+            AND    EXPENDITURE_TYPE = e.etype
+            AND    (PERSON_NUMBER = e.person OR (PERSON_NUMBER IS NULL AND e.person IS NULL));
             l_matched := l_matched + SQL%ROWCOUNT;
         END LOOP;
         RETURN l_matched;
