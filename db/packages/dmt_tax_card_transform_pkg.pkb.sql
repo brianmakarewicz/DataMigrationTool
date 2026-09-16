@@ -53,6 +53,7 @@ AS
             DIRECTIVE_CARD_NAME,
             TAX_REPORTING_UNIT,
             COMPONENT_GROUP_NAME,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -68,6 +69,11 @@ AS
             s.DIRECTIVE_CARD_NAME,
             s.TAX_REPORTING_UNIT,
             s.COMPONENT_GROUP_NAME,
+            -- RECON_KEY = the SourceSystemId written into CalculationCard.dat
+            -- (DMT_TAX_CARD_HDL_GEN_PKG writes prefixed PERSON_NUMBER || '_TAXCARD'),
+            -- and the value the BIP reconciliation report returns as RECORD_KEY.
+            -- One key definition (Contract v1, design section 5).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_TAXCARD',
             'STAGED',
             SYSDATE
         FROM DMT_TAX_CARD_STG_TBL s
@@ -117,6 +123,7 @@ AS
             LEGISLATIVE_DATA_GROUP_NAME,
             DIRECTIVE_CARD_NAME,
             TAX_REPORTING_UNIT,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -133,6 +140,11 @@ AS
             s.LEGISLATIVE_DATA_GROUP_NAME,
             s.DIRECTIVE_CARD_NAME,
             s.TAX_REPORTING_UNIT,
+            -- RECON_KEY = the SourceSystemId written into CardComponent lines
+            -- (DMT_TAX_CARD_HDL_GEN_PKG writes prefixed PERSON_NUMBER || '_TAXCOMP'),
+            -- and the value the BIP reconciliation report returns as RECORD_KEY.
+            -- One key definition (Contract v1, design section 5).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_TAXCOMP',
             'STAGED',
             SYSDATE
         FROM DMT_TAX_CARD_COMP_STG_TBL s
