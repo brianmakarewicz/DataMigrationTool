@@ -728,6 +728,51 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- W2Balances (100000035) — Contract v1 registration (design section 5).
+-- Loads via HDL as PayrollBalanceInitialization; base tier PAY_BAL_BATCH_HEADERS
+-- (BATCH_ID) matched through HRC_INTEGRATION_KEY_MAP (object InitializeBalanceBatch-
+-- Header, SOURCE_SYSTEM_OWNER='HRC_SQLLOADER', SURROGATE_ID=BATCH_ID).
+-- RECON_KEY = prefixed PERSON_NUMBER || '_BAL' (the .dat SourceSystemId).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000035                                                    bip_report_id,
+           'W2Balances'                                                 cemli_code,
+           'Balance Initialization'                                     object_type,
+           '/Custom/DMT2/W2Balances/DMT_W2BALANCES_RECON_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/W2Balances/DMT_W2BALANCES_RECON_RPT.xdo'       report_catalog_path,
+           'N/A (HDL)'                                                  interface_table,
+           'W2Balances HDL base-table reconciliation (Contract v1)'     notes,
+           1                                                            contract_version,
+           'DMT_W2_BAL_TFM_TBL'                                         tfm_table,
+           'FUSION_BALANCE_ID'                                          fusion_id_column,
+           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_BAL''' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- TalentProfiles (100000036) — Contract v1 registration (design section 5).
 -- Follows the Salaries template: HDL load = no interface table
 -- (INTERFACE_TABLE = 'N/A (HDL)'); base tier only from HRT_PROFILES_B via
