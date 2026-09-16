@@ -50,6 +50,8 @@ REPORTS = [
     ("Absences",                "DMT_ABSENCES_RECON_DM", "DMT_ABSENCES_RECON_RPT"),
     ("WorkSchedules",            "DMT_WORKSCHEDULES_RECON_DM", "DMT_WORKSCHEDULES_RECON_RPT"),
     ("PayrollRelationships",     "DMT_PAYROLLRELATIONSHIPS_RECON_DM", "DMT_PAYROLLRELATIONSHIPS_RECON_RPT"),
+    ("Assignments",              "DMT_ASSIGNMENTS_RECON_DM", "DMT_ASSIGNMENTS_RECON_RPT"),
+    ("BenParticipant",           "DMT_BENPARTICIPANT_RECON_DM", "DMT_BENPARTICIPANT_RECON_RPT"),
     ("TaxCards",                 "DMT_TAXCARDS_RECON_DM", "DMT_TAXCARDS_RECON_RPT"),
 ]
 
