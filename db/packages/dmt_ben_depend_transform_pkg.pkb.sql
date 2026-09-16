@@ -55,6 +55,7 @@ AS
             DESIGNATION_DATE,
             DESIGNATION_END_DATE,
             LEGAL_EMPLOYER_NAME,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -72,6 +73,13 @@ AS
             s.DESIGNATION_DATE,
             s.DESIGNATION_END_DATE,
             s.LEGAL_EMPLOYER_NAME,
+            -- RECON_KEY (Contract v1, design section 5): the business key that the
+            -- BIP reconciliation report returns as RECORD_KEY. It equals the value
+            -- written to PersonBenefitBalance.dat as SourceSystemId
+            -- (DMT_BEN_DEPEND_HDL_GEN_PKG: pv(PERSON_NUMBER) || '_BENDEP', where
+            -- PERSON_NUMBER is already the run-prefixed person number). One key
+            -- definition per object, so the '_BENDEP' suffix completes the key.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_BENDEP',
             'STAGED',
             SYSDATE
         FROM DMT_BEN_DEPEND_STG_TBL s
