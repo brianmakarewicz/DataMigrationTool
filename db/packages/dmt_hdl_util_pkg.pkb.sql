@@ -572,11 +572,12 @@
         -- interface-only status guess below is SKIPPED entirely: no row is promoted
         -- to LOADED and no data-set-level FAILED is broadcast from here. The
         -- per-record HDL errors from Step 1/1b already landed on their rows; the
-        -- remaining GENERATED rows are settled by the shared parser
-        -- DMT_RECON_CONTRACT_PKG.RECONCILE, which marks a row LOADED only once the
-        -- record is positively confirmed in the Fusion base table (with its Fusion
-        -- id), and leaves anything it cannot confirm for the honest [UNACCOUNTED]
-        -- sweep. This is the "positive success + Fusion IDs" rule made structural.
+        -- remaining GENERATED rows are settled by the object's Contract v1 reconciler
+        -- (which fetches the report via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies
+        -- it statically), which marks a row LOADED only once the record is positively
+        -- confirmed in the Fusion base table (with its Fusion id), and leaves anything
+        -- it cannot confirm for the honest [UNACCOUNTED] sweep. This is the "positive
+        -- success + Fusion IDs" rule made structural.
         IF p_defer_base_proof THEN
             DMT_UTIL_PKG.LOG(p_run_id,
                 'RECONCILE_HDL: deferring LOADED promotion to Contract v1 base-table '

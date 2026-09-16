@@ -230,7 +230,7 @@ commit;
 -- Workers — Contract v1 registration (design section 5). The FIRST object
 -- registered with the four Contract v1 columns (CONTRACT_VERSION, TFM_TABLE,
 -- FUSION_ID_COLUMN, RECON_KEY_SQL) that drive the shared parser
--- DMT_RECON_CONTRACT_PKG.RECONCILE. Kept in its own MERGE so this block also
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS. Kept in its own MERGE so this block also
 -- converges the Contract v1 columns on an existing row. HDL load = no interface
 -- table (INTERFACE_TABLE = 'N/A (HDL)'); reconciliation is base-tier only from
 -- PER_ALL_PEOPLE_F. RECON_KEY = the prefixed PERSON_NUMBER (also the .dat

@@ -3,7 +3,7 @@
 -- docs/DMT_DESIGN.html section 5 ("BIP reconciliation report contract - v1").
 --
 -- Adds the four columns the single shared Contract v1 parser
--- (DMT_RECON_CONTRACT_PKG.RECONCILE) reads per object:
+-- (DMT_RECON_CONTRACT_PKG.FETCH_ROWS) reads per object:
 --   CONTRACT_VERSION  1 = conforms to Contract v1 (shared parser applies the
 --                     seven-column response); NULL/0 = legacy bespoke reconciler.
 --   TFM_TABLE         the object's TFM table the parser updates.

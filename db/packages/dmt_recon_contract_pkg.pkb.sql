@@ -2,21 +2,25 @@
 
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_RECON_CONTRACT_PKG" AS
 -- ============================================================
--- DMT_RECON_CONTRACT_PKG body — the one shared Contract v1 FETCH.
+-- DMT_RECON_CONTRACT_PKG body — the one shared Contract v1 fetch.
 -- See the package spec for the contract and the FETCH/APPLY split (Option A).
 -- This package contains NO dynamic SQL and names NO TFM table.
 -- ============================================================
 
     -- --------------------------------------------------------
-    -- FETCH — run the object's Contract v1 report and return its parsed rows.
+    -- FETCH_ROWS — run the object's Contract v1 report and return its parsed rows.
+    -- Procedure per the procedures-only rule: outcome via x_error_code; exceptions
+    -- never escape.
     -- --------------------------------------------------------
-    FUNCTION FETCH_ROWS (
+    PROCEDURE FETCH_ROWS (
         p_cemli_code    IN  VARCHAR2,
         p_run_id        IN  NUMBER,
         p_load_ess_id   IN  NUMBER   DEFAULT NULL,
         p_import_ess_id IN  NUMBER   DEFAULT NULL,
-        p_row_cap       IN  NUMBER   DEFAULT NULL
-    ) RETURN T_RECON_TBL IS
+        p_row_cap       IN  NUMBER   DEFAULT NULL,
+        x_rows          OUT T_RECON_TBL,
+        x_error_code    OUT NUMBER
+    ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'FETCH_ROWS';
         l_contract_ver  NUMBER;
         l_prefix        VARCHAR2(30);
@@ -28,9 +32,10 @@
         l_page_rows     PLS_INTEGER;
         l_last_key      VARCHAR2(1000);
         l_max_pages     PLS_INTEGER;
-        l_out           T_RECON_TBL;
         l_n             PLS_INTEGER := 0;
     BEGIN
+        x_error_code := DMT_UTIL_PKG.C_ERROR;   -- pessimistic until proven
+
         -- Registry: the object must be Contract v1. Only the CONTRACT_VERSION is
         -- read here (plus PREFIX from the run); the report catalog path is
         -- resolved inside RUN_BIP_REPORT from DMT_BIP_REPORT_TBL. This package
@@ -42,16 +47,26 @@
             WHERE  CEMLI_CODE = p_cemli_code;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
-                RAISE_APPLICATION_ERROR(-20090,
-                    'DMT_RECON_CONTRACT_PKG.FETCH_ROWS: no DMT_BIP_REPORT_TBL row for CEMLI '
-                    || p_cemli_code);
+                DMT_UTIL_PKG.LOG(
+                    p_run_id    => p_run_id,
+                    p_message   => C_PROC || ': no DMT_BIP_REPORT_TBL row for CEMLI '
+                                   || p_cemli_code,
+                    p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                    p_package   => C_PKG,
+                    p_procedure => C_PROC);
+                RETURN;
         END;
 
         IF NVL(l_contract_ver, 0) <> 1 THEN
-            RAISE_APPLICATION_ERROR(-20091,
-                'DMT_RECON_CONTRACT_PKG.FETCH_ROWS: CEMLI ' || p_cemli_code ||
-                ' is not registered as CONTRACT_VERSION = 1 (found ' ||
-                NVL(TO_CHAR(l_contract_ver), 'NULL') || ').');
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': CEMLI ' || p_cemli_code ||
+                               ' is not registered as CONTRACT_VERSION = 1 (found ' ||
+                               NVL(TO_CHAR(l_contract_ver), 'NULL') || ').',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RETURN;
         END IF;
 
         -- Run prefix (Contract v1 P_PREFIX) and page size.
@@ -62,11 +77,13 @@
         -- cannot loop forever. +2 pages of slack, floor of 2.
         l_max_pages := GREATEST(2, CEIL(NVL(p_row_cap, 0) / GREATEST(l_chunk_size, 1)) + 2);
 
-        DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' start. CEMLI: ' || p_cemli_code ||
-            ' | ChunkSize: ' || l_chunk_size || ' | MaxPages: ' || l_max_pages ||
-            ' | LoadReqId: ' || NVL(TO_CHAR(p_load_ess_id), '(null)'),
-            'INFO', C_PKG, C_PROC);
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' start. CEMLI: ' || p_cemli_code ||
+                           ' | ChunkSize: ' || l_chunk_size || ' | MaxPages: ' || l_max_pages ||
+                           ' | LoadReqId: ' || NVL(TO_CHAR(p_load_ess_id), '(null)'),
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
 
         -- Keyset pagination loop (design section 5): first call empty cursor;
         -- each next call passes the last RECORD_KEY received; stop on a short page.
@@ -85,12 +102,20 @@
                 x_report_xml => l_xml,
                 x_error_code => l_err);
 
-            -- A transport failure / SOAP fault raises immediately (design section 5:
-            -- never a silent retry, never a zero-row "success").
+            -- A transport failure / SOAP fault surfaces via x_error_code (design
+            -- section 5: never a silent retry, never a zero-row "success"). We stop
+            -- and return C_ERROR with an empty set; the caller raises loudly.
             IF l_err <> DMT_UTIL_PKG.C_SUCCESS THEN
-                RAISE_APPLICATION_ERROR(-20093,
-                    'DMT_RECON_CONTRACT_PKG.FETCH_ROWS: Contract v1 report failed for CEMLI '
-                    || p_cemli_code || ' on page ' || l_page || ' (detail in DMT_LOG_TBL).');
+                DMT_UTIL_PKG.LOG(
+                    p_run_id    => p_run_id,
+                    p_message   => C_PROC || ': Contract v1 report failed for CEMLI '
+                                   || p_cemli_code || ' on page ' || l_page ||
+                                   ' (detail logged by RUN_BIP_REPORT).',
+                    p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                    p_package   => C_PKG,
+                    p_procedure => C_PROC);
+                x_error_code := DMT_UTIL_PKG.C_ERROR;
+                RETURN;
             END IF;
 
             -- A NULL page = zero rows. On the first page this is the "zero report
@@ -98,11 +123,14 @@
             -- on page 1). The caller's no-rows policy decides the outcome.
             IF l_xml IS NULL THEN
                 IF l_page = 1 THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        C_PROC || ': Contract v1 report returned ZERO rows for CEMLI '
-                        || p_cemli_code || '. Returning empty set (caller applies '
-                        || 'the never-a-silent-success rule).',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+                    DMT_UTIL_PKG.LOG(
+                        p_run_id    => p_run_id,
+                        p_message   => C_PROC || ': Contract v1 report returned ZERO rows '
+                                       || 'for CEMLI ' || p_cemli_code || '. Returning empty '
+                                       || 'set (caller applies the never-a-silent-success rule).',
+                        p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                        p_package   => C_PKG,
+                        p_procedure => C_PROC);
                 END IF;
                 EXIT;
             END IF;
@@ -131,21 +159,23 @@
                 ORDER BY x.record_key
             ) LOOP
                 l_n := l_n + 1;
-                l_out(l_n).object_type     := r.object_type;
-                l_out(l_n).record_key      := r.record_key;
-                l_out(l_n).source_type     := r.source_type;
-                l_out(l_n).fusion_status   := r.fusion_status;
-                l_out(l_n).fusion_id       := r.fusion_id;
-                l_out(l_n).error_message   := r.error_message;
-                l_out(l_n).load_request_id := r.load_request_id;
+                x_rows(l_n).object_type     := r.object_type;
+                x_rows(l_n).record_key      := r.record_key;
+                x_rows(l_n).source_type     := r.source_type;
+                x_rows(l_n).fusion_status   := r.fusion_status;
+                x_rows(l_n).fusion_id       := r.fusion_id;
+                x_rows(l_n).error_message   := r.error_message;
+                x_rows(l_n).load_request_id := r.load_request_id;
                 l_page_rows := l_page_rows + 1;
                 l_last_key  := r.record_key;
             END LOOP;
 
-            DMT_UTIL_PKG.LOG(p_run_id,
-                C_PROC || ' page ' || l_page || ': rows ' || l_page_rows ||
-                ' | lastKey ' || NVL(l_last_key, '(none)'),
-                'INFO', C_PKG, C_PROC);
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' page ' || l_page || ': rows ' || l_page_rows ||
+                               ' | lastKey ' || NVL(l_last_key, '(none)'),
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
 
             -- Short page => last page (keyset is exact, no overlap).
             EXIT WHEN l_page_rows < l_chunk_size;
@@ -153,29 +183,38 @@
             -- Safety cap: a report that keeps returning full pages beyond the
             -- expected row count is misbehaving; stop and surface it.
             IF l_page >= l_max_pages THEN
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    C_PROC || ': page cap (' || l_max_pages || ') reached for CEMLI '
-                    || p_cemli_code || ' — stopping keyset loop. Report may be looping.',
-                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+                DMT_UTIL_PKG.LOG(
+                    p_run_id    => p_run_id,
+                    p_message   => C_PROC || ': page cap (' || l_max_pages || ') reached for '
+                                   || 'CEMLI ' || p_cemli_code || ' — stopping keyset loop. '
+                                   || 'Report may be looping.',
+                    p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                    p_package   => C_PKG,
+                    p_procedure => C_PROC);
                 EXIT;
             END IF;
 
             l_after_key := l_last_key;
         END LOOP;
 
-        DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete. CEMLI: ' || p_cemli_code ||
-            ' | pages ' || l_page || ' | rows ' || l_n,
-            'INFO', C_PKG, C_PROC);
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. CEMLI: ' || p_cemli_code ||
+                           ' | pages ' || l_page || ' | rows ' || l_n,
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
 
-        RETURN l_out;
+        x_error_code := DMT_UTIL_PKG.C_SUCCESS;
 
     EXCEPTION
         WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                C_PROC || ' failed for CEMLI ' || p_cemli_code || '.',
-                SQLERRM, C_PKG, C_PROC);
-            RAISE;
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed for CEMLI ' || p_cemli_code || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
     END FETCH_ROWS;
 
 END DMT_RECON_CONTRACT_PKG;

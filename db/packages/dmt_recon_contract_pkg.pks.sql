@@ -55,12 +55,17 @@
     TYPE T_RECON_TBL IS TABLE OF T_RECON_ROW INDEX BY PLS_INTEGER;
 
     -- --------------------------------------------------------
-    -- FETCH — run the object's Contract v1 report and return its parsed rows.
+    -- FETCH_ROWS — run the object's Contract v1 report and RETURN its parsed rows.
     -- Touches NO TFM table; the caller applies the rows statically.
+    --
+    -- A PROCEDURE (not a function): it does network I/O (RUN_BIP_REPORT), so per
+    -- the design's procedures-only rule it reports outcome via an OUT error code
+    -- rather than being SQL-callable. Exceptions never escape — a transport/SOAP
+    -- failure is logged and surfaced through x_error_code (x_rows left empty).
     --
     --   p_cemli_code    the object registered in DMT_BIP_REPORT_TBL (its report
     --                   catalog path is resolved by RUN_BIP_REPORT). CONTRACT_VERSION
-    --                   must be 1 (else raises -20091).
+    --                   must be 1 (else x_error_code = C_ERROR).
     --   p_run_id        the pipeline run id (Contract v1 P_RUN_ID).
     --   p_load_ess_id   the load job's request id (P_LOAD_REQUEST_ID). For HDL
     --                   objects this is the HDL data set request id.
@@ -68,16 +73,19 @@
     --   p_row_cap       expected upper bound on rows (usually the run's generated-
     --                   row count) used only to derive the keyset page-count cap.
     --                   NULL/0 falls back to a floor of 2 pages of slack.
-    --
-    -- Returns an empty collection when the report returns zero rows.
+    --   x_rows          OUT the parsed rows (empty when the report returns zero rows).
+    --   x_error_code    OUT DMT_UTIL_PKG.C_SUCCESS or C_ERROR. On C_ERROR the failure
+    --                   detail is in DMT_LOG_TBL and x_rows is empty.
     -- --------------------------------------------------------
-    FUNCTION FETCH_ROWS (
+    PROCEDURE FETCH_ROWS (
         p_cemli_code    IN  VARCHAR2,
         p_run_id        IN  NUMBER,
         p_load_ess_id   IN  NUMBER   DEFAULT NULL,
         p_import_ess_id IN  NUMBER   DEFAULT NULL,
-        p_row_cap       IN  NUMBER   DEFAULT NULL
-    ) RETURN T_RECON_TBL;
+        p_row_cap       IN  NUMBER   DEFAULT NULL,
+        x_rows          OUT T_RECON_TBL,
+        x_error_code    OUT NUMBER
+    );
 
 END DMT_RECON_CONTRACT_PKG;
 /

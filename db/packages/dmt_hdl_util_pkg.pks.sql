@@ -95,9 +95,11 @@
     --   p_defer_base_proof: Contract v1 base-table proof (design section 5). When
     --     TRUE, RECONCILE_HDL still applies the per-record HDL error messages
     --     (marking real [FUSION_ERROR] rows FAILED) and echoes STG, but SKIPS the
-    --     data-set-status LOADED promotion — a row is promoted to LOADED only by
-    --     the shared parser DMT_RECON_CONTRACT_PKG.RECONCILE once the record is
-    --     positively confirmed in the Fusion base table (with its Fusion id). This
+    --     data-set-status LOADED promotion — a row is promoted to LOADED only by the
+    --     object's Contract v1 reconciler (which fetches the report via
+    --     DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies it statically) once the
+    --     record is positively confirmed in the Fusion base table (with its Fusion
+    --     id). This
     --     replaces the interface-only status guess for Contract-v1 objects. When
     --     FALSE (default, all other HDL tables), the legacy status-based promotion
     --     is retained so non-Contract-v1 sub-tables keep working unchanged.

@@ -10,7 +10,8 @@
     with its real Fusion PERSON_ID as FUSION_ID. HDL failures arrive per-record
     in the HDL response (tagged [FUSION_ERROR] by RECONCILE_HDL before this report
     runs), so this report's ERROR rows are optional and it returns the BASE tier
-    only — the shared parser DMT_RECON_CONTRACT_PKG.RECONCILE promotes a Worker
+    only — the Workers reconciler (which fetches these rows via
+    DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically) promotes a Worker
     TFM row to LOADED only from a BASE / SUCCESS / FUSION_ID-not-null row here.
 
     RECORD_KEY = the worker's business key = the prefixed PERSON_NUMBER, which is
