@@ -52,6 +52,7 @@ AS
             PROFILE_STATUS_CODE,
             PROFILE_USAGE_CODE,
             DESCRIPTION,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -66,6 +67,11 @@ AS
             s.PROFILE_STATUS_CODE,
             s.PROFILE_USAGE_CODE,
             s.DESCRIPTION,
+            -- RECON_KEY = the parent TalentProfile.dat SourceSystemId = prefixed
+            -- PERSON_NUMBER || '_TPROF' (see DMT_TALENT_PROF_HDL_GEN_PKG). This is
+            -- the business key the Contract v1 report returns as RECORD_KEY and the
+            -- shared parser matches on (design section 5, one key per object).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_TPROF',
             'STAGED',
             SYSDATE
         FROM DMT_TALENT_PROF_STG_TBL s
@@ -115,6 +121,7 @@ AS
             RATING,
             PROFILE_CODE,
             INTEREST_LEVEL,
+            RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
         )
@@ -131,6 +138,11 @@ AS
             s.RATING,
             s.PROFILE_CODE,
             s.INTEREST_LEVEL,
+            -- RECON_KEY = the child ProfileItem.dat SourceSystemId = prefixed
+            -- PERSON_NUMBER || '_TPITM' (see DMT_TALENT_PROF_HDL_GEN_PKG). Stamped
+            -- for consistency and future child base-tier proof; the current
+            -- Contract v1 reconciler promotes only the parent TalentProfile row.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_TPITM',
             'STAGED',
             SYSDATE
         FROM DMT_TALENT_PROF_ITEM_STG_TBL s
