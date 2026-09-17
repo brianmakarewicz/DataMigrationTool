@@ -17,9 +17,10 @@ AS
     -- DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs the BenBeneficiary recon report over BIP
     -- and returns the parsed rows (no dynamic SQL, no TFM reference there); the APPLY
     -- here is STATIC SQL against the compile-time-known BenBeneficiary TFM table. It
-    -- confirms each migrated beneficiary designation in Fusion (loaded via HDL under
-    -- the discriminator PersonBenefitBalance) by its SourceSystemId, reading the
-    -- HRC_INTEGRATION_KEY_MAP row whose SURROGATE_ID is the Fusion base-table id, and
+    -- confirms each migrated beneficiary enrollment in Fusion (loaded via HDL as the
+    -- BeneficiaryEnrollment business object, child DesignateBeneficiary) by its
+    -- SourceSystemId, reading the HRC_INTEGRATION_KEY_MAP row (OBJECT_NAME=
+    -- 'BeneficiaryEnrollment') whose SURROGATE_ID is the Fusion base-table id, and
     -- marks that BenBeneficiary TFM row LOADED with the real Fusion id stamped into
     -- FUSION_BENEFICIARY_ID; any ERROR row is marked FAILED with the real Fusion error.
     -- This REPLACES the bulk LOOKUP_FUSION_IDS positive path for BenBeneficiary. The
@@ -165,7 +166,7 @@ AS
             p_stg_table        => 'DMT_BEN_BENFY_STG_TBL',
             p_key_column       => 'PERSON_NUMBER',
             p_dataset_status   => p_dataset_status,
-            p_log_context      => C_CEMLI || ' > BeneficiaryDesignation',
+            p_log_context      => C_CEMLI || ' > BeneficiaryEnrollment',
             p_defer_base_proof => TRUE);
 
         -- Contract v1 base-tier positive proof (design section 5), Option A shape:

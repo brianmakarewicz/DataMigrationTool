@@ -5,43 +5,53 @@
     DMT_BENBENEFICIARY_RECON_DM — Contract v1 reconciliation data model for
     BenBeneficiary (design section 5, "BIP reconciliation report contract - v1").
 
-    Returns the BASE tier for the BenBeneficiary HDL load: one row per migrated
-    beneficiary designation that is positively confirmed in Fusion, with its real
-    Fusion base-table id as FUSION_ID. The object loads via HDL under the discriminator
-    PersonBenefitBalance (see DMT_BEN_BENFY_HDL_GEN_PKG — 'BeneficiaryBenefitBalance is
-    NOT a valid discriminator; use PersonBenefitBalance'). The load records one row in
-    HRC_INTEGRATION_KEY_MAP keyed by the SourceSystemId we wrote, whose SURROGATE_ID is
-    the Fusion PersonBenefitBalance base-table id. This report reads that map row exactly
-    the way the Workers and Salaries reports do, so it needs no direct grant on the
-    Benefits (BEN_*) base tables — the map's SURROGATE_ID IS the base-table id.
+    2026-09-17 RE-MODEL. The object was previously (wrongly) loaded as the HDL
+    business object PersonBenefitBalance — which carries accumulated benefit
+    balance amounts, not beneficiary designations, and collided on file
+    name/discriminator with BenParticipant and BenDependent. Beneficiary
+    designation is its own HDL business object: BeneficiaryEnrollment, with the
+    child component DesignateBeneficiary (Oracle docs "Example of Loading
+    Beneficiary Enrollments"). This report now reconciles against
+    OBJECT_NAME='BeneficiaryEnrollment'.
 
-    RECORD_KEY = the beneficiary's business key = the prefixed PERSON_NUMBER || '_BENBNFY',
-    which is exactly the value written into PersonBenefitBalance.dat as SourceSystemId
-    (see DMT_BEN_BENFY_HDL_GEN_PKG) and stamped on the BenBeneficiary TFM row as RECON_KEY
-    (one key definition per object).
+    Returns the BASE tier for the BeneficiaryEnrollment HDL load: one row per
+    migrated worker's beneficiary enrollment positively confirmed in Fusion, with
+    its real Fusion base-table id as FUSION_ID. The load records one row in
+    HRC_INTEGRATION_KEY_MAP keyed by the SourceSystemId we wrote on the parent
+    BeneficiaryEnrollment component (prefixed PERSON_NUMBER || '_BENENRL'), whose
+    SURROGATE_ID is the Fusion base-table id. This report reads that map row
+    exactly the way the Workers and Salaries reports do, so it needs no direct
+    grant on the Benefits (BEN_*) base tables — the map's SURROGATE_ID IS the
+    base-table id.
 
-    Verified live 2026-09-16 via scripts/fusion_bip_query.py (cred fin_impl):
-      HRC_INTEGRATION_KEY_MAP.OBJECT_NAME        = 'PersonBenefitBalance' (838 rows;
-        10 owned by HRC_SQLLOADER — our HDL loads, e.g. SOURCE_SYSTEM_ID
-        '67936DMTBNFY001_BENBNFY' / '67936DMTBNFY002_BENBNFY')
-      HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID   == the SourceSystemId we wrote (ends _BENBNFY)
-      HRC_INTEGRATION_KEY_MAP.SURROGATE_ID       == the Fusion PersonBenefitBalance id
-        (e.g. 300000331552758) — a real base-table id.
-    Running this exact SQL with :P_PREFIX='67936' returned two BASE/SUCCESS rows with
-    real Fusion ids. The physical Benefits base table (BEN_*) is NOT visible to the FSCM
-    BIP data source (0 BEN_ tables reachable), so — like Salaries — BASE-tier proof is the
-    map row whose SURROGATE_ID is the base-table id.
+    RECORD_KEY = the enrollment's business key = the prefixed PERSON_NUMBER ||
+    '_BENENRL', which is exactly the SourceSystemId written onto the parent
+    BeneficiaryEnrollment component (see DMT_BEN_BENFY_HDL_GEN_PKG) and stamped on
+    the BenBeneficiary TFM row as RECON_KEY (one key definition per object). All of
+    a worker's DesignateBeneficiary children share the enrollment as the
+    reconcilable unit.
+
+    Live probe 2026-09-17 via scripts/fusion_bip_query.py (cred fin_impl):
+      No BeneficiaryEnrollment rows exist yet in HRC_INTEGRATION_KEY_MAP on this pod
+        (beneficiary designation has not been exercised via the CORRECT object here).
+      The historical '..._BENBNFY' rows are recorded under OBJECT_NAME=
+        'PersonBenefitBalance' (the WRONG object) — proof of the defect this
+        re-model fixes, not evidence of a real beneficiary load.
+      The physical Benefits base table (BEN_*) is NOT visible to the FSCM BIP data
+        source, so — like Salaries — BASE-tier proof is the map row whose
+        SURROGATE_ID is the base-table id.
 
     HDL per-record failures arrive in the HDL response (tagged [FUSION_ERROR] by
-    RECONCILE_HDL before this report runs), so this report returns the BASE tier only; the
-    BenBeneficiary reconciler (which fetches these rows via DMT_RECON_CONTRACT_PKG.FETCH_ROWS
-    and applies them statically) promotes a BenBeneficiary TFM row to LOADED only from a
-    BASE / SUCCESS / FUSION_ID-not-null row here.
+    RECONCILE_HDL before this report runs), so this report returns the BASE tier only;
+    the BenBeneficiary reconciler (which fetches these rows via
+    DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically) promotes a
+    BenBeneficiary TFM row to LOADED only from a BASE / SUCCESS / FUSION_ID-not-null
+    row here.
 
     Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
-    P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an HDL load,
-    so BASE-tier matching is by the run prefix (P_PREFIX). LOAD_REQUEST_ID is echoed back
-    unchanged for audit.
+    P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an HDL
+    load, so BASE-tier matching is by the run prefix (P_PREFIX). LOAD_REQUEST_ID is
+    echoed back unchanged for audit.
   -->
   <dataProperties>
     <property name="include_parameters" value="true"/>
@@ -56,9 +66,8 @@ SELECT object_type, record_key, source_type, fusion_status,
        fusion_id, error_message, load_request_id
 FROM (
     -- BASE tier: positive proof via the HDL integration key map. The load writes one
-    -- HRC_INTEGRATION_KEY_MAP row per beneficiary (OBJECT_NAME='PersonBenefitBalance')
-    -- whose SURROGATE_ID is the Fusion PersonBenefitBalance base-table id. One row per
-    -- migrated beneficiary.
+    -- HRC_INTEGRATION_KEY_MAP row per enrolled worker (OBJECT_NAME='BeneficiaryEnrollment')
+    -- whose SURROGATE_ID is the Fusion base-table id. One row per migrated enrollment.
     SELECT 'BenBeneficiary'                 AS object_type,
            m.source_system_id              AS record_key,
            'BASE'                          AS source_type,
@@ -67,9 +76,9 @@ FROM (
            CAST(NULL AS VARCHAR2(4000))    AS error_message,
            :P_LOAD_REQUEST_ID              AS load_request_id
     FROM   hrc_integration_key_map m
-    WHERE  m.object_name = 'PersonBenefitBalance'
+    WHERE  m.object_name = 'BeneficiaryEnrollment'
     AND    m.source_system_id LIKE :P_PREFIX || '%'
-    AND    m.source_system_id LIKE '%\_BENBNFY' ESCAPE '\'
+    AND    m.source_system_id LIKE '%\_BENENRL' ESCAPE '\'
     AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
     GROUP BY m.source_system_id
     ORDER BY m.source_system_id

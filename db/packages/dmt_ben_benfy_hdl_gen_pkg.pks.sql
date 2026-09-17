@@ -5,12 +5,13 @@ AUTHID DEFINER
 AS
 -- ============================================================
 -- DMT_BEN_BENFY_HDL_GEN_PKG
--- Generates the BenefitParticipantEnrollment.dat HDL file from TFM staging records.
+-- Generates the BeneficiaryEnrollment.dat HDL file from TFM staging records.
 --
--- BeneficiaryDesignation HDL is ONE zip containing ONE DAT file with 1 business object(s):
---   BeneficiaryDesignation.
+-- Beneficiary designation loads via the BeneficiaryEnrollment HDL business
+-- object with its child component DesignateBeneficiary. ONE zip containing ONE
+-- DAT file named for the business object: BeneficiaryEnrollment.dat.
 --
--- OBJECT_TYPE = 'BeneficiaryDesignations'.
+-- OBJECT_TYPE = 'BeneficiaryEnrollment'.
 -- ============================================================
 
     PROCEDURE GENERATE_HDL (
