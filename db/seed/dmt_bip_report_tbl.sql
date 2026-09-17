@@ -475,7 +475,11 @@ using (
            '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_DM.xdm'  dm_catalog_path,
            '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                                                interface_table,
-           'Payroll Relationship HDL base-table reconciliation (Contract v1)'         notes,
+           'Payroll Relationship base-table VERIFIER (Contract v1). 2026-09-17: '
+             || 'PayrollRelationships retired as a standalone HDL load (the payroll '
+             || 'relationship is auto-created at hire by the Worker load). This report '
+             || 'is kept read-only to verify a loaded worker gets an auto-created row '
+             || 'in PAY_PAY_RELATIONSHIPS_F; no HDL load is submitted for it.'         notes,
            1                                                                          contract_version,
            'DMT_PAY_REL_TFM_TBL'                                                      tfm_table,
            'FUSION_PAYROLL_RELATIONSHIP_ID'                                           fusion_id_column,
@@ -506,11 +510,19 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
--- Assignments (100000032) — Contract v1 registration (design section 5). HDL
--- load = no interface table. Assignments loads TWO record types into two TFM
--- tables, so the ONE recon report returns two base tiers (OBJECT_TYPE
--- discriminator) and the reconciler (DMT_ASSIGNMENT_RESULTS_PKG) applies each to
--- its matching TFM table statically:
+-- Assignments (100000032) — Contract v1 registration (design section 5).
+-- RE-HOMED 2026-09-17: Assignments is no longer a standalone pipeline object.
+-- WorkTerms + Assignment are components of the Worker business object, loaded in
+-- the ONE Worker.dat. This report row is RETAINED (still keyed CEMLI_CODE
+-- 'Assignments') as the assignment-component recon report: the Worker reconcile
+-- path now invokes DMT_ASSIGNMENT_RESULTS_PKG, which looks this report up by the
+-- 'Assignments' key and applies the two base tiers to DMT_WORK_REL_TFM_TBL /
+-- DMT_ASSIGNMENT_TFM_TBL. It is kept as its own row (rather than merged into the
+-- Workers report 100000027) so the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
+-- resolves exactly one report per CEMLI key. The row is no longer a queue object
+-- (its pipeline_def membership + dispatch rows were retired); it is a report
+-- definition only. HDL load = no interface table. The report returns two base
+-- tiers (OBJECT_TYPE discriminator), applied to the matching TFM table statically:
 --   OBJECT_TYPE='WorkRelationship' -> DMT_WORK_REL_TFM_TBL, base tier
 --       PER_PERIODS_OF_SERVICE, FUSION_PERSON_ID = PERSON_ID, RECON_KEY
 --       '<prefixed PERSON_NUMBER>_POS'.

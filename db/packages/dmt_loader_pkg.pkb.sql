@@ -4387,8 +4387,12 @@
     BEGIN
         CASE p_cemli_code
             WHEN 'Workers' THEN
+                -- Single Worker.dat carries the assignment components, so the
+                -- Workers base-lag retry re-checks BOTH the person tiers and the
+                -- assignment / work-rel tiers against the same HDL data set. There
+                -- is no standalone 'Assignments' CEMLI anymore (2026-09-17 model
+                -- correction), so its former retry arm is folded here.
                 DMT_WORKER_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
-            WHEN 'Assignments' THEN
                 DMT_ASSIGNMENT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
             WHEN 'Salaries' THEN
                 DMT_SALARY_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
@@ -4412,8 +4416,10 @@
                 DMT_PERF_EVAL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
             WHEN 'WorkSchedules' THEN
                 DMT_WORK_SCHED_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
-            WHEN 'PayrollRelationships' THEN
-                DMT_PAY_REL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            -- 'PayrollRelationships' retired 2026-09-17: the payroll relationship
+            -- is auto-created at hire by the Worker load, not a standalone HDL load,
+            -- so there is no CEMLI to reconcile here. Its recon report survives as a
+            -- read-only verifier only.
             ELSE
                 RAISE_APPLICATION_ERROR(-20103,
                     'RECONCILE_HDL_OBJECT: no HDL reconciler mapped for CEMLI ' || p_cemli_code);
@@ -4442,7 +4448,7 @@
         -- Step 1: Pre-validation (stub — no rules yet)
         DMT_WORKER_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
 
-        -- Step 2: Transform all 7 business objects (STG → TFM)
+        -- Step 2: Transform all 7 person business objects (STG → TFM)
         DMT_WORKER_TRANSFORM_PKG.TRANSFORM_WORKERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_NAMES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_EMAILS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -4450,12 +4456,27 @@
         DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_NIDS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_WORKER_TRANSFORM_PKG.TRANSFORM_PERSON_LEGISL(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+
+        -- Step 2b: Assignment + WorkRelationship components (2026-09-17 HCM object-
+        -- model correction). WorkTerms and Assignment are COMPONENTS of the Worker
+        -- business object, delivered in the ONE Worker.dat. There is no separate
+        -- Assignments pipeline object anymore, so the Worker run itself validates and
+        -- transforms the assignment / work-relationship staged rows here, BEFORE the
+        -- generate step below reads DMT_ASSIGNMENT_TFM_TBL / DMT_WORK_REL_TFM_TBL.
+        -- The [PRE_VALIDATION] exclusion and the prefixing in the assignment transform
+        -- are preserved (those packages are unchanged; only their call site moved).
+        DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_WORK_RELS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
-        -- Step 3: Post-validation (stub)
+        -- Step 3: Post-validation (stub) — persons and assignment components
         DMT_WORKER_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
+        DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
 
-        -- Step 4: Generate Worker.dat HDL file → ZIP
+        -- Step 4: Generate the single Worker.dat HDL file → ZIP. It emits
+        -- Worker/PersonName/WorkRelationship/WorkTerms/Assignment (+ optional person
+        -- child sections) — the complete Worker object in ONE data set.
         DMT_WORKER_HDL_GEN_PKG.GENERATE_HDL(p_run_id, l_hdl_zip, l_filename, l_csv_id);
         COMMIT;
 
@@ -4500,8 +4521,20 @@
         DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
         DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
 
-        -- Step 8: Reconcile — parse HDL errors, update TFM/STG
+        -- Step 8: Reconcile — parse HDL errors, update TFM/STG. Both the person
+        -- tiers (Worker + Person*) and the assignment component tiers
+        -- (WorkRelationship + Assignment) are reconciled against the SAME single
+        -- Worker.dat HDL data set (one request id), because they were loaded
+        -- together. Worker reconcile covers the person tiers; the assignment
+        -- reconcile covers DMT_WORK_REL_TFM_TBL / DMT_ASSIGNMENT_TFM_TBL. Every
+        -- assignment / work-rel TFM row therefore still gets a LOADED/FAILED
+        -- verdict (object-status-accounting rule) with no separate load.
         DMT_WORKER_RESULTS_PKG.RECONCILE_BATCH(
+            p_run_id => p_run_id,
+            p_request_id     => l_request_id,
+            p_dataset_status => l_dataset_status);
+
+        DMT_ASSIGNMENT_RESULTS_PKG.RECONCILE_BATCH(
             p_run_id => p_run_id,
             p_request_id     => l_request_id,
             p_dataset_status => l_dataset_status);
@@ -4517,64 +4550,16 @@
     END RUN_WORKERS;
 
     -- --------------------------------------------------------
-    -- RUN_ASSIGNMENTS (public) — HDL pattern
-    -- WorkRelationship + Assignment in Worker.dat HDL.
+    -- RUN_ASSIGNMENTS — RETIRED 2026-09-17 (HCM object-model correction).
+    -- Assignments is no longer a standalone pipeline object. WorkTerms and
+    -- Assignment are components of the Worker business object, delivered in the
+    -- ONE Worker.dat. RUN_WORKERS now runs the assignment/work-rel validate +
+    -- transform (feeding DMT_ASSIGNMENT_TFM_TBL / DMT_WORK_REL_TFM_TBL) before it
+    -- generates the single Worker.dat, and reconciles those tiers against the same
+    -- HDL data set. The assignment validate/transform/results packages are kept
+    -- (they feed and reconcile the Worker load); only this standalone submission
+    -- procedure and the standalone Assignment HDL generator were removed.
     -- --------------------------------------------------------
-    PROCEDURE RUN_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC      CONSTANT VARCHAR2(30) := 'RUN_ASSIGNMENTS';
-        l_hdl_zip   BLOB;
-        l_filename  VARCHAR2(200);
-        l_csv_id    NUMBER;
-        l_content_id    VARCHAR2(100);
-        l_request_id    VARCHAR2(100);
-        l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER;
-    BEGIN
-        resolve_scenario(p_scenario_name, v_scenario_id);
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_ASSIGNMENTS start. Integration ID: ' || p_run_id,
-            'INFO', C_PKG, C_PROC);
-
-        DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-
-        DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_WORK_RELS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        COMMIT;
-
-        DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
-
-        DMT_ASSIGNMENT_HDL_GEN_PKG.GENERATE_HDL(p_run_id, l_hdl_zip, l_filename, l_csv_id);
-        COMMIT;
-
-        IF l_hdl_zip IS NULL OR DBMS_LOB.GETLENGTH(l_hdl_zip) = 0 THEN
-            DMT_UTIL_PKG.LOG(p_run_id, 'No Assignment rows to load. Skipping.',
-                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
-            RETURN;
-        END IF;
-
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'Assignments');
-        DBMS_LOB.FREETEMPORARY(l_hdl_zip);
-
-        l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT Assignments ' || TO_CHAR(p_run_id), 'Assignments');
-
-        COMMIT;
-
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Assignments', l_dataset_status);
-
-        -- HDL base-lag retry: publish this cycle's HDL request id + data set
-        -- status so EXECUTE_ONE can persist them and the queue can re-run the
-        -- base proof on a later tick if the base rows lag.
-        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
-        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
-        DMT_ASSIGNMENT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
-
-        DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ASSIGNMENTS complete.', 'INFO', C_PKG, C_PROC);
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'RUN_ASSIGNMENTS failed.', SQLERRM, C_PKG, C_PROC);
-            RAISE;
-    END RUN_ASSIGNMENTS;
 
     -- --------------------------------------------------------
     -- RUN_SALARIES (public) — HDL pattern
@@ -4955,58 +4940,14 @@
     END RUN_BEN_BENEFICIARY;
 
     -- --------------------------------------------------------
-    -- RUN_PAYROLL_RELS (public) — HDL pattern
+    -- RUN_PAYROLL_RELS — RETIRED 2026-09-17. A payroll relationship is NOT a
+    -- loadable standalone HDL business object: Fusion auto-creates it when a
+    -- person is hired (i.e. when the Worker/WorkRelationship loads). A standalone
+    -- PayrollRelationship.dat is rejected as "not a supported business object"
+    -- (see objects/PayrollRelationships/README.md, run 142). The object is retired
+    -- from the pipeline; its Contract v1 recon report survives only as a read-only
+    -- verifier that the payroll relationship was auto-created after the Worker load.
     -- --------------------------------------------------------
-    PROCEDURE RUN_PAYROLL_RELS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC      CONSTANT VARCHAR2(30) := 'RUN_PAYROLL_RELS';
-        l_hdl_zip   BLOB;
-        l_filename  VARCHAR2(200);
-        l_csv_id    NUMBER;
-        l_content_id    VARCHAR2(100);
-        l_request_id    VARCHAR2(100);
-        l_dataset_status VARCHAR2(50);
-        v_scenario_id NUMBER;
-    BEGIN
-        resolve_scenario(p_scenario_name, v_scenario_id);
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_PAYROLL_RELS start. Integration ID: ' || p_run_id,
-            'INFO', C_PKG, C_PROC);
-
-        DMT_PAY_REL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-
-        DMT_PAY_REL_TRANSFORM_PKG.TRANSFORM_PAYROLLRELATIONSHIPS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        COMMIT;
-        DMT_PAY_REL_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id);
-
-        DMT_PAY_REL_HDL_GEN_PKG.GENERATE_HDL(p_run_id, l_hdl_zip, l_filename, l_csv_id);
-        COMMIT;
-
-        IF l_hdl_zip IS NULL OR DBMS_LOB.GETLENGTH(l_hdl_zip) = 0 THEN
-            DMT_UTIL_PKG.LOG(p_run_id, 'No PayrollRelationship rows to load. Skipping.',
-                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
-            RETURN;
-        END IF;
-
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'PayrollRels');
-        DBMS_LOB.FREETEMPORARY(l_hdl_zip);
-        l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT PayrollRels ' || TO_CHAR(p_run_id), 'PayrollRels');
-        COMMIT;
-
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'PayrollRels', l_dataset_status);
-        -- HDL base-lag retry: publish this cycle's HDL request id + data set
-        -- status so EXECUTE_ONE can persist them and the queue can re-run the
-        -- base proof on a later tick if the base rows lag.
-        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
-        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
-        DMT_PAY_REL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
-
-        DMT_UTIL_PKG.LOG(p_run_id, 'RUN_PAYROLL_RELS complete.', 'INFO', C_PKG, C_PROC);
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'RUN_PAYROLL_RELS failed.', SQLERRM, C_PKG, C_PROC);
-            RAISE;
-    END RUN_PAYROLL_RELS;
 
     -- --------------------------------------------------------
     -- RUN_TAX_CARDS (public) — HDL pattern
@@ -5491,7 +5432,7 @@
         ) VALUES (
             l_run_id, l_run_id, 'HCM', 'PIPELINE',
             'MANUAL', 'IN_PROGRESS', l_prefix,
-            'Workers,Assignments,Salaries,SalaryBases,PayrollRels,TaxCards,W2Balances,BenParticipant,BenDependent,BenBeneficiary,Absences',
+            'Workers,Salaries,SalaryBases,TaxCards,W2Balances,BenParticipant,BenDependent,BenBeneficiary,Absences',
             p_scenario_name, p_run_mode
         );
         COMMIT;
@@ -5504,18 +5445,16 @@
 
         DMT_UTIL_PKG.REFRESH_BU_LOOKUPS;
 
-        -- Workers first (master data — all other HCM objects depend on workers)
+        -- Workers first (master data — all other HCM objects depend on workers).
+        -- The single Worker load now also carries the assignment + work-relationship
+        -- components (2026-09-17 model correction), so there is no separate
+        -- Assignments step. The payroll relationship is auto-created at hire, so
+        -- there is no PayrollRelationships step either.
         RUN_WORKERS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
-        -- Assignments depend on workers
-        RUN_ASSIGNMENTS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
-
-        -- Salary and salary basis depend on assignments
+        -- Salary and salary basis depend on the worker's assignment (loaded above)
         RUN_SALARIES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
         RUN_SALARY_BASES(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
-
-        -- Payroll relationships depend on workers
-        RUN_PAYROLL_RELS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
 
         -- Tax cards depend on payroll relationships
         RUN_TAX_CARDS(l_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);

@@ -45,11 +45,14 @@ using (
     union all select 'FINANCIALS', 20, 'GLBudgets', null, null from dual
     union all select 'FINANCIALS', 30, 'Assets', null,
         '/oracle/apps/ess/financials/assets/additions;PostMassAdditions' from dual
+    -- The single Worker load carries the WorkRelationship/WorkTerms/Assignment
+    -- components (2026-09-17 HCM object-model correction), so 'Assignments' is no
+    -- longer a pipeline object. 'PayrollRelationships' is retired too: it is
+    -- auto-created at hire, not a loadable standalone object. Their rows are
+    -- explicitly deleted at the end of this file so an existing database converges.
     union all select 'HCM', 10, 'Workers', null, null from dual
-    union all select 'HCM', 20, 'Assignments', 'Workers', null from dual
-    union all select 'HCM', 30, 'Salaries', 'Workers,Assignments', null from dual
+    union all select 'HCM', 30, 'Salaries', 'Workers', null from dual
     union all select 'HCM', 40, 'SalaryBases', 'Salaries', null from dual
-    union all select 'HCM', 50, 'PayrollRelationships', 'Workers', null from dual
     union all select 'HCM', 60, 'TaxCards', 'Workers', null from dual
     union all select 'HCM', 70, 'W2Balances', null, null from dual
     union all select 'HCM', 80, 'BenParticipant', 'Workers', null from dual
@@ -143,11 +146,11 @@ using (
     union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_GL_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'GLBudgets', 'DMT_LOADER_PKG.RUN_GL_BUDGETS', 'ASYNC', 'DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'Assets', 'DMT_LOADER_PKG.RUN_ASSETS', 'ASYNC', 'DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_FA_ASSET_RESULTS_PKG.GET_PARTITION_KEYS' from dual
+    -- 'Assignments' + 'PayrollRelationships' dispatch rows retired 2026-09-17
+    -- (see the membership block above); explicitly deleted at EOF to converge.
     union all select 'Workers', 'DMT_LOADER_PKG.RUN_WORKERS', 'ASYNC', null, 'N', null from dual
-    union all select 'Assignments', 'DMT_LOADER_PKG.RUN_ASSIGNMENTS', 'ASYNC', null, 'N', null from dual
     union all select 'Salaries', 'DMT_LOADER_PKG.RUN_SALARIES', 'ASYNC', null, 'N', null from dual
     union all select 'SalaryBases', 'DMT_LOADER_PKG.RUN_SALARY_BASES', 'ASYNC', null, 'N', null from dual
-    union all select 'PayrollRelationships', 'DMT_LOADER_PKG.RUN_PAYROLL_RELS', 'ASYNC', null, 'N', null from dual
     union all select 'TaxCards', 'DMT_LOADER_PKG.RUN_TAX_CARDS', 'ASYNC', null, 'N', null from dual
     union all select 'W2Balances', 'DMT_LOADER_PKG.RUN_W2_BALANCES', 'ASYNC', null, 'N', null from dual
     union all select 'BenParticipant', 'DMT_LOADER_PKG.RUN_BEN_PARTICIPANT', 'ASYNC', null, 'N', null from dual
@@ -172,5 +175,16 @@ when matched then update set
     t."RECON_PROC"           = s.recon_proc,
     t."RECON_HAS_CEMLI_ARG"  = s.recon_has_cemli_arg,
     t."PARTITION_KEYS_PROC"  = s.partition_keys_proc;
+
+commit;
+
+-- ----------------------------------------------------------------------
+-- Retirement converge (2026-09-17 HCM object-model correction). The two
+-- MERGE blocks above are insert/update only, so on a database that already
+-- carries the retired rows they would linger. Delete them explicitly (one
+-- row per CEMLI_CODE, so this clears both the membership and dispatch data
+-- for each). 'Assignments' folded into the single Worker load;
+-- 'PayrollRelationships' is auto-created at hire (verifier-only).
+delete from "DMT_PIPELINE_DEF_TBL" where "CEMLI_CODE" in ('Assignments','PayrollRelationships');
 
 commit;

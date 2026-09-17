@@ -1,6 +1,23 @@
 # Assignments
 
 ## Status
+RETIRED as a standalone object (2026-09-17) — FOLDED INTO WORKERS.
+
+A DMT object must map to ONE Fusion business object, and one HDL load delivers all
+components of that object in ONE `.dat`. Worker is the business object;
+WorkRelationship / WorkTerms / Assignment are **components** of it. Modelling
+Workers AND Assignments as two objects made both generators emit the identical full
+`Worker.dat` (a double-send). The single Worker load
+(`DMT_WORKER_HDL_GEN_PKG.GENERATE_HDL`, driven by `DMT_LOADER_PKG.RUN_WORKERS`) now
+carries the WorkTerms + Assignment sections, sourced from the validated, transformed
+`DMT_ASSIGNMENT_TFM_TBL` / `DMT_WORK_REL_TFM_TBL`. The assignment
+validator/transform/results packages are **kept** (they feed and reconcile the
+Worker load); only the standalone `RUN_ASSIGNMENTS` procedure and the
+`DMT_ASSIGNMENT_HDL_GEN_PKG` generator were removed. Accounting for the assignment
+and work-relationship rows is done under the Workers object (their catalog rows moved
+to `CEMLI_CODE='Workers'`).
+
+## Status (historical)
 NOT BUILT (HDL)
 
 ## Pipeline
