@@ -55,6 +55,13 @@ AS
     -- spawn-per-partition child settles on its OWN rows only and is not failed by
     -- a sibling batch's still-unloaded rows. NULL = the run-scoped count exactly
     -- as before (the heartbeat run rollup and every non-spawn object pass NULL).
+    -- x_awaiting_base (HDL base-table lag retry, 2026-09-17): of the unaccounted
+    -- rows, how many are still GENERATED AND carry no [FUSION_ERROR] tag — rows
+    -- awaiting async base-table confirmation rather than per-record HDL failures.
+    -- Computed in the SAME dynamic SELECT as the other counts (no new dynamic-SQL
+    -- site). Only the HDL base-lag deferral in RECONCILE_ONE reads it; other callers
+    -- pass a throwaway. It is a plain OUT (PL/SQL OUT cannot carry a DEFAULT), so
+    -- every caller supplies a variable — the two non-HDL callers ignore its value.
     PROCEDURE ACCOUNT_ROWS (
         p_run_id        IN  NUMBER,
         p_cemli_code    IN  VARCHAR2,
@@ -62,7 +69,8 @@ AS
         x_loaded        OUT NUMBER,
         x_failed        OUT NUMBER,
         x_unaccounted   OUT NUMBER,
-        p_work_queue_id IN  NUMBER DEFAULT NULL
+        p_work_queue_id IN  NUMBER DEFAULT NULL,
+        x_awaiting_base OUT NUMBER
     );
 
     -- ------------------------------------------------------------

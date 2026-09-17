@@ -317,6 +317,32 @@ AS
     -- sweep scope. NULL when no item context is active.
     g_gen_queue_id NUMBER := NULL;
 
+    -- HDL base-table lag retry (2026-09-17). An HDL object's RUN_* proc runs its
+    -- whole cycle inline (generate/upload/submit/poll/reconcile) in one EXECUTE_ONE
+    -- call; it has no queue-dispatched reconciler. To let the queue re-run ONLY the
+    -- base-table proof on a later tick (when the HCM base rows lag behind the finished
+    -- HDL data set), each HDL RUN_* stashes its HDL data set request id and terminal
+    -- data set status here right after POLL_HDL. EXECUTE_ONE persists the request id
+    -- onto the queue row and routes the item to RECONCILING; RECONCILE_ONE re-runs the
+    -- object's base proof via RECONCILE_HDL_OBJECT until the rows appear or the cap is
+    -- hit. NULL when no HDL cycle is active.
+    g_hdl_request_id    VARCHAR2(100) := NULL;
+    g_hdl_dataset_status VARCHAR2(50) := NULL;
+
+    -- Re-run ONE HDL object's base-table reconciliation (its RECONCILE_BATCH) for a
+    -- later retry tick. Uniform across the 14 HDL base-proof objects, whose
+    -- RECONCILE_BATCH all share the (p_run_id, p_request_id, p_dataset_status)
+    -- signature. Idempotent for the base tier: it re-queries the Fusion base table
+    -- and promotes only newly-confirmed rows to LOADED; it never re-uploads. Called
+    -- by DMT_QUEUE_WORKER_PKG.RECONCILE_ONE for an HDL object (RECON_PROC is NULL, so
+    -- the registry dispatch does not apply). Unknown CEMLI raises -20103.
+    PROCEDURE RECONCILE_HDL_OBJECT (
+        p_cemli_code     IN VARCHAR2,
+        p_run_id         IN NUMBER,
+        p_request_id     IN VARCHAR2,
+        p_dataset_status IN VARCHAR2 DEFAULT NULL
+    );
+
     -- Work-queue-ID core (2026-07-20): when TRUE, run_one_object_type validates and
     -- transforms (STG -> TFM STAGED) and returns BEFORE any generate/submit. The
     -- queue worker uses this on the PARENT of a spawn-per-partition object, then
