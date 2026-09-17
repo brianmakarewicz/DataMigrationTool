@@ -27,10 +27,8 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_PIPELINE_SUMMARY_V" ("RUN_ID", "INTEGRAT
     SELECT 'PlanningBudgets',                      'Financials',    3            FROM DUAL UNION ALL
     SELECT 'Assets',                               'Financials',    4            FROM DUAL UNION ALL
     SELECT 'Workers',                              'HCM',           1            FROM DUAL UNION ALL
-    SELECT 'Assignments',                          'HCM',           2            FROM DUAL UNION ALL
     SELECT 'Salaries',                             'HCM',           3            FROM DUAL UNION ALL
     SELECT 'SalaryBases',                          'HCM',           4            FROM DUAL UNION ALL
-    SELECT 'PayrollRelationships',                 'HCM',           5            FROM DUAL UNION ALL
     SELECT 'TaxCards',                             'HCM',           6            FROM DUAL UNION ALL
     SELECT 'W2Balances',                           'HCM',           7            FROM DUAL UNION ALL
     SELECT 'BenParticipant',                       'HCM',           8            FROM DUAL UNION ALL

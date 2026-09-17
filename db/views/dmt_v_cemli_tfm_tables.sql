@@ -54,10 +54,9 @@ UNION ALL SELECT 'Workers',              'DMT_PERSON_ADDR_TFM_TBL',        'Pers
 UNION ALL SELECT 'Workers',              'DMT_PERSON_NID_TFM_TBL',         'Person NIDs',              6, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Workers',              'DMT_PERSON_LEGISL_TFM_TBL',      'Person Legislation',       7, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Workers',              'DMT_WORK_REL_TFM_TBL',           'Work Relationships',       8, 'TFM_STATUS', NULL FROM DUAL
-UNION ALL SELECT 'Assignments',          'DMT_ASSIGNMENT_TFM_TBL',         'Assignments',              1, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Workers',              'DMT_ASSIGNMENT_TFM_TBL',         'Assignments',              9, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Salaries',             'DMT_SALARY_TFM_TBL',             'Salaries',                 1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'SalaryBases',          'DMT_SAL_BASIS_TFM_TBL',          'Salary Bases',             1, 'TFM_STATUS', NULL FROM DUAL
-UNION ALL SELECT 'PayrollRels',          'DMT_PAY_REL_TFM_TBL',            'Payroll Relationships',    1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'TaxCards',             'DMT_TAX_CARD_TFM_TBL',           'Tax Cards',                1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'TaxCards',             'DMT_TAX_CARD_COMP_TFM_TBL',      'Tax Card Components',      2, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'W2Balances',           'DMT_W2_BAL_TFM_TBL',             'W2 Balances',              1, 'TFM_STATUS', NULL FROM DUAL

@@ -221,15 +221,6 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_RUN_STATUS_V" ("RUN_ID", "INTEGRATION_ID
     FROM   DMT_WORKER_TFM_TBL
     GROUP  BY RUN_ID
     UNION ALL
-    -- ---- HCM: Worker Assignments ----
-    SELECT RUN_ID, 'WorkerAssignments', COUNT(*),
-           SUM(CASE WHEN TFM_STATUS = 'LOADED'    THEN 1 ELSE 0 END),
-           SUM(CASE WHEN TFM_STATUS = 'FAILED'    THEN 1 ELSE 0 END),
-           SUM(CASE WHEN TFM_STATUS = 'GENERATED' THEN 1 ELSE 0 END),
-           SUM(CASE WHEN TFM_STATUS NOT IN ('LOADED','FAILED','GENERATED') THEN 1 ELSE 0 END)
-    FROM   DMT_ASSIGNMENT_TFM_TBL
-    GROUP  BY RUN_ID
-    UNION ALL
     -- ---- HCM: Salaries ----
     SELECT RUN_ID, 'Salaries', COUNT(*),
            SUM(CASE WHEN TFM_STATUS = 'LOADED'    THEN 1 ELSE 0 END),
@@ -291,15 +282,6 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_RUN_STATUS_V" ("RUN_ID", "INTEGRATION_ID
            SUM(CASE WHEN TFM_STATUS = 'GENERATED' THEN 1 ELSE 0 END),
            SUM(CASE WHEN TFM_STATUS NOT IN ('LOADED','FAILED','GENERATED') THEN 1 ELSE 0 END)
     FROM   DMT_BEN_BENFY_TFM_TBL
-    GROUP  BY RUN_ID
-    UNION ALL
-    -- ---- HCM: Payroll Relationships ----
-    SELECT RUN_ID, 'PayrollRelationships', COUNT(*),
-           SUM(CASE WHEN TFM_STATUS = 'LOADED'    THEN 1 ELSE 0 END),
-           SUM(CASE WHEN TFM_STATUS = 'FAILED'    THEN 1 ELSE 0 END),
-           SUM(CASE WHEN TFM_STATUS = 'GENERATED' THEN 1 ELSE 0 END),
-           SUM(CASE WHEN TFM_STATUS NOT IN ('LOADED','FAILED','GENERATED') THEN 1 ELSE 0 END)
-    FROM   DMT_PAY_REL_TFM_TBL
     GROUP  BY RUN_ID
     UNION ALL
     -- ---- HCM: Tax Cards ----
@@ -407,7 +389,6 @@ ORDER BY
         WHEN t.OBJECT_TYPE = 'Grants'                  THEN 44
         WHEN t.OBJECT_TYPE = 'Requisitions'            THEN 45
         WHEN t.OBJECT_TYPE = 'Workers'                 THEN 50
-        WHEN t.OBJECT_TYPE = 'WorkerAssignments'       THEN 51
         WHEN t.OBJECT_TYPE = 'Salaries'                THEN 52
         WHEN t.OBJECT_TYPE = 'SalaryBases'             THEN 53
         WHEN t.OBJECT_TYPE = 'AbsenceEntries'          THEN 54
@@ -415,7 +396,6 @@ ORDER BY
         WHEN t.OBJECT_TYPE = 'ParticipantEnrollments'  THEN 56
         WHEN t.OBJECT_TYPE = 'DependentEnrollments'    THEN 57
         WHEN t.OBJECT_TYPE = 'BeneficiaryDesignations' THEN 58
-        WHEN t.OBJECT_TYPE = 'PayrollRelationships'    THEN 59
         WHEN t.OBJECT_TYPE = 'TaxCards'                THEN 60
         WHEN t.OBJECT_TYPE = 'TalentProfiles'          THEN 61
         WHEN t.OBJECT_TYPE = 'PerformanceDocuments'    THEN 62
