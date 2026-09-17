@@ -4,7 +4,13 @@
 AS
 -- ============================================================
 -- DMT_W2_BAL_RESULTS_PKG body
--- PayrollBalanceInitialization HDL reconciliation via DMT_HDL_UTIL_PKG.
+-- Balance Initialization HDL reconciliation via DMT_HDL_UTIL_PKG.
+--
+-- CORRECTED MODEL (2026-09-17): W2Balances loads as the "Balance Initialization"
+-- HDL object -- two objects in one zip, InitializeBalanceBatchHeader and
+-- InitializeBalanceBatchLine, keyed by BatchName (<prefix>_W2BAL). The batch
+-- header lands in PAY_BAL_BATCH_HEADERS; the reconciler confirms LOADED from that
+-- base table matched on BATCH_NAME = the run's BatchName = the TFM RECON_KEY.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_W2_BAL_RESULTS_PKG';
@@ -18,9 +24,10 @@ AS
     -- and returns the parsed rows (no dynamic SQL, no TFM reference there); the APPLY
     -- here is STATIC SQL against the compile-time-known W2Balances TFM table. It
     -- confirms each migrated balance-initialization batch in the Fusion payroll
-    -- balance base table PAY_BAL_BATCH_HEADERS by the SourceSystemId business key
-    -- (via HRC_INTEGRATION_KEY_MAP) and marks that W2Balances TFM row LOADED with the
-    -- real Fusion BATCH_ID stamped into FUSION_BALANCE_ID; any ERROR row is marked
+    -- balance base table PAY_BAL_BATCH_HEADERS by the BatchName business key
+    -- (PAY_BAL_BATCH_HEADERS.BATCH_NAME = the run's <prefix>_W2BAL = RECON_KEY) and
+    -- marks that W2Balances TFM row LOADED with the real Fusion BATCH_ID stamped
+    -- into FUSION_BALANCE_ID; any ERROR row is marked
     -- FAILED with the real Fusion error. This REPLACES the bulk LOOKUP_FUSION_IDS
     -- positive path for W2Balances. The HDL data set request id is the Contract v1
     -- P_LOAD_REQUEST_ID. Mirrors the Workers template (DMT_WORKER_RESULTS_PKG).
@@ -144,9 +151,10 @@ AS
             p_procedure      => C_PROC);
 
 
-        -- 1. BalanceInitialization — Contract v1 base-table proof (design section 5).
-        -- The per-record HDL error path still runs (real [FUSION_ERROR] rows are
-        -- marked FAILED here), but LOADED promotion is DEFERRED to the shared
+        -- 1. InitializeBalanceBatchHeader — Contract v1 base-table proof (design
+        -- section 5). The per-record HDL error path still runs (real [FUSION_ERROR]
+        -- rows are marked FAILED here, including whole-file rejections broadcast to
+        -- every GENERATED row), but LOADED promotion is DEFERRED to the shared
         -- Contract v1 parser below: a W2Balances row reaches LOADED only when the
         -- balance-initialization batch is positively confirmed in the Fusion base
         -- table (PAY_BAL_BATCH_HEADERS) with a real BATCH_ID, which the parser
@@ -162,7 +170,7 @@ AS
             p_defer_base_proof => TRUE);
 
 
-        -- 2. BalInitializationDetails
+        -- 2. InitializeBalanceBatchLine
         DMT_HDL_UTIL_PKG.RECONCILE_HDL(
             p_run_id => p_run_id,
             p_request_id     => p_request_id,

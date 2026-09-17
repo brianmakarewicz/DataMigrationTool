@@ -5,47 +5,41 @@
     DMT_W2BALANCES_RECON_DM — Contract v1 reconciliation data model for W2Balances
     (design section 5, "BIP reconciliation report contract - v1").
 
-    Returns the BASE tier for the W2Balances HDL load: one row per migrated
-    balance-initialization batch that is positively confirmed in the Fusion payroll
-    balance base table PAY_BAL_BATCH_HEADERS, with its real Fusion BATCH_ID as
-    FUSION_ID. W2Balances loads through the HCM Data Loader as the
-    PayrollBalanceInitialization business object: the parent BalanceInitialization
-    record loads as the InitializeBalanceBatchHeader HDL object, which lands as one
-    row in PAY_BAL_BATCH_HEADERS (BATCH_ID is the base id); the child
-    BalInitializationDetails records load as InitializeBalanceBatchLine, landing in
-    PAY_BAL_BATCH_LINES. This report proves the parent (the batch header) only — the
-    unit reconciled to LOADED is the BalanceInitialization TFM row.
+    CORRECTED MODEL (2026-09-17): W2Balances loads through the HCM Data Loader as the
+    "Balance Initialization" business object, which is TWO HDL objects in one zip —
+    InitializeBalanceBatchHeader (-> InitializeBalanceBatchHeader.dat) and
+    InitializeBalanceBatchLine (-> InitializeBalanceBatchLine.dat). One run = ONE
+    batch; the header carries the batch (BatchName|UploadDate|LegislativeDataGroup-
+    Name) and every line references it by BatchName. A "Load Initial Balances"
+    (Transfer Batch) payroll flow is then run in Fusion to apply the staged batch.
+    (This replaces the outdated PayrollBalanceInitialization.dat model, which Fusion
+    rejects.)
 
-    The base table PAY_BAL_BATCH_HEADERS carries no business key we control, so the
-    match is made through HRC_INTEGRATION_KEY_MAP: an HDL-loaded header appears there
-    as OBJECT_NAME = 'InitializeBalanceBatchHeader' with SOURCE_SYSTEM_OWNER =
-    'HRC_SQLLOADER' (the .dat SourceSystemOwner) and SOURCE_SYSTEM_ID = the .dat
-    SourceSystemId; SURROGATE_ID = the base BATCH_ID. The join
-    (map.surrogate_id = header.batch_id) was verified live 2026-09-16 with
-    --cred fin_impl.
+    Returns the BASE tier: one row per migrated balance-initialization batch that is
+    positively confirmed in the Fusion payroll balance base table
+    PAY_BAL_BATCH_HEADERS, with its real Fusion BATCH_ID as FUSION_ID. This report
+    proves the batch header — the unit reconciled to LOADED is the W2Balances
+    (InitializeBalanceBatchHeader) TFM row.
+
+    The match is made directly on PAY_BAL_BATCH_HEADERS.BATCH_NAME, which IS the
+    business key we control: BatchName = <run prefix> || '_W2BAL' (the generator's
+    BatchName, stamped on the W2Balances TFM row as RECON_KEY). Balance-initialization
+    batch objects are keyed by BatchName (a user key), not by a person SourceSystemId,
+    so matching by BATCH_NAME is both correct and robust. BATCH_ID is the base id.
+    Verified live 2026-09-16/17 (--cred fin_impl): PAY_BAL_BATCH_HEADERS.BATCH_NAME is
+    directly queryable (e.g. batch_name LIKE 'DMT%' returns the DMT batches with their
+    BATCH_ID), and HRC_INTEGRATION_KEY_MAP has InitializeBalanceBatchHeader (7 keys)
+    and InitializeBalanceBatchLine (13 keys), confirming the object names on this pod.
 
     HDL failures arrive per-record in the HDL response (tagged [FUSION_ERROR] by
     RECONCILE_HDL before this report runs), so this report's ERROR rows are optional
     and it returns the BASE tier only — the W2Balances reconciler (which fetches
     these rows via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically)
-    promotes a BalanceInitialization TFM row to LOADED only from a BASE / SUCCESS /
+    promotes a W2Balances TFM row to LOADED only from a BASE / SUCCESS /
     FUSION_ID-not-null row here.
 
-    RECORD_KEY = the balance-initialization batch's business key = the prefixed
-    SourceSystemId = the prefixed PERSON_NUMBER with the '_BAL' suffix, which is
-    stamped on the W2Balances TFM row as RECON_KEY (DMT_UTIL_PKG.PREFIXED(prefix,
-    PERSON_NUMBER, 30) || '_BAL' at transform — one key definition per object; see
-    DMT_W2_BAL_HDL_GEN_PKG, where SourceSystemId = PERSON_NUMBER || '_BAL'). Matching
-    is on HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID, which carries that same prefixed
-    key once loaded.
-
-    Live probe 2026-09-16 (--cred fin_impl): the demo instance has 7
-    InitializeBalanceBatchHeader keys, all SOURCE_SYSTEM_OWNER='FUSION' (prior UI/test
-    data), zero SOURCE_SYSTEM_OWNER<>'FUSION' — i.e. no record has yet been migrated
-    through this SourceSystemId path, so there is no live base-data proof for a DMT
-    prefix today. W2Balances is upstream-blocked; the report shape is proven but
-    returns zero rows until a real DMT HDL load lands (honest: zero rows is never
-    LOADED, per the reconciler's no-rows policy).
+    RECORD_KEY = PAY_BAL_BATCH_HEADERS.BATCH_NAME = the run's BatchName
+    (<prefix>_W2BAL) = the W2Balances TFM row's RECON_KEY.
 
     Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
     P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an
@@ -65,23 +59,20 @@ SELECT object_type, record_key, source_type, fusion_status,
        fusion_id, error_message, load_request_id
 FROM (
     -- BASE tier: positive proof in the Fusion payroll balance base table
-    -- PAY_BAL_BATCH_HEADERS, matched to our HDL SourceSystemId through
-    -- HRC_INTEGRATION_KEY_MAP. One row per migrated balance-initialization batch.
+    -- PAY_BAL_BATCH_HEADERS, matched directly on BATCH_NAME (the business key we
+    -- control): BatchName = <prefix>_W2BAL. One row per migrated balance batch.
     SELECT 'W2Balances'                    AS object_type,
-           m.source_system_id              AS record_key,
+           h.batch_name                    AS record_key,
            'BASE'                          AS source_type,
            'SUCCESS'                       AS fusion_status,
            MAX(h.batch_id)                 AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))    AS error_message,
            :P_LOAD_REQUEST_ID              AS load_request_id
-    FROM   hrc_integration_key_map m
-    JOIN   pay_bal_batch_headers   h ON h.batch_id = m.surrogate_id
-    WHERE  m.object_name         = 'InitializeBalanceBatchHeader'
-    AND    m.source_system_owner = 'HRC_SQLLOADER'
-    AND    m.source_system_id LIKE :P_PREFIX || '%'
-    AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
-    GROUP BY m.source_system_id
-    ORDER BY m.source_system_id
+    FROM   pay_bal_batch_headers   h
+    WHERE  h.batch_name LIKE :P_PREFIX || '%'
+    AND    (:P_AFTER_KEY IS NULL OR h.batch_name > :P_AFTER_KEY)
+    GROUP BY h.batch_name
+    ORDER BY h.batch_name
 )
 WHERE ROWNUM <= :P_CHUNK_SIZE
       ]]></sql>
