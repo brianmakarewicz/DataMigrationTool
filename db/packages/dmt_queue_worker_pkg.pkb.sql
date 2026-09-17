@@ -4,6 +4,19 @@
 AS
     C_PKG CONSTANT VARCHAR2(30) := 'DMT_QUEUE_WORKER_PKG';
 
+    -- HDL base-table lag retry cap. HDL loads are asynchronous: after the HDL
+    -- data set finishes, loaded rows take time to appear in the HCM base tables
+    -- (e.g. PER_ALL_PEOPLE_F). If reconcile runs before the base row is visible,
+    -- FETCH_ROWS returns nothing and a genuinely-loaded row would be swept to
+    -- UNACCOUNTED. RECONCILE_ONE therefore DEFERS the sweep/gate for an HDL
+    -- base-proof object while rows are still GENERATED (awaiting base
+    -- confirmation, no per-record error), re-polling every 90 seconds up to this
+    -- many times. When the cap is reached the honest sweep + accounting gate run
+    -- exactly as before -- the cap guarantees termination and nothing is ever
+    -- fabricated LOADED.
+    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 5;
+    C_HDL_RECON_DELAY_SEC CONSTANT PLS_INTEGER := 90;
+
     -- ============================================================
     -- get_dispatch — read the object's dispatch registration from
     -- DMT_PIPELINE_DEF_TBL (the section-12 one-row-per-object
@@ -139,6 +152,91 @@ AS
                 '" is not a valid SQL identifier (DMT_CEMLI_CATALOG_TBL seed defect)');
         END IF;
     END assert_catalog_identifier;
+
+    -- ============================================================
+    -- is_hdl_base_proof — TRUE when the object reconciles against a
+    -- Fusion HCM base table via an HDL load (no FBDI interface table).
+    -- Identified ROBUSTLY from the object's BIP report registration, NOT
+    -- a hardcoded CEMLI list: its DMT_BIP_REPORT_TBL row carries
+    -- CONTRACT_VERSION = 1 (shared Contract v1 parser applies base/success
+    -- rows) AND INTERFACE_TABLE = 'N/A (HDL)' (the HDL sentinel — no FBDI
+    -- interface table). FBDI objects have a real interface table and never
+    -- match, so the base-lag deferral below can never touch them.
+    -- ============================================================
+    FUNCTION is_hdl_base_proof (p_cemli_code IN VARCHAR2) RETURN BOOLEAN IS
+        l_cnt PLS_INTEGER;
+    BEGIN
+        SELECT COUNT(*)
+        INTO   l_cnt
+        FROM   DMT_BIP_REPORT_TBL
+        WHERE  CEMLI_CODE      = p_cemli_code
+        AND    CONTRACT_VERSION = 1
+        AND    INTERFACE_TABLE  = 'N/A (HDL)';
+        RETURN l_cnt > 0;
+    END is_hdl_base_proof;
+
+    -- ============================================================
+    -- count_awaiting_base — how many TFM rows of an HDL base-proof
+    -- object are still GENERATED for this scope AND are awaiting base
+    -- confirmation rather than carrying a real per-record HDL error.
+    --
+    -- An HDL reconciler marks a genuinely-rejected record FAILED with a
+    -- [FUSION_ERROR] tag (see every *_results_pkg APPLY_CONTRACT_V1_*);
+    -- a row it leaves GENERATED is one Fusion neither confirmed in the
+    -- base table nor rejected -- exactly the async base-lag case. The
+    -- [FUSION_ERROR] guard is defence in depth: a GENERATED row cannot
+    -- normally carry that tag (a real error would have set it FAILED),
+    -- but the guard makes the intent explicit and never defers a row
+    -- that already has a real error.
+    --
+    -- Same sanctioned dynamic-SQL site as ACCOUNT_ROWS / SWEEP_UNACCOUNTED:
+    -- table + status column come only from the seeded catalog and are
+    -- identifier-checked; every value is bound. Scope mirrors the sweep
+    -- exactly (RUN_ID always; WORK_QUEUE_ID for a spawn child).
+    -- ============================================================
+    FUNCTION count_awaiting_base (
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_work_queue_id IN NUMBER DEFAULT NULL
+    ) RETURN NUMBER IS
+        l_sql   VARCHAR2(4000);
+        l_cnt   NUMBER;
+        l_total NUMBER := 0;
+    BEGIN
+        FOR r IN (
+            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'TFM_STATUS') AS STATUS_COLUMN, ROW_FILTER
+            FROM   DMT_CEMLI_CATALOG_TBL
+            WHERE  CEMLI_CODE = p_cemli_code
+            AND    TFM_TABLE IS NOT NULL
+            ORDER BY SORT_ORDER
+        ) LOOP
+            assert_catalog_identifier(r.TFM_TABLE, 'TFM_TABLE');
+            assert_catalog_identifier(r.STATUS_COLUMN, 'STATUS_COLUMN');
+
+            l_sql :=
+                'SELECT COUNT(*)'
+                || ' FROM ' || r.TFM_TABLE
+                || ' WHERE RUN_ID = :run_id'
+                || ' AND ' || r.STATUS_COLUMN || ' = ''GENERATED'''
+                -- Only rows awaiting base confirmation, never a real per-record
+                -- HDL failure. INSTR on the CLOB tolerates a NULL ERROR_TEXT.
+                || ' AND NVL(INSTR(DBMS_LOB.SUBSTR(ERROR_TEXT, 4000, 1),'
+                || '               ''[FUSION_ERROR]''), 0) = 0'
+                || CASE WHEN p_work_queue_id IS NOT NULL
+                        THEN ' AND WORK_QUEUE_ID = :wq' END
+                || CASE WHEN r.ROW_FILTER IS NOT NULL
+                        THEN ' AND ' || r.ROW_FILTER END;
+
+            IF p_work_queue_id IS NOT NULL THEN
+                EXECUTE IMMEDIATE l_sql INTO l_cnt USING p_run_id, p_work_queue_id;
+            ELSE
+                EXECUTE IMMEDIATE l_sql INTO l_cnt USING p_run_id;
+            END IF;
+
+            l_total := l_total + NVL(l_cnt, 0);
+        END LOOP;
+        RETURN l_total;
+    END count_awaiting_base;
 
     -- ============================================================
     -- ACCOUNT_ROWS — catalog-driven accounting counts (design
@@ -685,6 +783,108 @@ AS
                     DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
                         TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID),
                         p_work_queue_id => p_queue_id);
+                END IF;
+            END;
+        END IF;
+
+        -- HDL base-table lag deferral (retry-on-base-lag, capped). HDL loads are
+        -- asynchronous: after the HDL data set finishes, loaded rows take time to
+        -- appear in the HCM base tables. The reconciler above only promotes a row
+        -- to LOADED once its base row is positively confirmed (FETCH_ROWS returns
+        -- it); a genuinely-rejected record was already marked FAILED [FUSION_ERROR]
+        -- by the reconciler. A row still GENERATED at this point on an HDL
+        -- base-proof object therefore means the base row has not appeared YET, not
+        -- that the record failed. Running the sweep now would flip that
+        -- genuinely-loaded row to UNACCOUNTED and fail the object.
+        --
+        -- So, for an HDL base-proof object only, if any GENERATED-and-error-free
+        -- rows remain in this item's scope and we have not exhausted the retry
+        -- cap, DEFER: re-schedule this same reconcile for 90 seconds later and
+        -- RETURN before the sweep/gate. The poller (DMT_QUEUE_PKG.dispatch_reconcile,
+        -- which honours NEXT_POLL_AFTER) re-spawns DMT_RC_{queue_id} after the
+        -- delay and RECONCILE_ONE runs again from the top. When the base rows have
+        -- appeared, the reconciler marks them LOADED, no error-free GENERATED rows
+        -- remain, the deferral condition is false, and this pass proceeds to the
+        -- sweep + gate. When POLL_COUNT reaches the cap the deferral condition is
+        -- also false, so the honest sweep + gate run EXACTLY as today and any
+        -- still-unaccounted row settles honestly. Nothing is ever fabricated
+        -- LOADED; the cap guarantees termination.
+        --
+        -- FBDI and non-HDL objects can never enter this branch: is_hdl_base_proof
+        -- is FALSE for them (they have a real INTERFACE_TABLE), so their behaviour
+        -- is byte-for-byte unchanged.
+        IF is_hdl_base_proof(l_rec.CEMLI_CODE) THEN
+            DECLARE
+                l_partition_key DMT_WORK_QUEUE_TBL.PARTITION_KEY%TYPE;
+                l_scope_wq      NUMBER;
+                l_awaiting      NUMBER;
+                l_attempt       PLS_INTEGER;
+                l_next_attempt  PLS_INTEGER;
+                l_carry         VARCHAR2(4000);
+            BEGIN
+                -- Same scope the sweep/gate use: run-scoped, or WORK_QUEUE_ID for
+                -- a spawn-per-partition child.
+                SELECT PARTITION_KEY INTO l_partition_key
+                FROM   DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
+                l_scope_wq := CASE WHEN l_partition_key IS NOT NULL
+                                    AND l_partition_key <> 'ALL'
+                                   THEN p_queue_id END;
+
+                l_awaiting := count_awaiting_base(l_rec.RUN_ID, l_rec.CEMLI_CODE, l_scope_wq);
+
+                -- Deferral attempts are counted in a reconcile-owned sentinel in
+                -- ERROR_MESSAGE ('[HDL_BASE_RETRY n]'), NOT in POLL_COUNT. POLL_COUNT
+                -- still carries the AWAITING-phase poll history at reconcile time
+                -- (see the transient-retry handler's note), so it cannot be compared
+                -- to a small cap. Nothing else reads ERROR_MESSAGE as data.
+                BEGIN
+                    SELECT NVL(TO_NUMBER(
+                             REGEXP_SUBSTR(ERROR_MESSAGE,
+                               '\[HDL_BASE_RETRY ([0-9]+)\]', 1, 1, NULL, 1)), 0)
+                    INTO   l_attempt
+                    FROM   DMT_WORK_QUEUE_TBL
+                    WHERE  QUEUE_ID = p_queue_id;
+                EXCEPTION WHEN OTHERS THEN
+                    l_attempt := 0;
+                END;
+
+                IF l_awaiting > 0 AND l_attempt < C_HDL_RECON_MAX_RETRY THEN
+                    l_next_attempt := l_attempt + 1;
+                    -- Re-schedule this reconcile: stamp the sentinel, delay the next
+                    -- pick-up by 90s, and route back to RECONCILING so the poller
+                    -- (dispatch_reconcile, which now honours NEXT_POLL_AFTER)
+                    -- re-spawns DMT_RC_{queue_id} after the delay. Do NOT set
+                    -- COMPLETED_AT -- the item is not terminal.
+                    UPDATE DMT_WORK_QUEUE_TBL
+                    SET WORK_STATUS     = 'RECONCILING',
+                        ERROR_MESSAGE   = '[HDL_BASE_RETRY ' || l_next_attempt || '] '
+                            || 'HDL base rows not yet visible; deferring reconcile.',
+                        NEXT_POLL_AFTER = SYS_EXTRACT_UTC(SYSTIMESTAMP)
+                                          + NUMTODSINTERVAL(C_HDL_RECON_DELAY_SEC, 'SECOND')
+                    WHERE QUEUE_ID = p_queue_id;
+
+                    DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                        'HDL base rows not yet visible for ' || l_rec.CEMLI_CODE
+                        || ' (' || l_awaiting || ' record(s) still awaiting base '
+                        || 'confirmation); deferring reconcile, retry '
+                        || l_next_attempt || '/' || C_HDL_RECON_MAX_RETRY
+                        || ' after ' || C_HDL_RECON_DELAY_SEC || 's.',
+                        'INFO', C_PKG, 'RECONCILE_ONE');
+
+                    COMMIT;
+                    RETURN;  -- skip sweep + gate this pass; retry next tick
+                END IF;
+
+                -- Falling through (base rows appeared, or cap reached): clear our
+                -- sentinel so it never lingers as stale text on the settled item.
+                -- The sweep + gate below run exactly as today.
+                SELECT ERROR_MESSAGE INTO l_carry
+                FROM   DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
+                IF l_carry IS NOT NULL
+                   AND REGEXP_LIKE(l_carry, '\[HDL_BASE_RETRY [0-9]+\]') THEN
+                    UPDATE DMT_WORK_QUEUE_TBL
+                    SET ERROR_MESSAGE = NULL
+                    WHERE QUEUE_ID = p_queue_id;
                 END IF;
             END;
         END IF;

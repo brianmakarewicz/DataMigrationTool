@@ -317,6 +317,13 @@ AS
             SELECT QUEUE_ID, RUN_ID, CEMLI_CODE
             FROM DMT_WORK_QUEUE_TBL
             WHERE WORK_STATUS = 'RECONCILING'
+              -- Honour NEXT_POLL_AFTER exactly as dispatch_ess_polls does. Most
+              -- RECONCILING rows have NEXT_POLL_AFTER NULL (reconcile immediately).
+              -- The HDL base-lag deferral in RECONCILE_ONE sets it ~90s ahead so
+              -- the re-spawned reconcile waits for the base rows to appear instead
+              -- of busy-looping. A plain UTC TIMESTAMP comparison, same as polls.
+              AND (NEXT_POLL_AFTER IS NULL
+                   OR NEXT_POLL_AFTER <= SYS_EXTRACT_UTC(SYSTIMESTAMP))
         )
         LOOP
             l_job_name := 'DMT_RC_' || rec.QUEUE_ID;
