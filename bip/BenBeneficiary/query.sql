@@ -2,23 +2,25 @@
 -- Mirror of the CDATA SQL in DMT_BENBENEFICIARY_RECON_DM.xdm, kept here for review and
 -- for running the query standalone against live Fusion (bind the six parameters).
 --
--- Returns the BASE tier for the BenBeneficiary HDL load: one row per migrated
--- beneficiary positively confirmed in Fusion, with the real Fusion PersonBenefitBalance
--- base-table id as FUSION_ID. The object loads via HDL under the discriminator
--- PersonBenefitBalance (see DMT_BEN_BENFY_HDL_GEN_PKG). HDL per-record failures are
--- captured separately (RECONCILE_HDL tags [FUSION_ERROR] before this report runs), so
--- this report returns BASE/SUCCESS rows only; the shared parser marks a BenBeneficiary
--- LOADED only from a BASE / SUCCESS / FUSION_ID-not-null row.
+-- 2026-09-17 RE-MODEL: beneficiary designation loads via the HDL business object
+-- BeneficiaryEnrollment (child DesignateBeneficiary), NOT PersonBenefitBalance.
+-- PersonBenefitBalance is accumulated benefit balances and had collided on file
+-- name/discriminator with BenParticipant and BenDependent. This report reconciles
+-- against OBJECT_NAME='BeneficiaryEnrollment'.
 --
--- RECORD_KEY = the prefixed PERSON_NUMBER || '_BENBNFY' = the SourceSystemId written
--- into PersonBenefitBalance.dat = the BenBeneficiary TFM row's RECON_KEY.
--- Verified live 2026-09-16 (scripts/fusion_bip_query.py --cred fin_impl):
---   HRC_INTEGRATION_KEY_MAP.OBJECT_NAME       = 'PersonBenefitBalance'
---       (10 HRC_SQLLOADER-owned HDL rows; e.g. SOURCE_SYSTEM_ID '67936DMTBNFY001_BENBNFY')
---   HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID  == the SourceSystemId we wrote (ends _BENBNFY)
---   HRC_INTEGRATION_KEY_MAP.SURROGATE_ID      == the Fusion PersonBenefitBalance id
---       (e.g. 300000331552758) — a real base-table id
---   Running this SQL with :P_PREFIX='67936' returned two BASE/SUCCESS rows with real ids.
+-- Returns the BASE tier for the BeneficiaryEnrollment HDL load: one row per migrated
+-- worker's beneficiary enrollment positively confirmed in Fusion, with the real Fusion
+-- base-table id as FUSION_ID. HDL per-record failures are captured separately
+-- (RECONCILE_HDL tags [FUSION_ERROR] before this report runs), so this report returns
+-- BASE/SUCCESS rows only; the shared parser marks a BenBeneficiary row LOADED only from a
+-- BASE / SUCCESS / FUSION_ID-not-null row.
+--
+-- RECORD_KEY = the prefixed PERSON_NUMBER || '_BENENRL' = the SourceSystemId written onto
+-- the parent BeneficiaryEnrollment component = the BenBeneficiary TFM row's RECON_KEY.
+-- Live probe 2026-09-17 (scripts/fusion_bip_query.py --cred fin_impl): no
+-- BeneficiaryEnrollment rows exist yet on this pod (never exercised via the correct
+-- object); the historical '..._BENBNFY' rows are recorded under the WRONG object
+-- PersonBenefitBalance — the defect this re-model fixes.
 -- The physical Benefits base table (BEN_*) is not visible to the FSCM BIP data source, so
 -- — like Salaries — BASE-tier proof is the map row whose SURROGATE_ID is the base-table id.
 -- Base-tier matching is by run prefix (P_PREFIX); keyset pagination by RECORD_KEY.
@@ -34,9 +36,9 @@ FROM (
            CAST(NULL AS VARCHAR2(4000))    AS error_message,
            :P_LOAD_REQUEST_ID              AS load_request_id
     FROM   hrc_integration_key_map m
-    WHERE  m.object_name = 'PersonBenefitBalance'
+    WHERE  m.object_name = 'BeneficiaryEnrollment'
     AND    m.source_system_id LIKE :P_PREFIX || '%'
-    AND    m.source_system_id LIKE '%\_BENBNFY' ESCAPE '\'
+    AND    m.source_system_id LIKE '%\_BENENRL' ESCAPE '\'
     AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
     GROUP BY m.source_system_id
     ORDER BY m.source_system_id

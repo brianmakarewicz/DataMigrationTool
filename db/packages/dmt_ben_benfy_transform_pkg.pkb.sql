@@ -75,14 +75,14 @@ AS
             s.PERCENTAGE,
             s.BENEFICIARY_TYPE,
             s.LEGAL_EMPLOYER_NAME,
-            -- RECON_KEY = the same value written to the HDL .dat as the
-            -- PersonBenefitBalance SourceSystemId (DMT_BEN_BENFY_HDL_GEN_PKG:
-            -- prefixed PERSON_NUMBER || '_BENBNFY'), and the value the BIP
-            -- reconciliation report returns as RECORD_KEY. One key definition
-            -- (Contract v1, design section 5). Verified live 2026-09-16 against
-            -- HRC_INTEGRATION_KEY_MAP (OBJECT_NAME='PersonBenefitBalance',
-            -- SOURCE_SYSTEM_ID ends '_BENBNFY').
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_BENBNFY',
+            -- RECON_KEY = the BeneficiaryEnrollment parent SourceSystemId written
+            -- to the HDL .dat (DMT_BEN_BENFY_HDL_GEN_PKG: prefixed PERSON_NUMBER ||
+            -- '_BENENRL'), and the value the BIP reconciliation report returns as
+            -- RECORD_KEY. One key definition (Contract v1, design section 5).
+            -- 2026-09-17 re-model: the object is BeneficiaryEnrollment (child
+            -- DesignateBeneficiary), NOT PersonBenefitBalance; the key suffix is
+            -- '_BENENRL', never the old collided '_BENBNFY'.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_BENENRL',
             'STAGED',
             SYSDATE
         FROM DMT_BEN_BENFY_STG_TBL s
