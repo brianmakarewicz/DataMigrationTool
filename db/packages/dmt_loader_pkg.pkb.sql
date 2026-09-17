@@ -4369,6 +4369,58 @@
     END RUN_ORDER_TO_CASH;
 
     -- --------------------------------------------------------
+    -- RECONCILE_HDL_OBJECT (public) — re-run ONE HDL object's base-table
+    -- reconciliation for a retry tick (HDL base-table lag). Uniform CASE over
+    -- the 14 HDL base-proof objects; each object's RECONCILE_BATCH shares the
+    -- (p_run_id, p_request_id, p_dataset_status) signature and is idempotent for
+    -- the base tier (re-queries the Fusion base table, promotes only newly-
+    -- confirmed rows to LOADED, never re-uploads). Static calls only — no dynamic
+    -- SQL. Unknown CEMLI raises -20103 (only HDL base-proof objects are routed here
+    -- by RECONCILE_ONE).
+    -- --------------------------------------------------------
+    PROCEDURE RECONCILE_HDL_OBJECT (
+        p_cemli_code     IN VARCHAR2,
+        p_run_id         IN NUMBER,
+        p_request_id     IN VARCHAR2,
+        p_dataset_status IN VARCHAR2 DEFAULT NULL
+    ) IS
+    BEGIN
+        CASE p_cemli_code
+            WHEN 'Workers' THEN
+                DMT_WORKER_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'Assignments' THEN
+                DMT_ASSIGNMENT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'Salaries' THEN
+                DMT_SALARY_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'SalaryBases' THEN
+                DMT_SAL_BASIS_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'Absences' THEN
+                DMT_ABSENCE_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'W2Balances' THEN
+                DMT_W2_BAL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'BenParticipant' THEN
+                DMT_BEN_PARTIC_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'BenDependent' THEN
+                DMT_BEN_DEPEND_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'BenBeneficiary' THEN
+                DMT_BEN_BENFY_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'TaxCards' THEN
+                DMT_TAX_CARD_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'TalentProfiles' THEN
+                DMT_TALENT_PROF_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'PerfEvaluations' THEN
+                DMT_PERF_EVAL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'WorkSchedules' THEN
+                DMT_WORK_SCHED_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            WHEN 'PayrollRelationships' THEN
+                DMT_PAY_REL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_request_id, p_dataset_status);
+            ELSE
+                RAISE_APPLICATION_ERROR(-20103,
+                    'RECONCILE_HDL_OBJECT: no HDL reconciler mapped for CEMLI ' || p_cemli_code);
+        END CASE;
+    END RECONCILE_HDL_OBJECT;
+
+    -- --------------------------------------------------------
     -- RUN_WORKERS (public) — HDL pattern
     -- Generates Worker.dat, uploads via HCM REST, polls, reconciles.
     -- --------------------------------------------------------
@@ -4442,6 +4494,12 @@
             p_log_context    => 'Workers',
             x_dataset_status => l_dataset_status);
 
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set status
+        -- so EXECUTE_ONE can persist them and the queue can re-run the base proof on
+        -- a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
+
         -- Step 8: Reconcile — parse HDL errors, update TFM/STG
         DMT_WORKER_RESULTS_PKG.RECONCILE_BATCH(
             p_run_id => p_run_id,
@@ -4504,6 +4562,11 @@
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Assignments', l_dataset_status);
 
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_ASSIGNMENT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ASSIGNMENTS complete.', 'INFO', C_PKG, C_PROC);
@@ -4553,6 +4616,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Salaries', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_SALARY_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_SALARIES complete.', 'INFO', C_PKG, C_PROC);
@@ -4602,6 +4670,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'SalaryBases', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_SAL_BASIS_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_SALARY_BASES complete.', 'INFO', C_PKG, C_PROC);
@@ -4651,6 +4724,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Absences', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_ABSENCE_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_ABSENCES complete.', 'INFO', C_PKG, C_PROC);
@@ -4700,6 +4778,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'W2Balances', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_W2_BAL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_W2_BALANCES complete.', 'INFO', C_PKG, C_PROC);
@@ -4749,6 +4832,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenParticipant', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_BEN_PARTIC_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_BEN_PARTICIPANT complete.', 'INFO', C_PKG, C_PROC);
@@ -4798,6 +4886,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenDependent', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_BEN_DEPEND_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_BEN_DEPENDENT complete.', 'INFO', C_PKG, C_PROC);
@@ -4847,6 +4940,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenBeneficiary', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_BEN_BENFY_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_BEN_BENEFICIARY complete.', 'INFO', C_PKG, C_PROC);
@@ -4896,6 +4994,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'PayrollRels', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_PAY_REL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_PAYROLL_RELS complete.', 'INFO', C_PKG, C_PROC);
@@ -4945,6 +5048,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'TaxCards', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_TAX_CARD_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_TAX_CARDS complete.', 'INFO', C_PKG, C_PROC);
@@ -4994,6 +5102,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'TalentProfiles', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_TALENT_PROF_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_TALENT_PROFILES complete.', 'INFO', C_PKG, C_PROC);
@@ -5043,6 +5156,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'PerfEvaluations', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_PERF_EVAL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_PERF_EVALUATIONS complete.', 'INFO', C_PKG, C_PROC);
@@ -5092,6 +5210,11 @@
         COMMIT;
 
         DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'WorkSchedules', l_dataset_status);
+        -- HDL base-lag retry: publish this cycle's HDL request id + data set
+        -- status so EXECUTE_ONE can persist them and the queue can re-run the
+        -- base proof on a later tick if the base rows lag.
+        DMT_LOADER_PKG.g_hdl_request_id     := l_request_id;
+        DMT_LOADER_PKG.g_hdl_dataset_status := l_dataset_status;
         DMT_WORK_SCHED_RESULTS_PKG.RECONCILE_BATCH(p_run_id, l_request_id, l_dataset_status);
 
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_WORK_SCHEDULES complete.', 'INFO', C_PKG, C_PROC);

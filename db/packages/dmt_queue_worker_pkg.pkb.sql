@@ -10,11 +10,12 @@ AS
     -- FETCH_ROWS returns nothing and a genuinely-loaded row would be swept to
     -- UNACCOUNTED. RECONCILE_ONE therefore DEFERS the sweep/gate for an HDL
     -- base-proof object while rows are still GENERATED (awaiting base
-    -- confirmation, no per-record error), re-polling every 90 seconds up to this
+    -- confirmation, no per-record error), re-polling on a fixed delay up to this
     -- many times. When the cap is reached the honest sweep + accounting gate run
     -- exactly as before -- the cap guarantees termination and nothing is ever
-    -- fabricated LOADED.
-    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 5;
+    -- fabricated LOADED. Person-load lag on the demo pod is observed at a few
+    -- minutes, so 8 retries x 90s = 12 minutes of headroom before the honest sweep.
+    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 8;
     C_HDL_RECON_DELAY_SEC CONSTANT PLS_INTEGER := 90;
 
     -- ============================================================
@@ -473,6 +474,7 @@ AS
         l_rec       DMT_WORK_QUEUE_TBL%ROWTYPE;
         l_run_rec   DMT_PIPELINE_RUN_TBL%ROWTYPE;
         l_load_ess_id VARCHAR2(100);
+        l_hdl_request_id VARCHAR2(100);
         l_exec_proc   VARCHAR2(200);
         l_exec_mode   VARCHAR2(10);
         l_recon_proc  VARCHAR2(200);
@@ -647,11 +649,17 @@ AS
             x_keys             => l_ignore_keys);
 
         l_load_ess_id := DMT_LOADER_PKG.g_load_ess_id;
+        -- HDL cycle just ran inline (generate/upload/submit/poll/reconcile). Capture
+        -- the HDL data set request id + terminal status it published so the base proof
+        -- can be re-run on a later tick (base-table lag). NULL for non-HDL objects.
+        l_hdl_request_id := DMT_LOADER_PKG.g_hdl_request_id;
         DMT_LOADER_PKG.g_async_mode := FALSE;
         DMT_LOADER_PKG.g_load_ess_id := NULL;
         DMT_LOADER_PKG.g_partition_key := NULL;
         DMT_LOADER_PKG.g_work_queue_id := NULL;
         DMT_LOADER_PKG.g_gen_queue_id := NULL;
+        DMT_LOADER_PKG.g_hdl_request_id := NULL;
+        DMT_LOADER_PKG.g_hdl_dataset_status := NULL;
 
         IF l_load_ess_id IS NOT NULL THEN
             UPDATE DMT_WORK_QUEUE_TBL
@@ -659,6 +667,28 @@ AS
                 LOAD_ESS_JOB_ID = l_load_ess_id,
                 POLL_COUNT = 0,
                 NEXT_POLL_AFTER = SYS_EXTRACT_UTC(SYSTIMESTAMP) + INTERVAL '60' SECOND
+            WHERE QUEUE_ID = p_queue_id;
+        ELSIF is_hdl_base_proof(l_rec.CEMLI_CODE) THEN
+            -- HDL base-proof object. Its RUN_* ran the whole cycle inline, including
+            -- the first RECONCILE_BATCH pass, but the loaded rows may not be visible
+            -- in the HCM base tables yet (async base-table lag). Instead of settling
+            -- the item now (the old ELSE branch called apply_accounting_gate here,
+            -- which swept a genuinely-loaded-but-not-yet-visible row to UNACCOUNTED),
+            -- route to RECONCILING and let RECONCILE_ONE re-run ONLY the base proof
+            -- on later ticks until the rows appear or the retry cap is hit. Persist
+            -- the HDL data set request id in LOAD_ESS_JOB_ID so the base-proof report
+            -- can be re-fetched with the same load id. (The terminal data set status is
+            -- deliberately NOT persisted: on a re-run pass NULL, which routes the
+            -- per-record HDL step to "leave GENERATED, do not fabricate" and lets the
+            -- base-table re-check own the outcome. The per-record FAILED verdicts from
+            -- the inline first pass are already on the rows and are never revisited.)
+            -- The very first RECONCILE_ONE pass sees what the inline reconcile settled;
+            -- if any rows remain GENERATED and error-free it defers, otherwise it
+            -- sweeps + gates exactly as before.
+            UPDATE DMT_WORK_QUEUE_TBL
+            SET WORK_STATUS     = 'RECONCILING',
+                LOAD_ESS_JOB_ID = SUBSTR(l_hdl_request_id, 1, 30),
+                NEXT_POLL_AFTER = NULL
             WHERE QUEUE_ID = p_queue_id;
         ELSIF l_recon_proc IS NOT NULL THEN
             -- No load ESS id (LOCAL objects, or a cycle that reconciles
@@ -745,23 +775,40 @@ AS
         -- p_cemli_code parameter).
         get_dispatch(l_rec.CEMLI_CODE, l_exec_proc, l_exec_mode, l_recon_proc, l_recon_cemli);
         IF l_recon_proc IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20101,
-                'RECONCILE_ONE: No RECON_PROC registered in DMT_PIPELINE_DEF_TBL '
-                || 'for CEMLI code: ' || l_rec.CEMLI_CODE);
+            -- HDL base-proof objects have no queue-dispatched reconciler (RECON_PROC
+            -- is NULL): their RUN_* did the first reconcile inline. But they DO flow
+            -- through RECONCILE_ONE now (EXECUTE_ONE routes them to RECONCILING) so the
+            -- base-table proof can be re-run on later ticks while the HCM base rows
+            -- lag. Re-run ONLY the base proof (idempotent: re-queries the base table,
+            -- promotes newly-confirmed rows to LOADED, never re-uploads). Pass NULL
+            -- data set status so the per-record HDL step leaves rows GENERATED and the
+            -- base-table re-check owns the outcome. Then the defer / sweep / gate below
+            -- run exactly as for a normal object.
+            IF is_hdl_base_proof(l_rec.CEMLI_CODE) THEN
+                DMT_LOADER_PKG.RECONCILE_HDL_OBJECT(
+                    p_cemli_code     => l_rec.CEMLI_CODE,
+                    p_run_id         => l_rec.RUN_ID,
+                    p_request_id     => l_rec.LOAD_ESS_JOB_ID,
+                    p_dataset_status => NULL);
+            ELSE
+                RAISE_APPLICATION_ERROR(-20101,
+                    'RECONCILE_ONE: No RECON_PROC registered in DMT_PIPELINE_DEF_TBL '
+                    || 'for CEMLI code: ' || l_rec.CEMLI_CODE);
+            END IF;
+        ELSE
+            invoke_registered(
+                p_proc          => l_recon_proc,
+                p_style         => CASE l_recon_cemli WHEN 'Y' THEN 'RECON_CEMLI' ELSE 'RECON' END,
+                p_run_id        => l_rec.RUN_ID,
+                p_cemli_code    => l_rec.CEMLI_CODE,
+                p_load_ess_id   => TO_NUMBER(l_rec.LOAD_ESS_JOB_ID),
+                p_import_ess_id => TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID),
+                -- Work-queue-ID core: the reconciler sweeps only THIS item's rows.
+                -- For a spawn-per-partition child this is its own (child) queue id;
+                -- for a single-item object it is the object's own queue id.
+                p_work_queue_id => p_queue_id,
+                x_keys          => l_ignore_keys);
         END IF;
-
-        invoke_registered(
-            p_proc          => l_recon_proc,
-            p_style         => CASE l_recon_cemli WHEN 'Y' THEN 'RECON_CEMLI' ELSE 'RECON' END,
-            p_run_id        => l_rec.RUN_ID,
-            p_cemli_code    => l_rec.CEMLI_CODE,
-            p_load_ess_id   => TO_NUMBER(l_rec.LOAD_ESS_JOB_ID),
-            p_import_ess_id => TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID),
-            -- Work-queue-ID core: the reconciler sweeps only THIS item's rows.
-            -- For a spawn-per-partition child this is its own (child) queue id;
-            -- for a single-item object it is the object's own queue id.
-            p_work_queue_id => p_queue_id,
-            x_keys          => l_ignore_keys);
 
         -- Items special case (kept from the retired chain, deliberately NOT
         -- registry-expressible yet: the Items FBDI ZIP bundles the
