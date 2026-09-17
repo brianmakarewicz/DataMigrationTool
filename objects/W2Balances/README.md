@@ -5,9 +5,14 @@ NOT BUILT (HDL)
 
 ## Pipeline
 - Module: HCM
-- HDL File: W2Balances.dat
+- HDL Object: Balance Initialization (two objects in one zip)
+- HDL Files: InitializeBalanceBatchHeader.dat + InitializeBalanceBatchLine.dat
 - Loader Type: HDL (REST upload/submit/poll)
 - Auth User: fin_impl
+- Post-load: "Load Initial Balances" (Transfer Batch) payroll flow run in Fusion
+  applies the staged batch to balances (functional step, not part of the HDL file).
+- Key model: one run = one batch; BatchName = <prefix>_W2BAL links lines to header
+  and is the reconciliation key (PAY_BAL_BATCH_HEADERS.BATCH_NAME, BATCH_ID = Fusion id).
 
 ## Code References
 - STG Table DDL: `schema/tables/120_dmt_w2_bal_stg_tbl.sql`
