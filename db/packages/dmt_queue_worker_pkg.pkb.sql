@@ -13,10 +13,13 @@ AS
     -- confirmation, no per-record error), re-polling on a fixed delay up to this
     -- many times. When the cap is reached the honest sweep + accounting gate run
     -- exactly as before -- the cap guarantees termination and nothing is ever
-    -- fabricated LOADED. Person-load lag on the demo pod is observed at a few
-    -- minutes, so 8 retries x 90s = 12 minutes of headroom before the honest sweep.
-    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 8;
-    C_HDL_RECON_DELAY_SEC CONSTANT PLS_INTEGER := 90;
+    -- fabricated LOADED. Person-load lag on the demo pod was observed at ~17+
+    -- minutes live (run 144: worker HDL submit -> base row visible in
+    -- PER_ALL_PEOPLE_F took longer than the old 12-minute window, so a genuinely
+    -- LOADED worker was wrongly swept UNACCOUNTED). 20 retries x 120s = 40 minutes
+    -- of headroom before the honest sweep, covering that lag with margin.
+    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 20;
+    C_HDL_RECON_DELAY_SEC CONSTANT PLS_INTEGER := 120;
 
     -- ============================================================
     -- get_dispatch — read the object's dispatch registration from
