@@ -212,7 +212,12 @@
             s.EFFECTIVE_END_DATE,
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
             s.ASSIGNMENT_NAME,
-            s.ASSIGNMENT_NUMBER,
+            -- Prefix the assignment number: it becomes the Fusion AssignmentNumber /
+            -- employment-terms number, which must be unique per run. Left raw, every
+            -- run re-emitted the same source number (e.g. ET-RT-WKR-G1) and collided
+            -- with the prior load ("already an employment terms number with that
+            -- value"), failing the whole Worker/Assignment/Salary chain.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSIGNMENT_NUMBER, 30),
             s.ASSIGNMENT_STATUS_TYPE_CODE,
             s.BUSINESS_UNIT_NAME,
             s.ACTION_CODE,
@@ -234,14 +239,13 @@
             s.MANAGER_ASSIGNMENT_NUMBER,
             s.PRIMARY_ASSIGNMENT_FLAG,
             -- RECON_KEY = the same value written to the HDL .dat as the
-            -- Assignment SourceSystemId (DMT_ASSIGNMENT_HDL_GEN_PKG:
-            -- ASSIGNMENT_NUMBER || '_ASG'), and the value the BIP reconciliation
-            -- report returns as RECORD_KEY (object type 'Assignment'). The
-            -- assignment number already carries the run prefix from source, so
-            -- no PREFIXED() call is applied (mirrors the generator, which writes
-            -- ASSIGNMENT_NUMBER verbatim). One key definition (Contract v1,
-            -- design section 5).
-            s.ASSIGNMENT_NUMBER || '_ASG',
+            -- Assignment SourceSystemId (the generator writes the TFM
+            -- ASSIGNMENT_NUMBER verbatim via pv(), so it must be the PREFIXED
+            -- number) and the value the BIP reconciliation report returns as
+            -- RECORD_KEY (object type 'Assignment'). Prefixed to match the
+            -- ASSIGNMENT_NUMBER above so the .dat, the recon key, and the Fusion
+            -- base row all align on the run-unique number (Contract v1, section 5).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSIGNMENT_NUMBER, 30) || '_ASG',
             'STAGED',
             SYSDATE
         FROM DMT_ASSIGNMENT_STG_TBL s
