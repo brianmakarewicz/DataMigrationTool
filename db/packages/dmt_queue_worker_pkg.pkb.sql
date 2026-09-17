@@ -884,6 +884,15 @@ AS
                 -- still carries the AWAITING-phase poll history at reconcile time
                 -- (see the transient-retry handler's note), so it cannot be compared
                 -- to a small cap. Nothing else reads ERROR_MESSAGE as data.
+                --
+                -- Coexistence with the transient-transport handler's own sentinel
+                -- ('[RECONCILE_RETRY n]', written only when RECONCILE_HDL_OBJECT throws
+                -- a transport error): each handler writes/reads only its own tag and
+                -- each cap self-bounds, so neither can loop forever. If a transport
+                -- error interleaves with a base-lag defer, one full ERROR_MESSAGE
+                -- overwrite can reset the OTHER counter, allowing a few extra retries
+                -- before that path's cap; this is bounded and harmless (the honest
+                -- sweep + gate still run once both caps are exhausted).
                 BEGIN
                     SELECT NVL(TO_NUMBER(
                              REGEXP_SUBSTR(ERROR_MESSAGE,
@@ -1244,7 +1253,8 @@ AS
                 -- after we stopped watching, it finds the records in Fusion
                 -- and flips them LOADED.
                 UPDATE DMT_WORK_QUEUE_TBL
-                SET WORK_STATUS = 'RECONCILING'
+                SET WORK_STATUS = 'RECONCILING',
+                    NEXT_POLL_AFTER = NULL  -- reconcile now; clear stale poll delay
                 WHERE QUEUE_ID = p_queue_id;
             ELSE
                 -- No queue-dispatched reconciler registered: settle by the
@@ -1309,7 +1319,8 @@ AS
                 ELSE
                     UPDATE DMT_WORK_QUEUE_TBL
                     SET WORK_STATUS = 'RECONCILING',
-                        POLL_COUNT = l_rec.POLL_COUNT + 1
+                        POLL_COUNT = l_rec.POLL_COUNT + 1,
+                        NEXT_POLL_AFTER = NULL  -- reconcile now; clear stale poll delay
                     WHERE QUEUE_ID = p_queue_id;
                 END IF;
             ELSIF l_rec.WORK_STATUS = 'AWAITING_IMPORT' THEN
@@ -1344,14 +1355,16 @@ AS
                 ELSE
                     UPDATE DMT_WORK_QUEUE_TBL
                     SET WORK_STATUS = 'RECONCILING',
-                        POLL_COUNT = l_rec.POLL_COUNT + 1
+                        POLL_COUNT = l_rec.POLL_COUNT + 1,
+                        NEXT_POLL_AFTER = NULL  -- reconcile now; clear stale poll delay
                     WHERE QUEUE_ID = p_queue_id;
                 END IF;
             ELSE
                 -- AWAITING_POSTRUN succeeded (e.g. PostMassAdditions done) → reconcile.
                 UPDATE DMT_WORK_QUEUE_TBL
                 SET WORK_STATUS = 'RECONCILING',
-                    POLL_COUNT = l_rec.POLL_COUNT + 1
+                    POLL_COUNT = l_rec.POLL_COUNT + 1,
+                    NEXT_POLL_AFTER = NULL  -- reconcile now; clear stale poll delay
                 WHERE QUEUE_ID = p_queue_id;
             END IF;
         ELSIF l_status IN ('FAILED', 'ERROR', 'CANCELLED') THEN
@@ -1401,12 +1414,14 @@ AS
                 UPDATE DMT_WORK_QUEUE_TBL
                 SET WORK_STATUS = 'RECONCILING',
                     IMPORT_ESS_JOB_ID = l_import_id,
-                    POLL_COUNT = l_rec.POLL_COUNT + 1
+                    POLL_COUNT = l_rec.POLL_COUNT + 1,
+                    NEXT_POLL_AFTER = NULL  -- reconcile now; clear stale poll delay
                 WHERE QUEUE_ID = p_queue_id;
             ELSE
                 UPDATE DMT_WORK_QUEUE_TBL
                 SET WORK_STATUS = 'RECONCILING',
-                    POLL_COUNT = l_rec.POLL_COUNT + 1
+                    POLL_COUNT = l_rec.POLL_COUNT + 1,
+                    NEXT_POLL_AFTER = NULL  -- reconcile now; clear stale poll delay
                 WHERE QUEUE_ID = p_queue_id;
             END IF;
         ELSE
