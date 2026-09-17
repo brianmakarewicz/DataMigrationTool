@@ -5,29 +5,44 @@
     DMT_WORKSCHEDULES_RECON_DM — Contract v1 reconciliation data model for
     WorkSchedules (design section 5, "BIP reconciliation report contract - v1").
 
-    Returns the BASE tier for the WorkSchedules HDL load: one row per migrated
-    work pattern that is positively confirmed in the Fusion HCM Availability base
-    view HTS_WORK_PATTERNS_VL, with its real Fusion WORK_PATTERN_ID as FUSION_ID.
-    WorkSchedules loads through the HCM Data Loader as the WorkPattern object
-    (WorkPattern.dat), so a loaded work schedule lives as a work pattern
-    definition. HTS_WORK_PATTERNS_VL is the translated view over the base table
-    HTS_WORK_PATTERNS_B + _TL (the base table has no name column; the name lives
-    on _TL, exposed by the _VL view); WORK_PATTERN_ID is the base id. HDL failures
-    arrive per-record in the HDL response (tagged [FUSION_ERROR] by RECONCILE_HDL
-    before this report runs), so this report's ERROR rows are optional and it
-    returns the BASE tier only — the WorkSchedules reconciler (which fetches these
-    rows via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically)
-    promotes a WorkSchedule TFM row to LOADED only from a BASE / SUCCESS /
-    FUSION_ID-not-null row here.
+    Re-modelled 2026-09-17 (HCM re-model: WorkSchedules -> WorkPattern +
+    ScheduleAssignment). WorkSchedules is ONE DMT object whose zip carries TWO
+    distinct Fusion HDL business objects, each with its own Fusion base home:
+      (1) WorkPattern (the pattern DEFINITION) -> base view HTS_WORK_PATTERNS_VL
+          (translated view over HTS_WORK_PATTERNS_B + _TL; WORK_PATTERN_ID is the
+          base id). This is the object that has historically loaded on this pod.
+      (2) ScheduleAssignment (assigning the schedule to a WORKER) -> base table
+          PER_SCHEDULE_ASSIGNMENTS (SCHEDULE_ASSIGNMENT_ID is the base id;
+          RESOURCE_TYPE='ASSIGN', RESOURCE_ID = the worker's assignment id).
 
-    RECORD_KEY = the work schedule's business key = the prefixed work pattern name,
-    which is stamped on the WorkSchedule TFM row as RECON_KEY (the run prefix
-    applied to the source WORK_SCHEDULE_NAME at transform — one key definition per
-    object). Matching is on HTS_WORK_PATTERNS_VL.WORK_PATTERN_NAME, which carries
-    that same prefixed name (verified live 2026-09-16 with --cred fin_impl:
-    WORK_PATTERN_NAME LIKE '41657%' returns '41657 DMT Work Schedule 1' /
-    '41657 DMT Work Schedule 2' with base WORK_PATTERN_IDs 300000331578562 /
-    300000331578548).
+    This report returns the BASE tier as a UNION of both proofs, each keyed by the
+    SAME prefixed work-schedule/pattern name so the WorkSchedules reconciler
+    (DMT_RECON_CONTRACT_PKG.FETCH_ROWS -> APPLY_CONTRACT_V1_WORKSCHEDULES) can
+    match either against the TFM RECON_KEY. A WorkSchedule TFM row is promoted to
+    LOADED only from a BASE / SUCCESS / FUSION_ID-not-null row here. HDL
+    per-record failures arrive in the HDL response (tagged [FUSION_ERROR] by
+    RECONCILE_HDL before this report runs), so ERROR rows here are optional.
+
+    CONFIG PREREQUISITE for branch (2): a ScheduleAssignment can only succeed
+    when a Work Schedule (ZMM_SR_SCHEDULES) exists that wraps the pattern and is
+    referenced by ScheduleName. Verified live 2026-09-17 (--cred fin_impl):
+    the four HDL objects WorkPattern / WorkPatternShift / WorkPatternBreak /
+    ScheduleAssignment all exist in HRC_INTEGRATION_KEY_MAP, and
+    PER_SCHEDULE_ASSIGNMENTS rows key off SCHEDULE_ID via ZMM_SR_SCHEDULE_PATTERNS
+    to HTS_WORK_PATTERNS. But HDL has NO object that creates the Work Schedule
+    wrapper itself (that is a UI task, "Manage Work Schedules"), and none of the
+    migrated DMT patterns is wrapped in a schedule today, so branch (2) returns
+    zero base rows until that config is created. Branch (1) is unaffected and
+    continues to prove loaded patterns.
+
+    RECORD_KEY = the work schedule's business key = the prefixed work
+    pattern/schedule name, stamped on the WorkSchedule TFM row as RECON_KEY (the
+    run prefix applied to the source WORK_SCHEDULE_NAME at transform — one key
+    definition per object). Branch (1) matches on
+    HTS_WORK_PATTERNS_VL.WORK_PATTERN_NAME (verified live: WORK_PATTERN_NAME LIKE
+    '86348%' returns '86348 DMT Work Schedule 1', base WORK_PATTERN_ID
+    300000331553350). Branch (2) matches the same name by joining
+    PER_SCHEDULE_ASSIGNMENTS -> ZMM_SR_SCHEDULE_PATTERNS -> HTS_WORK_PATTERNS_VL.
 
     Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
     P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an
@@ -46,20 +61,49 @@
 SELECT object_type, record_key, source_type, fusion_status,
        fusion_id, error_message, load_request_id
 FROM (
-    -- BASE tier: positive proof in the HCM work pattern base view. One row per
-    -- migrated work pattern (GROUP BY work_pattern_name collapses translations).
-    SELECT 'WorkSchedules'                 AS object_type,
-           v.work_pattern_name             AS record_key,
-           'BASE'                          AS source_type,
-           'SUCCESS'                       AS fusion_status,
-           MAX(v.work_pattern_id)          AS fusion_id,
-           CAST(NULL AS VARCHAR2(4000))    AS error_message,
-           :P_LOAD_REQUEST_ID              AS load_request_id
-    FROM   hts_work_patterns_vl v
-    WHERE  v.work_pattern_name LIKE :P_PREFIX || '%'
-    AND    (:P_AFTER_KEY IS NULL OR v.work_pattern_name > :P_AFTER_KEY)
-    GROUP BY v.work_pattern_name
-    ORDER BY v.work_pattern_name
+    SELECT object_type, record_key, source_type, fusion_status,
+           fusion_id, error_message, load_request_id
+    FROM (
+        -- Branch (1) WorkPattern definition: positive proof in the HCM work
+        -- pattern base view. One row per migrated work pattern (GROUP BY
+        -- collapses translations). This is the historically-loading proof.
+        SELECT 'WorkSchedules'                 AS object_type,
+               v.work_pattern_name             AS record_key,
+               'BASE'                          AS source_type,
+               'SUCCESS'                       AS fusion_status,
+               MAX(v.work_pattern_id)          AS fusion_id,
+               CAST(NULL AS VARCHAR2(4000))    AS error_message,
+               :P_LOAD_REQUEST_ID              AS load_request_id
+        FROM   hts_work_patterns_vl v
+        WHERE  v.work_pattern_name LIKE :P_PREFIX || '%'
+        AND    (:P_AFTER_KEY IS NULL OR v.work_pattern_name > :P_AFTER_KEY)
+        GROUP BY v.work_pattern_name
+
+        UNION ALL
+
+        -- Branch (2) ScheduleAssignment: positive proof in the schedule
+        -- assignment base table PER_SCHEDULE_ASSIGNMENTS, keyed back to the same
+        -- prefixed pattern name via the schedule->pattern link so the reconciler
+        -- matches it against the same TFM RECON_KEY. Returns zero rows until a
+        -- Work Schedule wrapping the pattern is created (see header — config
+        -- prerequisite; HDL cannot create the schedule wrapper). ResourceType
+        -- 'ASSIGN' = a worker assignment.
+        SELECT 'WorkSchedules'                 AS object_type,
+               v.work_pattern_name             AS record_key,
+               'BASE'                          AS source_type,
+               'SUCCESS'                       AS fusion_status,
+               MAX(sa.schedule_assignment_id)  AS fusion_id,
+               CAST(NULL AS VARCHAR2(4000))    AS error_message,
+               :P_LOAD_REQUEST_ID              AS load_request_id
+        FROM   per_schedule_assignments   sa
+        JOIN   zmm_sr_schedule_patterns   sp ON sp.schedule_id = sa.schedule_id
+        JOIN   hts_work_patterns_vl       v  ON v.work_pattern_id = sp.pattern_id
+        WHERE  sa.resource_type = 'ASSIGN'
+        AND    v.work_pattern_name LIKE :P_PREFIX || '%'
+        AND    (:P_AFTER_KEY IS NULL OR v.work_pattern_name > :P_AFTER_KEY)
+        GROUP BY v.work_pattern_name
+    )
+    ORDER BY record_key
 )
 WHERE ROWNUM <= :P_CHUNK_SIZE
       ]]></sql>
