@@ -5,18 +5,21 @@ AS
     C_PKG CONSTANT VARCHAR2(30) := 'DMT_QUEUE_WORKER_PKG';
 
     -- HDL base-table lag retry cap. HDL loads are asynchronous: after the HDL
-    -- data set finishes, loaded rows take time to appear in the HCM base tables
-    -- (e.g. PER_ALL_PEOPLE_F). If reconcile runs before the base row is visible,
-    -- FETCH_ROWS returns nothing and a genuinely-loaded row would be swept to
-    -- UNACCOUNTED. RECONCILE_ONE therefore DEFERS the sweep/gate for an HDL
-    -- base-proof object while rows are still GENERATED (awaiting base
-    -- confirmation, no per-record error), re-polling on a fixed delay up to this
-    -- many times. When the cap is reached the honest sweep + accounting gate run
-    -- exactly as before -- the cap guarantees termination and nothing is ever
-    -- fabricated LOADED. Person-load lag on the demo pod is observed at a few
-    -- minutes, so 8 retries x 90s = 12 minutes of headroom before the honest sweep.
-    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 8;
-    C_HDL_RECON_DELAY_SEC CONSTANT PLS_INTEGER := 90;
+    -- data set finishes. CORRECTION (2026-09-17): an HDL data set that COMPLETES
+    -- writes its rows to the base tables as part of the same job -- there is no
+    -- meaningful "base-table lag". If the reconcile finds a GENERATED row still
+    -- absent from the base table, the load did NOT succeed for that row, and the
+    -- real reason is available immediately from the data set's own status and
+    -- per-record messages (GET_HDL_ERRORS). The earlier long defer loop (8-20
+    -- retries at 90-120s) was a misdiagnosis: it waited ~12-40 minutes for base
+    -- rows that were never coming, then swept them UNACCOUNTED anyway. It is
+    -- replaced by the job-driven reconcile: per-record errors are applied from the
+    -- data set immediately, and LOADED is confirmed by ONE base-table proof pass.
+    -- This short cap now only absorbs a genuine transient REST/BIP blip (the base
+    -- proof report momentarily unreachable), NOT base lag. This supersedes the
+    -- prior 40-minute retry (was PR #268).
+    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 2;
+    C_HDL_RECON_DELAY_SEC CONSTANT PLS_INTEGER := 30;
 
     -- ============================================================
     -- get_dispatch — read the object's dispatch registration from
