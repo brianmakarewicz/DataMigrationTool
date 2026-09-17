@@ -1,40 +1,65 @@
 # WorkSchedules
 
 ## Status
-CLOSE — parent METADATA validated, child WorkPatternShift V1 attributes unknown (2026-04-04 DB-20)
+RE-MODELLED 2026-09-17 — split into two distinct Fusion HDL objects
+(WorkPattern definition + ScheduleAssignment). Pattern side loads (proven by
+prior '<prefix> DMT Work Schedule N' patterns in HTS_WORK_PATTERNS_VL);
+ScheduleAssignment side is CONFIG-BLOCKED (needs a Work Schedule wrapper HDL
+cannot create — see below).
 
 ## Pipeline
 - Module: HCM
-- HDL File: **WorkPattern.dat** (NOT WorkSchedule.dat)
-- Discriminator: **WorkPattern** (V1)
-- Child: **WorkPatternShift** (V1) — at least 1 required
+- HDL: ONE object zip carrying TWO .dat files (one DMT object, two HDL objects):
+  - **WorkPattern.dat** — the pattern DEFINITION (+ WorkPatternShift child).
+    Base view HTS_WORK_PATTERNS_VL (WORK_PATTERN_ID).
+  - **ScheduleAssignment.dat** — assigns the schedule to the WORKER.
+    Base table PER_SCHEDULE_ASSIGNMENTS (SCHEDULE_ASSIGNMENT_ID).
 - Loader Type: HDL (REST upload/submit/poll)
-- Auth User: hcm_impl (password: m?CDa6^6)
+- Auth User: hcm_impl
+
+Object names verified live on this pod (--cred fin_impl, HRC_INTEGRATION_KEY_MAP):
+WorkPattern, WorkPatternShift, WorkPatternBreak, ScheduleAssignment.
 
 ## SourceSystemId Convention
 | Component | Suffix | Example |
 |-----------|--------|---------|
-| WorkPattern | _WPAT | 9210DMTW101_WPAT |
-| WorkPatternShift | _WSHIFT_{seq} | 9210DMTW101_WSHIFT_123 |
+| WorkPattern | _WPAT | DMT Test Sched A_WPAT |
+| WorkPatternShift | _WSHIFT_{seq} | DMT Test Sched A_WSHIFT_123 |
+| ScheduleAssignment | _WSASG | 10186WSTEST01_WSASG |
 
-## METADATA — Parent (Validated, Import OK)
+## METADATA — WorkPattern definition (AssignmentNumber removed — that was the conflation bug)
 ```
-SourceSystemOwner|SourceSystemId|AssignmentNumber|DateFrom|WorkPatternTypeName
+SourceSystemOwner|SourceSystemId|WorkPatternTypeName|RepeatNumber|RepeatCycle|DateFrom|WorkPatternAltCode
 ```
-
-- `AssignmentNumber` = prefixed PERSON_NUMBER (matches Worker Assignment created during hire)
-- `DateFrom` = schedule start date
 - `WorkPatternTypeName` = **required**. Demo instance value: `9A - 5P General Shift`
-- PERSON_NUMBER added to STG/TFM in DB-20 (maps to AssignmentNumber via prefix)
+- `RepeatNumber|RepeatCycle` = 1 / 7 (one weekly cycle) by default
+- `DateFrom` = schedule start date
+- `WorkPatternAltCode` = the pattern name (stable reference; ties shift to parent)
 
-## METADATA — Child (BLOCKED — V1 attributes unknown)
-Attempted attributes, ALL rejected as "unknown for V1 version of WorkPatternShift":
-- `DayNumber` — INVALID
-- `StartTime` — INVALID  
-- `EndTime` — INVALID
-- `ShiftName`, `ShiftDate`, `Duration`, `UnitOfMeasure` — not yet tested
+## METADATA — WorkPatternShift child
+```
+SourceSystemOwner|SourceSystemId|WorkPatternAltCode|DayOfWorkPattern|ShiftStartTime|ShiftEndTime|DurationMinutes
+```
+Attribute names taken from Oracle doc (fahbo/example-of-deleting-work-patterns).
+The old '_V1' guesses (DayNumber/StartTime/EndTime) were wrong.
 
-Correct V1 attribute names need iterative discovery.
+## METADATA — ScheduleAssignment (assign schedule to worker)
+```
+SourceSystemOwner|SourceSystemId|ScheduleName|AssignmentNumber|ResourceType|PrimaryFlag|StartDate|EndDate
+```
+- `ScheduleName` = the Work Schedule name (must pre-exist — config prerequisite)
+- `AssignmentNumber` = prefixed PERSON_NUMBER (the worker's assignment)
+- `ResourceType` = `ASSIGN` (worker assignment); `PrimaryFlag` = `Y`
+
+## CONFIG BLOCKER — ScheduleAssignment side
+A ScheduleAssignment references a Work Schedule (ZMM_SR_SCHEDULES) by name. HDL
+has NO business object that creates that Work Schedule wrapper — it is a UI task
+("Manage Work Schedules"). The Fusion chain is
+WorkPattern -> ZMM_SR_SCHEDULE_PATTERNS -> ZMM_SR_SCHEDULES -> ScheduleAssignment.
+None of the migrated DMT patterns is wrapped in a schedule on this pod, so the
+assignment side loads nothing until that config exists. The generator emits the
+correct ScheduleAssignment.dat regardless; the recon report's assignment branch
+returns zero base rows until the schedule wrapper is created.
 
 ## Code References
 - STG Table DDL: `schema/tables/144_dmt_work_sched_stg_tbl.sql`
