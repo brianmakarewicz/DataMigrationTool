@@ -5,10 +5,16 @@ AUTHID DEFINER
 AS
 -- ============================================================
 -- DMT_BEN_DEPEND_HDL_GEN_PKG
--- Generates the BenefitParticipantEnrollment.dat HDL file from TFM staging records.
+-- Generates the DependentEnrollment.dat HDL file from TFM staging records.
 --
--- DependentEnrollment HDL is ONE zip containing ONE DAT file with 1 business object(s):
---   DependentEnrollment.
+-- Dependent benefit enrollment loads through the HCM Data Loader as the
+-- DependentEnrollment business object (NOT PersonBenefitBalance). The single
+-- zip contains ONE DAT file (DependentEnrollment.dat) with two components of
+-- that one business object:
+--   * DependentEnrollment  (parent) — participant benefit-relationship context.
+--   * DesignateDependent   (child)  — one row per designated dependent.
+-- Both components are source-keyed (SourceSystemOwner/SourceSystemId); the
+-- participant is referenced by SourceSystemId, never repeated as a worker record.
 --
 -- OBJECT_TYPE = 'DependentEnrollments'.
 -- ============================================================

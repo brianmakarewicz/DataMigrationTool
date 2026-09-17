@@ -5,40 +5,45 @@
     DMT_BENDEPENDENT_RECON_DM — Contract v1 reconciliation data model for
     BenDependent (design section 5, "BIP reconciliation report contract - v1").
 
-    Returns the BASE tier for the BenDependent HDL load: one row per migrated
-    dependent benefit balance that is positively confirmed in the Fusion HCM
-    Benefits base table BEN_PER_BNFTS_BAL_F, with its real Fusion
-    PER_BNFTS_BAL_ID as FUSION_ID. BenDependent loads through the HCM Data
-    Loader as the PersonBenefitBalance object (PersonBenefitBalance.dat — the
-    same discriminator all three benefit sub-objects share; the more specific
-    DependentBenefitBalance is NOT a valid HDL discriminator, see
-    DMT_BEN_DEPEND_HDL_GEN_PKG and objects/Benefits/README.md). HDL failures
-    arrive per-record in the HDL response (tagged [FUSION_ERROR] by RECONCILE_HDL
-    before this report runs), so this report's ERROR rows are optional and it
-    returns the BASE tier only — the BenDependent reconciler (which fetches these
-    rows via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically)
-    promotes a BenDependent TFM row to LOADED only from a BASE / SUCCESS /
-    FUSION_ID-not-null row here.
+    CORRECTED OBJECT (2026-09-17): dependent benefit enrollment loads through the
+    HCM Data Loader as the DependentEnrollment business object, whose dependent
+    designations are carried by the DesignateDependent child component (written to
+    DependentEnrollment.dat — see DMT_BEN_DEPEND_HDL_GEN_PKG). This is NOT
+    PersonBenefitBalance; the prior model read PersonBenefitBalance /
+    BEN_PER_BNFTS_BAL_F, which is the wrong object (and its file name collided
+    with BenBeneficiary and BenParticipant). One migrated TFM row = one dependent
+    designation = one DesignateDependent record.
 
-    RECORD_KEY = the dependent's business key = the prefixed PERSON_NUMBER ||
-    '_BENDEP', which is exactly the value written into PersonBenefitBalance.dat
-    as SourceSystemId (see DMT_BEN_DEPEND_HDL_GEN_PKG: pv(PERSON_NUMBER) ||
-    '_BENDEP', where PERSON_NUMBER is already the run-prefixed person number) and
-    stamped on the BenDependent TFM row as RECON_KEY (one key definition per
-    object). The load records a mapping row in HRC_INTEGRATION_KEY_MAP keyed by
-    that same SourceSystemId, whose SURROGATE_ID is the Fusion PER_BNFTS_BAL_ID.
-    Matching joins that mapping row to the base table to guarantee FUSION_ID is a
-    real base-table id, mirroring the Salaries report's key-map read.
+    Returns the BASE tier: one row per migrated dependent designation positively
+    confirmed by its HRC_INTEGRATION_KEY_MAP mapping row
+    (OBJECT_NAME='DesignateDependent'), with the Fusion-assigned SURROGATE_ID as
+    FUSION_ID. The benefit-election base tables are not reachable by name from the
+    BIP reporting user (ORA-00942 on BEN_ELIG_DPNT_F and related), so
+    HRC_INTEGRATION_KEY_MAP is the authoritative base-tier source — the same
+    approach proven for BenParticipant and Salaries. HDL per-record failures are
+    captured separately (RECONCILE_HDL tags [FUSION_ERROR] before this report
+    runs), so this report returns BASE/SUCCESS rows only; the reconciler promotes
+    a BenDependent TFM row to LOADED only from a BASE / SUCCESS / FUSION_ID-not-null
+    row here.
 
-    Verified live 2026-09-16 with the fin_impl credential:
-      HRC_INTEGRATION_KEY_MAP.OBJECT_NAME='PersonBenefitBalance' has 838 rows;
-      SURROGATE_ID == BEN_PER_BNFTS_BAL_F.PER_BNFTS_BAL_ID (join proven, PERSON_ID
-      resolves), and the seven-column contract SQL below returns BASE/SUCCESS rows.
-    Our own '_BENDEP' records are NOT present: employee benefit enrollment is not
-    configured on the demo instance and the migrated test workers are not enrolled
-    in any plan, so the load is rejected upstream (documented BLOCKER,
-    objects/Benefits/README.md). The report is nonetheless correct and its shape is
-    proven; it will return our rows once benefits enrollment is configured.
+    RECORD_KEY = the DesignateDependent SourceSystemId written by
+    DMT_BEN_DEPEND_HDL_GEN_PKG:
+      PERSON_NUMBER || '_' || DEPENDENT_PERSON_NUMBER || '_' || LINE_NO || '_BENDEP'
+    (PERSON_NUMBER and DEPENDENT_PERSON_NUMBER already run-prefixed). This equals
+    the BenDependent TFM row's RECON_KEY (one key definition per object). The load
+    records a mapping row in HRC_INTEGRATION_KEY_MAP keyed by that SourceSystemId,
+    whose SURROGATE_ID is the Fusion designation id.
+
+    Verified live 2026-09-17 with the fin_impl credential:
+      HRC_INTEGRATION_KEY_MAP carries ContactRelationship (397 rows — dependents
+      are contact-relationship-based) and PersonBenefitBalance (838, a distinct
+      object). DependentEnrollment / DesignateDependent rows are NOT present yet
+      and the BEN_ELIG_DPNT_F base table is not reachable by name (ORA-00942),
+      confirming the key-map read is the correct base-tier source. Our own records
+      are absent because employee benefit enrollment is not configured on the demo
+      instance (documented BLOCKER, objects/Benefits/README.md). The report is
+      correct and its shape is proven; it returns our rows once benefits enrollment
+      is configured and the load succeeds.
 
     Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
     P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an
@@ -57,22 +62,21 @@
 SELECT object_type, record_key, source_type, fusion_status,
        fusion_id, error_message, load_request_id
 FROM (
-    -- BASE tier: positive proof in the HCM Benefits base table. The load writes
-    -- one HRC_INTEGRATION_KEY_MAP row per person benefit balance
-    -- (OBJECT_NAME='PersonBenefitBalance') whose SURROGATE_ID is the
-    -- BEN_PER_BNFTS_BAL_F.PER_BNFTS_BAL_ID. Joined to the base table so FUSION_ID
-    -- is guaranteed a real base-table id. One row per migrated dependent balance.
+    -- BASE tier: positive proof from the integration key map. The load writes one
+    -- HRC_INTEGRATION_KEY_MAP row per dependent designation
+    -- (OBJECT_NAME='DesignateDependent') whose SURROGATE_ID is the Fusion-assigned
+    -- designation id. The benefit-election base tables are not reachable by name
+    -- from the BIP reporting user, so the key map is the authoritative base-tier
+    -- source. One row per migrated dependent designation.
     SELECT 'BenDependent'                  AS object_type,
            m.source_system_id              AS record_key,
            'BASE'                          AS source_type,
            'SUCCESS'                       AS fusion_status,
-           MAX(b.per_bnfts_bal_id)         AS fusion_id,
+           MAX(m.surrogate_id)             AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))    AS error_message,
            :P_LOAD_REQUEST_ID              AS load_request_id
     FROM   hrc_integration_key_map m
-    JOIN   ben_per_bnfts_bal_f b
-           ON b.per_bnfts_bal_id = m.surrogate_id
-    WHERE  m.object_name = 'PersonBenefitBalance'
+    WHERE  m.object_name = 'DesignateDependent'
     AND    m.source_system_id LIKE :P_PREFIX || '%'
     AND    m.source_system_id LIKE '%\_BENDEP' ESCAPE '\'
     AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)

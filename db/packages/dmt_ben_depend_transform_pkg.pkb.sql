@@ -73,13 +73,15 @@ AS
             s.DESIGNATION_DATE,
             s.DESIGNATION_END_DATE,
             s.LEGAL_EMPLOYER_NAME,
-            -- RECON_KEY (Contract v1, design section 5): the business key that the
-            -- BIP reconciliation report returns as RECORD_KEY. It equals the value
-            -- written to PersonBenefitBalance.dat as SourceSystemId
-            -- (DMT_BEN_DEPEND_HDL_GEN_PKG: pv(PERSON_NUMBER) || '_BENDEP', where
-            -- PERSON_NUMBER is already the run-prefixed person number). One key
-            -- definition per object, so the '_BENDEP' suffix completes the key.
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_BENDEP',
+            -- RECON_KEY: placeholder here, finalized in the UPDATE below once
+            -- TFM_SEQUENCE_ID exists. The final key equals the DesignateDependent
+            -- SourceSystemId written to DependentEnrollment.dat by
+            -- DMT_BEN_DEPEND_HDL_GEN_PKG (design section 5, one key per object):
+            --   PERSON_NUMBER || '_' || DEPENDENT_PERSON_NUMBER || '_' || LINE_NO
+            --   || '_BENDEP'
+            -- where PERSON_NUMBER/DEPENDENT_PERSON_NUMBER are already run-prefixed
+            -- and LINE_NO is the dependent's sequence within the participant.
+            NULL,
             'STAGED',
             SYSDATE
         FROM DMT_BEN_DEPEND_STG_TBL s
@@ -100,6 +102,27 @@ AS
         );
 
         l_ok_count := l_ok_count + SQL%ROWCOUNT;
+
+        -- Finalize RECON_KEY = the DesignateDependent SourceSystemId the generator
+        -- writes. LINE_NO is the dependent's position within the participant,
+        -- ordered by TFM_SEQUENCE_ID (matches the generator's ROW_NUMBER window).
+        MERGE INTO DMT_BEN_DEPEND_TFM_TBL tgt
+        USING (
+            SELECT t.TFM_SEQUENCE_ID,
+                   t.PERSON_NUMBER || '_' ||
+                       t.DEPENDENT_PERSON_NUMBER || '_' ||
+                       TO_CHAR(ROW_NUMBER() OVER (
+                           PARTITION BY t.PERSON_NUMBER
+                           ORDER BY t.TFM_SEQUENCE_ID)) ||
+                       '_BENDEP' AS NEW_RECON_KEY
+            FROM   DMT_BEN_DEPEND_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.TFM_STATUS = 'STAGED'
+            AND    t.RECON_KEY IS NULL
+        ) src
+        ON (tgt.TFM_SEQUENCE_ID = src.TFM_SEQUENCE_ID)
+        WHEN MATCHED THEN
+            UPDATE SET tgt.RECON_KEY = src.NEW_RECON_KEY;
 
         UPDATE DMT_BEN_DEPEND_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
