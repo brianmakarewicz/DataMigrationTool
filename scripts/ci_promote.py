@@ -183,12 +183,44 @@ def stage_test_local(pipelines=None):
     force_local_prefix(v)
     return run_regression("local", pipelines)
 
-def stage_merge(pr):
+def stage_merge(pr, wait_min=15):
+    """Respect the mandated review gate. CLAUDE.md: the pr-review.yml GitHub Action
+    is the binding reviewer and auto-merges clean PRs; we NEVER bypass it. So this
+    stage waits for that reviewer: success only when the PR actually reaches MERGED
+    (or is APPROVED and then merged through normal branch protection - no --admin,
+    no bypass). CHANGES_REQUESTED or timeout -> fail, so promote stops before prod."""
     if not pr:
-        print("[merge] no --pr given; skipping (merge manually or via pr-review.yml)"); return True
-    rc = subprocess.run(["gh", "pr", "merge", str(pr), "--squash", "--admin"]).returncode
-    print(f"[merge] PR #{pr} {'merged' if rc == 0 else 'merge FAILED'}")
-    return rc == 0
+        print("[merge] no --pr given; skipping (pr-review.yml merges the branch)"); return True
+    import time
+    deadline = wait_min * 60
+    waited = 0
+    while waited <= deadline:
+        j = subprocess.run(["gh", "pr", "view", str(pr), "--json",
+                            "state,reviewDecision,mergeStateStatus"],
+                           capture_output=True, text=True)
+        try:
+            info = json.loads(j.stdout)
+        except Exception:
+            info = {}
+        state = info.get("state"); decision = info.get("reviewDecision")
+        if state == "MERGED":
+            print(f"[merge] PR #{pr} merged by the automated reviewer."); return True
+        if decision == "CHANGES_REQUESTED":
+            print(f"[merge] PR #{pr} has CHANGES_REQUESTED - not merging, stopping before prod.")
+            return False
+        if decision == "APPROVED":
+            # Approved by pr-review.yml; merge through normal protection (NO --admin).
+            rc = subprocess.run(["gh", "pr", "merge", str(pr), "--squash"]).returncode
+            print(f"[merge] PR #{pr} approved; merge {'ok' if rc == 0 else 'FAILED'}")
+            return rc == 0
+        print(f"[merge] waiting for pr-review.yml on PR #{pr} "
+              f"(state={state}, review={decision})... {waited}s/{deadline}s")
+        if waited == deadline:
+            break
+        time.sleep(min(30, deadline - waited)); waited += 30
+    print(f"[merge] timed out after {wait_min} min waiting for the automated review; "
+          f"not merging (run again once pr-review.yml has approved).")
+    return False
 
 def stage_deploy_prod(yes):
     if not yes:

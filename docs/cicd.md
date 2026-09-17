@@ -36,7 +36,12 @@ Stages (each runnable alone):
   is fresh-install only — it exits on the first "already exists".)
 - **test-local** — deploy-local, set the prefix (see below), run the deterministic
   regression on local. **Hard gate.**
-- **merge** — `gh pr merge --squash` (only after test-local passes).
+- **merge** — respects the mandated review gate; it does **not** bypass it. `pr-review.yml`
+  is the binding reviewer (CLAUDE.md) and auto-merges clean PRs, so this stage *waits* for
+  that reviewer: it succeeds only when the PR actually reaches MERGED, or is APPROVED and then
+  merged through normal branch protection (no `--admin`, no bypass). CHANGES_REQUESTED or a
+  timeout fails the stage, so `promote` stops before prod. `test-local` is an additional local
+  pre-check, not a substitute for the automated review.
 - **deploy-prod** — pull `main`, deploy `db/` + APEX to ATP. Requires `--yes`.
 - **test-prod** — run the same regression on ATP to confirm the deploy. Requires `--yes`.
 
