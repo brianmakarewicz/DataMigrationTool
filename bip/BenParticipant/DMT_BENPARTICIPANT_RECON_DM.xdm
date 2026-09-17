@@ -5,43 +5,44 @@
     DMT_BENPARTICIPANT_RECON_DM — Contract v1 reconciliation data model for
     BenParticipant (design section 5, "BIP reconciliation report contract - v1").
 
-    BenParticipant loads through HCM Data Loader as the PersonBenefitBalance
-    business object (DAT discriminator PersonBenefitBalance; see
-    DMT_BEN_PARTIC_HDL_GEN_PKG). An HDL load has no interface table, so this
-    report returns the BASE tier only: one row per migrated record that Fusion
-    positively confirmed by writing a HRC_INTEGRATION_KEY_MAP entry
-    (OBJECT_NAME = 'PersonBenefitBalance') keyed to our SourceSystemId, with the
-    Fusion-assigned SURROGATE_ID as FUSION_ID. This is the same base-tier proof
-    the Salaries reconciler uses (base-tier only via HRC_INTEGRATION_KEY_MAP);
-    it is more robust than naming the benefit-balance base table directly, which
-    is not reachable by name on this pod (see note below).
+    BenParticipant loads through HCM Data Loader as the ParticipantEnrollment
+    business object (DAT discriminator ParticipantEnrollment; see
+    DMT_BEN_PARTIC_HDL_GEN_PKG) — NOT PersonBenefitBalance. An HDL load has no
+    interface table, so this report returns the BASE tier only: one row per
+    migrated worker whose benefit participant enrollment Fusion positively
+    confirmed in the enrollment base table BEN_PRTT_ENRT_RSLT, with the real
+    Fusion PRTT_ENRT_RSLT_ID as FUSION_ID.
 
-    RECORD_KEY = the record's business key = the SourceSystemId written into the
-    PersonBenefitBalance.dat = the BenParticipant TFM row's RECON_KEY. That value
-    is the prefixed PERSON_NUMBER concatenated with '_BENENRL'
-    (DMT_BEN_PARTIC_HDL_GEN_PKG writes PERSON_NUMBER || '_BENENRL', where
-    PERSON_NUMBER is already prefixed on the TFM row). The BenParticipant
-    reconciler fetches these rows via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and
-    applies them statically, promoting a BenParticipant TFM row to LOADED only
-    from a BASE / SUCCESS / FUSION_ID-not-null row here and stamping FUSION_ID
-    into FUSION_PARTICIPANT_ID.
+    ParticipantEnrollment is create-only and carries NO SourceSystemId, so it
+    does NOT register a row in HRC_INTEGRATION_KEY_MAP (confirmed absent on the
+    pod). Reconciliation therefore reads the enrollment base table directly,
+    joined to PER_ALL_PEOPLE_F by the worker's PersonNumber — the same base-table
+    shape the Workers reconciler uses (PER_ALL_PEOPLE_F.PERSON_NUMBER matched by
+    prefix).
 
-    Verified live 2026-09-16 against the demo Fusion instance (fin_impl /
+    RECORD_KEY = the prefixed PERSON_NUMBER = the PersonNumber written into
+    ParticipantEnrollment.dat = the BenParticipant TFM row's RECON_KEY
+    (DMT_BEN_PARTIC_HDL_GEN_PKG references the worker by PersonNumber, which is
+    already prefixed on the TFM row). The BenParticipant reconciler fetches these
+    rows via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically,
+    promoting a BenParticipant TFM row to LOADED only from a
+    BASE / SUCCESS / FUSION_ID-not-null row here and stamping FUSION_ID into
+    FUSION_PARTICIPANT_ID.
+
+    Verified live 2026-09-17 against the demo Fusion instance (fin_impl /
     ApplicationDB_FSCM):
-      * OBJECT_NAME 'PersonBenefitBalance' exists in HRC_INTEGRATION_KEY_MAP
-        (838 rows on the pod today).
-      * This exact SELECT (grouped by SOURCE_SYSTEM_ID, MAX(SURROGATE_ID) as
-        FUSION_ID) runs cleanly and returns real base rows when the _BENENRL
-        filter is removed (SURROGATE_ID == the Fusion base id).
-      * With the '%\_BENENRL' filter it returns ZERO rows: our HDL has not yet
-        loaded any BenParticipant records (no SOURCE_SYSTEM_OWNER='HRC_SQLLOADER'
-        / '%_BENENRL' rows). Honest zero-row result — the query is correct;
-        there is simply no base data yet (object is upstream-blocked / unloaded).
-      * The benefit-balance base table itself (BEN_PER_BNFT_BAL* variants) is
-        NOT reachable by name from the BIP reporting user (ORA-00942 on ~40
-        candidates; the user's ALL_TABLES does not even list PER_ALL_PEOPLE_F,
-        which IS directly selectable) — so HRC_INTEGRATION_KEY_MAP is the
-        authoritative, verifiable base-tier source, exactly as for Salaries.
+      * Benefits IS configured on the pod: BEN_PGM_F = 24 programs,
+        BEN_PRTT_ENRT_RSLT = 38,411 enrollment results, BEN_LER_F lists real
+        life events including 'New Hire'.
+      * 'ParticipantEnrollment' is absent from HRC_INTEGRATION_KEY_MAP
+        (create-only object, no SourceSystemId), confirming the base-table
+        approach is required.
+      * BEN_PRTT_ENRT_RSLT and PER_ALL_PEOPLE_F are both reachable by name from
+        the BIP reporting user; this exact SELECT (grouped by PERSON_NUMBER,
+        MAX(PRTT_ENRT_RSLT_ID) as FUSION_ID) runs cleanly and returns real base
+        rows (e.g. person 39 -> 337499).
+      * With a test P_PREFIX it returns ZERO rows until our HDL loads
+        enrollments — an honest zero-row result, not a broken query.
 
     Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
     P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base for an HDL
@@ -60,24 +61,24 @@
 SELECT object_type, record_key, source_type, fusion_status,
        fusion_id, error_message, load_request_id
 FROM (
-    -- BASE tier: positive proof in the HCM integration key map. The load writes
-    -- one HRC_INTEGRATION_KEY_MAP row per record (OBJECT_NAME='PersonBenefitBalance')
-    -- whose SURROGATE_ID is the Fusion benefit-balance base id. One row per
-    -- migrated record.
+    -- BASE tier: positive proof in the Fusion benefit enrollment base table.
+    -- ParticipantEnrollment is create-only (no SourceSystemId / no integration
+    -- key-map row), so match the base row by the worker's prefixed PersonNumber
+    -- via PER_ALL_PEOPLE_F. FUSION_ID = the Fusion PRTT_ENRT_RSLT_ID. One row per
+    -- migrated worker (MAX over that worker's enrollment results).
     SELECT 'BenParticipant'               AS object_type,
-           m.source_system_id             AS record_key,
+           p.person_number                AS record_key,
            'BASE'                         AS source_type,
            'SUCCESS'                      AS fusion_status,
-           MAX(m.surrogate_id)            AS fusion_id,
+           MAX(r.prtt_enrt_rslt_id)       AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))   AS error_message,
            :P_LOAD_REQUEST_ID             AS load_request_id
-    FROM   hrc_integration_key_map m
-    WHERE  m.object_name = 'PersonBenefitBalance'
-    AND    m.source_system_id LIKE :P_PREFIX || '%'
-    AND    m.source_system_id LIKE '%\_BENENRL' ESCAPE '\'
-    AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
-    GROUP BY m.source_system_id
-    ORDER BY m.source_system_id
+    FROM   ben_prtt_enrt_rslt r
+    JOIN   per_all_people_f   p ON p.person_id = r.person_id
+    WHERE  p.person_number LIKE :P_PREFIX || '%'
+    AND    (:P_AFTER_KEY IS NULL OR p.person_number > :P_AFTER_KEY)
+    GROUP BY p.person_number
+    ORDER BY p.person_number
 )
 WHERE ROWNUM <= :P_CHUNK_SIZE
       ]]></sql>

@@ -6,13 +6,14 @@ AS
 -- DMT_BEN_PARTIC_RESULTS_PKG body
 -- BenParticipant HDL reconciliation via DMT_HDL_UTIL_PKG.
 --
--- BenParticipant loads through HCM Data Loader as the PersonBenefitBalance
--- business object (DAT discriminator PersonBenefitBalance; see
+-- BenParticipant loads through HCM Data Loader as the ParticipantEnrollment
+-- business object (DAT discriminator ParticipantEnrollment; see
 -- DMT_BEN_PARTIC_HDL_GEN_PKG). Reconciliation is base-tier only via the shared
--- Contract v1 report (design section 5), which confirms each record in
--- HRC_INTEGRATION_KEY_MAP (OBJECT_NAME='PersonBenefitBalance') keyed to our
--- SourceSystemId. Follows the Workers template exactly (Option A, owner decision
--- on PR #248).
+-- Contract v1 report (design section 5). ParticipantEnrollment is create-only
+-- and carries no SourceSystemId, so the report confirms each record in the
+-- benefit enrollment base table BEN_PRTT_ENRT_RSLT (joined to PER_ALL_PEOPLE_F
+-- by the prefixed PersonNumber), returning PRTT_ENRT_RSLT_ID as the Fusion id.
+-- Follows the Workers base-table template (Option A, owner decision on PR #248).
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_BEN_PARTIC_RESULTS_PKG';
@@ -27,8 +28,9 @@ AS
     -- report over BIP and returns the parsed rows (no dynamic SQL, no TFM
     -- reference there); the APPLY here is STATIC SQL against the compile-time-known
     -- BenParticipant TFM table. It confirms each migrated record in the Fusion
-    -- integration key map (PersonBenefitBalance) by RECON_KEY and marks that TFM
-    -- row LOADED with the real Fusion id stamped into FUSION_PARTICIPANT_ID; any
+    -- benefit enrollment base table (BEN_PRTT_ENRT_RSLT) by RECON_KEY (the
+    -- prefixed PersonNumber) and marks that TFM row LOADED with the real Fusion
+    -- PRTT_ENRT_RSLT_ID stamped into FUSION_PARTICIPANT_ID; any
     -- ERROR row is marked FAILED with the real Fusion error. This REPLACES the
     -- bulk LOOKUP_FUSION_IDS positive path for BenParticipant. The HDL data set
     -- request id is the Contract v1 P_LOAD_REQUEST_ID.

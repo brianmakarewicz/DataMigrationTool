@@ -5,10 +5,14 @@ AUTHID DEFINER
 AS
 -- ============================================================
 -- DMT_BEN_PARTIC_HDL_GEN_PKG
--- Generates the BenefitParticipantEnrollment.dat HDL file from TFM staging records.
+-- Generates the ParticipantEnrollment.dat HDL file from TFM staging records.
 --
--- BenefitParticipantEnrollment HDL is ONE zip containing ONE DAT file with 1 business object(s):
---   ParticipantEnrollment.
+-- This object loads through HCM Data Loader as the ParticipantEnrollment
+-- business object (verified in the Oracle HDL guide "Example of Loading
+-- Participant Enrollments" and probed live on the pod). The HDL package is ONE
+-- zip containing ONE DAT file (ParticipantEnrollment.dat) with 1 business
+-- object: ParticipantEnrollment. This is distinct from the benefit-BALANCE
+-- object PersonBenefitBalance; the prior version wrongly emitted that name.
 --
 -- OBJECT_TYPE = 'ParticipantEnrollments'.
 -- ============================================================
