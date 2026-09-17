@@ -212,7 +212,13 @@
             s.EFFECTIVE_END_DATE,
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
             s.ASSIGNMENT_NAME,
-            s.ASSIGNMENT_NUMBER,
+            -- ASSIGNMENT_NUMBER carries the run prefix (PR #266). The HDL keys the
+            -- WorkTerms/Assignment SourceSystemId ('<num>_TRM' / '<num>_ASG') and the
+            -- AssignmentNumber attribute off this value, so it MUST be prefixed like
+            -- PERSON_NUMBER -- otherwise a re-run under a new prefix collides with a
+            -- prior run's employment-terms/assignment numbers in Fusion, and the
+            -- WorkTerms parent reference fails to resolve. Proven live (run 145).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSIGNMENT_NUMBER, 30),
             s.ASSIGNMENT_STATUS_TYPE_CODE,
             s.BUSINESS_UNIT_NAME,
             s.ACTION_CODE,
@@ -235,13 +241,11 @@
             s.PRIMARY_ASSIGNMENT_FLAG,
             -- RECON_KEY = the same value written to the HDL .dat as the
             -- Assignment SourceSystemId (DMT_WORKER_HDL_GEN_PKG:
-            -- ASSIGNMENT_NUMBER || '_ASG'), and the value the BIP reconciliation
-            -- report returns as RECORD_KEY (object type 'Assignment'). The
-            -- assignment number already carries the run prefix from source, so
-            -- no PREFIXED() call is applied (mirrors the generator, which writes
-            -- ASSIGNMENT_NUMBER verbatim). One key definition (Contract v1,
-            -- design section 5).
-            s.ASSIGNMENT_NUMBER || '_ASG',
+            -- ASSIGNMENT_NUMBER || '_ASG'). ASSIGNMENT_NUMBER above already carries
+            -- the run prefix, so the generator writes the prefixed number verbatim
+            -- and this RECON_KEY matches the report's RECORD_KEY. One key definition
+            -- (Contract v1, design section 5).
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSIGNMENT_NUMBER, 30) || '_ASG',
             'STAGED',
             SYSDATE
         FROM DMT_ASSIGNMENT_STG_TBL s

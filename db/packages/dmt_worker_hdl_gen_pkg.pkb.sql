@@ -270,8 +270,8 @@ AS
                       TO_CHAR(r.eff_seq)                     || '|' ||  -- EffectiveSequence (distinct per same-day sibling)
                       CASE WHEN r.eff_seq = r.eff_cnt THEN 'Y' ELSE 'N' END || '|' ||  -- EffectiveLatestChange: only the last same-day sibling
                       pv(r.EFFECTIVE_START_DATE)             || '|' ||  -- DateStart (From Date)
-                      pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
-                      pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
+                      pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName (raw source name)
+                      'ET-' || pv(r.ASSIGNMENT_NUMBER)       || '|' ||  -- AssignmentNumber: the employment-terms number MUST be distinct from the assignment number (Fusion rejects a shared number). 'ET-'||<prefixed assignment number>. Proven live (run 145).
                       pv(NVL(r.PRIMARY_ASSIGNMENT_FLAG, 'Y'));    -- PrimaryWorkTermsFlag (source primary flag; one 'Y' per _POS)
             DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'WorkTerms');
             l_row_count := l_row_count + 1;
