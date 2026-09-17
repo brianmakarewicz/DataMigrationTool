@@ -5,10 +5,17 @@ AUTHID DEFINER
 AS
 -- ============================================================
 -- DMT_WORK_SCHED_HDL_GEN_PKG
--- Generates the WorkSchedule.dat HDL file from TFM staging records.
+-- Generates the WorkSchedules HDL zip from TFM staging records.
 --
--- WorkSchedule HDL is ONE zip containing ONE DAT file with 2 business object(s):
---   WorkSchedule, WorkScheduleShift.
+-- WorkSchedules is ONE DMT object = ONE zip. The zip carries TWO DAT files,
+-- one per distinct Fusion HDL business object (re-modelled 2026-09-17):
+--   WorkPattern.dat        - the work pattern DEFINITION (+ WorkPatternShift
+--                            child). Base view HTS_WORK_PATTERNS_VL.
+--   ScheduleAssignment.dat - assigns the schedule to the WORKER, by
+--                            AssignmentNumber + ScheduleName, ResourceType
+--                            'ASSIGN'. Base table PER_SCHEDULE_ASSIGNMENTS.
+-- The pattern definition no longer carries AssignmentNumber; the worker
+-- linkage lives solely on ScheduleAssignment.
 --
 -- OBJECT_TYPE = 'WorkSchedules'.
 -- ============================================================
