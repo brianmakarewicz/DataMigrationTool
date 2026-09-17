@@ -231,7 +231,15 @@ AS
                           TO_CHAR(r.eff_seq)                     || '|' ||  -- EffectiveSequence (distinct per same-day sibling)
                           CASE WHEN r.eff_seq = r.eff_cnt THEN 'Y' ELSE 'N' END || '|' ||  -- EffectiveLatestChange: only the last same-day sibling
                           pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
-                          pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
+                          -- Employment-terms number must DIFFER from the assignment
+                          -- number: this pod's two-tier model numbers the ET (employment
+                          -- terms) row 'ET-<n>' and the E (assignment) row '<n>' (proven
+                          -- live). Giving both the same value made Fusion reject the
+                          -- Assignment as a duplicate ("already an assignment number").
+                          -- Prepend 'ET-' here; the Assignment line below keeps the plain
+                          -- number. They stay linked by the _TRM SourceSystemId, not this
+                          -- business number.
+                          'ET-' || pv(r.ASSIGNMENT_NUMBER)       || '|' ||  -- AssignmentNumber (employment-terms number, distinct from the assignment number)
                           pv(NVL(r.PRIMARY_ASSIGNMENT_FLAG, 'Y'));    -- PrimaryWorkTermsFlag (source primary flag; one 'Y' per _POS)
                 DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'WorkTerms');
                 l_row_count := l_row_count + 1;
