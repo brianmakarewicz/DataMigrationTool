@@ -519,7 +519,14 @@ AS
         );
 
         -- ============================================================
-        -- Update all 7 TFM tables to GENERATED and stamp FBDI_CSV_ID
+        -- Update all 9 TFM tables (7 person + WorkRelationship + Assignment) to
+        -- GENERATED and stamp FBDI_CSV_ID. The assignment + work-rel tables MUST be
+        -- stamped here too (2026-09-17): the queue accounting counts a still-GENERATED
+        -- row as "awaiting base confirmation" to keep the HDL base-lag retry alive,
+        -- and reconciliation later promotes GENERATED -> LOADED/FAILED. Leaving them
+        -- STAGED would make the accounting treat them as unaccounted immediately and
+        -- skip the base-lag retry, so the Workers gate could fail before the
+        -- assignment base rows land.
         -- ============================================================
         UPDATE DMT_WORKER_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
@@ -546,6 +553,15 @@ AS
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         UPDATE DMT_PERSON_LEGISL_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
+        -- Assignment components carried in this same Worker.dat (2026-09-17).
+        UPDATE DMT_WORK_REL_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
+        UPDATE DMT_ASSIGNMENT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
