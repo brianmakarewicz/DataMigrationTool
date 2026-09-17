@@ -131,15 +131,6 @@ AS
         -- Assignment are accounted by their own Contract v1 base tiers
         -- (DMT_ASSIGNMENT_RESULTS_PKG), so they are intentionally not touched here.
         -- ============================================================
-        FOR t IN (
-            SELECT COLUMN_VALUE AS tbl FROM TABLE(SYS.ODCIVARCHAR2LIST(
-                'DMT_PERSON_NAME_TFM_TBL', 'DMT_PERSON_EMAIL_TFM_TBL',
-                'DMT_PERSON_PHONE_TFM_TBL', 'DMT_PERSON_ADDR_TFM_TBL',
-                'DMT_PERSON_NID_TFM_TBL', 'DMT_PERSON_LEGISL_TFM_TBL'))
-        ) LOOP
-            NULL; -- placeholder; explicit static UPDATEs below (one per table)
-        END LOOP;
-
         -- LOADED workers -> their component rows LOADED.
         UPDATE DMT_PERSON_NAME_TFM_TBL c
         SET    c.TFM_STATUS = 'LOADED', c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
@@ -176,42 +167,78 @@ AS
         -- (a person component cannot load without its person).
         UPDATE DMT_PERSON_NAME_TFM_TBL c
         SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT, '[FUSION_ERROR] Parent worker failed to load; person component not loaded.'),
+               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
+                    WHERE  wk.RUN_ID = p_run_id
+                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
+                    AND    wk.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
         WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
                     AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
         UPDATE DMT_PERSON_EMAIL_TFM_TBL c
         SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT, '[FUSION_ERROR] Parent worker failed to load; person component not loaded.'),
+               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
+                    WHERE  wk.RUN_ID = p_run_id
+                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
+                    AND    wk.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
         WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
                     AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
         UPDATE DMT_PERSON_PHONE_TFM_TBL c
         SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT, '[FUSION_ERROR] Parent worker failed to load; person component not loaded.'),
+               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
+                    WHERE  wk.RUN_ID = p_run_id
+                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
+                    AND    wk.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
         WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
                     AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
         UPDATE DMT_PERSON_ADDR_TFM_TBL c
         SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT, '[FUSION_ERROR] Parent worker failed to load; person component not loaded.'),
+               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
+                    WHERE  wk.RUN_ID = p_run_id
+                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
+                    AND    wk.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
         WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
                     AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
         UPDATE DMT_PERSON_NID_TFM_TBL c
         SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT, '[FUSION_ERROR] Parent worker failed to load; person component not loaded.'),
+               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
+                    WHERE  wk.RUN_ID = p_run_id
+                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
+                    AND    wk.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
         WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
                     AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
         UPDATE DMT_PERSON_LEGISL_TFM_TBL c
         SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT, '[FUSION_ERROR] Parent worker failed to load; person component not loaded.'),
+               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
+                    WHERE  wk.RUN_ID = p_run_id
+                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
+                    AND    wk.TFM_STATUS = 'FAILED'
+                    AND    ROWNUM = 1)),
                c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
         WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
