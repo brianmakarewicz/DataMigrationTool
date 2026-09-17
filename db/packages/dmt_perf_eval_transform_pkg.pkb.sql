@@ -73,8 +73,8 @@ AS
             s.APPROVAL_STATUS,
             s.START_DATE,
             s.END_DATE,
-            -- Contract v1 reconciliation key (design section 5): the prefixed goal
-            -- plan name = the base HRG_GOAL_PLANS_VL.GOAL_PLAN_NAME = report RECORD_KEY.
+            -- Contract v1 reconciliation key (design section 5): the prefixed
+            -- document name = the base HRA_EVALUATIONS.NAME = report RECORD_KEY.
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.DOCUMENT_NAME, 240),
             'STAGED',
             SYSDATE

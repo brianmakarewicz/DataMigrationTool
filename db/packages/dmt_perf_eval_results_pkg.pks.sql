@@ -5,9 +5,10 @@ AUTHID DEFINER
 AS
 -- ============================================================
 -- DMT_PERF_EVAL_RESULTS_PKG
--- Post-load HDL reconciliation for PerfEvaluations (loaded via HDL as GoalPlan).
+-- Post-load HDL reconciliation for PerfEvaluations (loaded via HDL as the
+-- PerformanceDocument object, discriminator PerfDocComplete).
 -- Calls DMT_HDL_UTIL_PKG.RECONCILE_HDL for each TFM table, then applies the shared
--- Contract v1 base-table positive proof (HRG_GOAL_PLANS_VL) via
+-- Contract v1 base-table positive proof (HRA_EVALUATIONS) via
 -- DMT_RECON_CONTRACT_PKG.FETCH_ROWS + a private static APPLY.
 --
 -- CEMLI_CODE: 'PerfEvaluations'

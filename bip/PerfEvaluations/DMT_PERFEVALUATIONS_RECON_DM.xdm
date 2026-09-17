@@ -6,42 +6,42 @@
     PerfEvaluations (design section 5, "BIP reconciliation report contract - v1").
 
     Returns the BASE tier for the PerfEvaluations HDL load: one row per migrated
-    performance evaluation that is positively confirmed in the Fusion HCM Goals
-    base view HRG_GOAL_PLANS_VL, with its real Fusion GOAL_PLAN_ID as FUSION_ID.
+    performance document that is positively confirmed in the Fusion Performance
+    Management base table HRA_EVALUATIONS, with its real Fusion EVALUATION_ID as
+    FUSION_ID.
 
     WHAT OUR HDL WRITES (verified in db/packages/dmt_perf_eval_hdl_gen_pkg.pkb.sql):
-    PerfEvaluations loads through the HCM Data Loader as the GoalPlan object
-    (GoalPlan.dat, BUILD_DAT_HEADER('GoalPlan',...)); the child ratings load as
-    GoalPlanGoal. A loaded performance evaluation therefore lives in Fusion as a
-    goal plan definition. Confirmed live 2026-09-16 (cred fin_impl):
-    HRC_INTEGRATION_KEY_MAP.object_name = 'GoalPlan' exists (72 rows) and
-    'GoalPlanGoal' exists (17152 rows).
+    PerfEvaluations loads through the HCM Data Loader as the PerformanceDocument
+    object (PerfDocComplete.dat, BUILD_DAT_HEADER('PerfDocComplete',...)); the
+    section/overall ratings and comments load as RatingsAndComments. A loaded
+    performance evaluation therefore lives in Fusion as a performance document.
+    (Re-modelled 2026-09 from the prior wrong-object GoalPlan load, which is Goal
+    Management, not performance evaluations.)
 
-    BASE TABLE: HRG_GOAL_PLANS_VL is the translated view over the base table
-    HRG_GOAL_PLANS_B + _TL (the name lives on _TL, exposed by the _VL view).
-    GOAL_PLAN_ID is the base id; GOAL_PLAN_NAME is the business key. Verified live
-    2026-09-16 (cred fin_impl): HRG_GOAL_PLANS_VL has columns GOAL_PLAN_ID and
-    GOAL_PLAN_NAME, and migrated DMT goal plans carry the run prefix in
-    GOAL_PLAN_NAME, e.g.
-        300000331553042  '43426 DMT Goal Plan A'
-        300000331553046  '43426 DMT Goal Plan B'
-        300000331552755  '95480 DMT Goal Plan B'
-    confirming GOAL_PLAN_ID is the base-tier Fusion id and GOAL_PLAN_NAME carries
-    the run prefix.
+    BASE TABLE: HRA_EVALUATIONS is the performance document base table.
+    EVALUATION_ID is the base id; NAME is the document name (CustomaryName) and the
+    business key. Verified live 2026-09-17 (cred fin_impl): HRA_EVALUATIONS exists
+    with 6773 rows and columns EVALUATION_ID, NAME, WORKER_ID, ASSIGNMENT_ID,
+    MANAGER_ID, REVIEW_PERIOD_ID, TEMPLATE_DEFN_ID, START_DATE, END_DATE.
 
-    RECORD_KEY = the performance evaluation's business key = the prefixed goal plan
+    CONFIG PREREQUISITES PRESENT: 39 distinct TEMPLATE_DEFN_ID and 5 distinct
+    REVIEW_PERIOD_ID are in use across the existing documents, so performance
+    templates and review periods are configured on this pod. A create-document HDL
+    load is therefore viable here.
+
+    RECORD_KEY = the performance evaluation's business key = the prefixed document
     name, stamped on the PerfEvaluations TFM row as RECON_KEY (the run prefix
     applied to the source DOCUMENT_NAME at transform — one key definition per
-    object). Matching is on HRG_GOAL_PLANS_VL.GOAL_PLAN_NAME, which carries that
-    same prefixed name.
+    object). Matching is on HRA_EVALUATIONS.NAME, which carries that same prefixed
+    name.
 
-    BASE-MATCH BY PREFIXED NAME (not by SourceSystemId): the .dat SourceSystemId our
-    generator writes is PERSON_NUMBER || '_GOAL' with SourceSystemOwner
-    'HRC_SQLLOADER'. Verified live 2026-09-16 that NO such HRC_SQLLOADER / '_GOAL'
-    rows exist in HRC_INTEGRATION_KEY_MAP for object GoalPlan, so a SourceSystemId
-    key-map join would return zero rows for our loads. The base names DO carry the
-    run prefix, so — exactly like WorkSchedules — base-tier matching is by the run
-    prefix (P_PREFIX) against GOAL_PLAN_NAME. This is the data-proven, reliable key.
+    BASE-MATCH BY PREFIXED NAME (not by SourceSystemId): PerfDocComplete is a
+    natural-key HDL object (keyed by AssignmentNumber + CustomaryName; no
+    SourceSystem keys), so there is no SourceSystemId to join on. Verified live
+    2026-09-17 that HRC_INTEGRATION_KEY_MAP has NO PerformanceDocument /
+    PerfDocComplete rows (only the legacy GoalPlan rows from the prior wrong-object
+    load), and no DMT-prefixed documents exist yet in HRA_EVALUATIONS. Base-tier
+    matching is by the run prefix (P_PREFIX) against NAME. This is the reliable key.
 
     HDL failures arrive per-record in the HDL response (tagged [FUSION_ERROR] by
     RECONCILE_HDL before this report runs), so this report's ERROR rows are optional
@@ -67,20 +67,20 @@
 SELECT object_type, record_key, source_type, fusion_status,
        fusion_id, error_message, load_request_id
 FROM (
-    -- BASE tier: positive proof in the HCM goal plan base view. One row per
-    -- migrated goal plan (GROUP BY goal_plan_name collapses translations).
+    -- BASE tier: positive proof in the performance document base table. One row
+    -- per migrated document (GROUP BY name collapses any duplicates).
     SELECT 'PerfEvaluations'               AS object_type,
-           v.goal_plan_name                AS record_key,
+           v.name                          AS record_key,
            'BASE'                          AS source_type,
            'SUCCESS'                       AS fusion_status,
-           MAX(v.goal_plan_id)             AS fusion_id,
+           MAX(v.evaluation_id)            AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))    AS error_message,
            :P_LOAD_REQUEST_ID              AS load_request_id
-    FROM   hrg_goal_plans_vl v
-    WHERE  v.goal_plan_name LIKE :P_PREFIX || '%'
-    AND    (:P_AFTER_KEY IS NULL OR v.goal_plan_name > :P_AFTER_KEY)
-    GROUP BY v.goal_plan_name
-    ORDER BY v.goal_plan_name
+    FROM   hra_evaluations v
+    WHERE  v.name LIKE :P_PREFIX || '%'
+    AND    (:P_AFTER_KEY IS NULL OR v.name > :P_AFTER_KEY)
+    GROUP BY v.name
+    ORDER BY v.name
 )
 WHERE ROWNUM <= :P_CHUNK_SIZE
       ]]></sql>
