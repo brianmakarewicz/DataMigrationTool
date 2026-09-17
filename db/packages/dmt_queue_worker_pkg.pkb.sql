@@ -177,69 +177,6 @@ AS
     END is_hdl_base_proof;
 
     -- ============================================================
-    -- count_awaiting_base — how many TFM rows of an HDL base-proof
-    -- object are still GENERATED for this scope AND are awaiting base
-    -- confirmation rather than carrying a real per-record HDL error.
-    --
-    -- An HDL reconciler marks a genuinely-rejected record FAILED with a
-    -- [FUSION_ERROR] tag (see every *_results_pkg APPLY_CONTRACT_V1_*);
-    -- a row it leaves GENERATED is one Fusion neither confirmed in the
-    -- base table nor rejected -- exactly the async base-lag case. The
-    -- [FUSION_ERROR] guard is defence in depth: a GENERATED row cannot
-    -- normally carry that tag (a real error would have set it FAILED),
-    -- but the guard makes the intent explicit and never defers a row
-    -- that already has a real error.
-    --
-    -- Same sanctioned dynamic-SQL site as ACCOUNT_ROWS / SWEEP_UNACCOUNTED:
-    -- table + status column come only from the seeded catalog and are
-    -- identifier-checked; every value is bound. Scope mirrors the sweep
-    -- exactly (RUN_ID always; WORK_QUEUE_ID for a spawn child).
-    -- ============================================================
-    FUNCTION count_awaiting_base (
-        p_run_id        IN NUMBER,
-        p_cemli_code    IN VARCHAR2,
-        p_work_queue_id IN NUMBER DEFAULT NULL
-    ) RETURN NUMBER IS
-        l_sql   VARCHAR2(4000);
-        l_cnt   NUMBER;
-        l_total NUMBER := 0;
-    BEGIN
-        FOR r IN (
-            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'TFM_STATUS') AS STATUS_COLUMN, ROW_FILTER
-            FROM   DMT_CEMLI_CATALOG_TBL
-            WHERE  CEMLI_CODE = p_cemli_code
-            AND    TFM_TABLE IS NOT NULL
-            ORDER BY SORT_ORDER
-        ) LOOP
-            assert_catalog_identifier(r.TFM_TABLE, 'TFM_TABLE');
-            assert_catalog_identifier(r.STATUS_COLUMN, 'STATUS_COLUMN');
-
-            l_sql :=
-                'SELECT COUNT(*)'
-                || ' FROM ' || r.TFM_TABLE
-                || ' WHERE RUN_ID = :run_id'
-                || ' AND ' || r.STATUS_COLUMN || ' = ''GENERATED'''
-                -- Only rows awaiting base confirmation, never a real per-record
-                -- HDL failure. INSTR on the CLOB tolerates a NULL ERROR_TEXT.
-                || ' AND NVL(INSTR(DBMS_LOB.SUBSTR(ERROR_TEXT, 4000, 1),'
-                || '               ''[FUSION_ERROR]''), 0) = 0'
-                || CASE WHEN p_work_queue_id IS NOT NULL
-                        THEN ' AND WORK_QUEUE_ID = :wq' END
-                || CASE WHEN r.ROW_FILTER IS NOT NULL
-                        THEN ' AND ' || r.ROW_FILTER END;
-
-            IF p_work_queue_id IS NOT NULL THEN
-                EXECUTE IMMEDIATE l_sql INTO l_cnt USING p_run_id, p_work_queue_id;
-            ELSE
-                EXECUTE IMMEDIATE l_sql INTO l_cnt USING p_run_id;
-            END IF;
-
-            l_total := l_total + NVL(l_cnt, 0);
-        END LOOP;
-        RETURN l_total;
-    END count_awaiting_base;
-
-    -- ============================================================
     -- ACCOUNT_ROWS — catalog-driven accounting counts (design
     -- section 5 "Object-status accounting": an object is DONE iff
     -- every record is accounted for — base-loaded OR interface-
@@ -260,18 +197,30 @@ AS
         x_loaded        OUT NUMBER,
         x_failed        OUT NUMBER,
         x_unaccounted   OUT NUMBER,
-        p_work_queue_id IN  NUMBER DEFAULT NULL
+        p_work_queue_id IN  NUMBER DEFAULT NULL,
+        -- x_awaiting_base: of the unaccounted rows, how many are still GENERATED
+        -- AND carry no [FUSION_ERROR] tag — i.e. rows awaiting base-table
+        -- confirmation, not per-record HDL failures. Computed in the SAME
+        -- catalog-driven dynamic SELECT as the other counts (no new dynamic-SQL
+        -- site). The HDL base-lag deferral in RECONCILE_ONE reads only this count;
+        -- every other caller ignores it (optional OUT, so existing calls are
+        -- unaffected). A GENERATED row cannot normally carry [FUSION_ERROR] (a real
+        -- error sets it FAILED), so the guard is defence in depth and never defers a
+        -- row that already has a real error.
+        x_awaiting_base OUT NUMBER
     ) IS
         l_sql   VARCHAR2(4000);
         l_cnt   NUMBER;
         l_ld    NUMBER;
         l_fl    NUMBER;
+        l_ab    NUMBER;
         l_un    NUMBER;
     BEGIN
-        x_total       := 0;
-        x_loaded      := 0;
-        x_failed      := 0;
-        x_unaccounted := 0;
+        x_total         := 0;
+        x_loaded        := 0;
+        x_failed        := 0;
+        x_unaccounted   := 0;
+        x_awaiting_base := 0;
 
         FOR r IN (
             SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'TFM_STATUS') AS STATUS_COLUMN, ROW_FILTER
@@ -300,7 +249,13 @@ AS
                 || 'SUM(CASE WHEN ' || r.STATUS_COLUMN || ' = ''LOADED'' THEN 1 ELSE 0 END), '
                 || 'SUM(CASE WHEN ' || r.STATUS_COLUMN || ' = ''FAILED'''
                 || '          AND ERROR_TEXT IS NOT NULL'
-                || '          AND DBMS_LOB.GETLENGTH(ERROR_TEXT) > 0 THEN 1 ELSE 0 END) '
+                || '          AND DBMS_LOB.GETLENGTH(ERROR_TEXT) > 0 THEN 1 ELSE 0 END), '
+                -- awaiting base confirmation: still GENERATED and no [FUSION_ERROR]
+                -- tag. INSTR on the CLOB substring tolerates a NULL ERROR_TEXT.
+                || 'SUM(CASE WHEN ' || r.STATUS_COLUMN || ' = ''GENERATED'''
+                || '          AND NVL(INSTR(DBMS_LOB.SUBSTR(ERROR_TEXT, 4000, 1),'
+                || '                        ''[FUSION_ERROR]''), 0) = 0'
+                || '         THEN 1 ELSE 0 END) '
                 || 'FROM ' || r.TFM_TABLE
                 || ' WHERE RUN_ID = :run_id'
                 || CASE WHEN p_work_queue_id IS NOT NULL
@@ -309,16 +264,17 @@ AS
                         THEN ' AND ' || r.ROW_FILTER END;
 
             IF p_work_queue_id IS NOT NULL THEN
-                EXECUTE IMMEDIATE l_sql INTO l_cnt, l_ld, l_fl USING p_run_id, p_work_queue_id;
+                EXECUTE IMMEDIATE l_sql INTO l_cnt, l_ld, l_fl, l_ab USING p_run_id, p_work_queue_id;
             ELSE
-                EXECUTE IMMEDIATE l_sql INTO l_cnt, l_ld, l_fl USING p_run_id;
+                EXECUTE IMMEDIATE l_sql INTO l_cnt, l_ld, l_fl, l_ab USING p_run_id;
             END IF;
 
             l_un := l_cnt - NVL(l_ld, 0) - NVL(l_fl, 0);
-            x_total       := x_total       + l_cnt;
-            x_loaded      := x_loaded      + NVL(l_ld, 0);
-            x_failed      := x_failed      + NVL(l_fl, 0);
-            x_unaccounted := x_unaccounted + l_un;
+            x_total         := x_total         + l_cnt;
+            x_loaded        := x_loaded        + NVL(l_ld, 0);
+            x_failed        := x_failed        + NVL(l_fl, 0);
+            x_unaccounted   := x_unaccounted   + l_un;
+            x_awaiting_base := x_awaiting_base + NVL(l_ab, 0);
         END LOOP;
     END ACCOUNT_ROWS;
 
@@ -409,6 +365,7 @@ AS
         l_loaded      NUMBER;
         l_failed      NUMBER;
         l_unaccounted NUMBER;
+        l_awaiting    NUMBER;  -- unused here; ACCOUNT_ROWS OUT (base-lag count)
         l_partition_key DMT_WORK_QUEUE_TBL.PARTITION_KEY%TYPE;
         l_scope_wq    NUMBER;
     BEGIN
@@ -429,7 +386,8 @@ AS
 
         ACCOUNT_ROWS(p_run_id, p_cemli_code,
                      l_total, l_loaded, l_failed, l_unaccounted,
-                     p_work_queue_id => l_scope_wq);
+                     p_work_queue_id => l_scope_wq,
+                     x_awaiting_base => l_awaiting);
 
         IF l_unaccounted > 0 THEN
             UPDATE DMT_WORK_QUEUE_TBL
@@ -865,6 +823,10 @@ AS
                 l_partition_key DMT_WORK_QUEUE_TBL.PARTITION_KEY%TYPE;
                 l_scope_wq      NUMBER;
                 l_awaiting      NUMBER;
+                l_total         NUMBER;
+                l_loaded        NUMBER;
+                l_failed        NUMBER;
+                l_unaccounted   NUMBER;
                 l_attempt       PLS_INTEGER;
                 l_next_attempt  PLS_INTEGER;
                 l_carry         VARCHAR2(4000);
@@ -877,7 +839,13 @@ AS
                                     AND l_partition_key <> 'ALL'
                                    THEN p_queue_id END;
 
-                l_awaiting := count_awaiting_base(l_rec.RUN_ID, l_rec.CEMLI_CODE, l_scope_wq);
+                -- Read the "awaiting base confirmation" count from the shared,
+                -- sanctioned ACCOUNT_ROWS dynamic-SQL site (no separate site). The
+                -- other counts are ignored here; the gate below recomputes them.
+                ACCOUNT_ROWS(l_rec.RUN_ID, l_rec.CEMLI_CODE,
+                             l_total, l_loaded, l_failed, l_unaccounted,
+                             p_work_queue_id => l_scope_wq,
+                             x_awaiting_base => l_awaiting);
 
                 -- Deferral attempts are counted in a reconcile-owned sentinel in
                 -- ERROR_MESSAGE ('[HDL_BASE_RETRY n]'), NOT in POLL_COUNT. POLL_COUNT

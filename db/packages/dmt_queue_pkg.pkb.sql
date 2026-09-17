@@ -437,6 +437,7 @@ AS
         l_ld          NUMBER;
         l_fl          NUMBER;
         l_un          NUMBER;
+        l_ab          NUMBER;  -- unused here; ACCOUNT_ROWS OUT (base-lag count)
         l_new_status  VARCHAR2(30);
     BEGIN
         FOR run_rec IN (
@@ -491,7 +492,8 @@ AS
                 )
                 LOOP
                     DMT_QUEUE_WORKER_PKG.ACCOUNT_ROWS(
-                        run_rec.RUN_ID, obj.CEMLI_CODE, l_t, l_ld, l_fl, l_un);
+                        run_rec.RUN_ID, obj.CEMLI_CODE, l_t, l_ld, l_fl, l_un,
+                        x_awaiting_base => l_ab);
                     l_row_total  := l_row_total  + l_t;
                     l_row_failed := l_row_failed + l_fl + l_un;
                 END LOOP;
