@@ -1,0 +1,316 @@
+prompt --application/pages/page_00057
+begin
+--   Manifest
+--     PAGE: 00057
+--   Manifest End
+wwv_flow_imp.component_begin (
+ p_version_yyyy_mm_dd=>'2026.03.30'
+,p_release=>'26.1.4'
+,p_default_workspace_id=>32599344892582845
+,p_default_application_id=>500
+,p_default_id_offset=>32805213799451421
+,p_default_owner=>'DMT2_OWNER'
+);
+wwv_flow_imp_page.create_page(
+ p_id=>57
+,p_name=>'Record Detail'
+,p_alias=>'RECORD-DETAIL'
+,p_step_title=>'Record Detail'
+,p_autocomplete_on_off=>'OFF'
+,p_javascript_code=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'function openRestModal(subObj, dispKey, tfmId, lookupKey) {',
+'  var modal = document.getElementById("restModal");',
+'  document.getElementById("restModalTitle").innerText = "Fusion Record: " + dispKey;',
+'  document.getElementById("restModalBody").innerHTML = "<div style=\"text-align:center;padding:32px;color:#888;\">Loading from Fusion...<br><small>Querying REST endpoint</small></div>";',
+'  modal.style.display = "flex";',
+'  apex.server.process("QUERY_FUSION_REST", {',
+'    x01: subObj, x02: dispKey, x03: String(tfmId), x04: lookupKey || dispKey',
+'  }, {',
+'    success: function(data) {',
+'      var body = document.getElementById("restModalBody");',
+'      if (!data) { body.innerHTML = "<div style=\"color:#888;padding:12px;\">No response.</div>"; return; }',
+'      if (data.status === "error") { body.innerHTML = "<div style=\"color:#F44336;padding:12px;\">" + (data.message || "Unknown error") + "</div>"; return; }',
+'      if (data.rows && data.rows.length > 0) {',
+'        var h = "<table style=\"width:100%;border-collapse:collapse;font-size:13px;\">";',
+'        for (var i = 0; i < data.rows.length; i++) {',
+'          var r = data.rows[i];',
+'          h += "<tr style=\"border-bottom:1px solid #444;\"><td style=\"padding:6px 8px;color:#999;white-space:nowrap;width:35%;\">" + r.label + "</td><td style=\"padding:6px 8px;\">" + (r.value || "-") + "</td></tr>";',
+'        }',
+'        body.innerHTML = h + "</table>";',
+'      } else { body.innerHTML = "<div style=\"color:#888;padding:12px;\">No data returned from Fusion.</div>"; }',
+'    },',
+'    error: function(xhr) { document.getElementById("restModalBody").innerHTML = "<div style=\"color:#F44336;padding:12px;\">AJAX Error: " + (xhr.statusText || "Request failed") + "</div>"; },',
+'    dataType: "json"',
+'  });',
+'}',
+'function closeRestModal() { document.getElementById("restModal").style.display = "none"; }',
+'document.addEventListener("keydown", function(e) { if (e.key === "Escape") closeRestModal(); });'))
+,p_step_template=>4072355960268175073
+,p_page_template_options=>'#DEFAULT#'
+,p_page_component_map=>'10'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(1524987452356892856)
+,p_plug_name=>'Parameters'
+,p_static_id=>'parameters'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_display_sequence=>1
+,p_plug_item_display_point=>'ABOVE'
+,p_location=>null
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'output_as', 'TEXT',
+  'show_line_breaks', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(1524987452356892858)
+,p_plug_name=>'Record Detail'
+,p_static_id=>'record-detail'
+,p_plug_display_sequence=>20
+,p_plug_item_display_point=>'ABOVE'
+,p_location=>null
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'DECLARE',
+'  l_int  NUMBER := :P57_RUN_ID;',
+'  l_sub  VARCHAR2(200) := :P57_SUB_OBJECT;',
+'  l_stat VARCHAR2(50) := :P57_STATUS;',
+'  l_cnt  PLS_INTEGER := 0;',
+'BEGIN',
+'  IF l_int IS NULL THEN RETURN; END IF;',
+'',
+'  -- Modal overlay for REST query results',
+'  HTP.P(''<div id="restModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;">'');',
+'  HTP.P(''<div style="background:#1e1e1e;border-radius:8px;padding:24px;width:640px;max-height:80vh;overflow-y:auto;color:#eee;box-shadow:0 8px 32px rgba(0,0,0,0.3);">'');',
+'  HTP.P(''<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'');',
+'  HTP.P(''<h3 id="restModalTitle" style="margin:0;font-size:16px;font-weight:600;">Fusion Record</h3>'');',
+'  HTP.P(''<button type="button" onclick="closeRestModal()" style="background:none;border:none;color:#888;font-size:24px;cursor:pointer;line-height:1;">&times;</button>'');',
+'  HTP.P(''</div>'');',
+'  HTP.P(''<div id="restModalBody" style="font-size:13px;">Loading...</div>'');',
+'  HTP.P(''</div></div>'');',
+'',
+'  HTP.P(''<h3 style="font-size:14px;font-weight:600;margin:8px 0;">Records</h3>'');',
+'  HTP.P(''<table style="width:100%;border-collapse:collapse;font-size:13px;">'');',
+'  HTP.P(''<thead><tr style="border-bottom:2px solid #555;text-align:left;">'');',
+'  HTP.P(''<th style="padding:8px;">TFM ID</th><th style="padding:8px;">Display Key</th><th style="padding:8px;">Status</th><th style="padding:8px;">Error Category</th><th style="padding:8px;">Error Text</th><th style="padding:8px;">Updated</th><th sty'
+||'le="padding:8px;text-align:center;">Verify</th></tr></thead><tbody>'');',
+'',
+'  FOR rec IN (',
+'    SELECT TFM_SEQUENCE_ID, DISPLAY_KEY, LOOKUP_KEY, TFM_STATUS, RECONCILIATION_STATUS, ERROR_CATEGORY, ERROR_TEXT, TO_CHAR(RESULTS_UPDATED_DATE,''YYYY-MM-DD HH24:MI'') UPD',
+'    FROM DMT_RECORD_DETAIL_V',
+'    WHERE INTEGRATION_ID = l_int AND SUB_OBJECT = l_sub',
+'    AND (l_stat IS NULL OR TFM_STATUS = l_stat)',
+'    ORDER BY TFM_SEQUENCE_ID',
+'  ) LOOP',
+'    l_cnt := l_cnt + 1;',
+'    HTP.P(''<tr style="border-bottom:1px solid #333;">'');',
+'    HTP.P(''<td style="padding:8px;">'' || rec.TFM_SEQUENCE_ID || ''</td>'');',
+'    HTP.P(''<td style="padding:8px;">'' || APEX_ESCAPE.HTML(rec.DISPLAY_KEY) || ''</td>'');',
+'    HTP.P(''<td style="padding:8px;color:'' || CASE rec.RECONCILIATION_STATUS WHEN ''CONFIRMED'' THEN ''#4CAF50'' WHEN ''UNRECONCILED'' THEN ''#F44336'' ELSE ''#FFC107'' END || '';">'' || APEX_ESCAPE.HTML(rec.TFM_STATUS) || ''</td>'');',
+'    HTP.P(''<td style="padding:8px;">'' || NVL(APEX_ESCAPE.HTML(rec.ERROR_CATEGORY),''-'') || ''</td>'');',
+'    HTP.P(''<td style="padding:8px;max-width:400px;word-wrap:break-word;">'' || NVL(APEX_ESCAPE.HTML(SUBSTR(rec.ERROR_TEXT,1,500)),''-'') || ''</td>'');',
+'    HTP.P(''<td style="padding:8px;">'' || NVL(rec.UPD,''-'') || ''</td>'');',
+'    IF rec.TFM_STATUS = ''LOADED'' THEN',
+'      HTP.P(''<td style="padding:8px;text-align:center;"><button type="button" onclick="openRestModal('' || CHR(39) || APEX_ESCAPE.HTML(l_sub) || CHR(39) || '','' || CHR(39) || APEX_ESCAPE.HTML(rec.DISPLAY_KEY) || CHR(39) || '','' || rec.TFM_SEQUENCE_ID ||'
+||' '','' || CHR(39) || APEX_ESCAPE.HTML(NVL(rec.LOOKUP_KEY, rec.DISPLAY_KEY)) || CHR(39) || '')" style="background:#1a73e8;color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:12px;">View</button></td>'');',
+'    ELSE',
+'      HTP.P(''<td style="padding:8px;text-align:center;">-</td>'');',
+'    END IF;',
+'    HTP.P(''</tr>'');',
+'  END LOOP;',
+'  HTP.P(''</tbody></table>'');',
+'  IF l_cnt = 0 THEN HTP.P(''<div style="padding:16px;color:#888;">No records found.</div>''); END IF;',
+'EXCEPTION',
+'  WHEN VALUE_ERROR THEN NULL;',
+'  WHEN NO_DATA_FOUND THEN NULL;',
+'END;'))
+,p_plug_source_type=>'NATIVE_PLSQL'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(1524987452356892857)
+,p_plug_name=>'Run Info'
+,p_static_id=>'run-info'
+,p_plug_display_sequence=>10
+,p_plug_item_display_point=>'ABOVE'
+,p_location=>null
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'DECLARE',
+'                                  l_int  NUMBER := :P57_RUN_ID;',
+'                                    l_sub  VARCHAR2(200) := :P57_SUB_OBJECT;',
+'                                      l_stat VARCHAR2(50) := :P57_STATUS;',
+'                                        l_app  VARCHAR2(10) := V(''APP_ID'');',
+'                                          l_sess VARCHAR2(50) := V(''APP_SESSION'');',
+'                                          l_cemli VARCHAR2(100);',
+'                                          BEGIN',
+'                                            IF l_int IS NULL THEN',
+'                                                HTP.P(''<div style="padding:24px;color:#888;">No parameters specified.</div>'');',
+'                                                    RETURN;',
+'                                                      END IF;',
+'  BEGIN SELECT MIN(CEMLI_CODE) INTO l_cemli FROM DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = l_sub; EXCEPTION WHEN OTHERS THEN l_cemli := NULL; END; l_cemli := NVL(l_cemli, l_sub);',
+'                                                        HTP.P(''<div style="margin-bottom:12px;"><a href="f?p='' || l_app || '':52:'' || l_sess || ''::NO::P52_RUN_ID,P52_CEMLI_CODE:'' || l_int || '','' || l_cemli || ''" style="font-size:13px;color:#666;">&lar'
+||'r; Back to Object Detail</a></div>'');',
+'                                                          HTP.P(''<div style="display:flex;gap:24px;padding:12px 0;border-bottom:1px solid #444;margin-bottom:16px;">'');',
+'                                                            HTP.P(''<div><span style="color:#888;font-size:11px;text-transform:uppercase;">Sub-Object</span><br><strong style="font-size:15px;">'' || APEX_ESCAPE.HTML(l_sub) || ''</strong></div>'');',
+'                                                              HTP.P(''<div><span style="color:#888;font-size:11px;text-transform:uppercase;">Integration ID</span><br><strong style="font-size:15px;">'' || l_int || ''</strong></div>'');',
+'                                                                IF l_stat IS NOT NULL THEN',
+'                                                                    HTP.P(''<div><span style="color:#888;font-size:11px;text-transform:uppercase;">Filter</span><br><strong style="font-size:15px;">'' || APEX_ESCAPE.HTML(l_stat) || ''</strong></div>'');',
+'                                                                      END IF;',
+'                                                                        HTP.P(''</div>'');',
+'                                                                        -- ESS File Download Modal',
+'HTP.P(''<div id="essModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;">''',
+'  || ''<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1a2e;border:1px solid #444;border-radius:8px;padding:24px;min-width:500px;max-width:700px;color:#e0e0e0;">''',
+'  || ''<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">''',
+'  || ''<h3 style="margin:0;font-size:16px;">ESS Job Output Files</h3>''',
+'  || ''<a href="javascript:void(0)" onclick="closeEssModal()" style="color:#aaa;font-size:20px;text-decoration:none;">&times;</a>''',
+'  || ''</div>''',
+'  || ''<div id="essFileList" style="min-height:60px;"><p style="color:#888;">Loading...</p></div>''',
+'  || ''</div></div>'');',
+'',
+'HTP.P(''<script>'');',
+'HTP.P(''function openEssModal(essJobId) {'');',
+'HTP.P(''  document.getElementById("essModal").style.display="block";'');',
+'HTP.P(''  document.getElementById("essFileList").innerHTML="<p style=color:#888>Loading files...</p>";'');',
+'HTP.P(''  apex.server.process("DOWNLOAD_ESS_FILE", {x01: essJobId, x03: "LIST"}, {'');',
+'HTP.P(''    success: function(data) {'');',
+'HTP.P(''      var html = "";'');',
+'HTP.P(''      if (data.files && data.files.length > 0) {'');',
+'HTP.P(''        html = "<table style=width:100%25;border-collapse:collapse>";'');',
+'HTP.P(''        html += "<tr style=border-bottom:1px__solid__#444><th style=padding:6px;text-align:left>File</th><th style=padding:6px;text-align:left>Type</th><th style=padding:6px>Action</th></tr>";'');',
+'HTP.P(''        data.files.forEach(function(f) {'');',
+'HTP.P(''          html += "<tr style=border-bottom:1px__solid__#333>";'');',
+'HTP.P(''          html += "<td style=padding:6px>" + f.file_name + "</td>";'');',
+'HTP.P(''          html += "<td style=padding:6px>" + f.file_type + "</td>";'');',
+'HTP.P(''          html += "<td style=padding:6px;text-align:center><a href=javascript:void(0) onclick=downloadEssFile(" + f.request_id + "," + JSON.stringify(f.file_name) + ") style=color:#5B9BD5>Download</a></td>";'');',
+'HTP.P(''          html += "</tr>";'');',
+'HTP.P(''        });'');',
+'HTP.P(''        html += "</table>";'');',
+'HTP.P(''      } else {'');',
+'HTP.P(''        html = "<p style=color:#888;padding:12px>No output files found for this ESS job.</p>";'');',
+'HTP.P(''      }'');',
+'HTP.P(''      document.getElementById("essFileList").innerHTML = html;'');',
+'HTP.P(''    },'');',
+'HTP.P(''    error: function(xhr) {'');',
+'HTP.P(''      document.getElementById("essFileList").innerHTML = "<p style=color:red>Error loading files.</p>";'');',
+'HTP.P(''    }'');',
+'HTP.P(''  });'');',
+'HTP.P(''}'');',
+'HTP.P(''function downloadEssFile(requestId, fileName) {'');',
+'HTP.P(''  var u = "wwv_flow.show?p_flow_id=" + $("#pFlowId").val() + "&p_flow_step_id=" + $("#pFlowStepId").val() + "&p_instance=" + $("#pInstance").val() + "&p_request=APPLICATION_PROCESS%3DDOWNLOAD_ESS_FILE&x01=" + requestId + "&x02=" + encodeURICom'
+||'ponent(fileName) + "&x03=DOWNLOAD";'');',
+'HTP.P(''  window.open(u, "_blank");'');',
+'HTP.P(''}'');',
+'HTP.P(''function closeEssModal() { document.getElementById("essModal").style.display="none"; }'');',
+'HTP.P(''</script>'');',
+'END;'))
+,p_plug_source_type=>'NATIVE_PLSQL'
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(1524987452356893856)
+,p_name=>'P57_RUN_ID'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(1524987452356892856)
+,p_source_type=>'ALWAYS_NULL'
+,p_display_as=>'NATIVE_HIDDEN'
+,p_protection_level=>'S'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(1524987452356893858)
+,p_name=>'P57_STATUS'
+,p_item_sequence=>30
+,p_item_plug_id=>wwv_flow_imp.id(1524987452356892856)
+,p_source_type=>'ALWAYS_NULL'
+,p_display_as=>'NATIVE_HIDDEN'
+,p_protection_level=>'S'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(1524987452356893857)
+,p_name=>'P57_SUB_OBJECT'
+,p_item_sequence=>20
+,p_item_plug_id=>wwv_flow_imp.id(1524987452356892856)
+,p_source_type=>'ALWAYS_NULL'
+,p_display_as=>'NATIVE_HIDDEN'
+,p_protection_level=>'S'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(1489004693757350004)
+,p_process_sequence=>10
+,p_process_point=>'ON_DEMAND'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'DOWNLOAD_ESS_FILE'
+,p_static_id=>'download-ess-file'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'DECLARE',
+'    l_request_id  NUMBER := TO_NUMBER(apex_application.g_x03);',
+'    l_file_name   VARCHAR2(500) := apex_application.g_x02;',
+'    l_action      VARCHAR2(20) := NVL(apex_application.g_x01, ''DOWNLOAD'');',
+'BEGIN',
+'    IF l_action = ''LIST'' THEN',
+'        APEX_JSON.open_object;',
+'        APEX_JSON.open_array(''files'');',
+'        FOR f IN (',
+'            SELECT ESS_FILE_ID, REQUEST_ID, FILE_TYPE, FILE_NAME, CONTENT_TYPE',
+'            FROM   DMT_ESS_JOB_FILE_TBL',
+'            WHERE  ESS_JOB_ID = l_request_id',
+'        ) LOOP',
+'            APEX_JSON.open_object;',
+'            APEX_JSON.write(''file_id'', f.ESS_FILE_ID);',
+'            APEX_JSON.write(''request_id'', f.REQUEST_ID);',
+'            APEX_JSON.write(''file_type'', f.FILE_TYPE);',
+'            APEX_JSON.write(''file_name'', f.FILE_NAME);',
+'            APEX_JSON.write(''content_type'', f.CONTENT_TYPE);',
+'            APEX_JSON.close_object;',
+'        END LOOP;',
+'        APEX_JSON.close_array;',
+'        APEX_JSON.close_object;',
+'    ELSE',
+'        DMT_ESS_UTIL_PKG.DOWNLOAD_ESS_FILE_TO_BROWSER(',
+'            p_request_id => l_request_id,',
+'            p_file_name  => l_file_name',
+'        );',
+'    END IF;',
+'EXCEPTION',
+'    WHEN OTHERS THEN',
+'        APEX_JSON.open_object;',
+'        APEX_JSON.write(''error'', SQLERRM);',
+'        APEX_JSON.close_object;',
+'END;'))
+,p_process_clob_language=>'PLSQL'
+,p_internal_uid=>36196970532764263
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(1480343019111389584)
+,p_process_sequence=>20
+,p_process_point=>'ON_DEMAND'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'QUERY_FUSION_REST'
+,p_static_id=>'query-fusion-rest'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'DECLARE',
+'  l_sub_object  VARCHAR2(200) := apex_application.g_x01;',
+'  l_display_key VARCHAR2(400) := apex_application.g_x02;',
+'  l_tfm_seq_id  NUMBER        := TO_NUMBER(apex_application.g_x03);',
+'  l_lookup_key  VARCHAR2(400) := apex_application.g_x04;',
+'  l_result      CLOB;',
+'BEGIN',
+'  EXECUTE IMMEDIATE q''[DECLARE l_r CLOB; BEGIN l_r := DMT_REST_QUERY_PKG.QUERY_FUSION_RECORD(p_sub_object => :1, p_display_key => :2, p_tfm_seq_id => :3, p_lookup_key => :4); :5 := l_r; END;]''',
+'  USING IN l_sub_object, IN l_display_key, IN l_tfm_seq_id, IN l_lookup_key, OUT l_result;',
+'  OWA_UTIL.MIME_HEADER(''application/json'', FALSE);',
+'  OWA_UTIL.HTTP_HEADER_CLOSE;',
+'  HTP.P(l_result);',
+'EXCEPTION',
+'  WHEN OTHERS THEN',
+'    apex_json.open_object;',
+'    apex_json.write(''status'', ''error'');',
+'    apex_json.write(''message'', ''REST query failed. Error: '' || SQLERRM);',
+'    apex_json.close_object;',
+'END;'))
+,p_process_clob_language=>'PLSQL'
+,p_internal_uid=>27535295886803843
+);
+wwv_flow_imp.component_end;
+end;
+/

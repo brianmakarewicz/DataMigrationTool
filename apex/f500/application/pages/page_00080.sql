@@ -1,0 +1,192 @@
+prompt --application/pages/page_00080
+begin
+--   Manifest
+--     PAGE: 00080
+--   Manifest End
+wwv_flow_imp.component_begin (
+ p_version_yyyy_mm_dd=>'2026.03.30'
+,p_release=>'26.1.4'
+,p_default_workspace_id=>32599344892582845
+,p_default_application_id=>500
+,p_default_id_offset=>32805213799451421
+,p_default_owner=>'DMT2_OWNER'
+);
+wwv_flow_imp_page.create_page(
+ p_id=>80
+,p_name=>'Run History'
+,p_alias=>'P80-RUN-HISTORY'
+,p_step_title=>'Pipeline Run History'
+,p_autocomplete_on_off=>'OFF'
+,p_step_template=>4072355960268175073
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+,p_page_component_map=>'18'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(605228858524473516)
+,p_plug_name=>'Run History'
+,p_static_id=>'run-history'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_display_sequence=>10
+,p_plug_item_display_point=>'ABOVE'
+,p_query_type=>'SQL'
+,p_plug_source=>'SELECT RUN_ID, PIPELINE_CODES, NVL(SCENARIO_NAME,''(all)'') AS SCENARIO, PREFIX, RUN_MODE, RUN_STATUS, DONE_COUNT || ''/'' || TOTAL_OBJECTS AS PROGRESS, CURRENT_STEP, FAILED_COUNT, TO_CHAR(SUBMITTED_DATE,''YYYY-MM-DD HH24:MI'') AS SUBMITTED, SUBMITTED_BY F'
+||'ROM DMT_RUN_HISTORY_V ORDER BY RUN_ID DESC'
+,p_plug_source_type=>'NATIVE_IR'
+,p_prn_output=>'N'
+,p_ai_enabled=>false
+);
+wwv_flow_imp_page.create_worksheet(
+ p_id=>wwv_flow_imp.id(605228858524473517)
+,p_max_row_count=>'100000'
+,p_pagination_type=>'ROWS_X_TO_Y'
+,p_pagination_display_pos=>'BOTTOM_RIGHT'
+,p_report_list_mode=>'TABS'
+,p_lazy_loading=>false
+,p_show_detail_link=>'C'
+,p_show_notify=>'Y'
+,p_download_formats=>'CSV:HTML:XLSX'
+,p_enable_mail_download=>'Y'
+,p_detail_link=>'f?p=&APP_ID.:82:&SESSION.::&DEBUG.:82:P82_RUN_ID:#RUN_ID#'
+,p_detail_link_text=>'<span class="fa fa-chevron-right"></span>'
+,p_internal_uid=>800001
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473532)
+,p_db_column_name=>'CURRENT_STEP'
+,p_display_order=>80
+,p_column_identifier=>'H'
+,p_column_label=>'Current Step'
+,p_column_type=>'STRING'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473533)
+,p_db_column_name=>'FAILED_COUNT'
+,p_display_order=>90
+,p_column_identifier=>'I'
+,p_column_label=>'Failed'
+,p_column_type=>'NUMBER'
+,p_column_alignment=>'CENTER'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473526)
+,p_db_column_name=>'PIPELINE_CODES'
+,p_display_order=>20
+,p_column_identifier=>'B'
+,p_column_label=>'Pipelines'
+,p_column_type=>'STRING'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473528)
+,p_db_column_name=>'PREFIX'
+,p_display_order=>40
+,p_column_identifier=>'D'
+,p_column_label=>'Prefix'
+,p_column_type=>'STRING'
+,p_column_alignment=>'CENTER'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473531)
+,p_db_column_name=>'PROGRESS'
+,p_display_order=>70
+,p_column_identifier=>'G'
+,p_column_label=>'Progress'
+,p_column_type=>'STRING'
+,p_column_alignment=>'CENTER'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473525)
+,p_db_column_name=>'RUN_ID'
+,p_display_order=>10
+,p_column_identifier=>'A'
+,p_column_label=>'Run #'
+,p_column_type=>'NUMBER'
+,p_column_alignment=>'CENTER'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473529)
+,p_db_column_name=>'RUN_MODE'
+,p_display_order=>50
+,p_column_identifier=>'E'
+,p_column_label=>'Mode'
+,p_column_type=>'STRING'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473530)
+,p_db_column_name=>'RUN_STATUS'
+,p_display_order=>60
+,p_column_identifier=>'F'
+,p_column_label=>'Status'
+,p_column_type=>'STRING'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473527)
+,p_db_column_name=>'SCENARIO'
+,p_display_order=>30
+,p_column_identifier=>'C'
+,p_column_label=>'Scenario'
+,p_column_type=>'STRING'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473534)
+,p_db_column_name=>'SUBMITTED'
+,p_display_order=>100
+,p_column_identifier=>'K'
+,p_column_label=>'Submitted'
+,p_column_type=>'STRING'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_column(
+ p_id=>wwv_flow_imp.id(605228858524473535)
+,p_db_column_name=>'SUBMITTED_BY'
+,p_display_order=>110
+,p_column_identifier=>'L'
+,p_column_label=>'By'
+,p_column_type=>'STRING'
+,p_use_as_row_header=>'N'
+,p_available_clientside=>'N'
+);
+wwv_flow_imp_page.create_worksheet_rpt(
+ p_id=>wwv_flow_imp.id(605228858524473545)
+,p_application_user=>'APXWS_DEFAULT'
+,p_report_seq=>10
+,p_report_alias=>'RH80RPT'
+,p_status=>'PUBLIC'
+,p_is_default=>'Y'
+,p_report_columns=>'RUN_ID:PIPELINE_CODES:SCENARIO:PREFIX:RUN_MODE:RUN_STATUS:PROGRESS:CURRENT_STEP:FAILED_COUNT:SUBMITTED:SUBMITTED_BY'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(605228858524473555)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(605228858524473516)
+,p_button_name=>'NEW_RUN'
+,p_static_id=>'new-run'
+,p_button_action=>'REDIRECT_PAGE'
+,p_button_template_options=>'#DEFAULT#'
+,p_button_image_alt=>'New Run'
+,p_button_position=>'RIGHT_OF_IR_SEARCH_BAR'
+,p_button_redirect_url=>'f?p=&APP_ID.:84:&SESSION.::&DEBUG.:84::'
+,p_icon_css_classes=>'fa-plus'
+);
+wwv_flow_imp.component_end;
+end;
+/

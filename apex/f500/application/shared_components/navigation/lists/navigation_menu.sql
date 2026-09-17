@@ -1,0 +1,520 @@
+prompt --application/shared_components/navigation/lists/navigation_menu
+begin
+--   Manifest
+--     LIST: Navigation Menu
+--   Manifest End
+wwv_flow_imp.component_begin (
+ p_version_yyyy_mm_dd=>'2026.03.30'
+,p_release=>'26.1.4'
+,p_default_workspace_id=>32599344892582845
+,p_default_application_id=>500
+,p_default_id_offset=>32805213799451421
+,p_default_owner=>'DMT2_OWNER'
+);
+wwv_flow_imp_shared.create_list(
+ p_id=>wwv_flow_imp.id(1580211009104795491)
+,p_name=>'Navigation Menu'
+,p_static_id=>'navigation-menu'
+,p_version_scn=>'46966191465764'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253930603)
+,p_list_item_display_sequence=>800
+,p_list_item_link_text=>'Administration'
+,p_static_id=>'administration'
+,p_list_item_link_target=>'f?p=&APP_ID.:8:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-gear'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253241606)
+,p_list_item_display_sequence=>113
+,p_list_item_link_text=>'AP Invoices'
+,p_static_id=>'ap-invoices'
+,p_list_item_link_target=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.::G_SECTION:AP'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253240603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253251605)
+,p_list_item_display_sequence=>122
+,p_list_item_link_text=>'AR Invoices'
+,p_static_id=>'ar-invoices'
+,p_list_item_link_target=>'f?p=&APP_ID.:4:&APP_SESSION.::&DEBUG.::G_SECTION:AR'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253250603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253311605)
+,p_list_item_display_sequence=>182
+,p_list_item_link_text=>'Banking'
+,p_static_id=>'banking'
+,p_list_item_link_target=>'f?p=&APP_ID.:24:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253310603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253940605)
+,p_list_item_display_sequence=>820
+,p_list_item_link_text=>'BIP Reports'
+,p_static_id=>'bip-reports'
+,p_list_item_link_target=>'f?p=&APP_ID.:8:&APP_SESSION.::&DEBUG.::G_SECTION:BIP'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253930603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253751607)
+,p_list_item_display_sequence=>624
+,p_list_item_link_text=>'COA Crosswalk'
+,p_static_id=>'coa-crosswalk'
+,p_list_item_link_target=>'f?p=&APP_ID.:34:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253750603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253750603)
+,p_list_item_display_sequence=>620
+,p_list_item_link_text=>'COA Mapping'
+,p_static_id=>'coa-mapping'
+,p_list_item_link_target=>'f?p=&APP_ID.:30:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-exchange'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253730603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253751604)
+,p_list_item_display_sequence=>621
+,p_list_item_link_text=>'COA Sets'
+,p_static_id=>'coa-sets'
+,p_list_item_link_target=>'f?p=&APP_ID.:31:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253750603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253300603)
+,p_list_item_display_sequence=>170
+,p_list_item_link_text=>'Configuration'
+,p_static_id=>'configuration'
+,p_list_item_link_target=>'#'
+,p_list_item_icon=>'fa-cogs'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253230603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253230603)
+,p_list_item_display_sequence=>100
+,p_list_item_link_text=>'Conversion Data'
+,p_static_id=>'conversion-data'
+,p_list_item_link_target=>'#'
+,p_list_item_icon=>'fa-database'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253251604)
+,p_list_item_display_sequence=>121
+,p_list_item_link_text=>'Customers'
+,p_static_id=>'customers'
+,p_list_item_link_target=>'f?p=&APP_ID.:4:&APP_SESSION.::&DEBUG.::G_SECTION:CUST'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253250603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253130604)
+,p_list_item_display_sequence=>10
+,p_list_item_link_text=>'Dashboard'
+,p_static_id=>'dashboard'
+,p_list_item_link_target=>'f?p=&APP_ID.:1:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-home'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253630603)
+,p_list_item_display_sequence=>500
+,p_list_item_link_text=>'Data Management'
+,p_static_id=>'data-management'
+,p_list_item_link_target=>'#'
+,p_list_item_icon=>'fa-cloud-upload'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253741605)
+,p_list_item_display_sequence=>612
+,p_list_item_link_text=>'EBS Values'
+,p_static_id=>'ebs-values'
+,p_list_item_link_target=>'f?p=&APP_ID.:18:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253740603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253281605)
+,p_list_item_display_sequence=>152
+,p_list_item_link_text=>'Employment'
+,p_static_id=>'employment'
+,p_list_item_link_target=>'f?p=&APP_ID.:7:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253280603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253260603)
+,p_list_item_display_sequence=>130
+,p_list_item_link_text=>'ERP Financials'
+,p_static_id=>'erp-financials'
+,p_list_item_link_target=>'f?p=&APP_ID.:3:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-calculator'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253230603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253270603)
+,p_list_item_display_sequence=>140
+,p_list_item_link_text=>'ERP Projects'
+,p_static_id=>'erp-projects'
+,p_list_item_link_target=>'f?p=&APP_ID.:5:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-briefcase'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253230603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253940604)
+,p_list_item_display_sequence=>810
+,p_list_item_link_text=>'ESS Job Monitor'
+,p_static_id=>'ess-job-monitor'
+,p_list_item_link_target=>'f?p=&APP_ID.:8:&APP_SESSION.::&DEBUG.::G_SECTION:ESS'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253930603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253271606)
+,p_list_item_display_sequence=>143
+,p_list_item_link_text=>'Expenditures'
+,p_static_id=>'expenditures'
+,p_list_item_link_target=>'f?p=&APP_ID.:5:&APP_SESSION.::&DEBUG.::G_SECTION:EXP'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253270603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253301604)
+,p_list_item_display_sequence=>171
+,p_list_item_link_text=>'Financial Setup'
+,p_static_id=>'financial-setup'
+,p_list_item_link_target=>'f?p=&APP_ID.:21:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253300603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253261605)
+,p_list_item_display_sequence=>132
+,p_list_item_link_text=>'Fixed Assets'
+,p_static_id=>'fixed-assets'
+,p_list_item_link_target=>'f?p=&APP_ID.:3:&APP_SESSION.::&DEBUG.::G_SECTION:FA'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253260603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253741606)
+,p_list_item_display_sequence=>613
+,p_list_item_link_text=>'Fusion Values'
+,p_static_id=>'fusion-values'
+,p_list_item_link_target=>'f?p=&APP_ID.:19:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253740603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253261604)
+,p_list_item_display_sequence=>131
+,p_list_item_link_text=>'GL Journals'
+,p_static_id=>'gl-journals'
+,p_list_item_link_target=>'f?p=&APP_ID.:3:&APP_SESSION.::&DEBUG.::G_SECTION:GL'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253260603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253290603)
+,p_list_item_display_sequence=>160
+,p_list_item_link_text=>'Grants'
+,p_static_id=>'grants'
+,p_list_item_link_target=>'f?p=&APP_ID.:12:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-file-text'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253230603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253280603)
+,p_list_item_display_sequence=>150
+,p_list_item_link_text=>'HCM'
+,p_static_id=>'hcm'
+,p_list_item_link_target=>'#'
+,p_list_item_icon=>'fa-users'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253230603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253311604)
+,p_list_item_display_sequence=>181
+,p_list_item_link_text=>'Items & Categories'
+,p_static_id=>'items-categories'
+,p_list_item_link_target=>'f?p=&APP_ID.:23:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253310603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253741607)
+,p_list_item_display_sequence=>614
+,p_list_item_link_text=>'Lookup Admin'
+,p_static_id=>'lookup-admin'
+,p_list_item_link_target=>'f?p=&APP_ID.:20:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253740603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253740603)
+,p_list_item_display_sequence=>610
+,p_list_item_link_text=>'Lookup Mapping'
+,p_static_id=>'lookup-mapping'
+,p_list_item_link_target=>'f?p=&APP_ID.:16:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-search'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253730603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253730603)
+,p_list_item_display_sequence=>600
+,p_list_item_link_text=>'Lookups & Mapping'
+,p_static_id=>'lookups-mapping'
+,p_list_item_link_target=>'#'
+,p_list_item_icon=>'fa-table'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253310603)
+,p_list_item_display_sequence=>180
+,p_list_item_link_text=>'Master Data'
+,p_static_id=>'master-data'
+,p_list_item_link_target=>'#'
+,p_list_item_icon=>'fa-cubes'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253230603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253250603)
+,p_list_item_display_sequence=>120
+,p_list_item_link_text=>'Order to Cash'
+,p_static_id=>'order-to-cash'
+,p_list_item_link_target=>'f?p=&APP_ID.:4:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-money-bill'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253230603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253281607)
+,p_list_item_display_sequence=>154
+,p_list_item_link_text=>'Payroll'
+,p_static_id=>'payroll'
+,p_list_item_link_target=>'f?p=&APP_ID.:11:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253280603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253940607)
+,p_list_item_display_sequence=>840
+,p_list_item_link_text=>'Prefix Management'
+,p_static_id=>'prefix-management'
+,p_list_item_link_target=>'f?p=&APP_ID.:8:&APP_SESSION.::&DEBUG.::G_SECTION:CONFIG'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253930603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253240603)
+,p_list_item_display_sequence=>110
+,p_list_item_link_text=>'Procure to Pay'
+,p_static_id=>'procure-to-pay'
+,p_list_item_link_target=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-cart-full'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253230603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253301605)
+,p_list_item_display_sequence=>172
+,p_list_item_link_text=>'Procurement & Tax'
+,p_static_id=>'procurement-tax'
+,p_list_item_link_target=>'f?p=&APP_ID.:22:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253300603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253271604)
+,p_list_item_display_sequence=>141
+,p_list_item_link_text=>'Projects'
+,p_static_id=>'projects'
+,p_list_item_link_target=>'f?p=&APP_ID.:5:&APP_SESSION.::&DEBUG.::G_SECTION:PROJ'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253270603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253241605)
+,p_list_item_display_sequence=>112
+,p_list_item_link_text=>'Purchase Orders'
+,p_static_id=>'purchase-orders'
+,p_list_item_link_target=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.::G_SECTION:PO'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253240603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253251606)
+,p_list_item_display_sequence=>123
+,p_list_item_link_text=>'Receipts'
+,p_static_id=>'receipts'
+,p_list_item_link_target=>'f?p=&APP_ID.:4:&APP_SESSION.::&DEBUG.::G_SECTION:RCPT'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253250603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(1720190755979790839)
+,p_list_item_display_sequence=>19
+,p_list_item_link_text=>'Run History'
+,p_static_id=>'run-history'
+,p_list_item_link_target=>'f?p=&APP_ID.:80:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-bar-chart'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253940608)
+,p_list_item_display_sequence=>850
+,p_list_item_link_text=>'Run Metrics'
+,p_static_id=>'run-metrics'
+,p_list_item_link_target=>'f?p=&APP_ID.:8:&APP_SESSION.::&DEBUG.::G_SECTION:METRICS'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253930603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253640606)
+,p_list_item_display_sequence=>530
+,p_list_item_link_text=>'Scenario Management'
+,p_static_id=>'scenario-management'
+,p_list_item_link_target=>'f?p=&APP_ID.:14:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-tags'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253630603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253751605)
+,p_list_item_display_sequence=>622
+,p_list_item_link_text=>'Segment Rules'
+,p_static_id=>'segment-rules'
+,p_list_item_link_target=>'f?p=&APP_ID.:32:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253750603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253751606)
+,p_list_item_display_sequence=>623
+,p_list_item_link_text=>'Segment Values'
+,p_static_id=>'segment-values'
+,p_list_item_link_target=>'f?p=&APP_ID.:33:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253750603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253640604)
+,p_list_item_display_sequence=>510
+,p_list_item_link_text=>'Smart Upload'
+,p_static_id=>'smart-upload'
+,p_list_item_link_target=>'f?p=&APP_ID.:25:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-upload'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253630603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253751608)
+,p_list_item_display_sequence=>625
+,p_list_item_link_text=>'Source Combinations'
+,p_static_id=>'source-combinations'
+,p_list_item_link_target=>'f?p=&APP_ID.:35:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253750603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(1720190755979790840)
+,p_list_item_display_sequence=>20
+,p_list_item_link_text=>'Submit Pipeline'
+,p_static_id=>'submit-pipeline'
+,p_list_item_link_target=>'f?p=&APP_ID.:84:&APP_SESSION.::&DEBUG.:::'
+,p_list_item_icon=>'fa-send'
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253241604)
+,p_list_item_display_sequence=>111
+,p_list_item_link_text=>'Suppliers'
+,p_static_id=>'suppliers'
+,p_list_item_link_target=>'f?p=&APP_ID.:2:&APP_SESSION.::&DEBUG.::G_SECTION:SUPPLIERS'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253240603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253940606)
+,p_list_item_display_sequence=>830
+,p_list_item_link_text=>'System Configuration'
+,p_static_id=>'system-configuration'
+,p_list_item_link_target=>'f?p=&APP_ID.:8:&APP_SESSION.::&DEBUG.::G_SECTION:CONFIG'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253930603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253281606)
+,p_list_item_display_sequence=>153
+,p_list_item_link_text=>'Talent & Time'
+,p_static_id=>'talent-time'
+,p_list_item_link_target=>'f?p=&APP_ID.:10:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253280603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253751609)
+,p_list_item_display_sequence=>626
+,p_list_item_link_text=>'Target Combinations'
+,p_static_id=>'target-combinations'
+,p_list_item_link_target=>'f?p=&APP_ID.:36:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253750603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253271605)
+,p_list_item_display_sequence=>142
+,p_list_item_link_text=>'Tasks'
+,p_static_id=>'tasks'
+,p_list_item_link_target=>'f?p=&APP_ID.:5:&APP_SESSION.::&DEBUG.::G_SECTION:TASKS'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253270603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253940609)
+,p_list_item_display_sequence=>860
+,p_list_item_link_text=>'Upload Reference'
+,p_static_id=>'upload-reference'
+,p_list_item_link_target=>'f?p=&APP_ID.:9:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253930603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253741604)
+,p_list_item_display_sequence=>611
+,p_list_item_link_text=>'Value Mapping'
+,p_static_id=>'value-mapping'
+,p_list_item_link_target=>'f?p=&APP_ID.:17:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253740603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(989176812253281604)
+,p_list_item_display_sequence=>151
+,p_list_item_link_text=>'Workers & Core'
+,p_static_id=>'workers-core'
+,p_list_item_link_target=>'f?p=&APP_ID.:6:&APP_SESSION.::&DEBUG.:::'
+,p_parent_list_item_id=>wwv_flow_imp.id(989176812253280603)
+,p_list_item_current_type=>'TARGET_PAGE'
+);
+wwv_flow_imp.component_end;
+end;
+/
