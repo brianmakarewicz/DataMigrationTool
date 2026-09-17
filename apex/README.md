@@ -30,9 +30,20 @@ and has been removed.
 
 Never edit the ATP (gold) app directly — that is what creates drift.
 
-## Prerequisite for TEST imports (one-time, not yet done)
+## Open item — APEX version gap blocks TEST import (owner decision pending)
 
-The local Docker DB currently has no confirmed APEX instance or `DMT2` workspace, so
-`import --target local` will not succeed until that is stood up: install APEX + ORDS
-on `dmt2-local`, create the `DMT2` workspace bound to `DMT_OWNER`, then import. Until
-then the git baseline still protects against ATP drift (re-export and diff any time).
+Local Docker **does** have APEX (24.2, container `dmt2-ords` on port 8182, workspace
+`DMT`, currently serving app 172). But **ATP is on APEX 26.1**, and a 26.1 export
+cannot be imported into 24.2 (newer-into-older is unsupported). So the `apex/f500`
+baseline (captured from ATP 26.1) will not import to local as-is — `import --target
+local` is skipped in the CI pipeline for now.
+
+Local app 172 is **structurally identical** to ATP app 500 (same 41-page set), so
+local remains a working mirror in the meantime. Two ways to close the gap:
+- **(A, recommended)** upgrade local Docker APEX 24.2 → 26.1 so it truly mirrors prod
+  and the ATP baseline imports cleanly; or
+- **(B)** keep local on 24.2 and make the git canonical a 24.2-sourced export (imports
+  up to 26.1), accepting that 26.1-only features are not represented.
+
+The DB half of the pipeline is unaffected — local DB syncs from `db/` and the ATP
+APEX import from `apex/f500` works today.
