@@ -15,10 +15,15 @@ AS
     -- rows that were never coming, then swept them UNACCOUNTED anyway. It is
     -- replaced by the job-driven reconcile: per-record errors are applied from the
     -- data set immediately, and LOADED is confirmed by ONE base-table proof pass.
-    -- This short cap now only absorbs a genuine transient REST/BIP blip (the base
-    -- proof report momentarily unreachable), NOT base lag. This supersedes the
-    -- prior 40-minute retry (was PR #268).
-    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 2;
+    -- This short cap absorbs only the brief settling window in which a COMPLETED
+    -- data set's base rows become queryable (observed at seconds to ~2 min, and it
+    -- can differ slightly per tier -- e.g. the Worker person row confirms a moment
+    -- before its WorkRelationship period-of-service row), plus a transient REST/BIP
+    -- blip. It is NOT the old base-lag budget: 5 x 30s = 2.5 min, versus the retired
+    -- 40-minute wait. A row still absent after this window did NOT load, and the
+    -- honest sweep marks it with the data set's real per-record message. This
+    -- supersedes the prior 40-minute retry (was PR #268).
+    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 5;
     C_HDL_RECON_DELAY_SEC CONSTANT PLS_INTEGER := 30;
 
     -- ============================================================
