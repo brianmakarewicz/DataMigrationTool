@@ -93,7 +93,7 @@
             s.DATE_START,
             s.PRIMARY_FLAG,
             -- RECON_KEY = the same value written to the HDL .dat as the
-            -- WorkRelationship SourceSystemId (DMT_ASSIGNMENT_HDL_GEN_PKG:
+            -- WorkRelationship SourceSystemId (DMT_WORKER_HDL_GEN_PKG:
             -- prefixed PERSON_NUMBER || '_POS'), and the value the BIP
             -- reconciliation report returns as RECORD_KEY (object type
             -- 'WorkRelationship'). One key definition (Contract v1, design
@@ -234,7 +234,7 @@
             s.MANAGER_ASSIGNMENT_NUMBER,
             s.PRIMARY_ASSIGNMENT_FLAG,
             -- RECON_KEY = the same value written to the HDL .dat as the
-            -- Assignment SourceSystemId (DMT_ASSIGNMENT_HDL_GEN_PKG:
+            -- Assignment SourceSystemId (DMT_WORKER_HDL_GEN_PKG:
             -- ASSIGNMENT_NUMBER || '_ASG'), and the value the BIP reconciliation
             -- report returns as RECORD_KEY (object type 'Assignment'). The
             -- assignment number already carries the run prefix from source, so

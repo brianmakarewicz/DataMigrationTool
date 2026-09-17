@@ -597,7 +597,8 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_ar_results_pkg.pks.sql
 @@packages/dmt_ar_transform_pkg.pks.sql
 @@packages/dmt_ar_validator_pkg.pks.sql
-@@packages/dmt_assignment_hdl_gen_pkg.pks.sql
+-- dmt_assignment_hdl_gen_pkg retired 2026-09-17: the Worker generator emits the
+-- assignment components in the single Worker.dat (no standalone Assignments load).
 @@packages/dmt_assignment_results_pkg.pks.sql
 @@packages/dmt_assignment_transform_pkg.pks.sql
 @@packages/dmt_assignment_validator_pkg.pks.sql
@@ -693,7 +694,8 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_misc_receipt_transform_pkg.pks.sql
 @@packages/dmt_misc_receipt_validator_pkg.pks.sql
 @@packages/dmt_mock_pkg.pks.sql
-@@packages/dmt_pay_rel_hdl_gen_pkg.pks.sql
+-- dmt_pay_rel_hdl_gen_pkg retired 2026-09-17: payroll relationship is auto-created
+-- at hire, not a loadable standalone HDL object (verifier-only recon report kept).
 @@packages/dmt_pay_rel_results_pkg.pks.sql
 @@packages/dmt_pay_rel_transform_pkg.pks.sql
 @@packages/dmt_pay_rel_validator_pkg.pks.sql
@@ -810,7 +812,7 @@ prompt == Package bodies ==
 @@packages/dmt_ar_results_pkg.pkb.sql
 @@packages/dmt_ar_transform_pkg.pkb.sql
 @@packages/dmt_ar_validator_pkg.pkb.sql
-@@packages/dmt_assignment_hdl_gen_pkg.pkb.sql
+-- dmt_assignment_hdl_gen_pkg body retired 2026-09-17 (folded into Worker generator).
 @@packages/dmt_assignment_results_pkg.pkb.sql
 @@packages/dmt_assignment_transform_pkg.pkb.sql
 @@packages/dmt_assignment_validator_pkg.pkb.sql
@@ -906,7 +908,7 @@ prompt == Package bodies ==
 @@packages/dmt_misc_receipt_transform_pkg.pkb.sql
 @@packages/dmt_misc_receipt_validator_pkg.pkb.sql
 @@packages/dmt_mock_pkg.pkb.sql
-@@packages/dmt_pay_rel_hdl_gen_pkg.pkb.sql
+-- dmt_pay_rel_hdl_gen_pkg body retired 2026-09-17 (no standalone payroll-rel load).
 @@packages/dmt_pay_rel_results_pkg.pkb.sql
 @@packages/dmt_pay_rel_transform_pkg.pkb.sql
 @@packages/dmt_pay_rel_validator_pkg.pkb.sql

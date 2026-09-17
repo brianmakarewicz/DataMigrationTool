@@ -159,10 +159,9 @@ AS
     -- Workers: 7 business objects in Worker.dat (HDL).
     -- Worker + PersonName + PersonEmail + PersonPhone + PersonAddress
     -- + PersonNationalIdentifier + PersonLegislativeData.
+    -- The single Worker.dat also carries the WorkRelationship/WorkTerms/Assignment
+    -- components (2026-09-17 model correction); there is no standalone RUN_ASSIGNMENTS.
     PROCEDURE RUN_WORKERS               (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
-
-    -- Worker Assignments: WorkRelationship + Assignment in Worker.dat (HDL).
-    PROCEDURE RUN_ASSIGNMENTS           (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
     -- Salaries: Salary.dat (HDL).
     PROCEDURE RUN_SALARIES              (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
@@ -185,8 +184,8 @@ AS
     -- Beneficiary Enrollment: BenefitParticipantEnrollment.dat (HDL).
     PROCEDURE RUN_BEN_BENEFICIARY       (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
 
-    -- Payroll Relationships: Worker.dat (HDL).
-    PROCEDURE RUN_PAYROLL_RELS          (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);
+    -- RUN_PAYROLL_RELS retired 2026-09-17: the payroll relationship is auto-created
+    -- at hire by the Worker load, not a standalone HDL business object.
 
     -- Tax Calculation Cards: CalculationCard.dat (HDL).
     PROCEDURE RUN_TAX_CARDS             (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE);

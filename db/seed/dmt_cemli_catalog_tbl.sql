@@ -20,9 +20,10 @@
 --   * MiscReceipts reads the INV_TRX pipeline tables (section 1 correction
 --     2026-07-07 -- the orphaned RCV_* tables are a sweep candidate); those
 --     tables carry TFM_STATUS.
---   * Work Relationships is catalogued under Assignments, not Workers: the
---     Assignments generator emits the WorkRelationship sections (section 1
---     "move" note on the Workers catalog-view cell).
+--   * Work Relationships + Assignments are catalogued under Workers (2026-09-17
+--     HCM object-model correction): they are components of the ONE Worker business
+--     object, delivered in the single Worker.dat. The former standalone
+--     'Assignments' object was retired (double-send correction).
 --   * STATUS_COLUMN is uniformly TFM_STATUS (conformance tranche 2026-07-08:
 --     the section-7 infra-column dictionary renamed every TFM row-status
 --     column to TFM_STATUS; the queue engine follows this catalog value).
@@ -88,11 +89,18 @@ using (
     union all select 'Workers', 'Person Addresses', 'DMT_PERSON_ADDR_TFM_TBL', 'TFM_STATUS', null, 5 from dual
     union all select 'Workers', 'Person NIDs', 'DMT_PERSON_NID_TFM_TBL', 'TFM_STATUS', null, 6 from dual
     union all select 'Workers', 'Person Legislation', 'DMT_PERSON_LEGISL_TFM_TBL', 'TFM_STATUS', null, 7 from dual
-    union all select 'Assignments', 'Work Relationships', 'DMT_WORK_REL_TFM_TBL', 'TFM_STATUS', null, 1 from dual
-    union all select 'Assignments', 'Assignments', 'DMT_ASSIGNMENT_TFM_TBL', 'TFM_STATUS', null, 2 from dual
+    -- Work Relationships + Assignments are COMPONENTS of the Worker business object
+    -- (2026-09-17 HCM object-model correction): the single Worker load carries them,
+    -- so they are catalogued under Workers, not a standalone Assignments object.
+    -- Accounting (DMT_QUEUE_WORKER_PKG) resolves an object's TFM tables from these
+    -- rows, so this is what makes the Workers gate account the assignment tiers. The
+    -- old CEMLI_CODE='Assignments' rows are deleted at EOF to converge.
+    union all select 'Workers', 'Work Relationships', 'DMT_WORK_REL_TFM_TBL', 'TFM_STATUS', null, 8 from dual
+    union all select 'Workers', 'Assignments', 'DMT_ASSIGNMENT_TFM_TBL', 'TFM_STATUS', null, 9 from dual
     union all select 'Salaries', 'Salaries', 'DMT_SALARY_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'SalaryBases', 'Salary Bases', 'DMT_SAL_BASIS_TFM_TBL', 'TFM_STATUS', null, 1 from dual
-    union all select 'PayrollRelationships', 'Payroll Relationships', 'DMT_PAY_REL_TFM_TBL', 'TFM_STATUS', null, 1 from dual
+    -- PayrollRelationships retired 2026-09-17 (auto-created at hire; verifier-only).
+    -- Its catalog row is deleted at EOF so the queue does not account a phantom load.
     union all select 'TaxCards', 'Tax Cards', 'DMT_TAX_CARD_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'TaxCards', 'Tax Card Components', 'DMT_TAX_CARD_COMP_TFM_TBL', 'TFM_STATUS', null, 2 from dual
     union all select 'W2Balances', 'W2 Balances', 'DMT_W2_BAL_TFM_TBL', 'TFM_STATUS', null, 1 from dual
@@ -138,5 +146,16 @@ when matched then update set
 when not matched then insert
     ("CEMLI_CODE","DISPLAY_NAME","TFM_TABLE","STATUS_COLUMN","ROW_FILTER","SORT_ORDER")
     values (s.cemli_code, s.display_name, s.tfm_table, s.status_column, s.row_filter, s.sort_order);
+
+commit;
+
+-- ----------------------------------------------------------------------
+-- Retirement converge (2026-09-17 HCM object-model correction). The MERGE
+-- key is CEMLI_CODE + TFM_TABLE, so re-homing the assignment rows to Workers
+-- above INSERTS new rows and the old CEMLI_CODE='Assignments' rows would
+-- linger. Delete the retired-object catalog rows explicitly. The two
+-- assignment TFM tables are now catalogued under Workers (rows above), so the
+-- Workers accounting gate covers them; PayrollRelationships is verifier-only.
+delete from "DMT_CEMLI_CATALOG_TBL" where "CEMLI_CODE" in ('Assignments','PayrollRelationships');
 
 commit;

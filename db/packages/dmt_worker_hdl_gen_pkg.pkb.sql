@@ -26,8 +26,14 @@ AS
     C_WORK_TERMS_COLS CONSTANT VARCHAR2(500) :=
         'SourceSystemOwner|SourceSystemId|PeriodOfServiceId(SourceSystemId)|ActionCode|EffectiveStartDate|EffectiveSequence|EffectiveLatestChange|DateStart|AssignmentName|AssignmentNumber|PrimaryWorkTermsFlag';
 
+    -- Assignment column list — merged from the retired standalone Assignment
+    -- generator (2026-09-17). Carries the full assignment detail (job, grade,
+    -- location, department, position, category, hours, frequency) so the single
+    -- Worker.dat load delivers the complete assignment component. All attributes
+    -- proven valid for Fusion 25B V2. ManagerPersonNumber/ManagerAssignmentNumber
+    -- remain INVALID for V2 and are intentionally excluded.
     C_ASSIGNMENT_COLS CONSTANT VARCHAR2(1000) :=
-        'SourceSystemOwner|SourceSystemId|ActionCode|EffectiveStartDate|EffectiveSequence|EffectiveLatestChange|WorkTermsAssignmentId(SourceSystemId)|AssignmentName|AssignmentNumber|AssignmentStatusTypeCode|PersonTypeCode|BusinessUnitShortCode|PrimaryAssignmentFlag';
+        'SourceSystemOwner|SourceSystemId|ActionCode|EffectiveStartDate|EffectiveSequence|EffectiveLatestChange|WorkTermsAssignmentId(SourceSystemId)|AssignmentName|AssignmentNumber|AssignmentStatusTypeCode|PersonTypeCode|BusinessUnitShortCode|PrimaryAssignmentFlag|JobCode|GradeCode|LocationCode|DepartmentName|PositionCode|WorkerCategory|AssignmentCategory|FullPartTime|PermanentTemporary|NormalHours|Frequency';
 
     C_PERSON_EMAIL_COLS CONSTANT VARCHAR2(500) :=
         'SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|DateFrom|EmailType|EmailAddress|PrimaryFlag';
@@ -214,55 +220,56 @@ AS
 
         -- ============================================================
         -- 4. WorkTerms (one per assignment — required for new hires)
-        --    The assignment number is a business key that comes from the
-        --    Assignment source, joined to the worker by PERSON_NUMBER. The
-        --    Worker load NEVER fabricates the number: both this section and the
-        --    standalone Assignment object derive the HDL keys from the SAME
-        --    source field (ASSIGNMENT_NUMBER), so they always agree on
-        --    SourceSystemId/AssignmentNumber and never collide on the shared
-        --    assignment id. One assignment source row = one WorkTerms + one
-        --    Assignment line, so multiple assignments per person get distinct
-        --    keys by construction. A worker with no assignment row is a
-        --    validation failure (worker validator rule R3, checked before this).
+        --    Merged from the retired standalone Assignment generator (2026-09-17
+        --    HCM object-model correction): the Worker business object carries its
+        --    assignment components in the ONE Worker.dat, so there is no separate
+        --    Assignments load. Source the assignment from the validated,
+        --    transformed Assignment TFM table (NOT the STG table): RUN_WORKERS now
+        --    runs the assignment/work-rel validate + transform BEFORE this
+        --    generate, so DMT_ASSIGNMENT_TFM_TBL / DMT_WORK_REL_TFM_TBL are
+        --    populated. The TFM row carries the run-prefixed PERSON_NUMBER (the
+        --    same prefix the Worker TFM uses) and the source ASSIGNMENT_NUMBER
+        --    verbatim, so the WorkTerms SourceSystemId '<AssignmentNumber>_TRM'
+        --    and the PeriodOfServiceId '<prefixed person>_POS' both line up with
+        --    the Worker/WorkRelationship keys above and with the recon RECON_KEY.
+        --    One assignment TFM row = one WorkTerms + one Assignment line, so
+        --    multiple assignments per person get distinct keys by construction.
         --
-        --    IMPORTANT: source the assignment from the Assignment STG table, NOT
-        --    its TFM table. The Workers step runs BEFORE the Assignments step in
-        --    the pipeline (Assignments DEPENDS_ON Workers), so the assignment
-        --    TFM rows do not exist yet at worker-generate time. STG is populated
-        --    at stage time and carries the raw, unprefixed ASSIGNMENT_NUMBER —
-        --    which is exactly what the Assignment load later emits (the
-        --    assignment transform prefixes PERSON_NUMBER but leaves
-        --    ASSIGNMENT_NUMBER raw), so the two loads still produce identical
-        --    keys. Join worker TFM -> worker STG (by STG_SEQUENCE_ID) to get the
-        --    raw person, then to assignment STG by that raw person. Only
-        --    non-FAILED assignment STG rows are used, matching R3's population.
+        --    Same-day sequencing (carried over from PR #266, folded here): within
+        --    one period of service (one _POS), multiple employment terms dated the
+        --    SAME day must each carry a DISTINCT EffectiveSequence, and only the
+        --    last may be flagged the latest change — else Fusion HDL rejects the
+        --    set ("only one change can be the latest change for a day"). Rank
+        --    same-(person,date) siblings deterministically; siblings on different
+        --    days each rank 1 (their own line's latest change).
         -- ============================================================
         DBMS_LOB.WRITEAPPEND(l_dat, LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS)),
             DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS));
 
         FOR r IN (
-            SELECT w.PERSON_NUMBER, w.START_DATE,
-                   a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME, a.ACTION_CODE,
-                   a.PRIMARY_ASSIGNMENT_FLAG
-            FROM   DMT_WORKER_TFM_TBL w
-            JOIN   DMT_WORKER_STG_TBL ws
-                   ON  ws.STG_SEQUENCE_ID = w.STG_SEQUENCE_ID
-            JOIN   DMT_ASSIGNMENT_STG_TBL a
-                   ON  a.PERSON_NUMBER = ws.PERSON_NUMBER
-                   AND a.ASSIGNMENT_NUMBER IS NOT NULL
-                   AND NVL(a.STG_STATUS, 'NEW') <> 'FAILED'
-            WHERE  w.RUN_ID = p_run_id
-            AND    w.TFM_STATUS = 'STAGED'
-            ORDER BY w.TFM_SEQUENCE_ID, a.STG_SEQUENCE_ID
+            SELECT a.PERSON_NUMBER, a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME,
+                   a.EFFECTIVE_START_DATE, a.ACTION_CODE,
+                   a.PRIMARY_ASSIGNMENT_FLAG,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY a.PERSON_NUMBER, a.EFFECTIVE_START_DATE
+                       ORDER BY a.PRIMARY_ASSIGNMENT_FLAG DESC, a.TFM_SEQUENCE_ID
+                   ) AS eff_seq,
+                   COUNT(*) OVER (
+                       PARTITION BY a.PERSON_NUMBER, a.EFFECTIVE_START_DATE
+                   ) AS eff_cnt
+            FROM   DMT_ASSIGNMENT_TFM_TBL a
+            WHERE  a.RUN_ID = p_run_id
+            AND    a.TFM_STATUS = 'STAGED'
+            ORDER BY a.TFM_SEQUENCE_ID
         ) LOOP
             l_vals := C_SOURCE_SYSTEM                        || '|' ||
                       pv(r.ASSIGNMENT_NUMBER) || '_TRM'      || '|' ||  -- SourceSystemId (per assignment)
                       pv(r.PERSON_NUMBER) || '_POS'          || '|' ||  -- PeriodOfServiceId(SourceSystemId)
                       pv(NVL(r.ACTION_CODE, 'HIRE'))         || '|' ||
-                      pv(r.START_DATE)                       || '|' ||  -- EffectiveStartDate
-                      '1'                                    || '|' ||  -- EffectiveSequence
-                      'Y'                                    || '|' ||  -- EffectiveLatestChange
-                      pv(r.START_DATE)                       || '|' ||  -- DateStart (From Date)
+                      pv(r.EFFECTIVE_START_DATE)             || '|' ||  -- EffectiveStartDate
+                      TO_CHAR(r.eff_seq)                     || '|' ||  -- EffectiveSequence (distinct per same-day sibling)
+                      CASE WHEN r.eff_seq = r.eff_cnt THEN 'Y' ELSE 'N' END || '|' ||  -- EffectiveLatestChange: only the last same-day sibling
+                      pv(r.EFFECTIVE_START_DATE)             || '|' ||  -- DateStart (From Date)
                       pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
                       pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
                       pv(NVL(r.PRIMARY_ASSIGNMENT_FLAG, 'Y'));    -- PrimaryWorkTermsFlag (source primary flag; one 'Y' per _POS)
@@ -272,42 +279,55 @@ AS
 
         -- ============================================================
         -- 5. Assignment (one per assignment — required for new hires)
-        --    Keyed by the source ASSIGNMENT_NUMBER, matching section 4 and the
-        --    standalone Assignment object. Detail (BU/job/grade/...) comes from
-        --    the assignment source row rather than fabricated constants.
+        --    Merged from the retired standalone Assignment generator (2026-09-17).
+        --    Keyed by the source ASSIGNMENT_NUMBER, matching section 4. Detail
+        --    (BU/job/grade/location/department/position/...) comes from the
+        --    validated, transformed Assignment TFM row rather than fabricated
+        --    constants. Same same-(person,date) sequencing as WorkTerms above:
+        --    distinct EffectiveSequence per same-day sibling, only the last is the
+        --    latest change (Fusion rejects two same-day "latest" changes).
         -- ============================================================
         DBMS_LOB.WRITEAPPEND(l_dat, LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('Assignment', C_ASSIGNMENT_COLS)),
             DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('Assignment', C_ASSIGNMENT_COLS));
 
         FOR r IN (
-            SELECT w.PERSON_NUMBER, w.START_DATE,
-                   a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME, a.ACTION_CODE,
-                   a.ASSIGNMENT_STATUS_TYPE_CODE, a.BUSINESS_UNIT_NAME,
-                   a.PRIMARY_ASSIGNMENT_FLAG
-            FROM   DMT_WORKER_TFM_TBL w
-            JOIN   DMT_WORKER_STG_TBL ws
-                   ON  ws.STG_SEQUENCE_ID = w.STG_SEQUENCE_ID
-            JOIN   DMT_ASSIGNMENT_STG_TBL a
-                   ON  a.PERSON_NUMBER = ws.PERSON_NUMBER
-                   AND a.ASSIGNMENT_NUMBER IS NOT NULL
-                   AND NVL(a.STG_STATUS, 'NEW') <> 'FAILED'
-            WHERE  w.RUN_ID = p_run_id
-            AND    w.TFM_STATUS = 'STAGED'
-            ORDER BY w.TFM_SEQUENCE_ID, a.STG_SEQUENCE_ID
+            SELECT t.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY t.PERSON_NUMBER, t.EFFECTIVE_START_DATE
+                       ORDER BY t.PRIMARY_ASSIGNMENT_FLAG DESC, t.TFM_SEQUENCE_ID
+                   ) AS eff_seq,
+                   COUNT(*) OVER (
+                       PARTITION BY t.PERSON_NUMBER, t.EFFECTIVE_START_DATE
+                   ) AS eff_cnt
+            FROM   DMT_ASSIGNMENT_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.TFM_STATUS = 'STAGED'
+            ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             l_vals := C_SOURCE_SYSTEM                        || '|' ||
                       pv(r.ASSIGNMENT_NUMBER) || '_ASG'      || '|' ||  -- SourceSystemId (per assignment)
                       pv(NVL(r.ACTION_CODE, 'HIRE'))         || '|' ||
-                      pv(r.START_DATE)                       || '|' ||  -- EffectiveStartDate
-                      '1'                                    || '|' ||  -- EffectiveSequence
-                      'Y'                                    || '|' ||  -- EffectiveLatestChange
+                      pv(r.EFFECTIVE_START_DATE)             || '|' ||  -- EffectiveStartDate
+                      TO_CHAR(r.eff_seq)                     || '|' ||  -- EffectiveSequence (distinct per same-day sibling)
+                      CASE WHEN r.eff_seq = r.eff_cnt THEN 'Y' ELSE 'N' END || '|' ||  -- EffectiveLatestChange: only the last same-day sibling
                       pv(r.ASSIGNMENT_NUMBER) || '_TRM'      || '|' ||  -- WorkTermsAssignmentId(SourceSystemId)
                       pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
                       pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
                       pv(NVL(r.ASSIGNMENT_STATUS_TYPE_CODE, 'ACTIVE_PROCESS')) || '|' ||  -- AssignmentStatusTypeCode
                       'Employee'                             || '|' ||  -- PersonTypeCode
                       pv(NVL(r.BUSINESS_UNIT_NAME, l_bu_short)) || '|' ||  -- BusinessUnitShortCode
-                      pv(NVL(r.PRIMARY_ASSIGNMENT_FLAG, 'Y'));            -- PrimaryAssignmentFlag
+                      pv(NVL(r.PRIMARY_ASSIGNMENT_FLAG, 'Y')) || '|' ||   -- PrimaryAssignmentFlag
+                      pv(r.JOB_CODE)                         || '|' ||
+                      pv(r.GRADE_CODE)                       || '|' ||
+                      pv(r.LOCATION_CODE)                    || '|' ||
+                      pv(r.DEPARTMENT_NAME)                  || '|' ||
+                      pv(r.POSITION_CODE)                    || '|' ||
+                      pv(r.WORKER_CATEGORY)                  || '|' ||
+                      pv(r.ASSIGNMENT_CATEGORY)              || '|' ||
+                      pv(r.FULL_PART_TIME)                   || '|' ||
+                      pv(r.PERMANENT_TEMPORARY)              || '|' ||
+                      pv(r.NORMAL_HOURS)                     || '|' ||
+                      pv(r.FREQUENCY);
             DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'Assignment');
             l_row_count := l_row_count + 1;
         END LOOP;
@@ -499,7 +519,14 @@ AS
         );
 
         -- ============================================================
-        -- Update all 7 TFM tables to GENERATED and stamp FBDI_CSV_ID
+        -- Update all 9 TFM tables (7 person + WorkRelationship + Assignment) to
+        -- GENERATED and stamp FBDI_CSV_ID. The assignment + work-rel tables MUST be
+        -- stamped here too (2026-09-17): the queue accounting counts a still-GENERATED
+        -- row as "awaiting base confirmation" to keep the HDL base-lag retry alive,
+        -- and reconciliation later promotes GENERATED -> LOADED/FAILED. Leaving them
+        -- STAGED would make the accounting treat them as unaccounted immediately and
+        -- skip the base-lag retry, so the Workers gate could fail before the
+        -- assignment base rows land.
         -- ============================================================
         UPDATE DMT_WORKER_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
@@ -526,6 +553,15 @@ AS
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         UPDATE DMT_PERSON_LEGISL_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
+        -- Assignment components carried in this same Worker.dat (2026-09-17).
+        UPDATE DMT_WORK_REL_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
+        UPDATE DMT_ASSIGNMENT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
