@@ -2833,6 +2833,9 @@
                     p_run_start     => l_gb_run_start,
                     p_ledger_id     => l_gb_ledger);
             END;
+            -- Reconcile already ran inline here; tell EXECUTE_ONE not to re-route
+            -- this work item to RECONCILING (which would double-reconcile). See #7.
+            g_reconciled_inline := TRUE;
             GOTO grouped_finish;
         END IF;
 
@@ -3002,6 +3005,9 @@
                     p_import_ess_id => TO_NUMBER(l_ex_import_id),
                     p_work_queue_id => g_work_queue_id);
             END;
+            -- Reconcile already ran inline here; tell EXECUTE_ONE not to re-route
+            -- this work item to RECONCILING (which would double-reconcile). See #7.
+            g_reconciled_inline := TRUE;
             GOTO grouped_finish;
         END IF;
 
