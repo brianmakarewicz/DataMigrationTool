@@ -54,7 +54,15 @@ from conn_helper import connect_atp
 # ── Connection ──────────────────────────────────────────────────────────────
 
 
-SCENARIO_NAME = "RegressionTest"
+# Scenario name is caller-supplied so every deploy writes a FRESH, timestamped,
+# write-once scenario (never reseed an existing one). Precedence: env
+# DMT_SCENARIO_NAME, then argv[1], then a timestamped default. The deploy tool
+# (scripts/deploy_scenario.py) always passes an explicit RegressionTestYYMMDDHHMM name.
+import os as _os
+from datetime import datetime as _dt
+SCENARIO_NAME = (_os.environ.get("DMT_SCENARIO_NAME")
+                 or (sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None)
+                 or ("RegressionTest" + _dt.now().strftime("%y%m%d%H%M")))
 
 # ── Reference data (valid on Fusion demo instance) ─────────────────────────
 BU           = "US1 Business Unit"
@@ -298,21 +306,25 @@ def main():
     for tbl in cleanup_tables:
         is_tfm = "_TFM_" in tbl
         try:
+            # Scope cleanup to THIS scenario only. Never touch other scenarios'
+            # records (the old `OR SOURCE_ID LIKE 'RT-%'` deleted RT rows across
+            # ALL scenarios). With a fresh timestamped scenario this deletes
+            # nothing; re-running the same name cleanly replaces only that
+            # scenario -> write-once per scenario, no cross-scenario side effects,
+            # and no accumulation.
             if is_tfm:
-                # TFM tables don't have SCENARIO_ID/SOURCE_ID — delete by
-                # joining to STG parent via STG_SEQUENCE_ID.
-                # Derive STG table name: replace _TFM_ with _STG_
+                # TFM tables have no SCENARIO_ID — delete via STG parent by scenario.
                 stg_tbl = tbl.replace("_TFM_", "_STG_")
                 cur.execute(
                     f"""DELETE FROM {tbl}
                         WHERE STG_SEQUENCE_ID IN (
                             SELECT STG_SEQUENCE_ID FROM {stg_tbl}
-                            WHERE SCENARIO_ID = :sid OR SOURCE_ID LIKE 'RT-%'
+                            WHERE SCENARIO_ID = :sid
                         )""",
                     {"sid": scenario_id})
             else:
                 cur.execute(
-                    f"DELETE FROM {tbl} WHERE SCENARIO_ID = :sid OR SOURCE_ID LIKE 'RT-%'",
+                    f"DELETE FROM {tbl} WHERE SCENARIO_ID = :sid",
                     {"sid": scenario_id})
             n = cur.rowcount
             if n > 0:
