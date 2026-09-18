@@ -275,6 +275,19 @@ AS
     g_async_mode   BOOLEAN      := FALSE;
     g_load_ess_id  VARCHAR2(100) := NULL;
 
+    -- Inline-reconcile signal (double-reconcile fix, backlog item #7). Set TRUE
+    -- whenever run_one_object_type reconciles an object INLINE: the grouped
+    -- objects (each per-BU/group call in submit_and_reconcile_one -- they submit
+    -- multiple ESS jobs per object and cannot use the single-load async model)
+    -- and the SYNC single-load path (MiscReceipts). EXECUTE_ONE reads this after
+    -- the RUN_* returns: when TRUE the object was ALREADY reconciled inline, so it
+    -- routes straight to the accounting gate instead of RECONCILING (which would
+    -- reconcile it a SECOND time via RECON_PROC). EXECUTE_ONE resets it to FALSE
+    -- at dispatch start and after reading it (mirrors g_load_ess_id). Async
+    -- objects RETURN at the g_async_mode guard before any reconcile site, so they
+    -- never set it and the queue still reconciles them exactly once.
+    g_reconciled_inline BOOLEAN := FALSE;
+
     -- Multi-book Assets: when set (to a BOOK_TYPE_CODE), run_one_object_type for Assets
     -- skips re-transform and generates the FBDI for ONLY this book. NULL = all books.
     -- Generalized (2026-07-20): also carries the single partition value for any

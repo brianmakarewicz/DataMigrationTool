@@ -1310,34 +1310,27 @@
                 END;
             END IF;
 
-            -- Reconcile via BIP — dispatch by CEMLI code
-            IF p_cemli_code = 'PurchaseOrders' THEN
-                DMT_PO_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'ARInvoices' THEN
-                DMT_AR_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'BlanketPOs' THEN
-                DMT_BLANKET_PO_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'Contracts' THEN
-                DMT_CONTRACT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'APInvoices' THEN
-                DMT_AP_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'GLBalances' THEN
-                DMT_GL_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code LIKE 'Supplier%' THEN
-                DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH(p_run_id, p_cemli_code, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'Customers' THEN
-                DMT_CUST_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'Projects' THEN
-                DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'BillingEvents' THEN
-                DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'Expenditures' THEN
-                DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'Grants' THEN
-                DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'Items' THEN
-                -- Reconcile items + bundled categories (if any)
-                DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
+            -- Reconcile via BIP — SINGLE registry-driven dispatch (backlog #7).
+            -- Was a hardcoded ~19-arm ELSIF chain over CEMLI codes; that was the
+            -- SECOND source of truth for reconcile (the queue reads RECON_PROC).
+            -- Now both paths go through the one registry lookup + invoke_registered
+            -- site. The fail-open guard (RAISE -20044 for an unregistered object)
+            -- is preserved inside RECONCILE_VIA_REGISTRY. Grouped objects reconcile
+            -- INLINE here (once per BU/group); g_reconciled_inline is set below so
+            -- EXECUTE_ONE does NOT re-reconcile them via the queue.
+            DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
+                p_run_id        => p_run_id,
+                p_cemli_code    => p_cemli_code,
+                p_load_ess_id   => TO_NUMBER(x_load_ess_id),
+                p_import_ess_id => TO_NUMBER(x_import_ess_id),
+                p_work_queue_id => g_work_queue_id);
+
+            -- Items special case (kept from the retired chain, deliberately NOT
+            -- registry-expressible): the Items FBDI ZIP bundles the ItemCategories
+            -- CSV, so an Items work item conditionally reconciles the categories too
+            -- when this run generated any category rows. A data-dependent secondary
+            -- reconciler does not fit the one-RECON_PROC-per-object registry.
+            IF p_cemli_code = 'Items' THEN
                 DECLARE l_cat_gen2 NUMBER;
                 BEGIN
                     -- Work-queue-ID core: only reconcile categories THIS item generated
@@ -1349,29 +1342,12 @@
                         DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
                     END IF;
                 END;
-            ELSIF p_cemli_code = 'MiscReceipts' THEN
-                DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'Requisitions' THEN
-                DMT_REQ_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'GLBudgets' THEN
-                DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'PlanningBudgets' THEN
-                DMT_PLAN_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id));
-            ELSIF p_cemli_code = 'ProjectBudgets' THEN
-                DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSIF p_cemli_code = 'Assets' THEN
-                DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-            ELSE
-                -- Fail-open guard (Rule #1): no reconcile arm matched this CEMLI code, so
-                -- NOTHING was confirmed against the Fusion base tables. Never report success
-                -- here — a missing arm is a registration bug, not a load that quietly worked.
-                -- Raise loudly so the object goes to ERROR instead of a false pass.
-                RAISE_APPLICATION_ERROR(-20044,
-                    'No reconcile arm matched CEMLI_CODE ''' || p_cemli_code ||
-                    ''' in submit_and_reconcile_one. Refusing to report success without ' ||
-                    'base-table confirmation. Add the object''s reconcile dispatch (or its ' ||
-                    'RECON_PROC) before it can load.');
             END IF;
+
+            -- Inline reconcile happened: tell EXECUTE_ONE not to re-reconcile via
+            -- RECON_PROC (the double-reconcile fix). Settlement then runs through the
+            -- single accounting gate in EXECUTE_ONE.
+            g_reconciled_inline := TRUE;
 
             x_success := TRUE;
         END submit_and_reconcile_one;
@@ -2857,6 +2833,9 @@
                     p_run_start     => l_gb_run_start,
                     p_ledger_id     => l_gb_ledger);
             END;
+            -- Reconcile already ran inline here; tell EXECUTE_ONE not to re-route
+            -- this work item to RECONCILING (which would double-reconcile). See #7.
+            g_reconciled_inline := TRUE;
             GOTO grouped_finish;
         END IF;
 
@@ -3026,6 +3005,9 @@
                     p_import_ess_id => TO_NUMBER(l_ex_import_id),
                     p_work_queue_id => g_work_queue_id);
             END;
+            -- Reconcile already ran inline here; tell EXECUTE_ONE not to re-route
+            -- this work item to RECONCILING (which would double-reconcile). See #7.
+            g_reconciled_inline := TRUE;
             GOTO grouped_finish;
         END IF;
 
@@ -3426,71 +3408,26 @@
             END;
         END IF;
 
-        -- BIP reconciliation — dispatch to correct results package
-        IF p_cemli_code LIKE 'Supplier%' THEN
-            DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_cemli_code     => p_cemli_code,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_work_queue_id  => g_work_queue_id);
-        ELSIF p_cemli_code = 'Projects' THEN
-            DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_work_queue_id  => g_work_queue_id);
-        ELSIF p_cemli_code = 'BillingEvents' THEN
-            DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_work_queue_id  => g_work_queue_id);
-        ELSIF p_cemli_code = 'Expenditures' THEN
-            DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_work_queue_id  => g_work_queue_id);
-        ELSIF p_cemli_code = 'Grants' THEN
-            DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_work_queue_id  => g_work_queue_id);
-        -- Items: handled in grouped loop above.
-        ELSIF p_cemli_code = 'MiscReceipts' THEN
-            DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_work_queue_id  => g_work_queue_id);
-        -- Requisitions: handled in grouped loop above.
-        -- GLBalances: handled in grouped loop above.
-        ELSIF p_cemli_code = 'GLBudgets' THEN
-            DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_work_queue_id  => g_work_queue_id);
-        ELSIF p_cemli_code = 'PlanningBudgets' THEN
-            DMT_PLAN_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id));
-        ELSIF p_cemli_code = 'ProjectBudgets' THEN
-            DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_work_queue_id  => g_work_queue_id);
-        ELSIF p_cemli_code = 'Assets' THEN
-            DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH(
-                p_run_id => p_run_id,
-                p_load_ess_id    => TO_NUMBER(l_load_ess_id),
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_work_queue_id  => g_work_queue_id);
-        END IF;
+        -- BIP reconciliation — SINGLE registry-driven dispatch (backlog #7).
+        -- Was a hardcoded ELSIF chain (the SECOND source of truth, silently a
+        -- no-op for an unregistered object — no fail-open). Now routed through the
+        -- one registry lookup + invoke_registered site, which RAISEs -20044 for an
+        -- unregistered object (fail-open guard now covers this path too).
+        --
+        -- This path is reached ONLY when g_async_mode is FALSE: SYNC objects
+        -- (MiscReceipts) and direct non-queue RUN_* calls. Async objects already
+        -- RETURNed at the g_async_mode guard above and are reconciled exactly once
+        -- by the queue via RECON_PROC.
+        DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => TO_NUMBER(l_load_ess_id),
+            p_import_ess_id => TO_NUMBER(l_import_ess_id),
+            p_work_queue_id => g_work_queue_id);
+
+        -- Inline reconcile happened: tell EXECUTE_ONE not to re-reconcile via
+        -- RECON_PROC. Settlement runs through the single accounting gate.
+        g_reconciled_inline := TRUE;
 
         -- Check for rows still at GENERATED after BIP reconciliation.
         -- Do NOT assume success — leave at GENERATED for manual investigation.

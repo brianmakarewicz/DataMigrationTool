@@ -446,6 +446,7 @@ AS
         l_recon_proc  VARCHAR2(200);
         l_recon_cemli VARCHAR2(1);
         l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
+        l_reconciled_inline BOOLEAN := FALSE;  -- loader reconciled inline (double-reconcile fix)
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
         SELECT * INTO l_run_rec FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = l_rec.RUN_ID;
@@ -467,6 +468,11 @@ AS
         -- SYNC (MiscReceipts) and LOCAL (mocks) run inline.
         DMT_LOADER_PKG.g_async_mode := (l_exec_mode = 'ASYNC');
         DMT_LOADER_PKG.g_load_ess_id := NULL;
+        -- Inline-reconcile signal reset (double-reconcile fix, backlog #7): the
+        -- loader sets this TRUE if it reconciles inline (grouped / SYNC objects).
+        -- Reset before dispatch so a leftover TRUE from a prior item in the same
+        -- session cannot mis-route this one (mirrors g_load_ess_id discipline).
+        DMT_LOADER_PKG.g_reconciled_inline := FALSE;
         -- Spawn-per-partition: a partitioned child row carries its single partition value
         -- (a BOOK_TYPE_CODE / BATCH_ID); the loader uses this to skip re-transform and
         -- generate/load only that partition.
@@ -619,8 +625,16 @@ AS
         -- the HDL data set request id + terminal status it published so the base proof
         -- can be re-run on a later tick (base-table lag). NULL for non-HDL objects.
         l_hdl_request_id := DMT_LOADER_PKG.g_hdl_request_id;
+        -- Inline-reconcile signal (double-reconcile fix, backlog #7): capture whether
+        -- the loader reconciled this object INLINE (grouped objects submit N ESS jobs
+        -- per object and reconcile per group inside submit_and_reconcile_one; SYNC
+        -- objects reconcile in the generic path). If so, this item must NOT be routed
+        -- to RECONCILING (which would run RECON_PROC a SECOND time) -- it settles
+        -- straight through the accounting gate below.
+        l_reconciled_inline := DMT_LOADER_PKG.g_reconciled_inline;
         DMT_LOADER_PKG.g_async_mode := FALSE;
         DMT_LOADER_PKG.g_load_ess_id := NULL;
+        DMT_LOADER_PKG.g_reconciled_inline := FALSE;
         DMT_LOADER_PKG.g_partition_key := NULL;
         DMT_LOADER_PKG.g_work_queue_id := NULL;
         DMT_LOADER_PKG.g_gen_queue_id := NULL;
@@ -656,6 +670,31 @@ AS
                 LOAD_ESS_JOB_ID = SUBSTR(l_hdl_request_id, 1, 30),
                 NEXT_POLL_AFTER = NULL
             WHERE QUEUE_ID = p_queue_id;
+        ELSIF l_reconciled_inline THEN
+            -- Double-reconcile fix (backlog #7): the loader already reconciled this
+            -- object INLINE (a grouped object that submits N ESS jobs per object, or
+            -- the SYNC single-load path). Routing it to RECONCILING would run its
+            -- RECON_PROC a SECOND time via RECONCILE_ONE -- the exact bug this fix
+            -- removes. Instead settle it here through the SAME sweep + accounting
+            -- gate RECONCILE_ONE runs at its tail, minus the redundant RECONCILE_BATCH.
+            -- (The sweep lives only in the queue worker -- SWEEP_UNACCOUNTED is a
+            -- sanctioned dynamic-SQL site -- so it must run here, not in the loader.)
+            DECLARE
+                l_partition_key DMT_WORK_QUEUE_TBL.PARTITION_KEY%TYPE;
+                l_scope_wq      NUMBER;
+            BEGIN
+                -- Same scope decision as RECONCILE_ONE / apply_accounting_gate: a
+                -- spawn-per-partition child (real PARTITION_KEY, not NULL parent and
+                -- not the in-zip 'ALL' split) sweeps only its own WORK_QUEUE_ID rows;
+                -- every other object sweeps run-scoped (l_scope_wq NULL).
+                SELECT PARTITION_KEY INTO l_partition_key
+                FROM   DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
+                l_scope_wq := CASE WHEN l_partition_key IS NOT NULL
+                                    AND l_partition_key <> 'ALL'
+                                   THEN p_queue_id END;
+                SWEEP_UNACCOUNTED(l_rec.RUN_ID, l_rec.CEMLI_CODE, l_scope_wq);
+            END;
+            apply_accounting_gate(p_queue_id, l_rec.RUN_ID, l_rec.CEMLI_CODE);
         ELSIF l_recon_proc IS NOT NULL THEN
             -- No load ESS id (LOCAL objects, or a cycle that reconciles
             -- separately): route to RECONCILING so the registered
@@ -678,6 +717,7 @@ AS
         WHEN OTHERS THEN
             DMT_LOADER_PKG.g_async_mode := FALSE;
             DMT_LOADER_PKG.g_load_ess_id := NULL;
+            DMT_LOADER_PKG.g_reconciled_inline := FALSE;
             DMT_LOADER_PKG.g_partition_key := NULL;
             DMT_LOADER_PKG.g_work_queue_id := NULL;
             DMT_LOADER_PKG.g_gen_queue_id := NULL;
@@ -1072,6 +1112,69 @@ AS
                 END IF;
             END;
     END RECONCILE_ONE;
+
+    -- ============================================================
+    -- RECONCILE_VIA_REGISTRY — the ONE reconcile dispatch shared by
+    -- the loader's inline path and (implicitly) the queue. Backlog
+    -- item #7: reconcile used to be registered in TWO places (the
+    -- registry, read by RECONCILE_ONE, AND two hardcoded IF/ELSIF
+    -- chains inside DMT_LOADER_PKG). This wrapper lets the loader's
+    -- inline reconcile go through the SAME registry lookup +
+    -- invoke_registered site the queue uses, so an object is
+    -- registered once (DMT_PIPELINE_DEF_TBL.RECON_PROC) and cannot
+    -- silently drift.
+    --
+    -- Reuses the sanctioned invoke_registered site (no new dynamic-
+    -- SQL site: the three-site rule is unchanged). Styles are chosen
+    -- from RECON_HAS_CEMLI_ARG exactly as RECONCILE_ONE does, so the
+    -- shared supplier-family reconciler gets its p_cemli_code argument
+    -- identically.
+    --
+    -- Fail-open guard (Rule #1): an object with no RECON_PROC (and not
+    -- an HDL base-proof object, which reconciles inside its own loader
+    -- cycle) means NOTHING was confirmed against a Fusion base table.
+    -- RAISE -20044 rather than report success -- the same guard the
+    -- retired loader ELSE arm carried, now at the single dispatch site.
+    -- ============================================================
+    PROCEDURE RECONCILE_VIA_REGISTRY (
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
+    ) IS
+        l_exec_proc   VARCHAR2(200);
+        l_exec_mode   VARCHAR2(10);
+        l_recon_proc  VARCHAR2(200);
+        l_recon_cemli VARCHAR2(1);
+        l_ignore_keys DMT_PARTITION_KEY_TBL;
+    BEGIN
+        get_dispatch(p_cemli_code, l_exec_proc, l_exec_mode, l_recon_proc, l_recon_cemli);
+
+        IF l_recon_proc IS NULL THEN
+            -- HDL base-proof objects reconcile inside their own RUN_* cycle
+            -- (RECONCILE_HDL_OBJECT) and never route through this inline
+            -- dispatcher, so a NULL RECON_PROC there is expected -- do nothing.
+            IF is_hdl_base_proof(p_cemli_code) THEN
+                RETURN;
+            END IF;
+            RAISE_APPLICATION_ERROR(-20044,
+                'No RECON_PROC registered in DMT_PIPELINE_DEF_TBL for CEMLI_CODE '''
+                || p_cemli_code || '''. Refusing to report success without base-table '
+                || 'confirmation. Register the object''s reconcile dispatch (RECON_PROC) '
+                || 'before it can load.');
+        END IF;
+
+        invoke_registered(
+            p_proc          => l_recon_proc,
+            p_style         => CASE l_recon_cemli WHEN 'Y' THEN 'RECON_CEMLI' ELSE 'RECON' END,
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id,
+            p_work_queue_id => p_work_queue_id,
+            x_keys          => l_ignore_keys);
+    END RECONCILE_VIA_REGISTRY;
 
     -- ============================================================
     -- submit_postrun_job — Phase-2 staged load.
