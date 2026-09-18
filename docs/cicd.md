@@ -62,11 +62,12 @@ Fusion. **ATP's sequence is the single source of truth.**
 
 ## Prerequisites / open items
 
-- **APEX version gap (blocks APEX deploy to local).** Local APEX is 24.2; ATP is 26.1.
-  A 26.1 export cannot import into 24.2, so `deploy-apex --target local` is skipped for
-  now (local keeps its structurally-identical app 172). Decision pending: upgrade local
-  APEX to 26.1 (true mirror) vs. keep 24.2. The DB regression gate is unaffected. The
-  ATP APEX import (from the `apex/f500` git baseline) works today.
+- **APEX version parity — resolved 2026-09-17.** Local APEX was upgraded 24.2 → 26.1 to
+  match ATP, so `apex/f500` imports to both targets and `deploy-apex --target local` works.
+  If a Docker restart changes container IPs and ORDS loses its DB pool target
+  (`ORA-12541` on the browser), reset it with `ords config --db-pool default set
+  db.hostname host.docker.internal` / `db.port 1523` / `db.servicename FREEPDB1`, then
+  restart `dmt2-ords`. See `apex/README.md`.
 - **Hands-off automation (later).** This is script-first; you/the agent run it. To make
   a `git push` auto-fire the pipeline against local Docker, install a self-hosted GitHub
   Actions runner on this machine and call the same stages from a workflow.

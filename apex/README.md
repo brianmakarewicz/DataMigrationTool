@@ -30,20 +30,19 @@ and has been removed.
 
 Never edit the ATP (gold) app directly — that is what creates drift.
 
-## Open item — APEX version gap blocks TEST import (owner decision pending)
+## Version parity — local upgraded to APEX 26.1 (2026-09-17)
 
-Local Docker **does** have APEX (24.2, container `dmt2-ords` on port 8182, workspace
-`DMT`, currently serving app 172). But **ATP is on APEX 26.1**, and a 26.1 export
-cannot be imported into 24.2 (newer-into-older is unsupported). So the `apex/f500`
-baseline (captured from ATP 26.1) will not import to local as-is — `import --target
-local` is skipped in the CI pipeline for now.
+Local Docker APEX was upgraded **24.2 → 26.1** (container `dmt2-ords` on port 8182,
+workspace `DMT`) to match ATP. The `apex/f500` baseline (from ATP 26.1) now imports
+cleanly into local — app 500 is imported locally alongside the legacy app 172, and
+`import --target local` works in the CI pipeline.
 
-Local app 172 is **structurally identical** to ATP app 500 (same 41-page set), so
-local remains a working mirror in the meantime. Two ways to close the gap:
-- **(A, recommended)** upgrade local Docker APEX 24.2 → 26.1 so it truly mirrors prod
-  and the ATP baseline imports cleanly; or
-- **(B)** keep local on 24.2 and make the git canonical a 24.2-sourced export (imports
-  up to 26.1), accepting that 26.1-only features are not represented.
-
-The DB half of the pipeline is unaffected — local DB syncs from `db/` and the ATP
-APEX import from `apex/f500` works today.
+Upgrade notes (for the next time / other environments):
+- Run `apexins.sql SYSAUX SYSAUX TEMP /i/` as SYS inside `FREEPDB1`.
+- If a prior attempt was interrupted, drop the partial version schema first
+  (`alter session set "_oracle_script"=true; drop user APEX_<ver> cascade;`).
+- After upgrade, recompile invalidated DMT objects (APEX-dependent packages/procs).
+- ORDS (`dmt2-ords`) connects to the DB at `host.docker.internal:1523/FREEPDB1`; if a
+  Docker restart changes container IPs and the pool loses its target, reset it:
+  `ords --config /etc/ords/config config --db-pool default set db.hostname host.docker.internal`
+  (and `db.port 1523`, `db.servicename FREEPDB1`), then restart the ORDS container.

@@ -122,16 +122,11 @@ def deploy_db(target):
     return n == 0
 
 def deploy_apex(target):
-    """APEX deploy. ATP import works from the git split baseline. Local import is
-    blocked until local APEX (24.2) is upgraded to match ATP (26.1) - see the
-    open owner decision - so local is skipped with a clear message, not silently."""
-    if target == "local":
-        print("[deploy-apex:local] SKIPPED - local APEX 24.2 < ATP 26.1; ATP export "
-              "cannot import to local yet (owner decision pending). Local keeps app 172.")
-        return True
+    """APEX deploy from the git split baseline (apex/f500). Local APEX was upgraded
+    to 26.1 (2026-09-17) to match ATP, so import works on both targets now."""
     rc = subprocess.run([sys.executable, str(REPO / "scripts" / "apex_deploy.py"),
-                         "import", "--target", "atp"]).returncode
-    print(f"[deploy-apex:atp] {'OK' if rc == 0 else 'FAILED'}")
+                         "import", "--target", target]).returncode
+    print(f"[deploy-apex:{target}] {'OK' if rc == 0 else 'FAILED'}")
     return rc == 0
 
 # ---------------------------------------------------------------- prefix leapfrog
