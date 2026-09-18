@@ -55,7 +55,27 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
                               line_buffering=True)
 
 DEFAULT_PIPELINES = 'P2P,O2C,FINANCIALS,PROJECTS,HCM'   # run 113 reference set
-SCENARIO = 'RegressionTest'
+
+
+def _current_scenario():
+    """The current write-once regression scenario, read from the git-tracked
+    pointer scripts/regression_scenario.json (written by deploy_scenario.py).
+    We ALWAYS run the current write-once scenario with a new prefix; we never
+    reseed. Falls back to the legacy 'RegressionTest' only if the pointer is
+    missing (e.g. a brand-new checkout before the first deploy). Scenario 1
+    ('RegressionTest') is the permanently-polluted, abandoned scenario -- the
+    pointer keeps runs off it. See docs / never_reseed_writeonce_scenarios."""
+    try:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         'regression_scenario.json')
+        with open(p, encoding='utf-8') as f:
+            name = json.load(f).get('current_scenario')
+        return name or 'RegressionTest'
+    except Exception:
+        return 'RegressionTest'
+
+
+SCENARIO = _current_scenario()
 # CANCELLED removed 2026-07-08 (A8): no cancellation — Overview run-status table.
 TERMINAL_RUN_STATUSES = {'COMPLETED', 'COMPLETED_ERRORS', 'FAILED', 'NO_ROWS_PROCESSED'}
 TERMINAL_QUEUE_STATUSES = {'DONE', 'FAILED', 'SKIPPED'}
