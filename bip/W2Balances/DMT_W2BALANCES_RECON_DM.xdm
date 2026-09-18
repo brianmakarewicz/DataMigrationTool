@@ -26,7 +26,7 @@
     BatchName, stamped on the W2Balances TFM row as RECON_KEY). Balance-initialization
     batch objects are keyed by BatchName (a user key), not by a person SourceSystemId,
     so matching by BATCH_NAME is both correct and robust. BATCH_ID is the base id.
-    Verified live 2026-09-16/17 (--cred fin_impl): PAY_BAL_BATCH_HEADERS.BATCH_NAME is
+    Verified live 2026-09-16/17 (cred fin_impl): PAY_BAL_BATCH_HEADERS.BATCH_NAME is
     directly queryable (e.g. batch_name LIKE 'DMT%' returns the DMT batches with their
     BATCH_ID), and HRC_INTEGRATION_KEY_MAP has InitializeBalanceBatchHeader (7 keys)
     and InitializeBalanceBatchLine (13 keys), confirming the object names on this pod.
