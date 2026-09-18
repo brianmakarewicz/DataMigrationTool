@@ -55,7 +55,24 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
                               line_buffering=True)
 
 DEFAULT_PIPELINES = 'P2P,O2C,FINANCIALS,PROJECTS,HCM'   # run 113 reference set
-SCENARIO = 'RegressionTest'
+
+
+def _current_scenario():
+    """Always use the current write-once scenario recorded by deploy_scenario.py
+    (scripts/regression_scenario.json). We never run the stale/polluted original
+    'RegressionTest' (scenario 1). --scenario still overrides explicitly."""
+    ptr = os.path.join(os.path.dirname(__file__), 'regression_scenario.json')
+    try:
+        with open(ptr, encoding='utf-8') as fh:
+            name = json.load(fh).get('current_scenario')
+            if name:
+                return name
+    except (OSError, ValueError):
+        pass
+    return 'RegressionTest'
+
+
+SCENARIO = _current_scenario()
 # CANCELLED removed 2026-07-08 (A8): no cancellation — Overview run-status table.
 TERMINAL_RUN_STATUSES = {'COMPLETED', 'COMPLETED_ERRORS', 'FAILED', 'NO_ROWS_PROCESSED'}
 TERMINAL_QUEUE_STATUSES = {'DONE', 'FAILED', 'SKIPPED'}
