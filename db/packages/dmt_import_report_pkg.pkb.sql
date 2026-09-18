@@ -256,67 +256,21 @@
     END PARSE_AND_LOG_ERRORS;
 
     -- --------------------------------------------------------
-    -- APPLY_ERRORS (see spec for the full behavior contract). Extracted
-    -- from the byte-identical import-report match loops that were inlined
-    -- in the results packages (backlog item 28). Reproduces the inline
-    -- UPDATE exactly: identifiers concatenated into the statement text (they
-    -- are DMT compile-time constants, never user input), every value bound.
+    -- ERROR_TEXT_FOR (see spec). Pure string builder — the one piece that
+    -- was byte-identical across the results packages' import-report match
+    -- loops (backlog item 28). No SQL, no table access, no dynamic SQL:
+    -- each call site keeps its own static UPDATE and passes the composed
+    -- text to DMT_UTIL_PKG.APPEND_ERROR.
     -- --------------------------------------------------------
-    FUNCTION APPLY_ERRORS (
-        p_run_id        IN NUMBER,
-        p_errors        IN t_error_list,
-        p_table_name    IN VARCHAR2,
-        p_key_column    IN VARCHAR2,
-        p_parent_column IN VARCHAR2 DEFAULT NULL,
+    FUNCTION ERROR_TEXT_FOR (
+        p_error_message IN VARCHAR2,
         p_default_msg   IN VARCHAR2 DEFAULT 'Import error (no details)',
         p_tag           IN VARCHAR2 DEFAULT '[IMPORT_REPORT] '
-    ) RETURN NUMBER
+    ) RETURN VARCHAR2
     IS
-        l_sql     VARCHAR2(4000);
-        l_msg     VARCHAR2(4000);
-        l_matched NUMBER := 0;
     BEGIN
-        IF p_errors IS NULL OR p_errors.COUNT = 0 THEN
-            RETURN 0;
-        END IF;
-
-        -- Build the match predicate once. The simple form is the single-key
-        -- equality the Expenditure loop used; the compound form adds the
-        -- exact '/'-joined OR branch the Project loop used, and nothing more.
-        l_sql :=
-            'UPDATE ' || p_table_name || ' ' ||
-            'SET    TFM_STATUS           = ''FAILED'', ' ||
-            '       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, :msg), ' ||
-            '       RESULTS_UPDATED_DATE = SYSDATE, ' ||
-            '       LAST_UPDATED_DATE    = SYSDATE ' ||
-            'WHERE  RUN_ID     = :run_id ' ||
-            'AND    TFM_STATUS = ''GENERATED'' ' ||
-            'AND    (' || p_key_column || ' = :ident';
-        IF p_parent_column IS NOT NULL THEN
-            l_sql := l_sql ||
-                ' OR ' || p_parent_column || ' || ''/'' || ' || p_key_column || ' = :ident2';
-        END IF;
-        l_sql := l_sql || ')';
-
-        FOR i IN 1 .. p_errors.COUNT LOOP
-            IF p_errors(i).row_identifier IS NOT NULL THEN
-                l_msg := p_tag || NVL(p_errors(i).error_message, p_default_msg);
-                IF p_parent_column IS NOT NULL THEN
-                    EXECUTE IMMEDIATE l_sql
-                        USING l_msg, p_run_id,
-                              p_errors(i).row_identifier,
-                              p_errors(i).row_identifier;
-                ELSE
-                    EXECUTE IMMEDIATE l_sql
-                        USING l_msg, p_run_id,
-                              p_errors(i).row_identifier;
-                END IF;
-                l_matched := l_matched + SQL%ROWCOUNT;
-            END IF;
-        END LOOP;
-
-        RETURN l_matched;
-    END APPLY_ERRORS;
+        RETURN p_tag || NVL(p_error_message, p_default_msg);
+    END ERROR_TEXT_FOR;
 
 END DMT_IMPORT_REPORT_PKG;
 /
