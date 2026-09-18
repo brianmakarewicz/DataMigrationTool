@@ -461,21 +461,25 @@
 
     -- --------------------------------------------------------
     -- ACCOUNT_ALL_OR_NOTHING — Assets-ONLY exception (DMT_DESIGN section 5,
-    -- "Fixed Assets all-or-nothing accounting").
+    -- "Fixed Assets load-stage batch-failure accounting").
     --
-    -- Fixed Assets loads and posts a whole BOOK batch atomically: if any asset
-    -- in a book is rejected, NONE of that book's assets commit. When that
-    -- happens the two-tier BIP reconcile above confirms nothing and would leave
-    -- every asset in the book UNACCOUNTED. This routine gives those a real
-    -- verdict: the genuinely-rejected assets carry their actual Fusion error,
-    -- and the remaining assets in the SAME book carry a generic "batch rejected"
-    -- FAILED. It is scoped to ONE book partition (p_work_queue_id) and fires
-    -- ONLY when no asset in that book loaded (a true all-or-nothing failure).
+    -- Assets posts PER-ROW at Post Mass Additions (verified run 258: good assets
+    -- reach FA_ADDITIONS_B = LOADED, a bad asset fails with its real Fusion error)
+    -- -- that shape is handled by the normal two-tier BIP reconcile above, NOT
+    -- here. The all-or-nothing behavior is only at the SQL*LOADER LOAD stage: a
+    -- load-file reject makes SQL*Loader return WARNING (= zero rows committed) and
+    -- the load controller ERROR, so the whole book's records never reach the
+    -- interface table, the BIP reconcile confirms nothing, and every asset in the
+    -- book would be left UNACCOUNTED. This routine gives those a real verdict: the
+    -- genuinely-rejected assets carry their actual Fusion error, and any remaining
+    -- assets in the SAME book carry a generic "batch rejected" FAILED. It is
+    -- scoped to ONE book partition (p_work_queue_id) and fires ONLY when no asset
+    -- in that book loaded AND the load process genuinely failed.
     --
-    -- THIS PATTERN IS FORBIDDEN FOR EVERY OTHER OBJECT. All other objects
-    -- account per-row and MUST leave genuinely-unknown rows UNACCOUNTED rather
-    -- than blanket-failing a batch. Assets is the sole exception because its
-    -- Fusion load/post is atomic per book.
+    -- THIS PATTERN IS FORBIDDEN FOR EVERY OTHER OBJECT. All other objects account
+    -- per-row and MUST leave genuinely-unknown rows UNACCOUNTED rather than
+    -- blanket-failing a batch. Assets is the sole exception, and only because its
+    -- SQL*Loader LOAD stage is atomic per book (a WARNING commits zero rows).
     --
     -- Two error sources, matching the two failure stages:
     --   (a) LOAD stage: SQL*Loader rejected rows, so nothing reached
