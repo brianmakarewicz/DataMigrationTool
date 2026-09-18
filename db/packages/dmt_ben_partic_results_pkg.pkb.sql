@@ -37,7 +37,7 @@ AS
         p_run_id     IN NUMBER,
         p_request_id IN VARCHAR2
     ) IS
-        C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1_BENPARTICIPANT';
+        C_PROC      CONSTANT VARCHAR2(50) := 'APPLY_CONTRACT_V1_BENPARTICIPANT';
         l_gen_count NUMBER := 0;
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
