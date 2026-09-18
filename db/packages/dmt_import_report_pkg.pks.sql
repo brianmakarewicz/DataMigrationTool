@@ -48,5 +48,43 @@
         p_cemli_code     IN VARCHAR2 DEFAULT NULL
     ) RETURN NUMBER;
 
+    -- --------------------------------------------------------
+    -- APPLY_ERRORS — shared "match import-report error rows back to our
+    -- records" writer (backlog item 28). The same per-row loop was
+    -- copy-pasted across results packages: for each parsed error whose
+    -- row_identifier is not null, mark the matching still-GENERATED TFM
+    -- row FAILED and append the real Fusion message to ERROR_TEXT under
+    -- the [IMPORT_REPORT] tag. Extracted here once, parameterized by the
+    -- TFM table + the key column that carries the report's row identifier.
+    --
+    -- Behavior contract (must stay byte-identical to the inlined loops it
+    -- replaces — ERROR_TEXT is accounting evidence):
+    --   * Only rows with RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED' are
+    --     touched; a row already LOADED or FAILED is never revisited.
+    --   * Match key: p_key_column = row_identifier. When p_parent_column is
+    --     supplied, the object's inline predicate ALSO accepted the
+    --     '/'-joined compound (parent || '/' || key = row_identifier); that
+    --     exact OR branch is reproduced and NOTHING else. (INSTR/token
+    --     matches are object-specific and stay inline in their package.)
+    --   * ERROR_TEXT is written via DMT_UTIL_PKG.APPEND_ERROR (accumulate,
+    --     never overwrite) with p_tag || NVL(error_message, p_default_msg).
+    --   * Errors with a NULL row_identifier are skipped (never fabricated).
+    -- Returns the number of TFM rows matched (SUM of SQL%ROWCOUNT), so the
+    -- caller's matched-count accumulation is unchanged. Does NOT commit.
+    -- p_table_name / p_key_column / p_parent_column are compile-time
+    -- identifiers supplied by DMT code (never user input); every value is
+    -- bound, so the stored ERROR_TEXT and matched set are identical to the
+    -- static UPDATE this replaces.
+    -- --------------------------------------------------------
+    FUNCTION APPLY_ERRORS (
+        p_run_id        IN NUMBER,
+        p_errors        IN t_error_list,
+        p_table_name    IN VARCHAR2,
+        p_key_column    IN VARCHAR2,
+        p_parent_column IN VARCHAR2 DEFAULT NULL,
+        p_default_msg   IN VARCHAR2 DEFAULT 'Import error (no details)',
+        p_tag           IN VARCHAR2 DEFAULT '[IMPORT_REPORT] '
+    ) RETURN NUMBER;
+
 END DMT_IMPORT_REPORT_PKG;
 /

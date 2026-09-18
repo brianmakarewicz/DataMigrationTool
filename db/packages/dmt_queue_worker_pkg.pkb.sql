@@ -709,6 +709,30 @@ AS
             -- reconciler) still settle ONLY through the accounting gate —
             -- section 5 "Object-status accounting": DONE iff every record
             -- is accounted for; FAILED if any record is unaccounted.
+            --
+            -- Unaccounted sweep (backlog item 27, extended 2026-09-18). These
+            -- objects — config/FBL objects with no load ESS id, not HDL
+            -- base-proof, and no queue-dispatched reconciler (RECON_PROC NULL:
+            -- e.g. Lookups, ValueSets, GLCalendar, Banks, PaymentTerms,
+            -- UnitsOfMeasure, TaxCards, TaxConfig, ARReceipts) — settle here
+            -- and NEVER reach RECONCILE_ONE, so they were the one path that
+            -- skipped the shared sweep. Run the SAME sweep RECONCILE_ONE runs,
+            -- so any TFM row still GENERATED after the inline cycle is flipped
+            -- to the terminal status UNACCOUNTED with the bare [UNACCOUNTED]
+            -- tag before the gate reads the counts. This reuses the single
+            -- sanctioned SWEEP_UNACCOUNTED (no new dynamic-SQL site); it does
+            -- not commit, so it settles in the one COMMIT below with the gate.
+            -- Scope mirrors RECONCILE_ONE exactly: run-scoped unless this is a
+            -- spawn-per-partition child (a real PARTITION_KEY, not NULL/ALL).
+            DECLARE
+                l_scope_wq NUMBER;
+            BEGIN
+                l_scope_wq := CASE WHEN l_rec.PARTITION_KEY IS NOT NULL
+                                    AND l_rec.PARTITION_KEY <> 'ALL'
+                                   THEN p_queue_id END;
+                SWEEP_UNACCOUNTED(l_rec.RUN_ID, l_rec.CEMLI_CODE, l_scope_wq);
+            END;
+
             apply_accounting_gate(p_queue_id, l_rec.RUN_ID, l_rec.CEMLI_CODE);
         END IF;
         COMMIT;

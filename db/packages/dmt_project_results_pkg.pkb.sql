@@ -261,38 +261,40 @@ AS
 
             l_src := UPPER(NVL(l_ir_errors(i).error_source, ''));
 
+            -- Shared import-report match writer (backlog item 28). Each of the
+            -- three single-parent-key branches below is a byte-identical
+            -- compound match (child key OR parent || '/' || child key), so it
+            -- goes through the shared APPLY_ERRORS with p_parent_column. The
+            -- project ELSE branch uses an INSTR token match that the shared
+            -- signature cannot express, so it stays inline. p_default_msg is
+            -- 'Import error' here (the Project literal), and APPLY_ERRORS is
+            -- called with a single-element list so it matches only THIS error.
             IF l_src LIKE '%TASK%' THEN
-                UPDATE DMT_PJF_TASKS_TFM_TBL
-                SET    TFM_STATUS = 'FAILED',
-                       ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
-                       RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                AND    (TASK_NAME = l_ir_errors(i).row_identifier
-                        OR PROJECT_NUMBER || '/' || TASK_NAME = l_ir_errors(i).row_identifier);
-                x_matched := x_matched + SQL%ROWCOUNT;
+                x_matched := x_matched + DMT_IMPORT_REPORT_PKG.APPLY_ERRORS(
+                    p_run_id        => p_run_id,
+                    p_errors        => DMT_IMPORT_REPORT_PKG.t_error_list(l_ir_errors(i)),
+                    p_table_name    => 'DMT_PJF_TASKS_TFM_TBL',
+                    p_key_column    => 'TASK_NAME',
+                    p_parent_column => 'PROJECT_NUMBER',
+                    p_default_msg   => 'Import error');
 
             ELSIF l_src LIKE '%TEAM%' OR l_src LIKE '%PART%' OR l_src LIKE '%MEMBER%' THEN
-                UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                SET    TFM_STATUS = 'FAILED',
-                       ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
-                       RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                AND    (TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier
-                        OR PROJECT_NAME || '/' || TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier);
-                x_matched := x_matched + SQL%ROWCOUNT;
+                x_matched := x_matched + DMT_IMPORT_REPORT_PKG.APPLY_ERRORS(
+                    p_run_id        => p_run_id,
+                    p_errors        => DMT_IMPORT_REPORT_PKG.t_error_list(l_ir_errors(i)),
+                    p_table_name    => 'DMT_PJF_TEAM_MEMBERS_TFM_TBL',
+                    p_key_column    => 'TEAM_MEMBER_NAME',
+                    p_parent_column => 'PROJECT_NAME',
+                    p_default_msg   => 'Import error');
 
             ELSIF l_src LIKE '%TXN%' OR l_src LIKE '%CONTROL%' THEN
-                UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
-                SET    TFM_STATUS = 'FAILED',
-                       ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error')),
-                       RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                AND    (TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier
-                        OR PROJECT_NUMBER || '/' || TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier);
-                x_matched := x_matched + SQL%ROWCOUNT;
+                x_matched := x_matched + DMT_IMPORT_REPORT_PKG.APPLY_ERRORS(
+                    p_run_id        => p_run_id,
+                    p_errors        => DMT_IMPORT_REPORT_PKG.t_error_list(l_ir_errors(i)),
+                    p_table_name    => 'DMT_PJC_TXN_CONTROLS_TFM_TBL',
+                    p_key_column    => 'TXN_CTRL_REFERENCE',
+                    p_parent_column => 'PROJECT_NUMBER',
+                    p_default_msg   => 'Import error');
 
             ELSE
                 -- The report's per-project identifier can be a composite of the
