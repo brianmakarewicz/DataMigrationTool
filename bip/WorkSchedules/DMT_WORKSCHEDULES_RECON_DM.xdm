@@ -25,7 +25,7 @@
 
     CONFIG PREREQUISITE for branch (2): a ScheduleAssignment can only succeed
     when a Work Schedule (ZMM_SR_SCHEDULES) exists that wraps the pattern and is
-    referenced by ScheduleName. Verified live 2026-09-17 (--cred fin_impl):
+    referenced by ScheduleName. Verified live 2026-09-17 (cred fin_impl):
     the four HDL objects WorkPattern / WorkPatternShift / WorkPatternBreak /
     ScheduleAssignment all exist in HRC_INTEGRATION_KEY_MAP, and
     PER_SCHEDULE_ASSIGNMENTS rows key off SCHEDULE_ID via ZMM_SR_SCHEDULE_PATTERNS
