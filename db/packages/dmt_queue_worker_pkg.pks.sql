@@ -91,5 +91,35 @@ AS
         p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
+    -- ------------------------------------------------------------
+    -- RECONCILE_VIA_REGISTRY — the ONE reconcile dispatch (backlog
+    -- item #7 "reconcile registered in two places / fail-open").
+    -- Looks up the object's RECON_PROC / RECON_HAS_CEMLI_ARG from
+    -- DMT_PIPELINE_DEF_TBL and invokes it through the sanctioned
+    -- invoke_registered site — the SAME registry-driven path the
+    -- queue's RECONCILE_ONE uses. This replaces the loader's two
+    -- hardcoded IF/ELSIF reconcile chains (submit_and_reconcile_one
+    -- and the generic single-load path), so an object is registered
+    -- in ONE place, not two that can silently drift.
+    --
+    -- Fail-open guard (Rule #1) preserved: if the object has no
+    -- RECON_PROC registered, this RAISES ORA-20044 — never a silent
+    -- success without base-table confirmation. This is the same
+    -- guard the retired loader ELSE arm carried, now at the single
+    -- dispatch site.
+    --
+    -- Called by DMT_LOADER_PKG's inline reconcile path (grouped
+    -- objects that submit multiple ESS jobs per object, and SYNC
+    -- objects) and by any direct RUN_* call. The queue's own
+    -- RECONCILE_ONE keeps calling invoke_registered directly.
+    -- ------------------------------------------------------------
+    PROCEDURE RECONCILE_VIA_REGISTRY (
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
+    );
+
 END DMT_QUEUE_WORKER_PKG;
 /

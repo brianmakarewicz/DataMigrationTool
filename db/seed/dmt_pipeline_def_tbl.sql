@@ -45,6 +45,14 @@ using (
     union all select 'FINANCIALS', 20, 'GLBudgets', null, null from dual
     union all select 'FINANCIALS', 30, 'Assets', null,
         '/oracle/apps/ess/financials/assets/additions;PostMassAdditions' from dual
+    -- PlanningBudgets is NOT a pipeline member that runs in a FINANCIALS run
+    -- (decided 2026-07-07: out of scope). It is listed here only to satisfy the
+    -- NOT NULL PIPELINE_CODE so its dispatch row can carry a RECON_PROC (see the
+    -- dispatch MERGE below); EXEC_PROC stays NULL so the scheduler never queues it
+    -- (it queues only rows WHERE EXEC_PROC IS NOT NULL). It runs solely via a
+    -- direct RUN_PLAN_BUDGETS call. SORT_ORDER 90 keeps it clear of the real
+    -- FINANCIALS members.
+    union all select 'FINANCIALS', 90, 'PlanningBudgets', null, null from dual
     -- The single Worker load carries the WorkRelationship/WorkTerms/Assignment
     -- components (2026-09-17 HCM object-model correction), so 'Assignments' is no
     -- longer a pipeline object. 'PayrollRelationships' is retired too: it is
@@ -146,6 +154,16 @@ using (
     union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_GL_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'GLBudgets', 'DMT_LOADER_PKG.RUN_GL_BUDGETS', 'ASYNC', 'DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'Assets', 'DMT_LOADER_PKG.RUN_ASSETS', 'ASYNC', 'DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_FA_ASSET_RESULTS_PKG.GET_PARTITION_KEYS' from dual
+    -- PlanningBudgets: out of scope as a PIPELINE MEMBER (decided 2026-07-07) --
+    -- it is never seeded into a pipeline run because EXEC_PROC is NULL (the
+    -- scheduler queues only rows WHERE EXEC_PROC IS NOT NULL). But it DOES
+    -- reconcile when run directly via RUN_PLAN_BUDGETS, so its RECON_PROC is
+    -- registered here so the ONE reconcile dispatch (RECONCILE_VIA_REGISTRY,
+    -- backlog #7) finds it instead of hitting the fail-open -20044. Its
+    -- RECONCILE_BATCH now carries the uniform p_work_queue_id argument.
+    -- PIPELINE_CODE is required NOT NULL; FINANCIALS is its natural home, but
+    -- with EXEC_PROC NULL it is never dispatched into a FINANCIALS run.
+    union all select 'PlanningBudgets', null, 'ASYNC', 'DMT_PLAN_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     -- 'Assignments' + 'PayrollRelationships' dispatch rows retired 2026-09-17
     -- (see the membership block above); explicitly deleted at EOF to converge.
     union all select 'Workers', 'DMT_LOADER_PKG.RUN_WORKERS', 'ASYNC', null, 'N', null from dual

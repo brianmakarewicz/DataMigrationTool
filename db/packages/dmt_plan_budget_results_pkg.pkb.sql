@@ -71,7 +71,8 @@
     EXCEPTION WHEN OTHERS THEN DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'FETCH_BIP_RESULTS failed.', SQLERRM, C_PKG, 'FETCH_BIP_RESULTS'); RAISE;
     END FETCH_BIP_RESULTS;
 
-    PROCEDURE PARSE_AND_UPDATE (p_run_id IN NUMBER, p_xml_data IN CLOB) IS
+    PROCEDURE PARSE_AND_UPDATE (p_run_id IN NUMBER, p_xml_data IN CLOB,
+        p_work_queue_id IN NUMBER DEFAULT NULL) IS
         l_report_b64 VARCHAR2(32767); l_b64_start INTEGER; l_b64_end INTEGER;
         l_report_xml CLOB; l_xml XMLTYPE; l_loaded NUMBER := 0; l_failed NUMBER := 0;
     BEGIN
@@ -93,15 +94,20 @@
                 error_msg     VARCHAR2(4000) PATH 'ERROR_MESSAGE') x
         ) LOOP
             IF r.import_status IN ('Y','PROCESSED','SUCCESS','COMPLETED') THEN
+                -- Work-queue-ID core: when a work-queue scope is supplied, touch only
+                -- THIS item's rows (p_work_queue_id NULL = run-scoped, the standard
+                -- direct-run path -- byte-identical to the prior behaviour).
                 UPDATE DMT_PLAN_BUDGET_TFM_TBL SET TFM_STATUS='LOADED', RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-                WHERE RUN_ID=p_run_id AND SCENARIO=r.scenario AND TFM_STATUS!='LOADED';
+                WHERE RUN_ID=p_run_id AND SCENARIO=r.scenario AND TFM_STATUS!='LOADED'
+                AND   (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             ELSIF r.error_msg IS NOT NULL THEN
                 -- Real Fusion error returned — mark FAILED carrying it.
                 UPDATE DMT_PLAN_BUDGET_TFM_TBL SET TFM_STATUS='FAILED',
                     ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,'[FUSION_ERROR] '||r.error_msg),
                     RESULTS_UPDATED_DATE=SYSDATE, LAST_UPDATED_DATE=SYSDATE
-                WHERE RUN_ID=p_run_id AND SCENARIO=r.scenario AND TFM_STATUS!='FAILED';
+                WHERE RUN_ID=p_run_id AND SCENARIO=r.scenario AND TFM_STATUS!='FAILED'
+                AND   (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
                 l_failed := l_failed + SQL%ROWCOUNT;
             -- Non-success status but no real Fusion error message: do NOT write a
             -- bare '[FUSION_ERROR]' with no detail. Leave the row GENERATED for the
@@ -124,11 +130,12 @@
     EXCEPTION WHEN OTHERS THEN DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'PARSE_AND_UPDATE failed.', SQLERRM, C_PKG, 'PARSE_AND_UPDATE'); RAISE;
     END PARSE_AND_UPDATE;
 
-    PROCEDURE RECONCILE_BATCH (p_run_id IN NUMBER, p_load_ess_id IN NUMBER, p_import_ess_id IN NUMBER DEFAULT NULL) IS
+    PROCEDURE RECONCILE_BATCH (p_run_id IN NUMBER, p_load_ess_id IN NUMBER, p_import_ess_id IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL) IS
         l_xml CLOB;
     BEGIN
         l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id);
-        PARSE_AND_UPDATE(p_run_id, l_xml);
+        PARSE_AND_UPDATE(p_run_id, l_xml, p_work_queue_id => p_work_queue_id);
         IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN DBMS_LOB.FREETEMPORARY(l_xml); END IF;
     EXCEPTION WHEN OTHERS THEN DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'RECONCILE_BATCH failed.', SQLERRM, C_PKG, 'RECONCILE_BATCH'); RAISE;
     END RECONCILE_BATCH;
