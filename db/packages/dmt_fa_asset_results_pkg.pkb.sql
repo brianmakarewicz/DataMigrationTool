@@ -679,7 +679,7 @@
                     WHERE h.RUN_ID = bk.RUN_ID AND h.ASSET_NUMBER = bk.ASSET_NUMBER
                     AND h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
                bk.LAST_UPDATED_DATE = SYSDATE
-        WHERE  bk.RUN_ID = p_run_id AND bk.TFM_STATUS = 'GENERATED'
+        WHERE  bk.RUN_ID = p_run_id AND bk.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND    EXISTS (SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL h
                        WHERE h.RUN_ID = bk.RUN_ID AND h.ASSET_NUMBER = bk.ASSET_NUMBER
                        AND h.TFM_STATUS = 'FAILED');
@@ -692,7 +692,7 @@
                     WHERE h.RUN_ID = asn.RUN_ID AND h.ASSET_NUMBER = asn.ASSET_NUMBER
                     AND h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
                asn.LAST_UPDATED_DATE = SYSDATE
-        WHERE  asn.RUN_ID = p_run_id AND asn.TFM_STATUS = 'GENERATED'
+        WHERE  asn.RUN_ID = p_run_id AND asn.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND    EXISTS (SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL h
                        WHERE h.RUN_ID = asn.RUN_ID AND h.ASSET_NUMBER = asn.ASSET_NUMBER
                        AND h.TFM_STATUS = 'FAILED');
@@ -748,9 +748,18 @@
             DBMS_LOB.FREETEMPORARY(l_xml);
         END IF;
 
-        -- Unresolved records intentionally left GENERATED (unaccounted).
-        -- No fabricated FAILED: the accounting gate reports the object
-        -- not-DONE and the funnel surfaces these as UNRECONCILED.
+        -- Assets-ONLY exception: Fixed Assets loads/posts a book atomically, so
+        -- a single rejected asset leaves the whole book unposted and the BIP
+        -- reconcile above confirms nothing. Give those rows a real verdict
+        -- (real Fusion error on the rejected asset(s), generic on the rest)
+        -- instead of leaving the book UNACCOUNTED. Fires only on a genuinely
+        -- failed load process; a still-lagging load leaves rows UNACCOUNTED.
+        -- See DMT_DESIGN section 5 (Fixed Assets all-or-nothing accounting).
+        ACCOUNT_ALL_OR_NOTHING(p_run_id, p_load_ess_id, p_work_queue_id);
+
+        -- Any records still unresolved are intentionally left GENERATED
+        -- (unaccounted); the accounting gate reports the object not-DONE and the
+        -- funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
