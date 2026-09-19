@@ -893,3 +893,50 @@ when not matched then insert
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- UnitsOfMeasure (100000041) — NEW reconciliation standard (DMT_DESIGN.html,
+-- PROPOSED 2026-09): reconciliation is a BIP report over the Fusion BASE table
+-- that returns the base-table surrogate id. UOM loads via REST POST to the
+-- unitsOfMeasure resource, but LOADED is now driven by a positive hit in the
+-- base table INV_UNITS_OF_MEASURE_B: DMT_INV_UOM_RESULTS_PKG runs the report
+-- DMT_UOM_RECON_RPT over the run's UOM codes and, for each code found, marks the
+-- TFM row LOADED with FUSION_UOM_ID = UNIT_OF_MEASURE_ID (== the REST UOMId).
+-- INTERFACE_TABLE = 'N/A (REST)' — there is no interface table; the report reads
+-- the base table directly. The report is keyed by CEMLI_CODE 'UnitsOfMeasure'
+-- (the reconciler passes p_cemli_code => 'UnitsOfMeasure' to RUN_BIP_REPORT).
+-- Config UOM codes are 3 characters and are NOT run-prefixed (a numeric prefix
+-- would not fit UOM_CODE VARCHAR2(3)); the single parameter P_UOM_CODES carries
+-- the exact comma-delimited code list. This reconciler uses its own RECORD_KEY/
+-- BASE parser (not the shared Contract v1 parser), so the Contract v1 columns
+-- are left NULL. The when-not-matched insert makes this block self-contained.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000041                                                     bip_report_id,
+           'UnitsOfMeasure'                                              cemli_code,
+           'Unit of Measure'                                             object_type,
+           '/Custom/DMT2/UnitsOfMeasure/DMT_UOM_RECON_DM.xdm'            dm_catalog_path,
+           '/Custom/DMT2/UnitsOfMeasure/DMT_UOM_RECON_RPT.xdo'           report_catalog_path,
+           'N/A (REST)'                                                  interface_table,
+           'Units of Measure base-table reconciliation (new recon standard). '
+             || 'REST POST loads the UOM; LOADED is confirmed by a hit in '
+             || 'INV_UNITS_OF_MEASURE_B, capturing FUSION_UOM_ID = UNIT_OF_MEASURE_ID.' notes
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null);
+
+commit;
