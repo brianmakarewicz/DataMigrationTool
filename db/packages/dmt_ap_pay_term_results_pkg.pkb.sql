@@ -32,8 +32,14 @@
         l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
         l_url      := l_base_url || p_path;
 
-        UTL_HTTP.SET_WALLET('file:' || DMT_UTIL_PKG.GET_CONFIG('WALLET_DIR'),
-                            DMT_UTIL_PKG.GET_CONFIG('WALLET_PASSWORD'));
+        -- Attach a wallet only when a real one is configured; otherwise use the DB
+        -- default certificate store (as DMT_UTIL_PKG.HTTP_REQUEST and every other
+        -- HTTP caller do). An unset/placeholder WALLET_DIR must not be forced into
+        -- an invalid 'file:...' path — that throws ORA-29273 before any auth.
+        IF INSTR(NVL(DMT_UTIL_PKG.GET_CONFIG('WALLET_DIR'),' '),'/') > 0 THEN
+            UTL_HTTP.SET_WALLET('file:' || DMT_UTIL_PKG.GET_CONFIG('WALLET_DIR'),
+                                DMT_UTIL_PKG.GET_CONFIG('WALLET_PASSWORD'));
+        END IF;
 
         l_http_req := UTL_HTTP.BEGIN_REQUEST(l_url, p_method, 'HTTP/1.1');
         UTL_HTTP.SET_HEADER(l_http_req, 'Authorization',
