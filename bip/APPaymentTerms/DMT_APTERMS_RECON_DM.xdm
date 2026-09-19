@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="apterms_base_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    b.name                               AS record_key,
+    'SUCCESS'                            AS import_status,
+    'BASE'                               AS source_type,
+    b.term_id                            AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))         AS error_message
+FROM   ap_terms b
+WHERE  INSTR(',' || :P_TERM_NAMES || ',', ',' || b.name || ',') > 0
+      ]]></sql>
+    </dataSet>
+    <dataSet name="apterm_line_base_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    TO_CHAR(l.term_id) || '-' || TO_CHAR(l.sequence_num)   AS record_key,
+    'SUCCESS'                                              AS import_status,
+    'BASE_LINE'                                            AS source_type,
+    l.term_id                                              AS fusion_id,
+    l.sequence_num                                         AS sequence_num,
+    CAST(NULL AS VARCHAR2(4000))                           AS error_message
+FROM   ap_terms_lines l
+WHERE  INSTR(',' || :P_TERM_IDS || ',', ',' || TO_CHAR(l.term_id) || ',') > 0
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="apterms_base_results">
+          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
+          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+        <group name="G_2" label="G_2" source="apterm_line_base_results">
+          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
+          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="SEQUENCE_NUM" value="SEQUENCE_NUM" dataType="xsd:integer" tagName="SEQUENCE_NUM"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_TERM_NAMES" dataType="character" rowPlacement="1"
+               labelID="P_TERM_NAMES" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_TERM_IDS" dataType="character" rowPlacement="1"
+               labelID="P_TERM_IDS" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

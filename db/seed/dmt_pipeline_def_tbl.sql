@@ -182,7 +182,7 @@ using (
     union all select 'ValueSets', 'DMT_FND_VS_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
     union all select 'Lookups', null, 'ASYNC', null, 'N', null from dual
     union all select 'UnitsOfMeasure', 'DMT_INV_UOM_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
-    union all select 'PaymentTerms', null, 'ASYNC', null, 'N', null from dual
+    union all select 'PaymentTerms', 'DMT_AP_PAY_TERM_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
     union all select 'TaxConfig', null, 'ASYNC', null, 'N', null from dual
     union all select 'Banks', null, 'ASYNC', null, 'N', null from dual
 ) s

@@ -993,3 +993,53 @@ when not matched then insert
             null, null);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- PaymentTerms (100000043) — NEW reconciliation standard (DMT_DESIGN.html,
+-- PROPOSED 2026-09): reconciliation is a BIP report over the Fusion BASE tables
+-- that returns the base-table surrogate id. AP Payment Terms load via REST POST
+-- to the standardTerms resource, but LOADED is now driven by a positive hit in
+-- the base tables: DMT_AP_PAY_TERM_RESULTS_PKG runs the report
+-- DMT_APTERMS_RECON_RPT and, for each header name found in AP_TERMS, marks the
+-- header TFM row LOADED with FUSION_TERM_ID = TERM_ID (== the REST TermId); for
+-- each installment line found in AP_TERMS_LINES under a confirmed TERM_ID, marks
+-- the line TFM row LOADED. INTERFACE_TABLE = 'N/A (REST)' — there is no interface
+-- table; the report reads the base tables directly. The report is keyed by
+-- CEMLI_CODE 'PaymentTerms' (the reconciler passes p_cemli_code => 'PaymentTerms'
+-- to RUN_BIP_REPORT). Term names are NOT run-prefixed; the two parameters
+-- P_TERM_NAMES (header names) and P_TERM_IDS (confirmed header TERM_IDs for the
+-- line pass) carry the exact lists for this run. This reconciler uses its own
+-- RECORD_KEY/SOURCE_TYPE parser (not the shared Contract v1 parser), so the
+-- Contract v1 columns are left NULL. The when-not-matched insert makes this
+-- block self-contained.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000043                                                     bip_report_id,
+           'PaymentTerms'                                                cemli_code,
+           'AP Payment Terms'                                            object_type,
+           '/Custom/DMT2/APPaymentTerms/DMT_APTERMS_RECON_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/APPaymentTerms/DMT_APTERMS_RECON_RPT.xdo'       report_catalog_path,
+           'N/A (REST)'                                                  interface_table,
+           'AP Payment Terms base-table reconciliation (new recon standard). '
+             || 'REST POST loads the term then its installment lines; LOADED is '
+             || 'confirmed by a hit in AP_TERMS (FUSION_TERM_ID = TERM_ID) and '
+             || 'AP_TERMS_LINES. One report, two params: P_TERM_NAMES and P_TERM_IDS.' notes
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null);
+
+commit;
