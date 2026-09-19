@@ -4,27 +4,30 @@
 AS
     C_PKG CONSTANT VARCHAR2(30) := 'DMT_QUEUE_WORKER_PKG';
 
-    -- HDL base-table lag retry cap. HDL loads are asynchronous: after the HDL
-    -- data set finishes. CORRECTION (2026-09-17): an HDL data set that COMPLETES
-    -- writes its rows to the base tables as part of the same job -- there is no
-    -- meaningful "base-table lag". If the reconcile finds a GENERATED row still
-    -- absent from the base table, the load did NOT succeed for that row, and the
-    -- real reason is available immediately from the data set's own status and
-    -- per-record messages (GET_HDL_ERRORS). The earlier long defer loop (8-20
-    -- retries at 90-120s) was a misdiagnosis: it waited ~12-40 minutes for base
-    -- rows that were never coming, then swept them UNACCOUNTED anyway. It is
-    -- replaced by the job-driven reconcile: per-record errors are applied from the
-    -- data set immediately, and LOADED is confirmed by ONE base-table proof pass.
-    -- This short cap absorbs only the brief settling window in which a COMPLETED
-    -- data set's base rows become queryable (observed at seconds to ~2 min, and it
-    -- can differ slightly per tier -- e.g. the Worker person row confirms a moment
-    -- before its WorkRelationship period-of-service row), plus a transient REST/BIP
-    -- blip. It is NOT the old base-lag budget: 5 x 30s = 2.5 min, versus the retired
-    -- 40-minute wait. A row still absent after this window did NOT load, and the
-    -- honest sweep marks it with the data set's real per-record message. This
-    -- supersedes the prior 40-minute retry (was PR #268).
-    C_HDL_RECON_MAX_RETRY CONSTANT PLS_INTEGER := 5;
-    C_HDL_RECON_DELAY_SEC CONSTANT PLS_INTEGER := 30;
+    -- HDL base-table lag retry window. HDL runs one "Import and Load HCM Data"
+    -- job in two phases: Import, then Load. The Load phase writes rows to the HCM
+    -- application (base) tables synchronously inside that job, so when the data set
+    -- completes successfully the base rows ARE committed. CORRECTION (2026-09-19):
+    -- committed is not the same as BIP-readable. After the Load phase commits, a
+    -- few minutes of read-side visibility lag remain (search-keyword / index
+    -- refresh and delivered post-processes) during which our base-table proof
+    -- (FETCH_ROWS, a BIP report) may not yet return the row. The prior cap
+    -- (2026-09-17: 5 x 30s = 2.5 min) collapsed "committed" and "readable" and was
+    -- too short: the SAME good worker was swept UNACCOUNTED on some runs and
+    -- confirmed LOADED on others purely by whether the single proof landed inside
+    -- that 2.5-minute window (observed runs 259/260 vs 261/262). This restores a
+    -- longer, bounded window with a gentle backoff (30s, 60s, then 120s) so a
+    -- genuinely-loaded row has time to become BIP-visible on a later tick. The
+    -- window stays honest and terminating: the reconciler NEVER fabricates LOADED
+    -- (it promotes only on a positive base-table hit), a genuinely-rejected record
+    -- was already marked FAILED [FUSION_ERROR] from the data set's per-record
+    -- messages (so it never enters this defer branch), and the cap guarantees the
+    -- sweep + gate still run once the window is exhausted. Total window ~11.5 min
+    -- (30+60+120*5). Supersedes the 2026-09-17 2.5-min cap and the earlier PR #268
+    -- 40-minute wait.
+    C_HDL_RECON_MAX_RETRY     CONSTANT PLS_INTEGER := 7;
+    C_HDL_RECON_DELAY_SEC     CONSTANT PLS_INTEGER := 30;   -- base (first) delay
+    C_HDL_RECON_MAX_DELAY_SEC CONSTANT PLS_INTEGER := 120;  -- backoff ceiling
 
     -- ============================================================
     -- get_dispatch — read the object's dispatch registration from
@@ -901,6 +904,7 @@ AS
                 l_unaccounted   NUMBER;
                 l_attempt       PLS_INTEGER;
                 l_next_attempt  PLS_INTEGER;
+                l_delay_sec     PLS_INTEGER;
                 l_carry         VARCHAR2(4000);
             BEGIN
                 -- Same scope the sweep/gate use: run-scoped, or WORK_QUEUE_ID for
@@ -946,9 +950,14 @@ AS
 
                 IF l_awaiting > 0 AND l_attempt < C_HDL_RECON_MAX_RETRY THEN
                     l_next_attempt := l_attempt + 1;
+                    -- Gentle backoff: 30s, 60s, then 120s (capped). Quick early
+                    -- checks catch the common fast-settling case; longer later
+                    -- delays ride out BIP read-visibility lag without hammering.
+                    l_delay_sec := LEAST(C_HDL_RECON_MAX_DELAY_SEC,
+                                         C_HDL_RECON_DELAY_SEC * POWER(2, LEAST(l_attempt, 2)));
                     -- Re-schedule this reconcile: stamp the sentinel, delay the next
-                    -- pick-up by 90s, and route back to RECONCILING so the poller
-                    -- (dispatch_reconcile, which now honours NEXT_POLL_AFTER)
+                    -- pick-up by l_delay_sec, and route back to RECONCILING so the
+                    -- poller (dispatch_reconcile, which honours NEXT_POLL_AFTER)
                     -- re-spawns DMT_RC_{queue_id} after the delay. Do NOT set
                     -- COMPLETED_AT -- the item is not terminal.
                     UPDATE DMT_WORK_QUEUE_TBL
@@ -956,7 +965,7 @@ AS
                         ERROR_MESSAGE   = '[HDL_BASE_RETRY ' || l_next_attempt || '] '
                             || 'HDL base rows not yet visible; deferring reconcile.',
                         NEXT_POLL_AFTER = SYS_EXTRACT_UTC(SYSTIMESTAMP)
-                                          + NUMTODSINTERVAL(C_HDL_RECON_DELAY_SEC, 'SECOND')
+                                          + NUMTODSINTERVAL(l_delay_sec, 'SECOND')
                     WHERE QUEUE_ID = p_queue_id;
 
                     DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
@@ -964,7 +973,7 @@ AS
                         || ' (' || l_awaiting || ' record(s) still awaiting base '
                         || 'confirmation); deferring reconcile, retry '
                         || l_next_attempt || '/' || C_HDL_RECON_MAX_RETRY
-                        || ' after ' || C_HDL_RECON_DELAY_SEC || 's.',
+                        || ' after ' || l_delay_sec || 's.',
                         'INFO', C_PKG, 'RECONCILE_ONE');
 
                     COMMIT;
