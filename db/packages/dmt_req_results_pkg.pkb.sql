@@ -476,6 +476,35 @@ AS
         AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
         AND    ln.ERROR_TEXT       IS NOT NULL;
 
+        -- 5a3. Lines still GENERATED whose HEADER FAILED WITH A REAL Fusion error
+        --      did not import because the parent requisition header was rejected
+        --      (e.g. RT-REQ-BADHDR: nonexistent preparer). This is the sanctioned
+        --      child-inherits-parent's-REAL-error path: the header carries a real
+        --      G_ERRORS message (Step 2), so a good line under it is honestly
+        --      FAILED with that real header error rather than swept to UNACCOUNTED.
+        --      Guarded on h.ERROR_TEXT IS NOT NULL so nothing is ever fabricated;
+        --      Step 5b then carries the same real parent error onto the line's dists.
+        UPDATE DMT_POR_REQ_LINES_TFM_TBL ln
+        SET    ln.TFM_STATUS            = 'FAILED',
+               ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT h.ERROR_TEXT FROM DMT_POR_REQ_HEADERS_TFM_TBL h
+                    WHERE  h.RUN_ID = p_run_id
+                    AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
+                    AND    h.TFM_STATUS = 'FAILED'
+                    AND    h.ERROR_TEXT IS NOT NULL
+                    AND    ROWNUM = 1)),
+               ln.RESULTS_UPDATED_DATE = SYSDATE,
+               ln.LAST_UPDATED_DATE = SYSDATE
+        WHERE  ln.RUN_ID    = p_run_id
+        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
+        AND    EXISTS (
+            SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL h
+            WHERE  h.RUN_ID    = p_run_id
+            AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
+            AND    h.TFM_STATUS           = 'FAILED'
+            AND    h.ERROR_TEXT           IS NOT NULL);
+
         -- 5b. Dists still GENERATED under a FAILED line, with no real error of
         --     their own. The parent line only reaches FAILED carrying a real
         --     Fusion error (its own from G_ERRORS, or a child distribution's real
