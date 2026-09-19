@@ -569,11 +569,11 @@
         -- Poll the FAILED process before deciding this is an all-or-nothing
         -- failure. Nothing loaded can mean either (i) the load/post genuinely
         -- failed -- an atomic-batch rejection we must account -- or (ii) the load
-        -- succeeded and the base rows simply have not appeared yet (lag). We only
-        -- apply a verdict when there is real evidence of failure: the captured
-        -- load controller reached a failed/warning state, one of its SQL*Loader
-        -- children rejected rows, or the BIP report already returned a real error.
-        -- Otherwise we leave the rows UNACCOUNTED (never fabricate a failure).
+        -- succeeded and the base rows simply have not appeared yet (lag), or (iii)
+        -- the load succeeded and a row failed at the POST stage. The accepted
+        -- DMT_DESIGN section 7 carve-out authorizes the all-or-nothing exception
+        -- ONLY for a genuinely failed LOAD process (captured load controller
+        -- ERROR, or a SQL*Loader child WARNING/reject).
         SELECT COUNT(*) INTO l_proc_failed
         FROM   DMT_ESS_JOB_TBL
         WHERE  RUN_ID = p_run_id
@@ -581,13 +581,19 @@
         AND    (UPPER(STATE_TEXT) IN ('ERROR','WARNING')
                 OR STATE IN (10, 11));   -- 10=ERROR, 11=WARNING (SQL*Loader reject); Fusion emits SUCCEEDED/WARNING/ERROR
 
-        IF l_proc_failed = 0 AND l_failed_bip = 0 THEN
+        -- Gate the ENTIRE exception on a genuinely-failed LOAD process. If the
+        -- load shows no failure (l_proc_failed = 0) we do NOT batch-reject -- even
+        -- when a row was individually FAILED at the POST stage (l_failed_bip > 0):
+        -- Post Mass Additions is PER-ROW (proven run 258), so good rows load and
+        -- any remainder stays UNACCOUNTED via the normal path. Post-stage / lag /
+        -- indeterminate cases are never fabricated into a [BATCH_REJECTED] verdict.
+        IF l_proc_failed = 0 THEN
             DMT_UTIL_PKG.LOG(
                 p_run_id => p_run_id,
                 p_message => C_PROC || ' book=' || NVL(l_book,'(all)') ||
-                    ': nothing loaded but the load process shows no failure and BIP '
-                    || 'returned no error -- leaving rows UNACCOUNTED (possible lag, '
-                    || 'not fabricating a verdict).',
+                    ': load process shows no failure -- all-or-nothing exception '
+                    || 'not applied (post stage is per-row); unresolved rows left '
+                    || 'UNACCOUNTED, not fabricating a verdict.',
                 p_log_type => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package => C_PKG, p_procedure => C_PROC);
             RETURN;
