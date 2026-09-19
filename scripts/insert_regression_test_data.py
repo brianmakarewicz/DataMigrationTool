@@ -300,6 +300,9 @@ def main():
         "DMT_POZ_SUP_SITE_STG_TBL",
         "DMT_POZ_SUP_ADDR_STG_TBL",
         "DMT_POZ_SUPPLIERS_STG_TBL",
+        # Units of Measure (REST config object; TFM FK → STG)
+        "DMT_INV_UOM_TFM_TBL",
+        "DMT_INV_UOM_STG_TBL",
     ]
     print("=== Cleaning up existing scenario rows ===")
     total_deleted = 0
@@ -2485,6 +2488,34 @@ def main():
     tag_scenario(cur, "DMT_TALENT_PROF_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_TALENT_PROF_ITEM_STG_TBL", scenario_id)
 
+    # ====================================================================
+    # 46. UNITS OF MEASURE (REST → unitsOfMeasure endpoint). REST-based
+    #     config object: DMT_INV_UOM_RESULTS_PKG POSTs each UOM and captures
+    #     the Fusion-assigned UOMId onto DMT_INV_UOM_TFM_TBL.FUSION_UOM_ID
+    #     (backlog #11). UOMClass is a Fusion class code (5 = Quantity, live-
+    #     verified). GOOD row uses a free 3-char code and a valid class; BAD
+    #     row uses a nonexistent class so Fusion returns a real rejection that
+    #     lands the row in FAILED with its error. (objects/UnitsOfMeasure.)
+    # ====================================================================
+    print("\n=== 46. Units of Measure (REST) ===")
+    for code, uom_class, uom, descr, label in [
+        ("DZ8", "5",     "DMT2 Test Dozen8", "DMT2 recon GOOD (backlog #11)",
+         "GOOD UOM: DZ8 class 5"),
+        ("DZ7", "99999", "DMT2 Test Dozen7", "DMT2 recon BAD class",
+         "BAD UOM: DZ7 nonexistent class [FUSION_ERROR expected]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_INV_UOM_STG_TBL (
+                STG_SEQUENCE_ID, UOM_CODE, UOM_CLASS, UNIT_OF_MEASURE,
+                DESCRIPTION, BASE_UOM_FLAG, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                DMT_INV_UOM_STG_SEQ.NEXTVAL, :code, :cls, :uom,
+                :descr, 'N', :src, 'NEW'
+            )
+        """, {"code": code, "cls": uom_class, "uom": uom, "descr": descr,
+              "src": f"RT-UOM-{code}"}, label=label)
+    tag_scenario(cur, "DMT_INV_UOM_STG_TBL", scenario_id)
+
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()
     print("\n" + "=" * 60)
@@ -2552,6 +2583,8 @@ def main():
         ("DMT_POR_REQ_HEADERS_STG_TBL",           "STG_STATUS"),
         ("DMT_POR_REQ_LINES_STG_TBL",             "STG_STATUS"),
         ("DMT_POR_REQ_DISTS_STG_TBL",             "STG_STATUS"),
+        # Units of Measure (REST)
+        ("DMT_INV_UOM_STG_TBL",                  "STG_STATUS"),
     ]
     print("Verification — rows tagged with this scenario:")
     total_good = 0

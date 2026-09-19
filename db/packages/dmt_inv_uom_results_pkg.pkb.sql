@@ -123,6 +123,7 @@
         l_http_status   NUMBER;
         l_body          VARCHAR2(32767);
         l_payload       CLOB;
+        l_fusion_uom_id NUMBER;
 
         l_loaded_count  NUMBER := 0;
         l_failed_count  NUMBER := 0;
@@ -166,8 +167,16 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- Capture the Fusion-assigned id from the POST response body.
+                    -- The unitsOfMeasure REST resource returns it as UOMId, which is
+                    -- the same value as INV_UNITS_OF_MEASURE_TL.UNIT_OF_MEASURE_ID
+                    -- (positive proof of load). Backlog #11.
+                    l_body := DBMS_LOB.SUBSTR(l_response, 4000, INSTR(l_response, '|') + 1);
+                    l_fusion_uom_id := JSON_VALUE(l_body, '$.UOMId' RETURNING NUMBER);
+
                     UPDATE DMT_INV_UOM_TFM_TBL
-                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                    SET    TFM_STATUS = 'LOADED', FUSION_UOM_ID = l_fusion_uom_id,
+                           RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     UPDATE DMT_INV_UOM_STG_TBL
@@ -176,7 +185,9 @@
 
                     l_loaded_count := l_loaded_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'UOM LOADED: ' || r.UOM_CODE, C_PKG, C_PROC);
+                        'UOM LOADED: ' || r.UOM_CODE
+                        || ' (UOMId=' || NVL(TO_CHAR(l_fusion_uom_id), '(none)') || ')',
+                        C_PKG, C_PROC);
                 ELSE
                     l_body := DBMS_LOB.SUBSTR(l_response, 1000, INSTR(l_response, '|') + 1);
                     UPDATE DMT_INV_UOM_TFM_TBL
