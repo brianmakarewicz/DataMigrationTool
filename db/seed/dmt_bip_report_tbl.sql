@@ -942,21 +942,76 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- ValueSets (100000042) — NEW reconciliation standard (DMT_DESIGN.html,
+-- PROPOSED 2026-09): reconciliation is a BIP report over the Fusion BASE tables
+-- that returns the base-table surrogate id. ValueSets is a two-object load — a
+-- value set, then its child values — so its report reads BOTH base tables in a
+-- single call and returns one flat row list keyed by SOURCE_TYPE:
+--   * SET   rows  from FND_VS_VALUE_SETS: RECORD_KEY = VALUE_SET_CODE,
+--                 FUSION_ID = VALUE_SET_ID (-> DMT_FND_VS_SET_TFM_TBL.FUSION_VALUE_SET_ID).
+--   * VALUE rows  from FND_VS_VALUES_B joined to FND_VS_VALUE_SETS on VALUE_SET_ID:
+--                 RECORD_KEY = VALUE_SET_CODE || '^' || VALUE, FUSION_ID = VALUE_ID
+--                 (-> DMT_FND_VS_VALUE_TFM_TBL.FUSION_VALUE_ID).
+-- DMT_FND_VS_RESULTS_PKG runs DMT_VS_RECON_RPT and, for each row found, marks the
+-- matching TFM row LOADED with the real surrogate id. INTERFACE_TABLE = 'N/A (REST)'
+-- — there is no interface table; the report reads the base tables directly. The
+-- report is keyed by CEMLI_CODE 'ValueSets' (the reconciler passes
+-- p_cemli_code => 'ValueSets' to RUN_BIP_REPORT). Config codes are NOT run-prefixed;
+-- the two parameters P_SET_CODES and P_VALUE_KEYS carry the exact code / composite-key
+-- lists for this run. This reconciler uses its own RECORD_KEY/SOURCE_TYPE parser
+-- (not the shared Contract v1 parser), so the Contract v1 columns are left NULL.
+-- The when-not-matched insert makes this block self-contained.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000042                                                     bip_report_id,
+           'ValueSets'                                                   cemli_code,
+           'Value Set'                                                   object_type,
+           '/Custom/DMT2/ValueSets/DMT_VS_RECON_DM.xdm'                  dm_catalog_path,
+           '/Custom/DMT2/ValueSets/DMT_VS_RECON_RPT.xdo'                 report_catalog_path,
+           'N/A (REST)'                                                  interface_table,
+           'Value Sets base-table reconciliation (new recon standard). '
+             || 'REST POST loads each set then its child values; LOADED is confirmed '
+             || 'by a hit in FND_VS_VALUE_SETS (FUSION_VALUE_SET_ID = VALUE_SET_ID) '
+             || 'and FND_VS_VALUES_B (FUSION_VALUE_ID = VALUE_ID). One report, two '
+             || 'params: P_SET_CODES and P_VALUE_KEYS.' notes
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null);
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- PaymentTerms (100000043) — NEW reconciliation standard (DMT_DESIGN.html,
--- PROPOSED 2026-09): reconciliation is a BIP report over the Fusion BASE table
+-- PROPOSED 2026-09): reconciliation is a BIP report over the Fusion BASE tables
 -- that returns the base-table surrogate id. AP Payment Terms load via REST POST
 -- to the standardTerms resource, but LOADED is now driven by a positive hit in
--- the base table AP_TERMS: DMT_AP_PAY_TERM_RESULTS_PKG runs the report
--- DMT_APTERMS_RECON_RPT over the run's term names and, for each name found,
--- marks the header TFM row LOADED with FUSION_TERM_ID = TERM_ID (== the REST
--- TermId), then creates installment lines under the confirmed TERM_ID.
--- INTERFACE_TABLE = 'N/A (REST)' — there is no interface table; the report reads
--- the base table directly. The report is keyed by CEMLI_CODE 'PaymentTerms'
--- (the reconciler passes p_cemli_code => 'PaymentTerms' to RUN_BIP_REPORT).
--- Term names are NOT run-prefixed; the single parameter P_TERM_NAMES carries the
--- exact comma-delimited name list. This reconciler uses its own RECORD_KEY/BASE
--- parser (not the shared Contract v1 parser), so the Contract v1 columns are
--- left NULL. The when-not-matched insert makes this block self-contained.
+-- the base tables: DMT_AP_PAY_TERM_RESULTS_PKG runs the report
+-- DMT_APTERMS_RECON_RPT and, for each header name found in AP_TERMS, marks the
+-- header TFM row LOADED with FUSION_TERM_ID = TERM_ID (== the REST TermId); for
+-- each installment line found in AP_TERMS_LINES under a confirmed TERM_ID, marks
+-- the line TFM row LOADED. INTERFACE_TABLE = 'N/A (REST)' — there is no interface
+-- table; the report reads the base tables directly. The report is keyed by
+-- CEMLI_CODE 'PaymentTerms' (the reconciler passes p_cemli_code => 'PaymentTerms'
+-- to RUN_BIP_REPORT). Term names are NOT run-prefixed; the two parameters
+-- P_TERM_NAMES (header names) and P_TERM_IDS (confirmed header TERM_IDs for the
+-- line pass) carry the exact lists for this run. This reconciler uses its own
+-- RECORD_KEY/SOURCE_TYPE parser (not the shared Contract v1 parser), so the
+-- Contract v1 columns are left NULL. The when-not-matched insert makes this
+-- block self-contained.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
@@ -967,8 +1022,9 @@ using (
            '/Custom/DMT2/APPaymentTerms/DMT_APTERMS_RECON_RPT.xdo'       report_catalog_path,
            'N/A (REST)'                                                  interface_table,
            'AP Payment Terms base-table reconciliation (new recon standard). '
-             || 'REST POST loads the term; LOADED is confirmed by a hit in '
-             || 'AP_TERMS, capturing FUSION_TERM_ID = TERM_ID.' notes
+             || 'REST POST loads the term then its installment lines; LOADED is '
+             || 'confirmed by a hit in AP_TERMS (FUSION_TERM_ID = TERM_ID) and '
+             || 'AP_TERMS_LINES. One report, two params: P_TERM_NAMES and P_TERM_IDS.' notes
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)

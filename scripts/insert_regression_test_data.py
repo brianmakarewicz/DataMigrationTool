@@ -2522,28 +2522,100 @@ def main():
     tag_scenario(cur, "DMT_INV_UOM_STG_TBL", scenario_id)
 
     # ====================================================================
-    # 47. AP PAYMENT TERMS (REST → standardTerms endpoint). REST-based config
+    # 47. VALUE SETS (REST -> valueSets endpoint). REST-based config object:
+    #     DMT_FND_VS_RESULTS_PKG loads each value set then its child values
+    #     via REST POST, then reconciles via a BIP report over the Fusion
+    #     base tables FND_VS_VALUE_SETS (FUSION_VALUE_SET_ID = VALUE_SET_ID)
+    #     and FND_VS_VALUES_B (FUSION_VALUE_ID = VALUE_ID). Backlog #11 / new
+    #     reconciliation standard. (objects/ValueSets.)
+    #
+    #     LIVE FUSION CONSTRAINT (verified 2026-09-19): the valueSets REST
+    #     resource has the "create" action DISABLED on this demo pod, so every
+    #     POST returns HTTP 400 "The action \"create\" is not enabled." — this
+    #     is a real Fusion-side rejection, not our code. The GOOD fixture
+    #     therefore reuses a value set that ALREADY EXISTS in Fusion
+    #     (10219_INDEP_VS, VALUE_SET_ID 447985) and two of its existing values
+    #     (10411 -> VALUE_ID 623813, 10414_A3_VAL -> 623814). The POST 400s
+    #     (create disabled / already exists), but the base-table report finds
+    #     the set + values and marks them LOADED with their REAL surrogate ids
+    #     — exactly the load-then-BIP-authority pattern proven for UOM (whose
+    #     GOOD row also 400'd as a duplicate yet reconciled from the base
+    #     table). The BAD row uses a nonexistent set code that carries the
+    #     'BAD' marker in VALUE_SET_CODE so the regression harness (DISPLAY_KEY
+    #     = VALUE_SET_CODE for sets) classifies it as expected-to-FAIL; it is
+    #     absent from the base table and stays FAILED on the real Fusion error.
+    # ====================================================================
+    print("\n=== 47. Value Sets (REST) ===")
+    # GOOD set: an existing INDEP value set on the pod (reconciled from base table).
+    GOOD_VS   = "10219_INDEP_VS"
+    GOOD_MOD  = "47110F64AC0B08E2E040449823C60DB6"
+    # BAD set: nonexistent, 'BAD' marker in the code -> harness classifies BAD.
+    BAD_VS    = "DMT2_VS_BAD1"
+    for code, descr, mod, label in [
+        (GOOD_VS, "DMT2 recon GOOD (existing set, backlog #11)", GOOD_MOD,
+         "GOOD Value Set: 10219_INDEP_VS (existing, base-table confirmed)"),
+        (BAD_VS,  "DMT2 recon BAD set", None,
+         "BAD Value Set: DMT2_VS_BAD1 nonexistent [FUSION_ERROR expected]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_FND_VS_SET_STG_TBL (
+                STG_SEQUENCE_ID, VALUE_SET_CODE, DESCRIPTION, MODULE_ID,
+                VALIDATION_TYPE, VALUE_DATA_TYPE, MAXIMUM_SIZE,
+                SOURCE_ID, STG_STATUS
+            ) VALUES (
+                DMT_FND_VS_SET_STG_SEQ.NEXTVAL, :code, :descr, :mod,
+                'I', 'C', 30, :src, 'NEW'
+            )
+        """, {"code": code, "descr": descr, "mod": mod,
+              "src": f"RT-VS-{code}"}, label=label)
+    tag_scenario(cur, "DMT_FND_VS_SET_STG_TBL", scenario_id)
+
+    # GOOD values: two values that already exist under the GOOD set (base-table
+    # confirmed with their real VALUE_IDs). BAD value: under the BAD set, with a
+    # 'BAD' marker so its DISPLAY_KEY (VALUE_SET_CODE || ' - ' || VALUE) is BAD.
+    for vs_code, value, descr, label in [
+        (GOOD_VS, "10411",        "DMT2 recon GOOD value (existing)",
+         "GOOD Value: 10219_INDEP_VS/10411 (existing, base-table confirmed)"),
+        (GOOD_VS, "10414_A3_VAL", "DMT2 recon GOOD value (existing)",
+         "GOOD Value: 10219_INDEP_VS/10414_A3_VAL (existing, base-table confirmed)"),
+        (BAD_VS,  "BADVAL",       "DMT2 recon BAD value",
+         "BAD Value: DMT2_VS_BAD1/BADVAL [FUSION_ERROR expected]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_FND_VS_VALUE_STG_TBL (
+                STG_SEQUENCE_ID, VALUE_SET_CODE, VALUE, DESCRIPTION,
+                ENABLED_FLAG, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                DMT_FND_VS_VALUE_STG_SEQ.NEXTVAL, :vs, :val, :descr,
+                'Y', :src, 'NEW'
+            )
+        """, {"vs": vs_code, "val": value, "descr": descr,
+              "src": f"RT-VSV-{vs_code}-{value}"}, label=label)
+    tag_scenario(cur, "DMT_FND_VS_VALUE_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 48. AP PAYMENT TERMS (REST → standardTerms endpoint). REST-based config
     #     object on the NEW reconciliation standard (backlog #11): the header
     #     is POSTed to standardTerms, but LOADED is confirmed by a hit in the
     #     Fusion BASE table AP_TERMS via DMT_APTERMS_RECON_RPT, which captures
     #     the real surrogate id onto DMT_AP_PAY_TERM_HDR_TFM_TBL.FUSION_TERM_ID
-    #     ( = TERM_ID = the REST TermId). (objects/PaymentTerms.)
+    #     ( = TERM_ID = the REST TermId). Installment lines are confirmed from
+    #     AP_TERMS_LINES under the confirmed TERM_ID. (objects/PaymentTerms.)
     #
     #     GOOD row: reuses an EXISTING demo term name ('Net 30'). The demo pod
-    #     may reject the create POST as a duplicate (HTTP 400) — that is fine
-    #     and expected: the base-table report still finds 'Net 30' in AP_TERMS
-    #     and confirms the header LOADED with the real TERM_ID. Its installment
-    #     line is then created under that confirmed TERM_ID. (This mirrors the
-    #     ValueSets pattern where create may be disabled but base-table
+    #     returns HTTP 404 on the standardTerms create (create disabled) — that
+    #     is fine and expected: the base-table report still finds 'Net 30' in
+    #     AP_TERMS and confirms the header LOADED with the real TERM_ID, and its
+    #     installment line is confirmed from AP_TERMS_LINES. (This mirrors the
+    #     ValueSets pattern where create is disabled but base-table
     #     reconciliation still proves the outcome.)
     #
     #     BAD row: NAME carries the 'BAD' marker so the regression harness
     #     (DISPLAY_KEY = NAME for Payment Term Headers) classifies it as
-    #     BAD-expected-to-FAIL. It is not an existing term and its short-lived
-    #     name will not be created cleanly, so it is never found in AP_TERMS —
-    #     the reconciler lands it FAILED with the real Fusion REST rejection.
+    #     BAD-expected-to-FAIL. It is not an existing term and is never found in
+    #     AP_TERMS — the reconciler lands it FAILED with the real Fusion error.
     # ====================================================================
-    print("\n=== 47. AP Payment Terms (REST) ===")
+    print("\n=== 48. AP Payment Terms (REST) ===")
     # header GOOD (group 1) — reuse existing demo term so base-table confirms
     run_sql(cur, """
         INSERT INTO DMT_AP_PAY_TERM_HDR_STG_TBL (
@@ -2649,6 +2721,9 @@ def main():
         ("DMT_POR_REQ_DISTS_STG_TBL",             "STG_STATUS"),
         # Units of Measure (REST)
         ("DMT_INV_UOM_STG_TBL",                  "STG_STATUS"),
+        # Value Sets (REST)
+        ("DMT_FND_VS_SET_STG_TBL",               "STG_STATUS"),
+        ("DMT_FND_VS_VALUE_STG_TBL",             "STG_STATUS"),
         # AP Payment Terms (REST)
         ("DMT_AP_PAY_TERM_HDR_STG_TBL",          "STG_STATUS"),
         ("DMT_AP_PAY_TERM_LINE_STG_TBL",         "STG_STATUS"),

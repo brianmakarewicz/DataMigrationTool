@@ -179,7 +179,7 @@ using (
     union all select 'PerfEvaluations', 'DMT_LOADER_PKG.RUN_PERF_EVALUATIONS', 'ASYNC', null, 'N', null from dual
     union all select 'WorkSchedules', 'DMT_LOADER_PKG.RUN_WORK_SCHEDULES', 'ASYNC', null, 'N', null from dual
     union all select 'GLCalendar', null, 'ASYNC', null, 'N', null from dual
-    union all select 'ValueSets', null, 'ASYNC', null, 'N', null from dual
+    union all select 'ValueSets', 'DMT_FND_VS_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
     union all select 'Lookups', null, 'ASYNC', null, 'N', null from dual
     union all select 'UnitsOfMeasure', 'DMT_INV_UOM_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
     union all select 'PaymentTerms', 'DMT_AP_PAY_TERM_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
