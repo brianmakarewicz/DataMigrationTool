@@ -460,6 +460,291 @@
     END PARSE_AND_UPDATE;
 
     -- --------------------------------------------------------
+    -- ACCOUNT_ALL_OR_NOTHING — Assets-ONLY exception (DMT_DESIGN section 5,
+    -- "Fixed Assets load-stage batch-failure accounting").
+    --
+    -- Assets posts PER-ROW at Post Mass Additions (verified run 258: good assets
+    -- reach FA_ADDITIONS_B = LOADED, a bad asset fails with its real Fusion error)
+    -- -- that shape is handled by the normal two-tier BIP reconcile above, NOT
+    -- here. The all-or-nothing behavior is only at the SQL*LOADER LOAD stage: a
+    -- load-file reject makes SQL*Loader return WARNING (= zero rows committed) and
+    -- the load controller ERROR, so the whole book's records never reach the
+    -- interface table, the BIP reconcile confirms nothing, and every asset in the
+    -- book would be left UNACCOUNTED. This routine gives those a real verdict: the
+    -- genuinely-rejected assets carry their actual Fusion error, and any remaining
+    -- assets in the SAME book carry a generic "batch rejected" FAILED. It is
+    -- scoped to ONE book partition (p_work_queue_id) and fires ONLY when no asset
+    -- in that book loaded AND the load process genuinely failed.
+    --
+    -- THIS PATTERN IS FORBIDDEN FOR EVERY OTHER OBJECT. All other objects account
+    -- per-row and MUST leave genuinely-unknown rows UNACCOUNTED rather than
+    -- blanket-failing a batch. Assets is the sole exception, and only because its
+    -- SQL*Loader LOAD stage is atomic per book (a WARNING commits zero rows).
+    --
+    -- Two error sources, matching the two failure stages:
+    --   (a) LOAD stage: SQL*Loader rejected rows, so nothing reached
+    --       FA_MASS_ADDITIONS and the BIP report was empty. The real per-record
+    --       errors live in the load job's SQL*Loader log; we parse each
+    --       "Record N: Rejected ... ORA-#### ..." and map record N to the Nth
+    --       CSV row using the generator's exact join + ORDER BY b.TFM_SEQUENCE_ID.
+    --   (b) POST stage: rows loaded to the interface but Post Mass Additions
+    --       rejected the batch; the real error came back in the BIP report and
+    --       PARSE_AND_UPDATE already marked the bad asset(s) FAILED. Here we add
+    --       only the generic verdict to the good assets left unposted.
+    -- --------------------------------------------------------
+    PROCEDURE ACCOUNT_ALL_OR_NOTHING (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC     CONSTANT VARCHAR2(30) := 'ACCOUNT_ALL_OR_NOTHING';
+        C_GENERIC  CONSTANT VARCHAR2(400) :=
+            '[BATCH_REJECTED] Not loaded: another asset in this book batch was '
+            || 'rejected by Fusion. The Fixed Assets interface load/post is '
+            || 'all-or-nothing per book, so no assets in this book were committed.';
+        l_book       VARCHAR2(240);
+        l_remaining  NUMBER := 0;
+        l_loaded     NUMBER := 0;
+        l_failed_bip NUMBER := 0;
+        l_proc_failed NUMBER := 0;
+        l_one        CLOB;
+        l_start      PLS_INTEGER;
+        l_next       PLS_INTEGER;
+        l_recno      NUMBER;
+        l_chunk      VARCHAR2(4000);
+        l_err        VARCHAR2(2000);
+        l_asset      VARCHAR2(100);
+        l_marked     NUMBER := 0;
+    BEGIN
+        -- Book partition for this work item (NULL if somehow unpartitioned).
+        IF p_work_queue_id IS NOT NULL THEN
+            BEGIN
+                SELECT PARTITION_LABEL INTO l_book
+                FROM   DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_work_queue_id;
+            EXCEPTION WHEN NO_DATA_FOUND THEN l_book := NULL;
+            END;
+        END IF;
+
+        -- Assets in this book still without a verdict.
+        SELECT COUNT(*) INTO l_remaining
+        FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+        WHERE  h.RUN_ID = p_run_id
+        AND    h.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (l_book IS NULL OR EXISTS (
+                   SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
+                   WHERE b.RUN_ID = h.RUN_ID AND b.ASSET_NUMBER = h.ASSET_NUMBER
+                   AND   b.BOOK_TYPE_CODE = l_book));
+        IF l_remaining = 0 THEN
+            RETURN;   -- every asset in this book already accounted; nothing to do
+        END IF;
+
+        -- How many assets in this book actually LOADED?
+        SELECT COUNT(*) INTO l_loaded
+        FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+        WHERE  h.RUN_ID = p_run_id
+        AND    h.TFM_STATUS = 'LOADED'
+        AND    (l_book IS NULL OR EXISTS (
+                   SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
+                   WHERE b.RUN_ID = h.RUN_ID AND b.ASSET_NUMBER = h.ASSET_NUMBER
+                   AND   b.BOOK_TYPE_CODE = l_book));
+
+        -- If ANY asset in the book loaded, this was NOT an all-or-nothing batch
+        -- failure. Do not fabricate failures for the rest -- leave them
+        -- UNACCOUNTED for honest reporting. (Assets is atomic per book, so this
+        -- branch is a safety net, not the expected path.)
+        IF l_loaded > 0 THEN
+            RETURN;
+        END IF;
+
+        -- Assets in this book already marked FAILED from the BIP report (post-stage).
+        SELECT COUNT(*) INTO l_failed_bip
+        FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+        WHERE  h.RUN_ID = p_run_id
+        AND    h.TFM_STATUS = 'FAILED'
+        AND    (l_book IS NULL OR EXISTS (
+                   SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
+                   WHERE b.RUN_ID = h.RUN_ID AND b.ASSET_NUMBER = h.ASSET_NUMBER
+                   AND   b.BOOK_TYPE_CODE = l_book));
+
+        -- Poll the FAILED process before deciding this is an all-or-nothing
+        -- failure. Nothing loaded can mean either (i) the load/post genuinely
+        -- failed -- an atomic-batch rejection we must account -- or (ii) the load
+        -- succeeded and the base rows simply have not appeared yet (lag), or (iii)
+        -- the load succeeded and a row failed at the POST stage. The accepted
+        -- DMT_DESIGN section 7 carve-out authorizes the all-or-nothing exception
+        -- ONLY for a genuinely failed LOAD process (captured load controller
+        -- ERROR, or a SQL*Loader child WARNING/reject).
+        SELECT COUNT(*) INTO l_proc_failed
+        FROM   DMT_ESS_JOB_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    (REQUEST_ID = p_load_ess_id OR PARENT_REQUEST_ID = p_load_ess_id)
+        AND    (UPPER(STATE_TEXT) IN ('ERROR','WARNING')
+                OR STATE IN (10, 11));   -- 10=ERROR, 11=WARNING (SQL*Loader reject); Fusion emits SUCCEEDED/WARNING/ERROR
+
+        -- Gate the ENTIRE exception on a genuinely-failed LOAD process. If the
+        -- load shows no failure (l_proc_failed = 0) we do NOT batch-reject -- even
+        -- when a row was individually FAILED at the POST stage (l_failed_bip > 0):
+        -- Post Mass Additions is PER-ROW (proven run 258), so good rows load and
+        -- any remainder stays UNACCOUNTED via the normal path. Post-stage / lag /
+        -- indeterminate cases are never fabricated into a [BATCH_REJECTED] verdict.
+        IF l_proc_failed = 0 THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id => p_run_id,
+                p_message => C_PROC || ' book=' || NVL(l_book,'(all)') ||
+                    ': load process shows no failure -- all-or-nothing exception '
+                    || 'not applied (post stage is per-row); unresolved rows left '
+                    || 'UNACCOUNTED, not fabricating a verdict.',
+                p_log_type => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package => C_PKG, p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        -- (a) LOAD-STAGE: nothing accounted at all -> the load failed before the
+        -- interface. Pull the real per-record errors from the SQL*Loader log.
+        -- Assets loads THREE interface tables from three control files (headers/
+        -- books -> FA_MASS_ADDITIONS, distributions, rates), each its own
+        -- SQL*Loader child whose "Record N" numbering RESTARTS at 1. Only the
+        -- FA_MASS_ADDITIONS child's record order matches the header/book CSV
+        -- (ROW_NUMBER OVER (ORDER BY b.TFM_SEQUENCE_ID)), so we parse each child
+        -- log ALONE (never concatenated -- that would let a distributions/rates
+        -- Record N misattribute to the wrong asset) and attribute ONLY rejections
+        -- on table FA_MASS_ADDITIONS. A distributions/rates rejection has no
+        -- header CSV position, so its asset falls into the generic [BATCH_REJECTED]
+        -- pass (b) below rather than being mapped to a wrong header row.
+        IF l_failed_bip = 0 THEN
+            FOR c IN (
+                SELECT REQUEST_ID FROM DMT_ESS_JOB_TBL
+                WHERE  RUN_ID = p_run_id
+                AND    PARENT_REQUEST_ID = p_load_ess_id
+                AND    UPPER(JOB_SHORT_NAME) LIKE '%SQLLDR%'
+                ORDER BY REQUEST_ID
+            ) LOOP
+                BEGIN
+                    l_one := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_TEXT(c.REQUEST_ID);
+                EXCEPTION WHEN OTHERS THEN l_one := NULL;  -- a missing child log is not fatal
+                END;
+                -- Skip children that did not load FA_MASS_ADDITIONS: their record
+                -- numbers do not map to the header/book CSV.
+                IF l_one IS NULL OR INSTR(UPPER(l_one), 'FA_MASS_ADDITIONS') = 0 THEN
+                    CONTINUE;
+                END IF;
+
+                -- Walk each "Record N: Rejected ..." in THIS log alone.
+                l_start := 1;
+                LOOP
+                    l_start := REGEXP_INSTR(l_one, 'Record [0-9]+: Rejected', l_start);
+                    EXIT WHEN l_start = 0;
+                    l_recno := TO_NUMBER(REGEXP_SUBSTR(l_one, 'Record ([0-9]+):', l_start, 1, NULL, 1));
+                    l_next  := REGEXP_INSTR(l_one, 'Record [0-9]+:', l_start + 1);
+                    IF l_next = 0 THEN l_next := DBMS_LOB.GETLENGTH(l_one) + 1; END IF;
+                    l_chunk := DBMS_LOB.SUBSTR(l_one, LEAST(l_next - l_start, 3999), l_start);
+                    -- Only FA_MASS_ADDITIONS rejections map to a header row.
+                    IF INSTR(UPPER(l_chunk), 'FA_MASS_ADDITIONS') = 0 THEN
+                        l_start := l_next;
+                        CONTINUE;
+                    END IF;
+                    -- real Fusion error = the "Error on table..." line + first ORA- line
+                    l_err := TRIM(REGEXP_REPLACE(
+                                REGEXP_SUBSTR(l_chunk, 'Error on table[^'||CHR(10)||']*') || ' ' ||
+                                REGEXP_SUBSTR(l_chunk, 'ORA-[0-9]+[^'||CHR(10)||']*'),
+                                '[[:space:]]+', ' '));
+
+                    -- the asset at CSV position l_recno for this book
+                    BEGIN
+                        SELECT ASSET_NUMBER INTO l_asset FROM (
+                            SELECT h.ASSET_NUMBER,
+                                   ROW_NUMBER() OVER (ORDER BY b.TFM_SEQUENCE_ID) rn
+                            FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+                            JOIN   DMT_FA_ASSET_BOOK_TFM_TBL b
+                              ON   b.ASSET_NUMBER = h.ASSET_NUMBER AND b.RUN_ID = h.RUN_ID
+                            WHERE  h.RUN_ID = p_run_id
+                            AND    (l_book IS NULL OR b.BOOK_TYPE_CODE = l_book))
+                        WHERE rn = l_recno;
+                    EXCEPTION WHEN NO_DATA_FOUND THEN l_asset := NULL;
+                    END;
+
+                    IF l_asset IS NOT NULL AND l_err IS NOT NULL THEN
+                        UPDATE DMT_FA_ASSET_HDR_TFM_TBL
+                        SET    TFM_STATUS = 'FAILED',
+                               ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || l_err),
+                               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                        WHERE  RUN_ID = p_run_id AND ASSET_NUMBER = l_asset
+                        AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                    END IF;
+                    l_start := l_next;
+                END LOOP;
+            END LOOP;
+        END IF;
+
+        -- (b) both stages: every remaining un-accounted asset in this book was
+        -- not individually rejected but still did not load, because the batch is
+        -- all-or-nothing. Mark it FAILED with the generic batch message.
+        UPDATE DMT_FA_ASSET_HDR_TFM_TBL h
+        SET    h.TFM_STATUS = 'FAILED',
+               h.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(h.ERROR_TEXT, C_GENERIC),
+               h.RESULTS_UPDATED_DATE = SYSDATE, h.LAST_UPDATED_DATE = SYSDATE
+        WHERE  h.RUN_ID = p_run_id
+        AND    h.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    (l_book IS NULL OR EXISTS (
+                   SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
+                   WHERE b.RUN_ID = h.RUN_ID AND b.ASSET_NUMBER = h.ASSET_NUMBER
+                   AND   b.BOOK_TYPE_CODE = l_book));
+        l_marked := SQL%ROWCOUNT;
+
+        -- Cascade the new header FAILEDs to book + assignment + STG echo, using
+        -- the same linked-record wording as PARSE_AND_UPDATE.
+        UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
+        SET    bk.TFM_STATUS = 'FAILED',
+               bk.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT h.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL h
+                    WHERE h.RUN_ID = bk.RUN_ID AND h.ASSET_NUMBER = bk.ASSET_NUMBER
+                    AND h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
+               bk.LAST_UPDATED_DATE = SYSDATE
+        WHERE  bk.RUN_ID = p_run_id AND bk.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    EXISTS (SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL h
+                       WHERE h.RUN_ID = bk.RUN_ID AND h.ASSET_NUMBER = bk.ASSET_NUMBER
+                       AND h.TFM_STATUS = 'FAILED');
+
+        UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
+        SET    asn.TFM_STATUS = 'FAILED',
+               asn.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
+                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
+                   (SELECT h.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL h
+                    WHERE h.RUN_ID = asn.RUN_ID AND h.ASSET_NUMBER = asn.ASSET_NUMBER
+                    AND h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
+               asn.LAST_UPDATED_DATE = SYSDATE
+        WHERE  asn.RUN_ID = p_run_id AND asn.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    EXISTS (SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL h
+                       WHERE h.RUN_ID = asn.RUN_ID AND h.ASSET_NUMBER = asn.ASSET_NUMBER
+                       AND h.TFM_STATUS = 'FAILED');
+
+        UPDATE DMT_FA_ASSET_HDR_STG_TBL stg
+        SET    stg.STG_STATUS = 'FAILED',
+               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
+                   (SELECT t.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL t
+                    WHERE t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
+               stg.LAST_UPDATED_DATE = SYSDATE
+        WHERE  stg.STG_STATUS NOT IN ('LOADED','FAILED')
+        AND    stg.STG_SEQUENCE_ID IN (
+                   SELECT t.STG_SEQUENCE_ID FROM DMT_FA_ASSET_HDR_TFM_TBL t
+                   WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id => p_run_id,
+            p_message => C_PROC || ' book=' || NVL(l_book,'(all)') ||
+                         ' all-or-nothing: ' || l_remaining || ' unaccounted, ' ||
+                         l_marked || ' marked generic FAILED.',
+            p_package => C_PKG, p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id => p_run_id, p_message => C_PROC || ' failed.',
+                p_sqlerrm => SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
+            RAISE;
+    END ACCOUNT_ALL_OR_NOTHING;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
@@ -485,9 +770,18 @@
             DBMS_LOB.FREETEMPORARY(l_xml);
         END IF;
 
-        -- Unresolved records intentionally left GENERATED (unaccounted).
-        -- No fabricated FAILED: the accounting gate reports the object
-        -- not-DONE and the funnel surfaces these as UNRECONCILED.
+        -- Assets-ONLY exception: Fixed Assets loads/posts a book atomically, so
+        -- a single rejected asset leaves the whole book unposted and the BIP
+        -- reconcile above confirms nothing. Give those rows a real verdict
+        -- (real Fusion error on the rejected asset(s), generic on the rest)
+        -- instead of leaving the book UNACCOUNTED. Fires only on a genuinely
+        -- failed load process; a still-lagging load leaves rows UNACCOUNTED.
+        -- See DMT_DESIGN section 5 (Fixed Assets all-or-nothing accounting).
+        ACCOUNT_ALL_OR_NOTHING(p_run_id, p_load_ess_id, p_work_queue_id);
+
+        -- Any records still unresolved are intentionally left GENERATED
+        -- (unaccounted); the accounting gate reports the object not-DONE and the
+        -- funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
