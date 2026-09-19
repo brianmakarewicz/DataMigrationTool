@@ -2521,6 +2521,65 @@ def main():
               "src": f"RT-UOM-{code}"}, label=label)
     tag_scenario(cur, "DMT_INV_UOM_STG_TBL", scenario_id)
 
+    # ====================================================================
+    # 47. AP PAYMENT TERMS (REST → standardTerms endpoint). REST-based config
+    #     object on the NEW reconciliation standard (backlog #11): the header
+    #     is POSTed to standardTerms, but LOADED is confirmed by a hit in the
+    #     Fusion BASE table AP_TERMS via DMT_APTERMS_RECON_RPT, which captures
+    #     the real surrogate id onto DMT_AP_PAY_TERM_HDR_TFM_TBL.FUSION_TERM_ID
+    #     ( = TERM_ID = the REST TermId). (objects/PaymentTerms.)
+    #
+    #     GOOD row: reuses an EXISTING demo term name ('Net 30'). The demo pod
+    #     may reject the create POST as a duplicate (HTTP 400) — that is fine
+    #     and expected: the base-table report still finds 'Net 30' in AP_TERMS
+    #     and confirms the header LOADED with the real TERM_ID. Its installment
+    #     line is then created under that confirmed TERM_ID. (This mirrors the
+    #     ValueSets pattern where create may be disabled but base-table
+    #     reconciliation still proves the outcome.)
+    #
+    #     BAD row: NAME carries the 'BAD' marker so the regression harness
+    #     (DISPLAY_KEY = NAME for Payment Term Headers) classifies it as
+    #     BAD-expected-to-FAIL. It is not an existing term and its short-lived
+    #     name will not be created cleanly, so it is never found in AP_TERMS —
+    #     the reconciler lands it FAILED with the real Fusion REST rejection.
+    # ====================================================================
+    print("\n=== 47. AP Payment Terms (REST) ===")
+    # header GOOD (group 1) — reuse existing demo term so base-table confirms
+    run_sql(cur, """
+        INSERT INTO DMT_AP_PAY_TERM_HDR_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, NAME, DESCRIPTION,
+            ENABLED_FLAG, PAY_TERM_TYPE, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_AP_PAY_TERM_HDR_STG_SEQ.NEXTVAL, 1, 'Net 30',
+            'DMT2 recon GOOD (backlog #11) - existing demo term',
+            'Y', 'IMMEDIATE', 'RT-PAYTERM-G1', 'NEW'
+        )
+    """, label="GOOD Payment Term: Net 30 (existing demo term, base-table confirmed)")
+    # header BAD (group 2) — 'BAD' marker in NAME; never lands in AP_TERMS
+    run_sql(cur, """
+        INSERT INTO DMT_AP_PAY_TERM_HDR_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, NAME, DESCRIPTION,
+            ENABLED_FLAG, PAY_TERM_TYPE, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_AP_PAY_TERM_HDR_STG_SEQ.NEXTVAL, 2,
+            'DMT2 recon BAD term nonexistent type',
+            'DMT2 recon BAD (backlog #11) [FUSION_ERROR expected]',
+            'Y', 'NONEXISTENT_TYPE', 'RT-PAYTERM-B1', 'NEW'
+        )
+    """, label="BAD Payment Term: nonexistent PayTermType [FUSION_ERROR expected]")
+    # one installment line under the GOOD header (group 1): 100% due in 30 days
+    run_sql(cur, """
+        INSERT INTO DMT_AP_PAY_TERM_LINE_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, SEQUENCE_NUM,
+            DUE_PERCENT, DUE_DAYS, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_AP_PAY_TERM_LINE_STG_SEQ.NEXTVAL, 1, 1,
+            100, 30, 'RT-PAYTERM-G1-L1', 'NEW'
+        )
+    """, label="GOOD Payment Term line: 100% due in 30 days (under Net 30)")
+    tag_scenario(cur, "DMT_AP_PAY_TERM_HDR_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_AP_PAY_TERM_LINE_STG_TBL", scenario_id)
+
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()
     print("\n" + "=" * 60)
@@ -2590,6 +2649,9 @@ def main():
         ("DMT_POR_REQ_DISTS_STG_TBL",             "STG_STATUS"),
         # Units of Measure (REST)
         ("DMT_INV_UOM_STG_TBL",                  "STG_STATUS"),
+        # AP Payment Terms (REST)
+        ("DMT_AP_PAY_TERM_HDR_STG_TBL",          "STG_STATUS"),
+        ("DMT_AP_PAY_TERM_LINE_STG_TBL",         "STG_STATUS"),
     ]
     print("Verification — rows tagged with this scenario:")
     total_good = 0
