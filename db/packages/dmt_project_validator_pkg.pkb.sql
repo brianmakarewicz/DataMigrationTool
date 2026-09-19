@@ -79,7 +79,8 @@ AS
 
     PROCEDURE VALIDATE_PRE_TRANSFORM (
         p_run_id    IN NUMBER,
-        p_dependent_prefix  IN VARCHAR2 DEFAULT NULL
+        p_dependent_prefix  IN VARCHAR2 DEFAULT NULL,
+        p_scenario_id       IN NUMBER   DEFAULT NULL
     )
     IS
     BEGIN
@@ -89,14 +90,61 @@ AS
             p_package        => C_PKG,
             p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 
-        -- No pre-transform validations implemented yet.
-        -- Projects are top-level master data — no upstream dependency checks needed.
-        -- Future: validate PROJECT_NUMBER uniqueness, required fields, etc.
-        NULL;
+        -- Orphan-task check. A task whose PROJECT_NUMBER has no project header
+        -- in the same source (scenario) is an orphan: Fusion never produces a
+        -- per-row verdict for it because there is no parent project to import it
+        -- under, so it would otherwise land UNACCOUNTED. Reject it HERE, before
+        -- transform, as an honest OUR-side pre-validation failure — never at
+        -- reconcile time as a fabricated Fusion outcome. Record the reason in the
+        -- error table; the [PRE_VALIDATION] exclusion added to TRANSFORM_TASKS then
+        -- keeps the orphan out of TFM in EVERY run mode. The accounting gate counts
+        -- only TFM rows, so the excluded orphan is not unaccounted; the funnel view
+        -- surfaces it as PREVALIDATION_FAILED.
+        --
+        -- The check is scoped by SCENARIO_ID and does NOT depend on STG_STATUS:
+        -- ALL/FAILED-mode runs reuse the same write-once STG rows (already
+        -- TRANSFORMED from a prior run), so a NEW/RETRY filter would never fire in
+        -- regression. The parent-existence subquery correlates on SCENARIO_ID so a
+        -- task is judged against projects in its own batch only (mirrors the
+        -- Customers batch-parent check).
+        DECLARE
+            l_orphans NUMBER;
+        BEGIN
+            INSERT INTO DMT_STG_TFM_ERROR_TBL
+                   (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+            SELECT p_run_id, 'Projects', 'Project Tasks', t.STG_SEQUENCE_ID,
+                   '[PRE_VALIDATION] Parent project ''' || t.PROJECT_NUMBER ||
+                   ''' is not present in this source — orphan task skipped.'
+            FROM   DMT_PJF_TASKS_STG_TBL t
+            WHERE  t.PROJECT_NUMBER IS NOT NULL
+            AND    (p_scenario_id IS NULL OR t.SCENARIO_ID = p_scenario_id)
+            AND    NOT EXISTS (
+                       SELECT 1 FROM DMT_PJF_PROJECTS_STG_TBL p
+                       WHERE  p.PROJECT_NUMBER = t.PROJECT_NUMBER
+                       AND    (p.SCENARIO_ID = t.SCENARIO_ID
+                               OR (p.SCENARIO_ID IS NULL AND t.SCENARIO_ID IS NULL))
+                   )
+            -- Idempotent: do not double-write this run's error if pre-validation
+            -- is invoked more than once for the same run.
+            AND    NOT EXISTS (
+                       SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                       WHERE  e.RUN_ID = p_run_id
+                       AND    e.STG_SEQUENCE_ID = t.STG_SEQUENCE_ID
+                       AND    e.SUB_OBJECT = 'Project Tasks'
+                   );
+            l_orphans := SQL%ROWCOUNT;
+
+            DMT_UTIL_PKG.LOG(
+                p_run_id => p_run_id,
+                p_message => 'VALIDATE_PRE_TRANSFORM: ' || l_orphans ||
+                             ' orphan task(s) rejected (parent project absent).',
+                p_package => C_PKG,
+                p_procedure => 'VALIDATE_PRE_TRANSFORM');
+        END;
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => 'VALIDATE_PRE_TRANSFORM complete. No failures (stub).',
+            p_message        => 'VALIDATE_PRE_TRANSFORM complete.',
             p_package        => C_PKG,
             p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 
