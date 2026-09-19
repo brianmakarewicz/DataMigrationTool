@@ -1326,7 +1326,7 @@
                     END IF;
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/payrollDeductionCards/' ||
                              cr.FUSION_DIR_CARD_ID || '/child/cardComponents' ||
-                             '?q=ComponentName=''' || cr.COMPONENT_NAME || '''' ||
+                             '?q=ComponentName=''' || UTL_URL.ESCAPE(REPLACE(cr.COMPONENT_NAME, '''', ''''''), TRUE) || '''' ||
                              '&fields=CardComponentId&onlyData=true';
                     l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].CardComponentId'));
