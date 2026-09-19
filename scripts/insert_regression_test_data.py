@@ -2499,9 +2499,14 @@ def main():
     # ====================================================================
     print("\n=== 46. Units of Measure (REST) ===")
     for code, uom_class, uom, descr, label in [
-        ("DZ8", "5",     "DMT2 Test Dozen8", "DMT2 recon GOOD (backlog #11)",
+        ("DZ8", "5",     "DMT2 Test Dozen8",  "DMT2 recon GOOD (backlog #11)",
          "GOOD UOM: DZ8 class 5"),
-        ("DZ7", "99999", "DMT2 Test Dozen7", "DMT2 recon BAD class",
+        # UNIT_OF_MEASURE carries the 'BAD' marker so the regression harness
+        # (DISPLAY_KEY = UOM_CODE || ' - ' || UNIT_OF_MEASURE) classifies this
+        # intentionally-bad row as BAD-expected-to-FAIL rather than a good row
+        # that failed. The nonexistent UOMClass still drives the real Fusion
+        # HTTP 400 rejection that lands it in FAILED.
+        ("DZ7", "99999", "BAD DMT2 Test UOM", "DMT2 recon BAD class",
          "BAD UOM: DZ7 nonexistent class [FUSION_ERROR expected]"),
     ]:
         run_sql(cur, """
