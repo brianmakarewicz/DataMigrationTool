@@ -9,7 +9,8 @@ AS
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_PERF_EVAL_RESULTS_PKG';
     -- The CEMLI registered in DMT_BIP_REPORT_TBL as CONTRACT_VERSION 1 and used by
-    -- the shared Contract v1 fetch. This object loads via HDL as the GoalPlan object.
+    -- the shared Contract v1 fetch. This object loads via HDL as the
+    -- PerformanceDocument object (discriminator PerfDocComplete).
     C_CEMLI CONSTANT VARCHAR2(30) := 'PerfEvaluations';
 
     -- --------------------------------------------------------
@@ -20,9 +21,9 @@ AS
     -- runs the PerfEvaluations recon report over BIP and returns the parsed rows (no
     -- dynamic SQL, no TFM reference there); the APPLY here is STATIC SQL against the
     -- compile-time-known PerfEvaluations TFM table. It confirms each migrated
-    -- performance evaluation in the Fusion base table (HRG_GOAL_PLANS_VL, the goal
-    -- plan definition our GoalPlan.dat load creates) by its prefixed goal plan name
-    -- and marks that TFM row LOADED with the real Fusion GOAL_PLAN_ID stamped into
+    -- performance evaluation in the Fusion base table (HRA_EVALUATIONS, the
+    -- performance document our PerfDocComplete.dat load creates) by its prefixed
+    -- document name and marks that TFM row LOADED with the real Fusion EVALUATION_ID stamped into
     -- FUSION_EVALUATION_ID; any ERROR row is marked FAILED with the real Fusion
     -- error. This REPLACES the bulk LOOKUP_FUSION_IDS positive path for
     -- PerfEvaluations. The HDL data set request id is the Contract v1
@@ -77,8 +78,8 @@ AS
                 IF l_rows(i).SOURCE_TYPE = 'BASE'
                    AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                    AND l_rows(i).FUSION_ID IS NOT NULL THEN
-                    -- Positive proof: goal plan found in HRG_GOAL_PLANS_VL with a
-                    -- real id. The ONLY path to LOADED. Static UPDATE.
+                    -- Positive proof: performance document found in HRA_EVALUATIONS
+                    -- with a real EVALUATION_ID. The ONLY path to LOADED. Static UPDATE.
                     UPDATE DMT_PERF_EVAL_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            FUSION_EVALUATION_ID = l_rows(i).FUSION_ID,
@@ -155,8 +156,8 @@ AS
         -- The per-record HDL error path still runs (real [FUSION_ERROR] rows are
         -- marked FAILED here), but LOADED promotion is DEFERRED to the shared
         -- Contract v1 parser below: a PerfEvaluations row reaches LOADED only when
-        -- the goal plan is positively confirmed in the Fusion base table
-        -- (HRG_GOAL_PLANS_VL) with a real GOAL_PLAN_ID, which the parser stamps into
+        -- the performance document is positively confirmed in the Fusion base table
+        -- (HRA_EVALUATIONS) with a real EVALUATION_ID, which the parser stamps into
         -- FUSION_EVALUATION_ID.
         DMT_HDL_UTIL_PKG.RECONCILE_HDL(
             p_run_id => p_run_id,
