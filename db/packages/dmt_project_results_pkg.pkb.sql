@@ -742,6 +742,32 @@ AS
             AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
             AND    p.TFM_STATUS     = 'FAILED');
 
+        -- Orphan-task exception (owner decision 2026-09-18, THIS scenario ONLY):
+        -- a task still unaccounted whose PARENT PROJECT is entirely absent from
+        -- this load (no project row at all for that PROJECT_NUMBER -- e.g. the
+        -- NOPROJ999 orphan-task test row) can never import. Fusion silently skips
+        -- it -- the ImportProjectReportJob shows 0 tasks rejected -- so there is
+        -- NO Fusion error string to quote. We give it a factual dependency verdict
+        -- tagged [ORPHAN_TASK] (deliberately NOT [FUSION_ERROR], since it is our
+        -- determination from the verifiable absence of the parent project, not a
+        -- Fusion message). Scoped strictly to tasks whose parent project is FULLY
+        -- ABSENT: tasks whose parent LOADED are LOADED above, tasks whose parent
+        -- is present-but-FAILED already inherited the real parent error above.
+        -- This absence-based verdict is unique to orphaned Project tasks; every
+        -- other object's unresolved rows stay UNACCOUNTED (no fabricated FAILED).
+        UPDATE DMT_PJF_TASKS_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                   '[ORPHAN_TASK] Parent project ' || t.PROJECT_NUMBER ||
+                   ' is not present in this load; the task cannot be imported without its parent project.'),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID = p_run_id
+        AND    t.TFM_STATUS NOT IN ('LOADED','FAILED')
+        AND    NOT EXISTS (
+            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
+            WHERE  p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER);
+
         -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor given
         -- a real Fusion error is left GENERATED (unaccounted) — no fabricated FAILED.)
         l_not_recon := 0;
