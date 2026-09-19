@@ -123,5 +123,49 @@
             RAISE;
     END RUN;
 
+    -- ============================================================
+    -- RUN_STANDARD - queue-dispatch entry point (EXEC contract).
+    -- Resolves the scenario name to an id and delegates to RUN.
+    -- p_skip_bu_refresh is accepted for contract conformance; ValueSets has
+    -- no business-unit refresh, so it is ignored.
+    -- ============================================================
+    PROCEDURE RUN_STANDARD (
+        p_run_id          IN NUMBER,
+        p_scenario_name   IN VARCHAR2 DEFAULT NULL,
+        p_run_mode        IN VARCHAR2 DEFAULT 'NEW',
+        p_skip_bu_refresh IN BOOLEAN  DEFAULT FALSE
+    ) IS
+        C_PROC       CONSTANT VARCHAR2(30) := 'RUN_STANDARD';
+        l_scenario_id NUMBER;
+        l_err_code    NUMBER;
+    BEGIN
+        DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+            p_scenario_name => p_scenario_name,
+            x_scenario_id   => l_scenario_id,
+            x_error_code    => l_err_code);
+
+        IF l_err_code != DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20101,
+                'RUN_STANDARD: could not resolve scenario "' ||
+                NVL(p_scenario_name, '(null)') || '" (detail in DMT_LOG_TBL).');
+        END IF;
+
+        RUN(
+            p_run_id           => p_run_id,
+            p_run_mode         => p_run_mode,
+            p_scenario_id      => l_scenario_id,
+            p_include_untagged => 'N');
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id  => p_run_id,
+                p_message => 'RUN_STANDARD failed.',
+                p_sqlerrm => SQLERRM,
+                p_package => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END RUN_STANDARD;
+
 END DMT_FND_VS_RUNNER_PKG;
 /
