@@ -875,6 +875,24 @@
               AND tc.TFM_STATUS = 'LOADED'
               AND tc.FUSION_DIR_CARD_ID IS NULL;
 
+        -- TaxCard components -> the DIR card component id.
+        -- Each component belongs to the person's deduction card, so it is
+        -- matched to the card TFM row (same PERSON_NUMBER + RUN_ID) to reuse
+        -- the already-captured FUSION_DIR_CARD_ID, then resolved to its own
+        -- component id inside the card's cardComponents child by COMPONENT_NAME.
+        CURSOR c_tax_card_comps IS
+            SELECT cc.TFM_SEQUENCE_ID, cc.PERSON_NUMBER, cc.COMPONENT_NAME,
+                   tc.FUSION_DIR_CARD_ID
+            FROM DMT_TAX_CARD_COMP_TFM_TBL cc
+            LEFT JOIN DMT_TAX_CARD_TFM_TBL tc
+              ON  tc.PERSON_NUMBER = cc.PERSON_NUMBER
+              AND tc.RUN_ID = cc.RUN_ID
+              AND tc.TFM_STATUS = 'LOADED'
+              AND tc.FUSION_DIR_CARD_ID IS NOT NULL
+            WHERE cc.RUN_ID = p_run_id
+              AND cc.TFM_STATUS = 'LOADED'
+              AND cc.FUSION_DIR_CARD_COMP_ID IS NULL;
+
         -- W2Balances -> the person balance id
         CURSOR c_w2_balances IS
             SELECT b.TFM_SEQUENCE_ID, b.PERSON_NUMBER, w.FUSION_PERSON_ID
@@ -1291,6 +1309,44 @@
                         l_err_count := l_err_count + 1;
                         DMT_UTIL_PKG.LOG(p_run_id,
                             'TaxCards lookup failed for PersonNumber: ' || r.PERSON_NUMBER ||
+                            ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                END;
+            END LOOP;
+
+            -- Card components: each LOADED component row is resolved to its own
+            -- Fusion component id (DIR_CARD_COMP_ID) inside its card's
+            -- cardComponents child, matched by ComponentName. Reuses the card's
+            -- captured FUSION_DIR_CARD_ID (populated by the loop above).
+            FOR cr IN c_tax_card_comps LOOP
+                l_total := l_total + 1;
+                BEGIN
+                    IF cr.FUSION_DIR_CARD_ID IS NULL THEN
+                        l_err_count := l_err_count + 1;
+                        CONTINUE;
+                    END IF;
+                    l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/payrollDeductionCards/' ||
+                             cr.FUSION_DIR_CARD_ID || '/child/cardComponents' ||
+                             '?q=ComponentName=''' || UTL_URL.ESCAPE(REPLACE(cr.COMPONENT_NAME, '''', ''''''), TRUE) || '''' ||
+                             '&fields=CardComponentId&onlyData=true';
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].CardComponentId'));
+                    IF l_fusion_id IS NOT NULL THEN
+                        UPDATE DMT_TAX_CARD_COMP_TFM_TBL
+                        SET FUSION_DIR_CARD_COMP_ID = l_fusion_id, LAST_UPDATED_DATE = SYSDATE
+                        WHERE TFM_SEQUENCE_ID = cr.TFM_SEQUENCE_ID;
+                        l_ok_count := l_ok_count + 1;
+                    ELSE
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'CardComponentId not found for PersonNumber: ' || cr.PERSON_NUMBER ||
+                            ', ComponentName: ' || cr.COMPONENT_NAME,
+                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_err_count := l_err_count + 1;
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'TaxCard component lookup failed for PersonNumber: ' || cr.PERSON_NUMBER ||
+                            ', ComponentName: ' || cr.COMPONENT_NAME ||
                             ' | ' || SQLERRM, DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
                 END;
             END LOOP;
