@@ -640,17 +640,24 @@ declare
 begin
     dbms_output.put_line('--- Design-contract gap report (DMT_DESIGN.html section 5) ---');
 
-    -- Shared APPLY_ERRORS (section 5 end-state: matching UPDATE shared,
-    -- not copy-pasted per reconciler)
+    -- Shared import-report message builder (backlog item 28 end-state).
+    -- The [IMPORT_REPORT] row-matching UPDATE is duplicated inline in the
+    -- Projects/Expenditures reconcilers. The de-duplication does NOT move
+    -- the UPDATE into a shared procedure — that would need dynamic SQL to
+    -- parameterize the table/key column, which the Coding Standards "No
+    -- EXECUTE IMMEDIATE" rule forbids outside the three named
+    -- DMT_QUEUE_WORKER_PKG procedures (PR #291 review). Instead each site
+    -- keeps its own static UPDATE and shares only the composed message
+    -- string via DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR.
     select count(*) into l_cnt
     from   user_procedures
-    where  object_name = 'DMT_IMPORT_REPORT_PKG' and procedure_name = 'APPLY_ERRORS';
+    where  object_name = 'DMT_IMPORT_REPORT_PKG' and procedure_name = 'ERROR_TEXT_FOR';
     if l_cnt = 0 then
-        dbms_output.put_line('GAP: DMT_IMPORT_REPORT_PKG.APPLY_ERRORS(p_tfm_table, p_key_column, p_run_id) '||
-            'does not exist. Section 5 end-state: the [IMPORT_REPORT] row-matching UPDATE becomes a shared '||
-            'procedure; in the frozen stack it is duplicated inline in the Projects/Expenditures reconcilers.');
+        dbms_output.put_line('GAP: DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR does not exist. '||
+            'Item 28 end-state: the [IMPORT_REPORT] tag + NVL(default) message string is a shared '||
+            'pure builder; each reconciler keeps its own static UPDATE (no dynamic SQL).');
     else
-        dbms_output.put_line('OK : APPLY_ERRORS exists.');
+        dbms_output.put_line('OK : ERROR_TEXT_FOR exists (shared message builder; static UPDATE per site).');
     end if;
 
     dbms_output.put_line('GAP: PARSE_AND_LOG_ERRORS has no XML-injection seam (always downloads via '||

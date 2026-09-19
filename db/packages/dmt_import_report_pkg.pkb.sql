@@ -255,5 +255,22 @@
             RAISE;
     END PARSE_AND_LOG_ERRORS;
 
+    -- --------------------------------------------------------
+    -- ERROR_TEXT_FOR (see spec). Pure string builder — the one piece that
+    -- was byte-identical across the results packages' import-report match
+    -- loops (backlog item 28). No SQL, no table access, no dynamic SQL:
+    -- each call site keeps its own static UPDATE and passes the composed
+    -- text to DMT_UTIL_PKG.APPEND_ERROR.
+    -- --------------------------------------------------------
+    FUNCTION ERROR_TEXT_FOR (
+        p_error_message IN VARCHAR2,
+        p_default_msg   IN VARCHAR2 DEFAULT 'Import error (no details)',
+        p_tag           IN VARCHAR2 DEFAULT '[IMPORT_REPORT] '
+    ) RETURN VARCHAR2
+    IS
+    BEGIN
+        RETURN p_tag || NVL(p_error_message, p_default_msg);
+    END ERROR_TEXT_FOR;
+
 END DMT_IMPORT_REPORT_PKG;
 /

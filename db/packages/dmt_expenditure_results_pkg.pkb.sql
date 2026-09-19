@@ -402,16 +402,20 @@ AS
                     IF l_ir_xml IS NOT NULL AND DBMS_LOB.GETLENGTH(l_ir_xml) > 0 THEN
                         l_ir_errors := DMT_IMPORT_REPORT_PKG.PARSE_ERRORS(l_ir_xml);
 
+                        -- Static single-key match on ORIG_TRANSACTION_REFERENCE.
+                        -- The composed [IMPORT_REPORT] message is built by the
+                        -- shared DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR helper
+                        -- (backlog item 28); the UPDATE itself stays static.
                         FOR i IN 1..l_ir_errors.COUNT LOOP
                             IF l_ir_errors(i).row_identifier IS NOT NULL THEN
                                 UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                                SET    TFM_STATUS               = 'FAILED',
+                                SET    TFM_STATUS           = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                           '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error (no details)')),
+                                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message)),
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID              = p_run_id
-                                AND    TFM_STATUS                      = 'GENERATED'
+                                AND    TFM_STATUS                   = 'GENERATED'
                                 AND    ORIG_TRANSACTION_REFERENCE   = l_ir_errors(i).row_identifier;
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
                             END IF;
@@ -587,16 +591,19 @@ AS
                     IF l_ir_xml IS NOT NULL AND DBMS_LOB.GETLENGTH(l_ir_xml) > 0 THEN
                         l_ir_errors := DMT_IMPORT_REPORT_PKG.PARSE_ERRORS(l_ir_xml);
 
+                        -- Static single-key match on ORIG_TRANSACTION_REFERENCE.
+                        -- Message built by the shared ERROR_TEXT_FOR helper
+                        -- (backlog item 28); UPDATE stays static.
                         FOR i IN 1..l_ir_errors.COUNT LOOP
                             IF l_ir_errors(i).row_identifier IS NOT NULL THEN
                                 UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                                SET    TFM_STATUS               = 'FAILED',
+                                SET    TFM_STATUS           = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                           '[IMPORT_REPORT] ' || NVL(l_ir_errors(i).error_message, 'Import error (no details)')),
+                                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message)),
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID              = p_run_id
-                                AND    TFM_STATUS                      = 'GENERATED'
+                                AND    TFM_STATUS                   = 'GENERATED'
                                 AND    ORIG_TRANSACTION_REFERENCE   = l_ir_errors(i).row_identifier;
                                 l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
                             END IF;

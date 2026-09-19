@@ -48,5 +48,26 @@
         p_cemli_code     IN VARCHAR2 DEFAULT NULL
     ) RETURN NUMBER;
 
+    -- --------------------------------------------------------
+    -- ERROR_TEXT_FOR — shared "compose the [IMPORT_REPORT] ERROR_TEXT
+    -- string" helper (backlog item 28). The results packages each ran the
+    -- same per-row loop that matched an import-report error back to a TFM
+    -- row and stamped ERROR_TEXT with the tag + real Fusion message. The
+    -- ONE piece that was truly identical is the composed message string:
+    --   p_tag || NVL(error_message, p_default_msg)
+    -- Extracting that here removes the copy-paste of the tag literal and
+    -- the NVL default without introducing any dynamic SQL: each call site
+    -- keeps its own STATIC UPDATE (it knows its table + key column at
+    -- compile time, so the SQL stays statically analyzable and visible to
+    -- ALL_DEPENDENCIES — the Coding Standards "No EXECUTE IMMEDIATE" rule).
+    -- This function only builds a string; it touches no table and commits
+    -- nothing. p_tag carries its own trailing space when one is wanted.
+    -- --------------------------------------------------------
+    FUNCTION ERROR_TEXT_FOR (
+        p_error_message IN VARCHAR2,
+        p_default_msg   IN VARCHAR2 DEFAULT 'Import error (no details)',
+        p_tag           IN VARCHAR2 DEFAULT '[IMPORT_REPORT] '
+    ) RETURN VARCHAR2;
+
 END DMT_IMPORT_REPORT_PKG;
 /
