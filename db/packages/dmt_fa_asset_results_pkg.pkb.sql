@@ -507,7 +507,6 @@
         l_loaded     NUMBER := 0;
         l_failed_bip NUMBER := 0;
         l_proc_failed NUMBER := 0;
-        l_log        CLOB;
         l_one        CLOB;
         l_start      PLS_INTEGER;
         l_next       PLS_INTEGER;
@@ -579,8 +578,8 @@
         FROM   DMT_ESS_JOB_TBL
         WHERE  RUN_ID = p_run_id
         AND    (REQUEST_ID = p_load_ess_id OR PARENT_REQUEST_ID = p_load_ess_id)
-        AND    (UPPER(STATE_TEXT) IN ('ERROR','FAILED','WARNING')
-                OR STATE IN (10, 11));   -- 10=ERROR, 11=WARNING (SQL*Loader reject)
+        AND    (UPPER(STATE_TEXT) IN ('ERROR','WARNING')
+                OR STATE IN (10, 11));   -- 10=ERROR, 11=WARNING (SQL*Loader reject); Fusion emits SUCCEEDED/WARNING/ERROR
 
         IF l_proc_failed = 0 AND l_failed_bip = 0 THEN
             DMT_UTIL_PKG.LOG(
@@ -595,9 +594,18 @@
         END IF;
 
         -- (a) LOAD-STAGE: nothing accounted at all -> the load failed before the
-        -- interface. Pull the real per-record errors from the SQL*Loader log(s).
+        -- interface. Pull the real per-record errors from the SQL*Loader log.
+        -- Assets loads THREE interface tables from three control files (headers/
+        -- books -> FA_MASS_ADDITIONS, distributions, rates), each its own
+        -- SQL*Loader child whose "Record N" numbering RESTARTS at 1. Only the
+        -- FA_MASS_ADDITIONS child's record order matches the header/book CSV
+        -- (ROW_NUMBER OVER (ORDER BY b.TFM_SEQUENCE_ID)), so we parse each child
+        -- log ALONE (never concatenated -- that would let a distributions/rates
+        -- Record N misattribute to the wrong asset) and attribute ONLY rejections
+        -- on table FA_MASS_ADDITIONS. A distributions/rates rejection has no
+        -- header CSV position, so its asset falls into the generic [BATCH_REJECTED]
+        -- pass (b) below rather than being mapped to a wrong header row.
         IF l_failed_bip = 0 THEN
-            DBMS_LOB.CREATETEMPORARY(l_log, TRUE);
             FOR c IN (
                 SELECT REQUEST_ID FROM DMT_ESS_JOB_TBL
                 WHERE  RUN_ID = p_run_id
@@ -607,55 +615,59 @@
             ) LOOP
                 BEGIN
                     l_one := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_TEXT(c.REQUEST_ID);
-                    IF l_one IS NOT NULL THEN
-                        DBMS_LOB.APPEND(l_log, l_one);
-                    END IF;
-                EXCEPTION WHEN OTHERS THEN NULL;  -- a missing child log is not fatal
+                EXCEPTION WHEN OTHERS THEN l_one := NULL;  -- a missing child log is not fatal
                 END;
-            END LOOP;
-
-            -- Walk each "Record N: Rejected ..." and attribute its ORA error to
-            -- the Nth CSV row (generator order: HDR x BOOK join, ORDER BY book seq).
-            l_start := 1;
-            LOOP
-                l_start := REGEXP_INSTR(l_log, 'Record [0-9]+: Rejected', l_start);
-                EXIT WHEN l_start = 0;
-                l_recno := TO_NUMBER(REGEXP_SUBSTR(l_log, 'Record ([0-9]+):', l_start, 1, NULL, 1));
-                l_next  := REGEXP_INSTR(l_log, 'Record [0-9]+:', l_start + 1);
-                IF l_next = 0 THEN l_next := DBMS_LOB.GETLENGTH(l_log) + 1; END IF;
-                l_chunk := DBMS_LOB.SUBSTR(l_log, LEAST(l_next - l_start, 3999), l_start);
-                -- real Fusion error = the "Error on table..." line + first ORA- line
-                l_err := TRIM(REGEXP_REPLACE(
-                            REGEXP_SUBSTR(l_chunk, 'Error on table[^'||CHR(10)||']*') || ' ' ||
-                            REGEXP_SUBSTR(l_chunk, 'ORA-[0-9]+[^'||CHR(10)||']*'),
-                            '[[:space:]]+', ' '));
-
-                -- the asset at CSV position l_recno for this book
-                BEGIN
-                    SELECT ASSET_NUMBER INTO l_asset FROM (
-                        SELECT h.ASSET_NUMBER,
-                               ROW_NUMBER() OVER (ORDER BY b.TFM_SEQUENCE_ID) rn
-                        FROM   DMT_FA_ASSET_HDR_TFM_TBL h
-                        JOIN   DMT_FA_ASSET_BOOK_TFM_TBL b
-                          ON   b.ASSET_NUMBER = h.ASSET_NUMBER AND b.RUN_ID = h.RUN_ID
-                        WHERE  h.RUN_ID = p_run_id
-                        AND    (l_book IS NULL OR b.BOOK_TYPE_CODE = l_book))
-                    WHERE rn = l_recno;
-                EXCEPTION WHEN NO_DATA_FOUND THEN l_asset := NULL;
-                END;
-
-                IF l_asset IS NOT NULL AND l_err IS NOT NULL THEN
-                    UPDATE DMT_FA_ASSET_HDR_TFM_TBL
-                    SET    TFM_STATUS = 'FAILED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || l_err),
-                           RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  RUN_ID = p_run_id AND ASSET_NUMBER = l_asset
-                    AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                -- Skip children that did not load FA_MASS_ADDITIONS: their record
+                -- numbers do not map to the header/book CSV.
+                IF l_one IS NULL OR INSTR(UPPER(l_one), 'FA_MASS_ADDITIONS') = 0 THEN
+                    CONTINUE;
                 END IF;
-                l_start := l_next;
-            END LOOP;
 
-            IF DBMS_LOB.ISTEMPORARY(l_log) = 1 THEN DBMS_LOB.FREETEMPORARY(l_log); END IF;
+                -- Walk each "Record N: Rejected ..." in THIS log alone.
+                l_start := 1;
+                LOOP
+                    l_start := REGEXP_INSTR(l_one, 'Record [0-9]+: Rejected', l_start);
+                    EXIT WHEN l_start = 0;
+                    l_recno := TO_NUMBER(REGEXP_SUBSTR(l_one, 'Record ([0-9]+):', l_start, 1, NULL, 1));
+                    l_next  := REGEXP_INSTR(l_one, 'Record [0-9]+:', l_start + 1);
+                    IF l_next = 0 THEN l_next := DBMS_LOB.GETLENGTH(l_one) + 1; END IF;
+                    l_chunk := DBMS_LOB.SUBSTR(l_one, LEAST(l_next - l_start, 3999), l_start);
+                    -- Only FA_MASS_ADDITIONS rejections map to a header row.
+                    IF INSTR(UPPER(l_chunk), 'FA_MASS_ADDITIONS') = 0 THEN
+                        l_start := l_next;
+                        CONTINUE;
+                    END IF;
+                    -- real Fusion error = the "Error on table..." line + first ORA- line
+                    l_err := TRIM(REGEXP_REPLACE(
+                                REGEXP_SUBSTR(l_chunk, 'Error on table[^'||CHR(10)||']*') || ' ' ||
+                                REGEXP_SUBSTR(l_chunk, 'ORA-[0-9]+[^'||CHR(10)||']*'),
+                                '[[:space:]]+', ' '));
+
+                    -- the asset at CSV position l_recno for this book
+                    BEGIN
+                        SELECT ASSET_NUMBER INTO l_asset FROM (
+                            SELECT h.ASSET_NUMBER,
+                                   ROW_NUMBER() OVER (ORDER BY b.TFM_SEQUENCE_ID) rn
+                            FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+                            JOIN   DMT_FA_ASSET_BOOK_TFM_TBL b
+                              ON   b.ASSET_NUMBER = h.ASSET_NUMBER AND b.RUN_ID = h.RUN_ID
+                            WHERE  h.RUN_ID = p_run_id
+                            AND    (l_book IS NULL OR b.BOOK_TYPE_CODE = l_book))
+                        WHERE rn = l_recno;
+                    EXCEPTION WHEN NO_DATA_FOUND THEN l_asset := NULL;
+                    END;
+
+                    IF l_asset IS NOT NULL AND l_err IS NOT NULL THEN
+                        UPDATE DMT_FA_ASSET_HDR_TFM_TBL
+                        SET    TFM_STATUS = 'FAILED',
+                               ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || l_err),
+                               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                        WHERE  RUN_ID = p_run_id AND ASSET_NUMBER = l_asset
+                        AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                    END IF;
+                    l_start := l_next;
+                END LOOP;
+            END LOOP;
         END IF;
 
         -- (b) both stages: every remaining un-accounted asset in this book was
