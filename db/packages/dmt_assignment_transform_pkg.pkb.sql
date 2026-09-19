@@ -212,7 +212,12 @@
             s.EFFECTIVE_END_DATE,
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
             s.ASSIGNMENT_NAME,
-            s.ASSIGNMENT_NUMBER,
+            -- Run-prefix the assignment/employment-terms number. The source value
+            -- does NOT carry the run prefix (proven run 259: Fusion rejected the
+            -- unprefixed 'ET-RT-WKR-G1' as a duplicate employment-terms number
+            -- across runs). Prefixing it -- like PersonNumber above -- makes each
+            -- run's WorkTerms AssignmentNumber unique so good workers load. #19.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSIGNMENT_NUMBER, 30),
             s.ASSIGNMENT_STATUS_TYPE_CODE,
             s.BUSINESS_UNIT_NAME,
             s.ACTION_CODE,
@@ -231,17 +236,22 @@
                  THEN DMT_UTIL_PKG.PREFIXED(l_prefix, s.MANAGER_PERSON_NUMBER, 30)
                  ELSE NULL
             END,
-            s.MANAGER_ASSIGNMENT_NUMBER,
+            -- Manager's assignment number must be prefixed too, so it matches the
+            -- now-prefixed ASSIGNMENT_NUMBER of the manager's own row. #19.
+            CASE WHEN s.MANAGER_ASSIGNMENT_NUMBER IS NOT NULL
+                 THEN DMT_UTIL_PKG.PREFIXED(l_prefix, s.MANAGER_ASSIGNMENT_NUMBER, 30)
+                 ELSE NULL
+            END,
             s.PRIMARY_ASSIGNMENT_FLAG,
             -- RECON_KEY = the same value written to the HDL .dat as the
             -- Assignment SourceSystemId (DMT_WORKER_HDL_GEN_PKG:
             -- ASSIGNMENT_NUMBER || '_ASG'), and the value the BIP reconciliation
             -- report returns as RECORD_KEY (object type 'Assignment'). The
-            -- assignment number already carries the run prefix from source, so
-            -- no PREFIXED() call is applied (mirrors the generator, which writes
-            -- ASSIGNMENT_NUMBER verbatim). One key definition (Contract v1,
-            -- design section 5).
-            s.ASSIGNMENT_NUMBER || '_ASG',
+            -- assignment number is run-prefixed here (same PREFIXED call as the
+            -- ASSIGNMENT_NUMBER column above); the generator writes that prefixed
+            -- TFM value verbatim, so this recon key and the .dat SourceSystemId
+            -- stay identical. One key definition (Contract v1, design section 5). #19.
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSIGNMENT_NUMBER, 30) || '_ASG',
             'STAGED',
             SYSDATE
         FROM DMT_ASSIGNMENT_STG_TBL s
