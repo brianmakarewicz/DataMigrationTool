@@ -1608,7 +1608,7 @@
         ELSIF p_cemli_code = 'APInvoices' THEN
             DMT_AP_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'Projects' THEN
-            DMT_PROJECT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_PROJECT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => p_scenario_id);
         ELSIF p_cemli_code = 'BillingEvents' THEN
             DMT_BILLING_EVENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
         ELSIF p_cemli_code = 'Expenditures' THEN

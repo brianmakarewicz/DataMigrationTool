@@ -533,6 +533,21 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode. ALL/FAILED modes do
+        -- not filter on STG_STATUS, so without this a task the validator rejected
+        -- (an orphan whose parent project is absent from the batch) would still be
+        -- transformed, reach the FBDI, and land UNACCOUNTED. Excluding tasks that
+        -- have a [PRE_VALIDATION] error for this run keeps the orphan out of TFM;
+        -- the accounting gate counts only TFM rows, so the object settles DONE and
+        -- the funnel surfaces the orphan as PREVALIDATION_FAILED. SUB_OBJECT scopes
+        -- to tasks (STG_SEQUENCE_ID is polymorphic across the object's STG tables).
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Project Tasks'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
         -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
