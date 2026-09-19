@@ -2521,6 +2521,78 @@ def main():
               "src": f"RT-UOM-{code}"}, label=label)
     tag_scenario(cur, "DMT_INV_UOM_STG_TBL", scenario_id)
 
+    # ====================================================================
+    # 47. VALUE SETS (REST -> valueSets endpoint). REST-based config object:
+    #     DMT_FND_VS_RESULTS_PKG loads each value set then its child values
+    #     via REST POST, then reconciles via a BIP report over the Fusion
+    #     base tables FND_VS_VALUE_SETS (FUSION_VALUE_SET_ID = VALUE_SET_ID)
+    #     and FND_VS_VALUES_B (FUSION_VALUE_ID = VALUE_ID). Backlog #11 / new
+    #     reconciliation standard. (objects/ValueSets.)
+    #
+    #     LIVE FUSION CONSTRAINT (verified 2026-09-19): the valueSets REST
+    #     resource has the "create" action DISABLED on this demo pod, so every
+    #     POST returns HTTP 400 "The action \"create\" is not enabled." — this
+    #     is a real Fusion-side rejection, not our code. The GOOD fixture
+    #     therefore reuses a value set that ALREADY EXISTS in Fusion
+    #     (10219_INDEP_VS, VALUE_SET_ID 447985) and two of its existing values
+    #     (10411 -> VALUE_ID 623813, 10414_A3_VAL -> 623814). The POST 400s
+    #     (create disabled / already exists), but the base-table report finds
+    #     the set + values and marks them LOADED with their REAL surrogate ids
+    #     — exactly the load-then-BIP-authority pattern proven for UOM (whose
+    #     GOOD row also 400'd as a duplicate yet reconciled from the base
+    #     table). The BAD row uses a nonexistent set code that carries the
+    #     'BAD' marker in VALUE_SET_CODE so the regression harness (DISPLAY_KEY
+    #     = VALUE_SET_CODE for sets) classifies it as expected-to-FAIL; it is
+    #     absent from the base table and stays FAILED on the real Fusion error.
+    # ====================================================================
+    print("\n=== 47. Value Sets (REST) ===")
+    # GOOD set: an existing INDEP value set on the pod (reconciled from base table).
+    GOOD_VS   = "10219_INDEP_VS"
+    GOOD_MOD  = "47110F64AC0B08E2E040449823C60DB6"
+    # BAD set: nonexistent, 'BAD' marker in the code -> harness classifies BAD.
+    BAD_VS    = "DMT2_VS_BAD1"
+    for code, descr, mod, label in [
+        (GOOD_VS, "DMT2 recon GOOD (existing set, backlog #11)", GOOD_MOD,
+         "GOOD Value Set: 10219_INDEP_VS (existing, base-table confirmed)"),
+        (BAD_VS,  "DMT2 recon BAD set", None,
+         "BAD Value Set: DMT2_VS_BAD1 nonexistent [FUSION_ERROR expected]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_FND_VS_SET_STG_TBL (
+                STG_SEQUENCE_ID, VALUE_SET_CODE, DESCRIPTION, MODULE_ID,
+                VALIDATION_TYPE, VALUE_DATA_TYPE, MAXIMUM_SIZE,
+                SOURCE_ID, STG_STATUS
+            ) VALUES (
+                DMT_FND_VS_SET_STG_SEQ.NEXTVAL, :code, :descr, :mod,
+                'I', 'C', 30, :src, 'NEW'
+            )
+        """, {"code": code, "descr": descr, "mod": mod,
+              "src": f"RT-VS-{code}"}, label=label)
+    tag_scenario(cur, "DMT_FND_VS_SET_STG_TBL", scenario_id)
+
+    # GOOD values: two values that already exist under the GOOD set (base-table
+    # confirmed with their real VALUE_IDs). BAD value: under the BAD set, with a
+    # 'BAD' marker so its DISPLAY_KEY (VALUE_SET_CODE || ' - ' || VALUE) is BAD.
+    for vs_code, value, descr, label in [
+        (GOOD_VS, "10411",        "DMT2 recon GOOD value (existing)",
+         "GOOD Value: 10219_INDEP_VS/10411 (existing, base-table confirmed)"),
+        (GOOD_VS, "10414_A3_VAL", "DMT2 recon GOOD value (existing)",
+         "GOOD Value: 10219_INDEP_VS/10414_A3_VAL (existing, base-table confirmed)"),
+        (BAD_VS,  "BADVAL",       "DMT2 recon BAD value",
+         "BAD Value: DMT2_VS_BAD1/BADVAL [FUSION_ERROR expected]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_FND_VS_VALUE_STG_TBL (
+                STG_SEQUENCE_ID, VALUE_SET_CODE, VALUE, DESCRIPTION,
+                ENABLED_FLAG, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                DMT_FND_VS_VALUE_STG_SEQ.NEXTVAL, :vs, :val, :descr,
+                'Y', :src, 'NEW'
+            )
+        """, {"vs": vs_code, "val": value, "descr": descr,
+              "src": f"RT-VSV-{vs_code}-{value}"}, label=label)
+    tag_scenario(cur, "DMT_FND_VS_VALUE_STG_TBL", scenario_id)
+
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()
     print("\n" + "=" * 60)
