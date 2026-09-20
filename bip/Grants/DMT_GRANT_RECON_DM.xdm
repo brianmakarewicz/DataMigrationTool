@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="grant_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- Grants reconciliation data model -- BIP reconciliation report
+-- contract v1 (nine columns, keyset pagination, the six standard
+-- parameters). Conforms the Grants award-header object to the same
+-- shape as GLBalances / Requisitions.
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+--
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT.
+--
+-- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
+-- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. An empty :P_AFTER_KEY selects from the
+-- start (binds to NULL in BIP; every non-null RECORD_KEY sorts
+-- after it).
+--
+-- OBJECT: Grants award headers (AwardMassImportJob). Awards import
+-- as ONE object -- the header. The award children (projects,
+-- funding, personnel, terms, ...) have NO persistent Fusion base or
+-- interface tables to reconcile against on this pod (verified live:
+-- no GMS_AWARD_PROJ% tables exist; the child *_INT tables are purged
+-- by Fusion after import). This DM therefore reconciles the award
+-- HEADER tier only.
+--
+-- TWO tiers via OBJECT_TYPE / SOURCE_TYPE, UNION ALL, ordered by
+-- RECORD_KEY:
+--   BASE      -- GMS_AWARD_HEADERS_B rows for this run.
+--     Run scoping: DC_REQUEST_ID = :P_IMPORT_ESS_ID. VERIFIED live:
+--     for AWARD_SOURCE='FBDI' rows SUMMARY_REQUEST_ID is always NULL
+--     and DC_REQUEST_ID carries the real import ESS request id.
+--     FUSION_ID = ID. RECORD_KEY = SPONSOR_AWARD_NUMBER, or a stable
+--     'AWARD_ID:'||ID when the sponsor number is null so the keyset
+--     order is never null. SOURCE_REF = AWARD_SOURCE. DMT_REFERENCE
+--     = ATTRIBUTE1.
+--   INTERFACE -- GMS_AWARD_HEADERS_INT rows still present after
+--     import that Fusion did not mark successful. Run scoping:
+--     LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID. RECORD_KEY = AWARD_NUMBER
+--     (the prefixed number DMT stamps at transform). Real Fusion error
+--     from PROCESSED_MESSAGE + MESSAGE_USER_DETAILS + MESSAGE_USER_ACTION.
+--
+--     !! FUSION PURGES GMS_AWARD_HEADERS_INT (and the award
+--     interface/error tables) IMMEDIATELY AFTER EVERY AwardMassImportJob
+--     RUN -- on SUCCESS AND on REJECT alike. This is documented and
+--     verified live in objects/Grants/README.md ("Reconciliation --
+--     Award Batch Import Report"). Consequently this INTERFACE tier is
+--     STRUCTURALLY EXPECTED TO RETURN ZERO ROWS in production; it is NOT
+--     the tier that captures per-award rejections. Do NOT assume it
+--     populates on a fresh run.
+--
+--     Real per-award rejection messages come from the Award Batch
+--     Import Report path -- a SEPARATE child ESS request
+--     (ImportAwardReportJob / AwardBatchImportReportDm) parsed by
+--     dmt_grants_results_pkg (apply_award_import_report /
+--     PARSE_AND_UPDATE). Whoever wires this DM into the generic
+--     Contract v1 recon engine MUST keep that fallback. Unlike
+--     GLBalances / Requisitions -- whose interface tiers DO persist and
+--     populate -- this object's interface table is purged, so trusting
+--     interface-tier absence as LOADED would re-introduce the
+--     already-fixed "interface purged -> UNACCOUNTED" bug.
+--
+-- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
+--   BASE => SUCCESS; INTERFACE (rejection, if ever present) => ERROR.
+-- FUSION_ID non-null on every BASE row; ERROR_MESSAGE non-null on
+-- every ERROR row.
+--
+-- POD NOTE: Grants is NOT configured on the demo pod. GMS_AWARD_HEADERS_B
+-- still holds 117 historical rows, so the BASE tier's column shape is
+-- proven against real data. The INTERFACE tier was NOT exercised against
+-- a real rejected import -- and cannot reliably be, since Fusion purges
+-- the interface table right after import -- so its documented role here
+-- is the zero-row purge case described above.
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- Tier: BASE -- award headers that reached GMS_AWARD_HEADERS_B.
+    SELECT
+        'Grants'                             AS object_type,
+        NVL(b.sponsor_award_number,
+            'AWARD_ID:' || b.id)             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        b.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        b.award_source                       AS source_ref,
+        b.attribute1                         AS dmt_reference
+    FROM   gms_award_headers_b b
+    WHERE  b.dc_request_id = :P_IMPORT_ESS_ID
+    AND    b.award_source  = 'FBDI'
+
+    UNION ALL
+
+    -- Tier: INTERFACE -- award-header rejections left behind.
+    SELECT
+        'Grants'                             AS object_type,
+        h.award_number                       AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[AWARD] ' || NVL(
+            NULLIF(
+                h.processed_message
+                || CASE WHEN h.message_user_details IS NOT NULL
+                        THEN ' | ' || h.message_user_details ELSE '' END
+                || CASE WHEN h.message_user_action IS NOT NULL
+                        THEN ' | Action: ' || h.message_user_action ELSE '' END,
+                ''),
+            'Rejected by Award Import (processed_status='
+                || NVL(h.processed_status,'NULL')
+                || '; no message written -- e.g. rejected pre-validation).')
+                                             AS error_message,
+        h.load_request_id                    AS load_request_id,
+        h.award_number                       AS source_ref,
+        h.attribute1                         AS dmt_reference
+    FROM   gms_award_headers_int h
+    WHERE  h.load_request_id = :P_LOAD_REQUEST_ID
+    AND    NVL(UPPER(h.processed_status),'X') NOT IN ('SUCCESS','S','PROCESSED')
+)
+-- Keyset predicate. Empty P_AFTER_KEY (first page) binds NULL => from
+-- the start. Later pages carry the previous page's last RECORD_KEY;
+-- only greater keys are returned.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="grant_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
