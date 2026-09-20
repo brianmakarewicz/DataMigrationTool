@@ -54,6 +54,13 @@ COMMENT ON TABLE "DMT_BIP_REPORT_TBL"  IS 'BIP report registry. One row per CEML
 --                     the Fusion base-table id into on a BASE/SUCCESS row.
 --   RECON_KEY_SQL     (documentation) how RECON_KEY is built for the object; the
 --                     reconciler matches the report's RECORD_KEY to TFM.RECON_KEY.
+--   APPLY_PROC        PKG.PROC of the object's thin STATIC apply (APPLY_<OBJ>).
+--                     The generic recon engine (DMT_RECON_ENGINE_PKG) stages the
+--                     parsed report into DMT_RECON_STAGE_GTT, then dispatches
+--                     this proc through the sanctioned invoke_registered site.
+--                     It is a PROCEDURE NAME (invoke_registered validates the
+--                     PKG.PROC allow-pattern), never a table or column name — so
+--                     no new dynamic-SQL site is introduced.
 -- ---------------------------------------------------------------------------
 declare
   procedure add_col(p_col varchar2, p_ddl varchar2) is
@@ -70,9 +77,11 @@ begin
   add_col('TFM_TABLE',        '"TFM_TABLE" VARCHAR2(100)');
   add_col('FUSION_ID_COLUMN', '"FUSION_ID_COLUMN" VARCHAR2(100)');
   add_col('RECON_KEY_SQL',    '"RECON_KEY_SQL" VARCHAR2(1000)');
+  add_col('APPLY_PROC',       '"APPLY_PROC" VARCHAR2(200)');
 end;
 /
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."CONTRACT_VERSION" IS 'Contract v1 conformance: 1 = shared parser applies the seven-column response; NULL/0 = legacy bespoke reconciler.';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."TFM_TABLE" IS 'TFM table the shared Contract v1 parser updates for this object.';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."FUSION_ID_COLUMN" IS 'TFM column the shared parser stamps the Fusion base-table id into on a BASE/SUCCESS row.';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."RECON_KEY_SQL" IS 'Documents how RECON_KEY is built for this object (report RECORD_KEY is matched to TFM.RECON_KEY).';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."APPLY_PROC" IS 'PKG.PROC of the object thin static apply (APPLY_<OBJ>), dispatched by DMT_RECON_ENGINE_PKG through invoke_registered after staging the report to DMT_RECON_STAGE_GTT.';

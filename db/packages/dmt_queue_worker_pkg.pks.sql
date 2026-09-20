@@ -121,5 +121,30 @@ AS
         p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
+    -- ------------------------------------------------------------
+    -- INVOKE_APPLY — dispatch an object's thin static apply procedure
+    -- (APPLY_<OBJ>) through the SAME sanctioned invoke_registered site the
+    -- queue already uses. The generic recon engine (DMT_RECON_ENGINE_PKG) has
+    -- already staged the parsed nine-column report into DMT_RECON_STAGE_GTT;
+    -- this hands off to the object's own package, which reads that GTT and
+    -- MERGEs into its LITERALLY-named TFM table with STATIC SQL.
+    --
+    -- p_apply_proc is a PKG.PROC name (validated by invoke_registered's
+    -- allow-pattern), NEVER a table or column name. It is invoked with the RECON
+    -- style (p_run_id, p_load_ess_id, p_import_ess_id, p_work_queue_id) so no new
+    -- dispatch style and no new dynamic-SQL site is added — the three-site rule
+    -- (invoke_registered / ACCOUNT_ROWS / SWEEP_UNACCOUNTED) is unchanged. The
+    -- apply proc uses only p_run_id (and p_work_queue_id when scoping a child);
+    -- the ESS ids are along for the RECON signature.
+    -- ------------------------------------------------------------
+    PROCEDURE INVOKE_APPLY (
+        p_apply_proc    IN VARCHAR2,
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    );
+
 END DMT_QUEUE_WORKER_PKG;
 /

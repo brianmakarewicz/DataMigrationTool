@@ -52,5 +52,31 @@
         p_report_xml IN XMLTYPE
     );
 
+    -- ------------------------------------------------------------
+    -- APPLY_GL — GLBalances' thin STATIC apply, invoked by the generic recon
+    -- engine (DMT_RECON_ENGINE_PKG) through the sanctioned invoke_registered
+    -- site (style RECON). By that time the engine has staged the parsed
+    -- nine-column report into DMT_RECON_STAGE_GTT. This proc reads that GTT and
+    -- MERGEs into the LITERALLY-named DMT_GL_INTERFACE_TFM_TBL with STATIC SQL:
+    --   * LOADED   on SOURCE_TYPE='BASE' AND FUSION_STATUS='SUCCESS', capturing
+    --              FUSION_JE_HEADER_ID from the report's FUSION_ID;
+    --   * FAILED   on FUSION_STATUS='ERROR', appending the real Fusion error
+    --              tagged [FUSION_ERROR].
+    -- Rows with no match and no error STAY GENERATED (the shared sweep settles
+    -- them). Both MERGEs scope to RUN_ID, plus WORK_QUEUE_ID for a child item.
+    -- The table name is a compile-time literal here — static SQL, rule-safe.
+    --
+    -- The parameter shape matches invoke_registered's RECON style
+    -- (p_run_id, p_load_ess_id, p_import_ess_id, p_work_queue_id) so the engine
+    -- can dispatch it with no new dispatch style. Only p_run_id and
+    -- p_work_queue_id are used; the ESS ids ride the RECON signature unused.
+    -- ------------------------------------------------------------
+    PROCEDURE APPLY_GL (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    );
+
 END DMT_GL_RESULTS_PKG;
 /

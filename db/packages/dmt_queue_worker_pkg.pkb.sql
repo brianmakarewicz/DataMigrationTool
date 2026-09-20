@@ -1210,6 +1210,35 @@ AS
     END RECONCILE_VIA_REGISTRY;
 
     -- ============================================================
+    -- INVOKE_APPLY — dispatch an object's thin static APPLY_<OBJ> proc through
+    -- the SAME sanctioned invoke_registered site (style RECON). The generic
+    -- recon engine has already staged the parsed report into
+    -- DMT_RECON_STAGE_GTT; the object's own proc reads it and MERGEs with STATIC
+    -- SQL into its literally-named TFM table. No new dynamic-SQL site is added:
+    -- the ONLY EXECUTE IMMEDIATE remains inside invoke_registered.
+    -- ============================================================
+    PROCEDURE INVOKE_APPLY (
+        p_apply_proc    IN VARCHAR2,
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    ) IS
+        l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
+    BEGIN
+        invoke_registered(
+            p_proc          => p_apply_proc,
+            p_style         => 'RECON',
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id,
+            p_work_queue_id => p_work_queue_id,
+            x_keys          => l_ignore_keys);
+    END INVOKE_APPLY;
+
+    -- ============================================================
     -- submit_postrun_job — Phase-2 staged load.
     -- After the import job (e.g. PrepareMassAdditions) succeeds, a CEMLI
     -- whose registry row carries a POSTRUN_JOB runs a standalone follow-up

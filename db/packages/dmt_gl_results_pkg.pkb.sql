@@ -471,5 +471,137 @@
             RAISE;
     END RECONCILE_BATCH;
 
+    -- --------------------------------------------------------
+    -- APPLY_GL — GLBalances' thin STATIC apply for the generic recon engine.
+    -- The engine (DMT_RECON_ENGINE_PKG) has already staged the parsed
+    -- nine-column report into DMT_RECON_STAGE_GTT for this RUN_ID. This proc
+    -- reads that GTT and marks the TFM table set-based with STATIC SQL against
+    -- the literally-named DMT_GL_INTERFACE_TFM_TBL. It is the SAME two MERGEs
+    -- as APPLY_RESULTS above, sourced from the GTT (a static table) instead of
+    -- a TABLE(:collection) — proving the engine is a drop-in for the reference
+    -- reconciler with the object owning only its static apply.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_GL (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    ) IS
+        C_PROC     CONSTANT VARCHAR2(30) := 'APPLY_GL';
+        l_loaded   NUMBER := 0;
+        l_failed   NUMBER := 0;
+        l_checked  NUMBER := 0;
+        l_ok       NUMBER := 0;
+        l_mismatch NUMBER := 0;
+    BEGIN
+        -- (1) SET-BASED LOADED: a TFM row is LOADED only from a BASE/SUCCESS
+        -- staged row with a real FUSION_ID; FUSION_JE_HEADER_ID captured in the
+        -- same statement (contract: no LOADED without its Fusion id).
+        -- MAX(fusion_id) is a stable pick when several base lines share a key
+        -- (all lines of one journal share JE_HEADER_ID). Scoped to RUN_ID, plus
+        -- WORK_QUEUE_ID when a spawn-per-partition child owns the item.
+        MERGE INTO DMT_GL_INTERFACE_TFM_TBL t
+        USING (
+            SELECT g.record_key,
+                   MAX(g.fusion_id) AS fusion_id
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.source_type   = 'BASE'
+            AND    g.fusion_status = 'SUCCESS'
+            AND    g.fusion_id     IS NOT NULL
+            GROUP BY g.record_key
+        ) s
+        ON (    t.RUN_ID    = p_run_id
+            AND t.RECON_KEY = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'LOADED',
+                t.FUSION_JE_HEADER_ID  = s.fusion_id,
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_loaded := SQL%ROWCOUNT;
+
+        -- (2) SET-BASED FAILED: any staged ERROR row carrying a real Fusion
+        -- error message. Append the error, tagged [FUSION_ERROR]; never
+        -- overwrite. The LOADED statement already ran and both guard TFM_STATUS
+        -- NOT IN (LOADED,FAILED), so FAILED cannot clobber a LOADED row.
+        MERGE INTO DMT_GL_INTERFACE_TFM_TBL t
+        USING (
+            SELECT g.record_key,
+                   MIN(g.error_message) AS error_message
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.fusion_status = 'ERROR'
+            AND    g.error_message IS NOT NULL
+            GROUP BY g.record_key
+        ) s
+        ON (    t.RUN_ID    = p_run_id
+            AND t.RECON_KEY = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'FAILED',
+                t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                             t.ERROR_TEXT,
+                                             '[FUSION_ERROR] ' || s.error_message),
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_failed := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' complete (set-based, from GTT). LOADED: ' || l_loaded ||
+            ', FAILED: ' || l_failed ||
+            '. Unmatched/no-error rows left GENERATED (unaccounted).',
+            'INFO', C_PKG, C_PROC);
+
+        -- (3) ROUND-TRIP PROOF (strong, TFM-joined): every just-LOADED base
+        -- row's returned DMT_REFERENCE must equal BUILD_REF for its TFM row.
+        -- Static SQL joining the GTT to the literally-named TFM table.
+        -- Diagnostic only — WARNs on mismatch, NEVER alters a verdict.
+        BEGIN
+            SELECT
+                COUNT(*),
+                COUNT(CASE WHEN g.dmt_reference =
+                           DMT_REF_ID_PKG.BUILD_REF(t.RUN_ID, t.WORK_QUEUE_ID, t.TFM_SEQUENCE_ID)
+                           THEN 1 END),
+                COUNT(CASE WHEN g.dmt_reference IS NULL
+                            OR g.dmt_reference <>
+                           DMT_REF_ID_PKG.BUILD_REF(t.RUN_ID, t.WORK_QUEUE_ID, t.TFM_SEQUENCE_ID)
+                           THEN 1 END)
+              INTO l_checked, l_ok, l_mismatch
+              FROM DMT_RECON_STAGE_GTT g
+              JOIN DMT_GL_INTERFACE_TFM_TBL t
+                ON t.RUN_ID    = p_run_id
+               AND t.RECON_KEY = g.record_key
+             WHERE g.run_id        = p_run_id
+               AND g.source_type   = 'BASE'
+               AND g.fusion_status = 'SUCCESS';
+
+            IF l_mismatch = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'REF round-trip OK (APPLY_GL): ' || l_ok || ' of ' || l_checked ||
+                    ' LOADED base rows carry the expected DMT_REFERENCE.',
+                    'INFO', C_PKG, C_PROC);
+            ELSE
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'REF round-trip MISMATCH (APPLY_GL): ' || l_mismatch || ' of ' ||
+                    l_checked || ' LOADED base rows do NOT carry the expected ' ||
+                    'DMT_REFERENCE. LOADED verdict UNCHANGED (diagnostic only).',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+            END IF;
+        EXCEPTION
+            WHEN OTHERS THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'REF round-trip proof skipped (non-fatal): ' || SQLERRM,
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+        END;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed.', SQLERRM, C_PKG, C_PROC);
+            RAISE;
+    END APPLY_GL;
+
 END DMT_GL_RESULTS_PKG;
 /

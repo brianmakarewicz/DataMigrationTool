@@ -346,6 +346,7 @@ prompt == Tables ==
 @@tables/dmt_plan_budget_stg_tbl.sql
 @@tables/dmt_plan_budget_tfm_tbl.sql
 @@tables/dmt_plan_preview_gtt.sql
+@@tables/dmt_recon_stage_gtt.sql
 @@tables/dmt_por_req_dists_stg_tbl.sql
 @@tables/dmt_por_req_dists_tfm_tbl.sql
 @@tables/dmt_por_req_headers_stg_tbl.sql
@@ -737,6 +738,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_queue_pkg.pks.sql
 @@packages/dmt_queue_worker_pkg.pks.sql
 @@packages/dmt_recon_contract_pkg.pks.sql
+@@packages/dmt_recon_engine_pkg.pks.sql
 @@packages/dmt_ref_id_pkg.pks.sql
 @@packages/dmt_regression_pkg.pks.sql
 @@packages/dmt_report_pkg.pks.sql
@@ -951,6 +953,7 @@ prompt == Package bodies ==
 @@packages/dmt_queue_pkg.pkb.sql
 @@packages/dmt_queue_worker_pkg.pkb.sql
 @@packages/dmt_recon_contract_pkg.pkb.sql
+@@packages/dmt_recon_engine_pkg.pkb.sql
 @@packages/dmt_ref_id_pkg.pkb.sql
 @@packages/dmt_report_pkg.pkb.sql
 @@packages/dmt_req_fbdi_gen_pkg.pkb.sql
