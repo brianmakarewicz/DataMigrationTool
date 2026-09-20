@@ -13,6 +13,8 @@
     PROCEDURE TRANSFORM_BANKS (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
+        p_scenario_id      IN NUMBER DEFAULT NULL,
+        p_include_untagged IN VARCHAR2 DEFAULT 'N',
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_ok_count   NUMBER := 0;
@@ -82,7 +84,10 @@
             SELECT 1 FROM DMT_CE_BANK_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -99,7 +104,10 @@
             SELECT 1 FROM DMT_CE_BANK_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -125,6 +133,8 @@
     PROCEDURE TRANSFORM_BRANCHES (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
+        p_scenario_id      IN NUMBER DEFAULT NULL,
+        p_include_untagged IN VARCHAR2 DEFAULT 'N',
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_ok_count   NUMBER := 0;
@@ -194,7 +204,10 @@
             SELECT 1 FROM DMT_CE_BRANCH_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -211,7 +224,10 @@
             SELECT 1 FROM DMT_CE_BRANCH_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -237,6 +253,8 @@
     PROCEDURE TRANSFORM_ACCOUNTS (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
+        p_scenario_id      IN NUMBER DEFAULT NULL,
+        p_include_untagged IN VARCHAR2 DEFAULT 'N',
         p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_ok_count   NUMBER := 0;
@@ -320,7 +338,10 @@
             SELECT 1 FROM DMT_CE_BANK_ACCT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
 
         l_ok_count := SQL%ROWCOUNT;
 
@@ -337,7 +358,10 @@
             SELECT 1 FROM DMT_CE_BANK_ACCT_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

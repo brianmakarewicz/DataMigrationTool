@@ -10,7 +10,9 @@
 
     PROCEDURE RUN (
         p_run_id   IN NUMBER,
-        p_run_mode         IN VARCHAR2 DEFAULT 'NEW'
+        p_run_mode         IN VARCHAR2 DEFAULT 'NEW',
+        p_scenario_id      IN NUMBER DEFAULT NULL,
+        p_include_untagged IN VARCHAR2 DEFAULT 'N'
     ) IS
         C_PROC          CONSTANT VARCHAR2(30) := 'RUN';
         l_reprocess     BOOLEAN := FALSE;
@@ -41,6 +43,8 @@
         DMT_CE_BANK_TRANSFORM_PKG.TRANSFORM_BANKS(
             p_run_id   => p_run_id,
             p_reprocess_errors => l_reprocess,
+            p_scenario_id      => p_scenario_id,
+            p_include_untagged => p_include_untagged,
             p_run_mode         => p_run_mode
         );
 
@@ -48,6 +52,8 @@
         DMT_CE_BANK_TRANSFORM_PKG.TRANSFORM_BRANCHES(
             p_run_id   => p_run_id,
             p_reprocess_errors => l_reprocess,
+            p_scenario_id      => p_scenario_id,
+            p_include_untagged => p_include_untagged,
             p_run_mode         => p_run_mode
         );
 
@@ -55,6 +61,8 @@
         DMT_CE_BANK_TRANSFORM_PKG.TRANSFORM_ACCOUNTS(
             p_run_id   => p_run_id,
             p_reprocess_errors => l_reprocess,
+            p_scenario_id      => p_scenario_id,
+            p_include_untagged => p_include_untagged,
             p_run_mode         => p_run_mode
         );
 
@@ -131,10 +139,10 @@
     -- RUN_STANDARD - queue-dispatch entry point (EXEC contract, LOCAL mode).
     -- The scheduler calls this with named notation
     -- (p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE).
-    -- CashBanks has no scenario filter (its STG rows are scenario-tagged by the
-    -- seed and consumed by RUN_ID) and no business-unit refresh, so the extra
-    -- arguments are accepted for contract conformance and ignored; delegates
-    -- straight to RUN.
+    -- Resolves the scenario name to its id and delegates to RUN so STG selection
+    -- is scoped to the run's scenario (STG accumulates across scenarios on the
+    -- shared DB). p_skip_bu_refresh is accepted for contract conformance and
+    -- ignored (CashBanks has no business-unit refresh).
     -- ============================================================
     PROCEDURE RUN_STANDARD (
         p_run_id          IN NUMBER,
@@ -143,10 +151,25 @@
         p_skip_bu_refresh IN BOOLEAN  DEFAULT FALSE
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_STANDARD';
+        l_scenario_id NUMBER;
+        l_err_code    NUMBER;
     BEGIN
+        DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+            p_scenario_name => p_scenario_name,
+            x_scenario_id   => l_scenario_id,
+            x_error_code    => l_err_code);
+
+        IF l_err_code != DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20101,
+                'RUN_STANDARD: could not resolve scenario "' ||
+                NVL(p_scenario_name, '(null)') || '" (detail in DMT_LOG_TBL).');
+        END IF;
+
         RUN(
-            p_run_id   => p_run_id,
-            p_run_mode => p_run_mode);
+            p_run_id           => p_run_id,
+            p_run_mode         => p_run_mode,
+            p_scenario_id      => l_scenario_id,
+            p_include_untagged => 'N');
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(
