@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="req_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- Requisitions reconciliation data model -- BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination, the six
+-- standard parameters). Same shape as DMT_GL_BAL_RECON_DM.xdm.
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+--
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT.
+--
+-- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
+-- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
+-- with an empty cursor first, then passes the last RECORD_KEY it
+-- received on each next call, until a page returns fewer than
+-- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
+-- (every non-null RECORD_KEY sorts after the empty string).
+--
+-- MULTI-TIER object. Requisitions is one FBDI zip carrying three
+-- record types -- headers, lines, distributions -- each with its
+-- own interface table, its own base table, and its own stamped
+-- recon key. OBJECT_TYPE discriminates the tier and the six
+-- SELECT blocks are UNION ALL-ed, then ordered by RECORD_KEY.
+--
+-- STAMPED RECON KEYS (= TFM RECON keys, read back from Fusion):
+--   Header interface key  264_RQHDR_<seq>    (POR_REQ_HEADERS_INTERFACE_ALL.INTERFACE_HEADER_KEY)
+--   Line   interface key  264_RQLN_<seq>     (POR_REQ_LINES_INTERFACE_ALL.INTERFACE_LINE_KEY,
+--                                             AND persisted on the base line as INTERFACE_LINE_KEY)
+--   Dist   interface key  264_RQDIST_<seq>   (POR_REQ_DISTS_INTERFACE_ALL.INTERFACE_DISTRIBUTION_KEY)
+-- The header/line/dist stamped keys all begin with the pipeline
+-- run id: <run_id>_RQHDR_ / _RQLN_ / _RQDIST_. That prefix is the
+-- run-scoped selector (see "Row selection" below) and makes RECORD_KEY
+-- unique and comparable across all three tiers.
+--
+-- Row selection (proven live against run 264 -- prefix 10204):
+--   A single Requisitions run submits ONE load per work-queue batch,
+--   so a run with two batches has TWO distinct LOAD_REQUEST_IDs and
+--   TWO distinct import ESS ids. :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID
+--   therefore cannot select the whole run on their own. The reliable
+--   run-scoped selector is the stamped key prefix and the number
+--   prefix, both of which every batch shares:
+--     BASE  header rows: POR_REQUISITION_HEADERS_ALL where
+--           REQUISITION_NUMBER LIKE :P_PREFIX || '%' (prefixed number
+--           = TFM business key; no interface key survives on the base
+--           header, so the prefixed number is the read-back key).
+--     BASE  line rows:   POR_REQUISITION_LINES_ALL where
+--           INTERFACE_LINE_KEY LIKE :P_RUN_ID || '\_RQLN\_%' (the
+--           stamped line key is persisted verbatim on the base line).
+--     BASE  dist rows:   POR_REQ_DISTRIBUTIONS_ALL joined to the base
+--           line by REQUISITION_LINE_ID (the base dist carries no
+--           interface key, so it is confirmed transitively through
+--           its loaded parent line; RECORD_KEY is derived from the
+--           parent's stamped line key -- see the block comment).
+--     INTERFACE rows (all three tiers): the interface rows that did
+--           NOT import (PROCESS_FLAG <> 'SUCCESS') are the rejections.
+--           Interface rows persist for both success and failure, so
+--           the SUCCESS rows are handled only by the BASE tiers and
+--           the INTERFACE tiers return rejections only -- no row is
+--           counted twice. Selected by their stamped key prefix
+--           :P_RUN_ID || '\_RQHDR\_%' / '\_RQLN\_%' / '\_RQDIST\_%'.
+--   :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID are declared for contract
+--   symmetry and stamped into LOAD_REQUEST_ID for traceability.
+--
+-- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
+--   BASE  (row present in a Fusion base table)  => SUCCESS
+--   INTERFACE (rejection left in the interface) => ERROR
+-- FUSION_ID is non-null on every BASE row (the Fusion surrogate id).
+-- ERROR_MESSAGE is non-null on every ERROR row (the real Fusion
+-- rejection text from POR_REQ_IMPORT_ERRORS, joined per tier on
+-- INTERFACE_TYPE + INTERFACE_KEY = the row's own stamped key).
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- ========== BASE tier: positive proof, one block per record type ==========
+
+    -- BASE / headers. RECORD_KEY = prefixed requisition number
+    -- (the base header does not persist the interface key, so the
+    -- prefixed number is the read-back key = TFM business key).
+    SELECT
+        'Requisitions'                       AS object_type,
+        rh.requisition_number                AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        rh.requisition_header_id             AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        rh.interface_source_code             AS source_ref,
+        rh.attribute1                        AS dmt_reference
+    FROM   por_requisition_headers_all rh
+    WHERE  rh.requisition_number LIKE :P_PREFIX || '%'
+
+    UNION ALL
+
+    -- BASE / lines. RECORD_KEY = the stamped line key, persisted
+    -- verbatim on the base line as INTERFACE_LINE_KEY.
+    SELECT
+        'Requisitions.Line'                  AS object_type,
+        rl.interface_line_key                AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        rl.requisition_line_id               AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        rl.interface_line_key                AS source_ref,
+        rh.attribute1                        AS dmt_reference
+    FROM   por_requisition_lines_all rl
+    JOIN   por_requisition_headers_all rh
+           ON rh.requisition_header_id = rl.requisition_header_id
+    WHERE  rl.interface_line_key LIKE :P_RUN_ID || '\_RQLN\_%' ESCAPE '\'
+
+    UNION ALL
+
+    -- BASE / distributions. The base distribution carries NO
+    -- interface key, so it is confirmed transitively through its
+    -- loaded parent line. RECORD_KEY is derived from the parent's
+    -- stamped line key plus the base distribution number so it is
+    -- deterministic, unique and traceable to the parent -- it is
+    -- NOT the stamped RQDIST key (that key does not survive on the
+    -- base table; the RQDIST key is matched on the INTERFACE tier).
+    SELECT
+        'Requisitions.Distribution'          AS object_type,
+        rl.interface_line_key || ':DIST:' || rd.distribution_number  AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        rd.distribution_id                   AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        rl.interface_line_key                AS source_ref,
+        rh.attribute1                        AS dmt_reference
+    FROM   por_req_distributions_all rd
+    JOIN   por_requisition_lines_all rl
+           ON rl.requisition_line_id = rd.requisition_line_id
+    JOIN   por_requisition_headers_all rh
+           ON rh.requisition_header_id = rl.requisition_header_id
+    WHERE  rl.interface_line_key LIKE :P_RUN_ID || '\_RQLN\_%' ESCAPE '\'
+
+    UNION ALL
+
+    -- ========== INTERFACE tier: rejections only (PROCESS_FLAG <> SUCCESS) ==========
+
+    -- INTERFACE / headers. RECORD_KEY = the stamped header key.
+    -- Error text is the header-level rejection(s) for this key.
+    SELECT
+        'Requisitions'                       AS object_type,
+        h.interface_header_key               AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[HDR] ' || NVL(he.error_message,
+             'Rejected by Requisition Import (process_flag=' || NVL(h.process_flag,'NULL')
+             || '; no error row written -- e.g. header rejected pre-validation).')
+                                             AS error_message,
+        h.load_request_id                    AS load_request_id,
+        h.interface_header_key               AS source_ref,
+        h.attribute1                         AS dmt_reference
+    FROM   por_req_headers_interface_all h
+    LEFT   JOIN (
+        SELECT e.interface_key,
+               -- Skip fully-blank error rows and collapse an all-blank
+               -- aggregation to NULL so the NVL fallback fires (the source
+               -- sometimes writes an empty HEADER error row for a header whose
+               -- real rejection is on a child line/dist).
+               NULLIF(LISTAGG(
+                   CASE WHEN e.column_name IS NULL AND e.column_value IS NULL AND e.text_line IS NULL
+                        THEN NULL
+                        ELSE e.column_name || '=' || e.column_value || ': ' || e.text_line END,
+                   ' | ') WITHIN GROUP (ORDER BY e.req_import_error_id), '') AS error_message
+        FROM   por_req_import_errors e
+        WHERE  e.interface_type = 'HEADER'
+        GROUP BY e.interface_key
+    ) he ON he.interface_key = h.interface_header_key
+    WHERE  h.interface_header_key LIKE :P_RUN_ID || '\_RQHDR\_%' ESCAPE '\'
+    AND    NVL(h.process_flag,'X') <> 'SUCCESS'
+
+    UNION ALL
+
+    -- INTERFACE / lines. RECORD_KEY = the stamped line key.
+    SELECT
+        'Requisitions.Line'                  AS object_type,
+        l.interface_line_key                 AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[LINE] ' || NVL(le.error_message,
+             'Rejected by Requisition Import (process_flag=' || NVL(l.process_flag,'NULL')
+             || '; line not created in base table).')
+                                             AS error_message,
+        l.load_request_id                    AS load_request_id,
+        l.interface_line_key                 AS source_ref,
+        l.attribute1                         AS dmt_reference
+    FROM   por_req_lines_interface_all l
+    LEFT   JOIN (
+        SELECT e.interface_key,
+               NULLIF(LISTAGG(
+                   CASE WHEN e.column_name IS NULL AND e.column_value IS NULL AND e.text_line IS NULL
+                        THEN NULL
+                        ELSE e.column_name || '=' || e.column_value || ': ' || e.text_line END,
+                   ' | ') WITHIN GROUP (ORDER BY e.req_import_error_id), '') AS error_message
+        FROM   por_req_import_errors e
+        WHERE  e.interface_type = 'LINE'
+        GROUP BY e.interface_key
+    ) le ON le.interface_key = l.interface_line_key
+    WHERE  l.interface_line_key LIKE :P_RUN_ID || '\_RQLN\_%' ESCAPE '\'
+    AND    NVL(l.process_flag,'X') <> 'SUCCESS'
+
+    UNION ALL
+
+    -- INTERFACE / distributions. RECORD_KEY = the stamped dist key.
+    SELECT
+        'Requisitions.Distribution'          AS object_type,
+        d.interface_distribution_key         AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[DIST] ' || NVL(de.error_message,
+             'Rejected by Requisition Import (process_flag=' || NVL(d.process_flag,'NULL')
+             || '; distribution not created in base table).')
+                                             AS error_message,
+        d.load_request_id                    AS load_request_id,
+        d.interface_distribution_key         AS source_ref,
+        d.attribute1                         AS dmt_reference
+    FROM   por_req_dists_interface_all d
+    LEFT   JOIN (
+        SELECT e.interface_key,
+               NULLIF(LISTAGG(
+                   CASE WHEN e.column_name IS NULL AND e.column_value IS NULL AND e.text_line IS NULL
+                        THEN NULL
+                        ELSE e.column_name || '=' || e.column_value || ': ' || e.text_line END,
+                   ' | ') WITHIN GROUP (ORDER BY e.req_import_error_id), '') AS error_message
+        FROM   por_req_import_errors e
+        WHERE  e.interface_type = 'DISTRIBUTION'
+        GROUP BY e.interface_key
+    ) de ON de.interface_key = d.interface_distribution_key
+    WHERE  d.interface_distribution_key LIKE :P_RUN_ID || '\_RQDIST\_%' ESCAPE '\'
+    AND    NVL(d.process_flag,'X') <> 'SUCCESS'
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start": return every row. On later
+-- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
+-- greater keys are returned. RECORD_KEY is compared as text (the recon
+-- key is a string); the reconciler feeds back the exact key it received.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="req_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
