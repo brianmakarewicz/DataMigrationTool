@@ -61,9 +61,13 @@
 --   LOAD_STATUS, no MESSAGE_TEXT / ERROR_MESSAGE). The real per-row
 --   rejection message lives only in the Import Report XML that the
 --   reconciler package pulls from the child ImportProjectReportJob.
---   This DM therefore surfaces the interface disposition as a short
---   status string in ERROR_MESSAGE so an ERROR row is never blank; the
---   package overlays the true Fusion message from the report XML.
+--   Per Contract v1, an ERROR row therefore returns the literal marker
+--   '#IMPORT_REPORT#' -- a wire-time signal telling the reconciler to
+--   invoke the import-report fallback and overlay the true Fusion
+--   message. The human-readable interface disposition (IMPORT_STATUS /
+--   LOAD_STATUS) is kept for troubleshooting in DEBUG_DISPOSITION, a
+--   debug-only tenth column PAST the nine contract columns; it is not
+--   mapped into the report output.
 --
 -- SOURCE_REF / DMT_REFERENCE: the FBDI SOURCE_PROJECT_REFERENCE and
 --   ATTRIBUTE1 the pipeline sends are not read back on this instance
@@ -79,9 +83,13 @@
 --   TeamMembers : PROJECT_NUMBER || '/TM/' || <party/member key>
 --   TxnControls : PROJECT_NUMBER || '/TC/' || <control key>
 -- ============================================================
+-- The nine contract columns are selected by the report. DEBUG_DISPOSITION
+-- is a tenth, debug-only column carried in the SQL for troubleshooting; it
+-- is NOT mapped as a report element and never reaches the contract output.
 SELECT
     object_type, record_key, source_type, fusion_status,
-    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference,
+    debug_disposition
 FROM (
     -- ---- Projects tier : BASE (positive LOADED confirmation) --------
     -- Matched by run prefix on SEGMENT1; REQUEST_ID is NULL on the base
@@ -95,7 +103,8 @@ FROM (
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
         TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
         p.segment1                           AS source_ref,
-        p.segment1                           AS dmt_reference
+        p.segment1                           AS dmt_reference,
+        CAST(NULL AS VARCHAR2(4000))         AS debug_disposition
     FROM   pjf_projects_all_b p
     WHERE  :P_PREFIX IS NOT NULL
     AND    p.segment1 LIKE :P_PREFIX || '%'
@@ -109,14 +118,15 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
+        '#IMPORT_REPORT#'                    AS error_message,
+        x.load_request_id                    AS load_request_id,
+        x.project_number                     AS source_ref,
+        x.project_number                     AS dmt_reference,
         '[PROJECT] Left in interface after import (IMPORT_STATUS='
              || NVL(x.import_status,'?') || ', LOAD_STATUS='
              || NVL(x.load_status,'?')
              || '). See Import Report for the row-level message.'
-                                             AS error_message,
-        x.load_request_id                    AS load_request_id,
-        x.project_number                     AS source_ref,
-        x.project_number                     AS dmt_reference
+                                             AS debug_disposition
     FROM   pjf_projects_all_xface x
     WHERE  x.load_request_id = :P_LOAD_REQUEST_ID
 
@@ -136,7 +146,8 @@ FROM (
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
         TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
         p.segment1 || '/' || e.element_number AS source_ref,
-        p.segment1 || '/' || e.element_number AS dmt_reference
+        p.segment1 || '/' || e.element_number AS dmt_reference,
+        CAST(NULL AS VARCHAR2(4000))         AS debug_disposition
     FROM   pjf_proj_elements_b e
     JOIN   pjf_projects_all_b  p ON p.project_id = e.project_id
     WHERE  :P_PREFIX IS NOT NULL
@@ -152,14 +163,15 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
+        '#IMPORT_REPORT#'                    AS error_message,
+        t.load_request_id                    AS load_request_id,
+        t.project_number || '/' || t.task_number AS source_ref,
+        t.project_number || '/' || t.task_number AS dmt_reference,
         '[TASK] Left in interface after import (IMPORT_STATUS='
              || NVL(t.import_status,'?') || ', LOAD_STATUS='
              || NVL(t.load_status,'?')
              || '). See Import Report for the row-level message.'
-                                             AS error_message,
-        t.load_request_id                    AS load_request_id,
-        t.project_number || '/' || t.task_number AS source_ref,
-        t.project_number || '/' || t.task_number AS dmt_reference
+                                             AS debug_disposition
     FROM   pjf_proj_elements_xface t
     WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
 
@@ -177,14 +189,15 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
+        '#IMPORT_REPORT#'                    AS error_message,
+        tm.load_request_id                   AS load_request_id,
+        tm.project_name || '/TM/' || tm.team_member_name AS source_ref,
+        tm.project_name || '/TM/' || tm.team_member_name AS dmt_reference,
         '[TEAMMEMBER] Left in interface after import (IMPORT_STATUS='
              || NVL(tm.import_status,'?') || ', LOAD_STATUS='
              || NVL(tm.load_status,'?')
              || '). See Import Report for the row-level message.'
-                                             AS error_message,
-        tm.load_request_id                   AS load_request_id,
-        tm.project_name || '/TM/' || tm.team_member_name AS source_ref,
-        tm.project_name || '/TM/' || tm.team_member_name AS dmt_reference
+                                             AS debug_disposition
     FROM   pjf_project_parties_int tm
     WHERE  tm.load_request_id = :P_LOAD_REQUEST_ID
 
@@ -200,13 +213,14 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
+        '#IMPORT_REPORT#'                    AS error_message,
+        tc.load_request_id                   AS load_request_id,
+        tc.project_number || '/TC/' || tc.txn_ctrl_reference AS source_ref,
+        tc.project_number || '/TC/' || tc.txn_ctrl_reference AS dmt_reference,
         '[TXNCONTROL] Left in staging after import (LOAD_STATUS='
              || NVL(tc.load_status,'?')
              || '). See Import Report for the row-level message.'
-                                             AS error_message,
-        tc.load_request_id                   AS load_request_id,
-        tc.project_number || '/TC/' || tc.txn_ctrl_reference AS source_ref,
-        tc.project_number || '/TC/' || tc.txn_ctrl_reference AS dmt_reference
+                                             AS debug_disposition
     FROM   pjc_txn_controls_stage tc
     WHERE  tc.load_request_id = :P_LOAD_REQUEST_ID
 )
