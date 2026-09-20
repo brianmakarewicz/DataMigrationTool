@@ -1,21 +1,17 @@
 -- PACKAGE DMT_REQ_RESULTS_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_REQ_RESULTS_PKG" 
-AUTHID DEFINER
-AS
+  CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_REQ_RESULTS_PKG" AUTHID DEFINER AS
 -- ============================================================
 -- DMT_REQ_RESULTS_PKG
--- Post-load BIP reconciliation for Requisitions — Two-Tier pattern.
+-- Post-load BIP reconciliation for Requisitions — BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination, six standard
+-- parameters). Reader-code pilot: this package is a verbatim copy of
+-- the reference reconciler DMT_GL_RESULTS_PKG, with only the four
+-- object-specific swaps (CEMLI code, TFM table, FUSION_ID column,
+-- generated-row count table).
 --
--- Tier 1: POR_REQ_HEADERS_INTERFACE_ALL (interface table, errors/status)
--- Tier 2: POR_REQUISITION_HEADERS_ALL (base table, positive confirmation)
--- No absence=LOADED fallback. Every row gets positive verification
--- or is marked FAILED with a reconciliation error.
---
--- Reconciles headers, cascades to lines and distributions TFM,
--- then echoes back to all 3 STG tables.
---
--- BIP report path read from DMT_BIP_REPORT_TBL at runtime.
+-- Transport is the shared DMT_UTIL_PKG.RUN_BIP_REPORT (no private
+-- UTL_HTTP copy). Outcomes are written to the header TFM table only.
 -- CEMLI_CODE: 'Requisitions'
 -- ============================================================
 
@@ -28,26 +24,36 @@ AS
     ) RETURN DMT_PARTITION_KEY_TBL;
 
     -- Main entry point: call after POLL_ESS_JOB completes.
-    -- p_load_ess_id: the ESS job ID used as P_BATCH_ID in the BIP report
-    -- p_import_ess_id: the Import ESS job ID for base table lookup
+    -- p_load_ess_id: Load ESS job ID. Passed as P_LOAD_REQUEST_ID.
     PROCEDURE RECONCILE_BATCH (
-        p_run_id  IN NUMBER,
-        p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL,
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER DEFAULT NULL,
         p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
-    -- Call Fusion BIP v2 SOAP runReport and return raw XML response.
-    FUNCTION FETCH_BIP_RESULTS (
-        p_run_id  IN NUMBER,
-        p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
-    ) RETURN CLOB;
+    -- Run the reconciliation BIP report via the shared transport
+    -- (DMT_UTIL_PKG.RUN_BIP_REPORT) with the Contract v1 parameters
+    -- P_RUN_ID / P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID / P_PREFIX /
+    -- P_CHUNK_SIZE / P_AFTER_KEY. Single-page fetch (empty cursor).
+    --   x_report_xml : decoded report data; NULL with x_error_code =
+    --                  DMT_UTIL_PKG.C_SUCCESS means zero rows.
+    --   x_error_code : DMT_UTIL_PKG.C_SUCCESS / C_ERROR (failure detail
+    --                  in DMT_LOG_TBL; exceptions never escape).
+    -- Exposed publicly for independent testing.
+    PROCEDURE FETCH_BIP_RESULTS (
+        p_run_id        IN  NUMBER,
+        p_load_ess_id   IN  NUMBER,
+        x_report_xml    OUT XMLTYPE,
+        x_error_code    OUT NUMBER,
+        p_import_ess_id IN  NUMBER DEFAULT NULL
+    );
 
-    -- Parse BIP XML response and update all 3 TFM + STG tables.
+    -- Parse the BIP report data and update the TFM table only.
+    -- Exposed publicly so results can be reprocessed without re-calling Fusion.
     PROCEDURE PARSE_AND_UPDATE (
-        p_run_id IN NUMBER,
-        p_xml_data       IN CLOB
+        p_run_id     IN NUMBER,
+        p_report_xml IN XMLTYPE
     );
 
 END DMT_REQ_RESULTS_PKG;
