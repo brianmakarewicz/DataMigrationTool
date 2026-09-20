@@ -27,6 +27,21 @@
 -- PO family note: PurchaseOrders, BlanketPOs and Contracts all stage into the ONE
 -- header TFM table DMT_PO_HEADERS_INT_TFM_TBL (discriminated by STYLE_DISPLAY_NAME),
 -- so they share ONE carrier row (keyed by that table, CEMLI_CODE 'PurchaseOrders').
+-- TCA family note (backlog #12, TEMPLATE proven live 2026-09-20 on Customers):
+-- the TCA family = Customers + the 5 supplier objects (Suppliers, SupplierAddresses,
+-- SupplierSites, SupplierSiteAssignments, SupplierContacts). Recipe: Slot A is the
+-- object's *_ORIG_SYSTEM_REFERENCE, which the transform PREFIXES and the reconciler
+-- matches on; it lands in the Fusion base table HZ_ORIG_SYS_REFERENCES
+-- (owner_table_name = the record type's base table, owner_table_id = its base id) and
+-- the recon report reads it back. That read-back = the #12 round-trip proof (the value
+-- we stamped survived to the base table and returned unchanged), exactly like the HDL
+-- Workers proof riding Slot A. Slot C is NULL for TCA parties: the HZ party interface
+-- has only ATTRIBUTE1..20 (no ATTRIBUTE30) and no attribute is proven to round-trip to
+-- an HZ_PARTIES base column, so -- per the GL ATTRIBUTE20 lesson -- we do NOT invent a
+-- Slot C. The generator stamps WORK_QUEUE_ID = g_gen_queue_id so the reconciler's
+-- BUILD_REF can log the full run-scoped ref (DMT:run:wq:tfm) for audit alongside the
+-- confirmed Slot A carrier. Objects with no *_ORIG_SYSTEM_REFERENCE at all (e.g. the
+-- supplier header) carry the run id in a native batch column instead (Slot B).
 -- HDL family note: Slot A is universal SourceSystemId, whose base column is
 -- HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID (4000 chars); Slot B is not used for HDL.
 -- Slot C is NOT available for HDL persons (backlog #12, verified live 2026-09-20 on
