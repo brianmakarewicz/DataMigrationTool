@@ -379,6 +379,7 @@ prompt == Tables ==
 @@tables/dmt_rcv_headers_tfm_tbl.sql
 @@tables/dmt_rcv_transactions_stg_tbl.sql
 @@tables/dmt_rcv_transactions_tfm_tbl.sql
+@@tables/dmt_ref_carrier_cfg_tbl.sql
 @@tables/dmt_rest_lookup_tbl.sql
 @@tables/dmt_salary_stg_tbl.sql
 @@tables/dmt_salary_tfm_tbl.sql
