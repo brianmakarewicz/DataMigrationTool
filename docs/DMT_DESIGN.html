@@ -599,9 +599,11 @@
   <p><strong><code>P_BATCH_ID</code> is retired</strong> — it already means the load-ESS request id in some reports and the run id
   in others, a silent wrong-data trap.</p>
 
-  <p><strong>Response — every row of the report returns exactly these seven columns, in this order</strong> (rowset
-  <code>/DATA_DS/G_1</code>, upper-case tags, no rowset tag). Per-object extra columns are allowed <em>after</em> them for human
-  debugging only — the parser never reads them:</p>
+  <p><strong>Response — every row of the report returns exactly these nine columns, in this order</strong> (rowset
+  <code>/DATA_DS/G_1</code>, upper-case tags, no rowset tag). Columns 8&ndash;9 (<code>SOURCE_REF</code>, <code>DMT_REFERENCE</code>) were
+  added 2026-09-20 (owner-directed) to carry the run-scoped per-record reference read back from the base table; unlike the old
+  "extra columns", the parser <em>does</em> read them (for the reference round-trip confirmation and, once populated, id-to-id
+  matching). Any further per-object columns after these nine are debug-only and unread:</p>
   <table>
     <tr><th>Column</th><th>Meaning</th></tr>
     <tr><td><code>OBJECT_TYPE</code></td><td>Sub-object discriminator (record type within the FBDI); single-record-type objects return the object code constant. Lets one report serve headers/lines/children.</td></tr>
@@ -611,6 +613,8 @@
     <tr><td><code>FUSION_ID</code></td><td>The Fusion base-table id. <strong>Required non-null on every BASE/SUCCESS row</strong> — the "positive success + Fusion IDs" rule made structural. NULL on INTERFACE rows.</td></tr>
     <tr><td><code>ERROR_MESSAGE</code></td><td>Level-tagged error text (<code>[HDR]/[LINE]/[DIST]/[LLOC]</code> prefix). <strong>Required non-null on every ERROR row.</strong> Objects whose interface purges error text return the literal marker <code>#IMPORT_REPORT#</code>, telling the parser to invoke the import-report fallback instead.</td></tr>
     <tr><td><code>LOAD_REQUEST_ID</code></td><td>The request id the row matched on, returned unchanged so the match can be audited.</td></tr>
+    <tr><td><code>SOURCE_REF</code></td><td>Slot A — the object&#39;s native source-system reference read back from the base table (e.g. <code>ORIG_SYSTEM_REFERENCE</code>, <code>SourceSystemId</code>, GL <code>REFERENCE_1</code>). Carries the run-scoped reference in full where the field allows, else the TFM id (see the #12 carrier map). NULL where the object has no native source-ref carrier.</td></tr>
+    <tr><td><code>DMT_REFERENCE</code></td><td>Slot C — the full <code>DMT:&lt;run&gt;:&lt;queue&gt;:&lt;tfm&gt;</code> reference read back from the base table&#39;s DFF <code>ATTRIBUTE1</code> (or the object&#39;s designated attribute). NULL until the DFF segment is deployed (the stamp is written regardless — an un-deployed segment is silently dropped, no error), so <code>SOURCE_REF</code> is the reliable carrier in the interim.</td></tr>
   </table>
 
   <p><strong>Volume — keyset pagination (decided 2026-07-07).</strong> Every data model orders its rows by <code>RECORD_KEY</code> and returns at most <code>P_CHUNK_SIZE</code> rows after <code>P_AFTER_KEY</code>. The shared fetch function loops — first call with an empty cursor, each next call passing the last key received — feeding each page to the parser as it arrives, until a page returns fewer rows than the chunk size. Memory is bounded to one chunk regardless of total volume; a page-count cap derived from the run&#39;s generated-row count stops a misbehaving report from looping forever. Keyset was chosen over offset-plus-overlap paging: the cursor is exact (no gaps, no duplicates, no drift — and the reconciliation population is fixed anyway once the load and import jobs finish), and every page costs the same. A scheduled bulk file export was considered and rejected as heavier machinery (delivery infrastructure, job polling, giant-file parsing) for the same result.</p>
