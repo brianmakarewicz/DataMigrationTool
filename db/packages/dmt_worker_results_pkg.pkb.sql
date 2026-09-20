@@ -11,6 +11,61 @@ AS
     C_CEMLI CONSTANT VARCHAR2(30) := 'Workers';
 
     -- --------------------------------------------------------
+    -- LOG_REF12_ROUNDTRIP (private)
+    -- Backlog #12 round-trip proof for one just-LOADED Worker base row (HDL family
+    -- template; mirrors DMT_GL_RESULTS_PKG.LOG_REF12_ROUNDTRIP). For HDL persons the
+    -- carrier is Slot A: SourceSystemId (= the prefixed PERSON_NUMBER we wrote into
+    -- Worker.dat) lands in HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID and comes back as
+    -- the recon report's RECORD_KEY (= PER_ALL_PEOPLE_F.PERSON_NUMBER). So the proof
+    -- is: the base RECORD_KEY equals the Slot A value the TFM row carries as
+    -- RECON_KEY -- the value we stamped survived to the Fusion base table and
+    -- returned unchanged. There is NO Slot C for HDL persons, so the full reference
+    -- (BUILD_REF = DMT:run:wq:tfm) is logged for audit alongside the confirmed Slot A
+    -- carrier. Diagnostic only: a mismatch or lookup miss logs WARN and NEVER alters
+    -- the LOADED outcome (design section 7).
+    -- --------------------------------------------------------
+    PROCEDURE LOG_REF12_ROUNDTRIP (
+        p_run_id     IN NUMBER,
+        p_record_key IN VARCHAR2,
+        p_fusion_id  IN NUMBER
+    ) IS
+        C_PROC        CONSTANT VARCHAR2(30) := 'LOG_REF12_ROUNDTRIP';
+        l_slot_a      VARCHAR2(1000);
+        l_full_ref    VARCHAR2(150);
+    BEGIN
+        -- Read the Slot A carrier (RECON_KEY) and the full reference for the matched
+        -- TFM row. RECON_KEY is exactly what the generator wrote as SourceSystemId.
+        SELECT RECON_KEY,
+               DMT_REF_ID_PKG.BUILD_REF(RUN_ID, WORK_QUEUE_ID, TFM_SEQUENCE_ID)
+          INTO l_slot_a, l_full_ref
+          FROM DMT_WORKER_TFM_TBL
+         WHERE RUN_ID = p_run_id AND RECON_KEY = p_record_key
+           AND ROWNUM = 1;
+
+        IF p_record_key IS NOT NULL AND p_record_key = l_slot_a THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'REF #12 round-trip OK for RECON_KEY ' || p_record_key ||
+                ': Slot A SourceSystemId returned from the base table '
+                || '(HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID -> PER_ALL_PEOPLE_F, '
+                || 'PERSON_ID=' || p_fusion_id || ') = ' || l_slot_a ||
+                '. Full ref (audit, no Slot C for HDL): ' || l_full_ref || '.',
+                'INFO', C_PKG, C_PROC);
+        ELSE
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'REF #12 round-trip MISMATCH for RECON_KEY ' || p_record_key ||
+                ': base RECORD_KEY=' || NVL(p_record_key, '(null)') ||
+                ' expected Slot A=' || l_slot_a || '.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+        END IF;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'REF #12 round-trip: no TFM row found for RECON_KEY ' ||
+                p_record_key || ' (proof skipped).',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+    END LOG_REF12_ROUNDTRIP;
+
+    -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_WORKERS (private)
     -- The Contract v1 base-tier positive proof for the Worker record (design
     -- section 5), Option A shape (owner decision on PR #248). The shared package
@@ -85,6 +140,15 @@ AS
                     AND    RECON_KEY = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
+
+                    -- Backlog #12 round-trip proof (Slot A): confirm the base
+                    -- RECORD_KEY that came back equals the SourceSystemId (RECON_KEY)
+                    -- we wrote for this TFM row. Private proc so this loop keeps one
+                    -- BEGIN/END (design section 7 coding standard).
+                    LOG_REF12_ROUNDTRIP(
+                        p_run_id     => p_run_id,
+                        p_record_key => l_rows(i).RECORD_KEY,
+                        p_fusion_id  => l_rows(i).FUSION_ID);
 
                 ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                       AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN

@@ -629,6 +629,34 @@ AS
         -- so the generated file and the reconciler read the same stored value.
         synthesize_null_siteuse_refs(p_run_id, p_batch_id);
 
+        -- ============================================================
+        -- Backlog #12 -- stamp the generating work-queue id onto the party
+        -- (header-tier) TFM rows BEFORE the CSVs are built. Carrier config
+        -- (DMT_REF_CARRIER_CFG_TBL, cemli_code Customers), resolved to reality
+        -- 2026-09-20 and the TEMPLATE for the TCA family:
+        --   Slot A = PARTY_ORIG_SYSTEM_REFERENCE -> HZ_ORIG_SYS_REFERENCES
+        --            .ORIG_SYSTEM_REFERENCE. Already PREFIXED by the transform and
+        --            the reconciler's match key; it round-trips through the Fusion
+        --            base table, so it IS the #12 round-trip proof (like HDL Workers).
+        --   Slot B = none (no batch/request column on the party interface).
+        --   Slot C = none. The parties interface has only ATTRIBUTE1..20 (no
+        --            ATTRIBUTE30) and no attribute is proven to round-trip to an
+        --            HZ_PARTIES base column, so -- per the GL ATTRIBUTE20 lesson --
+        --            we do NOT invent a Slot C. Nothing extra is written into the
+        --            CSV; the full run-scoped ref (BUILD_REF = DMT:run:wq:tfm) is
+        --            recomputed at reconcile for audit and the round-trip rides Slot A.
+        -- We only persist WORK_QUEUE_ID here so BUILD_REF has the wq component at
+        -- reconcile. Use g_gen_queue_id (the current item's queue id, set for EVERY
+        -- object) rather than g_work_queue_id (deliberately NULL for non-partitioned
+        -- objects to preserve reconcile-sweep scope). g_gen_queue_id is the sanctioned
+        -- reference component and does not affect sweep scope.
+        UPDATE DMT_HZ_PARTIES_TFM_TBL
+        SET    WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
+
         -- Generate all 7 CSVs
         l_parties_csv    := gen_parties_csv(p_run_id, p_batch_id);
         l_locations_csv  := gen_locations_csv(p_run_id, p_batch_id);

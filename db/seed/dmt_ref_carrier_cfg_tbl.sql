@@ -28,20 +28,63 @@
 -- header TFM table DMT_PO_HEADERS_INT_TFM_TBL (discriminated by STYLE_DISPLAY_NAME),
 -- so they share ONE carrier row (keyed by that table, CEMLI_CODE 'PurchaseOrders').
 -- HDL family note: Slot A is universal SourceSystemId, whose base column is
--- HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID (2000 chars); Slot B is not used for HDL.
+-- HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID (4000 chars); Slot B is not used for HDL.
+-- Slot C is NOT available for HDL persons (backlog #12, verified live 2026-09-20 on
+-- the Workers proof-of-recipe): the person key map HRC_INTEGRATION_KEY_MAP has no
+-- attribute/DFF column (only OBJECT_NAME, GUID, SURROGATE_ID, SOURCE_SYSTEM_OWNER,
+-- SOURCE_SYSTEM_ID, ORA_PART_KEY), and the Worker.dat writes no PER_ALL_PEOPLE_F
+-- ATTRIBUTE that is proven to round-trip -- so per the GL lesson (do NOT assume a DFF
+-- column round-trips) we do NOT invent a Slot C. The #12 round-trip for HDL rides
+-- Slot A: SourceSystemId (= the prefixed PERSON_NUMBER we write) lands in
+-- HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID (OBJECT_NAME='Person', SURROGATE_ID =
+-- PER_ALL_PEOPLE_F.PERSON_ID) and comes back as the recon report's RECORD_KEY, which
+-- equals the TFM row's RECON_KEY -- proving the value we stamped survived to the
+-- base table. Every HDL row below therefore carries SLOT_C_ATTRIBUTE = NULL.
 merge into "DMT_REF_CARRIER_CFG_TBL" t
 using (
     -- ================= FBDI objects =================
     select 'GLBalances' cemli_code, 'GL Journals' sub_object,
            'DMT_GL_INTERFACE_TFM_TBL' tfm_table,
            'REFERENCE21' slot_a_field, 'GL_JE_LINES.REFERENCE_1' slot_a_base_column,
-           'GROUP_ID' slot_b_field, 'ATTRIBUTE20' slot_c_attribute, 150 slot_c_maxlen,
+           'GROUP_ID' slot_b_field, 'REFERENCE22' slot_c_attribute, 240 slot_c_maxlen,
            'FULL' ref_format, 'CONFIRMED' confidence, 'Y' active_flag,
-           'GL journal line ref carrier.' notes from dual
+           -- Slot C corrected 2026-09-19 (proof-of-recipe run 301): GL Journal
+           -- Import does NOT carry GL_INTERFACE.ATTRIBUTE20 onto GL_JE_LINES
+           -- (GL_JE_LINES has no ATTRIBUTE20; GL_JE_HEADERS has none either), so
+           -- the full ref must ride a line REFERENCE that Journal Import maps
+           -- through. REFERENCE22 -> GL_JE_LINES.REFERENCE_2 round-trips (proven,
+           -- same mechanism as REFERENCE21 -> REFERENCE_1). RECIPE LESSON for the
+           -- fan-out: Slot C must be a column the object''s import actually
+           -- carries to the base table, verified per object -- not assumed.
+           'GL journal line ref carrier; Slot C = REFERENCE22 -> GL_JE_LINES.REFERENCE_2.' notes from dual
     union all select 'Customers', 'Parties', 'DMT_HZ_PARTIES_TFM_TBL',
-           'ORIG_SYSTEM_REFERENCE', 'HZ_PARTIES.ORIG_SYSTEM_REFERENCE',
-           'REQUEST_ID', 'ATTRIBUTE30', 150, 'FULL', 'CONFIRMED', 'Y',
-           'TCA party carrier; header tier of the 7-tier Customers object.' from dual
+           'PARTY_ORIG_SYSTEM_REFERENCE', 'HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE',
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           -- Corrected 2026-09-20 (backlog #12 proof-of-recipe, live run). This row
+           -- is the TEMPLATE for the TCA family (Customers + the 5 supplier objects),
+           -- all keyed on ORIG_SYSTEM_REFERENCE. THREE slots resolved to reality:
+           --   Slot A = PARTY_ORIG_SYSTEM_REFERENCE. The transform already PREFIXES it
+           --     and the reconciler matches Parties on it; the recon report reads the
+           --     value back from the Fusion BASE table HZ_ORIG_SYS_REFERENCES
+           --     (owner_table_name=HZ_PARTIES, owner_table_id=HZ_PARTIES.PARTY_ID). It
+           --     is the identity carrier and VERIFIABLY round-trips -- this is the #12
+           --     round-trip proof (same shape as HDL Workers riding Slot A). Its base
+           --     column is HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE, NOT
+           --     HZ_PARTIES.ORIG_SYSTEM_REFERENCE (that column is a legacy single-value
+           --     stamp, not what the reconciler reads).
+           --   Slot B = NULL. The seed guessed REQUEST_ID; the party interface TFM has
+           --     no REQUEST_ID (or any batch/request) column, so there is no Slot B.
+           --   Slot C = NULL. The seed guessed ATTRIBUTE30; the parties interface has
+           --     only ATTRIBUTE1..ATTRIBUTE20 (no ATTRIBUTE30 column exists) and NO
+           --     ATTRIBUTE is proven to round-trip to an HZ_PARTIES base column. Per the
+           --     GL lesson (GL_INTERFACE.ATTRIBUTE20 did NOT carry through) we do NOT
+           --     invent a Slot C. The full run-scoped ref (DMT:run:wq:tfm from
+           --     BUILD_REF) is logged for audit at reconcile; the #12 round-trip rides
+           --     Slot A. WORK_QUEUE_ID is stamped from g_gen_queue_id at generation.
+           'TCA party carrier and TEMPLATE for the TCA family (Customers + 5 supplier ' ||
+           'objects). #12 round-trip rides Slot A (PARTY_ORIG_SYSTEM_REFERENCE -> ' ||
+           'HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE). Slot B/C NULL: no batch ' ||
+           'column and no round-trippable attribute on the party interface.' from dual
     union all select 'Suppliers', 'Suppliers', 'DMT_POZ_SUPPLIERS_TFM_TBL',
            null, null,
            'REQUEST_ID', 'ATTRIBUTE20', 150, 'FULL', 'CONFIRMED', 'Y',
@@ -121,40 +164,53 @@ using (
     -- ================= HDL objects (Slot A = SourceSystemId, base HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID(2000); Slot B unused) =================
     union all select 'Workers', 'Workers', 'DMT_WORKER_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
-           null, 'ATTRIBUTE30', 150, 'FULL', 'CONFIRMED', 'Y',
-           'HDL Worker header tier; SourceSystemId carries the per-record id.' from dual
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           'HDL Worker header tier and TEMPLATE for the 14-object HDL family. Slot A ' ||
+           'SourceSystemId = the prefixed PERSON_NUMBER; it round-trips to ' ||
+           'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID (OBJECT_NAME=Person, ' ||
+           'SURROGATE_ID = PER_ALL_PEOPLE_F.PERSON_ID) and returns as the recon ' ||
+           'RECORD_KEY = the TFM RECON_KEY (verified live 2026-09-20). SourceSystemId ' ||
+           'CANNOT embed the tfm id -- it must equal PERSON_NUMBER for the base match ' ||
+           'and the child PersonId(SourceSystemId) FK hints. Slot C is NULL: HDL ' ||
+           'persons have no attribute column that round-trips (see HDL family note).' from dual
     union all select 'Salaries', 'Salaries', 'DMT_SALARY_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
-           null, 'ATTRIBUTE30', null, 'FULL', 'LIKELY', 'Y',
-           'HDL Salary; ATTRIBUTE30 length not re-queried (LIKELY 150).' from dual
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           'HDL Salary; Slot C NULL (HDL persons have no round-trippable attribute -- ' ||
+           'see HDL family note + Workers verification). Round-trip rides Slot A.' from dual
     union all select 'SalaryBases', 'Salary Bases', 'DMT_SAL_BASIS_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
            null, null, null, 'FULL', 'CONFIRMED', 'Y',
            'HDL Salary Basis; no attribute column, per-record id in SourceSystemId only.' from dual
     union all select 'TaxCards', 'Tax Cards', 'DMT_TAX_CARD_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
-           null, 'ATTRIBUTE30', null, 'FULL', 'LIKELY', 'Y',
-           'HDL Tax Card; ATTRIBUTE30 presence/length not confirmed live (LIKELY).' from dual
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           'HDL Tax Card; Slot C NULL (HDL persons have no round-trippable attribute -- ' ||
+           'see HDL family note + Workers verification). Round-trip rides Slot A.' from dual
     union all select 'BenParticipant', 'Participant Enrollment', 'DMT_BEN_PARTIC_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
-           null, 'ATTRIBUTE30', null, 'FULL', 'LIKELY', 'Y',
-           'HDL PersonBenefitBalance (participant); ATTRIBUTE30 length not re-queried (LIKELY 150).' from dual
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           'HDL PersonBenefitBalance (participant); Slot C NULL (HDL persons have no ' ||
+           'round-trippable attribute -- see HDL family note). Round-trip rides Slot A.' from dual
     union all select 'BenDependent', 'Dependent Enrollment', 'DMT_BEN_DEPEND_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
-           null, 'ATTRIBUTE30', null, 'FULL', 'LIKELY', 'Y',
-           'HDL PersonBenefitBalance (dependent); ATTRIBUTE30 length not re-queried (LIKELY 150).' from dual
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           'HDL PersonBenefitBalance (dependent); Slot C NULL (HDL persons have no ' ||
+           'round-trippable attribute -- see HDL family note). Round-trip rides Slot A.' from dual
     union all select 'BenBeneficiary', 'Beneficiary Enrollment', 'DMT_BEN_BENFY_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
-           null, 'ATTRIBUTE30', null, 'FULL', 'LIKELY', 'Y',
-           'HDL PersonBenefitBalance (beneficiary); ATTRIBUTE30 length not re-queried (LIKELY 150).' from dual
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           'HDL PersonBenefitBalance (beneficiary); Slot C NULL (HDL persons have no ' ||
+           'round-trippable attribute -- see HDL family note). Round-trip rides Slot A.' from dual
     union all select 'Absences', 'Absences', 'DMT_ABSENCE_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
            null, null, null, 'FULL', 'CONFIRMED', 'Y',
            'HDL Absence; no attribute column, per-record id in SourceSystemId only.' from dual
     union all select 'TalentProfiles', 'Talent Profiles', 'DMT_TALENT_PROF_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
-           null, 'ATTRIBUTE30', null, 'FULL', 'LIKELY', 'Y',
-           'HDL Talent Profile; ATTRIBUTE30 length not re-queried (LIKELY 150).' from dual
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           'HDL Talent Profile; Slot C NULL (HDL persons have no round-trippable ' ||
+           'attribute -- see HDL family note). Round-trip rides Slot A.' from dual
     union all select 'PerfEvaluations', 'Performance Docs', 'DMT_PERF_EVAL_TFM_TBL',
            'SourceSystemId', 'HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID',
            null, null, null, 'FULL', 'UNVERIFIED', 'Y',
