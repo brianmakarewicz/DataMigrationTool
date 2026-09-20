@@ -38,6 +38,17 @@ None in this folder.
 None currently.
 
 ## History
+- 2026-09-20: **Conformed to the BIP Reconciliation Standard as the P1 reference
+  implementation.** The recon data model now returns the six standard columns
+  (RECORD_KEY, FUSION_ID, SOURCE_REF, DMT_REFERENCE, SOURCE_TYPE, ERROR_MESSAGE)
+  and pages with P_OFFSET/P_LIMIT (OFFSET ... FETCH NEXT). The reconciler replaced
+  its row-by-row FOR loop with a set-based bulk apply: each page is bulk-collected
+  into one DMT_RECON_ROW_TBL collection, then a single MERGE marks LOADED (capturing
+  FUSION_ID) and a single MERGE marks FAILED (with the real error). Round-trip proof
+  is now a single set-based summary. Two-tier GL semantics preserved: a BASE row with
+  no error is balanced/postable (LOADED); a BASE row with an error is unbalanced
+  (FAILED). NOTE: contrary to the older lesson below, the deployed DM DOES query
+  GL_JE_HEADERS/GL_JE_LINES in the UNION ALL — the "tier 2 stubbed" note is obsolete.
 - E2E LOADED confirmed with 2 rows reaching LOADED status in Fusion (2026-04-02).
 - 2026-04-02: BIP audit — switched to two-tier reconciliation.
   - Tier 1: GL_INTERFACE (interface table errors/status)
