@@ -46,9 +46,29 @@ SELECT
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
     -- BASE -- posted assets in FA_ADDITIONS_B, matched by prefix.
+    -- The book is folded into OBJECT_TYPE for readability via a
+    -- deterministic scalar subquery, NOT a join. An asset routinely
+    -- carries a corporate book row plus one or more tax-book rows in
+    -- FA_BOOKS (standard multi-book behaviour). A LEFT JOIN would fan
+    -- the BASE tier out into several rows all sharing the same
+    -- RECORD_KEY/SOURCE_REF (ASSET_NUMBER), which breaks the Contract v1
+    -- keyset invariant (no duplicate keys -- a page boundary between two
+    -- same-key rows would permanently drop the second). The scalar
+    -- subquery returns at most one book code (ROWNUM = 1), so
+    -- FA_ADDITIONS_B's natural one-row-per-ASSET_NUMBER grain is
+    -- preserved and RECORD_KEY stays unique.
     SELECT
-        'Assets' || NVL2(bk.book_type_code,
-                         ' [' || bk.book_type_code || ']', '')  AS object_type,
+        'Assets' || NVL2(
+            (SELECT bk.book_type_code
+               FROM fa_books bk
+              WHERE bk.asset_id = a.asset_id
+                AND bk.transaction_header_id_out IS NULL
+                AND ROWNUM = 1),
+            ' [' || (SELECT bk.book_type_code
+                       FROM fa_books bk
+                      WHERE bk.asset_id = a.asset_id
+                        AND bk.transaction_header_id_out IS NULL
+                        AND ROWNUM = 1) || ']', '')          AS object_type,
         a.asset_number                       AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
@@ -58,9 +78,6 @@ FROM (
         a.asset_number                       AS source_ref,
         a.serial_number                      AS dmt_reference
     FROM   fa_additions_b a
-    LEFT   JOIN fa_books bk
-           ON  bk.asset_id = a.asset_id
-           AND bk.transaction_header_id_out IS NULL
     WHERE  a.asset_number LIKE :P_PREFIX || '%'
     AND    :P_PREFIX IS NOT NULL
 
