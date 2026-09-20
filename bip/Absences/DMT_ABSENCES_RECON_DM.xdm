@@ -2,43 +2,48 @@
 <dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
            defaultDataSourceRef="ApplicationDB_FSCM">
   <!--
-    DMT_ABSENCES_RECON_DM — Contract v1 reconciliation data model for Absences
-    (design section 5, "BIP reconciliation report contract - v1"). Copied EXACTLY
-    from the merged Workers template DMT_WORKERS_RECON_DM.xdm (PR #248).
-
-    Returns the BASE tier for the Absences HDL load: one row per migrated
-    absence entry that is positively confirmed in the Fusion HCM base table
-    ANC_PER_ABS_ENTRIES, with its real Fusion PER_ABSENCE_ENTRY_ID as FUSION_ID.
-    HDL failures arrive per-record in the HDL response (tagged [FUSION_ERROR] by
-    RECONCILE_HDL before this report runs), so this report's ERROR rows are
-    optional and it returns the BASE tier only — the Absences reconciler (which
-    fetches these rows via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them
-    statically) promotes an Absence TFM row to LOADED only from a
+    DMT_ABSENCES_RECON_DM - Contract v1 reconciliation data model for Absences
+    (design section 5, "BIP reconciliation report contract - v1"), NINE-column
+    keyset variant. Same nine-column response shape as DMT_PO_RECON_DM.xdm /
+    DMT_GL_BAL_RECON_DM.xdm; BASE-tier-only HDL pattern (design section 5, HDL
+    note): each HDL object gets a Contract v1 report whose rows are the BASE tier
+    (business key + real Fusion id). ERROR rows are optional and are NOT emitted
+    here - HDL failures arrive per-record in the HDL response and are tagged
+    [FUSION_ERROR] by DMT_HDL_UTIL_PKG.RECONCILE_HDL before this report runs. The
+    Absences reconciler promotes an Absence TFM row to LOADED only from a
     BASE / SUCCESS / FUSION_ID-not-null row here.
 
-    RECORD_KEY = the absence entry's business key = the value written into
-    PersonAbsenceEntry.dat as SourceSystemId, which is the prefixed PERSON_NUMBER
-    with the '_ABS' record suffix (DMT_ABSENCE_HDL_GEN_PKG writes
-    PERSON_NUMBER || '_ABS'), stamped on the Absence TFM row as RECON_KEY (one
-    key definition per object). Unlike Workers (which have a business column,
-    PERSON_NUMBER, on the base table), an absence entry has NO business column on
-    ANC_PER_ABS_ENTRIES, so the tie from our written SourceSystemId to the base
-    row is the HCM integration key map HRC_INTEGRATION_KEY_MAP:
+    BASE table: ANC_PER_ABS_ENTRIES, one row per migrated absence entry.
+      FUSION_ID = ANC_PER_ABS_ENTRIES.PER_ABSENCE_ENTRY_ID (verified live).
+
+    KEY TIE: an absence entry has NO business column on ANC_PER_ABS_ENTRIES, so
+    the tie from the SourceSystemId we wrote into PersonAbsenceEntry.dat to the
+    base row is the HCM integration key map:
       HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID = the SourceSystemId we wrote
       HRC_INTEGRATION_KEY_MAP.SURROGATE_ID     = ANC_PER_ABS_ENTRIES.PER_ABSENCE_ENTRY_ID
     for OBJECT_NAME = 'PersonAbsenceEntry'.
 
-    Verified live 2026-09-16 (fin_impl):
-      * HRC_INTEGRATION_KEY_MAP has 8701 rows for OBJECT_NAME='PersonAbsenceEntry',
-        exactly matching COUNT(*) of ANC_PER_ABS_ENTRIES (8701), and every one
-        joins SURROGATE_ID = PER_ABSENCE_ENTRY_ID.
-      * SOURCE_SYSTEM_ID LIKE <prefix>||'%' filters correctly and the base join
-        holds.
+    RECORD_KEY = HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID = the exact
+    SourceSystemId written into PersonAbsenceEntry.dat by DMT_ABSENCE_HDL_GEN_PKG,
+    stamped on the Absence TFM row as RECON_KEY (one key definition per object).
+    SOURCE_REF echoes the same SourceSystemId. DMT_REFERENCE and ERROR_MESSAGE are
+    null on BASE/SUCCESS rows; LOAD_REQUEST_ID is null - an HDL load carries no
+    ESS load-request id into the base table.
+
+    Verified live 2026-09-20 (fin_impl):
+      * HRC_INTEGRATION_KEY_MAP OBJECT_NAME='PersonAbsenceEntry' has 8701 rows,
+        every one joining SURROGATE_ID = PER_ABSENCE_ENTRY_ID.
+      * DMT-migrated absence entries are present with SourceSystemId LIKE
+        '<numeric-prefix>DMTABS<seq>' (e.g. 15886DMTABS001), each joining to a
+        real PER_ABSENCE_ENTRY_ID (e.g. 300000331553437). Prefix filtering
+        (SOURCE_SYSTEM_ID LIKE :P_PREFIX || '%') and the base join both hold.
 
     Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
     P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an
     HDL load, so BASE-tier matching is by the run prefix (P_PREFIX) on the map's
-    SOURCE_SYSTEM_ID. LOAD_REQUEST_ID is echoed back unchanged for audit.
+    SOURCE_SYSTEM_ID. Nine response columns, in contract order:
+      OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS, FUSION_ID,
+      ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF, DMT_REFERENCE.
   -->
   <dataProperties>
     <property name="include_parameters" value="true"/>
@@ -47,45 +52,52 @@
     <property name="xml_tag_case" value="upper"/>
   </dataProperties>
   <dataSets>
-    <dataSet name="absences_recon" type="complex">
+    <dataSet name="absence_recon" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
 SELECT object_type, record_key, source_type, fusion_status,
-       fusion_id, error_message, load_request_id
+       fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    -- BASE tier: positive proof in the HCM absence-entry base table, tied to our
-    -- written SourceSystemId through the HCM integration key map. One row per
-    -- migrated absence entry.
+    -- BASE tier only (HDL). Positive proof in the HCM absence-entry base table
+    -- ANC_PER_ABS_ENTRIES, tied to the SourceSystemId we wrote through the HCM
+    -- integration key map. One row per migrated absence entry.
     SELECT 'Absences'                      AS object_type,
            m.source_system_id              AS record_key,
            'BASE'                          AS source_type,
            'SUCCESS'                       AS fusion_status,
            MAX(e.per_absence_entry_id)     AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))    AS error_message,
-           :P_LOAD_REQUEST_ID              AS load_request_id
+           CAST(NULL AS NUMBER)            AS load_request_id,
+           m.source_system_id              AS source_ref,
+           CAST(NULL AS VARCHAR2(240))     AS dmt_reference
     FROM   hrc_integration_key_map m
     JOIN   anc_per_abs_entries e
            ON e.per_absence_entry_id = m.surrogate_id
     WHERE  m.object_name = 'PersonAbsenceEntry'
     AND    m.source_system_id LIKE :P_PREFIX || '%'
-    AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
     GROUP BY m.source_system_id
-    ORDER BY m.source_system_id
 )
-WHERE ROWNUM <= :P_CHUNK_SIZE
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in BIP, so
+-- treat NULL as "from the start": return every row. On later pages P_AFTER_KEY
+-- carries the previous page's last RECORD_KEY and only greater keys are returned.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
       ]]></sql>
     </dataSet>
   </dataSets>
   <output rootName="DATA_DS" uniqueRowName="false">
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
-        <group name="G_1" label="G_1" source="absences_recon">
+        <group name="G_1" label="G_1" source="absence_recon">
           <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
           <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
           <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
           <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
           <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
           <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
-          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
         </group>
       </dataStructure>
     </nodeList>
@@ -96,19 +108,22 @@ WHERE ROWNUM <= :P_CHUNK_SIZE
     <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
                labelID="P_RUN_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
                labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="3"
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
                labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
                labelID="P_PREFIX" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="5"
+    <!-- Keyset pagination: page size + cursor. The reconciler calls with an
+         empty P_AFTER_KEY first, then passes the last RECORD_KEY received on
+         each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
                labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="6"
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
                labelID="P_AFTER_KEY" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
