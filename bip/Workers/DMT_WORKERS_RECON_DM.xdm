@@ -2,7 +2,7 @@
 <dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
            defaultDataSourceRef="ApplicationDB_FSCM">
   <!--
-    DMT_WORKER_RECON_DM : Contract v1 reconciliation data model for Workers (HDL).
+    DMT_WORKERS_RECON_DM : Contract v1 reconciliation data model for Workers (HDL).
     See docs/DMT_DESIGN.html section 5 ("BIP reconciliation report contract v1") and
     its HDL note: each HDL object gets a Contract v1 report whose rows are the BASE
     tier (key + Fusion id); its ERROR rows are optional, because HDL failures arrive

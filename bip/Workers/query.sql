@@ -1,5 +1,5 @@
--- DMT_WORKER_RECON_DM query (Contract v1, design section 5, HDL note).
--- Mirror of the CDATA SQL in DMT_WORKER_RECON_DM.xdm, kept here for review and for
+-- DMT_WORKERS_RECON_DM query (Contract v1, design section 5, HDL note).
+-- Mirror of the CDATA SQL in DMT_WORKERS_RECON_DM.xdm, kept here for review and for
 -- running the query standalone against live Fusion (bind the six parameters).
 --
 -- Returns the BASE tier for the Workers HDL load: one row per Workers HDL component
