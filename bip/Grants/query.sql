@@ -41,24 +41,42 @@
 --     DMT_REFERENCE = ATTRIBUTE1 (DMT descriptive-flexfield slot).
 --
 --   INTERFACE -- rows still in GMS_AWARD_HEADERS_INT after import
---     that Fusion did not mark successful. These are per-award
---     rejections. Run scoping: LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID.
---     RECORD_KEY = AWARD_NUMBER (the prefixed number DMT stamps at
---     transform, so it reads back exactly). Real Fusion error text
---     from PROCESSED_MESSAGE + MESSAGE_USER_DETAILS + MESSAGE_USER_ACTION
---     (never CAST(NULL) -- AD#19).
+--     that Fusion did not mark successful. Run scoping:
+--     LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID. RECORD_KEY = AWARD_NUMBER
+--     (the prefixed number DMT stamps at transform, so it reads back
+--     exactly). Real Fusion error text from PROCESSED_MESSAGE +
+--     MESSAGE_USER_DETAILS + MESSAGE_USER_ACTION (never CAST(NULL) -- AD#19).
+--
+--     !! FUSION PURGES GMS_AWARD_HEADERS_INT (and the award
+--     interface/error tables) IMMEDIATELY AFTER EVERY AwardMassImportJob
+--     RUN -- on SUCCESS AND on REJECT alike (documented + verified live
+--     in objects/Grants/README.md, "Reconciliation -- Award Batch Import
+--     Report"). So this INTERFACE tier is STRUCTURALLY EXPECTED TO RETURN
+--     ZERO ROWS in production; it does NOT capture per-award rejections.
+--     Do NOT assume it populates on a fresh run.
+--
+--     Real per-award rejection messages come from the Award Batch Import
+--     Report path -- a SEPARATE child ESS request (ImportAwardReportJob /
+--     AwardBatchImportReportDm) parsed by dmt_grants_results_pkg
+--     (apply_award_import_report / PARSE_AND_UPDATE). Whoever wires this
+--     DM into the generic Contract v1 recon engine MUST keep that
+--     fallback. Unlike GLBalances / Requisitions -- whose interface tiers
+--     DO persist and populate -- this object's interface table is purged,
+--     so trusting interface-tier absence as LOADED would re-introduce the
+--     already-fixed "interface purged -> UNACCOUNTED" bug.
 --
 -- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
 --   BASE (present in base table) => SUCCESS.
---   INTERFACE (rejection left behind)          => ERROR.
+--   INTERFACE (rejection left behind, if ever present) => ERROR.
 -- FUSION_ID non-null on every BASE row; ERROR_MESSAGE non-null on
 -- every ERROR row.
 --
--- POD NOTE: Grants is NOT configured on the demo pod, so a live DMT
--- run rejects every award at import and the INTERFACE tier is the
--- populated one. GMS_AWARD_HEADERS_B still holds 117 historical rows
--- (57 FBDI / 44 UI from earlier work), so the BASE tier's shape is
--- proven against real data even though a fresh run lands zero there.
+-- POD NOTE: Grants is NOT configured on the demo pod. GMS_AWARD_HEADERS_B
+-- still holds 117 historical rows (57 FBDI / 44 UI from earlier work), so
+-- the BASE tier's shape is proven against real data. The INTERFACE tier
+-- was NOT exercised against a real rejected import -- and cannot reliably
+-- be, since Fusion purges the interface table right after import -- so its
+-- documented role here is the zero-row purge case described above.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
