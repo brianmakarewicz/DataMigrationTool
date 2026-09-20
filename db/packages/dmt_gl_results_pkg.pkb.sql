@@ -107,7 +107,7 @@
     END FETCH_BIP_RESULTS;
 
     -- --------------------------------------------------------
-    -- LOG_REF12_ROUNDTRIP (private)
+    -- CONFIRM_REFERENCE_ROUNDTRIP (private)
     -- Backlog #12 round-trip proof for one just-LOADED base row.
     -- Recomputes the expected full reference (BUILD_REF) for the
     -- matched TFM row and logs whether GL_JE_LINES.REFERENCE_2 that
@@ -116,13 +116,13 @@
     -- Extracted from PARSE_AND_UPDATE's loop so that procedure keeps
     -- one BEGIN/END (design section 7 coding standard).
     -- --------------------------------------------------------
-    PROCEDURE LOG_REF12_ROUNDTRIP (
+    PROCEDURE CONFIRM_REFERENCE_ROUNDTRIP (
         p_run_id     IN NUMBER,
         p_record_key IN VARCHAR2,
         p_fusion_ref IN VARCHAR2,
         p_fusion_id  IN NUMBER
     ) IS
-        C_PROC     CONSTANT VARCHAR2(30) := 'LOG_REF12_ROUNDTRIP';
+        C_PROC     CONSTANT VARCHAR2(30) := 'CONFIRM_REFERENCE_ROUNDTRIP';
         l_expected VARCHAR2(150);
     BEGIN
         SELECT DMT_REF_ID_PKG.BUILD_REF(RUN_ID, WORK_QUEUE_ID, TFM_SEQUENCE_ID)
@@ -152,7 +152,7 @@
                 'REF #12 round-trip: no TFM row found for RECON_KEY ' ||
                 p_record_key || ' (proof skipped).',
                 DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
-    END LOG_REF12_ROUNDTRIP;
+    END CONFIRM_REFERENCE_ROUNDTRIP;
 
     -- --------------------------------------------------------
     -- PARSE_AND_UPDATE - Two-tier reconciliation, no absence=LOADED.
@@ -231,7 +231,7 @@
                     -- GL_JE_LINES.REFERENCE_2 equal to BUILD_REF for this TFM row.
                     -- RECORD_KEY = RECON_KEY = TFM_SEQUENCE_ID (Slot A). Handled by
                     -- a private procedure so this loop keeps one BEGIN/END.
-                    LOG_REF12_ROUNDTRIP(
+                    CONFIRM_REFERENCE_ROUNDTRIP(
                         p_run_id     => p_run_id,
                         p_record_key => r.record_key,
                         p_fusion_ref => r.fusion_ref,

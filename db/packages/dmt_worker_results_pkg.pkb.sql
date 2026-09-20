@@ -11,9 +11,9 @@ AS
     C_CEMLI CONSTANT VARCHAR2(30) := 'Workers';
 
     -- --------------------------------------------------------
-    -- LOG_REF12_ROUNDTRIP (private)
+    -- CONFIRM_REFERENCE_ROUNDTRIP (private)
     -- Backlog #12 round-trip proof for one just-LOADED Worker base row (HDL family
-    -- template; mirrors DMT_GL_RESULTS_PKG.LOG_REF12_ROUNDTRIP). For HDL persons the
+    -- template; mirrors DMT_GL_RESULTS_PKG.CONFIRM_REFERENCE_ROUNDTRIP). For HDL persons the
     -- carrier is Slot A: SourceSystemId (= the prefixed PERSON_NUMBER we wrote into
     -- Worker.dat) lands in HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID and comes back as
     -- the recon report's RECORD_KEY (= PER_ALL_PEOPLE_F.PERSON_NUMBER). So the proof
@@ -24,12 +24,12 @@ AS
     -- carrier. Diagnostic only: a mismatch or lookup miss logs WARN and NEVER alters
     -- the LOADED outcome (design section 7).
     -- --------------------------------------------------------
-    PROCEDURE LOG_REF12_ROUNDTRIP (
+    PROCEDURE CONFIRM_REFERENCE_ROUNDTRIP (
         p_run_id     IN NUMBER,
         p_record_key IN VARCHAR2,
         p_fusion_id  IN NUMBER
     ) IS
-        C_PROC        CONSTANT VARCHAR2(30) := 'LOG_REF12_ROUNDTRIP';
+        C_PROC        CONSTANT VARCHAR2(30) := 'CONFIRM_REFERENCE_ROUNDTRIP';
         l_slot_a      VARCHAR2(1000);
         l_full_ref    VARCHAR2(150);
     BEGIN
@@ -63,7 +63,7 @@ AS
                 'REF #12 round-trip: no TFM row found for RECON_KEY ' ||
                 p_record_key || ' (proof skipped).',
                 DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
-    END LOG_REF12_ROUNDTRIP;
+    END CONFIRM_REFERENCE_ROUNDTRIP;
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_WORKERS (private)
@@ -145,7 +145,7 @@ AS
                     -- RECORD_KEY that came back equals the SourceSystemId (RECON_KEY)
                     -- we wrote for this TFM row. Private proc so this loop keeps one
                     -- BEGIN/END (design section 7 coding standard).
-                    LOG_REF12_ROUNDTRIP(
+                    CONFIRM_REFERENCE_ROUNDTRIP(
                         p_run_id     => p_run_id,
                         p_record_key => l_rows(i).RECORD_KEY,
                         p_fusion_id  => l_rows(i).FUSION_ID);
