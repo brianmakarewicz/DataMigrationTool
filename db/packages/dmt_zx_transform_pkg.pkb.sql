@@ -95,6 +95,9 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         ;
 
         l_ok_count := SQL%ROWCOUNT;
@@ -113,7 +116,10 @@
             SELECT 1 FROM DMT_ZX_REGIME_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -228,6 +234,9 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         ;
 
         l_ok_count := SQL%ROWCOUNT;
@@ -246,7 +255,10 @@
             SELECT 1 FROM DMT_ZX_RATE_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
