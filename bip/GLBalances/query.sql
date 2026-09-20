@@ -1,50 +1,79 @@
 -- ============================================================
--- GLBalances BIP Reconciliation Query (Two-Tier, per-line key)
--- Data source: ApplicationDB_FSCM
--- Parameters (Contract v1 — names must match what DMT_GL_RESULTS_PKG sends):
---             :P_LOAD_REQUEST_ID = Load ESS request ID (LOAD_REQUEST_ID in GL_INTERFACE)
---             :P_RUN_ID          = pipeline run id (= GL_JE_BATCHES.GROUP_ID, set in transform)
---             :P_IMPORT_ESS_ID   = Import ESS request ID (declared for Contract v1; unused here)
---             :P_PREFIX          = run prefix (declared for Contract v1; unused here)
+-- GLBalances BIP reconciliation query — BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination).
+-- Data source: ApplicationDB_FSCM. This mirrors the SQL embedded
+-- in DMT_GL_BAL_RECON_DM.xdm for review; the .xdm is authoritative.
 --
--- RECORD_KEY: the per-line reconciliation key (RECON_KEY = prefix-stg_sequence_id),
---   written by the generator to GL_INTERFACE.REFERENCE21, which Journal Import
---   carries onto GL_JE_LINES.REFERENCE_1 (proven empirically 2026-07-11; requires
---   the journal source's "Import Journal References" flag, confirmed ON). Matching
---   is per LINE on this key, so two source journals that share a name never
---   collide (the reason batch-name keying was retired here).
+-- NINE columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE
 --
--- Tier 1 (INTERFACE): rows still in GL_INTERFACE after import are errors/rejections
---   (import DELETEs successfully-imported rows). REFERENCE10 is the import error
---   message; REFERENCE21 carries our per-line key.
+-- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY (names must match what
+--   DMT_GL_RESULTS_PKG sends). No P_OFFSET / P_LIMIT.
 --
--- Tier 2 (BASE): journal lines created in GL_JE_LINES. One row per line, keyed on
---   REFERENCE_1. Balance (DR=CR) at the header discriminates postable vs not; every
---   line of an unbalanced journal fails (the whole journal will not post).
+-- Keyset: ORDER BY RECORD_KEY, only rows whose RECORD_KEY sorts
+-- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
+--
+-- Row selection: BASE rows join the run's own journal batch by
+--   GL_JE_BATCHES.GROUP_ID = :P_RUN_ID (run id written as GROUP_ID
+--   at transform, survives Journal Import). INTERFACE rows are the
+--   GL_INTERFACE rejections the load ESS job left carrying
+--   :P_LOAD_REQUEST_ID.
+--
+-- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
+--   BASE balanced => SUCCESS; BASE unbalanced / INTERFACE => ERROR.
+--
+-- Keys (need source "Import Journal References" = ON):
+--   RECORD_KEY / SOURCE_REF = GL_JE_LINES.REFERENCE_1 (= TFM RECON_KEY)
+--   DMT_REFERENCE           = GL_JE_LINES.REFERENCE_2 (Slot C ref)
+--   FUSION_ID               = GL_JE_HEADERS.JE_HEADER_ID
 -- ============================================================
 SELECT
-    gi.reference21                       AS record_key,
-    gi.status                            AS import_status,
-    'INTERFACE'                          AS source_type,
-    CAST(NULL AS NUMBER)                 AS fusion_id,
-    gi.reference10                       AS error_message
-FROM   gl_interface gi
-WHERE  gi.load_request_id = :P_LOAD_REQUEST_ID
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    SELECT
+        'GLBalances'                         AS object_type,
+        jl.reference_1                       AS record_key,
+        'BASE'                               AS source_type,
+        CASE WHEN jh.running_total_dr = jh.running_total_cr
+             THEN 'SUCCESS' ELSE 'ERROR' END AS fusion_status,
+        jh.je_header_id                      AS fusion_id,
+        CASE WHEN jh.running_total_dr <> jh.running_total_cr
+             THEN '[LINE] Journal imported (JE_HEADER_ID=' || jh.je_header_id
+                  || ') but UNBALANCED: DR=' || jh.running_total_dr
+                  || ' CR=' || jh.running_total_cr || '. Will not post.'
+        END                                  AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        jl.reference_1                       AS source_ref,
+        jl.reference_2                       AS dmt_reference
+    FROM   gl_je_batches jb
+    JOIN   gl_je_headers jh ON jh.je_batch_id = jb.je_batch_id
+    JOIN   gl_je_lines   jl ON jl.je_header_id = jh.je_header_id
+    WHERE  jb.group_id = :P_RUN_ID
 
-UNION ALL
+    UNION ALL
 
-SELECT
-    jl.reference_1                       AS record_key,
-    CASE WHEN jh.running_total_dr = jh.running_total_cr
-         THEN 'SUCCESS' ELSE 'UNBALANCED' END  AS import_status,
-    'BASE'                               AS source_type,
-    jh.je_header_id                      AS fusion_id,
-    CASE WHEN jh.running_total_dr <> jh.running_total_cr
-         THEN 'Journal imported (JE_HEADER_ID=' || jh.je_header_id
-              || ') but UNBALANCED: DR=' || jh.running_total_dr
-              || ' CR=' || jh.running_total_cr || '. Will not post.'
-    END                                  AS error_message
-FROM   gl_je_batches jb
-JOIN   gl_je_headers jh ON jh.je_batch_id = jb.je_batch_id
-JOIN   gl_je_lines   jl ON jl.je_header_id = jh.je_header_id
-WHERE  jb.group_id = :P_RUN_ID
+    SELECT
+        'GLBalances'                         AS object_type,
+        gi.reference21                       AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[LINE] ' || NVL(gi.reference10,
+             'Rejected by Journal Import (row not created in base tables).')
+                                             AS error_message,
+        gi.load_request_id                   AS load_request_id,
+        gi.reference21                       AS source_ref,
+        gi.reference22                       AS dmt_reference
+    FROM   gl_interface gi
+    WHERE  gi.load_request_id = :P_LOAD_REQUEST_ID
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start". On later pages it carries the
+-- previous page's last RECORD_KEY; only greater keys are returned.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY

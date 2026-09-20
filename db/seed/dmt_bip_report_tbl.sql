@@ -65,7 +65,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT2/GLBalances/GL_BAL_DM.xdm','/Custom/DMT2/GLBalances/GL_BAL_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_DM.xdm','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation (Contract v1)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -153,10 +153,10 @@ using (
            'POZ_SUP_CONTACTS_INT',
            'Supplier contact import reconciliation' from dual
     union all select 100000016, 'GLBalances', 'GL Balance',
-           '/Custom/DMT2/GLBalances/GL_BAL_DM.xdm',
-           '/Custom/DMT2/GLBalances/GL_BAL_RPT.xdo',
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_DM.xdm',
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_RPT.xdo',
            'GL_INTERFACE',
-           'GL journal import reconciliation (Contract v1)' from dual
+           'GL journal import reconciliation (Contract v1 -- nine columns, keyset)' from dual
     -- Issue 8 (2026-07-20): repoint the remaining reconciliation reports from the
     -- frozen stack's /Custom/DMT/ to THIS stack's /Custom/DMT2/. Their data models
     -- + reports were additively deployed to /Custom/DMT2/{CEMLI}/ and each report
