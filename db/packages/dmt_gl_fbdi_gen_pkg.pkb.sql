@@ -265,14 +265,17 @@
         -- column: proof-of-recipe run 301 showed GL Journal Import does not carry
         -- GL_INTERFACE.ATTRIBUTE20 onto the base tables, whereas the line
         -- REFERENCE columns round-trip (same path as REFERENCE21 -> REFERENCE_1).
-        -- WORK_QUEUE_ID is the generating work-queue item (NULL for a single-item
-        -- object -- BUILD_REF then leaves the wq slot empty, still round-trippable).
-        -- Scoped to the STAGED rows this GENERATE call will emit (this ledger).
+        -- WORK_QUEUE_ID is the generating work-queue item. Use g_gen_queue_id (the
+        -- current item's QUEUE_ID, set for EVERY object) rather than g_work_queue_id
+        -- (which is deliberately NULL for non-partitioned objects to preserve the
+        -- reconcile-sweep scope, so it would leave the wq slot empty). g_gen_queue_id
+        -- is the sanctioned "reference component" global and does not affect sweep
+        -- scope. Scoped to the STAGED rows this GENERATE call will emit (this ledger).
         UPDATE DMT_GL_INTERFACE_TFM_TBL
-        SET    WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id,
+        SET    WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id,
                REFERENCE22   = DMT_REF_ID_PKG.BUILD_REF(
                                    p_run_id        => p_run_id,
-                                   p_work_queue_id => DMT_LOADER_PKG.g_work_queue_id,
+                                   p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
                                    p_tfm_seq_id    => TFM_SEQUENCE_ID),
                LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id
