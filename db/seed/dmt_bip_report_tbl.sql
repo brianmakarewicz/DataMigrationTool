@@ -1099,6 +1099,64 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- Lookups (100000044) — NEW reconciliation standard (DMT_DESIGN.html, PROPOSED
+-- 2026-09): reconciliation is a BIP report over the Fusion BASE tables.
+--
+-- SPECIAL CASE — no numeric surrogate id. FND lookups expose ONLY string keys.
+-- The types base FND_LOOKUP_TYPES is keyed by LOOKUP_TYPE; the values base
+-- FND_LOOKUP_VALUES_B by LOOKUP_TYPE + LOOKUP_CODE. There is NO
+-- LOOKUP_TYPE_ID / LOOKUP_ID numeric column (verified live 2026-09). So the
+-- report proves EXISTENCE by the string key and returns RECORD_KEY +
+-- SOURCE_TYPE ONLY (no FUSION_ID column). DMT_FND_LOOKUP_RESULTS_PKG runs
+-- DMT_LOOKUP_RECON_RPT and, for each row found, marks the matching TFM row
+-- LOADED while leaving FUSION_LOOKUP_TYPE_ID / FUSION_LOOKUP_ID NULL (there is
+-- no id to capture — never fabricated).
+--   * TYPE  rows  from FND_LOOKUP_TYPES:    RECORD_KEY = LOOKUP_TYPE
+--   * VALUE rows  from FND_LOOKUP_VALUES_B: RECORD_KEY = LOOKUP_TYPE || '^' || LOOKUP_CODE
+-- INTERFACE_TABLE = 'N/A (REST)' — there is no interface table; the report reads
+-- the base tables directly. Keyed by CEMLI_CODE 'Lookups' (the reconciler passes
+-- p_cemli_code => 'Lookups' to RUN_BIP_REPORT). Config codes are NOT run-prefixed;
+-- the two params P_TYPE_CODES and P_VALUE_KEYS carry the exact code / composite-key
+-- lists for this run. This reconciler uses its own RECORD_KEY/SOURCE_TYPE parser
+-- (not the shared Contract v1 parser), so the Contract v1 columns are left NULL.
+-- The when-not-matched insert makes this block self-contained.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000044                                                     bip_report_id,
+           'Lookups'                                                     cemli_code,
+           'Lookup'                                                      object_type,
+           '/Custom/DMT2/Lookups/DMT_LOOKUP_RECON_DM.xdm'               dm_catalog_path,
+           '/Custom/DMT2/Lookups/DMT_LOOKUP_RECON_RPT.xdo'              report_catalog_path,
+           'N/A (REST)'                                                  interface_table,
+           'Lookups base-table reconciliation (new recon standard). REST POST '
+             || 'loads each lookup type then its child codes; LOADED is confirmed '
+             || 'by a hit in FND_LOOKUP_TYPES (RECORD_KEY = LOOKUP_TYPE) and '
+             || 'FND_LOOKUP_VALUES_B (RECORD_KEY = LOOKUP_TYPE^LOOKUP_CODE). '
+             || 'SPECIAL CASE: FND lookups have NO numeric surrogate id, so the '
+             || 'report returns RECORD_KEY + SOURCE_TYPE only and the TFM '
+             || 'FUSION_LOOKUP_TYPE_ID / FUSION_LOOKUP_ID columns are left NULL. '
+             || 'One report, two params: P_TYPE_CODES and P_VALUE_KEYS.' notes
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null);
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Taxes / TaxConfig (100000045) — NEW reconciliation standard (DMT_DESIGN.html,
 -- PROPOSED 2026-09): reconciliation is a BIP report over the Fusion BASE tables
 -- that returns the base-table surrogate id. Taxes is a two-tier config load

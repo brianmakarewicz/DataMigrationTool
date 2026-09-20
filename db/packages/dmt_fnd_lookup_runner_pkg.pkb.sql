@@ -87,8 +87,18 @@
                 p_procedure      => C_PROC);
         END IF;
 
-        -- Step 6: Load to Fusion via REST and reconcile
-        IF l_fbl_zip IS NOT NULL THEN
+        -- Step 6: Load to Fusion via REST and reconcile against the base tables.
+        -- Loading is REST POST (standardLookups), not the FBL zip, so gate on the
+        -- presence of GENERATED TFM rows rather than on l_fbl_zip.
+        SELECT COUNT(*) INTO l_type_count
+        FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+
+        SELECT COUNT(*) INTO l_value_count
+        FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+
+        IF l_type_count > 0 OR l_value_count > 0 THEN
             DMT_FND_LOOKUP_RESULTS_PKG.LOAD_AND_RECONCILE(
                 p_run_id => p_run_id
             );
@@ -122,6 +132,50 @@
                 p_procedure      => C_PROC);
             RAISE;
     END RUN;
+
+    -- ============================================================
+    -- RUN_STANDARD - queue-dispatch entry point (EXEC contract, LOCAL mode).
+    -- Resolves the scenario name to an id and delegates to RUN.
+    -- p_skip_bu_refresh is accepted for contract conformance; Lookups has no
+    -- business-unit refresh, so it is ignored.
+    -- ============================================================
+    PROCEDURE RUN_STANDARD (
+        p_run_id          IN NUMBER,
+        p_scenario_name   IN VARCHAR2 DEFAULT NULL,
+        p_run_mode        IN VARCHAR2 DEFAULT 'NEW',
+        p_skip_bu_refresh IN BOOLEAN  DEFAULT FALSE
+    ) IS
+        C_PROC       CONSTANT VARCHAR2(30) := 'RUN_STANDARD';
+        l_scenario_id NUMBER;
+        l_err_code    NUMBER;
+    BEGIN
+        DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+            p_scenario_name => p_scenario_name,
+            x_scenario_id   => l_scenario_id,
+            x_error_code    => l_err_code);
+
+        IF l_err_code != DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20101,
+                'RUN_STANDARD: could not resolve scenario "' ||
+                NVL(p_scenario_name, '(null)') || '" (detail in DMT_LOG_TBL).');
+        END IF;
+
+        RUN(
+            p_run_id           => p_run_id,
+            p_run_mode         => p_run_mode,
+            p_scenario_id      => l_scenario_id,
+            p_include_untagged => 'N');
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id  => p_run_id,
+                p_message => 'RUN_STANDARD failed.',
+                p_sqlerrm => SQLERRM,
+                p_package => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END RUN_STANDARD;
 
 END DMT_FND_LOOKUP_RUNNER_PKG;
 /
