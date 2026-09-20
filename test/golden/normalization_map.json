@@ -450,13 +450,23 @@
             ]
           },
           {
-            "_note": "Field 52 = REFERENCE21 = the per-line reconciliation key RECON_KEY (prefix-STG_SEQUENCE_ID), added by the GL per-line-key feature. The trailing STG_SEQUENCE_ID is a global identity, not reproducible from the prefix/run-id, so it is normalized structurally: <prefix>-<digits> collapses to {RECON_KEY} on both sides. Golden field 52 was re-cut from blank to 9403-<n> to reflect the new field.",
+            "_note": "Field 52 = REFERENCE21 = the per-line reconciliation key RECON_KEY. Backlog #12 changed RECON_KEY from the old <prefix>-<STG_SEQUENCE_ID> shape to the bare TFM identity id (TO_CHAR(TFM_SEQUENCE_ID)) so Slot A and Slot C carry the same tfm id. TFM_SEQUENCE_ID is a GENERATED ALWAYS global identity, not reproducible from the prefix/run-id, so the field is normalized structurally: an all-digits field collapses to {RECON_KEY} on both sides (match: digits, field-restricted to 52). Golden field 52 was re-cut from 9403-<n> to bare <n> to reflect the new definition; a field that is not all digits is left unchanged and still diffs, so this is structural validation, not a mask.",
             "placeholder": "{RECON_KEY}",
-            "golden": "9403",
-            "local": "$PREFIX",
-            "match": "prefix_digits",
+            "golden": "0",
+            "local": "0",
+            "match": "digits",
             "fields": [
               52
+            ]
+          },
+          {
+            "_note": "Field 53 = REFERENCE22 = Slot C, the full run-scoped reference DMT_REF_ID_PKG.BUILD_REF(run, work_queue, tfm) stamped by backlog #12. It rides GL_INTERFACE.REFERENCE22 -> GL_JE_LINES.REFERENCE_2. FULL format is DMT:<run>:<wq>:<tfm> (wq is empty for a single-item object like GLBalances, giving DMT:<run>::<tfm>). Run id, work-queue id and tfm id all vary per run, so the field is normalized structurally: DMT:<digits>:<digits>:<digits> (middle segment optionally empty) collapses to {REF22} on both sides (match: ref_id, field-restricted to 53). Golden field 53 was re-cut from blank to DMT:<run>::<n> to reflect the new field; a value that is not that exact shape is left unchanged and still diffs.",
+            "placeholder": "{REF22}",
+            "golden": "x",
+            "local": "x",
+            "match": "ref_id",
+            "fields": [
+              53
             ]
           }
         ],

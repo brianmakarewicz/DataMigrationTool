@@ -10,8 +10,10 @@
   <dataSets>
     <dataSet name="gl_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
--- RECORD_KEY = the per-line RECON_KEY (prefix-stg_sequence_id) written to
--- GL_INTERFACE.REFERENCE21, carried onto GL_JE_LINES.REFERENCE_1 by Journal Import
+-- RECORD_KEY = the per-line RECON_KEY (the bare TFM identity id,
+-- TO_CHAR(TFM_SEQUENCE_ID); backlog #12 changed it from the old
+-- prefix-stg_sequence_id shape) written to GL_INTERFACE.REFERENCE21, carried onto
+-- GL_JE_LINES.REFERENCE_1 by Journal Import
 -- (proven 2026-07-11; needs the source's "Import Journal References" flag = ON).
 -- Matching is per LINE on this key, so journals sharing a name never collide.
 SELECT
