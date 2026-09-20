@@ -22,6 +22,64 @@
     C_CEMLI CONSTANT VARCHAR2(30) := 'Customers';
 
     -- --------------------------------------------------------
+    -- LOG_REF12_ROUNDTRIP (private)
+    -- Backlog #12 round-trip proof for one just-LOADED party BASE row (TCA family
+    -- template; mirrors DMT_GL_RESULTS_PKG / DMT_WORKER_RESULTS_PKG). For TCA the
+    -- carrier is Slot A: PARTY_ORIG_SYSTEM_REFERENCE (= the run-prefixed reference
+    -- the transform wrote) lands in the Fusion base table HZ_ORIG_SYS_REFERENCES
+    -- (owner_table_name=HZ_PARTIES) and comes back on the recon report as
+    -- ORIG_SYSTEM_REFERENCE. So the proof is: the value returned from the base table
+    -- equals the Slot A value the TFM row carries as PARTY_ORIG_SYSTEM_REFERENCE --
+    -- the value we stamped survived to Fusion and returned unchanged. There is NO
+    -- Slot C for TCA parties, so the full reference (BUILD_REF = DMT:run:wq:tfm) is
+    -- logged for audit alongside the confirmed Slot A carrier. Diagnostic only: a
+    -- mismatch or lookup miss logs WARN and NEVER alters the LOADED outcome
+    -- (design section 7). Runs after the LOADED UPDATE so it never blocks accounting.
+    -- --------------------------------------------------------
+    PROCEDURE LOG_REF12_ROUNDTRIP (
+        p_run_id     IN NUMBER,
+        p_fusion_ref IN VARCHAR2,
+        p_fusion_id  IN NUMBER
+    ) IS
+        C_PROC     CONSTANT VARCHAR2(30) := 'LOG_REF12_ROUNDTRIP';
+        l_slot_a   VARCHAR2(255);
+        l_full_ref VARCHAR2(150);
+    BEGIN
+        -- Read the Slot A carrier and the full reference for the matched party TFM
+        -- row. PARTY_ORIG_SYSTEM_REFERENCE is exactly what was written into the CSV
+        -- as the party's OrigSystemReference (the reconciler's match key).
+        SELECT PARTY_ORIG_SYSTEM_REFERENCE,
+               DMT_REF_ID_PKG.BUILD_REF(RUN_ID, WORK_QUEUE_ID, TFM_SEQUENCE_ID)
+          INTO l_slot_a, l_full_ref
+          FROM DMT_HZ_PARTIES_TFM_TBL
+         WHERE RUN_ID = p_run_id AND PARTY_ORIG_SYSTEM_REFERENCE = p_fusion_ref
+           AND ROWNUM = 1;
+
+        IF p_fusion_ref IS NOT NULL AND p_fusion_ref = l_slot_a THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'REF #12 round-trip OK for ORIG_SYSTEM_REFERENCE ' || p_fusion_ref ||
+                ': Slot A returned from the base table '
+                || '(HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE -> HZ_PARTIES, '
+                || 'PARTY_ID=' || p_fusion_id || ') = ' || l_slot_a ||
+                '. Full ref (audit, no Slot C for TCA): ' || l_full_ref || '.',
+                'INFO', C_PKG, C_PROC);
+        ELSE
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'REF #12 round-trip MISMATCH for ORIG_SYSTEM_REFERENCE ' ||
+                NVL(p_fusion_ref, '(null)') || ': expected Slot A=' || l_slot_a || '.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+        END IF;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            -- Round-trip proof is diagnostic only; a lookup miss must never swallow
+            -- silently (design section 7) nor alter the LOADED outcome.
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'REF #12 round-trip: no party TFM row found for ORIG_SYSTEM_REFERENCE ' ||
+                NVL(p_fusion_ref, '(null)') || ' (proof skipped).',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+    END LOG_REF12_ROUNDTRIP;
+
+    -- --------------------------------------------------------
     -- FETCH_BIP_RESULTS
     -- Delegates to DMT_UTIL_PKG.RUN_BIP_REPORT with the CEMLI's
     -- registered report and the Contract v1 parameters (design
@@ -202,6 +260,17 @@
                     WHERE RUN_ID=p_run_id AND PARTY_ORIG_SYSTEM_REFERENCE=r.orig_system_reference
                     AND TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_rc := SQL%ROWCOUNT;
+                    -- Backlog #12 round-trip proof: confirm the Slot A reference we
+                    -- wrote (PARTY_ORIG_SYSTEM_REFERENCE) came back from the Fusion
+                    -- base table HZ_ORIG_SYS_REFERENCES equal to the TFM row's value.
+                    -- Only for a row just marked LOADED; diagnostic only (never alters
+                    -- the outcome). Slot A only -- there is no Slot C for TCA parties.
+                    IF l_rc > 0 THEN
+                        LOG_REF12_ROUNDTRIP(
+                            p_run_id     => p_run_id,
+                            p_fusion_ref => r.orig_system_reference,
+                            p_fusion_id  => TO_NUMBER(r.fusion_id));
+                    END IF;
                 WHEN 'Locations' THEN
                     UPDATE DMT_HZ_LOCATIONS_TFM_TBL
                     SET TFM_STATUS='LOADED', FUSION_LOCATION_ID=TO_NUMBER(r.fusion_id),
