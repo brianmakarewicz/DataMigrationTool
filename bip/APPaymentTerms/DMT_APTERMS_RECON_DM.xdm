@@ -8,49 +8,140 @@
     <property name="xml_tag_case" value="upper"/>
   </dataProperties>
   <dataSets>
-    <dataSet name="apterms_base_results" type="complex">
+    <dataSet name="apterms_recon_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- APPaymentTerms reconciliation data model — BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination, the six
+-- standard parameters). Conforms AP Payment Terms to the shape of
+-- the reference template bip/GLBalances/DMT_GL_BAL_RECON_DM.xdm.
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+--
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT.
+--
+-- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
+-- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
+-- with an empty cursor first, then passes the last RECORD_KEY it
+-- received on each next call, until a page returns fewer than
+-- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
+-- (every non-null RECORD_KEY sorts after the empty string).
+--
+-- OBJECT / TRANSPORT.  AP Payment Terms is a REST object, not an
+-- FBDI/ESS load: LOAD_TERMS / POST_LINES POST each record to the
+-- standardTerms REST resource. There is therefore no interface
+-- table and no Fusion load-request id, so the load/import params
+-- are declared for contract symmetry but do not select rows here:
+--   :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID / :P_PREFIX are unused
+--   in the WHERE. Run-scoping is by :P_RUN_ID stamped into the base
+--   table (see below), exactly as GLBalances scopes by GROUP_ID.
+--
+-- Base tables (confirmed live 2026-09-20, term 10134 "Net 30"):
+--   Header  AP_TERMS_B   — surrogate TERM_ID (== the standardTerms
+--           REST TermId) and ATTRIBUTE1. The header NAME is NOT on
+--           AP_TERMS_B; it lives on the translation table
+--           AP_TERMS_TL (key NAME, joined by TERM_ID + LANGUAGE).
+--   Line    AP_TERMS_LINES — natural key TERM_ID + SEQUENCE_NUM.
+--
+-- RUN-SCOPING (mirrors GLBalances GROUP_ID = :P_RUN_ID).  The DMT
+-- run id is written to AP_TERMS_B.ATTRIBUTE1 at load time as the
+-- run reference, so this report selects a run's own terms by
+--   AP_TERMS_B.ATTRIBUTE1 = TO_CHAR(:P_RUN_ID)
+-- and their installment lines by the confirmed TERM_ID. A row
+-- present in the base table is positive proof the record loaded.
+--
+-- Keys / nine-column mapping:
+--   OBJECT_TYPE   = 'PaymentTerms' (the CEMLI code).
+--   RECORD_KEY    = header: the term NAME (AP_TERMS_TL.NAME);
+--                   line:   TERM_ID || '-' || SEQUENCE_NUM.
+--   SOURCE_TYPE   = 'BASE' (header) / 'BASE_LINE' (installment).
+--   FUSION_STATUS = 'SUCCESS' on every row — a base-table row is
+--                   positive proof of load (REST rejections never
+--                   reach the base table, so no ERROR rows exist
+--                   here; the reconciler marks records absent from
+--                   this report FAILED/unaccounted from its own
+--                   stashed REST error, not from this DM).
+--   FUSION_ID     = TERM_ID (the real Fusion surrogate id).
+--   ERROR_MESSAGE = NULL (no error rows, per above).
+--   LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID echoed for symmetry
+--                   (no ESS request exists for a REST object).
+--   SOURCE_REF    = header: the term NAME (native reference);
+--                   line:   TERM_ID || '-' || SEQUENCE_NUM.
+--   DMT_REFERENCE = AP_TERMS_B.ATTRIBUTE1 (the DMT run reference).
+-- Two tiers (headers + lines) via OBJECT_TYPE/SOURCE_TYPE,
+-- UNION ALL, ordered by RECORD_KEY for keyset paging.
+-- ============================================================
 SELECT
-    b.name                               AS record_key,
-    'SUCCESS'                            AS import_status,
-    'BASE'                               AS source_type,
-    b.term_id                            AS fusion_id,
-    CAST(NULL AS VARCHAR2(4000))         AS error_message
-FROM   ap_terms b
-WHERE  INSTR(',' || :P_TERM_NAMES || ',', ',' || b.name || ',') > 0
-      ]]></sql>
-    </dataSet>
-    <dataSet name="apterm_line_base_results" type="complex">
-      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT
-    TO_CHAR(l.term_id) || '-' || TO_CHAR(l.sequence_num)   AS record_key,
-    'SUCCESS'                                              AS import_status,
-    'BASE_LINE'                                            AS source_type,
-    l.term_id                                              AS fusion_id,
-    l.sequence_num                                         AS sequence_num,
-    CAST(NULL AS VARCHAR2(4000))                           AS error_message
-FROM   ap_terms_lines l
-WHERE  INSTR(',' || :P_TERM_IDS || ',', ',' || TO_CHAR(l.term_id) || ',') > 0
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- Tier: BASE — one row per AP_TERMS_B header stamped with this
+    -- run in ATTRIBUTE1. NAME comes from the translation table.
+    SELECT
+        'PaymentTerms'                       AS object_type,
+        tl.name                              AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        b.term_id                            AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        tl.name                              AS source_ref,
+        b.attribute1                         AS dmt_reference
+    FROM   ap_terms_b  b
+    JOIN   ap_terms_tl tl ON tl.term_id = b.term_id
+                         AND tl.language = USERENV('LANG')
+    WHERE  b.attribute1 = TO_CHAR(:P_RUN_ID)
+
+    UNION ALL
+
+    -- Tier: BASE_LINE — one row per AP_TERMS_LINES installment whose
+    -- parent header belongs to this run. Keyed TERM_ID-SEQUENCE_NUM.
+    SELECT
+        'PaymentTerms'                                    AS object_type,
+        TO_CHAR(l.term_id) || '-' || TO_CHAR(l.sequence_num)
+                                                          AS record_key,
+        'BASE_LINE'                                       AS source_type,
+        'SUCCESS'                                         AS fusion_status,
+        l.term_id                                         AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))                      AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)                     AS load_request_id,
+        TO_CHAR(l.term_id) || '-' || TO_CHAR(l.sequence_num)
+                                                          AS source_ref,
+        b.attribute1                                      AS dmt_reference
+    FROM   ap_terms_lines l
+    JOIN   ap_terms_b     b ON b.term_id = l.term_id
+    WHERE  b.attribute1 = TO_CHAR(:P_RUN_ID)
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start": return every row. On later
+-- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
+-- greater keys are returned. RECORD_KEY is compared as text; the
+-- reconciler feeds back the exact key it received.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
       ]]></sql>
     </dataSet>
   </dataSets>
   <output rootName="DATA_DS" uniqueRowName="false">
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
-        <group name="G_1" label="G_1" source="apterms_base_results">
-          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
-          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
-          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
-          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
-          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
-        </group>
-        <group name="G_2" label="G_2" source="apterm_line_base_results">
-          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
-          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
-          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
-          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
-          <element name="SEQUENCE_NUM" value="SEQUENCE_NUM" dataType="xsd:integer" tagName="SEQUENCE_NUM"/>
-          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        <group name="G_1" label="G_1" source="apterms_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
         </group>
       </dataStructure>
     </nodeList>
@@ -58,11 +149,26 @@ WHERE  INSTR(',' || :P_TERM_IDS || ',', ',' || TO_CHAR(l.term_id) || ',') > 0
   <eventTriggers/>
   <lexicals/>
   <parameters>
-    <parameter name="P_TERM_NAMES" dataType="character" rowPlacement="1"
-               labelID="P_TERM_NAMES" defaultValue="" nvp="false"
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_TERM_IDS" dataType="character" rowPlacement="1"
-               labelID="P_TERM_IDS" defaultValue="" nvp="false"
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>
