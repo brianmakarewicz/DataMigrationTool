@@ -2,29 +2,58 @@
 <dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
            defaultDataSourceRef="ApplicationDB_FSCM">
   <!--
-    DMT_WORKERS_RECON_DM — Contract v1 reconciliation data model for Workers
-    (design section 5, "BIP reconciliation report contract - v1").
+    DMT_WORKERS_RECON_DM : Contract v1 reconciliation data model for Workers (HDL).
+    See docs/DMT_DESIGN.html section 5 ("BIP reconciliation report contract v1") and
+    its HDL note: each HDL object gets a Contract v1 report whose rows are the BASE
+    tier (key + Fusion id); its ERROR rows are optional, because HDL failures arrive
+    per record in the HDL response and are tagged [FUSION_ERROR] before the report runs.
 
-    Returns the BASE tier for the Workers HDL load: one row per migrated worker
-    that is positively confirmed in the Fusion HCM base table PER_ALL_PEOPLE_F,
-    with its real Fusion PERSON_ID as FUSION_ID. HDL failures arrive per-record
-    in the HDL response (tagged [FUSION_ERROR] by RECONCILE_HDL before this report
-    runs), so this report's ERROR rows are optional and it returns the BASE tier
-    only — the Workers reconciler (which fetches these rows via
-    DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically) promotes a Worker
-    TFM row to LOADED only from a BASE / SUCCESS / FUSION_ID-not-null row here.
+    WHAT THIS RETURNS (BASE tier only)
+    One row per Workers HDL component that Fusion actually persisted, positively
+    confirmed in its HCM base table. HDL per record failures are NOT in this report
+    (DMT_HDL_UTIL_PKG.RECONCILE_HDL reads them from the HDL response and tags
+    [FUSION_ERROR] on the TFM row before this report runs). So every row here is
+    SOURCE_TYPE='BASE', FUSION_STATUS='SUCCESS', FUSION_ID not null. The INTERFACE
+    and ERROR tiers are intentionally empty.
 
-    RECORD_KEY = the worker's business key = the prefixed PERSON_NUMBER, which is
-    exactly the value written into Worker.dat as SourceSystemId and stamped on the
-    Worker TFM row as RECON_KEY (one key definition per object). Matching is on
-    PER_ALL_PEOPLE_F.PERSON_NUMBER, which equals that same value (verified live
-    2026-09-16: SOURCE_SYSTEM_ID we wrote == base PERSON_NUMBER, and
-    HRC_INTEGRATION_KEY_MAP.SURROGATE_ID == PER_ALL_PEOPLE_F.PERSON_ID).
+    THE JOIN (single, uniform for every component)
+    HDL stamps every business object it loads into HRC_INTEGRATION_KEY_MAP:
+      SOURCE_SYSTEM_ID : the SourceSystemId DMT wrote into Worker.dat (the run-scoped
+                         business key, equal to the TFM row's RECON_KEY)
+      OBJECT_NAME      : Fusion's HDL business-object name (Person, PersonName,
+                         PeriodOfService, Assignment, ...)
+      SURROGATE_ID     : the Fusion base-table primary key that HDL created
+    We drive from this map (scoped by the run PREFIX), then confirm each mapped
+    surrogate id against its own base table with an EXISTS check, so a row is emitted
+    ONLY on real base-table proof (Rule #1). FUSION_ID = SURROGATE_ID = the base PK.
 
-    Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
-    P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an
-    HDL load, so BASE-tier matching is by the run prefix (P_PREFIX). LOAD_REQUEST_ID
-    is echoed back unchanged for audit.
+    Verified live 2026-09-20 against the loaded worker 10249RT-WKR-G1 (run 309):
+      Person           key 10249RT-WKR-G1      SURROGATE_ID 300000333822904 = PER_ALL_PEOPLE_F.PERSON_ID
+      PersonName       key 10249RT-WKR-G1_NME  SURROGATE_ID 300000333822907 = PER_PERSON_NAMES_F.PERSON_NAME_ID
+      PeriodOfService  key 10249RT-WKR-G1_POS  SURROGATE_ID 300000333822906 = PER_PERIODS_OF_SERVICE.PERIOD_OF_SERVICE_ID
+      Assignment       keys 10249ET-RT-WKR-G1_ASG / _TRM (and the G1B pair) = PER_ALL_ASSIGNMENTS_M.ASSIGNMENT_ID
+      and PER_ALL_PEOPLE_F.PERSON_NUMBER = the Person SourceSystemId we wrote.
+
+    OBJECT_TYPE discriminates each persisted tier (equals the HRC OBJECT_NAME), so one
+    report serves every Workers component.
+
+    NINE COLUMNS (Contract v1 order)
+      OBJECT_TYPE     the HDL component name (Person / PersonName / PeriodOfService / Assignment / ...)
+      RECORD_KEY      the business key, equal to SourceSystemId, equal to TFM RECON_KEY
+      SOURCE_TYPE     'BASE'   (HDL recon is base tier only)
+      FUSION_STATUS   'SUCCESS'
+      FUSION_ID       the base-table primary key (equals the HRC SURROGATE_ID)
+      ERROR_MESSAGE   null     (failures come from the HDL response, not this report)
+      LOAD_REQUEST_ID null     (an HDL load carries no ESS request id into the base table)
+      SOURCE_REF      SourceSystemId (HDL's native source-system reference, read back)
+      DMT_REFERENCE   null     (HDL has no DFF carrier for the DMT run/queue/tfm stamp)
+
+    SIX Contract v1 parameters. Keyset pagination by RECORD_KEY (P_AFTER_KEY).
+    P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID and P_RUN_ID are declared per contract but not
+    used in the SQL: an HDL load leaves no request id in the base tables, so base-tier
+    scoping is by the run PREFIX. LOAD_REQUEST_ID is emitted null (there is no request
+    id the base row matched on). P_PREFIX and P_CHUNK_SIZE default so a bare report run
+    is safe (empty prefix returns zero rows; chunk size defaults to 5000).
   -->
   <dataProperties>
     <property name="include_parameters" value="true"/>
@@ -33,34 +62,64 @@
     <property name="xml_tag_case" value="upper"/>
   </dataProperties>
   <dataSets>
-    <dataSet name="workers_recon" type="complex">
+    <dataSet name="worker_recon" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT object_type, record_key, source_type, fusion_status,
-       fusion_id, error_message, load_request_id
+SELECT object_type,
+       record_key,
+       source_type,
+       fusion_status,
+       fusion_id,
+       error_message,
+       load_request_id,
+       source_ref,
+       dmt_reference
 FROM (
-    -- BASE tier: positive proof in the HCM person base table. One row per
-    -- migrated worker (GROUP BY person_number collapses effective-dated rows).
-    SELECT 'Workers'                       AS object_type,
-           p.person_number                 AS record_key,
-           'BASE'                          AS source_type,
-           'SUCCESS'                       AS fusion_status,
-           MAX(p.person_id)                AS fusion_id,
-           CAST(NULL AS VARCHAR2(4000))    AS error_message,
-           :P_LOAD_REQUEST_ID              AS load_request_id
-    FROM   per_all_people_f p
-    WHERE  p.person_number LIKE :P_PREFIX || '%'
-    AND    (:P_AFTER_KEY IS NULL OR p.person_number > :P_AFTER_KEY)
-    GROUP BY p.person_number
-    ORDER BY p.person_number
+    -- BASE tier: every persisted Workers HDL component, keyed off the HDL
+    -- integration key map and confirmed present in its own HCM base table.
+    SELECT m.object_name                    AS object_type,
+           m.source_system_id               AS record_key,
+           'BASE'                           AS source_type,
+           'SUCCESS'                        AS fusion_status,
+           m.surrogate_id                   AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))     AS error_message,
+           CAST(NULL AS VARCHAR2(60))       AS load_request_id,
+           m.source_system_id               AS source_ref,
+           CAST(NULL AS VARCHAR2(240))      AS dmt_reference
+    FROM   hrc_integration_key_map m
+    WHERE  :P_PREFIX IS NOT NULL
+    AND    m.source_system_id LIKE :P_PREFIX || '%'
+    AND    m.object_name IN ('Person','PersonName','PeriodOfService',
+                             'Assignment','WorkTerms','WorkRelationship')
+    AND    (
+             -- Person -> PER_ALL_PEOPLE_F (PERSON_ID)
+             (m.object_name = 'Person'
+              AND EXISTS (SELECT 1 FROM per_all_people_f b
+                          WHERE b.person_id = m.surrogate_id))
+             -- PersonName -> PER_PERSON_NAMES_F (PERSON_NAME_ID)
+          OR (m.object_name = 'PersonName'
+              AND EXISTS (SELECT 1 FROM per_person_names_f b
+                          WHERE b.person_name_id = m.surrogate_id))
+             -- PeriodOfService (WorkRelationship) -> PER_PERIODS_OF_SERVICE (PERIOD_OF_SERVICE_ID)
+          OR (m.object_name IN ('PeriodOfService','WorkRelationship')
+              AND EXISTS (SELECT 1 FROM per_periods_of_service b
+                          WHERE b.period_of_service_id = m.surrogate_id))
+             -- Assignment / WorkTerms -> PER_ALL_ASSIGNMENTS_M (ASSIGNMENT_ID)
+             -- (no rows persist on this instance yet; present for completeness)
+          OR (m.object_name IN ('Assignment','WorkTerms')
+              AND EXISTS (SELECT 1 FROM per_all_assignments_m b
+                          WHERE b.assignment_id = m.surrogate_id))
+           )
+    AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
 )
-WHERE ROWNUM <= :P_CHUNK_SIZE
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
       ]]></sql>
     </dataSet>
   </dataSets>
   <output rootName="DATA_DS" uniqueRowName="false">
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
-        <group name="G_1" label="G_1" source="workers_recon">
+        <group name="G_1" label="G_1" source="worker_recon">
           <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
           <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
           <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
@@ -68,6 +127,8 @@ WHERE ROWNUM <= :P_CHUNK_SIZE
           <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
           <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
           <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
         </group>
       </dataStructure>
     </nodeList>
