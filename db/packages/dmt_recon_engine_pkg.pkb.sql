@@ -253,7 +253,7 @@
         l_sql :=
             'MERGE INTO ' || p_cfg.tfm_table || ' t ' ||
             'USING (SELECT r.record_key, MAX(r.fusion_id) AS fusion_id ' ||
-            '       FROM   TABLE(:rows) r ' ||
+            '       FROM   TABLE(:p_rows) r ' ||
             '       WHERE  r.source_type = ''BASE'' ' ||
             '       AND    r.fusion_status = ''SUCCESS'' ' ||
             '       AND    r.fusion_id IS NOT NULL ' ||
@@ -281,7 +281,7 @@
         l_sql :=
             'MERGE INTO ' || p_cfg.tfm_table || ' t ' ||
             'USING (SELECT r.record_key, MIN(r.error_message) AS error_message ' ||
-            '       FROM   TABLE(:rows) r ' ||
+            '       FROM   TABLE(:p_rows) r ' ||
             '       WHERE  r.fusion_status = ''ERROR'' ' ||
             '       AND    r.error_message IS NOT NULL ' ||
             '       GROUP BY r.record_key) s ' ||
@@ -372,7 +372,7 @@
             '  COUNT(CASE WHEN r.dmt_reference IS NULL OR r.dmt_reference <> ' ||
             '        DMT_REF_ID_PKG.BUILD_REF(t.RUN_ID, t.WORK_QUEUE_ID, t.' || l_id_col || ') ' ||
             '        THEN 1 END) ' ||
-            'FROM TABLE(:rows) r ' ||
+            'FROM TABLE(:p_rows) r ' ||
             'JOIN ' || p_cfg.tfm_table || ' t ' ||
             '  ON t.RUN_ID = :run_id AND t.' || p_cfg.recon_key_column || ' = r.record_key ' ||
             'WHERE r.source_type = ''BASE'' AND r.fusion_status = ''SUCCESS''';
