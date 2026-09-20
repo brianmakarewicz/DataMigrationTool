@@ -8,72 +8,226 @@
     <property name="xml_tag_case" value="upper"/>
   </dataProperties>
   <dataSets>
-    <dataSet name="gl_budget_results" type="complex">
+    <dataSet name="gl_budget_recon_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT 'BAL'                                              AS rec_type,
-       bb.ledger_id                                       AS ledger_id,
-       bb.budget_name                                     AS budget_name,
-       bb.period_name                                     AS period_name,
-       bb.currency_code                                   AS currency_code,
-       NVL(bb.segment1,'#')||'|'||NVL(bb.segment2,'#')||'|'||NVL(bb.segment3,'#')||'|'||
-       NVL(bb.segment4,'#')||'|'||NVL(bb.segment5,'#')||'|'||NVL(bb.segment6,'#')||'|'||
-       NVL(bb.segment7,'#')||'|'||NVL(bb.segment8,'#')||'|'||NVL(bb.segment9,'#')||'|'||
-       NVL(bb.segment10,'#')||'|'||NVL(bb.segment11,'#')||'|'||NVL(bb.segment12,'#')||'|'||
-       NVL(bb.segment13,'#')||'|'||NVL(bb.segment14,'#')||'|'||NVL(bb.segment15,'#')||'|'||
-       NVL(bb.segment16,'#')||'|'||NVL(bb.segment17,'#')||'|'||NVL(bb.segment18,'#')||'|'||
-       NVL(bb.segment19,'#')||'|'||NVL(bb.segment20,'#')||'|'||NVL(bb.segment21,'#')||'|'||
-       NVL(bb.segment22,'#')||'|'||NVL(bb.segment23,'#')||'|'||NVL(bb.segment24,'#')||'|'||
-       NVL(bb.segment25,'#')||'|'||NVL(bb.segment26,'#')||'|'||NVL(bb.segment27,'#')||'|'||
-       NVL(bb.segment28,'#')||'|'||NVL(bb.segment29,'#')||'|'||NVL(bb.segment30,'#')
-                                                          AS account_key,
-       bb.period_net_dr                                   AS dr_amount,
-       bb.period_net_cr                                   AS cr_amount,
-       CAST(NULL AS VARCHAR2(2000))                       AS error_message,
-       TO_CHAR(bb.last_update_date,'YYYY-MM-DD HH24:MI:SS') AS event_date
-FROM   gl_budget_balances bb
-WHERE  bb.last_update_date >= TO_TIMESTAMP(:P_RUN_START,'YYYY-MM-DD HH24:MI:SS')
-AND    (:P_LEDGER_ID IS NULL OR bb.ledger_id = TO_NUMBER(:P_LEDGER_ID))
-UNION ALL
-SELECT 'IFACE'                                            AS rec_type,
-       bi.ledger_id                                       AS ledger_id,
-       bi.budget_name                                     AS budget_name,
-       bi.period_name                                     AS period_name,
-       bi.currency_code                                   AS currency_code,
-       NVL(bi.segment1,'#')||'|'||NVL(bi.segment2,'#')||'|'||NVL(bi.segment3,'#')||'|'||
-       NVL(bi.segment4,'#')||'|'||NVL(bi.segment5,'#')||'|'||NVL(bi.segment6,'#')||'|'||
-       NVL(bi.segment7,'#')||'|'||NVL(bi.segment8,'#')||'|'||NVL(bi.segment9,'#')||'|'||
-       NVL(bi.segment10,'#')||'|'||NVL(bi.segment11,'#')||'|'||NVL(bi.segment12,'#')||'|'||
-       NVL(bi.segment13,'#')||'|'||NVL(bi.segment14,'#')||'|'||NVL(bi.segment15,'#')||'|'||
-       NVL(bi.segment16,'#')||'|'||NVL(bi.segment17,'#')||'|'||NVL(bi.segment18,'#')||'|'||
-       NVL(bi.segment19,'#')||'|'||NVL(bi.segment20,'#')||'|'||NVL(bi.segment21,'#')||'|'||
-       NVL(bi.segment22,'#')||'|'||NVL(bi.segment23,'#')||'|'||NVL(bi.segment24,'#')||'|'||
-       NVL(bi.segment25,'#')||'|'||NVL(bi.segment26,'#')||'|'||NVL(bi.segment27,'#')||'|'||
-       NVL(bi.segment28,'#')||'|'||NVL(bi.segment29,'#')||'|'||NVL(bi.segment30,'#')
-                                                          AS account_key,
-       CASE WHEN bi.budget_amount >= 0 THEN bi.budget_amount ELSE 0 END   AS dr_amount,
-       CASE WHEN bi.budget_amount <  0 THEN -bi.budget_amount ELSE 0 END  AS cr_amount,
-       bi.error_message                                   AS error_message,
-       TO_CHAR(bi.creation_date,'YYYY-MM-DD HH24:MI:SS')  AS event_date
-FROM   gl_budget_interface bi
-WHERE  bi.creation_date >= TO_TIMESTAMP(:P_RUN_START,'YYYY-MM-DD HH24:MI:SS')
-AND    (:P_LEDGER_ID IS NULL OR bi.ledger_id = TO_NUMBER(:P_LEDGER_ID))
+-- ============================================================
+-- GLBudgets reconciliation data model — BIP reconciliation
+-- report Contract v1 (nine columns, keyset pagination, the six
+-- standard parameters). Sibling of the GLBalances exemplar
+-- (bip/GLBalances/DMT_GL_BAL_RECON_DM.xdm); conformed to the same
+-- shape 2026-09-20.
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+--
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT, no P_RUN_START / P_LEDGER_ID.
+--
+-- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
+-- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. An empty :P_AFTER_KEY (bound as NULL by
+-- BIP on the first call) selects from the start; each next call
+-- passes the last RECORD_KEY received until a short page returns.
+--
+-- WHY GLBudgets differs from every other object (structural, not a
+-- shortcut — see objects/GLBudget/README.md and DMT_DESIGN section
+-- 5 / the #12 carrier map, both proven live 2026-09-20):
+--   * Budgets are CELLS, not transactions. GL_BUDGET_BALANCES holds
+--     ONE row per (ledger + budget_name + period + 30 account
+--     segments + currency + currency_type) and carries NO surrogate
+--     id, NO run id, NO request id, and NO prefix stamp. Its only
+--     identity is that composite cell key -- so RECORD_KEY / the
+--     keyset key IS that cell key. There is no per-line REFERENCE_1
+--     the way GL journals have.
+--   * There is no reachable Fusion surrogate id for a budget cell.
+--     GL_BUDGET_VERSIONS.BUDGET_VERSION_ID (the id the design's
+--     carrier map names) is VPD-blocked on this instance -- a live
+--     SELECT returns ORA-00942. The honest, non-null, non-fabricated
+--     Fusion base-table id for a loaded cell is therefore the GL
+--     account it sits on: GL_CODE_COMBINATIONS.CODE_COMBINATION_ID,
+--     resolved by the cell's chart-of-accounts + 30 segments. This
+--     is a real Fusion id from a real base table (proven: cell
+--     101-10-77600-120-000-000 -> 300000047301444).
+--
+-- Row selection:
+--   BASE  rows are the loaded budget cells in GL_BUDGET_BALANCES for
+--         THIS run. A budget cell carries no run/request/prefix, so
+--         the run is scoped by joining each cell back to the run's
+--         own footprint in GL_BUDGET_INTERFACE (matched on
+--         load_request_id = :P_LOAD_REQUEST_ID by the cell's
+--         ledger + budget_name + period_name + currency + account).
+--         Import CONSUMES (deletes) successfully-loaded interface
+--         rows, so a cell that has a balance AND is no longer
+--         lingering as a FAILED interface row for the run = loaded.
+--         FUSION_ID = the cell account's CODE_COMBINATION_ID.
+--   INTERFACE rows are the GL_BUDGET_INTERFACE rows the load left
+--         behind carrying :P_LOAD_REQUEST_ID with STATUS='FAILED' --
+--         a per-cell rejection with its real Fusion ERROR_MESSAGE.
+--   (:P_RUN_ID, :P_IMPORT_ESS_ID and :P_PREFIX are declared for
+--    contract symmetry; the budget interface stamps neither the run
+--    id nor a prefix, so LOAD_REQUEST_ID is the scoping key here.)
+--
+-- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
+--   BASE  (loaded cell present)                 => SUCCESS
+--   INTERFACE (FAILED rejection left behind)    => ERROR
+-- FUSION_ID is non-null on every BASE/SUCCESS row (CODE_COMBINATION_ID).
+-- ERROR_MESSAGE is non-null on every ERROR row.
+--
+-- Keys:
+--   RECORD_KEY / SOURCE_REF = the composite cell key
+--       ledger|budget|period|currency|seg1..seg30 (~ NULL as '#'),
+--       the same grain DMT_GL_BUDGET_RESULTS_PKG builds from the TFM
+--       row -- one key definition serving screens and BIP matching.
+--   DMT_REFERENCE           = NULL: a budget cell has no DFF/ATTRIBUTE
+--       carrier in GL_BUDGET_BALANCES, so the Slot C reference cannot
+--       be read back. SOURCE_REF is the reliable carrier here.
+--   FUSION_ID               = GL_CODE_COMBINATIONS.CODE_COMBINATION_ID.
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- Tier: BASE -- one row per loaded budget cell for this run.
+    -- The cell key is scoped to the run via its interface footprint
+    -- (load_request_id = :P_LOAD_REQUEST_ID); FUSION_ID is the real
+    -- GL account id the cell resolves to.
+    SELECT
+        'GLBudgets'                          AS object_type,
+        bb.ledger_id || '|' || bb.budget_name || '|' || bb.period_name
+          || '|' || bb.currency_code || '|' ||
+          NVL(bb.segment1,'#')||'|'||NVL(bb.segment2,'#')||'|'||NVL(bb.segment3,'#')||'|'||
+          NVL(bb.segment4,'#')||'|'||NVL(bb.segment5,'#')||'|'||NVL(bb.segment6,'#')||'|'||
+          NVL(bb.segment7,'#')||'|'||NVL(bb.segment8,'#')||'|'||NVL(bb.segment9,'#')||'|'||
+          NVL(bb.segment10,'#')||'|'||NVL(bb.segment11,'#')||'|'||NVL(bb.segment12,'#')||'|'||
+          NVL(bb.segment13,'#')||'|'||NVL(bb.segment14,'#')||'|'||NVL(bb.segment15,'#')||'|'||
+          NVL(bb.segment16,'#')||'|'||NVL(bb.segment17,'#')||'|'||NVL(bb.segment18,'#')||'|'||
+          NVL(bb.segment19,'#')||'|'||NVL(bb.segment20,'#')||'|'||NVL(bb.segment21,'#')||'|'||
+          NVL(bb.segment22,'#')||'|'||NVL(bb.segment23,'#')||'|'||NVL(bb.segment24,'#')||'|'||
+          NVL(bb.segment25,'#')||'|'||NVL(bb.segment26,'#')||'|'||NVL(bb.segment27,'#')||'|'||
+          NVL(bb.segment28,'#')||'|'||NVL(bb.segment29,'#')||'|'||NVL(bb.segment30,'#')
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        gcc.code_combination_id              AS fusion_id,
+        CAST(NULL AS VARCHAR2(2000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        bb.ledger_id || '|' || bb.budget_name || '|' || bb.period_name
+          || '|' || bb.currency_code || '|' ||
+          NVL(bb.segment1,'#')||'|'||NVL(bb.segment2,'#')||'|'||NVL(bb.segment3,'#')||'|'||
+          NVL(bb.segment4,'#')||'|'||NVL(bb.segment5,'#')||'|'||NVL(bb.segment6,'#')||'|'||
+          NVL(bb.segment7,'#')||'|'||NVL(bb.segment8,'#')||'|'||NVL(bb.segment9,'#')||'|'||
+          NVL(bb.segment10,'#')||'|'||NVL(bb.segment11,'#')||'|'||NVL(bb.segment12,'#')||'|'||
+          NVL(bb.segment13,'#')||'|'||NVL(bb.segment14,'#')||'|'||NVL(bb.segment15,'#')||'|'||
+          NVL(bb.segment16,'#')||'|'||NVL(bb.segment17,'#')||'|'||NVL(bb.segment18,'#')||'|'||
+          NVL(bb.segment19,'#')||'|'||NVL(bb.segment20,'#')||'|'||NVL(bb.segment21,'#')||'|'||
+          NVL(bb.segment22,'#')||'|'||NVL(bb.segment23,'#')||'|'||NVL(bb.segment24,'#')||'|'||
+          NVL(bb.segment25,'#')||'|'||NVL(bb.segment26,'#')||'|'||NVL(bb.segment27,'#')||'|'||
+          NVL(bb.segment28,'#')||'|'||NVL(bb.segment29,'#')||'|'||NVL(bb.segment30,'#')
+                                             AS source_ref,
+        CAST(NULL AS VARCHAR2(2000))         AS dmt_reference
+    FROM   gl_budget_balances bb
+    JOIN   gl_ledgers led
+      ON   led.ledger_id = bb.ledger_id
+    JOIN   gl_code_combinations gcc
+      ON   gcc.chart_of_accounts_id = led.chart_of_accounts_id
+     AND   NVL(gcc.segment1 ,'#') = NVL(bb.segment1 ,'#')
+     AND   NVL(gcc.segment2 ,'#') = NVL(bb.segment2 ,'#')
+     AND   NVL(gcc.segment3 ,'#') = NVL(bb.segment3 ,'#')
+     AND   NVL(gcc.segment4 ,'#') = NVL(bb.segment4 ,'#')
+     AND   NVL(gcc.segment5 ,'#') = NVL(bb.segment5 ,'#')
+     AND   NVL(gcc.segment6 ,'#') = NVL(bb.segment6 ,'#')
+     AND   NVL(gcc.segment7 ,'#') = NVL(bb.segment7 ,'#')
+     AND   NVL(gcc.segment8 ,'#') = NVL(bb.segment8 ,'#')
+     AND   NVL(gcc.segment9 ,'#') = NVL(bb.segment9 ,'#')
+     AND   NVL(gcc.segment10,'#') = NVL(bb.segment10,'#')
+    -- Scope each cell to THIS run via its interface footprint. The
+    -- run's interface rows carry load_request_id; a cell that also
+    -- has a balance is a loaded cell of the run.
+    WHERE  EXISTS (
+             SELECT 1
+             FROM   gl_budget_interface gi
+             WHERE  gi.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+             AND    gi.ledger_id     = bb.ledger_id
+             AND    gi.budget_name   = bb.budget_name
+             AND    gi.period_name   = bb.period_name
+             AND    gi.currency_code = bb.currency_code
+             AND    NVL(gi.segment1 ,'#') = NVL(bb.segment1 ,'#')
+             AND    NVL(gi.segment2 ,'#') = NVL(bb.segment2 ,'#')
+             AND    NVL(gi.segment3 ,'#') = NVL(bb.segment3 ,'#')
+           )
+
+    UNION ALL
+
+    -- Tier: INTERFACE -- FAILED rows still in GL_BUDGET_INTERFACE
+    -- after import are per-cell rejections carrying the real Fusion
+    -- error text and the run's load_request_id.
+    SELECT
+        'GLBudgets'                          AS object_type,
+        gi.ledger_id || '|' || gi.budget_name || '|' || gi.period_name
+          || '|' || gi.currency_code || '|' ||
+          NVL(gi.segment1,'#')||'|'||NVL(gi.segment2,'#')||'|'||NVL(gi.segment3,'#')||'|'||
+          NVL(gi.segment4,'#')||'|'||NVL(gi.segment5,'#')||'|'||NVL(gi.segment6,'#')||'|'||
+          NVL(gi.segment7,'#')||'|'||NVL(gi.segment8,'#')||'|'||NVL(gi.segment9,'#')||'|'||
+          NVL(gi.segment10,'#')||'|'||NVL(gi.segment11,'#')||'|'||NVL(gi.segment12,'#')||'|'||
+          NVL(gi.segment13,'#')||'|'||NVL(gi.segment14,'#')||'|'||NVL(gi.segment15,'#')||'|'||
+          NVL(gi.segment16,'#')||'|'||NVL(gi.segment17,'#')||'|'||NVL(gi.segment18,'#')||'|'||
+          NVL(gi.segment19,'#')||'|'||NVL(gi.segment20,'#')||'|'||NVL(gi.segment21,'#')||'|'||
+          NVL(gi.segment22,'#')||'|'||NVL(gi.segment23,'#')||'|'||NVL(gi.segment24,'#')||'|'||
+          NVL(gi.segment25,'#')||'|'||NVL(gi.segment26,'#')||'|'||NVL(gi.segment27,'#')||'|'||
+          NVL(gi.segment28,'#')||'|'||NVL(gi.segment29,'#')||'|'||NVL(gi.segment30,'#')
+                                             AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[LINE] ' || NVL(gi.error_message,
+             'Rejected by Validate and Load Budgets (cell not created in GL_BUDGET_BALANCES).')
+                                             AS error_message,
+        gi.load_request_id                   AS load_request_id,
+        gi.ledger_id || '|' || gi.budget_name || '|' || gi.period_name
+          || '|' || gi.currency_code || '|' ||
+          NVL(gi.segment1,'#')||'|'||NVL(gi.segment2,'#')||'|'||NVL(gi.segment3,'#')||'|'||
+          NVL(gi.segment4,'#')||'|'||NVL(gi.segment5,'#')||'|'||NVL(gi.segment6,'#')||'|'||
+          NVL(gi.segment7,'#')||'|'||NVL(gi.segment8,'#')||'|'||NVL(gi.segment9,'#')||'|'||
+          NVL(gi.segment10,'#')||'|'||NVL(gi.segment11,'#')||'|'||NVL(gi.segment12,'#')||'|'||
+          NVL(gi.segment13,'#')||'|'||NVL(gi.segment14,'#')||'|'||NVL(gi.segment15,'#')||'|'||
+          NVL(gi.segment16,'#')||'|'||NVL(gi.segment17,'#')||'|'||NVL(gi.segment18,'#')||'|'||
+          NVL(gi.segment19,'#')||'|'||NVL(gi.segment20,'#')||'|'||NVL(gi.segment21,'#')||'|'||
+          NVL(gi.segment22,'#')||'|'||NVL(gi.segment23,'#')||'|'||NVL(gi.segment24,'#')||'|'||
+          NVL(gi.segment25,'#')||'|'||NVL(gi.segment26,'#')||'|'||NVL(gi.segment27,'#')||'|'||
+          NVL(gi.segment28,'#')||'|'||NVL(gi.segment29,'#')||'|'||NVL(gi.segment30,'#')
+                                             AS source_ref,
+        CAST(NULL AS VARCHAR2(2000))         AS dmt_reference
+    FROM   gl_budget_interface gi
+    WHERE  gi.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    gi.status = 'FAILED'
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start": return every row. On later
+-- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
+-- greater keys are returned. RECORD_KEY is compared as text (the cell
+-- key is a string); the reconciler feeds back the exact key it received.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
       ]]></sql>
     </dataSet>
   </dataSets>
   <output rootName="DATA_DS" uniqueRowName="false">
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
-        <group name="G_1" label="G_1" source="gl_budget_results">
-          <element name="REC_TYPE"      value="REC_TYPE"      dataType="xsd:string" tagName="REC_TYPE"/>
-          <element name="LEDGER_ID"     value="LEDGER_ID"     dataType="xsd:string" tagName="LEDGER_ID"/>
-          <element name="BUDGET_NAME"   value="BUDGET_NAME"   dataType="xsd:string" tagName="BUDGET_NAME"/>
-          <element name="PERIOD_NAME"   value="PERIOD_NAME"   dataType="xsd:string" tagName="PERIOD_NAME"/>
-          <element name="CURRENCY_CODE" value="CURRENCY_CODE" dataType="xsd:string" tagName="CURRENCY_CODE"/>
-          <element name="ACCOUNT_KEY"   value="ACCOUNT_KEY"   dataType="xsd:string" tagName="ACCOUNT_KEY"/>
-          <element name="DR_AMOUNT"     value="DR_AMOUNT"     dataType="xsd:double" tagName="DR_AMOUNT"/>
-          <element name="CR_AMOUNT"     value="CR_AMOUNT"     dataType="xsd:double" tagName="CR_AMOUNT"/>
-          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
-          <element name="EVENT_DATE"    value="EVENT_DATE"    dataType="xsd:string" tagName="EVENT_DATE"/>
+        <group name="G_1" label="G_1" source="gl_budget_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
         </group>
       </dataStructure>
     </nodeList>
@@ -81,11 +235,26 @@ AND    (:P_LEDGER_ID IS NULL OR bi.ledger_id = TO_NUMBER(:P_LEDGER_ID))
   <eventTriggers/>
   <lexicals/>
   <parameters>
-    <parameter name="P_RUN_START" dataType="character" rowPlacement="1"
-               labelID="P_RUN_START" defaultValue="2026-01-01 00:00:00" nvp="false"
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_LEDGER_ID" dataType="character" rowPlacement="2"
-               labelID="P_LEDGER_ID" defaultValue="" nvp="false"
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>
