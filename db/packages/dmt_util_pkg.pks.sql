@@ -200,6 +200,17 @@ AS
     -- maintaining a local copy.
     FUNCTION CLOB_TO_BLOB (p_clob IN CLOB) RETURN BLOB;
 
+    -- Decode an HTTP response body that may be gzip-compressed.
+    -- Fusion sometimes returns error bodies gzip-compressed even when the
+    -- request asked for identity encoding; the raw bytes then land in
+    -- ERROR_TEXT as unreadable binary. Callers that read the response as a
+    -- BLOB (UTL_HTTP.READ_RAW) pass it here. If the bytes carry the gzip
+    -- magic number (0x1F 0x8B) the payload is inflated and returned as text;
+    -- otherwise the bytes are returned as plain text unchanged. Inflation
+    -- never raises: on any failure the function falls back to the raw text so
+    -- a reconcile is never crashed by an undecodable body.
+    FUNCTION GUNZIP_RESPONSE (p_raw IN BLOB) RETURN CLOB;
+
     -- ============================================================
     -- FBDI CSV<->ZIP helpers (one DMT_FBDI_CSV_TBL row per physical CSV).
     -- Generators call REGISTER_CSV once per file, then BUILD_ZIP_FROM_CSVS

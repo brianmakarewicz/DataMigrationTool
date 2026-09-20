@@ -662,6 +662,87 @@
     END CLOB_TO_BLOB;
 
     -- --------------------------------------------------------
+    -- GUNZIP_RESPONSE
+    -- Turn a (possibly gzip-compressed) HTTP response BLOB into readable text.
+    --
+    -- Why this exists: Fusion sometimes gzip-compresses error bodies even when
+    -- the request asked for identity encoding. The REST reconcilers used to
+    -- read the response with UTL_HTTP.READ_TEXT and stash it straight into
+    -- ERROR_TEXT, so a compressed body became unreadable binary and the real
+    -- 400/404 rejection message was lost. The reconcilers now read the raw
+    -- bytes into a BLOB and hand them here.
+    --
+    -- gzip framing (RFC 1952): a 10-byte header, then a raw DEFLATE stream,
+    -- then an 8-byte trailer (CRC32 + ISIZE). On this database's Oracle version
+    -- UTL_COMPRESS.LZ_UNCOMPRESS reads a whole gzip stream directly, so we feed
+    -- it the untouched bytes and render the result as AL32UTF8 text.
+    --
+    -- We only attempt inflation when the bytes carry the gzip magic number
+    -- (0x1F 0x8B); anything else is already text and is returned unchanged.
+    --
+    -- Never raises: any failure (not gzip, unexpected framing, inflate error)
+    -- falls back to returning the raw bytes as text, so a reconcile is never
+    -- crashed by an undecodable body.
+    -- --------------------------------------------------------
+    FUNCTION GUNZIP_RESPONSE (p_raw IN BLOB) RETURN CLOB IS
+        l_len       INTEGER;
+        l_magic     RAW(2);
+        l_out       BLOB;
+        l_clob      CLOB;
+
+        -- Return a BLOB rendered as text (AL32UTF8) via a temporary CLOB.
+        FUNCTION blob_to_text (p_b IN BLOB) RETURN CLOB IS
+            l_c   CLOB;
+            l_do  INTEGER := 1;
+            l_so  INTEGER := 1;
+            l_lc  INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
+            l_w   INTEGER;
+        BEGIN
+            DBMS_LOB.CREATETEMPORARY(l_c, TRUE);
+            IF p_b IS NULL OR DBMS_LOB.GETLENGTH(p_b) = 0 THEN
+                RETURN l_c;
+            END IF;
+            DBMS_LOB.CONVERTTOCLOB(
+                dest_lob     => l_c,
+                src_blob     => p_b,
+                amount       => DBMS_LOB.LOBMAXSIZE,
+                dest_offset  => l_do,
+                src_offset   => l_so,
+                blob_csid    => NLS_CHARSET_ID('AL32UTF8'),
+                lang_context => l_lc,
+                warning      => l_w);
+            RETURN l_c;
+        END blob_to_text;
+    BEGIN
+        IF p_raw IS NULL OR DBMS_LOB.GETLENGTH(p_raw) = 0 THEN
+            DBMS_LOB.CREATETEMPORARY(l_clob, TRUE);
+            RETURN l_clob;
+        END IF;
+
+        l_len   := DBMS_LOB.GETLENGTH(p_raw);
+        l_magic := DBMS_LOB.SUBSTR(p_raw, 2, 1);
+
+        -- Not gzip (no 1F 8B magic) -> return the bytes as text unchanged.
+        IF l_magic <> HEXTORAW('1F8B') OR l_len <= 18 THEN
+            RETURN blob_to_text(p_raw);
+        END IF;
+
+        BEGIN
+            -- LZ_UNCOMPRESS inflates the whole gzip stream on this version.
+            l_out  := UTL_COMPRESS.LZ_UNCOMPRESS(p_raw);
+            l_clob := blob_to_text(l_out);
+            IF DBMS_LOB.ISTEMPORARY(l_out) = 1 THEN DBMS_LOB.FREETEMPORARY(l_out); END IF;
+            RETURN l_clob;
+        EXCEPTION
+            WHEN OTHERS THEN
+                -- Inflation failed for any reason: fall back to raw text so the
+                -- reconcile still gets *something* and never crashes.
+                BEGIN IF DBMS_LOB.ISTEMPORARY(l_out) = 1 THEN DBMS_LOB.FREETEMPORARY(l_out); END IF; EXCEPTION WHEN OTHERS THEN NULL; END;
+                RETURN blob_to_text(p_raw);
+        END;
+    END GUNZIP_RESPONSE;
+
+    -- --------------------------------------------------------
     -- REGISTER_CSV: persist one physical CSV as a child of a zip.
     -- --------------------------------------------------------
     PROCEDURE REGISTER_CSV (
