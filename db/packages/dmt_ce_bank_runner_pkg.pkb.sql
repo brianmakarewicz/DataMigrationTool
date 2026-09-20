@@ -127,5 +127,36 @@
             RAISE;
     END RUN;
 
+    -- ============================================================
+    -- RUN_STANDARD - queue-dispatch entry point (EXEC contract, LOCAL mode).
+    -- The scheduler calls this with named notation
+    -- (p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE).
+    -- CashBanks has no scenario filter (its STG rows are scenario-tagged by the
+    -- seed and consumed by RUN_ID) and no business-unit refresh, so the extra
+    -- arguments are accepted for contract conformance and ignored; delegates
+    -- straight to RUN.
+    -- ============================================================
+    PROCEDURE RUN_STANDARD (
+        p_run_id          IN NUMBER,
+        p_scenario_name   IN VARCHAR2 DEFAULT NULL,
+        p_run_mode        IN VARCHAR2 DEFAULT 'NEW',
+        p_skip_bu_refresh IN BOOLEAN  DEFAULT FALSE
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'RUN_STANDARD';
+    BEGIN
+        RUN(
+            p_run_id   => p_run_id,
+            p_run_mode => p_run_mode);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id  => p_run_id,
+                p_message => 'RUN_STANDARD failed.',
+                p_sqlerrm => SQLERRM,
+                p_package => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END RUN_STANDARD;
+
 END DMT_CE_BANK_RUNNER_PKG;
 /

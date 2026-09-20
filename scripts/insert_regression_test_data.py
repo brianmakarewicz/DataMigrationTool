@@ -2723,6 +2723,86 @@ def main():
     tag_scenario(cur, "DMT_ZX_REGIME_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_ZX_RATE_STG_TBL", scenario_id)
 
+    # ====================================================================
+    # 50. Cash Management Banks (REST) — NEW recon standard (backlog #11)
+    #     Three-tier object (banks -> bank branches -> bank accounts) loaded
+    #     record-at-a-time via the cashBanks / cashBankBranches /
+    #     cashBankAccounts REST resources, then reconciled against the Fusion
+    #     BASE tables via DMT_CEBANK_RECON_RPT, which captures the real
+    #     surrogate ids onto the TFM tables: FUSION_BANK_PARTY_ID (CE_BANKS_V),
+    #     FUSION_BRANCH_PARTY_ID (CE_BANK_BRANCHES_V), FUSION_BANK_ACCOUNT_ID
+    #     (CE_BANK_ACCOUNTS). (objects/Banks/README.md.)
+    #
+    #     Linking (per DMT_CE_BANK_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM):
+    #       branch.SOURCE_GROUP_ID must match a bank.SOURCE_GROUP_ID
+    #       account.SOURCE_LINE_ID must match a branch.SOURCE_LINE_ID
+    #
+    #     GOOD rows (group 1) reuse EXISTING demo records so the base-table
+    #     report confirms them even though the demo pod may reject the REST
+    #     create (like ValueSets / PaymentTerms): bank 'Bank of America',
+    #     branch 'New York' under it, account 'CA Chequing'. The POST may 4xx
+    #     as a duplicate; the report still finds each in its base view/table
+    #     and marks the row LOADED with the real surrogate id.
+    #
+    #     BAD row (group 2): a bank NAME carrying the 'BAD' marker with a bogus
+    #     country code 'ZZ'. It is never found in CE_BANKS_V and Fusion rejects
+    #     the create with a real error, so the reconciler lands it FAILED.
+    #     DISPLAY_KEY for Banks = BANK_NAME || ' - ' || BANK_NUMBER, so 'BAD'
+    #     in the name makes the harness classify it as BAD-expected-to-FAIL.
+    # ====================================================================
+    print("\n=== 50. Cash Management Banks (REST) ===")
+    # GOOD bank (group 1) — reuse existing demo bank so base-table confirms
+    run_sql(cur, """
+        INSERT INTO DMT_CE_BANK_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, COUNTRY_CODE, BANK_NAME,
+            DESCRIPTION, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_CE_BANK_STG_SEQ.NEXTVAL, 1, 'US', 'Bank of America',
+            'DMT2 recon GOOD (backlog #11) - existing demo bank',
+            'RT-CEBANK-G1', 'NEW'
+        )
+    """, label="GOOD Bank: Bank of America (existing demo bank, base-table confirmed)")
+    # BAD bank (group 2) — 'BAD' marker in NAME, bogus country; never in CE_BANKS_V
+    run_sql(cur, """
+        INSERT INTO DMT_CE_BANK_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, COUNTRY_CODE, BANK_NAME,
+            DESCRIPTION, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_CE_BANK_STG_SEQ.NEXTVAL, 2, 'ZZ',
+            'DMT2 recon BAD bank nonexistent country',
+            'DMT2 recon BAD (backlog #11) [FUSION_ERROR expected]',
+            'RT-CEBANK-B1', 'NEW'
+        )
+    """, label="BAD Bank: bogus country [FUSION_ERROR expected]")
+    # GOOD branch (group 1, line 1) — 'New York' under Bank of America
+    run_sql(cur, """
+        INSERT INTO DMT_CE_BRANCH_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, SOURCE_LINE_ID, COUNTRY_CODE,
+            BANK_NAME, BRANCH_NAME, DESCRIPTION, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_CE_BRANCH_STG_SEQ.NEXTVAL, 1, 1, 'US',
+            'Bank of America', 'New York',
+            'DMT2 recon GOOD (backlog #11) - existing demo branch',
+            'RT-CEBRANCH-G1', 'NEW'
+        )
+    """, label="GOOD Bank Branch: New York (under Bank of America, base-table confirmed)")
+    # GOOD account (group 1, line 1) — 'CA Chequing' under the New York branch
+    run_sql(cur, """
+        INSERT INTO DMT_CE_BANK_ACCT_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, SOURCE_LINE_ID,
+            BANK_NAME, BRANCH_NAME, ACCOUNT_NAME, CURRENCY_CODE,
+            DESCRIPTION, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_CE_BANK_ACCT_STG_SEQ.NEXTVAL, 1, 1,
+            'Bank of America', 'New York', 'CA Chequing', 'CAD',
+            'DMT2 recon GOOD (backlog #11) - existing demo account',
+            'RT-CEACCT-G1', 'NEW'
+        )
+    """, label="GOOD Bank Account: CA Chequing (under New York, base-table confirmed)")
+    tag_scenario(cur, "DMT_CE_BANK_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_CE_BRANCH_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_CE_BANK_ACCT_STG_TBL", scenario_id)
+
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()
     print("\n" + "=" * 60)

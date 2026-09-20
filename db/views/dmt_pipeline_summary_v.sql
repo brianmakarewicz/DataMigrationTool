@@ -41,7 +41,7 @@ CREATE OR REPLACE EDITIONABLE VIEW "DMT_PIPELINE_SUMMARY_V" ("RUN_ID", "INTEGRAT
     -- ItemCategories are bundled into the Items FBDI ZIP and roll up into the Items card
     -- (see DMT_V_CEMLI_STATUS) — no separate lookup row.
     SELECT 'Items',                                'MasterData',    1            FROM DUAL UNION ALL
-    SELECT 'Banks',                                'MasterData',    3            FROM DUAL UNION ALL
+    SELECT 'CashBanks',                            'MasterData',    3            FROM DUAL UNION ALL
     SELECT 'GLCalendar',                           'Configuration', 1            FROM DUAL UNION ALL
     SELECT 'ValueSets',                            'Configuration', 2            FROM DUAL UNION ALL
     SELECT 'Lookups',                              'Configuration', 4            FROM DUAL UNION ALL
