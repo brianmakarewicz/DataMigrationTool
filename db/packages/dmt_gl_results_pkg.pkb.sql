@@ -2,29 +2,33 @@
 
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_GL_RESULTS_PKG" AS
 -- ============================================================
--- DMT_GL_RESULTS_PKG body — BIP Reconciliation Standard, reference
--- implementation (P1). This is the copy-template for every other
--- reconciler, so the shape below is deliberate:
+-- DMT_GL_RESULTS_PKG body — BIP reconciliation report contract v1,
+-- reference implementation. This is the copy-template for every
+-- other conforming reconciler, so the shape below is deliberate:
 --
---   1. FETCH: page the six-column recon report with P_OFFSET/P_LIMIT
---      until a short page returns, accumulating each page's rows into
---      ONE collection (DMT_RECON_ROW_TBL). Memory is bounded to one
---      page during the fetch; the collection holds the fixed, finished
---      reconciliation population.
---   2. APPLY (set-based): a SINGLE UPDATE marks LOADED (capturing
---      FUSION_ID) for BASE matches with no error, and a SINGLE UPDATE
---      marks FAILED (capturing the real Fusion error) for rows that
---      carry an ERROR_MESSAGE. No per-row PL/SQL loop does the marking
---      — each statement joins TABLE(l_rows) to the TFM table on the
---      recon key.
+--   1. FETCH (keyset): page the nine-column recon report by passing
+--      an empty P_AFTER_KEY first, then the last RECORD_KEY received
+--      on each next call, at most P_CHUNK_SIZE rows per page, until a
+--      page returns fewer than P_CHUNK_SIZE rows. Accumulate every
+--      page's rows into ONE collection (DMT_RECON_ROW_TBL). Memory is
+--      bounded to one page during the fetch; the collection holds the
+--      fixed, finished reconciliation population. A page-count cap
+--      derived from the run's generated-row count stops a misbehaving
+--      report from looping forever.
+--   2. APPLY (set-based): a SINGLE MERGE marks LOADED (capturing
+--      FUSION_ID) for BASE/SUCCESS matches, and a SINGLE MERGE marks
+--      FAILED (capturing the real Fusion error) for ERROR rows. No
+--      per-row PL/SQL loop does the marking — each statement joins
+--      TABLE(l_rows) to the TFM table on the recon key.
 --   3. ROUND-TRIP PROOF: one set-based diagnostic pass logs a single
 --      WARN summary if any just-LOADED base row's DMT_REFERENCE does
 --      not equal BUILD_REF for its TFM row. It never changes a verdict.
 --
--- GL two-tier semantics preserved (no IMPORT_STATUS column needed):
---   BASE  + ERROR_MESSAGE IS NULL  => balanced/postable => LOADED
---   BASE  + ERROR_MESSAGE NOT NULL => unbalanced, will not post => FAILED
---   INTERFACE + ERROR_MESSAGE NOT NULL => Fusion rejection => FAILED
+-- GL two-tier semantics preserved (FUSION_STATUS is normalized in the
+-- DM to SUCCESS/ERROR, so the reconciler is object-agnostic here):
+--   BASE  + SUCCESS (balanced/postable)          => LOADED
+--   BASE  + ERROR   (unbalanced, will not post)  => FAILED
+--   INTERFACE + ERROR (Journal-Import rejection) => FAILED
 --   INTERFACE with no error is corroborating only, never LOADED on its
 --   own (LOADED requires a BASE/FUSION_ID row).
 -- Rows with no match and no error STAY GENERATED (unaccounted) — the
@@ -38,18 +42,20 @@
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_GL_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'GLBalances';
 
-    -- Safety cap on the page loop so a misbehaving report can never
-    -- loop forever. GL runs are tiny; 10,000 pages at the default
-    -- chunk size is far past any real conversion volume.
-    C_MAX_PAGES CONSTANT PLS_INTEGER := 10000;
+    -- Absolute safety cap on the page loop, above any real conversion
+    -- volume. The live cap is derived per-run from the generated-row
+    -- count (see FETCH_ALL_PAGES); this constant is the last-resort
+    -- ceiling for a run whose generated count could not be read.
+    C_MAX_PAGES CONSTANT PLS_INTEGER := 100000;
 
     -- --------------------------------------------------------
     -- FETCH_ALL_PAGES (private)
-    -- Pages the deployed six-column recon report with P_OFFSET/P_LIMIT
-    -- until a page returns fewer rows than the page size, accumulating
-    -- every row into x_rows (DMT_RECON_ROW_TBL). Each page is decoded
-    -- with XMLTABLE over the six standard columns. HTTP/SOAP failures
-    -- are surfaced through x_error_code (detail logged by RUN_BIP_REPORT).
+    -- Keyset-pages the deployed nine-column recon report: empty
+    -- P_AFTER_KEY on the first call, then the last RECORD_KEY received
+    -- on each next call, until a page returns fewer than P_CHUNK_SIZE
+    -- rows. Each page is decoded with XMLTABLE over the nine standard
+    -- columns. HTTP/SOAP failures are surfaced through x_error_code
+    -- (detail logged by RUN_BIP_REPORT).
     -- --------------------------------------------------------
     PROCEDURE FETCH_ALL_PAGES (
         p_run_id        IN  NUMBER,
@@ -59,38 +65,57 @@
         x_error_code    OUT NUMBER
     ) IS
         C_PROC     CONSTANT VARCHAR2(30) := 'FETCH_ALL_PAGES';
-        l_prefix   VARCHAR2(20);
-        l_limit    PLS_INTEGER;
-        l_offset   PLS_INTEGER := 0;
-        l_page     PLS_INTEGER := 0;
-        l_page_cnt PLS_INTEGER;
-        l_xml      XMLTYPE;
-        l_err      NUMBER;
+        l_prefix    VARCHAR2(20);
+        l_chunk     PLS_INTEGER;
+        l_after_key VARCHAR2(1000) := NULL;   -- empty cursor on first call
+        l_page      PLS_INTEGER := 0;
+        l_page_cap  PLS_INTEGER;
+        l_gen_cnt   PLS_INTEGER;
+        l_page_cnt  PLS_INTEGER;
+        l_xml       XMLTYPE;
+        l_err       NUMBER;
         l_page_rows DMT_RECON_ROW_TBL;
     BEGIN
         x_rows       := DMT_RECON_ROW_TBL();
         x_error_code := DMT_UTIL_PKG.C_ERROR;   -- pessimistic until proven
 
-        l_limit := TO_NUMBER(NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_CHUNK_SIZE'), '5000'));
-        IF l_limit IS NULL OR l_limit <= 0 THEN
-            l_limit := 5000;
+        l_chunk := TO_NUMBER(NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_CHUNK_SIZE'), '5000'));
+        IF l_chunk IS NULL OR l_chunk <= 0 THEN
+            l_chunk := 5000;
         END IF;
 
         SELECT PREFIX INTO l_prefix
         FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id;
 
+        -- Page-count cap from the run's generated-row count: at most one
+        -- page per generated row plus a small margin, capped at C_MAX_PAGES.
+        BEGIN
+            SELECT COUNT(*) INTO l_gen_cnt
+            FROM   DMT_GL_INTERFACE_TFM_TBL
+            WHERE  RUN_ID = p_run_id;
+        EXCEPTION WHEN OTHERS THEN l_gen_cnt := 0;
+        END;
+        l_page_cap := CEIL(GREATEST(l_gen_cnt, 1) / l_chunk) + 2;
+        IF l_page_cap > C_MAX_PAGES THEN
+            l_page_cap := C_MAX_PAGES;
+        END IF;
+
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' start. CEMLI: ' || C_CEMLI ||
             ' | P_RUN_ID: ' || p_run_id ||
             ' | P_LOAD_REQUEST_ID: ' || p_load_ess_id ||
-            ' | page size: ' || l_limit,
+            ' | chunk size: ' || l_chunk ||
+            ' | page cap: ' || l_page_cap || ' (gen rows: ' || l_gen_cnt || ')',
             'INFO', C_PKG, C_PROC);
 
         LOOP
             l_page := l_page + 1;
-            EXIT WHEN l_page > C_MAX_PAGES;
+            EXIT WHEN l_page > l_page_cap;
 
+            -- Keyset cursor: P_AFTER_KEY empty on the first page, then the
+            -- last RECORD_KEY of the previous page. P_CHUNK_SIZE bounds the
+            -- page. No P_OFFSET / P_LIMIT (retired by Contract v1).
             DMT_UTIL_PKG.RUN_BIP_REPORT(
                 p_run_id     => p_run_id,
                 p_cemli_code => C_CEMLI,
@@ -98,15 +123,16 @@
                                 '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
                                 '~P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
                                 '~P_PREFIX|'          || l_prefix ||
-                                '~P_OFFSET|'          || TO_CHAR(l_offset) ||
-                                '~P_LIMIT|'           || TO_CHAR(l_limit),
+                                '~P_CHUNK_SIZE|'      || TO_CHAR(l_chunk) ||
+                                '~P_AFTER_KEY|'       || l_after_key,
                 x_report_xml => l_xml,
                 x_error_code => l_err);
 
             IF l_err != DMT_UTIL_PKG.C_SUCCESS THEN
                 DMT_UTIL_PKG.LOG(p_run_id,
                     C_PROC || ' failed on page ' || l_page ||
-                    ' (offset ' || l_offset || '); detail logged by RUN_BIP_REPORT.',
+                    ' (after_key ''' || NVL(l_after_key, '<empty>') ||
+                    '''); detail logged by RUN_BIP_REPORT.',
                     DMT_UTIL_PKG.C_LOG_ERROR, C_PKG, C_PROC);
                 RETURN;   -- x_error_code stays C_ERROR
             END IF;
@@ -118,30 +144,39 @@
                 l_page_rows := DMT_RECON_ROW_TBL();
             ELSE
                 SELECT DMT_RECON_ROW_OBJ(
-                           x.record_key, x.fusion_id, x.source_ref,
-                           x.dmt_reference, UPPER(x.source_type), x.error_message)
+                           x.object_type, x.record_key, UPPER(x.source_type),
+                           UPPER(x.fusion_status), x.fusion_id, x.error_message,
+                           x.load_request_id, x.source_ref, x.dmt_reference)
                   BULK COLLECT INTO l_page_rows
                   FROM XMLTABLE('/DATA_DS/G_1' PASSING l_xml
                         COLUMNS
-                            record_key    VARCHAR2(1000) PATH 'RECORD_KEY',
-                            fusion_id     NUMBER         PATH 'FUSION_ID',
-                            source_ref    VARCHAR2(240)  PATH 'SOURCE_REF',
-                            dmt_reference VARCHAR2(240)  PATH 'DMT_REFERENCE',
-                            source_type   VARCHAR2(20)   PATH 'SOURCE_TYPE',
-                            error_message VARCHAR2(4000) PATH 'ERROR_MESSAGE'
+                            object_type     VARCHAR2(60)   PATH 'OBJECT_TYPE',
+                            record_key      VARCHAR2(1000) PATH 'RECORD_KEY',
+                            source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
+                            fusion_status   VARCHAR2(20)   PATH 'FUSION_STATUS',
+                            fusion_id       NUMBER         PATH 'FUSION_ID',
+                            error_message   VARCHAR2(4000) PATH 'ERROR_MESSAGE',
+                            load_request_id NUMBER         PATH 'LOAD_REQUEST_ID',
+                            source_ref      VARCHAR2(240)  PATH 'SOURCE_REF',
+                            dmt_reference   VARCHAR2(240)  PATH 'DMT_REFERENCE'
                        ) x;
             END IF;
 
             l_page_cnt := l_page_rows.COUNT;
 
-            -- Accumulate this page into the run-wide collection.
+            -- Accumulate this page into the run-wide collection and
+            -- advance the keyset cursor to this page's last RECORD_KEY
+            -- (the report ORDERs BY RECORD_KEY, so the last row carries
+            -- the greatest key).
             FOR i IN 1 .. l_page_cnt LOOP
                 x_rows.EXTEND;
                 x_rows(x_rows.COUNT) := l_page_rows(i);
             END LOOP;
+            IF l_page_cnt > 0 THEN
+                l_after_key := l_page_rows(l_page_cnt).record_key;
+            END IF;
 
-            EXIT WHEN l_page_cnt < l_limit;   -- short page = last page
-            l_offset := l_offset + l_limit;
+            EXIT WHEN l_page_cnt < l_chunk;   -- short page = last page
         END LOOP;
 
         x_error_code := DMT_UTIL_PKG.C_SUCCESS;
@@ -161,7 +196,7 @@
 
     -- --------------------------------------------------------
     -- FETCH_BIP_RESULTS (public, retained for independent testing)
-    -- Single-page XML fetch (offset 0, one chunk) via the shared
+    -- Single-page XML fetch (empty cursor, one chunk) via the shared
     -- transport. Kept so a caller can pull the raw report XML without
     -- the set-based apply. The live reconcile path uses FETCH_ALL_PAGES.
     -- --------------------------------------------------------
@@ -174,12 +209,12 @@
     ) IS
         C_PROC   CONSTANT VARCHAR2(30) := 'FETCH_BIP_RESULTS';
         l_prefix VARCHAR2(20);
-        l_limit  PLS_INTEGER;
+        l_chunk  PLS_INTEGER;
     BEGIN
         x_report_xml := NULL;
         x_error_code := DMT_UTIL_PKG.C_ERROR;
 
-        l_limit := TO_NUMBER(NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_CHUNK_SIZE'), '5000'));
+        l_chunk := TO_NUMBER(NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_CHUNK_SIZE'), '5000'));
 
         SELECT PREFIX INTO l_prefix
         FROM   DMT_PIPELINE_RUN_TBL
@@ -192,8 +227,8 @@
                             '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
                             '~P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
                             '~P_PREFIX|'          || l_prefix ||
-                            '~P_OFFSET|0' ||
-                            '~P_LIMIT|'           || TO_CHAR(l_limit),
+                            '~P_CHUNK_SIZE|'      || TO_CHAR(l_chunk) ||
+                            '~P_AFTER_KEY|',       -- empty cursor: first page
             x_report_xml => x_report_xml,
             x_error_code => x_error_code);
 
@@ -208,7 +243,7 @@
 
     -- --------------------------------------------------------
     -- CONFIRM_ROUNDTRIP_SET (private)
-    -- Set-based #12 round-trip proof: one query counts BASE/LOADED rows
+    -- Set-based round-trip proof: one query counts BASE/SUCCESS rows
     -- whose returned DMT_REFERENCE does NOT equal BUILD_REF for the
     -- matched TFM row, and logs a single summary. Diagnostic only — it
     -- WARNs on any mismatch and NEVER alters the LOADED verdict (honest:
@@ -238,17 +273,17 @@
           JOIN DMT_GL_INTERFACE_TFM_TBL t
             ON t.RUN_ID = p_run_id
            AND t.RECON_KEY = r.record_key
-         WHERE r.source_type = 'BASE'
-           AND r.error_message IS NULL;
+         WHERE r.source_type   = 'BASE'
+           AND r.fusion_status = 'SUCCESS';
 
         IF l_mismatch = 0 THEN
             DMT_UTIL_PKG.LOG(p_run_id,
-                'REF #12 round-trip OK (set-based): ' || l_ok || ' of ' ||
+                'REF round-trip OK (set-based): ' || l_ok || ' of ' ||
                 l_checked || ' LOADED base rows carry the expected DMT_REFERENCE.',
                 'INFO', C_PKG, C_PROC);
         ELSE
             DMT_UTIL_PKG.LOG(p_run_id,
-                'REF #12 round-trip MISMATCH (set-based): ' || l_mismatch ||
+                'REF round-trip MISMATCH (set-based): ' || l_mismatch ||
                 ' of ' || l_checked || ' LOADED base rows do NOT carry the ' ||
                 'expected DMT_REFERENCE. LOADED verdict UNCHANGED (diagnostic only).',
                 DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
@@ -257,7 +292,7 @@
         WHEN OTHERS THEN
             -- Round-trip proof must never break the reconcile.
             DMT_UTIL_PKG.LOG(p_run_id,
-                'REF #12 round-trip proof skipped (non-fatal): ' || SQLERRM,
+                'REF round-trip proof skipped (non-fatal): ' || SQLERRM,
                 DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
     END CONFIRM_ROUNDTRIP_SET;
 
@@ -274,18 +309,17 @@
         l_failed NUMBER := 0;
     BEGIN
         -- (1) SET-BASED LOADED: a TFM row is LOADED only from a
-        -- BASE row with a real FUSION_ID and no error (balanced,
-        -- postable). Capture FUSION_ID in the same statement (design
-        -- section 7: no LOADED without its Fusion id). If two base
-        -- lines map to the same TFM recon key, MAX(fusion_id) is a
-        -- stable pick (all lines of one journal share JE_HEADER_ID).
+        -- BASE/SUCCESS row with a real FUSION_ID. Capture FUSION_ID in
+        -- the same statement (contract: no LOADED without its Fusion id).
+        -- If two base lines map to the same TFM recon key, MAX(fusion_id)
+        -- is a stable pick (all lines of one journal share JE_HEADER_ID).
         MERGE INTO DMT_GL_INTERFACE_TFM_TBL t
         USING (
             SELECT r.record_key,
                    MAX(r.fusion_id) AS fusion_id
             FROM   TABLE(p_rows) r
             WHERE  r.source_type   = 'BASE'
-            AND    r.error_message IS NULL
+            AND    r.fusion_status = 'SUCCESS'
             AND    r.fusion_id     IS NOT NULL
             GROUP BY r.record_key
         ) s
@@ -299,17 +333,19 @@
         l_loaded := SQL%ROWCOUNT;
 
         -- (2) SET-BASED FAILED: any row (BASE unbalanced, or INTERFACE
-        -- rejection) that carries a real Fusion error message. Append
-        -- the error, tagged [FUSION_ERROR]; never overwrite. A row that
-        -- both errored and loaded cannot exist (an error row has a
-        -- non-null message; a loaded row does not), and the LOADED
-        -- statement already ran, so FAILED cannot clobber a LOADED row.
+        -- rejection) whose FUSION_STATUS is ERROR, carrying a real Fusion
+        -- error message. Append the error, tagged [FUSION_ERROR]; never
+        -- overwrite. A row that both errored and loaded cannot exist (an
+        -- ERROR row has a non-null message and a non-SUCCESS status; a
+        -- SUCCESS row does not), and the LOADED statement already ran, so
+        -- FAILED cannot clobber a LOADED row.
         MERGE INTO DMT_GL_INTERFACE_TFM_TBL t
         USING (
             SELECT r.record_key,
                    MIN(r.error_message) AS error_message
             FROM   TABLE(p_rows) r
-            WHERE  r.error_message IS NOT NULL
+            WHERE  r.fusion_status = 'ERROR'
+            AND    r.error_message IS NOT NULL
             GROUP BY r.record_key
         ) s
         ON (t.RUN_ID = p_run_id AND t.RECON_KEY = s.record_key)
@@ -333,8 +369,8 @@
     -- --------------------------------------------------------
     -- PARSE_AND_UPDATE (public, retained signature) —
     -- decodes an XML report page and delegates to the set-based apply.
-    -- The live path uses the collection overload below; this XML
-    -- overload is kept for independent reprocessing/testing.
+    -- The live path uses FETCH_ALL_PAGES; this XML overload is kept for
+    -- independent reprocessing/testing of a single decoded page.
     -- --------------------------------------------------------
     PROCEDURE PARSE_AND_UPDATE (
         p_run_id     IN NUMBER,
@@ -352,17 +388,21 @@
         END IF;
 
         SELECT DMT_RECON_ROW_OBJ(
-                   x.record_key, x.fusion_id, x.source_ref,
-                   x.dmt_reference, UPPER(x.source_type), x.error_message)
+                   x.object_type, x.record_key, UPPER(x.source_type),
+                   UPPER(x.fusion_status), x.fusion_id, x.error_message,
+                   x.load_request_id, x.source_ref, x.dmt_reference)
           BULK COLLECT INTO l_rows
           FROM XMLTABLE('/DATA_DS/G_1' PASSING p_report_xml
                 COLUMNS
-                    record_key    VARCHAR2(1000) PATH 'RECORD_KEY',
-                    fusion_id     NUMBER         PATH 'FUSION_ID',
-                    source_ref    VARCHAR2(240)  PATH 'SOURCE_REF',
-                    dmt_reference VARCHAR2(240)  PATH 'DMT_REFERENCE',
-                    source_type   VARCHAR2(20)   PATH 'SOURCE_TYPE',
-                    error_message VARCHAR2(4000) PATH 'ERROR_MESSAGE'
+                    object_type     VARCHAR2(60)   PATH 'OBJECT_TYPE',
+                    record_key      VARCHAR2(1000) PATH 'RECORD_KEY',
+                    source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
+                    fusion_status   VARCHAR2(20)   PATH 'FUSION_STATUS',
+                    fusion_id       NUMBER         PATH 'FUSION_ID',
+                    error_message   VARCHAR2(4000) PATH 'ERROR_MESSAGE',
+                    load_request_id NUMBER         PATH 'LOAD_REQUEST_ID',
+                    source_ref      VARCHAR2(240)  PATH 'SOURCE_REF',
+                    dmt_reference   VARCHAR2(240)  PATH 'DMT_REFERENCE'
                ) x;
 
         APPLY_RESULTS(p_run_id, l_rows);
@@ -376,7 +416,7 @@
 
     -- --------------------------------------------------------
     -- RECONCILE_BATCH — orchestrates the standard flow:
-    -- page the six-column report into one collection, apply it
+    -- keyset-page the nine-column report into one collection, apply it
     -- set-based, then log the set-based round-trip proof.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
@@ -408,7 +448,7 @@
         END IF;
 
         IF l_rows IS NULL OR l_rows.COUNT = 0 THEN
-            -- Zero report rows is never success (design section 5). The
+            -- Zero report rows is never success (Contract v1). The
             -- GENERATED rows stay unaccounted; the accounting gate reports
             -- the object not-DONE.
             DMT_UTIL_PKG.LOG(p_run_id,

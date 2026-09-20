@@ -38,17 +38,25 @@ None in this folder.
 None currently.
 
 ## History
-- 2026-09-20: **Conformed to the BIP Reconciliation Standard as the P1 reference
-  implementation.** The recon data model now returns the six standard columns
-  (RECORD_KEY, FUSION_ID, SOURCE_REF, DMT_REFERENCE, SOURCE_TYPE, ERROR_MESSAGE)
-  and pages with P_OFFSET/P_LIMIT (OFFSET ... FETCH NEXT). The reconciler replaced
-  its row-by-row FOR loop with a set-based bulk apply: each page is bulk-collected
-  into one DMT_RECON_ROW_TBL collection, then a single MERGE marks LOADED (capturing
-  FUSION_ID) and a single MERGE marks FAILED (with the real error). Round-trip proof
-  is now a single set-based summary. Two-tier GL semantics preserved: a BASE row with
-  no error is balanced/postable (LOADED); a BASE row with an error is unbalanced
-  (FAILED). NOTE: contrary to the older lesson below, the deployed DM DOES query
-  GL_JE_HEADERS/GL_JE_LINES in the UNION ALL — the "tier 2 stubbed" note is obsolete.
+- 2026-09-20: **Conformed to the BIP reconciliation report contract v1 as the
+  reference implementation.** The recon data model now returns the NINE standard
+  columns in contract order (OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+  FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF, DMT_REFERENCE), declares
+  exactly the six standard parameters (P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+  P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY — no P_OFFSET/P_LIMIT), and pages by KEYSET:
+  rows ordered by RECORD_KEY, only keys greater than P_AFTER_KEY, at most P_CHUNK_SIZE
+  per page. FUSION_STATUS is normalized inside the DM to SUCCESS/ERROR. Artifacts
+  renamed to the _RECON_ infix: DMT_GL_BAL_RECON_DM.xdm + DMT_GL_BAL_RECON_RPT.xdo
+  (deploy script + BIP registry updated). The reconciler's shared keyset fetch loop
+  bulk-collects each page into one DMT_RECON_ROW_TBL collection, then a single MERGE
+  marks LOADED (BASE/SUCCESS, capturing FUSION_ID) and a single MERGE marks FAILED
+  (ERROR, with the real message). Round-trip proof is a single set-based summary.
+  Two-tier GL semantics preserved: a balanced base journal is postable (LOADED); an
+  unbalanced one will not post (FAILED). Validated standalone against prior loaded
+  run 314 (keys 473/474 SUCCESS, 475 ERROR) with keyset paging proven page-by-page.
+  Supersedes the rejected six-column/OFFSET attempt (PR #324). NOTE: contrary to the
+  older lesson below, the deployed DM DOES query GL_JE_HEADERS/GL_JE_LINES in the
+  UNION ALL — the "tier 2 stubbed" note is obsolete.
 - E2E LOADED confirmed with 2 rows reaching LOADED status in Fusion (2026-04-02).
 - 2026-04-02: BIP audit — switched to two-tier reconciliation.
   - Tier 1: GL_INTERFACE (interface table errors/status)
@@ -66,7 +74,9 @@ None currently.
 - **ParameterList must match ledger.** DataAccessSetID and LedgerID must correspond to the ledger named in the data. Query `gl_ledgers` + `gl_access_sets` to find correct IDs.
 - **Use open periods.** Test data must use a period with `closing_status = 'O'` in `gl_period_statuses`. Query to find open periods: `SELECT period_name FROM gl_period_statuses WHERE application_id = 101 AND closing_status = 'O' AND ledger_id = <id>`.
 - **Never assume absence=LOADED without positive verification.** Two-tier BIP pattern queries both interface AND base tables.
-- **GL_BAL_DM.xdm is the deployed DM, not GL_DM.xdm.** The deploy script uses GL_BAL_DM.
+- **DMT_GL_BAL_RECON_DM.xdm is the deployed DM** (Contract v1, _RECON_ infix). The
+  deploy script and BIP registry both point here. The old GL_BAL_DM.xdm / GL_DM.xdm
+  names are retired.
 - **BIP SQL parser requires blank lines around UNION ALL.** Without them, BIP throws java.sql.SQLSyntaxErrorException.
 - **GL_JE_HEADERS/LINES not queryable in BIP UNION ALL context.** Tier 2 is stubbed with DUAL.
 - **Valid COA segments for US Primary Ledger:** 6-segment format (101.10.xxxxx.120.000.000). Accounts 78630, 77600, 60540, 62510, 78610 confirmed valid.
