@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="exp_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- Expenditures (project costs) reconciliation data model -- BIP
+-- reconciliation report contract v1 (nine columns, keyset
+-- pagination, the six standard parameters). Same shape as
+-- DMT_GL_BAL_RECON_DM.xdm and DMT_REQ_RECON_DM.xdm.
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+--
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT.
+--
+-- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
+-- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
+-- with an empty cursor first, then passes the last RECORD_KEY it
+-- received on each next call, until a page returns fewer than
+-- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
+-- (every non-null RECORD_KEY sorts after the empty string).
+--
+-- OBJECT MODEL. Expenditures is ONE object -- one FBDI zip
+-- (PjcExpendituresInterface), one interface table
+-- (PJC_TXN_XFACE_STAGE_ALL), one base table (PJC_EXP_ITEMS_ALL),
+-- loaded by the "Import and Process Cost Transactions" ESS job. So
+-- this DM is two tiers (BASE + INTERFACE), not the six-tier
+-- Requisitions shape.
+--
+-- RECON KEY = ORIG_TRANSACTION_REFERENCE (Slot A, the object's
+-- native source reference). The transform stamps the run prefix
+-- onto it (e.g. 10199RT-EXP-PCS10080-2025-04-18), and that prefixed
+-- value survives verbatim onto the base row's ORIG_TRANSACTION_REFERENCE.
+-- It is therefore BOTH the read-back recon key and the run-scoped
+-- selector -- exactly the role REQUISITION_NUMBER's prefix plays in
+-- the Requisitions DM.
+--
+-- Row selection (proven live against runs 259 / 262 -- prefixes
+-- 10199 / 10202):
+--   The load and import ESS ids are not durably captured per row on
+--   this pod (the base row keeps only the import REQUEST_ID; rejected
+--   interface rows keep no request id at all), so :P_LOAD_REQUEST_ID
+--   / :P_IMPORT_ESS_ID cannot select the run on their own. The
+--   reliable run-scoped selector is the stamped prefix, which every
+--   row of the run shares:
+--     BASE rows:      PJC_EXP_ITEMS_ALL where
+--         ORIG_TRANSACTION_REFERENCE LIKE :P_PREFIX || '%'.
+--         FUSION_ID = EXPENDITURE_ITEM_ID (verified live: run 259 ->
+--         753739 / 753740; run 262 -> 754742 / 754743).
+--     INTERFACE rows: PJC_TXN_XFACE_STAGE_ALL rows for the prefix
+--         that did NOT process (TRANSACTION_STATUS_CODE <> 'P';
+--         'P' = Processed/success, 'R' = Rejected). These are the
+--         rejections still sitting in the interface.
+--   :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID / :P_RUN_ID are declared
+--   for contract symmetry and stamped into LOAD_REQUEST_ID for
+--   traceability.
+--
+-- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
+--   BASE  (row present in PJC_EXP_ITEMS_ALL)          => SUCCESS
+--   INTERFACE (unprocessed rejection in the interface) => ERROR
+-- FUSION_ID is non-null on every BASE row (EXPENDITURE_ITEM_ID).
+--
+-- ERROR_MESSAGE -- honest limitation of this object. The cost
+-- interface table PJC_TXN_XFACE_STAGE_ALL has NO error-text column
+-- (verified live: no %MSG%/%ERR%/%REASON%/%DETAIL%/%TEXT% column),
+-- and the processing-error table PJC_TXN_ERRORS carries NO
+-- ORIG_TRANSACTION_REFERENCE (its TXN_REFERENCE1 is null on this
+-- pod), so a rejected interface row cannot be joined to its real
+-- Fusion message from a queryable table. The per-row rejection text
+-- is only in the Import-and-Process report XML, which the pipeline
+-- harvests into DMT's own TFM.ERROR_TEXT at import time
+-- (DMT_EXPENDITURE_RESULTS_PKG). This DM therefore reports the
+-- interface status the object DOES carry as the ERROR_MESSAGE, and
+-- the reconciler keeps the real Fusion text it already harvested.
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- ========== BASE tier: positive proof (SUCCESS) ==========
+    -- One row per costed expenditure item for this run's prefix.
+    -- RECORD_KEY / SOURCE_REF = ORIG_TRANSACTION_REFERENCE (the
+    -- prefixed native reference, persisted verbatim on the base row).
+    -- DMT_REFERENCE = ATTRIBUTE1 (the FBDI DFF slot; NULL when the
+    -- source carried no DMT reference -- honest NULL, not fabricated).
+    SELECT
+        'Expenditures'                       AS object_type,
+        ei.orig_transaction_reference        AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        ei.expenditure_item_id               AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        ei.orig_transaction_reference        AS source_ref,
+        ei.attribute1                        AS dmt_reference
+    FROM   pjc_exp_items_all ei
+    WHERE  ei.orig_transaction_reference LIKE :P_PREFIX || '%'
+
+    UNION ALL
+
+    -- ========== INTERFACE tier: rejections only (ERROR) ==========
+    -- Interface rows for this prefix that did not process
+    -- (TRANSACTION_STATUS_CODE <> 'P'). SUCCESS rows are covered by
+    -- the BASE tier, so filtering out 'P' here means no row is counted
+    -- twice. RECORD_KEY / SOURCE_REF = ORIG_TRANSACTION_REFERENCE.
+    -- ERROR_MESSAGE reports the interface status code (the only
+    -- rejection signal this interface table carries -- see the header
+    -- note); the reconciler retains the real per-row Fusion text it
+    -- harvested from the import report XML.
+    SELECT
+        'Expenditures'                       AS object_type,
+        st.orig_transaction_reference        AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[INTERFACE] Rejected by Import and Process Cost Transactions '
+             || '(TRANSACTION_STATUS_CODE=' || NVL(st.transaction_status_code,'NULL')
+             || '; not costed to PJC_EXP_ITEMS_ALL). The cost interface has no '
+             || 'error-text column; the per-row Fusion rejection message is in the '
+             || 'import report XML, harvested to DMT TFM.ERROR_TEXT.'
+                                             AS error_message,
+        st.load_request_id                   AS load_request_id,
+        st.orig_transaction_reference        AS source_ref,
+        st.attribute1                        AS dmt_reference
+    FROM   pjc_txn_xface_stage_all st
+    WHERE  st.orig_transaction_reference LIKE :P_PREFIX || '%'
+    AND    NVL(st.transaction_status_code,'X') <> 'P'
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start": return every row. On later
+-- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
+-- greater keys are returned. RECORD_KEY is compared as text (the recon
+-- key is a string); the reconciler feeds back the exact key it received.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="exp_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
