@@ -70,9 +70,21 @@ begin
   add_col('TFM_TABLE',        '"TFM_TABLE" VARCHAR2(100)');
   add_col('FUSION_ID_COLUMN', '"FUSION_ID_COLUMN" VARCHAR2(100)');
   add_col('RECON_KEY_SQL',    '"RECON_KEY_SQL" VARCHAR2(1000)');
+  -- Generic recon-engine columns (DMT_RECON_ENGINE_PKG.RECONCILE). ADDITIVE +
+  -- NULLABLE. Unlike the DOCUMENTATION columns above, these two ARE consumed as
+  -- SQL identifiers by the shared engine's generic MERGEs -- so they are
+  -- pattern-asserted (assert_ident, same posture as ACCOUNT_ROWS) before any
+  -- concatenation. STATUS_COLUMN is the TFM status column; RECON_KEY_COLUMN is
+  -- the TFM column matched to the report RECORD_KEY. Both default in the engine
+  -- (TFM_STATUS / RECON_KEY) when left NULL, so an object need only set one that
+  -- differs from the universal DMT convention.
+  add_col('STATUS_COLUMN',    '"STATUS_COLUMN" VARCHAR2(100)');
+  add_col('RECON_KEY_COLUMN', '"RECON_KEY_COLUMN" VARCHAR2(100)');
 end;
 /
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."CONTRACT_VERSION" IS 'Contract v1 conformance: 1 = shared parser applies the seven-column response; NULL/0 = legacy bespoke reconciler.';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."TFM_TABLE" IS 'TFM table the shared Contract v1 parser updates for this object.';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."FUSION_ID_COLUMN" IS 'TFM column the shared parser stamps the Fusion base-table id into on a BASE/SUCCESS row.';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."RECON_KEY_SQL" IS 'Documents how RECON_KEY is built for this object (report RECORD_KEY is matched to TFM.RECON_KEY).';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."STATUS_COLUMN" IS 'TFM status column the generic recon engine (DMT_RECON_ENGINE_PKG) marks LOADED/FAILED. Asserted as an identifier. Defaults to TFM_STATUS when NULL.';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."RECON_KEY_COLUMN" IS 'TFM column the generic recon engine matches the report RECORD_KEY against. Asserted as an identifier. Defaults to RECON_KEY when NULL.';

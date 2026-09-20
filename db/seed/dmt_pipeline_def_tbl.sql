@@ -156,7 +156,13 @@ using (
     union all select 'Expenditures', 'DMT_LOADER_PKG.RUN_EXPENDITURES', 'ASYNC', 'DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_EXPENDITURE_RESULTS_PKG.GET_PARTITION_KEYS' from dual
     union all select 'Grants', 'DMT_LOADER_PKG.RUN_GRANTS', 'ASYNC', 'DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'ProjectBudgets', 'DMT_LOADER_PKG.RUN_PROJECT_BUDGETS', 'ASYNC', 'DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
-    union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_GL_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    -- GLBalances reconcile is now the shared generic engine (2026-09-20):
+    -- RECON_PROC -> DMT_RECON_ENGINE_PKG.RECONCILE_BATCH with RECON_HAS_CEMLI_ARG
+    -- = 'Y' so the RECON_CEMLI dispatch passes p_cemli_code. The engine reads
+    -- GLBalances' TFM table / status / fusion-id / recon-key columns from its
+    -- DMT_BIP_REPORT_TBL row (CONTRACT_VERSION = 1). The bespoke
+    -- DMT_GL_RESULTS_PKG is retained (unregistered) for independent testing.
+    union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_RECON_ENGINE_PKG.RECONCILE_BATCH', 'Y', null from dual
     union all select 'GLBudgets', 'DMT_LOADER_PKG.RUN_GL_BUDGETS', 'ASYNC', 'DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'Assets', 'DMT_LOADER_PKG.RUN_ASSETS', 'ASYNC', 'DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_FA_ASSET_RESULTS_PKG.GET_PARTITION_KEYS' from dual
     -- PlanningBudgets: out of scope as a PIPELINE MEMBER (decided 2026-07-07) --

@@ -1206,3 +1206,63 @@ when not matched then insert
             null, null);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- GLBalances -- generic recon-engine registration (2026-09-20). GLBalances was
+-- the reference reconciler that proved the Contract v1 nine-column shape; it now
+-- runs through the shared generic engine DMT_RECON_ENGINE_PKG.RECONCILE. That
+-- engine reads its config from THIS row: CONTRACT_VERSION = 1 (gate),
+-- TFM_TABLE, FUSION_ID_COLUMN, STATUS_COLUMN, RECON_KEY_COLUMN. The last two
+-- are consumed as SQL identifiers by the engine's generic MERGEs (asserted
+-- before concatenation). GLBalances follows the universal convention
+-- (TFM_STATUS / RECON_KEY), so they are set explicitly here for clarity even
+-- though the engine would default them. Kept as its own MERGE so re-running the
+-- seed converges an existing GLBalances row (the earlier blocks set only paths).
+-- FUSION_ID_COLUMN = FUSION_JE_HEADER_ID (the JE header id captured on a
+-- BASE/SUCCESS row). RECON_KEY_SQL documents the key build for parity with the
+-- HDL objects (report RECORD_KEY is matched to TFM.RECON_KEY).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000016                                            bip_report_id,
+           'GLBalances'                                         cemli_code,
+           'GL Balance'                                         object_type,
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_RPT.xdo'   report_catalog_path,
+           'GL_INTERFACE'                                       interface_table,
+           'GL journal import reconciliation (Contract v1 -- nine columns, keyset; '
+             || 'generic engine DMT_RECON_ENGINE_PKG.RECONCILE).'                notes,
+           1                                                    contract_version,
+           'DMT_GL_INTERFACE_TFM_TBL'                           tfm_table,
+           'FUSION_JE_HEADER_ID'                                fusion_id_column,
+           'TFM_STATUS'                                         status_column,
+           'RECON_KEY'                                          recon_key_column,
+           'Pre-built RECON_KEY (run prefix included); report RECORD_KEY matches TFM.RECON_KEY' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."STATUS_COLUMN"       = s.status_column,
+    t."RECON_KEY_COLUMN"    = s.recon_key_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN",
+     "STATUS_COLUMN","RECON_KEY_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column,
+            s.status_column, s.recon_key_column, s.recon_key_sql);
+
+commit;
