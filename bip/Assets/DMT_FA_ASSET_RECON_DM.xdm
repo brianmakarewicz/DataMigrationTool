@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="fa_asset_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- Assets reconciliation data model -- BIP reconciliation report
+-- contract v1 (nine columns, keyset pagination, the six standard
+-- parameters). Conforms to the GLBalances / Requisitions template.
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+--
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT.
+--
+-- KEYSET pagination: rows ordered by RECORD_KEY; only rows whose
+-- RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
+-- with an empty cursor first, then passes the last RECORD_KEY it
+-- received on each next call, until a page returns fewer than
+-- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
+-- (every non-null RECORD_KEY sorts after the empty string).
+--
+-- Assets recon key = ASSET_NUMBER. The pipeline supplies a prefixed
+-- asset number (e.g. '10001RT-ASSET-G1'); Fusion honours the supplied
+-- number, so it survives to FA_ADDITIONS_B and is the per-row anchor
+-- on both tiers. RECORD_KEY = SOURCE_REF = ASSET_NUMBER.
+--
+-- Assets special case (NOT reflected in this DM): the load stage
+-- partitions by BOOK_TYPE_CODE, one FBDI per book, and the sanctioned
+-- all-or-nothing behaviour lives in the reconciler. This DM reports
+-- per-row BASE/INTERFACE like every other object; the book is folded
+-- into OBJECT_TYPE for BASE rows (from FA_BOOKS) and INTERFACE rows
+-- (from FA_MASS_ADDITIONS.BOOK_TYPE_CODE) for readability only.
+--
+-- Row selection (proven live against the loaded run prefix 10001,
+-- asset numbers 10001RT-ASSET-G1/G2, ASSET_ID 570143/570144):
+--   BASE   rows are assets in FA_ADDITIONS_B whose ASSET_NUMBER
+--          carries the run prefix. PostMassAdditions purges the
+--          interface rows after posting, so the base tier is matched
+--          by prefix on ASSET_NUMBER, not by joining the interface.
+--   INTERFACE rows are the FA_MASS_ADDITIONS rows the load ESS job
+--          left behind carrying :P_LOAD_REQUEST_ID -- rows that did
+--          not post (rejections), carrying Fusion's ERROR_MSG.
+--   (:P_IMPORT_ESS_ID is declared for contract symmetry; the base
+--          tier keys on the prefix and the interface tier on
+--          LOAD_REQUEST_ID, so it is not needed in the predicates.)
+--
+-- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
+--   BASE (present in FA_ADDITIONS_B)              => SUCCESS
+--   INTERFACE (left in FA_MASS_ADDITIONS, posting_status not posted,
+--              carrying an error)                 => ERROR
+-- FUSION_ID is non-null on every BASE row (ASSET_ID).
+-- ERROR_MESSAGE is non-null on every ERROR row (real ERROR_MSG text,
+-- or an honest fallback naming posting_status when Fusion wrote none).
+--
+-- Keys / read-back (honest -- Assets stamps no DMT DFF on the base
+-- row, so DMT_REFERENCE is native where present, else NULL):
+--   RECORD_KEY / SOURCE_REF = ASSET_NUMBER (the recon anchor)
+--   FUSION_ID               = FA_ADDITIONS_B.ASSET_ID (BASE only)
+--   DMT_REFERENCE (BASE)      = FA_ADDITIONS_B.SERIAL_NUMBER
+--                               (native source value read back;
+--                                no DMT reference DFF is stamped)
+--   DMT_REFERENCE (INTERFACE) = FA_MASS_ADDITIONS.FEEDER_SYSTEM_NAME
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- Tier: BASE -- assets posted to FA_ADDITIONS_B for this run,
+    -- matched by prefixed ASSET_NUMBER. Book folded into OBJECT_TYPE
+    -- from the corporate FA_BOOKS row (period-open / current row).
+    SELECT
+        'Assets' || NVL2(bk.book_type_code,
+                         ' [' || bk.book_type_code || ']', '')  AS object_type,
+        a.asset_number                       AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        a.asset_id                           AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        a.asset_number                       AS source_ref,
+        a.serial_number                      AS dmt_reference
+    FROM   fa_additions_b a
+    LEFT   JOIN fa_books bk
+           ON  bk.asset_id = a.asset_id
+           AND bk.transaction_header_id_out IS NULL
+    WHERE  a.asset_number LIKE :P_PREFIX || '%'
+    AND    :P_PREFIX IS NOT NULL
+
+    UNION ALL
+
+    -- Tier: INTERFACE -- rows still in FA_MASS_ADDITIONS after
+    -- PostMassAdditions are rejections. ERROR_MSG carries the Fusion
+    -- rejection text; POSTING_STATUS names the state when it is blank.
+    SELECT
+        'Assets' || NVL2(fma.book_type_code,
+                         ' [' || fma.book_type_code || ']', '')  AS object_type,
+        fma.asset_number                     AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[ASSET] ' || NVL(fma.error_msg,
+             'Not posted to FA_ADDITIONS_B (posting_status='
+             || NVL(fma.posting_status, 'NULL')
+             || '); rejected by Mass Additions import.')
+                                             AS error_message,
+        fma.load_request_id                  AS load_request_id,
+        fma.asset_number                     AS source_ref,
+        fma.feeder_system_name               AS dmt_reference
+    FROM   fa_mass_additions fma
+    WHERE  fma.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    NVL(fma.posting_status, 'X')
+           NOT IN ('POSTED', 'POST', 'Y', 'PROCESSED', 'SUCCESS', 'COMPLETED')
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start": return every row. On later
+-- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
+-- greater keys are returned. RECORD_KEY (ASSET_NUMBER) is compared as
+-- text; the reconciler feeds back the exact key it received.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="fa_asset_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
