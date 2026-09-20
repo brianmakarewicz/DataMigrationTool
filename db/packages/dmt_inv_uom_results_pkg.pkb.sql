@@ -50,7 +50,8 @@
         l_http_req     UTL_HTTP.REQ;
         l_http_resp    UTL_HTTP.RESP;
         l_response     CLOB;
-        l_chunk        VARCHAR2(32767);
+        l_raw_body     BLOB;
+        l_raw_chunk    RAW(32767);
         l_base_url     VARCHAR2(500);
         l_username     VARCHAR2(100);
         l_password     VARCHAR2(100);
@@ -101,16 +102,25 @@
         l_http_resp := UTL_HTTP.GET_RESPONSE(l_http_req);
         l_status := l_http_resp.status_code;
 
-        DBMS_LOB.CREATETEMPORARY(l_response, TRUE);
+        -- Read the body as RAW bytes (not text) so a gzip-compressed error body
+        -- survives intact. Fusion sometimes gzips error bodies even though we
+        -- ask for identity encoding; DMT_UTIL_PKG.GUNZIP_RESPONSE detects the
+        -- gzip magic number and inflates, otherwise returns the bytes as text.
+        DBMS_LOB.CREATETEMPORARY(l_raw_body, TRUE);
         BEGIN
             LOOP
-                UTL_HTTP.READ_TEXT(l_http_resp, l_chunk, 32767);
-                DBMS_LOB.WRITEAPPEND(l_response, LENGTH(l_chunk), l_chunk);
+                UTL_HTTP.READ_RAW(l_http_resp, l_raw_chunk, 32767);
+                DBMS_LOB.WRITEAPPEND(l_raw_body, UTL_RAW.LENGTH(l_raw_chunk), l_raw_chunk);
             END LOOP;
         EXCEPTION
             WHEN UTL_HTTP.END_OF_BODY THEN NULL;
         END;
         UTL_HTTP.END_RESPONSE(l_http_resp);
+
+        l_response := DMT_UTIL_PKG.GUNZIP_RESPONSE(l_raw_body);
+        IF DBMS_LOB.ISTEMPORARY(l_raw_body) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(l_raw_body);
+        END IF;
 
         -- Prepend status code so caller can check
         DECLARE
