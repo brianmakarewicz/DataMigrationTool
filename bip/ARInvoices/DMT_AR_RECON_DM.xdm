@@ -1,14 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ar_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
 -- ============================================================
--- ARInvoices BIP reconciliation query -- BIP reconciliation report
--- contract v1 (nine columns, keyset pagination, the six standard
--- parameters). Same shape as DMT_GL_BAL_RECON_DM.xdm and
--- DMT_REQ_RECON_DM.xdm. This file MIRRORS the CDATA body of the
--- deployed data model bip/ARInvoices/DMT_AR_RECON_DM.xdm (deploy
--- target /Custom/DMT2/ARInvoices/); the .xdm is authoritative --
--- regenerate this file whenever the data model changes so the
--- mirror never drifts.
---
--- Data source: ApplicationDB_FSCM
+-- ARInvoices reconciliation data model -- BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination, the six
+-- standard parameters). Same shape as DMT_GL_BAL_RECON_DM.xdm and
+-- DMT_REQ_RECON_DM.xdm.
 --
 -- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
@@ -21,10 +27,7 @@
 --
 -- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
 -- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
--- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
--- with an empty cursor first, then passes the last RECORD_KEY it
--- received on each next call, until a page returns fewer than
--- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start.
+-- :P_CHUNK_SIZE of them. An empty :P_AFTER_KEY selects from the start.
 --
 -- MULTI-TIER object. ARInvoices (AutoInvoice) is one FBDI zip
 -- carrying two record types -- lines and distributions -- each with
@@ -40,50 +43,39 @@
 --   and INTERFACE_LINE_ATTRIBUTE2 = the STG_SEQUENCE_ID.
 --   AutoInvoice PERSISTS both attribute columns onto the base line
 --   RA_CUSTOMER_TRX_LINES_ALL, so the base line is keyed on the
---   recon key directly (INTERFACE_LINE_ATTRIBUTE1). AR uses
---   automatic transaction numbering, so the base TRX_NUMBER is
---   Fusion-assigned and does NOT carry the DMT prefix -- the recon
---   key, not the number, is the read-back key. The base distribution
---   carries no interface key, so it is confirmed transitively
---   through its loaded parent line (same pattern as Requisitions
---   distributions).
+--   recon key directly. AR uses automatic transaction numbering, so
+--   the base TRX_NUMBER is Fusion-assigned and does NOT carry the DMT
+--   prefix -- the recon key, not the number, is the read-back key.
+--   The base distribution carries no interface key, so it is
+--   confirmed transitively through its loaded parent line.
 --
 -- Row selection:
 --   BASE  line rows: RA_CUSTOMER_TRX_LINES_ALL where
---         INTERFACE_LINE_ATTRIBUTE1 LIKE :P_PREFIX || '%' (the
---         run-scoped prefix the transform stamped; the base line
---         persists it verbatim). Joined to RA_CUSTOMER_TRX_ALL to
---         return the header CUSTOMER_TRX_ID for traceability.
---   BASE  dist rows: RA_CUST_TRX_LINE_GL_DIST_ALL joined to the
---         base line by CUSTOMER_TRX_LINE_ID (confirmed transitively
---         through the loaded parent line; RECORD_KEY is derived from
---         the parent recon key + account class + the dist id so it is
---         deterministic, unique and traceable to the parent).
+--         INTERFACE_LINE_ATTRIBUTE1 LIKE :P_PREFIX || '%'. Joined to
+--         RA_CUSTOMER_TRX_ALL for the header CUSTOMER_TRX_ID.
+--   BASE  dist rows: RA_CUST_TRX_LINE_GL_DIST_ALL joined to the base
+--         line by CUSTOMER_TRX_LINE_ID (confirmed transitively).
 --   INTERFACE rows (both tiers): the interface rows that did NOT
---         load are the rejections. AutoInvoice does NOT purge
---         interface rows, so success rows persist too; they are
---         handled by the BASE tiers only, and the INTERFACE tiers
---         return rejections only -- a line/dist with NO base row --
---         so no row is counted twice. Selected by the load ESS
---         request id :P_LOAD_REQUEST_ID (RA_INTERFACE_LINES_ALL /
---         RA_INTERFACE_DISTRIBUTIONS_ALL.LOAD_REQUEST_ID), which is
---         the batch the run submitted.
+--         load (no base row). AutoInvoice does NOT purge interface
+--         rows, so success rows persist too and are handled by the
+--         BASE tiers only -- the INTERFACE tiers return rejections
+--         only, so no row is counted twice. Selected by the load ESS
+--         request id :P_LOAD_REQUEST_ID.
 --   :P_RUN_ID / :P_IMPORT_ESS_ID are declared for contract symmetry
 --   and stamped into LOAD_REQUEST_ID for traceability.
 --
 -- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
 --   BASE  (row present in a Fusion base table)  => SUCCESS
 --   INTERFACE (rejection left in the interface) => ERROR
--- FUSION_ID is non-null on every BASE row (the Fusion surrogate id:
---   CUSTOMER_TRX_LINE_ID for a line, CUST_TRX_LINE_GL_DIST_ID for a
---   distribution). ERROR_MESSAGE is non-null on every ERROR row (the
---   real Fusion rejection text from RA_INTERFACE_ERRORS_ALL,
---   enriched with INVALID_VALUE, correlated per tier on
---   INTERFACE_LINE_ID / INTERFACE_DISTRIBUTION_ID).
+-- FUSION_ID is non-null on every BASE row (CUSTOMER_TRX_LINE_ID for a
+-- line, CUST_TRX_LINE_GL_DIST_ID for a distribution). ERROR_MESSAGE
+-- is non-null on every ERROR row (real Fusion reject text from
+-- RA_INTERFACE_ERRORS_ALL, enriched with INVALID_VALUE, correlated
+-- per tier on INTERFACE_LINE_ID / INTERFACE_DISTRIBUTION_ID).
 --
 -- RESIDUAL NOTE (honest): AR AutoInvoice is a known residual on the
 -- demo instance -- AutoInvoice job-level aborts, so no AR line has
--- ever reached RA_CUSTOMER_TRX_LINES_ALL. The BASE tiers below are
+-- ever reached RA_CUSTOMER_TRX_LINES_ALL. The BASE tiers are
 -- therefore expected to return zero rows against current data; they
 -- are the correct SHAPE for when AutoInvoice runs clean. The
 -- INTERFACE tiers return the interface rows that exist. This is the
@@ -120,8 +112,7 @@ FROM (
     -- interface key, so it is confirmed transitively through its
     -- loaded parent line (joined by CUSTOMER_TRX_LINE_ID). RECORD_KEY
     -- is derived from the parent's stamped recon key plus the account
-    -- class plus the base dist id so it is deterministic, unique and
-    -- traceable to the parent line.
+    -- class plus the base dist id so it is deterministic and unique.
     SELECT
         'ARInvoices.Distribution'            AS object_type,
         bl.interface_line_attribute1 || ':DIST:' || gd.account_class
@@ -143,10 +134,8 @@ FROM (
     -- ========== INTERFACE tier: rejections only (no base row) ==========
 
     -- INTERFACE / lines. RECORD_KEY = the stamped recon key. A line
-    -- is a rejection when it has NO base row (its recon key is not
-    -- present in RA_CUSTOMER_TRX_LINES_ALL). Error text is the real
-    -- AutoInvoice reject text for the line, enriched with the
-    -- offending value.
+    -- is a rejection when it has NO base row. Error text is the real
+    -- AutoInvoice reject text, enriched with the offending value.
     SELECT
         'ARInvoices'                         AS object_type,
         l.interface_line_attribute1          AS record_key,
@@ -228,3 +217,51 @@ FROM (
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="ar_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
