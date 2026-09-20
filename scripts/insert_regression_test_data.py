@@ -303,6 +303,11 @@ def main():
         # Units of Measure (REST config object; TFM FK → STG)
         "DMT_INV_UOM_TFM_TBL",
         "DMT_INV_UOM_STG_TBL",
+        # Taxes (REST config object, two tiers; TFM FK → STG)
+        "DMT_ZX_RATE_TFM_TBL",
+        "DMT_ZX_RATE_STG_TBL",
+        "DMT_ZX_REGIME_TFM_TBL",
+        "DMT_ZX_REGIME_STG_TBL",
     ]
     print("=== Cleaning up existing scenario rows ===")
     total_deleted = 0
@@ -2652,6 +2657,72 @@ def main():
     tag_scenario(cur, "DMT_AP_PAY_TERM_HDR_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_AP_PAY_TERM_LINE_STG_TBL", scenario_id)
 
+    # ====================================================================
+    # 49. TAXES (REST → taxRegimes + taxRates). Two-tier REST config object on
+    #     the NEW reconciliation standard (backlog #11): the regime is POSTed to
+    #     taxRegimes and the rate to taxRates, but LOADED is confirmed by a hit
+    #     in the Fusion BASE tables via DMT_ZX_RECON_RPT, which captures the real
+    #     surrogate ids onto DMT_ZX_REGIME_TFM_TBL.FUSION_TAX_REGIME_ID
+    #     ( = ZX_REGIMES_B.TAX_REGIME_ID) and DMT_ZX_RATE_TFM_TBL.FUSION_TAX_RATE_ID
+    #     ( = ZX_RATES_B.TAX_RATE_ID). (objects/Taxes; CEMLI code 'TaxConfig'.)
+    #
+    #     GOOD regime (group 1): reuses an EXISTING demo regime code
+    #     ('AU GST TAX', TAX_REGIME_ID 300000050734813). The demo pod returns a
+    #     non-2xx on the taxRegimes create (create disabled / duplicate) — that
+    #     is fine and expected: the base-table report still finds 'AU GST TAX' in
+    #     ZX_REGIMES_B and confirms the regime LOADED with its real TAX_REGIME_ID.
+    #     (Mirrors the ValueSets / PaymentTerms pattern where create is disabled
+    #     but base-table reconciliation still proves the outcome.)
+    #
+    #     GOOD rate (group 1): reuses an EXISTING demo rate under that regime
+    #     ('AU GST TAX STANDARD RATE', TAX_RATE_ID 300000050735021). Confirmed
+    #     from ZX_RATES_B under the confirmed regime.
+    #
+    #     BAD regime (group 2): TAX_REGIME_CODE carries the 'BAD' marker so the
+    #     regression harness (DISPLAY_KEY = TAX_REGIME_CODE for Tax Regimes)
+    #     classifies it as BAD-expected-to-FAIL. It is not an existing regime and
+    #     is never found in ZX_REGIMES_B — the reconciler lands it FAILED with the
+    #     real Fusion error.
+    # ====================================================================
+    print("\n=== 49. Taxes (REST: regimes + rates) ===")
+    # regime GOOD (group 1) — reuse existing demo regime so base-table confirms
+    run_sql(cur, """
+        INSERT INTO DMT_ZX_REGIME_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, TAX_REGIME_CODE, TAX_REGIME_NAME,
+            DESCRIPTION, COUNTRY_CODE, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_ZX_REGIME_STG_SEQ.NEXTVAL, 1, 'AU GST TAX', 'AU GST TAX',
+            'DMT2 recon GOOD (backlog #11) - existing demo regime',
+            'AU', 'RT-TAXREG-G1', 'NEW'
+        )
+    """, label="GOOD Tax Regime: AU GST TAX (existing demo regime, base-table confirmed)")
+    # regime BAD (group 2) — 'BAD' marker in code; never lands in ZX_REGIMES_B
+    run_sql(cur, """
+        INSERT INTO DMT_ZX_REGIME_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, TAX_REGIME_CODE, TAX_REGIME_NAME,
+            DESCRIPTION, COUNTRY_CODE, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_ZX_REGIME_STG_SEQ.NEXTVAL, 2, 'DMT2 BAD REGIME',
+            'DMT2 recon BAD regime',
+            'DMT2 recon BAD (backlog #11) [FUSION_ERROR expected]',
+            'ZZ', 'RT-TAXREG-B1', 'NEW'
+        )
+    """, label="BAD Tax Regime: DMT2 BAD REGIME nonexistent country [FUSION_ERROR expected]")
+    # rate GOOD (group 1) — reuse existing demo rate under the GOOD regime
+    run_sql(cur, """
+        INSERT INTO DMT_ZX_RATE_STG_TBL (
+            STG_SEQUENCE_ID, SOURCE_GROUP_ID, TAX_REGIME_CODE, TAX,
+            TAX_STATUS_CODE, TAX_RATE_CODE, TAX_RATE_NAME, RATE_TYPE_CODE,
+            PERCENTAGE_RATE, ACTIVE_FLAG, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            DMT_ZX_RATE_STG_SEQ.NEXTVAL, 1, 'AU GST TAX', 'AU GST TAX',
+            'STANDARD', 'AU GST TAX STANDARD RATE', 'AU GST TAX STANDARD RATE',
+            'PERCENTAGE', 10, 'Y', 'RT-TAXRATE-G1', 'NEW'
+        )
+    """, label="GOOD Tax Rate: AU GST TAX STANDARD RATE (existing demo rate, base-table confirmed)")
+    tag_scenario(cur, "DMT_ZX_REGIME_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_ZX_RATE_STG_TBL", scenario_id)
+
     # ── Commit everything ───────────────────────────────────────────────────
     conn.commit()
     print("\n" + "=" * 60)
@@ -2727,6 +2798,9 @@ def main():
         # AP Payment Terms (REST)
         ("DMT_AP_PAY_TERM_HDR_STG_TBL",          "STG_STATUS"),
         ("DMT_AP_PAY_TERM_LINE_STG_TBL",         "STG_STATUS"),
+        # Taxes (REST, two tiers)
+        ("DMT_ZX_REGIME_STG_TBL",                "STG_STATUS"),
+        ("DMT_ZX_RATE_STG_TBL",                  "STG_STATUS"),
     ]
     print("Verification — rows tagged with this scenario:")
     total_good = 0
