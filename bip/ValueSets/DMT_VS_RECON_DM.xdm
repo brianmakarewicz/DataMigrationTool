@@ -8,153 +8,38 @@
     <property name="xml_tag_case" value="upper"/>
   </dataProperties>
   <dataSets>
-    <dataSet name="vs_recon_results" type="complex">
+    <dataSet name="vs_base_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
--- ============================================================
--- ValueSets reconciliation data model - BIP reconciliation
--- report contract v1 (nine columns, keyset pagination, the six
--- standard parameters). Conforms ValueSets to the shape of the
--- reference template bip/GLBalances/DMT_GL_BAL_RECON_DM.xdm.
---
--- NINE response columns, in contract order:
---   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
---   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
---   DMT_REFERENCE.
---
--- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
---   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
---   No P_OFFSET / P_LIMIT.
---
--- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
--- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
--- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
--- with an empty cursor first, then passes the last RECORD_KEY it
--- received on each next call, until a page returns fewer than
--- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
--- (every non-null RECORD_KEY sorts after the empty string).
---
--- OBJECT / TRANSPORT.  ValueSets is an FBL (File-Based Loader)
--- object loaded in two logical parts - the value set definitions,
--- then the values within each set. This report reads BOTH Fusion
--- base tables in one call and returns them as two tiers keyed by
--- OBJECT_TYPE. FBL rejections never reach the base table, so every
--- row returned here carries FUSION_STATUS = 'SUCCESS'; records the
--- reconciler sent that are absent from this report are marked
--- FAILED / unaccounted from its own stashed FBL error, not here.
--- The load/import params (:P_LOAD_REQUEST_ID, :P_IMPORT_ESS_ID,
--- :P_PREFIX) are declared for contract symmetry but do not select
--- rows; run-scoping is by :P_RUN_ID as described below.
---
--- Base tables (columns confirmed live 2026-09-20):
---   Set    FND_VS_VALUE_SETS - surrogate VALUE_SET_ID, natural key
---          VALUE_SET_CODE.  This table has NEITHER an ATTRIBUTE1 nor
---          an EXTERNAL_DATA_SOURCE column, so a value set cannot be
---          run-stamped directly and carries no native/DMT reference.
---   Value  FND_VS_VALUES_B - surrogate VALUE_ID, keyed by VALUE
---          within a set (join to FND_VS_VALUE_SETS on VALUE_SET_ID
---          to expose VALUE_SET_CODE).  This table DOES carry
---          ATTRIBUTE1 (the DMT run reference) and EXTERNAL_DATA_SOURCE
---          (the native source reference).
---
--- RUN-SCOPING.  The DMT run reference is stamped on each loaded
--- value's ATTRIBUTE1 as 'DMT:<run>:<queue>:<tfm>', so this report
--- selects a run's own values by
---   FND_VS_VALUES_B.ATTRIBUTE1 LIKE 'DMT:' || :P_RUN_ID || ':%'
--- Because FND_VS_VALUE_SETS cannot be stamped, the SET tier is scoped
--- indirectly: it returns exactly those value sets that own at least
--- one value belonging to this run (a value set is proven loaded once
--- one of its run values exists).  A row present in either base table
--- is positive proof the corresponding record loaded.
---
--- Two tiers via OBJECT_TYPE ('ValueSet' / 'ValueSetValue'),
--- UNION ALL, ordered by RECORD_KEY for keyset paging.
---
--- Keys / nine-column mapping:
---   OBJECT_TYPE   = 'ValueSet' (set tier) / 'ValueSetValue' (value tier).
---   RECORD_KEY    = set:   VALUE_SET_CODE;
---                   value: VALUE_SET_CODE || '^' || VALUE (composite;
---                          '^' cannot occur in a code or a value).
---   SOURCE_TYPE   = 'BASE' on every row (base-table proof of load).
---   FUSION_STATUS = 'SUCCESS' on every row (see transport note).
---   FUSION_ID     = set:   VALUE_SET_ID; value: VALUE_ID.
---   ERROR_MESSAGE = NULL (no error rows, per above).
---   LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID echoed for symmetry
---                     (no ESS request exists for an FBL object).
---   SOURCE_REF    = set:   NULL (no native ref column on the set table);
---                   value: EXTERNAL_DATA_SOURCE (native source ref).
---   DMT_REFERENCE = set:   NULL (no ATTRIBUTE1 on the set table);
---                   value: ATTRIBUTE1 (the DMT run reference).
--- ============================================================
 SELECT
-    object_type, record_key, source_type, fusion_status,
-    fusion_id, error_message, load_request_id, source_ref, dmt_reference
-FROM (
-    -- Tier: ValueSet - one row per FND_VS_VALUE_SETS definition that
-    -- owns at least one value belonging to this run. Keyed on
-    -- VALUE_SET_CODE. The set table carries no run stamp and no
-    -- reference columns, so SOURCE_REF / DMT_REFERENCE are NULL.
-    SELECT
-        'ValueSet'                           AS object_type,
-        s.value_set_code                     AS record_key,
-        'BASE'                               AS source_type,
-        'SUCCESS'                            AS fusion_status,
-        s.value_set_id                       AS fusion_id,
-        CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
-        CAST(NULL AS VARCHAR2(4000))         AS source_ref,
-        CAST(NULL AS VARCHAR2(4000))         AS dmt_reference
-    FROM   fnd_vs_value_sets s
-    WHERE  EXISTS (
-               SELECT 1
-               FROM   fnd_vs_values_b v
-               WHERE  v.value_set_id = s.value_set_id
-               AND    v.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%'
-           )
-
-    UNION ALL
-
-    -- Tier: ValueSetValue - one row per FND_VS_VALUES_B value stamped
-    -- with this run in ATTRIBUTE1. Keyed on the composite
-    -- VALUE_SET_CODE || '^' || VALUE. Native reference and DMT run
-    -- reference come from the value row's own columns.
-    SELECT
-        'ValueSetValue'                      AS object_type,
-        s.value_set_code || '^' || v.value   AS record_key,
-        'BASE'                               AS source_type,
-        'SUCCESS'                            AS fusion_status,
-        v.value_id                           AS fusion_id,
-        CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
-        v.external_data_source               AS source_ref,
-        v.attribute1                         AS dmt_reference
-    FROM   fnd_vs_values_b   v
-    JOIN   fnd_vs_value_sets s ON s.value_set_id = v.value_set_id
-    WHERE  v.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%'
-)
--- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
--- BIP, so treat NULL as "from the start": return every row. On later
--- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
--- greater keys are returned. RECORD_KEY is compared as text; the
--- reconciler feeds back the exact key it received.
-WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
-ORDER BY record_key
-FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+    s.value_set_code                     AS record_key,
+    'SUCCESS'                            AS import_status,
+    'SET'                                AS source_type,
+    s.value_set_id                       AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))         AS error_message
+FROM   fnd_vs_value_sets s
+WHERE  INSTR(',' || :P_SET_CODES || ',', ',' || s.value_set_code || ',') > 0
+UNION ALL
+SELECT
+    s.value_set_code || '^' || v.value   AS record_key,
+    'SUCCESS'                            AS import_status,
+    'VALUE'                              AS source_type,
+    v.value_id                           AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))         AS error_message
+FROM   fnd_vs_values_b v
+       JOIN fnd_vs_value_sets s ON s.value_set_id = v.value_set_id
+WHERE  INSTR(',' || :P_VALUE_KEYS || ',', ',' || s.value_set_code || '^' || v.value || ',') > 0
       ]]></sql>
     </dataSet>
   </dataSets>
   <output rootName="DATA_DS" uniqueRowName="false">
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
-        <group name="G_1" label="G_1" source="vs_recon_results">
-          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
-          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
-          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
-          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
-          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
-          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
-          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
-          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
-          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        <group name="G_1" label="G_1" source="vs_base_results">
+          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
+          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
         </group>
       </dataStructure>
     </nodeList>
@@ -162,26 +47,11 @@ FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
   <eventTriggers/>
   <lexicals/>
   <parameters>
-    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
-               labelID="P_RUN_ID" defaultValue="" nvp="false"
+    <parameter name="P_SET_CODES" dataType="character" rowPlacement="1"
+               labelID="P_SET_CODES" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
-               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
-               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
-               labelID="P_PREFIX" defaultValue="" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <!-- Keyset pagination: page size + cursor. The reconciler calls
-         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
-         received on each next call, until a short page returns. -->
-    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
-               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
-               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+    <parameter name="P_VALUE_KEYS" dataType="character" rowPlacement="1"
+               labelID="P_VALUE_KEYS" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>
