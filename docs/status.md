@@ -1,5 +1,96 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-20 -- Backlog #11 done (config objects), #12 foundation + proof; six config objects moved to BIP reconcile
+
+**Headline:** The six REST-loaded configuration objects now reconcile the same way as every
+other object -- a BIP report over the Fusion base tables that also captures the Fusion id --
+and the foundation for stamping a run-scoped reference on every record was built and proven
+end-to-end on GLBalances. All work is on `origin/main` except one open PR (#314).
+
+**Work completed this session (verified against `gh pr view`):**
+- #297 Requisitions -- a rejected header now cascades its real error to its child line and
+  distribution, so they are no longer left unaccounted. MERGED.
+- #298 Projects -- an orphan task (parent project not in the batch) is rejected at
+  pre-validation, scenario-scoped and safe in ALL mode. MERGED.
+- #299 Docs status update. MERGED.
+- #300 HDL -- the base-table retry window was widened (about an 11.5-minute backoff) so Workers
+  no longer intermittently land unaccounted while Fusion is still writing the base row. MERGED.
+- #301 TaxCards -- capture the Fusion calculation-card id on reconcile (backlog #11). MERGED.
+- #302 UnitsOfMeasure -- capture the Fusion UOM id (interim). MERGED.
+- #303 Requirement (PROPOSED, red): reconciliation MUST occur via a BIP report over the Fusion
+  base tables, for every object. MERGED -- **still PROPOSED/red; the owner has NOT yet promoted
+  it to accepted. This is an OPEN OWNER ACTION.**
+- #304 REST reconcilers -- use the database default certificate store instead of forcing a
+  wallet (fixed ORA-29273; no wallet needed locally). MERGED.
+- #305-#310 The six REST config objects were converted to BIP base-table reconciliation with
+  Fusion-id capture: UnitsOfMeasure (#305, with #302), ValueSets (#306), PaymentTerms (#307),
+  Taxes/TaxConfig (#308), CashBanks/Banks (#309), Lookups (#310). All MERGED. Lookups has no
+  numeric surrogate id, so its `FUSION_*_ID` columns are intentionally NULL -- existence in the
+  base table is the proof.
+- #311 Backlog #12 FOUNDATION -- the `DMT_REF_CARRIER_CFG_TBL` config table + a 39-row seed +
+  the `DMT_REF_ID_PKG` id-writer (`BUILD_REF` produces `DMT:<run_id>:<work_queue_id>:<tfm_seq_id>`). MERGED.
+- #312 Config transforms -- scope the staging selection to the run's scenario (fixed an ALL-mode
+  cross-scenario pull that overflowed the ValueSets reconciliation parameter). MERGED.
+- #313 REST reconcilers -- gunzip response bodies so a bad row's error text is human-readable
+  (shared `DMT_UTIL_PKG.GUNZIP_RESPONSE`). MERGED.
+- #314 Backlog #12 PROOF-OF-RECIPE on GLBalances -- stamp the run-scoped per-record reference
+  end-to-end; the round-trip is PROVEN (`GL_JE_LINES.REFERENCE_2` = the built reference).
+  **OPEN at session close -- verify and merge next session.**
+
+**Key decisions and findings to preserve:**
+1. Backlog #11 (capture the Fusion id on reconcile) is DONE for every config object that has a
+   surrogate id. Lookups has none; that is documented, not a gap.
+2. Backlog #12 design is OWNER-APPROVED: a per-record reference
+   `DMT:<run_id>:<work_queue_id>:<tfm_seq_id>` written ALWAYS, including cutover. Each object has
+   three carrier slots stored in `DMT_REF_CARRIER_CFG_TBL`: Slot A = the native source-reference
+   field, gets the TFM id; Slot B = the native batch field, gets the run id; Slot C = a
+   base-table column that ROUND-TRIPS, gets the full reference. Reconciliation matches on the TFM
+   id; the run and work-queue ids are provenance. GLBudgets is the only object with no carrier --
+   it falls back to a business-key reconcile (flagged).
+3. CRITICAL #12 finding from the GLBalances proof: Slot C must be a column the object's import
+   ACTUALLY carries to the base table -- do NOT assume it just because the base table has an
+   ATTRIBUTE column. `GL_INTERFACE.ATTRIBUTE20` does NOT round-trip; the working path was
+   `REFERENCE22` into `GL_JE_LINES.REFERENCE_2`. The 39-row seed's Slot C ATTRIBUTE choices are
+   UNVERIFIED and must be verified per object during fan-out. This is the main risk for the #12
+   fan-out.
+4. The #12 fan-out to the remaining ~27 objects is NOT started. It is gated on (a) disk space
+   (the Docker disk image is about 95 GB and C: is full, so new git worktrees fail -- owner is
+   considering an external SSD then relocating the Docker disk image) and (b) per-object Slot C
+   verification.
+5. The Fusion demo password rotated mid-session. It was propagated everywhere via the
+   rotate-demo-password skill (ATP config, local config, both `DMT_ERP_INTERFACE_OPTIONS_TBL`
+   override tables, Vercel); all 5 demo users verified HTTP 200. The mid-run 401 wave in the big
+   regression (run 294) was THIS rotation, not code.
+6. Regression harness finding: write-once scenarios ACCUMULATE in shared staging, so an ALL-mode
+   transform that does not filter by scenario pulls cross-scenario rows (fixed for the six config
+   objects in #312; other objects already filtered). A full-regression run's red is often
+   environmental (password rotation, scenario accumulation), not code -- classify failures against
+   the prior baseline before calling anything a regression.
+7. The fusion-bip MCP server holds a STALE in-memory password (cached before the rotation);
+   `connections.json` and the database are current. Restart the MCP server next session to clear it.
+8. Known residual OUR-side accounting gaps still open (NOT this session's regressions):
+   AR AutoInvoice (job-level abort), MiscReceipts, ProjectBudgets (no carrier, newly exposed by
+   scenario coverage). Grants is an environment issue (module not configured). All pre-existing.
+
+**Docs updated this session (this PR):**
+- `docs/DMT_REBUILD_PLAN.html` -- object status matrix: the six config rows now say
+  reconcile-via-BIP + id-captured; GLBalances row notes it is #12-wired (proof, PR #314 open).
+- `docs/backlog.html` -- #11 marked RESOLVED (config objects); #12 detail rewritten with the
+  approved design, the Slot-C-must-round-trip finding, and fan-out-pending status; summary counts
+  adjusted; #64 (P3) intact. JSON validated (64 items parse).
+- `docs/DMT_DESIGN.html` -- open-items list: #11 config-objects RESOLVED note, #12 foundation +
+  proof note, and the reconcile-via-BIP requirement note updated to record the conversions landed
+  while staying PROPOSED (red) awaiting owner promotion. All additions red-styled; the design
+  guard passed.
+
+**NEXT-SESSION START LIST:**
+1. Restart the fusion-bip MCP server to clear its stale cached password.
+2. Resolve disk space (external SSD, then relocate the Docker disk image) BEFORE starting the
+   #12 fan-out -- new git worktrees currently fail because C: is full.
+3. Verify and merge PR #314 (GLBalances #12 proof).
+4. Fan out #12 to the remaining objects, verifying the Slot C round-trip per object.
+5. Owner to promote the reconcile-via-BIP requirement from PROPOSED to accepted (once satisfied).
+
 ## Session -- 2026-09-14 -- Deploy DMT2 to the queryapp ATP (DMT2_OWNER) + drive the regression
 
 **Headline:** DMT2 is now deployed and running on the **queryapp ATP** as a NEW schema **DMT2_OWNER**
