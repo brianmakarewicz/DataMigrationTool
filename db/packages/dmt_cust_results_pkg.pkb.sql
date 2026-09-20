@@ -22,7 +22,7 @@
     C_CEMLI CONSTANT VARCHAR2(30) := 'Customers';
 
     -- --------------------------------------------------------
-    -- LOG_REF12_ROUNDTRIP (private)
+    -- CONFIRM_REFERENCE_ROUNDTRIP (private)
     -- Backlog #12 round-trip proof for one just-LOADED party BASE row (TCA family
     -- template; mirrors DMT_GL_RESULTS_PKG / DMT_WORKER_RESULTS_PKG). For TCA the
     -- carrier is Slot A: PARTY_ORIG_SYSTEM_REFERENCE (= the run-prefixed reference
@@ -36,12 +36,12 @@
     -- mismatch or lookup miss logs WARN and NEVER alters the LOADED outcome
     -- (design section 7). Runs after the LOADED UPDATE so it never blocks accounting.
     -- --------------------------------------------------------
-    PROCEDURE LOG_REF12_ROUNDTRIP (
+    PROCEDURE CONFIRM_REFERENCE_ROUNDTRIP (
         p_run_id     IN NUMBER,
         p_fusion_ref IN VARCHAR2,
         p_fusion_id  IN NUMBER
     ) IS
-        C_PROC     CONSTANT VARCHAR2(30) := 'LOG_REF12_ROUNDTRIP';
+        C_PROC     CONSTANT VARCHAR2(30) := 'CONFIRM_REFERENCE_ROUNDTRIP';
         l_slot_a   VARCHAR2(255);
         l_full_ref VARCHAR2(150);
     BEGIN
@@ -77,7 +77,7 @@
                 'REF #12 round-trip: no party TFM row found for ORIG_SYSTEM_REFERENCE ' ||
                 NVL(p_fusion_ref, '(null)') || ' (proof skipped).',
                 DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
-    END LOG_REF12_ROUNDTRIP;
+    END CONFIRM_REFERENCE_ROUNDTRIP;
 
     -- --------------------------------------------------------
     -- FETCH_BIP_RESULTS
@@ -266,7 +266,7 @@
                     -- Only for a row just marked LOADED; diagnostic only (never alters
                     -- the outcome). Slot A only -- there is no Slot C for TCA parties.
                     IF l_rc > 0 THEN
-                        LOG_REF12_ROUNDTRIP(
+                        CONFIRM_REFERENCE_ROUNDTRIP(
                             p_run_id     => p_run_id,
                             p_fusion_ref => r.orig_system_reference,
                             p_fusion_id  => TO_NUMBER(r.fusion_id));
