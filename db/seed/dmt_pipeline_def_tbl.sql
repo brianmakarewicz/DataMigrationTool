@@ -194,7 +194,7 @@ using (
     union all select 'ValueSets', 'DMT_FND_VS_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
     union all select 'Lookups', 'DMT_FND_LOOKUP_RUNNER_PKG.RUN_STANDARD', 'LOCAL', 'DMT_RECON_ENGINE_PKG.RECONCILE_BATCH', 'Y', null from dual
     union all select 'UnitsOfMeasure', 'DMT_INV_UOM_RUNNER_PKG.RUN_STANDARD', 'LOCAL', 'DMT_RECON_ENGINE_PKG.RECONCILE_BATCH', 'Y', null from dual
-    union all select 'PaymentTerms', 'DMT_AP_PAY_TERM_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
+    union all select 'PaymentTerms', 'DMT_AP_PAY_TERM_RUNNER_PKG.RUN_STANDARD', 'LOCAL', 'DMT_RECON_ENGINE_PKG.RECONCILE_BATCH', 'Y', null from dual
     union all select 'TaxConfig', 'DMT_ZX_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
     -- CashBanks: LOCAL dispatch to the CE bank runner's RUN_STANDARD (REST load +
     -- BIP base-table reconcile, backlog #11). No RECON_PROC — LOAD_AND_RECONCILE

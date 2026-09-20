@@ -23,8 +23,25 @@ AS
 --   POST /standardTerms/{TermId}/child/installments -> create lines
 -- ============================================================
 
+    -- LOAD phase: POST headers, confirm them mid-load to obtain each TERM_ID
+    -- (the child URL key the installment lines need), then POST the lines.
+    -- Rows are left GENERATED; the generic recon engine owns the final verdict
+    -- via APPLY_PAY_TERM. (Name retained for the runner's contract.)
     PROCEDURE LOAD_AND_RECONCILE (
         p_run_id IN NUMBER
+    );
+
+    -- APPLY_PAY_TERM — thin STATIC apply dispatched by the generic recon engine
+    -- (DMT_RECON_ENGINE_PKG) through invoke_registered (style RECON). Reads
+    -- DMT_RECON_STAGE_GTT and MERGEs LOADED/FAILED into the two literally-named
+    -- payment-term TFM tables with STATIC SQL, one tier per report SOURCE_TYPE
+    -- ('BASE' header by NAME; 'BASE_LINE' installment by TERM_ID-SEQUENCE_NUM),
+    -- capturing FUSION_TERM_ID.
+    PROCEDURE APPLY_PAY_TERM (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
     );
 
 END DMT_AP_PAY_TERM_RESULTS_PKG;

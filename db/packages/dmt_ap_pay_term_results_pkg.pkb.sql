@@ -201,6 +201,10 @@
             ORDER BY TFM_SEQUENCE_ID
         ) LOOP
             BEGIN
+                -- Run-scope stamp. The recon DM finds this run's terms by
+                -- AP_TERMS_B.ATTRIBUTE1 = TO_CHAR(:P_RUN_ID), so the POST body MUST
+                -- carry the run id in attribute1; without it the report returns zero
+                -- rows and no term is ever confirmed LOADED.
                 l_payload := '{"Name":"' || REPLACE(r.NAME, '"', '\"') || '"'
                     || CASE WHEN r.DESCRIPTION IS NOT NULL
                        THEN ',"Description":"' || REPLACE(r.DESCRIPTION, '"', '\"') || '"'
@@ -208,6 +212,7 @@
                     || CASE WHEN r.PAY_TERM_TYPE IS NOT NULL
                        THEN ',"PayTermType":"' || REPLACE(r.PAY_TERM_TYPE, '"', '\"') || '"'
                        END
+                    || ',"attribute1":"' || TO_CHAR(p_run_id) || '"'
                     || '}';
 
                 l_response := rest_call('POST', C_TERMS_PATH, l_payload, p_run_id);
@@ -630,14 +635,9 @@
     ) IS
         C_PROC     CONSTANT VARCHAR2(30) := 'LOAD_AND_RECONCILE';
         l_names    VARCHAR2(4000);
-        l_ids      VARCHAR2(4000);
         l_xml      XMLTYPE;
-        l_line_xml XMLTYPE;
         l_err      NUMBER;
         l_term_map t_term_map;
-        l_idx      VARCHAR2(100);
-        l_loaded   NUMBER;
-        l_failed   NUMBER;
         l_unaccnt  NUMBER;
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
@@ -673,97 +673,30 @@
 
         PARSE_HEADERS(p_run_id, l_xml, l_term_map);
 
-        -- Phase 3: LOAD lines under base-table-confirmed terms (POST only;
-        -- never terminal), then RECONCILE lines via the base-table report
-        -- (G_2 over AP_TERMS_LINES by the confirmed TERM_IDs).
+        -- Phase 3: LOAD lines under base-table-confirmed terms (POST only; never
+        -- terminal). The intra-load header confirm above (PARSE_HEADERS) captured
+        -- each confirmed TERM_ID, which POST_LINES needs as the child URL key. All
+        -- rows are then left for the generic recon engine's single final reconcile
+        -- to settle (via APPLY_PAY_TERM). Confirming headers mid-load also marks
+        -- them LOADED (they genuinely are loaded); APPLY_PAY_TERM's guarded MERGE
+        -- leaves those untouched and marks the LINES LOADED plus any ERROR rows
+        -- FAILED. This is NOT a second reconcile pass — it is the load helper the
+        -- header/line REST dependency requires; the engine owns the final verdict.
         POST_LINES(p_run_id, l_term_map);
-
-        -- Build the comma-delimited list of confirmed TERM_IDs from the map.
-        l_ids := NULL;
-        l_idx := l_term_map.FIRST;
-        WHILE l_idx IS NOT NULL LOOP
-            l_ids := CASE WHEN l_ids IS NULL THEN '' ELSE l_ids || ',' END
-                     || TO_CHAR(l_term_map(l_idx));
-            l_idx := l_term_map.NEXT(l_idx);
-        END LOOP;
-
-        IF l_ids IS NOT NULL THEN
-            FETCH_BIP_RESULTS(
-                p_run_id     => p_run_id,
-                p_term_names => NULL,
-                p_term_ids   => l_ids,
-                x_report_xml => l_line_xml,
-                x_error_code => l_err);
-
-            IF l_err != DMT_UTIL_PKG.C_SUCCESS THEN
-                RAISE_APPLICATION_ERROR(-20039,
-                    'LOAD_AND_RECONCILE: line base-table reconciliation report failed for CEMLI '
-                    || C_CEMLI || ' (detail in DMT_LOG_TBL).');
-            END IF;
-
-            PARSE_LINES(p_run_id, l_line_xml);
-        END IF;
-
-        -- Post-reconcile sweep: any header NOT confirmed in the base table is
-        -- still GENERATED. If its POST returned a real Fusion error (stashed in
-        -- ERROR_TEXT by LOAD_TERMS) mark it FAILED on that real error. A header
-        -- with no stashed error AND no base-table hit is left GENERATED
-        -- (unaccounted); the accounting gate surfaces it -- never a fabricated
-        -- verdict. The same sweep applies to lines (stashed by POST_LINES).
-        UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
-        SET    TFM_STATUS           = 'FAILED',
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    ERROR_TEXT IS NOT NULL;
-
-        UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
-        SET    TFM_STATUS           = 'FAILED',
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    ERROR_TEXT IS NOT NULL;
-
-        -- Mirror the terminal TFM outcome onto STG for headers.
-        UPDATE DMT_AP_PAY_TERM_HDR_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
-                               FROM   DMT_AP_PAY_TERM_HDR_TFM_TBL t
-                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                               AND    t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_AP_PAY_TERM_HDR_TFM_TBL t
-                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                       AND    t.RUN_ID = p_run_id
-                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
-
-        -- Mirror the terminal TFM outcome onto STG for lines.
-        UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
-                               FROM   DMT_AP_PAY_TERM_LINE_TFM_TBL t
-                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                               AND    t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_AP_PAY_TERM_LINE_TFM_TBL t
-                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                       AND    t.RUN_ID = p_run_id
-                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
 
         COMMIT;
 
-        SELECT COUNT(CASE WHEN TFM_STATUS = 'LOADED' THEN 1 END),
-               COUNT(CASE WHEN TFM_STATUS = 'FAILED' THEN 1 END),
-               COUNT(CASE WHEN TFM_STATUS NOT IN ('LOADED','FAILED') THEN 1 END)
-        INTO   l_loaded, l_failed, l_unaccnt
-        FROM   (SELECT TFM_STATUS FROM DMT_AP_PAY_TERM_HDR_TFM_TBL WHERE RUN_ID = p_run_id
+        SELECT COUNT(*)
+        INTO   l_unaccnt
+        FROM   (SELECT TFM_STATUS FROM DMT_AP_PAY_TERM_HDR_TFM_TBL
+                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                 UNION ALL
-                SELECT TFM_STATUS FROM DMT_AP_PAY_TERM_LINE_TFM_TBL WHERE RUN_ID = p_run_id);
+                SELECT TFM_STATUS FROM DMT_AP_PAY_TERM_LINE_TFM_TBL
+                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED');
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete. LOADED: ' || l_loaded
-            || ', FAILED: ' || l_failed
-            || ', UNACCOUNTED: ' || l_unaccnt || '.',
+            C_PROC || ' (load phase) complete. Headers confirmed mid-load; lines '
+            || 'POSTed. Rows left GENERATED for engine reconcile: ' || l_unaccnt || '.',
             p_package => C_PKG, p_procedure => C_PROC);
 
     EXCEPTION
@@ -772,6 +705,137 @@
                 C_PROC || ' failed.', SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
             RAISE;
     END LOAD_AND_RECONCILE;
+
+    -- --------------------------------------------------------
+    -- APPLY_PAY_TERM — thin STATIC apply for the generic recon engine.
+    -- Two-tier object (headers + installment lines) with a real surrogate id
+    -- (TERM_ID). The engine has staged the nine-column report into
+    -- DMT_RECON_STAGE_GTT; this proc MERGEs LOADED/FAILED into the two literally-
+    -- named TFM tables with STATIC SQL, one tier per report SOURCE_TYPE:
+    --   SOURCE_TYPE='BASE'      -> DMT_AP_PAY_TERM_HDR_TFM_TBL  by NAME
+    --   SOURCE_TYPE='BASE_LINE' -> DMT_AP_PAY_TERM_LINE_TFM_TBL by TERM_ID-SEQUENCE_NUM
+    -- Both tiers capture FUSION_TERM_ID from the report FUSION_ID. Headers marked
+    -- LOADED mid-load stay LOADED (guarded MERGE); this pass adds the lines.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_PAY_TERM (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    ) IS
+        C_PROC       CONSTANT VARCHAR2(30) := 'APPLY_PAY_TERM';
+        l_hdr_loaded NUMBER := 0;
+        l_ln_loaded  NUMBER := 0;
+        l_hdr_failed NUMBER := 0;
+        l_ln_failed  NUMBER := 0;
+    BEGIN
+        -- (1a) HEADERS LOADED: match report RECORD_KEY (= term NAME) to the header
+        -- TFM NAME; capture FUSION_TERM_ID.
+        MERGE INTO DMT_AP_PAY_TERM_HDR_TFM_TBL t
+        USING (
+            SELECT g.record_key, MAX(g.fusion_id) AS fusion_id
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.source_type   = 'BASE'
+            AND    g.fusion_status = 'SUCCESS'
+            AND    g.fusion_id     IS NOT NULL
+            GROUP BY g.record_key
+        ) s
+        ON (    t.RUN_ID = p_run_id
+            AND t.NAME   = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'LOADED',
+                t.FUSION_TERM_ID       = s.fusion_id,
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_hdr_loaded := SQL%ROWCOUNT;
+
+        -- (1b) LINES LOADED: report RECORD_KEY for a line = TERM_ID-SEQUENCE_NUM.
+        -- The line TFM carries FUSION_TERM_ID (set by POST_LINES/intra-confirm) and
+        -- SEQUENCE_NUM, so match on TO_CHAR(FUSION_TERM_ID)||'-'||SEQUENCE_NUM.
+        MERGE INTO DMT_AP_PAY_TERM_LINE_TFM_TBL t
+        USING (
+            SELECT g.record_key, MAX(g.fusion_id) AS fusion_id
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.source_type   = 'BASE_LINE'
+            AND    g.fusion_status = 'SUCCESS'
+            AND    g.fusion_id     IS NOT NULL
+            GROUP BY g.record_key
+        ) s
+        ON (    t.RUN_ID = p_run_id
+            AND TO_CHAR(t.FUSION_TERM_ID) || '-' || TO_CHAR(t.SEQUENCE_NUM) = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'LOADED',
+                t.FUSION_TERM_ID       = s.fusion_id,
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_ln_loaded := SQL%ROWCOUNT;
+
+        -- (2a) HEADERS FAILED on any staged ERROR row for the header tier.
+        MERGE INTO DMT_AP_PAY_TERM_HDR_TFM_TBL t
+        USING (
+            SELECT g.record_key, MIN(g.error_message) AS error_message
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.source_type   = 'BASE'
+            AND    g.fusion_status = 'ERROR'
+            AND    g.error_message IS NOT NULL
+            GROUP BY g.record_key
+        ) s
+        ON (    t.RUN_ID = p_run_id
+            AND t.NAME   = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'FAILED',
+                t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                             t.ERROR_TEXT,
+                                             '[FUSION_ERROR] ' || s.error_message),
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_hdr_failed := SQL%ROWCOUNT;
+
+        -- (2b) LINES FAILED on any staged ERROR row for the line tier.
+        MERGE INTO DMT_AP_PAY_TERM_LINE_TFM_TBL t
+        USING (
+            SELECT g.record_key, MIN(g.error_message) AS error_message
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.source_type   = 'BASE_LINE'
+            AND    g.fusion_status = 'ERROR'
+            AND    g.error_message IS NOT NULL
+            GROUP BY g.record_key
+        ) s
+        ON (    t.RUN_ID = p_run_id
+            AND TO_CHAR(t.FUSION_TERM_ID) || '-' || TO_CHAR(t.SEQUENCE_NUM) = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'FAILED',
+                t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                             t.ERROR_TEXT,
+                                             '[FUSION_ERROR] ' || s.error_message),
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_ln_failed := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' complete (set-based, from GTT). Headers LOADED: ' || l_hdr_loaded
+            || ', FAILED: ' || l_hdr_failed || ' | Lines LOADED: ' || l_ln_loaded
+            || ', FAILED: ' || l_ln_failed
+            || '. Unmatched/no-error rows left GENERATED (unaccounted).',
+            'INFO', C_PKG, C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed.', SQLERRM, C_PKG, C_PROC);
+            RAISE;
+    END APPLY_PAY_TERM;
 
 END DMT_AP_PAY_TERM_RESULTS_PKG;
 /

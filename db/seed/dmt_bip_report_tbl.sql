@@ -1129,6 +1129,38 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- PaymentTerms — Contract v1 registration + generic recon engine wiring.
+-- The deployed report DMT_APTERMS_RECON_RPT already emits the nine standard
+-- Contract v1 columns (single group G_1, two tiers folded by SOURCE_TYPE
+-- BASE/BASE_LINE via UNION ALL — see bip/APPaymentTerms/DMT_APTERMS_RECON_DM.xdm),
+-- so the generic engine can page + parse + stage it, then dispatch
+-- DMT_AP_PAY_TERM_RESULTS_PKG.APPLY_PAY_TERM. The header/line REST dependency
+-- (lines need the confirmed TERM_ID as the child URL key) is handled in the LOAD
+-- phase (LOAD_TERMS -> confirm headers -> POST_LINES); the engine's single final
+-- reconcile then settles both tiers via APPLY_PAY_TERM. RECON_KEY = term NAME
+-- (header) / TERM_ID-SEQUENCE_NUM (line); FUSION_ID = TERM_ID.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'PaymentTerms'                                         cemli_code,
+           1                                                      contract_version,
+           'DMT_AP_PAY_TERM_HDR_TFM_TBL,DMT_AP_PAY_TERM_LINE_TFM_TBL' tfm_table,
+           'FUSION_TERM_ID'                                       fusion_id_column,
+           'term NAME (header) / TERM_ID-SEQUENCE_NUM (line)'     recon_key_sql,
+           'DMT_AP_PAY_TERM_RESULTS_PKG.APPLY_PAY_TERM'           apply_proc
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CONTRACT_VERSION" = s.contract_version,
+    t."TFM_TABLE"        = s.tfm_table,
+    t."FUSION_ID_COLUMN" = s.fusion_id_column,
+    t."RECON_KEY_SQL"    = s.recon_key_sql,
+    t."APPLY_PROC"       = s.apply_proc;
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Lookups (100000044) — NEW reconciliation standard (DMT_DESIGN.html, PROPOSED
 -- 2026-09): reconciliation is a BIP report over the Fusion BASE tables.
 --
