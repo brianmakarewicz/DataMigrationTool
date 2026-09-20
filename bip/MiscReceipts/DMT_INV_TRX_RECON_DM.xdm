@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="inv_trx_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- MiscReceipts (inventory transactions) reconciliation data
+-- model -- BIP reconciliation report contract v1 (nine columns,
+-- keyset pagination, the six standard parameters). Same shape as
+-- DMT_GL_BAL_RECON_DM.xdm and DMT_REQ_RECON_DM.xdm.
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+--
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT.
+--
+-- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
+-- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
+-- with an empty cursor first, then passes the last RECORD_KEY it
+-- received on each next call, until a page returns fewer than
+-- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start.
+--
+-- SINGLE-TIER object. MiscReceipts loads on-hand quantities as
+-- Miscellaneous Receipt inventory transactions through the FBDI
+-- Inventory Transactions interface. The one FBDI zip carries a
+-- transactions CSV plus optional lot/serial child CSVs, but Fusion
+-- records the outcome of each transaction on ONE interface/base
+-- row keyed by SOURCE_LINE_ID -- a lot/serial rejection surfaces
+-- as the parent transaction row's error. So there is one recon
+-- tier, MiscReceipts, split only into BASE (posted) and INTERFACE
+-- (rejected). OBJECT_TYPE is 'MiscReceipts' on every row.
+--
+-- RECON KEY (= the object's recon key, verified live against runs
+-- 259 and 262):
+--   The transformer stamps each transaction with
+--     SOURCE_CODE           = 'DMT'
+--     TRANSACTION_REFERENCE = 'DMT-' || <run_id>   (the run batch key)
+--     SOURCE_LINE_ID        = the TFM STG_SEQUENCE_ID
+--   SOURCE_LINE_ID is unique per record within a run and is disjoint
+--   between the posted (base) and rejected (interface) sets, so it is
+--   the RECORD_KEY. The results package maps SOURCE_LINE_ID back to
+--   DMT_INV_TRX_TFM_TBL.STG_SEQUENCE_ID.
+--
+-- Row selection: run-scoped by the batch key
+--   TRANSACTION_REFERENCE = 'DMT-' || :P_RUN_ID and SOURCE_CODE='DMT'.
+--   BASE  rows: INV_MATERIAL_TXNS -- every posted transaction. A row
+--         in the base table IS the positive proof of success; the
+--         interface row for a success is purged, so the tiers never
+--         overlap. FUSION_ID = TRANSACTION_ID.
+--   INTERFACE rows: INV_TRANSACTIONS_INTERFACE with PROCESS_FLAG=3
+--         (error) -- the rejections that never posted. The interface
+--         carries ERROR_CODE + ERROR_EXPLANATION inline (there is no
+--         separate MTL_TRANSACTION_INTERFACE_ERRORS-style child table
+--         for this interface on this release; the real Fusion error
+--         text lives on the interface row itself).
+--   :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID are declared for contract
+--   symmetry and stamped into LOAD_REQUEST_ID for traceability.
+--   :P_PREFIX is declared for contract symmetry; the batch key
+--   'DMT-'||:P_RUN_ID is the reliable run-scoped selector here.
+--
+-- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
+--   BASE  (row present in INV_MATERIAL_TXNS)        => SUCCESS
+--   INTERFACE (PROCESS_FLAG=3 rejection)            => ERROR
+-- FUSION_ID is non-null on every BASE row (TRANSACTION_ID).
+-- ERROR_MESSAGE is non-null on every ERROR row (the real Fusion
+-- rejection text: ERROR_CODE + ERROR_EXPLANATION from the interface).
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- ========== BASE tier: posted transactions (positive proof) ==========
+    -- RECORD_KEY = SOURCE_LINE_ID (= TFM STG_SEQUENCE_ID, the recon key).
+    SELECT
+        'MiscReceipts'                       AS object_type,
+        TO_CHAR(t.source_line_id)            AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        t.transaction_id                     AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        t.transaction_reference              AS source_ref,
+        TO_CHAR(t.source_line_id)            AS dmt_reference
+    FROM   inv_material_txns t
+    WHERE  t.source_code           = 'DMT'
+    AND    t.transaction_reference = 'DMT-' || :P_RUN_ID
+
+    UNION ALL
+
+    -- ========== INTERFACE tier: rejections only (PROCESS_FLAG=3) ==========
+    -- RECORD_KEY = SOURCE_LINE_ID. ERROR_MESSAGE = the real Fusion
+    -- rejection carried inline on the interface row.
+    SELECT
+        'MiscReceipts'                       AS object_type,
+        TO_CHAR(t.source_line_id)            AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[TXN] ' || NVL(
+            NVL2(t.error_code, t.error_code || ': ', NULL) || t.error_explanation,
+            'Rejected by Inventory Transaction import (process_flag=3; '
+            || 'transaction not created in base table; no error text written).')
+                                             AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        t.transaction_reference              AS source_ref,
+        TO_CHAR(t.source_line_id)            AS dmt_reference
+    FROM   inv_transactions_interface t
+    WHERE  t.source_code           = 'DMT'
+    AND    t.transaction_reference = 'DMT-' || :P_RUN_ID
+    AND    t.process_flag          = 3
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start": return every row. On later
+-- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
+-- greater keys are returned. RECORD_KEY is compared as text (SOURCE_LINE_ID
+-- rendered TO_CHAR); the reconciler feeds back the exact key it received.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="inv_trx_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
