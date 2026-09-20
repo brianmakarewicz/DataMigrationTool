@@ -2,7 +2,7 @@
 <dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
            defaultDataSourceRef="ApplicationDB_FSCM">
   <!--
-    DMT_SAL_BASIS_RECON_DM - Contract v1 reconciliation data model for SalaryBases
+    DMT_SALARYBASES_RECON_DM - Contract v1 reconciliation data model for SalaryBases
     (design section 5, "BIP reconciliation report contract - v1"; nine-column
     response, columns 8-9 SOURCE_REF/DMT_REFERENCE added 2026-09-20).
 
@@ -17,9 +17,11 @@
 
     BASE-TIER-ONLY, HDL recipe (mirrors Workers/Salaries): the report is driven off
     HRC_INTEGRATION_KEY_MAP, the mapping HDL writes for every loaded object. It is
-    scoped to this object by OBJECT_NAME = 'SalaryBasis' and to this run by
-    SOURCE_SYSTEM_ID LIKE :P_PREFIX || '%'. OBJECT_NAME is echoed back as OBJECT_TYPE,
-    and SURROGATE_ID is the real Fusion base-table PK - verified live 2026-09-20:
+    scoped to this object by OBJECT_NAME = 'SalaryBasis' (the source-system object
+    name) and to this run by SOURCE_SYSTEM_ID LIKE :P_PREFIX || '%'. OBJECT_TYPE is
+    the literal DMT object code 'SalaryBases' (the CEMLI_CODE, per the Contract v1
+    rule that single-record-type objects return the object-code constant), and
+    SURROGATE_ID is the real Fusion base-table PK - verified live 2026-09-20:
       HRC_INTEGRATION_KEY_MAP.OBJECT_NAME       = 'SalaryBasis' (155 rows on the pod;
                                                   8 owned by our loader HRC_SQLLOADER)
       HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID == the prefixed SalaryBasisName we wrote
@@ -55,8 +57,10 @@ FROM (
     -- BASE tier: positive proof via the HDL integration key map. The load writes one
     -- HRC_INTEGRATION_KEY_MAP row per salary basis (OBJECT_NAME='SalaryBasis') whose
     -- SURROGATE_ID is the CMP_SALARY_BASES.SALARY_BASIS_ID. One row per migrated basis
-    -- (GROUP BY source_system_id collapses any duplicate map rows).
-    SELECT m.object_name                   AS object_type,
+    -- (GROUP BY source_system_id collapses any duplicate map rows). OBJECT_TYPE is the
+    -- literal DMT object code 'SalaryBases' (the CEMLI_CODE), not the source object
+    -- name 'SalaryBasis' - that value is the WHERE discriminator, not the output column.
+    SELECT 'SalaryBases'                   AS object_type,
            m.source_system_id              AS record_key,
            'BASE'                          AS source_type,
            'SUCCESS'                       AS fusion_status,
@@ -69,7 +73,7 @@ FROM (
     WHERE  m.object_name = 'SalaryBasis'
     AND    m.source_system_id LIKE :P_PREFIX || '%'
     AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
-    GROUP BY m.object_name, m.source_system_id
+    GROUP BY m.source_system_id
     ORDER BY m.source_system_id
 )
 WHERE ROWNUM <= :P_CHUNK_SIZE
