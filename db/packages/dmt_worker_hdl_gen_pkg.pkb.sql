@@ -126,6 +126,34 @@ AS
 
         x_filename := 'Worker_' || TO_CHAR(p_run_id) || '.zip';
 
+        -- ============================================================
+        -- Backlog #12 -- run-scoped per-record reference (HDL family template).
+        -- Carrier config (DMT_REF_CARRIER_CFG_TBL, cemli_code Workers):
+        --   Slot A = SourceSystemId  -> HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID
+        --   Slot B = none (the run prefix inside SourceSystemId IS the batch marker)
+        --   Slot C = none (HDL persons have NO attribute column that round-trips:
+        --            HRC_INTEGRATION_KEY_MAP carries no DFF, and per the GL lesson we
+        --            do not assume a PER_ALL_PEOPLE_F ATTRIBUTE round-trips).
+        -- Slot A already carries the per-record identity: SourceSystemId = the
+        -- prefixed PERSON_NUMBER, which is also RECON_KEY. It CANNOT additionally
+        -- embed the tfm id, because it must equal PERSON_NUMBER for the base-table
+        -- match (PER_ALL_PEOPLE_F.PERSON_NUMBER) and for the child
+        -- PersonId(SourceSystemId) FK hints. So the #12 change for HDL is NOT a new
+        -- CSV/DAT column; it is: stamp WORK_QUEUE_ID on the TFM rows so the full
+        -- reference DMT:run:wq:tfm is derivable per row (BUILD_REF), and prove the
+        -- round-trip at reconcile on Slot A (the base RECORD_KEY that comes back
+        -- equals the Slot A value we wrote = RECON_KEY). The work-queue source is
+        -- DMT_LOADER_PKG.g_gen_queue_id -- the current item's QUEUE_ID, set for EVERY
+        -- object as the sanctioned "reference component" global. (NOT g_work_queue_id:
+        -- that is deliberately NULL for non-partitioned objects to preserve
+        -- reconcile-sweep scope, so it would leave the wq segment empty as DMT:run::tfm
+        -- -- the correction proven on GLBalances run 305.) Scoped to this run's STAGED
+        -- Worker rows.
+        UPDATE DMT_WORKER_TFM_TBL
+        SET    WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
         DBMS_LOB.CREATETEMPORARY(l_dat, TRUE);
 
         -- Source key naming convention:
