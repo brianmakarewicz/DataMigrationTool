@@ -58,9 +58,33 @@ using (
            -- carries to the base table, verified per object -- not assumed.
            'GL journal line ref carrier; Slot C = REFERENCE22 -> GL_JE_LINES.REFERENCE_2.' notes from dual
     union all select 'Customers', 'Parties', 'DMT_HZ_PARTIES_TFM_TBL',
-           'ORIG_SYSTEM_REFERENCE', 'HZ_PARTIES.ORIG_SYSTEM_REFERENCE',
-           'REQUEST_ID', 'ATTRIBUTE30', 150, 'FULL', 'CONFIRMED', 'Y',
-           'TCA party carrier; header tier of the 7-tier Customers object.' from dual
+           'PARTY_ORIG_SYSTEM_REFERENCE', 'HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE',
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           -- Corrected 2026-09-20 (backlog #12 proof-of-recipe, live run). This row
+           -- is the TEMPLATE for the TCA family (Customers + the 5 supplier objects),
+           -- all keyed on ORIG_SYSTEM_REFERENCE. THREE slots resolved to reality:
+           --   Slot A = PARTY_ORIG_SYSTEM_REFERENCE. The transform already PREFIXES it
+           --     and the reconciler matches Parties on it; the recon report reads the
+           --     value back from the Fusion BASE table HZ_ORIG_SYS_REFERENCES
+           --     (owner_table_name=HZ_PARTIES, owner_table_id=HZ_PARTIES.PARTY_ID). It
+           --     is the identity carrier and VERIFIABLY round-trips -- this is the #12
+           --     round-trip proof (same shape as HDL Workers riding Slot A). Its base
+           --     column is HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE, NOT
+           --     HZ_PARTIES.ORIG_SYSTEM_REFERENCE (that column is a legacy single-value
+           --     stamp, not what the reconciler reads).
+           --   Slot B = NULL. The seed guessed REQUEST_ID; the party interface TFM has
+           --     no REQUEST_ID (or any batch/request) column, so there is no Slot B.
+           --   Slot C = NULL. The seed guessed ATTRIBUTE30; the parties interface has
+           --     only ATTRIBUTE1..ATTRIBUTE20 (no ATTRIBUTE30 column exists) and NO
+           --     ATTRIBUTE is proven to round-trip to an HZ_PARTIES base column. Per the
+           --     GL lesson (GL_INTERFACE.ATTRIBUTE20 did NOT carry through) we do NOT
+           --     invent a Slot C. The full run-scoped ref (DMT:run:wq:tfm from
+           --     BUILD_REF) is logged for audit at reconcile; the #12 round-trip rides
+           --     Slot A. WORK_QUEUE_ID is stamped from g_gen_queue_id at generation.
+           'TCA party carrier and TEMPLATE for the TCA family (Customers + 5 supplier ' ||
+           'objects). #12 round-trip rides Slot A (PARTY_ORIG_SYSTEM_REFERENCE -> ' ||
+           'HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE). Slot B/C NULL: no batch ' ||
+           'column and no round-trippable attribute on the party interface.' from dual
     union all select 'Suppliers', 'Suppliers', 'DMT_POZ_SUPPLIERS_TFM_TBL',
            null, null,
            'REQUEST_ID', 'ATTRIBUTE20', 150, 'FULL', 'CONFIRMED', 'Y',
