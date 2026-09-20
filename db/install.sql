@@ -379,6 +379,7 @@ prompt == Tables ==
 @@tables/dmt_rcv_headers_tfm_tbl.sql
 @@tables/dmt_rcv_transactions_stg_tbl.sql
 @@tables/dmt_rcv_transactions_tfm_tbl.sql
+@@tables/dmt_ref_carrier_cfg_tbl.sql
 @@tables/dmt_rest_lookup_tbl.sql
 @@tables/dmt_salary_stg_tbl.sql
 @@tables/dmt_salary_tfm_tbl.sql
@@ -735,6 +736,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_queue_pkg.pks.sql
 @@packages/dmt_queue_worker_pkg.pks.sql
 @@packages/dmt_recon_contract_pkg.pks.sql
+@@packages/dmt_ref_id_pkg.pks.sql
 @@packages/dmt_regression_pkg.pks.sql
 @@packages/dmt_report_pkg.pks.sql
 @@packages/dmt_req_fbdi_gen_pkg.pks.sql
@@ -948,6 +950,7 @@ prompt == Package bodies ==
 @@packages/dmt_queue_pkg.pkb.sql
 @@packages/dmt_queue_worker_pkg.pkb.sql
 @@packages/dmt_recon_contract_pkg.pkb.sql
+@@packages/dmt_ref_id_pkg.pkb.sql
 @@packages/dmt_report_pkg.pkb.sql
 @@packages/dmt_req_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_req_results_pkg.pkb.sql
@@ -1002,6 +1005,7 @@ prompt == Grants made ==
 prompt == Seed data ==
 @@seed/dmt_cemli_split_cfg.sql
 @@seed/dmt_bip_report_tbl.sql
+@@seed/dmt_ref_carrier_cfg_tbl.sql
 @@seed/dmt_erp_interface_options_tbl.sql
 @@seed/dmt_rest_lookup_tbl.sql
 @@seed/dmt_config_tbl.sql
