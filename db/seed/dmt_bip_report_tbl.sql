@@ -942,6 +942,36 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- UnitsOfMeasure — Contract v1 registration + generic recon engine wiring.
+-- The deployed report DMT_UOM_RECON_RPT already emits the nine standard
+-- Contract v1 columns (single group G_1, see bip/UnitsOfMeasure/DMT_UOM_RECON_DM.xdm),
+-- so the generic engine (DMT_RECON_ENGINE_PKG) can page + parse + stage it, then
+-- dispatch this object's own thin static apply, DMT_INV_UOM_RESULTS_PKG.APPLY_UOM,
+-- through the sanctioned invoke_registered site. APPLY_UOM MERGEs from
+-- DMT_RECON_STAGE_GTT into the literally-named DMT_INV_UOM_TFM_TBL with STATIC SQL.
+-- RECON_KEY = UOM_CODE (the report RECORD_KEY matched to TFM.UOM_CODE).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'UnitsOfMeasure'                                       cemli_code,
+           1                                                      contract_version,
+           'DMT_INV_UOM_TFM_TBL'                                  tfm_table,
+           'FUSION_UOM_ID'                                        fusion_id_column,
+           'UOM code reconciliation key (report RECORD_KEY matched to TFM.UOM_CODE)' recon_key_sql,
+           'DMT_INV_UOM_RESULTS_PKG.APPLY_UOM'                    apply_proc
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CONTRACT_VERSION" = s.contract_version,
+    t."TFM_TABLE"        = s.tfm_table,
+    t."FUSION_ID_COLUMN" = s.fusion_id_column,
+    t."RECON_KEY_SQL"    = s.recon_key_sql,
+    t."APPLY_PROC"       = s.apply_proc;
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- ValueSets (100000042) — NEW reconciliation standard (DMT_DESIGN.html,
 -- PROPOSED 2026-09): reconciliation is a BIP report over the Fusion BASE tables
 -- that returns the base-table surrogate id. ValueSets is a two-object load — a
@@ -1153,6 +1183,36 @@ when not matched then insert
     values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
             s.report_catalog_path, s.interface_table, sysdate, s.notes,
             null, null);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Lookups — Contract v1 registration + generic recon engine wiring.
+-- The deployed report DMT_LOOKUP_RECON_RPT already emits the nine standard
+-- Contract v1 columns (single group G_1, two tiers folded by OBJECT_TYPE via
+-- UNION ALL — see bip/Lookups/DMT_LOOKUP_RECON_DM.xdm), so the generic engine
+-- can page + parse + stage it, then dispatch DMT_FND_LOOKUP_RESULTS_PKG
+-- .APPLY_LOOKUPS. FND lookups have NO numeric surrogate id, so FUSION_ID_COLUMN
+-- is left NULL and APPLY_LOOKUPS marks LOADED on existence (no id captured).
+-- RECON_KEY = LOOKUP_TYPE (types) / LOOKUP_TYPE^LOOKUP_CODE (values).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Lookups'                                              cemli_code,
+           1                                                      contract_version,
+           'DMT_FND_LOOKUP_TYPE_TFM_TBL,DMT_FND_LOOKUP_VALUE_TFM_TBL' tfm_table,
+           CAST(NULL AS VARCHAR2(128))                            fusion_id_column,
+           'LOOKUP_TYPE (types) / LOOKUP_TYPE^LOOKUP_CODE (values); no numeric surrogate' recon_key_sql,
+           'DMT_FND_LOOKUP_RESULTS_PKG.APPLY_LOOKUPS'             apply_proc
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CONTRACT_VERSION" = s.contract_version,
+    t."TFM_TABLE"        = s.tfm_table,
+    t."FUSION_ID_COLUMN" = s.fusion_id_column,
+    t."RECON_KEY_SQL"    = s.recon_key_sql,
+    t."APPLY_PROC"       = s.apply_proc;
 
 commit;
 

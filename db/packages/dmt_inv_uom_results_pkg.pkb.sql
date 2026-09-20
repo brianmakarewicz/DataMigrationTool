@@ -179,11 +179,12 @@
         l_reject_count  NUMBER := 0;
         l_errmsg        VARCHAR2(4000);
         l_base_uom_val  VARCHAR2(10);
+        l_dmt_ref       VARCHAR2(240);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
         FOR r IN (
-            SELECT TFM_SEQUENCE_ID,
+            SELECT TFM_SEQUENCE_ID, WORK_QUEUE_ID,
                    UOM_CODE, UOM_CLASS, UNIT_OF_MEASURE,
                    DESCRIPTION, BASE_UOM_FLAG
             FROM   DMT_INV_UOM_TFM_TBL
@@ -199,6 +200,15 @@
                     l_base_uom_val := 'false';
                 END IF;
 
+                -- Slot C DFF stamp (round-trip reference). The recon DM finds a
+                -- run's base rows by ATTRIBUTE1 LIKE 'DMT:'||run||':%', so the POST
+                -- body MUST carry the DMT reference in the descriptive flexfield.
+                -- Without this stamp the recon report returns zero rows and no UOM
+                -- is ever confirmed LOADED. Uses the standard FULL reference format
+                -- (DMT:run:wq:tfm) so the engine's TFM-joined round-trip proof holds.
+                l_dmt_ref := DMT_REF_ID_PKG.BUILD_REF(
+                                 p_run_id, r.WORK_QUEUE_ID, r.TFM_SEQUENCE_ID);
+
                 l_payload := '{"UOMCode":"' || REPLACE(r.UOM_CODE, '"', '\"') || '"'
                     || ',"UOM":"' || REPLACE(NVL(r.UNIT_OF_MEASURE, r.UOM_CODE), '"', '\"') || '"'
                     || ',"UOMClass":' || NVL(r.UOM_CLASS, 'null')
@@ -206,6 +216,8 @@
                     || CASE WHEN r.DESCRIPTION IS NOT NULL
                        THEN ',"Description":"' || REPLACE(r.DESCRIPTION, '"', '\"') || '"'
                        END
+                    || ',"__FLEX_Context":null'
+                    || ',"attribute1":"' || REPLACE(l_dmt_ref, '"', '\"') || '"'
                     || '}';
 
                 l_response := rest_call('POST', C_UOM_PATH, l_payload, p_run_id);
@@ -407,91 +419,41 @@
 
     -- ============================================================
     -- LOAD_AND_RECONCILE
-    -- Main entry point. LOAD via REST POST, then RECONCILE via the BIP
-    -- base-table report (the new standard). No COMMIT until the end (the
-    -- runner also commits, but this keeps the two phases in one txn).
+    -- LOAD-ONLY entry point (name retained for the runner's contract).
+    -- POSTs every GENERATED UOM to Fusion, stamping the DMT run reference into
+    -- the descriptive flexfield so the deployed nine-column recon report can find
+    -- this run's base rows. Rows are left GENERATED. RECONCILE is now owned by the
+    -- generic Contract v1 engine: the queue routes UnitsOfMeasure to RECONCILING
+    -- (RECON_PROC = DMT_RECON_ENGINE_PKG.RECONCILE_BATCH, RECON_HAS_CEMLI_ARG='Y'),
+    -- which pages + stages the report and dispatches APPLY_UOM (below). Reconciling
+    -- here too would double-reconcile (the backlog #7 bug), so it is deliberately
+    -- NOT done inline. The private FETCH_BIP_RESULTS / PARSE_AND_UPDATE are kept for
+    -- independent testing but are no longer on the live path.
     -- ============================================================
     PROCEDURE LOAD_AND_RECONCILE (
         p_run_id IN NUMBER
     ) IS
         C_PROC     CONSTANT VARCHAR2(30) := 'LOAD_AND_RECONCILE';
-        l_codes    VARCHAR2(4000);
-        l_xml      XMLTYPE;
-        l_err      NUMBER;
-        l_loaded   NUMBER;
-        l_failed   NUMBER;
-        l_unaccnt  NUMBER;
+        l_gen      NUMBER;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
+        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' (load-only) start.',
+            p_package => C_PKG, p_procedure => C_PROC);
 
-        -- Phase 1: LOAD -- POST every GENERATED UOM to Fusion.
+        -- LOAD -- POST every GENERATED UOM to Fusion (stamping the DMT run
+        -- reference into the descriptive flexfield). Rows stay GENERATED for the
+        -- engine reconcile that follows via the queue.
         LOAD_UOMS(p_run_id);
-
-        -- Build the comma-delimited list of codes we POSTed and still need
-        -- confirmed (rows the load step did NOT mark FAILED). Config UOM codes
-        -- are not run-prefixed, so we match the base table on the exact codes.
-        SELECT LISTAGG(UOM_CODE, ',') WITHIN GROUP (ORDER BY UOM_CODE)
-        INTO   l_codes
-        FROM   DMT_INV_UOM_TFM_TBL
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED';
-
-        -- Phase 2: RECONCILE -- run the base-table report and confirm.
-        FETCH_BIP_RESULTS(
-            p_run_id     => p_run_id,
-            p_uom_codes  => l_codes,
-            x_report_xml => l_xml,
-            x_error_code => l_err);
-
-        IF l_err != DMT_UTIL_PKG.C_SUCCESS THEN
-            -- Reconciliation transport failed: raise loudly so the queue work item
-            -- fails, never a silent zero-row "success".
-            RAISE_APPLICATION_ERROR(-20039,
-                'LOAD_AND_RECONCILE: base-table reconciliation report failed for CEMLI '
-                || C_CEMLI || ' (detail in DMT_LOG_TBL).');
-        END IF;
-
-        PARSE_AND_UPDATE(p_run_id, l_xml);
-
-        -- Post-reconcile sweep: any row NOT confirmed in the base table is still
-        -- GENERATED. If its POST returned a real Fusion error (stashed in
-        -- ERROR_TEXT by LOAD_UOMS) mark it FAILED on that real error. A row with
-        -- no stashed error AND no base-table hit is left GENERATED (unaccounted);
-        -- the accounting gate surfaces it -- we never fabricate a verdict.
-        UPDATE DMT_INV_UOM_TFM_TBL
-        SET    TFM_STATUS           = 'FAILED',
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    ERROR_TEXT IS NOT NULL;
-
-        -- Mirror the terminal TFM outcome onto STG (STG_STATUS is terminal from
-        -- staging's point of view; the TFM row is the record of the Fusion outcome).
-        UPDATE DMT_INV_UOM_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
-                               FROM   DMT_INV_UOM_TFM_TBL t
-                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                               AND    t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_INV_UOM_TFM_TBL t
-                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                       AND    t.RUN_ID = p_run_id
-                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
 
         COMMIT;
 
-        SELECT COUNT(CASE WHEN TFM_STATUS = 'LOADED'    THEN 1 END),
-               COUNT(CASE WHEN TFM_STATUS = 'FAILED'    THEN 1 END),
-               COUNT(CASE WHEN TFM_STATUS NOT IN ('LOADED','FAILED') THEN 1 END)
-        INTO   l_loaded, l_failed, l_unaccnt
+        SELECT COUNT(CASE WHEN TFM_STATUS = 'GENERATED' THEN 1 END)
+        INTO   l_gen
         FROM   DMT_INV_UOM_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete. LOADED: ' || l_loaded
-            || ', FAILED: ' || l_failed
-            || ', UNACCOUNTED: ' || l_unaccnt || '.',
+            C_PROC || ' (load-only) complete. Rows left GENERATED for engine '
+            || 'reconcile: ' || l_gen || '.',
             p_package => C_PKG, p_procedure => C_PROC);
 
     EXCEPTION
@@ -500,6 +462,87 @@
                 C_PROC || ' failed.', SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
             RAISE;
     END LOAD_AND_RECONCILE;
+
+    -- --------------------------------------------------------
+    -- APPLY_UOM — thin STATIC apply for the generic recon engine.
+    -- Same two-MERGE shape as DMT_GL_RESULTS_PKG.APPLY_GL, sourced from
+    -- DMT_RECON_STAGE_GTT (which the engine has already populated for this run)
+    -- and targeting the literally-named DMT_INV_UOM_TFM_TBL. UnitsOfMeasure is a
+    -- single-tier object, so one LOADED MERGE and one FAILED MERGE suffice; the
+    -- report's OBJECT_TYPE is always 'UnitsOfMeasure' and SOURCE_TYPE 'BASE'.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_UOM (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'APPLY_UOM';
+        l_loaded NUMBER := 0;
+        l_failed NUMBER := 0;
+    BEGIN
+        -- (1) SET-BASED LOADED: a TFM row is LOADED only from a BASE/SUCCESS
+        -- staged row with a real FUSION_ID; FUSION_UOM_ID captured in the same
+        -- statement. Match on UOM_CODE (report RECORD_KEY). MAX(fusion_id) is a
+        -- stable pick if the report ever returns a code more than once.
+        MERGE INTO DMT_INV_UOM_TFM_TBL t
+        USING (
+            SELECT g.record_key,
+                   MAX(g.fusion_id) AS fusion_id
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.source_type   = 'BASE'
+            AND    g.fusion_status = 'SUCCESS'
+            AND    g.fusion_id     IS NOT NULL
+            GROUP BY g.record_key
+        ) s
+        ON (    t.RUN_ID   = p_run_id
+            AND t.UOM_CODE = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'LOADED',
+                t.FUSION_UOM_ID        = s.fusion_id,
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_loaded := SQL%ROWCOUNT;
+
+        -- (2) SET-BASED FAILED: any staged ERROR row carrying a real Fusion error
+        -- message. Append the error, tagged [FUSION_ERROR]; never overwrite.
+        MERGE INTO DMT_INV_UOM_TFM_TBL t
+        USING (
+            SELECT g.record_key,
+                   MIN(g.error_message) AS error_message
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.fusion_status = 'ERROR'
+            AND    g.error_message IS NOT NULL
+            GROUP BY g.record_key
+        ) s
+        ON (    t.RUN_ID   = p_run_id
+            AND t.UOM_CODE = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'FAILED',
+                t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                             t.ERROR_TEXT,
+                                             '[FUSION_ERROR] ' || s.error_message),
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_failed := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' complete (set-based, from GTT). LOADED: ' || l_loaded ||
+            ', FAILED: ' || l_failed ||
+            '. Unmatched/no-error rows left GENERATED (unaccounted).',
+            'INFO', C_PKG, C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed.', SQLERRM, C_PKG, C_PROC);
+            RAISE;
+    END APPLY_UOM;
 
 END DMT_INV_UOM_RESULTS_PKG;
 /
