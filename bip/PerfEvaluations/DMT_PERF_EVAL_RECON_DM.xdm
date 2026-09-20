@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <!--
+    DMT_PERF_EVAL_RECON_DM - Contract v1 (nine-column) reconciliation data model
+    for PerfEvaluations (design section 5, "BIP reconciliation report contract - v1";
+    columns 8-9 SOURCE_REF / DMT_REFERENCE added 2026-09-20).
+
+    Returns the BASE tier for the PerfEvaluations HDL load: one row per migrated
+    performance evaluation that is positively confirmed in the Fusion HCM Goals
+    base view HRG_GOAL_PLANS_VL, with its real Fusion GOAL_PLAN_ID as FUSION_ID.
+
+    WHAT OUR HDL WRITES (verified in db/packages/dmt_perf_eval_hdl_gen_pkg.pkb.sql):
+    PerfEvaluations loads through the HCM Data Loader as the GoalPlan object
+    (GoalPlan.dat, BUILD_DAT_HEADER('GoalPlan',...)); the child ratings load as
+    GoalPlanGoal. A loaded performance evaluation therefore lives in Fusion as a
+    goal plan definition. The parent SourceSystemId our generator writes is
+    PERSON_NUMBER || '_GOAL' with SourceSystemOwner 'HRC_SQLLOADER' (constant
+    C_SOURCE_SYSTEM); GoalPlanName = the prefixed DOCUMENT_NAME (the run prefix is
+    applied at transform, not in the generator).
+
+    WHY BASE-MATCH IS BY PREFIXED NAME, NOT BY THE HRC_SQLLOADER KEY MAP:
+    The generic HDL recipe drives off HRC_INTEGRATION_KEY_MAP scoped by
+    SOURCE_SYSTEM_OWNER='HRC_SQLLOADER' AND SOURCE_SYSTEM_ID LIKE :P_PREFIX||'%',
+    with SURROGATE_ID as the Fusion id (that is how Salaries works). That recipe
+    does NOT apply to PerfEvaluations, verified live 2026-09-20 (cred fin_impl):
+      1) HRC_INTEGRATION_KEY_MAP has GoalPlan (72) and GoalPlanGoal (17152) rows,
+         but EVERY one has SOURCE_SYSTEM_OWNER='FUSION' - there are ZERO
+         HRC_SQLLOADER-owned rows for either object.
+      2) Those FUSION-owned rows store SOURCE_SYSTEM_ID = the numeric GOAL_PLAN_ID
+         itself (SSID==SURROGATE_ID), not our 'PERSON_NUMBER_GOAL' business key.
+      3) No row exists in HRC_INTEGRATION_KEY_MAP whose SOURCE_SYSTEM_ID matches
+         our '%_GOAL' key or contains 'DMT'. Our HDL SourceSystemIds are not in
+         the key map at all, so a key-map join returns zero rows for our loads.
+    Also, our '_GOAL' SourceSystemId does not carry the run prefix (only the
+    GoalPlanName / DOCUMENT_NAME does), so even a LIKE :P_PREFIX||'%' on the key
+    map would not scope to a run. The reliable, data-proven key is the prefixed
+    GOAL_PLAN_NAME on the base view - exactly like WorkSchedules.
+
+    BASE TABLE: HRG_GOAL_PLANS_VL is the translated view over the base table
+    HRG_GOAL_PLANS_B + _TL (the name lives on _TL, exposed by the _VL view).
+    GOAL_PLAN_ID is the base id; GOAL_PLAN_NAME is the business key. Verified live
+    2026-09-20 (cred fin_impl): migrated DMT goal plans carry the run prefix in
+    GOAL_PLAN_NAME and GOAL_PLAN_ID is the base-tier Fusion id, e.g.
+        300000331552763  '95480 DMT Goal Plan A'
+        300000331552755  '95480 DMT Goal Plan B'
+    and GOAL_PLAN_NAME is unique (no name appears more than once in the view), so
+    it is a safe RECORD_KEY; MAX(goal_plan_id) is kept defensively for the GROUP BY.
+
+    RECORD_KEY = the performance evaluation's business key = the prefixed goal plan
+    name (= DOCUMENT_NAME with the run prefix), stamped on the PerfEvaluations TFM
+    row as RECON_KEY. Matching is on HRG_GOAL_PLANS_VL.GOAL_PLAN_NAME.
+
+    THE NINE COLUMNS (design section 5, in order):
+      1 OBJECT_TYPE     - 'PerfEvaluations' (single record type in this report;
+                          the GoalPlanGoal child ratings are not base-reconciled).
+      2 RECORD_KEY      - GOAL_PLAN_NAME (the prefixed business key).
+      3 SOURCE_TYPE     - 'BASE' (positive base-table proof).
+      4 FUSION_STATUS   - 'SUCCESS' (this report returns the BASE/SUCCESS tier only;
+                          HDL per-record failures are tagged [FUSION_ERROR] by
+                          RECONCILE_HDL from the HDL response before this runs).
+      5 FUSION_ID       - GOAL_PLAN_ID, the real Fusion base-table PK (non-null on
+                          every BASE/SUCCESS row, as the contract requires).
+      6 ERROR_MESSAGE   - NULL (no ERROR rows in a BASE-tier HDL report).
+      7 LOAD_REQUEST_ID - :P_LOAD_REQUEST_ID echoed back unchanged for audit.
+      8 SOURCE_REF      - Slot A, the run-scoped native reference read back from the
+                          base table. HRG_GOAL_PLANS does not store our HDL
+                          SourceSystemId (verified above), so the run-scoped
+                          reference the base table carries is the prefixed
+                          GOAL_PLAN_NAME - returned here as SOURCE_REF (= RECORD_KEY).
+      9 DMT_REFERENCE   - Slot C, the DMT:<run>:<queue>:<tfm> stamp read back from
+                          the DFF ATTRIBUTE1 on HRG_GOAL_PLANS_VL. Our generator
+                          writes no DFF stamp for GoalPlan, so this is NULL today;
+                          read back from the base table so it populates
+                          automatically if a DFF stamp is added later.
+
+    Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
+    P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an
+    HDL load, so BASE-tier matching is by the run prefix (P_PREFIX) against
+    GOAL_PLAN_NAME. LOAD_REQUEST_ID is echoed back unchanged for audit.
+
+    STANDALONE-VALIDATED live 2026-09-20 (cred fin_impl, via
+    scripts/fusion_bip_query.py) against a prior loaded run, prefix '95480',
+    P_CHUNK_SIZE=1:
+      page 1 (P_AFTER_KEY null)                 -> '95480 DMT Goal Plan A', FUSION_ID 300000331552763
+      page 2 (P_AFTER_KEY '95480 DMT Goal Plan A') -> '95480 DMT Goal Plan B', FUSION_ID 300000331552755
+      page 3 (P_AFTER_KEY '95480 DMT Goal Plan B') -> empty
+    All nine columns populated; FUSION_ID round-trips to a real GOAL_PLAN_ID;
+    SOURCE_REF carries the run-scoped name; DMT_REFERENCE null (no DFF stamp yet).
+  -->
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="perf_eval_recon" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT object_type, record_key, source_type, fusion_status,
+       fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- BASE tier: positive proof in the HCM goal plan base view. One row per
+    -- migrated goal plan (GROUP BY goal_plan_name collapses translations).
+    SELECT 'PerfEvaluations'               AS object_type,
+           v.goal_plan_name                AS record_key,
+           'BASE'                          AS source_type,
+           'SUCCESS'                       AS fusion_status,
+           MAX(v.goal_plan_id)             AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))    AS error_message,
+           :P_LOAD_REQUEST_ID              AS load_request_id,
+           v.goal_plan_name                AS source_ref,
+           MAX(v.attribute1)               AS dmt_reference
+    FROM   hrg_goal_plans_vl v
+    WHERE  v.goal_plan_name LIKE :P_PREFIX || '%'
+    AND    (:P_AFTER_KEY IS NULL OR v.goal_plan_name > :P_AFTER_KEY)
+    GROUP BY v.goal_plan_name
+    ORDER BY v.goal_plan_name
+)
+WHERE ROWNUM <= :P_CHUNK_SIZE
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="perf_eval_recon">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="3"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="5"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="6"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
