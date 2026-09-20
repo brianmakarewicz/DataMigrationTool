@@ -8,37 +8,138 @@
     <property name="xml_tag_case" value="upper"/>
   </dataProperties>
   <dataSets>
-    <dataSet name="lookup_base_results" type="complex">
+    <dataSet name="lookup_recon_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
--- Lookups reconciliation over the Fusion base tables.
--- SPECIAL CASE: FND lookups have NO numeric surrogate id. The types base
--- (FND_LOOKUP_TYPES, key LOOKUP_TYPE) and the values base
--- (FND_LOOKUP_VALUES_B, key LOOKUP_TYPE + LOOKUP_CODE) expose only string
--- keys. Existence-by-key IS the honest base-table proof, so this report
--- returns RECORD_KEY + SOURCE_TYPE only (no FUSION_ID column). DISTINCT
--- collapses the date-tracked / translation rows the base views expand to.
-SELECT record_key, source_type FROM (
+-- ============================================================
+-- Lookups reconciliation data model — BIP reconciliation report
+-- contract v1 (nine columns, keyset pagination, the six standard
+-- parameters). Conforms to the GLBalances reference template.
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+--
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT.
+--
+-- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
+-- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
+-- with an empty cursor first, then passes the last RECORD_KEY it
+-- received on each next call, until a page returns fewer than
+-- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
+-- (every non-null RECORD_KEY sorts after the empty string).
+--
+-- SPECIAL CASE — Lookups has NO numeric surrogate id. The base
+-- tables are FND_LOOKUP_TYPES (key LOOKUP_TYPE) and
+-- FND_LOOKUP_VALUES_B (key LOOKUP_TYPE + LOOKUP_CODE); neither
+-- exposes a numeric id for a loaded row. Existence-by-key IS the
+-- honest base-table proof, so on every returned row:
+--   SOURCE_TYPE   = 'BASE'  (the row is present in the base table)
+--   FUSION_STATUS = 'SUCCESS'
+--   FUSION_ID     = NULL    (no surrogate exists; NULL by design)
+--   ERROR_MESSAGE = NULL    (a base-table hit is never an error)
+-- A record that never reached the base table simply does not appear
+-- here; the reconciler treats a run key absent from this report as
+-- unaccounted and carries the FBL import log error separately.
+--
+-- Run-scoping (DMT: marker in the flexfield ATTRIBUTE columns):
+--   FND_LOOKUP_VALUES_B HAS ATTRIBUTE1..ATTRIBUTE15, so a loaded
+--   value carries ATTRIBUTE1 = 'DMT:'||run||':'||queue||':'||tfm and
+--   the VALUE tier is scoped by
+--       v.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%'.
+--   FND_LOOKUP_TYPES has NO ATTRIBUTE columns (verified live on the
+--   demo pod), so the TYPE tier cannot carry its own DMT marker.
+--   A type belongs to this run when at least one of its child values
+--   carries the run marker, so the TYPE tier is scoped by the run's
+--   own values (EXISTS against FND_LOOKUP_VALUES_B). Consequently
+--   DMT_REFERENCE is NULL for every TYPE row (the types base has no
+--   ATTRIBUTE1 to return) and = ATTRIBUTE1 for every VALUE row.
+--
+-- Keys:
+--   RECORD_KEY / SOURCE_REF:
+--       TYPE  = FND_LOOKUP_TYPES.LOOKUP_TYPE
+--       VALUE = FND_LOOKUP_VALUES_B.LOOKUP_TYPE || '^' || LOOKUP_CODE
+--   DMT_REFERENCE:
+--       TYPE  = NULL (types base has no ATTRIBUTE1)
+--       VALUE = FND_LOOKUP_VALUES_B.ATTRIBUTE1
+--   FUSION_ID = NULL for both tiers (no numeric surrogate).
+-- DISTINCT collapses the date-tracked / translation rows the base
+-- tables expand a single logical lookup into.
+-- (:P_IMPORT_ESS_ID and :P_PREFIX are declared for contract
+-- symmetry; the run marker in ATTRIBUTE1 scopes rows exactly, so no
+-- prefix/LIKE fallback is needed here.)
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- Tier: LookupType — one row per LOOKUP_TYPE that this run's
+    -- values reference. No surrogate id and no ATTRIBUTE column on the
+    -- types base, so FUSION_ID and DMT_REFERENCE are NULL by design.
     SELECT DISTINCT
-        t.lookup_type                        AS record_key,
-        'TYPE'                               AS source_type
+        'LookupType'                          AS object_type,
+        t.lookup_type                         AS record_key,
+        'BASE'                                AS source_type,
+        'SUCCESS'                             AS fusion_status,
+        CAST(NULL AS NUMBER)                  AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))          AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)         AS load_request_id,
+        t.lookup_type                         AS source_ref,
+        CAST(NULL AS VARCHAR2(4000))          AS dmt_reference
     FROM   fnd_lookup_types t
-    WHERE  INSTR(',' || :P_TYPE_CODES || ',', ',' || t.lookup_type || ',') > 0
+    WHERE  EXISTS (
+               SELECT 1
+               FROM   fnd_lookup_values_b cv
+               WHERE  cv.lookup_type = t.lookup_type
+               AND    cv.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%'
+           )
+
     UNION ALL
+
+    -- Tier: LookupValue — one row per LOOKUP_TYPE^LOOKUP_CODE this run
+    -- loaded, scoped by the DMT: run marker in ATTRIBUTE1. DMT_REFERENCE
+    -- carries that same ATTRIBUTE1 marker; FUSION_ID is NULL (no id).
     SELECT DISTINCT
+        'LookupValue'                         AS object_type,
         v.lookup_type || '^' || v.lookup_code AS record_key,
-        'VALUE'                               AS source_type
+        'BASE'                                AS source_type,
+        'SUCCESS'                             AS fusion_status,
+        CAST(NULL AS NUMBER)                  AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))          AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)         AS load_request_id,
+        v.lookup_type || '^' || v.lookup_code AS source_ref,
+        v.attribute1                          AS dmt_reference
     FROM   fnd_lookup_values_b v
-    WHERE  INSTR(',' || :P_VALUE_KEYS || ',', ',' || v.lookup_type || '^' || v.lookup_code || ',') > 0
+    WHERE  v.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%'
 )
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start": return every row. On later
+-- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
+-- greater keys are returned. RECORD_KEY is compared as text; the
+-- reconciler feeds back the exact key it received. Ordering by
+-- RECORD_KEY interleaves both tiers into one stable keyset stream.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
       ]]></sql>
     </dataSet>
   </dataSets>
   <output rootName="DATA_DS" uniqueRowName="false">
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
-        <group name="G_1" label="G_1" source="lookup_base_results">
-          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
-          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+        <group name="G_1" label="G_1" source="lookup_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
         </group>
       </dataStructure>
     </nodeList>
@@ -46,11 +147,26 @@ SELECT record_key, source_type FROM (
   <eventTriggers/>
   <lexicals/>
   <parameters>
-    <parameter name="P_TYPE_CODES" dataType="character" rowPlacement="1"
-               labelID="P_TYPE_CODES" defaultValue="" nvp="false"
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_VALUE_KEYS" dataType="character" rowPlacement="1"
-               labelID="P_VALUE_KEYS" defaultValue="" nvp="false"
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>
