@@ -290,11 +290,12 @@
         l_posted_count  NUMBER := 0;
         l_reject_count  NUMBER := 0;
         l_errmsg        VARCHAR2(4000);
+        l_dmt_ref       VARCHAR2(240);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
         FOR r IN (
-            SELECT v.TFM_SEQUENCE_ID,
+            SELECT v.TFM_SEQUENCE_ID, v.WORK_QUEUE_ID,
                    v.LOOKUP_TYPE, v.LOOKUP_CODE, v.DISPLAY_SEQUENCE,
                    v.ENABLED_FLAG, v.START_DATE_ACTIVE, v.END_DATE_ACTIVE,
                    v.MEANING, v.DESCRIPTION, v.TAG
@@ -304,6 +305,13 @@
             ORDER BY v.LOOKUP_TYPE, v.DISPLAY_SEQUENCE, v.TFM_SEQUENCE_ID
         ) LOOP
             BEGIN
+                -- Slot C DFF stamp (round-trip reference). The recon DM scopes a
+                -- run's lookup values by FND_LOOKUP_VALUES_B.ATTRIBUTE1 LIKE
+                -- 'DMT:'||run||':%', so the POST body MUST carry the DMT reference.
+                -- Without this, the recon report returns zero rows for the run.
+                l_dmt_ref := DMT_REF_ID_PKG.BUILD_REF(
+                                 p_run_id, r.WORK_QUEUE_ID, r.TFM_SEQUENCE_ID);
+
                 l_payload := '{"LookupCode":"' || REPLACE(r.LOOKUP_CODE, '"', '\"') || '"'
                     || ',"DisplaySequence":' || NVL(TO_CHAR(r.DISPLAY_SEQUENCE), '1')
                     || ',"EnabledFlag":"' || NVL(r.ENABLED_FLAG, 'Y') || '"'
@@ -320,6 +328,7 @@
                     || CASE WHEN r.END_DATE_ACTIVE IS NOT NULL
                        THEN ',"EndDateActive":"' || TO_CHAR(r.END_DATE_ACTIVE, 'YYYY-MM-DD') || '"'
                        END
+                    || ',"attribute1":"' || REPLACE(l_dmt_ref, '"', '\"') || '"'
                     || '}';
 
                 l_response := rest_call('POST',
@@ -546,134 +555,46 @@
 
     -- ============================================================
     -- LOAD_AND_RECONCILE
-    -- Main entry point. LOAD types then values via REST POST, then RECONCILE
-    -- both against the Fusion base tables via the BIP report (the new standard).
-    -- COMMIT at the end (the runner also commits, but this keeps the two phases
-    -- in one txn).
+    -- LOAD-ONLY entry point (name retained for the runner's contract).
+    -- POSTs every GENERATED lookup type then value to Fusion, stamping the DMT
+    -- run reference into each value's descriptive flexfield so the deployed
+    -- nine-column recon report can find this run's base rows. Rows are left
+    -- GENERATED. RECONCILE is now owned by the generic Contract v1 engine: the
+    -- queue routes Lookups to RECONCILING (RECON_PROC = DMT_RECON_ENGINE_PKG
+    -- .RECONCILE_BATCH, RECON_HAS_CEMLI_ARG='Y'), which pages + stages the report
+    -- and dispatches APPLY_LOOKUPS (below). Reconciling here too would double-
+    -- reconcile (backlog #7), so it is deliberately NOT done inline. The private
+    -- FETCH_BIP_RESULTS / PARSE_AND_UPDATE are kept for independent testing.
     -- ============================================================
     PROCEDURE LOAD_AND_RECONCILE (
         p_run_id IN NUMBER
     ) IS
         C_PROC       CONSTANT VARCHAR2(30) := 'LOAD_AND_RECONCILE';
-        l_type_codes  VARCHAR2(4000);
-        l_value_keys  VARCHAR2(4000);
-        l_xml         XMLTYPE;
-        l_err         NUMBER;
-        l_types_loaded   NUMBER;
-        l_types_failed   NUMBER;
-        l_types_unaccnt  NUMBER;
-        l_vals_loaded    NUMBER;
-        l_vals_failed    NUMBER;
-        l_vals_unaccnt   NUMBER;
+        l_gen_types   NUMBER;
+        l_gen_vals    NUMBER;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
+        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' (load-only) start.',
+            p_package => C_PKG, p_procedure => C_PROC);
 
-        -- Phase 1: LOAD -- POST every GENERATED type, then every GENERATED value.
+        -- LOAD -- POST every GENERATED type, then every GENERATED value (stamping
+        -- the DMT run reference into each value's DFF). Rows stay GENERATED for the
+        -- engine reconcile that follows via the queue.
         LOAD_TYPES(p_run_id);
         LOAD_VALUES(p_run_id);
 
-        -- Build the comma-delimited lists of type codes / value keys we POSTed and
-        -- still need confirmed (rows the load step did NOT mark FAILED; config
-        -- codes are not run-prefixed, so match the base tables on the exact codes).
-        SELECT LISTAGG(LOOKUP_TYPE, ',') WITHIN GROUP (ORDER BY LOOKUP_TYPE)
-        INTO   l_type_codes
-        FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED';
-
-        SELECT LISTAGG(LOOKUP_TYPE || '^' || LOOKUP_CODE, ',')
-                   WITHIN GROUP (ORDER BY LOOKUP_TYPE, LOOKUP_CODE)
-        INTO   l_value_keys
-        FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED';
-
-        -- Phase 2: RECONCILE -- run the base-table report and confirm.
-        FETCH_BIP_RESULTS(
-            p_run_id     => p_run_id,
-            p_type_codes => l_type_codes,
-            p_value_keys => l_value_keys,
-            x_report_xml => l_xml,
-            x_error_code => l_err);
-
-        IF l_err != DMT_UTIL_PKG.C_SUCCESS THEN
-            -- Reconciliation transport failed: raise loudly so the queue work item
-            -- fails, never a silent zero-row "success".
-            RAISE_APPLICATION_ERROR(-20039,
-                'LOAD_AND_RECONCILE: base-table reconciliation report failed for CEMLI '
-                || C_CEMLI || ' (detail in DMT_LOG_TBL).');
-        END IF;
-
-        PARSE_AND_UPDATE(p_run_id, l_xml);
-
-        -- Post-reconcile sweep: any row NOT confirmed in the base table is still
-        -- GENERATED. If its POST returned a real Fusion error (stashed in
-        -- ERROR_TEXT by the load step) mark it FAILED on that real error. A row
-        -- with no stashed error AND no base-table hit is left GENERATED
-        -- (unaccounted); the accounting gate surfaces it -- we never fabricate a
-        -- verdict.
-        UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
-        SET    TFM_STATUS           = 'FAILED',
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    ERROR_TEXT IS NOT NULL;
-
-        UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
-        SET    TFM_STATUS           = 'FAILED',
-               RESULTS_UPDATED_DATE = SYSDATE,
-               LAST_UPDATED_DATE    = SYSDATE
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'GENERATED'
-        AND    ERROR_TEXT IS NOT NULL;
-
-        -- Mirror the terminal TFM outcome onto STG for both tiers (STG_STATUS is
-        -- terminal from staging's point of view; the TFM row is the record of the
-        -- Fusion outcome).
-        UPDATE DMT_FND_LOOKUP_TYPE_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
-                               FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL t
-                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                               AND    t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
-                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                       AND    t.RUN_ID = p_run_id
-                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
-
-        UPDATE DMT_FND_LOOKUP_VALUE_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
-                               FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL t
-                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                               AND    t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_FND_LOOKUP_VALUE_TFM_TBL t
-                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                       AND    t.RUN_ID = p_run_id
-                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
-
         COMMIT;
 
-        SELECT COUNT(CASE WHEN TFM_STATUS = 'LOADED' THEN 1 END),
-               COUNT(CASE WHEN TFM_STATUS = 'FAILED' THEN 1 END),
-               COUNT(CASE WHEN TFM_STATUS NOT IN ('LOADED','FAILED') THEN 1 END)
-        INTO   l_types_loaded, l_types_failed, l_types_unaccnt
-        FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
-        WHERE  RUN_ID = p_run_id;
+        SELECT COUNT(CASE WHEN TFM_STATUS = 'GENERATED' THEN 1 END)
+        INTO   l_gen_types
+        FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL WHERE RUN_ID = p_run_id;
 
-        SELECT COUNT(CASE WHEN TFM_STATUS = 'LOADED' THEN 1 END),
-               COUNT(CASE WHEN TFM_STATUS = 'FAILED' THEN 1 END),
-               COUNT(CASE WHEN TFM_STATUS NOT IN ('LOADED','FAILED') THEN 1 END)
-        INTO   l_vals_loaded, l_vals_failed, l_vals_unaccnt
-        FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL
-        WHERE  RUN_ID = p_run_id;
+        SELECT COUNT(CASE WHEN TFM_STATUS = 'GENERATED' THEN 1 END)
+        INTO   l_gen_vals
+        FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL WHERE RUN_ID = p_run_id;
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete. Types -- LOADED: ' || l_types_loaded
-            || ', FAILED: ' || l_types_failed || ', UNACCOUNTED: ' || l_types_unaccnt
-            || ' | Values -- LOADED: ' || l_vals_loaded
-            || ', FAILED: ' || l_vals_failed || ', UNACCOUNTED: ' || l_vals_unaccnt || '.',
+            C_PROC || ' (load-only) complete. Left GENERATED for engine reconcile '
+            || '-- types: ' || l_gen_types || ', values: ' || l_gen_vals || '.',
             p_package => C_PKG, p_procedure => C_PROC);
 
     EXCEPTION
@@ -682,6 +603,140 @@
                 C_PROC || ' failed.', SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
             RAISE;
     END LOAD_AND_RECONCILE;
+
+    -- --------------------------------------------------------
+    -- APPLY_LOOKUPS — thin STATIC apply for the generic recon engine.
+    -- Two-tier object (types + values), NO numeric surrogate (FUSION_*_ID stay
+    -- NULL by design). The engine has staged the nine-column report into
+    -- DMT_RECON_STAGE_GTT; this proc MERGEs LOADED/FAILED into the two literally-
+    -- named TFM tables with STATIC SQL, one tier per OBJECT_TYPE:
+    --   OBJECT_TYPE='LookupType'  -> DMT_FND_LOOKUP_TYPE_TFM_TBL  by LOOKUP_TYPE
+    --   OBJECT_TYPE='LookupValue' -> DMT_FND_LOOKUP_VALUE_TFM_TBL by LOOKUP_TYPE^CODE
+    -- LOADED is marked on existence (SOURCE_TYPE='BASE' AND FUSION_STATUS='SUCCESS');
+    -- there is no FUSION_ID to capture. FAILED is marked on any staged ERROR row.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_LOOKUPS (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    ) IS
+        C_PROC        CONSTANT VARCHAR2(30) := 'APPLY_LOOKUPS';
+        l_type_loaded NUMBER := 0;
+        l_val_loaded  NUMBER := 0;
+        l_type_failed NUMBER := 0;
+        l_val_failed  NUMBER := 0;
+    BEGIN
+        -- (1a) TYPES LOADED on existence (no surrogate id). Match report
+        -- RECORD_KEY (= LOOKUP_TYPE) to the type TFM table's LOOKUP_TYPE.
+        MERGE INTO DMT_FND_LOOKUP_TYPE_TFM_TBL t
+        USING (
+            SELECT DISTINCT g.record_key
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.object_type   = 'LookupType'
+            AND    g.source_type   = 'BASE'
+            AND    g.fusion_status = 'SUCCESS'
+        ) s
+        ON (    t.RUN_ID      = p_run_id
+            AND t.LOOKUP_TYPE = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'LOADED',
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_type_loaded := SQL%ROWCOUNT;
+
+        -- (1b) VALUES LOADED on existence. RECORD_KEY = LOOKUP_TYPE^LOOKUP_CODE.
+        MERGE INTO DMT_FND_LOOKUP_VALUE_TFM_TBL t
+        USING (
+            SELECT DISTINCT
+                   SUBSTR(g.record_key, 1, INSTR(g.record_key, '^') - 1) AS lookup_type,
+                   SUBSTR(g.record_key, INSTR(g.record_key, '^') + 1)     AS lookup_code
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.object_type   = 'LookupValue'
+            AND    g.source_type   = 'BASE'
+            AND    g.fusion_status = 'SUCCESS'
+            AND    INSTR(g.record_key, '^') > 0
+        ) s
+        ON (    t.RUN_ID      = p_run_id
+            AND t.LOOKUP_TYPE = s.lookup_type
+            AND t.LOOKUP_CODE = s.lookup_code
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'LOADED',
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_val_loaded := SQL%ROWCOUNT;
+
+        -- (2a) TYPES FAILED on any staged ERROR row for the type tier.
+        MERGE INTO DMT_FND_LOOKUP_TYPE_TFM_TBL t
+        USING (
+            SELECT g.record_key, MIN(g.error_message) AS error_message
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.object_type   = 'LookupType'
+            AND    g.fusion_status = 'ERROR'
+            AND    g.error_message IS NOT NULL
+            GROUP BY g.record_key
+        ) s
+        ON (    t.RUN_ID      = p_run_id
+            AND t.LOOKUP_TYPE = s.record_key
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'FAILED',
+                t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                             t.ERROR_TEXT,
+                                             '[FUSION_ERROR] ' || s.error_message),
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_type_failed := SQL%ROWCOUNT;
+
+        -- (2b) VALUES FAILED on any staged ERROR row for the value tier.
+        MERGE INTO DMT_FND_LOOKUP_VALUE_TFM_TBL t
+        USING (
+            SELECT SUBSTR(g.record_key, 1, INSTR(g.record_key, '^') - 1) AS lookup_type,
+                   SUBSTR(g.record_key, INSTR(g.record_key, '^') + 1)     AS lookup_code,
+                   MIN(g.error_message) AS error_message
+            FROM   DMT_RECON_STAGE_GTT g
+            WHERE  g.run_id        = p_run_id
+            AND    g.object_type   = 'LookupValue'
+            AND    g.fusion_status = 'ERROR'
+            AND    g.error_message IS NOT NULL
+            AND    INSTR(g.record_key, '^') > 0
+            GROUP BY SUBSTR(g.record_key, 1, INSTR(g.record_key, '^') - 1),
+                     SUBSTR(g.record_key, INSTR(g.record_key, '^') + 1)
+        ) s
+        ON (    t.RUN_ID      = p_run_id
+            AND t.LOOKUP_TYPE = s.lookup_type
+            AND t.LOOKUP_CODE = s.lookup_code
+            AND (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID = p_work_queue_id))
+        WHEN MATCHED THEN UPDATE
+            SET t.TFM_STATUS           = 'FAILED',
+                t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                             t.ERROR_TEXT,
+                                             '[FUSION_ERROR] ' || s.error_message),
+                t.RESULTS_UPDATED_DATE = SYSDATE,
+                t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE t.TFM_STATUS NOT IN ('LOADED','FAILED');
+        l_val_failed := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' complete (set-based, from GTT). Types LOADED: ' || l_type_loaded
+            || ', FAILED: ' || l_type_failed || ' | Values LOADED: ' || l_val_loaded
+            || ', FAILED: ' || l_val_failed
+            || '. Unmatched/no-error rows left GENERATED (unaccounted).',
+            'INFO', C_PKG, C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed.', SQLERRM, C_PKG, C_PROC);
+            RAISE;
+    END APPLY_LOOKUPS;
 
 END DMT_FND_LOOKUP_RESULTS_PKG;
 /

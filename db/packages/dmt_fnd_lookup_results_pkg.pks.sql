@@ -39,10 +39,23 @@
 -- LOOKUP_TYPE + LOOKUP_CODE). Backlog #11 / new recon standard.
 -- ============================================================
 
-    -- Load all GENERATED TFM rows to Fusion via REST, then reconcile against the
-    -- Fusion base tables via the BIP report (the new standard).
+    -- Load all GENERATED TFM rows to Fusion via REST (LOAD-only now; reconcile is
+    -- owned by the generic Contract v1 recon engine via APPLY_LOOKUPS below).
     PROCEDURE LOAD_AND_RECONCILE (
         p_run_id IN NUMBER
+    );
+
+    -- APPLY_LOOKUPS — thin STATIC apply dispatched by the generic recon engine
+    -- (DMT_RECON_ENGINE_PKG) through the sanctioned invoke_registered site
+    -- (style RECON). Reads DMT_RECON_STAGE_GTT (staged by the engine) and MERGEs
+    -- LOADED/FAILED into the two literally-named lookup TFM tables with STATIC SQL,
+    -- one tier per report OBJECT_TYPE ('LookupType' / 'LookupValue'). LOADED is on
+    -- existence (FND lookups have no numeric surrogate — FUSION_*_ID stay NULL).
+    PROCEDURE APPLY_LOOKUPS (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
     );
 
 END DMT_FND_LOOKUP_RESULTS_PKG;
