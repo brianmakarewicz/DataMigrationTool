@@ -150,14 +150,16 @@
                    UPPER(x.source_type)    AS source_type,
                    UPPER(x.import_status)  AS import_status,
                    x.fusion_id,
-                   x.error_msg
+                   x.error_msg,
+                   x.fusion_ref
             FROM   XMLTABLE('/DATA_DS/G_1' PASSING p_report_xml
                 COLUMNS
                     record_key      VARCHAR2(100)  PATH 'RECORD_KEY',
                     import_status   VARCHAR2(50)   PATH 'IMPORT_STATUS',
                     source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
                     fusion_id       NUMBER         PATH 'FUSION_ID',
-                    error_msg       VARCHAR2(4000) PATH 'ERROR_MESSAGE'
+                    error_msg       VARCHAR2(4000) PATH 'ERROR_MESSAGE',
+                    fusion_ref      VARCHAR2(150)  PATH 'FUSION_REF'
             ) x
         ) LOOP
             IF r.source_type = 'BASE' THEN
@@ -175,6 +177,39 @@
                     AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
+
+                    -- Backlog #12 round-trip proof: confirm the reference we
+                    -- stamped into GL_INTERFACE.ATTRIBUTE20 came back on
+                    -- GL_JE_LINES.ATTRIBUTE20 equal to BUILD_REF for this TFM row.
+                    -- RECORD_KEY = RECON_KEY = TFM_SEQUENCE_ID (Slot A), so we
+                    -- recompute the expected full ref from the matched row.
+                    DECLARE
+                        l_expected VARCHAR2(150);
+                        l_run_id   NUMBER;
+                        l_wq_id    NUMBER;
+                    BEGIN
+                        SELECT DMT_REF_ID_PKG.BUILD_REF(RUN_ID, WORK_QUEUE_ID, TFM_SEQUENCE_ID),
+                               RUN_ID, WORK_QUEUE_ID
+                          INTO l_expected, l_run_id, l_wq_id
+                          FROM DMT_GL_INTERFACE_TFM_TBL
+                         WHERE RUN_ID = p_run_id AND RECON_KEY = r.record_key
+                           AND ROWNUM = 1;
+                        IF r.fusion_ref IS NOT NULL AND r.fusion_ref = l_expected THEN
+                            DMT_UTIL_PKG.LOG(p_run_id,
+                                'REF #12 round-trip OK for RECON_KEY ' || r.record_key ||
+                                ': GL_JE_LINES.ATTRIBUTE20 = ' || r.fusion_ref ||
+                                ' (JE_HEADER_ID=' || r.fusion_id || ').',
+                                'INFO', C_PKG, C_PROC);
+                        ELSE
+                            DMT_UTIL_PKG.LOG(p_run_id,
+                                'REF #12 round-trip MISMATCH for RECON_KEY ' || r.record_key ||
+                                ': base ATTRIBUTE20=' || NVL(r.fusion_ref, '(null)') ||
+                                ' expected=' || l_expected || '.',
+                                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+                        END IF;
+                    EXCEPTION
+                        WHEN NO_DATA_FOUND THEN NULL;
+                    END;
                 ELSIF r.error_msg IS NOT NULL THEN
                     -- UNBALANCED (or any non-SUCCESS base status) WITH a real
                     -- Fusion-returned message = FAILED on that returned message.

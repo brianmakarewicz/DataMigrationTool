@@ -19,7 +19,8 @@ SELECT
     gi.status                            AS import_status,
     'INTERFACE'                          AS source_type,
     CAST(NULL AS NUMBER)                 AS fusion_id,
-    gi.reference10                       AS error_message
+    gi.reference10                       AS error_message,
+    CAST(NULL AS VARCHAR2(150))          AS fusion_ref
 FROM   gl_interface gi
 WHERE  gi.load_request_id = :P_LOAD_REQUEST_ID
 
@@ -38,7 +39,12 @@ SELECT
          THEN 'Journal imported (JE_HEADER_ID=' || jh.je_header_id
               || ') but UNBALANCED: DR=' || jh.running_total_dr
               || ' CR=' || jh.running_total_cr || '. Will not post.'
-    END                                  AS error_message
+    END                                  AS error_message,
+    -- Backlog #12 round-trip proof: the full run-scoped reference stamped by
+    -- the generator into GL_INTERFACE.ATTRIBUTE20, carried onto GL_JE_LINES.
+    -- ATTRIBUTE20 by Journal Import. The reconciler confirms it equals
+    -- DMT_REF_ID_PKG.BUILD_REF(run, wq, tfm) for the matched TFM row.
+    jl.attribute20                       AS fusion_ref
 FROM   gl_je_batches jb
 JOIN   gl_je_headers jh ON jh.je_batch_id = jb.je_batch_id
 JOIN   gl_je_lines   jl ON jl.je_header_id = jh.je_header_id
@@ -55,6 +61,7 @@ WHERE  jb.group_id = :P_RUN_ID
           <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
           <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
           <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+          <element name="FUSION_REF" value="FUSION_REF" dataType="xsd:string" tagName="FUSION_REF"/>
         </group>
       </dataStructure>
     </nodeList>

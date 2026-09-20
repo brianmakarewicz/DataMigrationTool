@@ -82,12 +82,10 @@
             s.ATTRIBUTE6, s.ATTRIBUTE7, s.ATTRIBUTE8, s.ATTRIBUTE9, s.ATTRIBUTE10,
             s.ATTRIBUTE11, s.ATTRIBUTE12, s.ATTRIBUTE13, s.ATTRIBUTE14, s.ATTRIBUTE15,
             s.ATTRIBUTE16, s.ATTRIBUTE17, s.ATTRIBUTE18, s.ATTRIBUTE19, s.ATTRIBUTE20,
-            -- Per-line reconciliation key -> GL_INTERFACE.REFERENCE21 ->
-            -- GL_JE_LINES.REFERENCE_1 (the generator writes it; the reconciler
-            -- matches base lines on it). Preserve a source-provided REFERENCE21
-            -- if the staging row has one; only when the source leaves it null do
-            -- we generate a prefix-scoped, per-line id.
-            NVL(s.REFERENCE21, l_prefix || '-' || s.STG_SEQUENCE_ID),
+            -- RECON_KEY is stamped in a post-insert UPDATE below (backlog #12):
+            -- it must equal the TFM identity id, which only exists after the
+            -- INSERT assigns it. Seed NULL here; the UPDATE sets it.
+            NULL,
             'STAGED'
         FROM   DMT_GL_INTERFACE_STG_TBL s
         WHERE  (
@@ -105,6 +103,25 @@
         ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok := SQL%ROWCOUNT;
+
+        -- ============================================================
+        -- Backlog #12 -- run-scoped per-record reference (Slot A).
+        -- Carrier config (DMT_REF_CARRIER_CFG_TBL, cemli_code GLBalances):
+        --   SLOT_A_FIELD = REFERENCE21  -> GL_JE_LINES.REFERENCE_1
+        -- The reconciler matches base GL_JE_LINES on RECON_KEY = REFERENCE_1,
+        -- so RECON_KEY and the REFERENCE21 CSV slot must carry the same value.
+        -- Design choice (documented): RECON_KEY = the TFM identity id
+        -- (TFM_SEQUENCE_ID). That id is unique per record, stable, and is the
+        -- same value BUILD_REF puts in the tfm slot of the full Slot C ref, so
+        -- Slot A and Slot C are internally consistent. TFM_SEQUENCE_ID is a
+        -- GENERATED ALWAYS identity, known only after the INSERT, hence this
+        -- post-insert stamp. The generator emits RECON_KEY into the REFERENCE21
+        -- CSV column (slot 53) unchanged.
+        UPDATE DMT_GL_INTERFACE_TFM_TBL
+        SET    RECON_KEY = TO_CHAR(TFM_SEQUENCE_ID)
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'STAGED'
+        AND    RECON_KEY IS NULL;
 
         UPDATE DMT_GL_INTERFACE_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
