@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <!--
+    DMT_W2_BAL_RECON_DM - BIP reconciliation report contract v1 for W2Balances
+    (payroll balance initialization, loaded via HCM Data Loader). Design doc:
+    "BIP reconciliation report contract - v1" (nine columns, six parameters,
+    keyset pagination) plus its HDL note: each HDL object gets a Contract v1
+    report whose rows are the BASE tier (key + Fusion id); its ERROR rows are
+    optional because HDL failures arrive per-record in the HDL response and are
+    tagged [FUSION_ERROR] before the report runs.
+
+    BASE-TIER ONLY. An HDL load has no interface table, so this report returns
+    the BASE tier: one row per migrated balance-initialization batch that Fusion
+    positively confirmed by writing its batch header, with the Fusion-assigned
+    BATCH_ID as FUSION_ID.
+
+    HOW THIS OBJECT LOADS (DMT_W2_BAL_HDL_GEN_PKG):
+      * W2Balances is the "Balance Initialization" business object - TWO HDL
+        objects in one zip: InitializeBalanceBatchHeader (parent) and
+        InitializeBalanceBatchLine (child, referenced by BatchName).
+      * ONE run = ONE batch. The generator sets
+        BatchName = <run prefix> || '_W2BAL'. That BatchName is the W2Balances
+        TFM row's RECON_KEY (one key definition per object). The batch line
+        objects reference the header purely by BatchName; no per-worker
+        SourceSystemId chain is emitted (batch objects are keyed by BatchName,
+        a user key, not by a person SourceSystemId).
+      * A "Load Initial Balances" (Transfer Batch) payroll flow is then run in
+        Fusion to apply the staged batch.
+
+    KEY GRANULARITY IS THE BATCH, NOT THE PERSON. RECORD_KEY = the run's
+    BatchName (= PAY_BAL_BATCH_HEADERS.BATCH_NAME). This is deliberately
+    coarser than the per-person HDL objects (Salaries, BenBeneficiary), because
+    the balance-init batch is loaded and confirmed as a single unit.
+
+    WHY THIS DM DRIVES OFF THE BASE TABLE, NOT HRC_INTEGRATION_KEY_MAP - HONEST
+    NOTE (verified live 2026-09-20, fin_impl / ApplicationDB_FSCM):
+      * The standard HDL recipe drives off HRC_INTEGRATION_KEY_MAP scoped by our
+        prefixed SourceSystemId with SOURCE_SYSTEM_OWNER='HRC_SQLLOADER'. That
+        does NOT work for this object. On this pod the balance-init map rows are:
+          InitializeBalanceBatchHeader : 7 rows, SOURCE_SYSTEM_OWNER='FUSION'
+          InitializeBalanceBatchLine   : 13 rows, SOURCE_SYSTEM_OWNER='FUSION'
+        and their SOURCE_SYSTEM_ID is Fusion's internal surrogate (identical to
+        SURROGATE_ID, e.g. 300000331552768), NOT our controllable BatchName.
+        There is no HRC_SQLLOADER owner and no prefixed business key in the map
+        for this object, so it cannot be scoped by our run prefix from the map.
+      * Our only prefix-scoped, controllable business key lives in the base table
+        PAY_BAL_BATCH_HEADERS.BATCH_NAME. So this DM matches on BATCH_NAME and
+        returns BATCH_ID (the base PK) as FUSION_ID.
+      * Round-trip proven live: HRC_INTEGRATION_KEY_MAP.SURROGATE_ID for
+        InitializeBalanceBatchHeader 300000331552768 == PAY_BAL_BATCH_HEADERS
+        .BATCH_ID 300000331552768, whose BATCH_NAME is 'DMTW232147'. The key-map
+        SURROGATE_ID and the base PK are the same number; the base table simply
+        also carries the business key (BATCH_NAME) that the map lacks.
+
+    LIVE STATE ON THIS POD (verified 2026-09-20):
+      * PAY_BAL_BATCH_HEADERS holds seven DMT balance batches:
+        DMTPROBE1, DMTW210163, DMTW225314, DMTW232147, DMTW241088, DMTW260133,
+        DMTW265405 (older-format names predating the current '_W2BAL' suffix).
+        Their BATCH_ID values are real populated Fusion base ids.
+      * No batch carries the current-generator BatchName shape (<prefix>_W2BAL)
+        yet, so a run today whose prefix is (say) 10163 would match nothing until
+        a real DMT balance batch lands under that prefix. The standalone
+        validation in the PR body pages the existing 'DMT%' batches to prove the
+        nine-column shape, the real BATCH_ID round-trip, and the keyset paging
+        (page then empty page).
+
+    NINE response columns, in contract order:
+      OBJECT_TYPE, RECORD_KEY (= BATCH_NAME), SOURCE_TYPE('BASE'),
+      FUSION_STATUS('SUCCESS'), FUSION_ID (= BATCH_ID), ERROR_MESSAGE (NULL),
+      LOAD_REQUEST_ID (NULL), SOURCE_REF (= BATCH_NAME), DMT_REFERENCE (NULL).
+    SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID, P_PREFIX,
+      P_CHUNK_SIZE, P_AFTER_KEY.
+    KEYSET pagination by RECORD_KEY (P_AFTER_KEY cursor, P_CHUNK_SIZE page).
+      LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base for an HDL
+      load, so BASE-tier matching is by run prefix (P_PREFIX). LOAD_REQUEST_ID is
+      returned NULL per the brief's column mapping.
+  -->
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="w2_bal_recon" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- BASE tier: positive proof in the Fusion payroll balance base table
+    -- PAY_BAL_BATCH_HEADERS, matched on BATCH_NAME (the business key we control,
+    -- = <prefix>_W2BAL). One row per migrated balance-initialization batch;
+    -- BATCH_ID is the base primary key returned as FUSION_ID.
+    SELECT 'W2Balances'                   AS object_type,
+           h.batch_name                   AS record_key,
+           'BASE'                         AS source_type,
+           'SUCCESS'                      AS fusion_status,
+           MAX(h.batch_id)                AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))   AS error_message,
+           CAST(NULL AS VARCHAR2(30))     AS load_request_id,
+           h.batch_name                   AS source_ref,
+           CAST(NULL AS VARCHAR2(4000))   AS dmt_reference
+    FROM   pay_bal_batch_headers h
+    WHERE  h.batch_name LIKE :P_PREFIX || '%'
+    GROUP BY h.batch_name
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in BIP, so
+-- treat NULL as "from the start": every non-null RECORD_KEY sorts after the empty
+-- string. On later pages P_AFTER_KEY carries the previous page's last RECORD_KEY
+-- and only greater keys are returned.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="w2_bal_recon">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls with an empty
+         P_AFTER_KEY first, then passes the last RECORD_KEY received on each next
+         call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
