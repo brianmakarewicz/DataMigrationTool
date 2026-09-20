@@ -43,10 +43,15 @@ Stdlib only.
 import argparse
 import json
 import os
+import re
 import sys
 import zipfile
 
 DATE_PAT_LEN = 10  # YYYY/MM/DD
+
+# DMT_REF_ID_PKG.BUILD_REF FULL output: DMT:<run>:<wq>:<tfm>. Middle (work-queue)
+# segment is empty for single-item objects; run/tfm are always digits.
+_RE_REF_ID = re.compile(r"^DMT:\d*:\d*:\d+$")
 
 
 def is_fbdi_date(v):
@@ -180,6 +185,17 @@ def apply_tokens(records, tokens):
       prefix_digits — field of the form <literal>-<digits> (a prefix-scoped id
                       whose trailing digits are a non-reproducible sequence)
                       collapses whole to the placeholder; validates structure
+      digits        — field that is ONLY digits (a bare non-reproducible global
+                      identity, e.g. a GENERATED ALWAYS TFM_SEQUENCE_ID) collapses
+                      whole to the placeholder; validates structure, ignores the
+                      literal. ALWAYS pair with a 'fields' restriction so it cannot
+                      collapse unrelated numeric business columns.
+      ref_id        — field of the form DMT:<digits>:<digits>:<digits> (the middle
+                      work-queue segment may be empty) collapses whole to the
+                      placeholder. This is DMT_REF_ID_PKG.BUILD_REF's FULL output
+                      (DMT:<run>:<wq>:<tfm>), whose three ids all vary per run;
+                      validates the DMT:run:wq:tfm structure, ignores the literal.
+                      ALWAYS pair with a 'fields' restriction.
       substring     — replace every occurrence (use only for long/unique tokens)
     'fields' (optional list of 0-based positions) restricts the token to those
     CSV columns; None = any column.
@@ -224,6 +240,22 @@ def _apply_field(field, col, toks):
             # exactly <literal>-<digits> is left unchanged and still diffs, so
             # this is structural validation, not a mask.
             if field.startswith(lit + "-") and field[len(lit) + 1:].isdigit():
+                field = ph
+        elif mode == "digits":
+            # A bare non-reproducible global identity (e.g. TFM_SEQUENCE_ID). The
+            # field must be ALL digits (and non-empty) to collapse; anything else
+            # is left unchanged and still diffs. Field-restricted by 'fields' so
+            # it never touches unrelated numeric columns.
+            if field.isdigit():
+                field = ph
+        elif mode == "ref_id":
+            # DMT_REF_ID_PKG.BUILD_REF FULL output: DMT:<run>:<wq>:<tfm>. The
+            # work-queue segment is empty for single-item objects (DMT:<run>::<tfm>).
+            # Validate that exact structure -- literal "DMT", three colon-separated
+            # segments where segments 1 and 2 are optional-digit and segment 3 is
+            # 1+ digits -- and collapse the whole field to the placeholder. A value
+            # not of that shape is left unchanged and still diffs.
+            if _RE_REF_ID.match(field):
                 field = ph
         else:  # substring
             if lit in field:

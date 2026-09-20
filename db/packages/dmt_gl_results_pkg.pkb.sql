@@ -107,6 +107,54 @@
     END FETCH_BIP_RESULTS;
 
     -- --------------------------------------------------------
+    -- LOG_REF12_ROUNDTRIP (private)
+    -- Backlog #12 round-trip proof for one just-LOADED base row.
+    -- Recomputes the expected full reference (BUILD_REF) for the
+    -- matched TFM row and logs whether GL_JE_LINES.REFERENCE_2 that
+    -- came back on the report equals it: INFO when it matches, WARN
+    -- when it does not or when the TFM row can no longer be found.
+    -- Extracted from PARSE_AND_UPDATE's loop so that procedure keeps
+    -- one BEGIN/END (design section 7 coding standard).
+    -- --------------------------------------------------------
+    PROCEDURE LOG_REF12_ROUNDTRIP (
+        p_run_id     IN NUMBER,
+        p_record_key IN VARCHAR2,
+        p_fusion_ref IN VARCHAR2,
+        p_fusion_id  IN NUMBER
+    ) IS
+        C_PROC     CONSTANT VARCHAR2(30) := 'LOG_REF12_ROUNDTRIP';
+        l_expected VARCHAR2(150);
+    BEGIN
+        SELECT DMT_REF_ID_PKG.BUILD_REF(RUN_ID, WORK_QUEUE_ID, TFM_SEQUENCE_ID)
+          INTO l_expected
+          FROM DMT_GL_INTERFACE_TFM_TBL
+         WHERE RUN_ID = p_run_id AND RECON_KEY = p_record_key
+           AND ROWNUM = 1;
+
+        IF p_fusion_ref IS NOT NULL AND p_fusion_ref = l_expected THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'REF #12 round-trip OK for RECON_KEY ' || p_record_key ||
+                ': GL_JE_LINES.REFERENCE_2 = ' || p_fusion_ref ||
+                ' (JE_HEADER_ID=' || p_fusion_id || ').',
+                'INFO', C_PKG, C_PROC);
+        ELSE
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'REF #12 round-trip MISMATCH for RECON_KEY ' || p_record_key ||
+                ': base REFERENCE_2=' || NVL(p_fusion_ref, '(null)') ||
+                ' expected=' || l_expected || '.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+        END IF;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            -- Round-trip proof is diagnostic only; a lookup miss must never
+            -- swallow silently (design section 7) nor alter the LOADED outcome.
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'REF #12 round-trip: no TFM row found for RECON_KEY ' ||
+                p_record_key || ' (proof skipped).',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+    END LOG_REF12_ROUNDTRIP;
+
+    -- --------------------------------------------------------
     -- PARSE_AND_UPDATE - Two-tier reconciliation, no absence=LOADED.
     -- BASE rows = LOADED (positively confirmed in GL_JE_HEADERS/LINES).
     -- INTERFACE rows = FAILED (still in GL_INTERFACE) unless status P.
@@ -150,14 +198,16 @@
                    UPPER(x.source_type)    AS source_type,
                    UPPER(x.import_status)  AS import_status,
                    x.fusion_id,
-                   x.error_msg
+                   x.error_msg,
+                   x.fusion_ref
             FROM   XMLTABLE('/DATA_DS/G_1' PASSING p_report_xml
                 COLUMNS
                     record_key      VARCHAR2(100)  PATH 'RECORD_KEY',
                     import_status   VARCHAR2(50)   PATH 'IMPORT_STATUS',
                     source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
                     fusion_id       NUMBER         PATH 'FUSION_ID',
-                    error_msg       VARCHAR2(4000) PATH 'ERROR_MESSAGE'
+                    error_msg       VARCHAR2(4000) PATH 'ERROR_MESSAGE',
+                    fusion_ref      VARCHAR2(150)  PATH 'FUSION_REF'
             ) x
         ) LOOP
             IF r.source_type = 'BASE' THEN
@@ -175,6 +225,17 @@
                     AND    RECON_KEY = r.record_key
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED');
                     l_loaded := l_loaded + SQL%ROWCOUNT;
+
+                    -- Backlog #12 round-trip proof: confirm the reference we
+                    -- stamped into GL_INTERFACE.REFERENCE22 came back on
+                    -- GL_JE_LINES.REFERENCE_2 equal to BUILD_REF for this TFM row.
+                    -- RECORD_KEY = RECON_KEY = TFM_SEQUENCE_ID (Slot A). Handled by
+                    -- a private procedure so this loop keeps one BEGIN/END.
+                    LOG_REF12_ROUNDTRIP(
+                        p_run_id     => p_run_id,
+                        p_record_key => r.record_key,
+                        p_fusion_ref => r.fusion_ref,
+                        p_fusion_id  => r.fusion_id);
                 ELSIF r.error_msg IS NOT NULL THEN
                     -- UNBALANCED (or any non-SUCCESS base status) WITH a real
                     -- Fusion-returned message = FAILED on that returned message.

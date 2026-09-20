@@ -116,7 +116,9 @@
                 -- Slot 53 = GL_INTERFACE.REFERENCE21 -> GL_JE_LINES.REFERENCE_1
                 -- (proven empirically 2026-07-11): the per-line reconciliation key.
                 || '"' || REPLACE(NVL(RECON_KEY,''), '"', '""') || '"' || ','
-                || '""' || ','   -- REFERENCE22
+                -- REFERENCE22 = Slot C (backlog #12): the full run-scoped ref
+                -- (DMT:run:wq:tfm) -> GL_JE_LINES.REFERENCE_2 via Journal Import.
+                || '"' || REPLACE(NVL(REFERENCE22,''), '"', '""') || '"' || ','
                 || '""' || ','   -- REFERENCE23
                 || '""' || ','   -- REFERENCE24
                 || '""' || ','   -- REFERENCE25
@@ -251,6 +253,31 @@
         ELSE
             x_filename := 'GLBalances_' || TO_CHAR(p_run_id) || '.zip';
         END IF;
+
+        -- ============================================================
+        -- Backlog #12 -- stamp the run-scoped per-record reference BEFORE the
+        -- CSV is built, so the CSV picks up the stamped Slot C value.
+        -- Carrier config (DMT_REF_CARRIER_CFG_TBL, cemli_code GLBalances):
+        --   Slot A = REFERENCE21 (carried by RECON_KEY, set at transform)
+        --   Slot B = GROUP_ID    (= run_id, set at transform)
+        --   Slot C = REFERENCE22 = DMT_REF_ID_PKG.BUILD_REF(run, work_queue, tfm)
+        -- Slot C rides REFERENCE22 (-> GL_JE_LINES.REFERENCE_2), NOT an ATTRIBUTE
+        -- column: proof-of-recipe run 301 showed GL Journal Import does not carry
+        -- GL_INTERFACE.ATTRIBUTE20 onto the base tables, whereas the line
+        -- REFERENCE columns round-trip (same path as REFERENCE21 -> REFERENCE_1).
+        -- WORK_QUEUE_ID is the generating work-queue item (NULL for a single-item
+        -- object -- BUILD_REF then leaves the wq slot empty, still round-trippable).
+        -- Scoped to the STAGED rows this GENERATE call will emit (this ledger).
+        UPDATE DMT_GL_INTERFACE_TFM_TBL
+        SET    WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id,
+               REFERENCE22   = DMT_REF_ID_PKG.BUILD_REF(
+                                   p_run_id        => p_run_id,
+                                   p_work_queue_id => DMT_LOADER_PKG.g_work_queue_id,
+                                   p_tfm_seq_id    => TFM_SEQUENCE_ID),
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'STAGED'
+        AND    (p_ledger_name IS NULL OR LEDGER_NAME = p_ledger_name);
 
         l_csv := gen_gl_csv(p_run_id, p_ledger_name);
 

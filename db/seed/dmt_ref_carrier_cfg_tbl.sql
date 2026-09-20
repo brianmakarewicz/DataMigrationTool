@@ -35,9 +35,17 @@ using (
     select 'GLBalances' cemli_code, 'GL Journals' sub_object,
            'DMT_GL_INTERFACE_TFM_TBL' tfm_table,
            'REFERENCE21' slot_a_field, 'GL_JE_LINES.REFERENCE_1' slot_a_base_column,
-           'GROUP_ID' slot_b_field, 'ATTRIBUTE20' slot_c_attribute, 150 slot_c_maxlen,
+           'GROUP_ID' slot_b_field, 'REFERENCE22' slot_c_attribute, 240 slot_c_maxlen,
            'FULL' ref_format, 'CONFIRMED' confidence, 'Y' active_flag,
-           'GL journal line ref carrier.' notes from dual
+           -- Slot C corrected 2026-09-19 (proof-of-recipe run 301): GL Journal
+           -- Import does NOT carry GL_INTERFACE.ATTRIBUTE20 onto GL_JE_LINES
+           -- (GL_JE_LINES has no ATTRIBUTE20; GL_JE_HEADERS has none either), so
+           -- the full ref must ride a line REFERENCE that Journal Import maps
+           -- through. REFERENCE22 -> GL_JE_LINES.REFERENCE_2 round-trips (proven,
+           -- same mechanism as REFERENCE21 -> REFERENCE_1). RECIPE LESSON for the
+           -- fan-out: Slot C must be a column the object''s import actually
+           -- carries to the base table, verified per object -- not assumed.
+           'GL journal line ref carrier; Slot C = REFERENCE22 -> GL_JE_LINES.REFERENCE_2.' notes from dual
     union all select 'Customers', 'Parties', 'DMT_HZ_PARTIES_TFM_TBL',
            'ORIG_SYSTEM_REFERENCE', 'HZ_PARTIES.ORIG_SYSTEM_REFERENCE',
            'REQUEST_ID', 'ATTRIBUTE30', 150, 'FULL', 'CONFIRMED', 'Y',
