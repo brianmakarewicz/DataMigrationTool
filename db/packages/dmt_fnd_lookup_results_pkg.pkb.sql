@@ -1,23 +1,59 @@
 -- PACKAGE BODY DMT_FND_LOOKUP_RESULTS_PKG
 
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_FND_LOOKUP_RESULTS_PKG" AS
+-- ============================================================
+-- DMT_FND_LOOKUP_RESULTS_PKG body
+-- FND Lookups: REST load + BIP base-table reconciliation.
+--
+-- New reconciliation standard (DMT_DESIGN.html, PROPOSED 2026-09): the BIP
+-- report over the Fusion BASE tables -- not the POST response -- is the sole
+-- authority for LOADED. Lookups is a two-tier load (a lookup type, then its
+-- child lookup codes), so LOAD and RECONCILE are two phases, each covering
+-- both tiers.
+--
+-- SPECIAL CASE -- no numeric surrogate id. FND lookups expose only string
+-- keys: FND_LOOKUP_TYPES (key LOOKUP_TYPE) and FND_LOOKUP_VALUES_B (key
+-- LOOKUP_TYPE + LOOKUP_CODE). There is NO LOOKUP_TYPE_ID / LOOKUP_ID numeric
+-- column, so reconciliation confirms EXISTENCE by the string key, marks the
+-- row LOADED, and LEAVES FUSION_LOOKUP_TYPE_ID / FUSION_LOOKUP_ID NULL (there
+-- is no id to capture -- never fabricated). The report returns RECORD_KEY +
+-- SOURCE_TYPE only.
+--
+--   LOAD  (LOAD_TYPES / LOAD_VALUES): POST each GENERATED type, then each
+--         GENERATED value to its type's child collection. A non-2xx / exception
+--         is a real Fusion rejection -> its message is STASHED into ERROR_TEXT
+--         (accumulate, never overwrite); the row is left GENERATED, pending
+--         base-table proof. A 2xx is NOT treated as LOADED.
+--
+--   RECONCILE (FETCH_BIP_RESULTS + PARSE_AND_UPDATE): run DMT_LOOKUP_RECON_RPT
+--         over this run's type codes and value keys. A type found in
+--         FND_LOOKUP_TYPES -> LOADED. A value found in FND_LOOKUP_VALUES_B ->
+--         LOADED. Rows not returned stay as the load step set them: FAILED if
+--         the REST load stashed a real error, else left GENERATED (unaccounted)
+--         -- never a fabricated verdict or id.
+--
+-- Transport is the shared DMT_UTIL_PKG.RUN_BIP_REPORT (no private SOAP copy).
+-- Backlog #11 / new recon standard.
+-- ============================================================
 
-    C_PKG CONSTANT VARCHAR2(50) := 'DMT_FND_LOOKUP_RESULTS_PKG';
+    C_PKG   CONSTANT VARCHAR2(50) := 'DMT_FND_LOOKUP_RESULTS_PKG';
+    C_CEMLI CONSTANT VARCHAR2(30) := 'Lookups';
 
     -- Fusion REST base path for standard lookups
     C_LOOKUPS_PATH CONSTANT VARCHAR2(200) := '/fscmRestApi/resources/11.13.18.05/standardLookups';
 
-    -- ModuleId for user-level lookup types (required by Fusion REST API)
-    -- Discovered from instance: this is the common FND module GUID
+    -- ModuleId for user-level lookup types (same common FND module GUID as
+    -- value sets; required by the standardLookups REST API on create).
     C_MODULE_ID CONSTANT VARCHAR2(50) := '40B3FA7250D19380E040449823C67A1A';
 
     -- --------------------------------------------------------
     -- Private: make a REST call and return status + response
+    -- (shared "STATUS|body" convention, same as the ValueSets reconciler).
     -- --------------------------------------------------------
     FUNCTION rest_call (
-        p_method         IN VARCHAR2,  -- GET, POST, DELETE
-        p_path           IN VARCHAR2,  -- relative path after base URL
-        p_body           IN CLOB DEFAULT NULL,
+        p_method IN VARCHAR2,  -- GET, POST, DELETE
+        p_path   IN VARCHAR2,  -- relative path after base URL
+        p_body   IN CLOB DEFAULT NULL,
         p_run_id IN NUMBER DEFAULT NULL
     ) RETURN CLOB
     IS
@@ -39,7 +75,7 @@
         -- Attach a wallet only when a real one is configured; otherwise use the DB
         -- default certificate store (as DMT_UTIL_PKG.HTTP_REQUEST and every other
         -- HTTP caller do). An unset/placeholder WALLET_DIR must not be forced into
-        -- an invalid 'file:...' path — that throws ORA-29273 before any auth.
+        -- an invalid 'file:...' path -- that throws ORA-29273 before any auth.
         IF INSTR(NVL(DMT_UTIL_PKG.GET_CONFIG('WALLET_DIR'),' '),'/') > 0 THEN
             UTL_HTTP.SET_WALLET('file:' || DMT_UTIL_PKG.GET_CONFIG('WALLET_DIR'), DMT_UTIL_PKG.GET_CONFIG('WALLET_PASSWORD'));
         END IF;
@@ -49,6 +85,10 @@
             'Basic ' || UTL_RAW.CAST_TO_VARCHAR2(UTL_ENCODE.BASE64_ENCODE(
                 UTL_RAW.CAST_TO_RAW(l_username || ':' || l_password))));
         UTL_HTTP.SET_HEADER(l_http_req, 'Accept', 'application/json');
+        -- Ask Fusion NOT to gzip the response. Without this, error bodies come
+        -- back gzip-compressed and land in ERROR_TEXT as unreadable binary; the
+        -- real Fusion rejection message must be human-readable.
+        UTL_HTTP.SET_HEADER(l_http_req, 'Accept-Encoding', 'identity');
 
         IF p_body IS NOT NULL THEN
             UTL_HTTP.SET_HEADER(l_http_req, 'Content-Type', 'application/json');
@@ -109,90 +149,80 @@
     FUNCTION get_status(p_response IN CLOB) RETURN NUMBER IS
     BEGIN
         RETURN TO_NUMBER(SUBSTR(p_response, 1, INSTR(p_response, '|') - 1));
-    END;
-
-    -- --------------------------------------------------------
-    -- Private: extract body from rest_call response
-    -- --------------------------------------------------------
-    FUNCTION get_body(p_response IN CLOB) RETURN CLOB IS
-    BEGIN
-        RETURN DBMS_LOB.SUBSTR(p_response, DBMS_LOB.GETLENGTH(p_response) - INSTR(p_response, '|'), INSTR(p_response, '|') + 1);
-    END;
+    END get_status;
 
     -- ============================================================
-    -- LOAD_AND_RECONCILE
-    -- Main entry point. Creates lookup types + codes in Fusion
-    -- via REST, then verifies and updates TFM/STG status.
+    -- LOAD_TYPES
+    -- The LOAD step for lookup types: POST each GENERATED type. The BIP
+    -- base-table report -- not the POST response -- is the authority for LOADED,
+    -- so this step NEVER marks a row terminal; it leaves every attempted row
+    -- GENERATED. A non-2xx / exception is a real Fusion rejection: its message
+    -- is STASHED into ERROR_TEXT (accumulate, never overwrite) so that if
+    -- reconcile later finds the type absent from FND_LOOKUP_TYPES, the sweep
+    -- marks it FAILED on that real error. Writes the TFM table only; no COMMIT
+    -- (the runner owns the txn).
     -- ============================================================
-    PROCEDURE LOAD_AND_RECONCILE (
+    PROCEDURE LOAD_TYPES (
         p_run_id IN NUMBER
     ) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'LOAD_AND_RECONCILE';
+        C_PROC CONSTANT VARCHAR2(30) := 'LOAD_TYPES';
 
         l_response      CLOB;
         l_http_status   NUMBER;
         l_body          VARCHAR2(32767);
         l_payload       CLOB;
 
-        l_types_loaded  NUMBER := 0;
-        l_types_failed  NUMBER := 0;
-        l_values_loaded NUMBER := 0;
-        l_values_failed NUMBER := 0;
+        l_posted_count  NUMBER := 0;
+        l_reject_count  NUMBER := 0;
         l_errmsg        VARCHAR2(4000);
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'LOAD_AND_RECONCILE start.', C_PKG, C_PROC);
+        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
-        -- ========================================
-        -- Phase 1: Create Lookup Types in Fusion
-        -- ========================================
         FOR r IN (
-            SELECT TFM_SEQUENCE_ID, STG_SEQUENCE_ID, LOOKUP_TYPE, MEANING, DESCRIPTION
+            SELECT TFM_SEQUENCE_ID, LOOKUP_TYPE, MEANING, DESCRIPTION, MODULE_KEY
             FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS = 'GENERATED'
             ORDER BY TFM_SEQUENCE_ID
         ) LOOP
             BEGIN
+                -- ModuleId: use the mapped MODULE_KEY when the source carries one,
+                -- else the common user-level FND module GUID. A bad mapped module
+                -- is a genuine Fusion rejection (HTTP 400), not a fabricated one.
                 l_payload := '{"LookupType":"' || REPLACE(r.LOOKUP_TYPE, '"', '\"') || '"'
                     || ',"Meaning":"' || REPLACE(NVL(r.MEANING, r.LOOKUP_TYPE), '"', '\"') || '"'
                     || CASE WHEN r.DESCRIPTION IS NOT NULL
                        THEN ',"Description":"' || REPLACE(r.DESCRIPTION, '"', '\"') || '"'
                        END
-                    || ',"ModuleId":"' || C_MODULE_ID || '"'
+                    || ',"ModuleId":"' || NVL(r.MODULE_KEY, C_MODULE_ID) || '"'
                     || '}';
 
                 l_response := rest_call('POST', C_LOOKUPS_PATH, l_payload, p_run_id);
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
-                    UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
-                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-
-                    UPDATE DMT_FND_LOOKUP_TYPE_STG_TBL
-                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
-                    WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
-
-                    l_types_loaded := l_types_loaded + 1;
+                    -- POST accepted. Row stays GENERATED for the base-table report to
+                    -- confirm (no id to capture on lookups).
+                    l_posted_count := l_posted_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Type LOADED: ' || r.LOOKUP_TYPE, C_PKG, C_PROC);
+                        'Type POSTed (awaiting base-table confirmation): ' || r.LOOKUP_TYPE
+                        || ' HTTP ' || l_http_status,
+                        p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 1000, INSTR(l_response, '|') + 1);
+                    -- Non-2xx: stash the real REST error but leave the row GENERATED.
+                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
                     UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
-                    SET    TFM_STATUS = 'FAILED',
-                           ERROR_TEXT = '[FUSION_ERROR] HTTP ' || l_http_status || ': ' || SUBSTR(l_body, 1, 2000),
-                           RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                          || SUBSTR(l_body, 1, 2000)),
+                           LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
-                    UPDATE DMT_FND_LOOKUP_TYPE_STG_TBL
-                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-                    WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
-
-                    l_types_failed := l_types_failed + 1;
+                    l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Type FAILED: ' || r.LOOKUP_TYPE || ' HTTP ' || l_http_status,
-                        C_PKG, C_PROC, 'WARN');
+                        'Type POST rejected (stashed, awaiting base-table verdict): '
+                        || r.LOOKUP_TYPE || ' HTTP ' || l_http_status,
+                        p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
 
                 IF DBMS_LOB.ISTEMPORARY(l_response) = 1 THEN
@@ -203,44 +233,65 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
-                    SET    TFM_STATUS = 'FAILED',
-                           ERROR_TEXT = '[FUSION_ERROR] ' || l_errmsg,
-                           RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                          '[FUSION_ERROR] ' || l_errmsg),
+                           LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
-                    UPDATE DMT_FND_LOOKUP_TYPE_STG_TBL
-                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-                    WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
-
-                    l_types_failed := l_types_failed + 1;
+                    l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Type FAILED (exception): ' || r.LOOKUP_TYPE,
-                        l_errmsg, C_PKG, C_PROC);
+                        'Type POST failed (exception, stashed): ' || r.LOOKUP_TYPE,
+                        l_errmsg, p_package => C_PKG, p_procedure => C_PROC);
             END;
         END LOOP;
 
-        COMMIT;
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' complete. POSTed 2xx: ' || l_posted_count
+            || ', POST-rejected(stashed): ' || l_reject_count
+            || ' (all rows left GENERATED for base-table reconciliation).',
+            p_package => C_PKG, p_procedure => C_PROC);
 
-        -- ========================================
-        -- Phase 2: Create Lookup Codes in Fusion
-        -- Only for types that LOADED successfully.
-        -- ========================================
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed.', SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
+            RAISE;
+    END LOAD_TYPES;
+
+    -- ============================================================
+    -- LOAD_VALUES
+    -- The LOAD step for lookup codes: POST each GENERATED value to its parent
+    -- type's child collection. Same policy as LOAD_TYPES: never terminal, stash
+    -- real errors, leave GENERATED for base-table proof. A value whose parent
+    -- type does not exist in Fusion draws a real HTTP error from the child
+    -- collection endpoint -- a genuine Fusion rejection, stashed like any other.
+    -- Writes the TFM table only; no COMMIT (the runner owns the txn).
+    -- ============================================================
+    PROCEDURE LOAD_VALUES (
+        p_run_id IN NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'LOAD_VALUES';
+
+        l_response      CLOB;
+        l_http_status   NUMBER;
+        l_body          VARCHAR2(32767);
+        l_payload       CLOB;
+
+        l_posted_count  NUMBER := 0;
+        l_reject_count  NUMBER := 0;
+        l_errmsg        VARCHAR2(4000);
+    BEGIN
+        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
+
         FOR r IN (
-            SELECT v.TFM_SEQUENCE_ID, v.STG_SEQUENCE_ID,
+            SELECT v.TFM_SEQUENCE_ID,
                    v.LOOKUP_TYPE, v.LOOKUP_CODE, v.DISPLAY_SEQUENCE,
                    v.ENABLED_FLAG, v.START_DATE_ACTIVE, v.END_DATE_ACTIVE,
                    v.MEANING, v.DESCRIPTION, v.TAG
             FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL v
             WHERE  v.RUN_ID = p_run_id
             AND    v.TFM_STATUS = 'GENERATED'
-            -- Only load values whose parent type was LOADED
-            AND    EXISTS (
-                SELECT 1 FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
-                WHERE  t.RUN_ID = p_run_id
-                AND    t.LOOKUP_TYPE = v.LOOKUP_TYPE
-                AND    t.TFM_STATUS = 'LOADED'
-            )
-            ORDER BY v.LOOKUP_TYPE, v.DISPLAY_SEQUENCE
+            ORDER BY v.LOOKUP_TYPE, v.DISPLAY_SEQUENCE, v.TFM_SEQUENCE_ID
         ) LOOP
             BEGIN
                 l_payload := '{"LookupCode":"' || REPLACE(r.LOOKUP_CODE, '"', '\"') || '"'
@@ -267,31 +318,25 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
-                    UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
-                    SET    TFM_STATUS = 'LOADED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-
-                    UPDATE DMT_FND_LOOKUP_VALUE_STG_TBL
-                    SET    STG_STATUS = 'LOADED', LAST_UPDATED_DATE = SYSDATE
-                    WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
-
-                    l_values_loaded := l_values_loaded + 1;
-                ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 1000, INSTR(l_response, '|') + 1);
-                    UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
-                    SET    TFM_STATUS = 'FAILED',
-                           ERROR_TEXT = '[FUSION_ERROR] HTTP ' || l_http_status || ': ' || SUBSTR(l_body, 1, 2000),
-                           RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-
-                    UPDATE DMT_FND_LOOKUP_VALUE_STG_TBL
-                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-                    WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
-
-                    l_values_failed := l_values_failed + 1;
+                    l_posted_count := l_posted_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Value FAILED: ' || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE || ' HTTP ' || l_http_status,
-                        C_PKG, C_PROC, 'WARN');
+                        'Value POSTed (awaiting base-table confirmation): '
+                        || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE || ' HTTP ' || l_http_status,
+                        p_package => C_PKG, p_procedure => C_PROC);
+                ELSE
+                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+                    UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                          || SUBSTR(l_body, 1, 2000)),
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+
+                    l_reject_count := l_reject_count + 1;
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Value POST rejected (stashed, awaiting base-table verdict): '
+                        || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE || ' HTTP ' || l_http_status,
+                        p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
 
                 IF DBMS_LOB.ISTEMPORARY(l_response) = 1 THEN
@@ -302,47 +347,329 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
-                    SET    TFM_STATUS = 'FAILED',
-                           ERROR_TEXT = '[FUSION_ERROR] ' || l_errmsg,
-                           RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                          '[FUSION_ERROR] ' || l_errmsg),
+                           LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
-                    UPDATE DMT_FND_LOOKUP_VALUE_STG_TBL
-                    SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-                    WHERE  STG_SEQUENCE_ID = r.STG_SEQUENCE_ID;
-
-                    l_values_failed := l_values_failed + 1;
+                    l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Value FAILED (exception): ' || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE,
-                        l_errmsg, C_PKG, C_PROC);
+                        'Value POST failed (exception, stashed): ' || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE,
+                        l_errmsg, p_package => C_PKG, p_procedure => C_PROC);
             END;
         END LOOP;
 
-        -- Orphan values (parent type not LOADED) are NOT fabricated as FAILED.
-        -- The parent-not-LOADED set includes types left GENERATED, so there is no
-        -- real Fusion error to attribute. Leave GENERATED for the honest sweep to
-        -- mark UNACCOUNTED.
-
-        -- Echo those to STG
-        UPDATE DMT_FND_LOOKUP_VALUE_STG_TBL
-        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_SEQUENCE_ID IN (
-            SELECT STG_SEQUENCE_ID FROM DMT_FND_LOOKUP_VALUE_TFM_TBL
-            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'FAILED'
-            AND    STG_STATUS != 'FAILED'
-        );
-
-        COMMIT;
-
         DMT_UTIL_PKG.LOG(p_run_id,
-            'LOAD_AND_RECONCILE complete. Types: ' || l_types_loaded || ' LOADED, ' || l_types_failed || ' FAILED'
-            || ' | Values: ' || l_values_loaded || ' LOADED, ' || l_values_failed || ' FAILED',
-            C_PKG, C_PROC);
+            C_PROC || ' complete. POSTed 2xx: ' || l_posted_count
+            || ', POST-rejected(stashed): ' || l_reject_count
+            || ' (all rows left GENERATED for base-table reconciliation).',
+            p_package => C_PKG, p_procedure => C_PROC);
 
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                'LOAD_AND_RECONCILE failed.', SQLERRM, C_PKG, C_PROC);
+                C_PROC || ' failed.', SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
+            RAISE;
+    END LOAD_VALUES;
+
+    -- --------------------------------------------------------
+    -- FETCH_BIP_RESULTS
+    -- Runs the base-table reconciliation report for this run's type codes and
+    -- value keys. Delegates to the shared DMT_UTIL_PKG.RUN_BIP_REPORT. Two
+    -- parameters: P_TYPE_CODES (comma-delimited LOOKUP_TYPE list) and
+    -- P_VALUE_KEYS (comma-delimited LOOKUP_TYPE^LOOKUP_CODE composite-key list);
+    -- config codes are not run-prefixed. PROCEDURE per the procedures-only
+    -- contract: x_report_xml NULL with x_error_code = C_SUCCESS means zero rows;
+    -- failures are logged and surfaced through x_error_code -- exceptions never
+    -- escape.
+    -- --------------------------------------------------------
+    PROCEDURE FETCH_BIP_RESULTS (
+        p_run_id      IN  NUMBER,
+        p_type_codes  IN  VARCHAR2,
+        p_value_keys  IN  VARCHAR2,
+        x_report_xml  OUT XMLTYPE,
+        x_error_code  OUT NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'FETCH_BIP_RESULTS';
+        l_step VARCHAR2(500);
+    BEGIN
+        x_report_xml := NULL;
+        x_error_code := DMT_UTIL_PKG.C_ERROR;   -- pessimistic until proven
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' start. CEMLI: ' || C_CEMLI
+            || ' | P_TYPE_CODES: ' || NVL(p_type_codes, '(none)')
+            || ' | P_VALUE_KEYS: ' || NVL(p_value_keys, '(none)'),
+            p_package => C_PKG, p_procedure => C_PROC);
+
+        IF p_type_codes IS NULL AND p_value_keys IS NULL THEN
+            -- Nothing to confirm: zero rows, not an error.
+            x_error_code := DMT_UTIL_PKG.C_SUCCESS;
+            RETURN;
+        END IF;
+
+        l_step := 'running base-table reconciliation report for ' || C_CEMLI;
+        DMT_UTIL_PKG.RUN_BIP_REPORT(
+            p_run_id     => p_run_id,
+            p_cemli_code => C_CEMLI,
+            p_params     => 'P_TYPE_CODES|' || p_type_codes
+                            || '~P_VALUE_KEYS|' || p_value_keys,
+            x_report_xml => x_report_xml,
+            x_error_code => x_error_code);
+
+        IF x_error_code != DMT_UTIL_PKG.C_SUCCESS THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ' failed while ' || l_step
+                || ' (detail logged by RUN_BIP_REPORT).',
+                p_log_type => 'ERROR', p_package => C_PKG, p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' complete. CEMLI: ' || C_CEMLI ||
+            CASE WHEN x_report_xml IS NULL
+                 THEN ' | Report returned zero rows.'
+                 ELSE ' | Report data received.'
+            END,
+            p_package => C_PKG, p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_report_xml := NULL;
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed while ' || l_step || ' | CEMLI: ' || C_CEMLI,
+                SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
+    END FETCH_BIP_RESULTS;
+
+    -- --------------------------------------------------------
+    -- PARSE_AND_UPDATE
+    -- Positive base-table confirmation only. Each report row is either a type
+    -- found in FND_LOOKUP_TYPES (SOURCE_TYPE='TYPE') or a value found in
+    -- FND_LOOKUP_VALUES_B (SOURCE_TYPE='VALUE'):
+    --   TYPE  -> LOADED. RECORD_KEY = LOOKUP_TYPE. FUSION_LOOKUP_TYPE_ID left
+    --            NULL (no numeric surrogate exists on FND lookups).
+    --   VALUE -> LOADED. RECORD_KEY = LOOKUP_TYPE || '^' || LOOKUP_CODE.
+    --            FUSION_LOOKUP_ID left NULL (same -- no numeric surrogate).
+    -- Rows not returned are left as the load step set them (FAILED with a real
+    -- REST error, else GENERATED/unaccounted) -- never a fabricated verdict.
+    -- Writes the TFM tables only; no COMMIT (the runner owns the txn).
+    -- --------------------------------------------------------
+    PROCEDURE PARSE_AND_UPDATE (
+        p_run_id     IN NUMBER,
+        p_report_xml IN XMLTYPE
+    ) IS
+        C_PROC         CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
+        l_types_loaded  NUMBER := 0;
+        l_values_loaded NUMBER := 0;
+        l_type          VARCHAR2(30);
+        l_code          VARCHAR2(30);
+        l_sep           PLS_INTEGER;
+    BEGIN
+        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
+
+        IF p_report_xml IS NULL THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': report returned zero base-table rows. '
+                || 'No fabricated LOADED; rows left as the load step set them.',
+                p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        FOR r IN (
+            SELECT x.record_key,
+                   UPPER(x.source_type) AS source_type
+            FROM   XMLTABLE('/DATA_DS/G_1' PASSING p_report_xml
+                COLUMNS
+                    record_key  VARCHAR2(300) PATH 'RECORD_KEY',
+                    source_type VARCHAR2(20)  PATH 'SOURCE_TYPE'
+            ) x
+        ) LOOP
+            IF r.record_key IS NULL THEN
+                CONTINUE;
+            END IF;
+
+            IF r.source_type = 'TYPE' THEN
+                -- Positive proof: the type exists in FND_LOOKUP_TYPES. LOADED by
+                -- string-key match; FUSION_LOOKUP_TYPE_ID stays NULL (no id source).
+                UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
+                SET    TFM_STATUS           = 'LOADED',
+                       RESULTS_UPDATED_DATE = SYSDATE,
+                       LAST_UPDATED_DATE    = SYSDATE
+                WHERE  RUN_ID     = p_run_id
+                AND    LOOKUP_TYPE = r.record_key
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                l_types_loaded := l_types_loaded + SQL%ROWCOUNT;
+
+            ELSIF r.source_type = 'VALUE' THEN
+                -- Composite RECORD_KEY = LOOKUP_TYPE || '^' || LOOKUP_CODE.
+                l_sep := INSTR(r.record_key, '^');
+                IF l_sep > 0 THEN
+                    l_type := SUBSTR(r.record_key, 1, l_sep - 1);
+                    l_code := SUBSTR(r.record_key, l_sep + 1);
+
+                    UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
+                    SET    TFM_STATUS           = 'LOADED',
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID     = p_run_id
+                    AND    LOOKUP_TYPE = l_type
+                    AND    LOOKUP_CODE = l_code
+                    AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                    l_values_loaded := l_values_loaded + SQL%ROWCOUNT;
+                END IF;
+            END IF;
+        END LOOP;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' complete. Base-table confirmed LOADED (FUSION_*_ID left NULL '
+            || '-- no numeric surrogate on FND lookups) -- types: ' || l_types_loaded
+            || ', values: ' || l_values_loaded || '.',
+            p_package => C_PKG, p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed.', SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
+            RAISE;
+    END PARSE_AND_UPDATE;
+
+    -- ============================================================
+    -- LOAD_AND_RECONCILE
+    -- Main entry point. LOAD types then values via REST POST, then RECONCILE
+    -- both against the Fusion base tables via the BIP report (the new standard).
+    -- COMMIT at the end (the runner also commits, but this keeps the two phases
+    -- in one txn).
+    -- ============================================================
+    PROCEDURE LOAD_AND_RECONCILE (
+        p_run_id IN NUMBER
+    ) IS
+        C_PROC       CONSTANT VARCHAR2(30) := 'LOAD_AND_RECONCILE';
+        l_type_codes  VARCHAR2(4000);
+        l_value_keys  VARCHAR2(4000);
+        l_xml         XMLTYPE;
+        l_err         NUMBER;
+        l_types_loaded   NUMBER;
+        l_types_failed   NUMBER;
+        l_types_unaccnt  NUMBER;
+        l_vals_loaded    NUMBER;
+        l_vals_failed    NUMBER;
+        l_vals_unaccnt   NUMBER;
+    BEGIN
+        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
+
+        -- Phase 1: LOAD -- POST every GENERATED type, then every GENERATED value.
+        LOAD_TYPES(p_run_id);
+        LOAD_VALUES(p_run_id);
+
+        -- Build the comma-delimited lists of type codes / value keys we POSTed and
+        -- still need confirmed (rows the load step did NOT mark FAILED; config
+        -- codes are not run-prefixed, so match the base tables on the exact codes).
+        SELECT LISTAGG(LOOKUP_TYPE, ',') WITHIN GROUP (ORDER BY LOOKUP_TYPE)
+        INTO   l_type_codes
+        FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'GENERATED';
+
+        SELECT LISTAGG(LOOKUP_TYPE || '^' || LOOKUP_CODE, ',')
+                   WITHIN GROUP (ORDER BY LOOKUP_TYPE, LOOKUP_CODE)
+        INTO   l_value_keys
+        FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'GENERATED';
+
+        -- Phase 2: RECONCILE -- run the base-table report and confirm.
+        FETCH_BIP_RESULTS(
+            p_run_id     => p_run_id,
+            p_type_codes => l_type_codes,
+            p_value_keys => l_value_keys,
+            x_report_xml => l_xml,
+            x_error_code => l_err);
+
+        IF l_err != DMT_UTIL_PKG.C_SUCCESS THEN
+            -- Reconciliation transport failed: raise loudly so the queue work item
+            -- fails, never a silent zero-row "success".
+            RAISE_APPLICATION_ERROR(-20039,
+                'LOAD_AND_RECONCILE: base-table reconciliation report failed for CEMLI '
+                || C_CEMLI || ' (detail in DMT_LOG_TBL).');
+        END IF;
+
+        PARSE_AND_UPDATE(p_run_id, l_xml);
+
+        -- Post-reconcile sweep: any row NOT confirmed in the base table is still
+        -- GENERATED. If its POST returned a real Fusion error (stashed in
+        -- ERROR_TEXT by the load step) mark it FAILED on that real error. A row
+        -- with no stashed error AND no base-table hit is left GENERATED
+        -- (unaccounted); the accounting gate surfaces it -- we never fabricate a
+        -- verdict.
+        UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
+        SET    TFM_STATUS           = 'FAILED',
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'GENERATED'
+        AND    ERROR_TEXT IS NOT NULL;
+
+        UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
+        SET    TFM_STATUS           = 'FAILED',
+               RESULTS_UPDATED_DATE = SYSDATE,
+               LAST_UPDATED_DATE    = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'GENERATED'
+        AND    ERROR_TEXT IS NOT NULL;
+
+        -- Mirror the terminal TFM outcome onto STG for both tiers (STG_STATUS is
+        -- terminal from staging's point of view; the TFM row is the record of the
+        -- Fusion outcome).
+        UPDATE DMT_FND_LOOKUP_TYPE_STG_TBL s
+        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
+                               FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL t
+                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                               AND    t.RUN_ID = p_run_id),
+               s.LAST_UPDATED_DATE = SYSDATE
+        WHERE  EXISTS (SELECT 1 FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
+                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                       AND    t.RUN_ID = p_run_id
+                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
+
+        UPDATE DMT_FND_LOOKUP_VALUE_STG_TBL s
+        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
+                               FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL t
+                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                               AND    t.RUN_ID = p_run_id),
+               s.LAST_UPDATED_DATE = SYSDATE
+        WHERE  EXISTS (SELECT 1 FROM DMT_FND_LOOKUP_VALUE_TFM_TBL t
+                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                       AND    t.RUN_ID = p_run_id
+                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
+
+        COMMIT;
+
+        SELECT COUNT(CASE WHEN TFM_STATUS = 'LOADED' THEN 1 END),
+               COUNT(CASE WHEN TFM_STATUS = 'FAILED' THEN 1 END),
+               COUNT(CASE WHEN TFM_STATUS NOT IN ('LOADED','FAILED') THEN 1 END)
+        INTO   l_types_loaded, l_types_failed, l_types_unaccnt
+        FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
+        WHERE  RUN_ID = p_run_id;
+
+        SELECT COUNT(CASE WHEN TFM_STATUS = 'LOADED' THEN 1 END),
+               COUNT(CASE WHEN TFM_STATUS = 'FAILED' THEN 1 END),
+               COUNT(CASE WHEN TFM_STATUS NOT IN ('LOADED','FAILED') THEN 1 END)
+        INTO   l_vals_loaded, l_vals_failed, l_vals_unaccnt
+        FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL
+        WHERE  RUN_ID = p_run_id;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' complete. Types -- LOADED: ' || l_types_loaded
+            || ', FAILED: ' || l_types_failed || ', UNACCOUNTED: ' || l_types_unaccnt
+            || ' | Values -- LOADED: ' || l_vals_loaded
+            || ', FAILED: ' || l_vals_failed || ', UNACCOUNTED: ' || l_vals_unaccnt || '.',
+            p_package => C_PKG, p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed.', SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
             RAISE;
     END LOAD_AND_RECONCILE;
 

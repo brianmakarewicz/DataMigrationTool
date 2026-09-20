@@ -2594,6 +2594,82 @@ def main():
     tag_scenario(cur, "DMT_FND_VS_VALUE_STG_TBL", scenario_id)
 
     # ====================================================================
+    # 47b. LOOKUPS (REST → standardLookups endpoint). REST-based config object
+    #     on the NEW reconciliation standard (backlog #11): each lookup TYPE is
+    #     POSTed to standardLookups, then each child CODE to
+    #     standardLookups/{type}/child/lookupCodes. LOADED is confirmed by a hit
+    #     in the Fusion BASE tables via DMT_LOOKUP_RECON_RPT
+    #     (DMT_FND_LOOKUP_RESULTS_PKG). (objects/Lookups.)
+    #
+    #     SPECIAL CASE — NO NUMERIC SURROGATE ID (verified live 2026-09):
+    #     FND_LOOKUP_TYPES is keyed only by LOOKUP_TYPE and FND_LOOKUP_VALUES_B
+    #     only by LOOKUP_TYPE + LOOKUP_CODE — there is no LOOKUP_TYPE_ID /
+    #     LOOKUP_ID numeric column. Reconciliation proves EXISTENCE by the string
+    #     key and marks the row LOADED while leaving FUSION_LOOKUP_TYPE_ID /
+    #     FUSION_LOOKUP_ID NULL. That NULL is the correct/expected outcome.
+    #
+    #     GOOD fixture: reuses a lookup type + code that ALREADY EXISTS on the
+    #     pod (CONTACT, and CONTACT/A). The standardLookups create is ENABLED on
+    #     this pod, so CONTACT's POST 400s as a duplicate; the base-table report
+    #     still finds CONTACT and CONTACT^A and marks them LOADED (ids left NULL).
+    #
+    #     BAD fixture — must be a row Fusion GENUINELY rejects (create is enabled,
+    #     so a merely-nonexistent code would just get created). Two real
+    #     rejections, verified live 2026-09-19:
+    #       * BAD type 'DMT2_BAD_LKP' carries an INVALID mapped module
+    #         (MODULE_KEY='DMT2BADMODULE'). The reconciler sends it as ModuleId;
+    #         Fusion returns HTTP 400 and does NOT create the type, so it is
+    #         absent from FND_LOOKUP_TYPES -> FAILED on the real Fusion error.
+    #       * BAD value 'DMT2_BAD_LKP'/'BADVAL' POSTs to the child collection of
+    #         a parent type that was never created (its type POST 400'd) -> HTTP
+    #         404 from Fusion -> FAILED on the real Fusion error.
+    #     Both carry the 'BAD' marker so the harness (DISPLAY_KEY = LOOKUP_TYPE
+    #     for types, LOOKUP_TYPE || ' - ' || LOOKUP_CODE for values) classifies
+    #     them expected-to-FAIL.
+    # ====================================================================
+    print("\n=== 47b. Lookups (REST) ===")
+    GOOD_LKP  = "CONTACT"          # existing lookup type on the pod
+    GOOD_CODE = "A"               # existing code under CONTACT
+    BAD_LKP   = "DMT2_BAD_LKP"     # 'BAD' marker; bad module -> genuine 400
+    BAD_MOD   = "DMT2BADMODULE"    # invalid ModuleId -> Fusion HTTP 400
+    BAD_CODE  = "BADVAL"
+    for lkp_type, mod_key, meaning, descr, label in [
+        (GOOD_LKP, None,    "Contact",  "DMT2 recon GOOD (existing lookup type, backlog #11)",
+         "GOOD Lookup Type: CONTACT (existing, base-table confirmed, id left NULL)"),
+        (BAD_LKP,  BAD_MOD, "DMT2 BAD", "DMT2 recon BAD lookup type - invalid module [FUSION_ERROR expected]",
+         "BAD Lookup Type: DMT2_BAD_LKP invalid ModuleId [FUSION_ERROR expected]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_FND_LOOKUP_TYPE_STG_TBL (
+                STG_SEQUENCE_ID, LOOKUP_TYPE, MEANING, DESCRIPTION, MODULE_KEY,
+                SOURCE_ID, STG_STATUS
+            ) VALUES (
+                DMT_FND_LOOKUP_TYPE_STG_SEQ.NEXTVAL, :lkp, :mng, :descr, :mod,
+                :src, 'NEW'
+            )
+        """, {"lkp": lkp_type, "mng": meaning, "descr": descr, "mod": mod_key,
+              "src": f"RT-LKP-{lkp_type}"}, label=label)
+    tag_scenario(cur, "DMT_FND_LOOKUP_TYPE_STG_TBL", scenario_id)
+
+    for lkp_type, code, meaning, descr, label in [
+        (GOOD_LKP, GOOD_CODE, "A", "DMT2 recon GOOD value (existing)",
+         "GOOD Lookup Value: CONTACT/A (existing, base-table confirmed, id left NULL)"),
+        (BAD_LKP,  BAD_CODE,  "DMT2 BAD", "DMT2 recon BAD value - parent absent",
+         "BAD Lookup Value: DMT2_BAD_LKP/BADVAL [FUSION_ERROR expected]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_FND_LOOKUP_VALUE_STG_TBL (
+                STG_SEQUENCE_ID, LOOKUP_TYPE, LOOKUP_CODE, DISPLAY_SEQUENCE,
+                ENABLED_FLAG, MEANING, DESCRIPTION, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                DMT_FND_LOOKUP_VALUE_STG_SEQ.NEXTVAL, :lkp, :code, 1,
+                'Y', :mng, :descr, :src, 'NEW'
+            )
+        """, {"lkp": lkp_type, "code": code, "mng": meaning, "descr": descr,
+              "src": f"RT-LKPV-{lkp_type}-{code}"}, label=label)
+    tag_scenario(cur, "DMT_FND_LOOKUP_VALUE_STG_TBL", scenario_id)
+
+    # ====================================================================
     # 48. AP PAYMENT TERMS (REST → standardTerms endpoint). REST-based config
     #     object on the NEW reconciliation standard (backlog #11): the header
     #     is POSTed to standardTerms, but LOADED is confirmed by a hit in the
@@ -2724,6 +2800,9 @@ def main():
         # Value Sets (REST)
         ("DMT_FND_VS_SET_STG_TBL",               "STG_STATUS"),
         ("DMT_FND_VS_VALUE_STG_TBL",             "STG_STATUS"),
+        # Lookups (REST)
+        ("DMT_FND_LOOKUP_TYPE_STG_TBL",          "STG_STATUS"),
+        ("DMT_FND_LOOKUP_VALUE_STG_TBL",         "STG_STATUS"),
         # AP Payment Terms (REST)
         ("DMT_AP_PAY_TERM_HDR_STG_TBL",          "STG_STATUS"),
         ("DMT_AP_PAY_TERM_LINE_STG_TBL",         "STG_STATUS"),

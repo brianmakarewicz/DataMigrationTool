@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="lookup_base_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- Lookups reconciliation over the Fusion base tables.
+-- SPECIAL CASE: FND lookups have NO numeric surrogate id. The types base
+-- (FND_LOOKUP_TYPES, key LOOKUP_TYPE) and the values base
+-- (FND_LOOKUP_VALUES_B, key LOOKUP_TYPE + LOOKUP_CODE) expose only string
+-- keys. Existence-by-key IS the honest base-table proof, so this report
+-- returns RECORD_KEY + SOURCE_TYPE only (no FUSION_ID column). DISTINCT
+-- collapses the date-tracked / translation rows the base views expand to.
+SELECT record_key, source_type FROM (
+    SELECT DISTINCT
+        t.lookup_type                        AS record_key,
+        'TYPE'                               AS source_type
+    FROM   fnd_lookup_types t
+    WHERE  INSTR(',' || :P_TYPE_CODES || ',', ',' || t.lookup_type || ',') > 0
+    UNION ALL
+    SELECT DISTINCT
+        v.lookup_type || '^' || v.lookup_code AS record_key,
+        'VALUE'                               AS source_type
+    FROM   fnd_lookup_values_b v
+    WHERE  INSTR(',' || :P_VALUE_KEYS || ',', ',' || v.lookup_type || '^' || v.lookup_code || ',') > 0
+)
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="lookup_base_results">
+          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_TYPE_CODES" dataType="character" rowPlacement="1"
+               labelID="P_TYPE_CODES" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_VALUE_KEYS" dataType="character" rowPlacement="1"
+               labelID="P_VALUE_KEYS" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
