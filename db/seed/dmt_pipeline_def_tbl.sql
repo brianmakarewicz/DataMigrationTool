@@ -156,7 +156,14 @@ using (
     union all select 'Expenditures', 'DMT_LOADER_PKG.RUN_EXPENDITURES', 'ASYNC', 'DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_EXPENDITURE_RESULTS_PKG.GET_PARTITION_KEYS' from dual
     union all select 'Grants', 'DMT_LOADER_PKG.RUN_GRANTS', 'ASYNC', 'DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'ProjectBudgets', 'DMT_LOADER_PKG.RUN_PROJECT_BUDGETS', 'ASYNC', 'DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
-    union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_GL_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    -- GLBalances: RECON_PROC points at the GENERIC recon engine (Option 1).
+    -- The engine pages/parses/stages the Contract v1 report, then dispatches the
+    -- object's own static apply (DMT_GL_RESULTS_PKG.APPLY_GL, registered in
+    -- DMT_BIP_REPORT_TBL.APPLY_PROC) through invoke_registered. RECON_HAS_CEMLI_ARG
+    -- = 'Y' because the engine's RECONCILE_BATCH takes p_cemli_code (it must know
+    -- which registry row / apply proc to use). The legacy per-object
+    -- DMT_GL_RESULTS_PKG.RECONCILE_BATCH is retained but no longer dispatched.
+    union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_RECON_ENGINE_PKG.RECONCILE_BATCH', 'Y', null from dual
     union all select 'GLBudgets', 'DMT_LOADER_PKG.RUN_GL_BUDGETS', 'ASYNC', 'DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'Assets', 'DMT_LOADER_PKG.RUN_ASSETS', 'ASYNC', 'DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_FA_ASSET_RESULTS_PKG.GET_PARTITION_KEYS' from dual
     -- PlanningBudgets: out of scope as a PIPELINE MEMBER (decided 2026-07-07) --

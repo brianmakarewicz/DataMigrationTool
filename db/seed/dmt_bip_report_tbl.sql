@@ -1206,3 +1206,35 @@ when not matched then insert
             null, null);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- GLBalances — Contract v1 registration + generic recon engine wiring.
+-- GLBalances is the REFERENCE object for the Option 1 recon engine: its report
+-- already conforms to Contract v1 (the nine standard columns), so the generic
+-- engine (DMT_RECON_ENGINE_PKG) can page + parse + stage it, then dispatch the
+-- object's OWN thin static apply, DMT_GL_RESULTS_PKG.APPLY_GL, through the
+-- sanctioned invoke_registered site. APPLY_GL MERGEs from DMT_RECON_STAGE_GTT
+-- into the literally-named DMT_GL_INTERFACE_TFM_TBL with STATIC SQL. The four
+-- documentation columns describe the object; APPLY_PROC is what the engine
+-- actually dispatches. RECON_KEY = prefixed journal key. This MERGE converges
+-- the columns on the GLBalances row seeded earlier in this file.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'GLBalances'                                          cemli_code,
+           1                                                     contract_version,
+           'DMT_GL_INTERFACE_TFM_TBL'                            tfm_table,
+           'FUSION_JE_HEADER_ID'                                 fusion_id_column,
+           'prefixed GL journal reconciliation key (report RECORD_KEY matched to TFM.RECON_KEY)' recon_key_sql,
+           'DMT_GL_RESULTS_PKG.APPLY_GL'                         apply_proc
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CONTRACT_VERSION" = s.contract_version,
+    t."TFM_TABLE"        = s.tfm_table,
+    t."FUSION_ID_COLUMN" = s.fusion_id_column,
+    t."RECON_KEY_SQL"    = s.recon_key_sql,
+    t."APPLY_PROC"       = s.apply_proc;
+
+commit;
