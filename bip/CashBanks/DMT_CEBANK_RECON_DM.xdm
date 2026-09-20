@@ -8,162 +8,68 @@
     <property name="xml_tag_case" value="upper"/>
   </dataProperties>
   <dataSets>
-    <dataSet name="cebank_recon_results" type="complex">
+    <dataSet name="cebank_base_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
--- ============================================================
--- CashBanks reconciliation data model -- BIP reconciliation
--- report contract v1 (nine columns, keyset pagination, the six
--- standard parameters). Conforms to the GLBalances template
--- (bip/GLBalances/DMT_GL_BAL_RECON_DM.xdm).
---
--- NINE response columns, in contract order:
---   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
---   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
---   DMT_REFERENCE.
---
--- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
---   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
---   No P_OFFSET / P_LIMIT.
---
--- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
--- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
--- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
--- with an empty cursor first, then passes the last RECORD_KEY it
--- received on each next call, until a page returns fewer than
--- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
--- (every non-null RECORD_KEY sorts after the empty string).
---
--- THREE tiers of the Cash Management hierarchy, one OBJECT_TYPE each,
--- UNION ALL, all producing the nine contract columns. A row present
--- in the Fusion BASE view/table is positive proof the record loaded:
---   Bank        -> CE_BANKS_V         FUSION_ID = BANK_PARTY_ID,   key BANK_NAME
---   BankBranch  -> CE_BANK_BRANCHES_V FUSION_ID = BRANCH_PARTY_ID, key BANK_BRANCH_NAME
---                                     (+ parent BANK_NAME to disambiguate a reused name)
---   BankAccount -> CE_BANK_ACCOUNTS   FUSION_ID = BANK_ACCOUNT_ID, key BANK_ACCOUNT_NAME
--- Cash Management banks/branches are TCA parties loaded via REST; Fusion
--- assigns the ids. A row that is NOT present here did not load and is left
--- for the reconciler to mark FAILED with the real REST error (or unaccounted).
--- This DM returns only positive proof, so FUSION_STATUS is always SUCCESS
--- and ERROR_MESSAGE is always null; rejections never reach the base tables.
---
--- RECORD_KEY is a tier-prefixed composite so the single keyset cursor is
--- globally unique across the three tiers and cannot collide when a bank and
--- a branch (or two branches under different banks) share a name:
---   Bank|<bank_name>
---   BankBranch|<parent_bank_name>/<branch_name>
---   BankAccount|<account_name>
--- SOURCE_REF carries the plain natural key (the name the run sent), which is
--- the reconciler's match key back to the TFM row's RECON_KEY.
---
--- Run-scoping (SOURCE_REF / DMT_REFERENCE):
---   Banks and branches are party-backed. Where the load stamped a DMT
---   reference it lands in HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE (joined
---   by party id) and/or HZ_PARTIES.ATTRIBUTE1; both are LEFT-joined so the
---   columns populate when present and are null otherwise. Accounts expose
---   CE_BANK_ACCOUNTS.ATTRIBUTE1 directly as DMT_REFERENCE.
---   When any DMT reference is present for the run (:P_RUN_ID is supplied and a
---   matching ORIG_SYSTEM_REFERENCE / ATTRIBUTE1 exists) the tier is scoped to
---   this run with ORIG_SYSTEM_REFERENCE / ATTRIBUTE1 LIKE 'DMT:'||:P_RUN_ID||':%'.
---   When :P_RUN_ID is empty (standalone shape validation, or seed demo data that
---   carries no DMT reference) the tier returns every base row and the reconciler
---   matches them by SOURCE_REF against its own TFM RECON_KEY -- the same division
---   of labour as the GLBalances template. :P_LOAD_REQUEST_ID, :P_IMPORT_ESS_ID
---   and :P_PREFIX are declared for contract symmetry.
--- ============================================================
 SELECT
-    object_type, record_key, source_type, fusion_status,
-    fusion_id, error_message, load_request_id, source_ref, dmt_reference
-FROM (
-    -- Tier: Bank -- CE_BANKS_V, one row per confirmed bank.
-    SELECT
-        'Bank'                                       AS object_type,
-        'Bank|' || b.bank_name                       AS record_key,
-        'BASE'                                        AS source_type,
-        'SUCCESS'                                     AS fusion_status,
-        b.bank_party_id                              AS fusion_id,
-        CAST(NULL AS VARCHAR2(4000))                 AS error_message,
-        TO_NUMBER(:P_LOAD_REQUEST_ID)                AS load_request_id,
-        b.bank_name                                  AS source_ref,
-        NVL(osr.orig_system_reference, hp.attribute1) AS dmt_reference
-    FROM   ce_banks_v b
-    LEFT   JOIN hz_parties hp
-           ON hp.party_id = b.bank_party_id
-    LEFT   JOIN hz_orig_sys_references osr
-           ON osr.owner_table_name = 'HZ_PARTIES'
-          AND osr.owner_table_id   = b.bank_party_id
-          AND osr.orig_system_reference LIKE 'DMT:' || :P_RUN_ID || ':%'
-    WHERE  ( :P_RUN_ID IS NULL
-             OR osr.orig_system_reference IS NOT NULL
-             OR hp.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%' )
-
-    UNION ALL
-
-    -- Tier: BankBranch -- CE_BANK_BRANCHES_V, one row per confirmed branch.
-    -- Parent bank name is folded into RECORD_KEY so a branch name reused under
-    -- two banks yields two distinct keys.
-    SELECT
-        'BankBranch'                                 AS object_type,
-        'BankBranch|' || br.bank_name || '/' || br.bank_branch_name AS record_key,
-        'BASE'                                        AS source_type,
-        'SUCCESS'                                     AS fusion_status,
-        br.branch_party_id                           AS fusion_id,
-        CAST(NULL AS VARCHAR2(4000))                 AS error_message,
-        TO_NUMBER(:P_LOAD_REQUEST_ID)                AS load_request_id,
-        br.bank_branch_name                          AS source_ref,
-        NVL(osr.orig_system_reference, hp.attribute1) AS dmt_reference
-    FROM   ce_bank_branches_v br
-    LEFT   JOIN hz_parties hp
-           ON hp.party_id = br.branch_party_id
-    LEFT   JOIN hz_orig_sys_references osr
-           ON osr.owner_table_name = 'HZ_PARTIES'
-          AND osr.owner_table_id   = br.branch_party_id
-          AND osr.orig_system_reference LIKE 'DMT:' || :P_RUN_ID || ':%'
-    WHERE  ( :P_RUN_ID IS NULL
-             OR osr.orig_system_reference IS NOT NULL
-             OR hp.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%' )
-
-    UNION ALL
-
-    -- Tier: BankAccount -- CE_BANK_ACCOUNTS, one row per confirmed account.
-    -- ATTRIBUTE1 on the account row is the DMT reference directly.
-    SELECT
-        'BankAccount'                                AS object_type,
-        'BankAccount|' || a.bank_account_name        AS record_key,
-        'BASE'                                        AS source_type,
-        'SUCCESS'                                     AS fusion_status,
-        a.bank_account_id                            AS fusion_id,
-        CAST(NULL AS VARCHAR2(4000))                 AS error_message,
-        TO_NUMBER(:P_LOAD_REQUEST_ID)                AS load_request_id,
-        a.bank_account_name                          AS source_ref,
-        a.attribute1                                 AS dmt_reference
-    FROM   ce_bank_accounts a
-    WHERE  ( :P_RUN_ID IS NULL
-             OR a.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%' )
-)
--- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
--- BIP, so treat NULL as "from the start": return every row. On later
--- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
--- greater keys are returned. RECORD_KEY is the tier-prefixed composite and
--- is compared as text; the reconciler feeds back the exact key it received.
-WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
-ORDER BY record_key
-FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+    b.bank_name                          AS record_key,
+    'SUCCESS'                            AS import_status,
+    'BASE_BANK'                          AS source_type,
+    b.bank_party_id                      AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))         AS error_message
+FROM   ce_banks_v b
+WHERE  INSTR(',' || :P_BANK_NAMES || ',', ',' || b.bank_name || ',') > 0
+      ]]></sql>
+    </dataSet>
+    <dataSet name="cebranch_base_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    br.bank_branch_name                  AS record_key,
+    'SUCCESS'                            AS import_status,
+    'BASE_BRANCH'                        AS source_type,
+    br.branch_party_id                   AS fusion_id,
+    br.bank_name                         AS parent_bank_name,
+    CAST(NULL AS VARCHAR2(4000))         AS error_message
+FROM   ce_bank_branches_v br
+WHERE  INSTR(',' || :P_BRANCH_NAMES || ',', ',' || br.bank_branch_name || ',') > 0
+      ]]></sql>
+    </dataSet>
+    <dataSet name="ceacct_base_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT
+    a.bank_account_name                  AS record_key,
+    'SUCCESS'                            AS import_status,
+    'BASE_ACCOUNT'                       AS source_type,
+    a.bank_account_id                    AS fusion_id,
+    CAST(NULL AS VARCHAR2(4000))         AS error_message
+FROM   ce_bank_accounts a
+WHERE  INSTR(',' || :P_ACCT_NAMES || ',', ',' || a.bank_account_name || ',') > 0
       ]]></sql>
     </dataSet>
   </dataSets>
   <output rootName="DATA_DS" uniqueRowName="false">
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
-        <group name="G_1" label="G_1" source="cebank_recon_results">
-          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
-          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
-          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
-          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
-          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
-          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
-          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
-          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
-          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        <group name="G_1" label="G_1" source="cebank_base_results">
+          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
+          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+        <group name="G_2" label="G_2" source="cebranch_base_results">
+          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
+          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="PARENT_BANK_NAME" value="PARENT_BANK_NAME" dataType="xsd:string" tagName="PARENT_BANK_NAME"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
+        </group>
+        <group name="G_3" label="G_3" source="ceacct_base_results">
+          <element name="RECORD_KEY" value="RECORD_KEY" dataType="xsd:string" tagName="RECORD_KEY"/>
+          <element name="IMPORT_STATUS" value="IMPORT_STATUS" dataType="xsd:string" tagName="IMPORT_STATUS"/>
+          <element name="SOURCE_TYPE" value="SOURCE_TYPE" dataType="xsd:string" tagName="SOURCE_TYPE"/>
+          <element name="FUSION_ID" value="FUSION_ID" dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE" value="ERROR_MESSAGE" dataType="xsd:string" tagName="ERROR_MESSAGE"/>
         </group>
       </dataStructure>
     </nodeList>
@@ -171,26 +77,14 @@ FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
   <eventTriggers/>
   <lexicals/>
   <parameters>
-    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
-               labelID="P_RUN_ID" defaultValue="" nvp="false"
+    <parameter name="P_BANK_NAMES" dataType="character" rowPlacement="1"
+               labelID="P_BANK_NAMES" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
-               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+    <parameter name="P_BRANCH_NAMES" dataType="character" rowPlacement="1"
+               labelID="P_BRANCH_NAMES" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
-               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
-               labelID="P_PREFIX" defaultValue="" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <!-- Keyset pagination: page size + cursor. The reconciler calls
-         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
-         received on each next call, until a short page returns. -->
-    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
-               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
-               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+    <parameter name="P_ACCT_NAMES" dataType="character" rowPlacement="1"
+               labelID="P_ACCT_NAMES" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>
