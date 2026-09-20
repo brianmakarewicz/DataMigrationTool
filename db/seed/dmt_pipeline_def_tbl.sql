@@ -76,7 +76,12 @@ using (
     union all select 'CONFIGURATION', 40, 'UnitsOfMeasure', null, null from dual
     union all select 'CONFIGURATION', 50, 'PaymentTerms', null, null from dual
     union all select 'CONFIGURATION', 60, 'TaxConfig', null, null from dual
-    union all select 'CONFIGURATION', 70, 'Banks', null, null from dual
+    -- CashBanks (was 'Banks' before backlog #11 / the new recon standard): the
+    -- Cash Management three-tier object (banks / bank branches / bank accounts).
+    -- Renamed to match its REST resources (cashBanks/cashBankBranches/
+    -- cashBankAccounts) and the STANDALONE:CashBanks run label. The old 'Banks'
+    -- CEMLI_CODE rows are deleted at EOF so an existing database converges.
+    union all select 'CONFIGURATION', 70, 'CashBanks', null, null from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set
@@ -184,7 +189,11 @@ using (
     union all select 'UnitsOfMeasure', 'DMT_INV_UOM_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
     union all select 'PaymentTerms', 'DMT_AP_PAY_TERM_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
     union all select 'TaxConfig', 'DMT_ZX_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
-    union all select 'Banks', null, 'ASYNC', null, 'N', null from dual
+    -- CashBanks: LOCAL dispatch to the CE bank runner's RUN_STANDARD (REST load +
+    -- BIP base-table reconcile, backlog #11). No RECON_PROC — LOAD_AND_RECONCILE
+    -- reconciles inline via the base-table report, like the other REST-loaded
+    -- config objects (UnitsOfMeasure, ValueSets, PaymentTerms).
+    union all select 'CashBanks', 'DMT_CE_BANK_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set
@@ -204,5 +213,15 @@ commit;
 -- for each). 'Assignments' folded into the single Worker load;
 -- 'PayrollRelationships' is auto-created at hire (verifier-only).
 delete from "DMT_PIPELINE_DEF_TBL" where "CEMLI_CODE" in ('Assignments','PayrollRelationships');
+
+commit;
+
+-- ----------------------------------------------------------------------
+-- CashBanks rename converge (2026-09-19, backlog #11 / new recon standard).
+-- The Cash Management object's CEMLI_CODE moved from 'Banks' to 'CashBanks'
+-- (both MERGE blocks above are insert/update only, so the old 'Banks' row would
+-- otherwise linger). Delete it explicitly so an existing database converges to
+-- the single 'CashBanks' membership + dispatch row.
+delete from "DMT_PIPELINE_DEF_TBL" where "CEMLI_CODE" = 'Banks';
 
 commit;

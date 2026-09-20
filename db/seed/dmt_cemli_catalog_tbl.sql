@@ -127,9 +127,12 @@ using (
     union all select 'TaxConfig', 'Tax Regimes', 'DMT_ZX_REGIME_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'TaxConfig', 'Tax Rates', 'DMT_ZX_RATE_TFM_TBL', 'TFM_STATUS', null, 2 from dual
     -- REST-loaded objects ------------------------------------------------
-    union all select 'Banks', 'Banks', 'DMT_CE_BANK_TFM_TBL', 'TFM_STATUS', null, 1 from dual
-    union all select 'Banks', 'Bank Branches', 'DMT_CE_BRANCH_TFM_TBL', 'TFM_STATUS', null, 2 from dual
-    union all select 'Banks', 'Bank Accounts', 'DMT_CE_BANK_ACCT_TFM_TBL', 'TFM_STATUS', null, 3 from dual
+    -- CashBanks (was 'Banks' before backlog #11 / the new recon standard). The
+    -- accounting gate reads TFM tables by CEMLI_CODE, so this MUST match the
+    -- work-queue CEMLI_CODE 'CashBanks'. Old 'Banks' rows deleted at EOF.
+    union all select 'CashBanks', 'Banks', 'DMT_CE_BANK_TFM_TBL', 'TFM_STATUS', null, 1 from dual
+    union all select 'CashBanks', 'Bank Branches', 'DMT_CE_BRANCH_TFM_TBL', 'TFM_STATUS', null, 2 from dual
+    union all select 'CashBanks', 'Bank Accounts', 'DMT_CE_BANK_ACCT_TFM_TBL', 'TFM_STATUS', null, 3 from dual
     -- STATUS_COLUMN is TFM_STATUS even before the object is built: the
     -- dictionary makes TFM_STATUS the only legal value, and a NULL here
     -- would make the engine's catalog-driven SQL malformed the day the
@@ -157,5 +160,15 @@ commit;
 -- assignment TFM tables are now catalogued under Workers (rows above), so the
 -- Workers accounting gate covers them; PayrollRelationships is verifier-only.
 delete from "DMT_CEMLI_CATALOG_TBL" where "CEMLI_CODE" in ('Assignments','PayrollRelationships');
+
+commit;
+
+-- ----------------------------------------------------------------------
+-- CashBanks rename converge (2026-09-19, backlog #11 / new recon standard).
+-- The Cash Management object's CEMLI_CODE moved from 'Banks' to 'CashBanks'
+-- (the MERGE above is insert/update only, so the old 'Banks' rows would linger).
+-- Delete them explicitly so an existing database converges to the three
+-- 'CashBanks' catalog rows.
+delete from "DMT_CEMLI_CATALOG_TBL" where "CEMLI_CODE" = 'Banks';
 
 commit;

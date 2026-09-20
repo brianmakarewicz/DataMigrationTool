@@ -995,6 +995,60 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- CashBanks (100000046) — NEW reconciliation standard (DMT_DESIGN.html,
+-- PROPOSED 2026-09): reconciliation is a BIP report over the Fusion BASE tables
+-- that returns the base-table surrogate id. Cash Management banks/branches/
+-- accounts load via REST POST to cashBanks/cashBankBranches/cashBankAccounts,
+-- but LOADED is now driven by a positive hit in the base tables:
+-- DMT_CE_BANK_RESULTS_PKG runs the report DMT_CEBANK_RECON_RPT and, for each
+-- bank name found in CE_BANKS_V, marks the bank TFM row LOADED with
+-- FUSION_BANK_PARTY_ID = BANK_PARTY_ID; for each branch found in
+-- CE_BANK_BRANCHES_V (matched by branch name + parent bank name), marks the
+-- branch LOADED with FUSION_BRANCH_PARTY_ID = BRANCH_PARTY_ID; for each account
+-- found in CE_BANK_ACCOUNTS, marks the account LOADED with FUSION_BANK_ACCOUNT_ID
+-- = BANK_ACCOUNT_ID. INTERFACE_TABLE = 'N/A (REST)' — there is no interface
+-- table; the report reads the base views/table directly. Keyed by CEMLI_CODE
+-- 'CashBanks' (the reconciler passes p_cemli_code => 'CashBanks' to
+-- RUN_BIP_REPORT). Natural keys are NOT run-prefixed; three parameters
+-- P_BANK_NAMES / P_BRANCH_NAMES / P_ACCT_NAMES carry the exact lists per tier.
+-- This reconciler uses its own RECORD_KEY/SOURCE_TYPE parser (not the shared
+-- Contract v1 parser), so the Contract v1 columns are left NULL. The
+-- when-not-matched insert makes this block self-contained.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000046                                                     bip_report_id,
+           'CashBanks'                                                   cemli_code,
+           'Cash Management Banks'                                       object_type,
+           '/Custom/DMT2/CashBanks/DMT_CEBANK_RECON_DM.xdm'             dm_catalog_path,
+           '/Custom/DMT2/CashBanks/DMT_CEBANK_RECON_RPT.xdo'            report_catalog_path,
+           'N/A (REST)'                                                  interface_table,
+           'Cash Management banks/branches/accounts base-table reconciliation '
+             || '(new recon standard). REST POST loads each tier; LOADED is '
+             || 'confirmed by a hit in CE_BANKS_V (FUSION_BANK_PARTY_ID), '
+             || 'CE_BANK_BRANCHES_V (FUSION_BRANCH_PARTY_ID) and CE_BANK_ACCOUNTS '
+             || '(FUSION_BANK_ACCOUNT_ID). One report, three params: P_BANK_NAMES, '
+             || 'P_BRANCH_NAMES, P_ACCT_NAMES.' notes
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null);
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- PaymentTerms (100000043) — NEW reconciliation standard (DMT_DESIGN.html,
 -- PROPOSED 2026-09): reconciliation is a BIP report over the Fusion BASE tables
 -- that returns the base-table surrogate id. AP Payment Terms load via REST POST
