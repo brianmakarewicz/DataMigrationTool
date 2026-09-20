@@ -1,67 +1,112 @@
 -- ============================================================
--- CashBanks BIP reconciliation query -- MIRROR of the deployed data model
--- bip/CashBanks/DMT_CEBANK_RECON_DM.xdm (deploy target /Custom/DMT2/CashBanks/).
--- The three SELECTs below are the byte-exact CDATA bodies of that .xdm's three
--- datasets; regenerate this file from the .xdm whenever the data model changes --
--- the mirror must never drift.
+-- CashBanks BIP reconciliation query -- BIP reconciliation report
+-- contract v1 (nine columns, keyset pagination). This mirrors the SQL
+-- embedded in DMT_CEBANK_RECON_DM.xdm for review; the .xdm is authoritative.
+-- Regenerate this file from the .xdm whenever the data model changes -- the
+-- mirror must never drift.
 --
--- New reconciliation standard (DMT_DESIGN.html, PROPOSED 2026-09):
--- reconciliation is a BIP report over the Fusion BASE tables, returning the
--- base-table surrogate id. A REST load-call HTTP 200 is NOT reconciliation.
--- For Cash Management the three tiers are:
---   banks    -> CE_BANKS_V          (surrogate BANK_PARTY_ID,   key BANK_NAME)
---   branches -> CE_BANK_BRANCHES_V  (surrogate BRANCH_PARTY_ID, key BANK_BRANCH_NAME
---                                    + parent BANK_NAME to disambiguate a reused name)
---   accounts -> CE_BANK_ACCOUNTS    (surrogate BANK_ACCOUNT_ID, key BANK_ACCOUNT_NAME)
+-- NINE columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE
 --
--- Data source: ApplicationDB_FSCM
--- Parameters:
---   :P_BANK_NAMES   = comma-delimited list of the bank names this run sent.
---   :P_BRANCH_NAMES = comma-delimited list of the branch names this run sent.
---   :P_ACCT_NAMES   = comma-delimited list of the account names this run sent.
--- Names are NOT run-prefixed. The comma-boundary INSTR match avoids substring
--- false positives.
+-- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY. No P_OFFSET / P_LIMIT.
 --
--- G_1 (BASE_BANK):    a row in CE_BANKS_V is positive proof; FUSION_ID = BANK_PARTY_ID.
--- G_2 (BASE_BRANCH):  a row in CE_BANK_BRANCHES_V is positive proof; FUSION_ID =
---                     BRANCH_PARTY_ID; PARENT_BANK_NAME lets the reconciler match
---                     the branch to its TFM row by (branch name, parent bank name).
--- G_3 (BASE_ACCOUNT): a row in CE_BANK_ACCOUNTS is positive proof; FUSION_ID =
---                     BANK_ACCOUNT_ID.
--- Rows not returned were not created and are handled by the reconciler (FAILED
--- with the real REST error, else left unaccounted).
+-- Keyset: ORDER BY RECORD_KEY, only rows whose RECORD_KEY sorts after
+-- :P_AFTER_KEY, at most :P_CHUNK_SIZE per page. RECORD_KEY is a
+-- tier-prefixed composite so the single cursor is globally unique across
+-- the three tiers.
+--
+-- THREE tiers (UNION ALL), one OBJECT_TYPE each, all producing the nine
+-- contract columns. A row present in the Fusion base view/table is positive
+-- proof the record loaded:
+--   Bank        -> CE_BANKS_V         FUSION_ID = BANK_PARTY_ID,   key BANK_NAME
+--   BankBranch  -> CE_BANK_BRANCHES_V FUSION_ID = BRANCH_PARTY_ID, key BANK_BRANCH_NAME
+--   BankAccount -> CE_BANK_ACCOUNTS   FUSION_ID = BANK_ACCOUNT_ID, key BANK_ACCOUNT_NAME
+-- Only positive proof is returned, so FUSION_STATUS is always SUCCESS and
+-- ERROR_MESSAGE is always null; rejections never reach the base tables and
+-- are handled by the reconciler.
+--
+-- Run-scoping: banks/branches are TCA parties -- SOURCE_REF is the natural
+-- name (reconciler match key); DMT_REFERENCE is the run reference from
+-- HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE (LEFT-joined by party id) or
+-- HZ_PARTIES.ATTRIBUTE1, and CE_BANK_ACCOUNTS.ATTRIBUTE1 for accounts. When
+-- :P_RUN_ID is supplied each tier is scoped with the DMT reference LIKE
+-- 'DMT:'||:P_RUN_ID||':%'; when :P_RUN_ID is empty (standalone shape
+-- validation, or seed data with no DMT reference) every base row is returned
+-- and the reconciler matches by SOURCE_REF.
 -- ============================================================
-
--- G_1: bank confirmation over CE_BANKS_V by BANK_NAME
 SELECT
-    b.bank_name                          AS record_key,
-    'SUCCESS'                            AS import_status,
-    'BASE_BANK'                          AS source_type,
-    b.bank_party_id                      AS fusion_id,
-    CAST(NULL AS VARCHAR2(4000))         AS error_message
-FROM   ce_banks_v b
-WHERE  INSTR(',' || :P_BANK_NAMES || ',', ',' || b.bank_name || ',') > 0
-;
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- Tier: Bank -- CE_BANKS_V, one row per confirmed bank.
+    SELECT
+        'Bank'                                       AS object_type,
+        'Bank|' || b.bank_name                       AS record_key,
+        'BASE'                                        AS source_type,
+        'SUCCESS'                                     AS fusion_status,
+        b.bank_party_id                              AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))                 AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)                AS load_request_id,
+        b.bank_name                                  AS source_ref,
+        NVL(osr.orig_system_reference, hp.attribute1) AS dmt_reference
+    FROM   ce_banks_v b
+    LEFT   JOIN hz_parties hp
+           ON hp.party_id = b.bank_party_id
+    LEFT   JOIN hz_orig_sys_references osr
+           ON osr.owner_table_name = 'HZ_PARTIES'
+          AND osr.owner_table_id   = b.bank_party_id
+          AND osr.orig_system_reference LIKE 'DMT:' || :P_RUN_ID || ':%'
+    WHERE  ( :P_RUN_ID IS NULL
+             OR osr.orig_system_reference IS NOT NULL
+             OR hp.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%' )
 
--- G_2: branch confirmation over CE_BANK_BRANCHES_V by BANK_BRANCH_NAME
-SELECT
-    br.bank_branch_name                  AS record_key,
-    'SUCCESS'                            AS import_status,
-    'BASE_BRANCH'                        AS source_type,
-    br.branch_party_id                   AS fusion_id,
-    br.bank_name                         AS parent_bank_name,
-    CAST(NULL AS VARCHAR2(4000))         AS error_message
-FROM   ce_bank_branches_v br
-WHERE  INSTR(',' || :P_BRANCH_NAMES || ',', ',' || br.bank_branch_name || ',') > 0
-;
+    UNION ALL
 
--- G_3: account confirmation over CE_BANK_ACCOUNTS by BANK_ACCOUNT_NAME
-SELECT
-    a.bank_account_name                  AS record_key,
-    'SUCCESS'                            AS import_status,
-    'BASE_ACCOUNT'                       AS source_type,
-    a.bank_account_id                    AS fusion_id,
-    CAST(NULL AS VARCHAR2(4000))         AS error_message
-FROM   ce_bank_accounts a
-WHERE  INSTR(',' || :P_ACCT_NAMES || ',', ',' || a.bank_account_name || ',') > 0
-;
+    -- Tier: BankBranch -- CE_BANK_BRANCHES_V, one row per confirmed branch.
+    SELECT
+        'BankBranch'                                 AS object_type,
+        'BankBranch|' || br.bank_name || '/' || br.bank_branch_name AS record_key,
+        'BASE'                                        AS source_type,
+        'SUCCESS'                                     AS fusion_status,
+        br.branch_party_id                           AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))                 AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)                AS load_request_id,
+        br.bank_branch_name                          AS source_ref,
+        NVL(osr.orig_system_reference, hp.attribute1) AS dmt_reference
+    FROM   ce_bank_branches_v br
+    LEFT   JOIN hz_parties hp
+           ON hp.party_id = br.branch_party_id
+    LEFT   JOIN hz_orig_sys_references osr
+           ON osr.owner_table_name = 'HZ_PARTIES'
+          AND osr.owner_table_id   = br.branch_party_id
+          AND osr.orig_system_reference LIKE 'DMT:' || :P_RUN_ID || ':%'
+    WHERE  ( :P_RUN_ID IS NULL
+             OR osr.orig_system_reference IS NOT NULL
+             OR hp.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%' )
+
+    UNION ALL
+
+    -- Tier: BankAccount -- CE_BANK_ACCOUNTS, one row per confirmed account.
+    SELECT
+        'BankAccount'                                AS object_type,
+        'BankAccount|' || a.bank_account_name        AS record_key,
+        'BASE'                                        AS source_type,
+        'SUCCESS'                                     AS fusion_status,
+        a.bank_account_id                            AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))                 AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)                AS load_request_id,
+        a.bank_account_name                          AS source_ref,
+        a.attribute1                                 AS dmt_reference
+    FROM   ce_bank_accounts a
+    WHERE  ( :P_RUN_ID IS NULL
+             OR a.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%' )
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in BIP,
+-- so treat NULL as "from the start". On later pages it carries the previous
+-- page's last RECORD_KEY; only greater keys are returned.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
