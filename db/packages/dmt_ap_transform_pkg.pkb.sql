@@ -344,6 +344,22 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier template): stamp the header tier's
+        -- RECON_KEY so it equals the header RECORD_KEY the recon report emits.
+        -- The APInvoices Contract v1 data model (DMT_AP_RECON_DM.xdm) emits the
+        -- BASE header RECORD_KEY as the prefixed INVOICE_NUM (the base header
+        -- persists no interface key, so the prefixed invoice number is the
+        -- read-back key). The shared reconciler
+        -- (DMT_AP_RESULTS_PKG.APPLY_CONTRACT_V1_APINVOICES) joins report rows to
+        -- this table on RECON_KEY = report RECORD_KEY, so this stamp must match
+        -- that expression exactly. Only NULL keys are set (never overwrite);
+        -- post-INSERT, run-scoped.
+        UPDATE DMT_AP_INVOICES_INT_TFM_TBL
+        SET    RECON_KEY = INVOICE_NUM,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Update STG stg_status to TRANSFORMED for rows that were inserted into TFM
         UPDATE DMT_AP_INVOICES_INT_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
@@ -661,6 +677,27 @@
         );
 
         l_ok_count := SQL%ROWCOUNT;
+
+        -- Contract v1 coupling (multi-tier template): stamp the line tier's
+        -- RECON_KEY so it equals the line RECORD_KEY the recon report emits.
+        -- The Contract v1 data model emits the BASE line RECORD_KEY as the parent
+        -- header's prefixed INVOICE_NUM || ':LINE:' || base LINE_NUMBER (the base
+        -- line carries no id of its own). The line TFM row holds INVOICE_ID (which
+        -- joins to the header TFM's INVOICE_ID) and LINE_NUMBER; the parent's
+        -- prefixed INVOICE_NUM lives on the header TFM row, so it is looked up
+        -- through that join. The reconciler joins report rows to this table on
+        -- RECON_KEY = RECORD_KEY, so this stamp must match that composition
+        -- exactly. Only NULL keys are set; post-INSERT, run-scoped.
+        UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
+        SET    ln.RECON_KEY = (
+                   SELECT h.INVOICE_NUM || ':LINE:' || TO_CHAR(ln.LINE_NUMBER)
+                   FROM   DMT_AP_INVOICES_INT_TFM_TBL h
+                   WHERE  h.RUN_ID     = p_run_id
+                   AND    h.INVOICE_ID = ln.INVOICE_ID
+                   AND    ROWNUM = 1),
+               ln.LAST_UPDATED_DATE = SYSDATE
+        WHERE  ln.RUN_ID = p_run_id
+        AND    ln.RECON_KEY IS NULL;
 
         -- Update STG stg_status to TRANSFORMED for rows that were inserted into TFM
         UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL

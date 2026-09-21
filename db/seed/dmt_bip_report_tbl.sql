@@ -1730,3 +1730,44 @@ when matched then update set
     t."RECON_KEY_SQL"       = s.recon_key_sql;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- APInvoices — Contract v1 registration (design section 5), MULTI-TIER.
+-- Points the APInvoices CEMLI at the nine-column Contract v1 report and sets
+-- CONTRACT_VERSION = 1 so the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
+-- runs it (a NULL/absent CONTRACT_VERSION makes the shared fetch bail with
+-- "not registered as CONTRACT_VERSION = 1"). This converges the existing
+-- APInvoices row (seeded earlier in this file at the OLD AP_DM.xdm/AP_RPT.xdo
+-- two-dataset report) onto the Contract v1 report. APInvoices dispatches its
+-- APPLY through RECON_PROC (DMT_AP_RESULTS_PKG.RECONCILE_BATCH ->
+-- APPLY_CONTRACT_V1_APINVOICES), which does one static per-tier UPDATE pair
+-- discriminated by OBJECT_TYPE, so APPLY_PROC is intentionally not set here.
+-- TFM_TABLE / FUSION_ID_COLUMN carry the primary (header) tier for
+-- documentation; the reconciler names both tier tables statically. RECON_KEY
+-- per tier (stamped by DMT_AP_TRANSFORM_PKG, = each tier's report RECORD_KEY):
+-- headers = INVOICE_NUM (prefixed);
+-- lines = INVOICE_NUM (prefixed parent) || ':LINE:' || LINE_NUMBER.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'APInvoices'                                            cemli_code,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_DM.xdm'           dm_catalog_path,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_RPT.xdo'          report_catalog_path,
+           'AP invoice import reconciliation (Contract v1, multi-tier)' notes,
+           1                                                        contract_version,
+           'DMT_AP_INVOICES_INT_TFM_TBL'                           tfm_table,
+           'FUSION_INVOICE_ID'                                     fusion_id_column,
+           'multi-tier: headers=INVOICE_NUM; lines=INVOICE_NUM||'':LINE:''||LINE_NUMBER' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
