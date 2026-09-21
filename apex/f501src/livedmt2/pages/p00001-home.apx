@@ -1,0 +1,136 @@
+page 1 (
+    name: Dashboard
+    alias: HOME
+    title: Dashboard
+    appearance {
+        pageTemplate: @/standard
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        formAutoComplete: false
+    }
+
+    region migration-summary (
+        name: Migration Summary
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  l_total    NUMBER := 0;
+                  l_completed NUMBER := 0;
+                  l_failed   NUMBER := 0;
+                  l_in_prog  NUMBER := 0;
+                  l_records  NUMBER := 0;
+                  l_loaded   NUMBER := 0;
+                BEGIN
+                  -- Redesign 2026-07-15: stat tiles repointed off the retired master table
+                  -- onto the run/queue model (design section 8, Dashboard "redesign").
+                  SELECT NVL(COUNT(*),0),
+                         NVL(SUM(CASE WHEN run_status IN ('COMPLETED','COMPLETED_ERRORS') THEN 1 ELSE 0 END),0),
+                         NVL(SUM(CASE WHEN run_status = 'FAILED' THEN 1 ELSE 0 END),0),
+                         NVL(SUM(CASE WHEN run_status IN ('IN_PROGRESS','QUEUED') THEN 1 ELSE 0 END),0)
+                    INTO l_total, l_completed, l_failed, l_in_prog
+                    FROM dmt_pipeline_run_tbl;
+                  BEGIN
+                    -- Total processed vs base-table-confirmed ("Loaded to Fusion")
+                    SELECT NVL(SUM(total_rows),0), NVL(SUM(loaded_rows),0)
+                      INTO l_records, l_loaded FROM dmt_object_detail_v;
+                  EXCEPTION WHEN OTHERS THEN l_records := 0; l_loaded := 0; END;
+                
+                  htp.p('<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:24px;">');
+                  htp.p('<div style="flex:1;min-width:140px;background:#f8f9fa;border-radius:8px;padding:16px;text-align:center;border-left:4px solid #4a90d9;">');
+                  htp.p('<div style="font-size:28px;font-weight:700;color:#333;">' || l_total || '</div>');
+                  htp.p('<div style="font-size:13px;color:#666;margin-top:4px;">Total Runs</div></div>');
+                  htp.p('<div style="flex:1;min-width:140px;background:#f0faf0;border-radius:8px;padding:16px;text-align:center;border-left:4px solid #28a745;">');
+                  htp.p('<div style="font-size:28px;font-weight:700;color:#28a745;">' || l_completed || '</div>');
+                  htp.p('<div style="font-size:13px;color:#666;margin-top:4px;">Completed</div></div>');
+                  htp.p('<div style="flex:1;min-width:140px;background:#fef0f0;border-radius:8px;padding:16px;text-align:center;border-left:4px solid #dc3545;">');
+                  htp.p('<div style="font-size:28px;font-weight:700;color:#dc3545;">' || l_failed || '</div>');
+                  htp.p('<div style="font-size:13px;color:#666;margin-top:4px;">Failed</div></div>');
+                  htp.p('<div style="flex:1;min-width:140px;background:#fff8e6;border-radius:8px;padding:16px;text-align:center;border-left:4px solid #ffc107;">');
+                  htp.p('<div style="font-size:28px;font-weight:700;color:#e6a800;">' || l_in_prog || '</div>');
+                  htp.p('<div style="font-size:13px;color:#666;margin-top:4px;">In Progress</div></div>');
+                  htp.p('<div style="flex:1;min-width:140px;background:#f0f4ff;border-radius:8px;padding:16px;text-align:center;border-left:4px solid #6c5ce7;">');
+                  htp.p('<div style="font-size:28px;font-weight:700;color:#6c5ce7;">' || l_records || '</div>');
+                  htp.p('<div style="font-size:13px;color:#666;margin-top:4px;">Total Records</div></div>');
+                  htp.p('<div style="flex:1;min-width:140px;background:#e8f8f5;border-radius:8px;padding:16px;text-align:center;border-left:4px solid #00b894;">');
+                  htp.p('<div style="font-size:28px;font-weight:700;color:#00b894;">' || l_loaded || '</div>');
+                  htp.p('<div style="font-size:13px;color:#666;margin-top:4px;">Loaded to Fusion</div></div>');
+                  htp.p('</div>');
+                
+                  htp.p('<h3 style="margin-bottom:12px;font-size:16px;color:#333;">Recent Migration Runs</h3>');
+                  htp.p('<div style="overflow-x:auto;">');
+                  htp.p('<table style="width:100%;border-collapse:collapse;font-size:13px;">');
+                  htp.p('<thead><tr style="background:#f1f3f5;border-bottom:2px solid #dee2e6;">');
+                  htp.p('<th style="padding:10px 12px;text-align:left;">Run</th>');
+                  htp.p('<th style="padding:10px 12px;text-align:left;">Pipelines</th>');
+                  htp.p('<th style="padding:10px 12px;text-align:left;">Mode</th>');
+                  htp.p('<th style="padding:10px 12px;text-align:left;">Prefix</th>');
+                  htp.p('<th style="padding:10px 12px;text-align:left;">Status</th>');
+                  htp.p('<th style="padding:10px 12px;text-align:left;">Submitted</th>');
+                  htp.p('</tr></thead><tbody>');
+                
+                  FOR r IN (SELECT run_id, pipeline_codes, run_mode, prefix, run_status, submitted_date
+                              FROM dmt_run_history_v
+                             ORDER BY run_id DESC FETCH FIRST 15 ROWS ONLY) LOOP
+                    htp.p('<tr style="border-bottom:1px solid #e9ecef;">');
+                    htp.p('<td style="padding:8px 12px;"><a href="'
+                      || APEX_PAGE.GET_URL(p_page => 82, p_clear_cache => 82,
+                           p_items => 'P82_RUN_ID', p_values => TO_CHAR(r.run_id))
+                      || '" style="color:#4a90d9;text-decoration:none;font-weight:600;">' || r.run_id || '</a></td>');
+                    htp.p('<td style="padding:8px 12px;">' || NVL(r.pipeline_codes,'-') || '</td>');
+                    htp.p('<td style="padding:8px 12px;">' || NVL(r.run_mode,'-') || '</td>');
+                    htp.p('<td style="padding:8px 12px;">' || NVL(TO_CHAR(r.prefix),'-') || '</td>');
+                    htp.p('<td style="padding:8px 12px;"><span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:'
+                      || CASE WHEN r.run_status = 'COMPLETED' THEN '#28a745'
+                              WHEN r.run_status = 'COMPLETED_ERRORS' THEN '#8bc34a'
+                              WHEN r.run_status = 'FAILED' THEN '#dc3545'
+                              WHEN r.run_status IN ('IN_PROGRESS','QUEUED') THEN '#ffc107'
+                              ELSE '#6c757d' END
+                      || ';">' || r.run_status || '</span></td>');
+                    htp.p('<td style="padding:8px 12px;">' || TO_CHAR(r.submitted_date,'MM/DD/YYYY HH:MI AM') || '</td>');
+                    htp.p('</tr>');
+                  END LOOP;
+                
+                  htp.p('</tbody></table></div>');
+                END;
+                ```
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+    )
+
+    region welcome (
+        name: Welcome
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                BEGIN
+                htp.p('<div style="max-width:1100px;margin:0 auto;padding:24px 20px 0 20px;">');
+                htp.p('<h2 style="color:#1e293b;margin-bottom:6px;font-size:24px;">Data Migration Console</h2>');
+                htp.p('<p style="color:#64748b;font-size:14px;margin-bottom:24px;">EBS to Fusion Cloud &mdash; monitor, validate, and troubleshoot your data migrations.</p>');
+                htp.p('<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:28px;">');
+                htp.p('<a href="f?p=&APP_ID.:2:' || V('APP_SESSION') || '" style="text-decoration:none;background:#f0f7ff;border-left:4px solid #1a73e8;padding:18px;border-radius:6px;display:block;transition:box-shadow .2s;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Procure to Pay</div><div style="font-size:16px;font-weight:600;color:#1e293b;margin-top:4px;">Suppliers, POs, AP Invoices</div></a>');
+                htp.p('<a href="f?p=&APP_ID.:3:' || V('APP_SESSION') || '" style="text-decoration:none;background:#f0fff4;border-left:4px solid #34a853;padding:18px;border-radius:6px;display:block;transition:box-shadow .2s;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">ERP Financials</div><div style="font-size:16px;font-weight:600;color:#1e293b;margin-top:4px;">GL Journals, Fixed Assets</div></a>');
+                htp.p('<a href="f?p=&APP_ID.:4:' || V('APP_SESSION') || '" style="text-decoration:none;background:#fff8f0;border-left:4px solid #f9ab00;padding:18px;border-radius:6px;display:block;transition:box-shadow .2s;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Order to Cash</div><div style="font-size:16px;font-weight:600;color:#1e293b;margin-top:4px;">Customers, AR Invoices, Receipts</div></a>');
+                htp.p('<a href="f?p=&APP_ID.:5:' || V('APP_SESSION') || '" style="text-decoration:none;background:#fef0f0;border-left:4px solid #ea4335;padding:18px;border-radius:6px;display:block;transition:box-shadow .2s;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Projects</div><div style="font-size:16px;font-weight:600;color:#1e293b;margin-top:4px;">Projects, Tasks, Expenditures</div></a>');
+                htp.p('<a href="f?p=&APP_ID.:6:' || V('APP_SESSION') || '" style="text-decoration:none;background:#f3f0ff;border-left:4px solid #7c3aed;padding:18px;border-radius:6px;display:block;transition:box-shadow .2s;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">HCM Workers</div><div style="font-size:16px;font-weight:600;color:#1e293b;margin-top:4px;">Workers, Assignments</div></a>');
+                htp.p('<a href="f?p=&APP_ID.:7:' || V('APP_SESSION') || '" style="text-decoration:none;background:#f0f4ff;border-left:4px solid #6366f1;padding:18px;border-radius:6px;display:block;transition:box-shadow .2s;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">HCM Time and Labor</div><div style="font-size:16px;font-weight:600;color:#1e293b;margin-top:4px;">Schedules, Absences</div></a>');
+                htp.p('</div></div>');
+                END;
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+    )
+
+)
+

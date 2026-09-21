@@ -1,0 +1,486 @@
+page 21 (
+    name: Config - Financial
+    alias: CONFIG-FINANCIAL
+    title: Configuration Data - Financial & Reference
+    appearance {
+        pageTemplate: @/standard
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        formAutoComplete: false
+    }
+
+    region bulk-upload (
+        name: Bulk Upload
+        type: staticContent
+        source {
+            htmlCode: <p>Upload a CSV file for configuration objects on this page.</p>
+        }
+        layout {
+            sequence: 50
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region gl-calendar-periods (
+        name: GL Calendar Periods
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_CFG_GL_CALENDAR_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99210002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521649 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ADJUSTMENT_PERIOD_FLAG (
+                sequence: 8
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 10
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 9
+            )
+
+            displayColumn PERIOD_END_DATE (
+                sequence: 7
+            )
+
+            displayColumn PERIOD_NAME (
+                sequence: 2
+            )
+
+            displayColumn PERIOD_NUM (
+                sequence: 5
+            )
+
+            displayColumn PERIOD_SET_NAME (
+                sequence: 1
+            )
+
+            displayColumn PERIOD_START_DATE (
+                sequence: 6
+            )
+
+            displayColumn PERIOD_TYPE (
+                sequence: 3
+            )
+
+            displayColumn PERIOD_YEAR (
+                sequence: 4
+            )
+
+            displayColumn PREFIX (
+                sequence: 14
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 13
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 15
+            )
+
+            displayColumn STG_STATUS (
+                sequence: 11
+            )
+
+            displayColumn TFM_STATUS (
+                sequence: 12
+            )
+
+        )
+
+    )
+
+    region units-of-measure (
+        name: Units of Measure
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_CFG_UOM_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 40
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99213002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521666 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn BASE_UOM_FLAG (
+                sequence: 5
+            )
+
+            displayColumn DESCRIPTION (
+                sequence: 4
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 7
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 6
+            )
+
+            displayColumn PREFIX (
+                sequence: 9
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 8
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 10
+            )
+
+            displayColumn UNIT_OF_MEASURE (
+                sequence: 2
+            )
+
+            displayColumn UOM_CLASS (
+                sequence: 3
+            )
+
+            displayColumn UOM_CODE (
+                sequence: 1
+            )
+
+        )
+
+    )
+
+    region value-set-values (
+        name: Value Set Values
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_CFG_VS_VALUES_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99212002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521660 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn DESCRIPTION (
+                sequence: 3
+            )
+
+            displayColumn EFFECTIVE_END_DATE (
+                sequence: 8
+            )
+
+            displayColumn EFFECTIVE_START_DATE (
+                sequence: 7
+            )
+
+            displayColumn ENABLED_FLAG (
+                sequence: 4
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 6
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 5
+            )
+
+            displayColumn PREFIX (
+                sequence: 10
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 9
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 11
+            )
+
+            displayColumn VALUE (
+                sequence: 2
+            )
+
+            displayColumn VALUE_SET_CODE (
+                sequence: 1
+            )
+
+        )
+
+    )
+
+    region value-sets (
+        name: Value Sets
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_CFG_VALUE_SETS_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99211002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521655 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn DESCRIPTION (
+                sequence: 2
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 7
+            )
+
+            displayColumn MODULE_ID (
+                sequence: 3
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 6
+            )
+
+            displayColumn PREFIX (
+                sequence: 9
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 8
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 10
+            )
+
+            displayColumn VALIDATION_TYPE (
+                sequence: 4
+            )
+
+            displayColumn VALUE_DATA_TYPE (
+                sequence: 5
+            )
+
+            displayColumn VALUE_SET_CODE (
+                sequence: 1
+            )
+
+        )
+
+    )
+
+    pageItem P21_SCENARIO (
+        type: selectList
+        label {
+            label: Scenario
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT scenario_name d, scenario_name r FROM dmt_scenario_tbl WHERE status = 'ACTIVE' ORDER BY scenario_name
+            displayExtraValues: false
+            nullDisplayValue: -- No Scenario --
+        }
+        layout {
+            sequence: 15
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P21_UPLOAD_FILE (
+        type: fileUpload
+        label {
+            label: Upload File
+            alignment: left
+        }
+        storage {
+            type: appTempFiles
+        }
+        layout {
+            sequence: 20
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 30
+        }
+    )
+
+    pageItem P21_UPLOAD_OBJECT (
+        type: selectList
+        label {
+            label: Object Type
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT display_name d, object_code r FROM dmt_upload_object_tbl WHERE page_number = 21 ORDER BY display_order
+            displayExtraValues: false
+            nullDisplayValue: -- Select Object --
+        }
+        layout {
+            sequence: 10
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button upload-csv (
+        buttonName: UPLOAD_CSV_21
+        label: Upload
+        layout {
+            sequence: 30
+            region: @bulk-upload
+            slot: belowBox
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+)
+

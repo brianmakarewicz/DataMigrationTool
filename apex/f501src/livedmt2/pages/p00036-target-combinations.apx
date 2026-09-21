@@ -1,0 +1,294 @@
+page 36 (
+    name: Target Combinations
+    alias: TARGET-COMBINATIONS
+    title: Target Combinations
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region target-combinations (
+        name: Target Combinations
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT concat_segments,
+                       segment1, segment2, segment3, segment4,
+                       segment5, segment6, segment7, segment8,
+                       enabled_flag,
+                       last_refresh_date
+                FROM DMT_COA_TARGET_COMBOS
+                WHERE coa_set_id = :P36_COA_SET_ID
+                ORDER BY concat_segments
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        messages {
+            whenNoDataFound: No data found.
+            whenMoreDataFound: The maximum row count for this report is #MAX_ROW_COUNT# rows.  Please apply a filter to reduce the number of records in your query.
+        }
+        advanced {
+            savedReportMappingIdentifier: 50087259566976582
+        }
+
+        column CONCAT_SEGMENTS (
+            type: plainText
+            heading {
+                heading: Concat Segments
+            }
+            layout {
+                sequence: 1
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column ENABLED_FLAG (
+            type: plainText
+            heading {
+                heading: Enabled Flag
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column LAST_REFRESH_DATE (
+            type: plainText
+            heading {
+                heading: Last Refresh Date
+            }
+            layout {
+                sequence: 11
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column SEGMENT1 (
+            type: plainText
+            heading {
+                heading: Segment1
+            }
+            layout {
+                sequence: 2
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column SEGMENT2 (
+            type: plainText
+            heading {
+                heading: Segment2
+            }
+            layout {
+                sequence: 3
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column SEGMENT3 (
+            type: plainText
+            heading {
+                heading: Segment3
+            }
+            layout {
+                sequence: 4
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column SEGMENT4 (
+            type: plainText
+            heading {
+                heading: Segment4
+            }
+            layout {
+                sequence: 5
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column SEGMENT5 (
+            type: plainText
+            heading {
+                heading: Segment5
+            }
+            layout {
+                sequence: 6
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column SEGMENT6 (
+            type: plainText
+            heading {
+                heading: Segment6
+            }
+            layout {
+                sequence: 7
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column SEGMENT7 (
+            type: plainText
+            heading {
+                heading: Segment7
+            }
+            layout {
+                sequence: 8
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column SEGMENT8 (
+            type: plainText
+            heading {
+                heading: Segment8
+            }
+            layout {
+                sequence: 9
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+        pageHeader {
+            pageHeaderText: Target Combinations
+        }
+    )
+
+    pageItem P36_COA_SET_ID (
+        type: selectList
+        label {
+            label: Target COA Set
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT set_code || ' — ' || ledger_name AS d, coa_set_id AS r FROM DMT_COA_SET WHERE set_type='TARGET' AND active_flag='Y' ORDER BY set_code
+        }
+        layout {
+            sequence: 20
+            region: @target-combinations
+            slot: regionBody
+            alignment: left
+            startNewRow: false
+            newColumn: false
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+)
+

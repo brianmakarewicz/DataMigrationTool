@@ -1,0 +1,304 @@
+breadcrumb breadcrumb (
+    name: Breadcrumb
+
+    entry administration (
+        name: Administration
+        pageNumber: 8
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 8
+            }
+        }
+    )
+
+    entry coa-dashboard (
+        name: COA Dashboard
+        pageNumber: 30
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 30
+            }
+        }
+    )
+
+    entry coa-sets (
+        name: COA Sets
+        pageNumber: 31
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 31
+            }
+        }
+    )
+
+    entry ebs-values (
+        name: EBS Values
+        pageNumber: 18
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 18
+            }
+        }
+    )
+
+    entry erp-financials (
+        name: ERP Financials
+        pageNumber: 3
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 3
+            }
+        }
+    )
+
+    entry erp-projects (
+        name: ERP Projects
+        pageNumber: 5
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 5
+            }
+        }
+    )
+
+    entry fusion-values (
+        name: Fusion Values
+        pageNumber: 19
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 19
+            }
+        }
+    )
+
+    entry grants-management (
+        name: Grants Management
+        pageNumber: 12
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 12
+            }
+        }
+    )
+
+    entry hcm-payroll (
+        name: HCM Payroll
+        pageNumber: 11
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 11
+            }
+        }
+    )
+
+    entry hcm-talent-amp-time (
+        name: HCM Talent &amp; Time
+        pageNumber: 10
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 10
+            }
+        }
+    )
+
+    entry hcm-time-and-labor (
+        name: HCM Time and Labor
+        pageNumber: 7
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 7
+            }
+        }
+    )
+
+    entry hcm-workers (
+        name: HCM Workers
+        pageNumber: 6
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 6
+            }
+        }
+    )
+
+    entry home (
+        name: Home
+        pageNumber: 1
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 1
+            }
+        }
+    )
+
+    entry lookup-admin (
+        name: Lookup Admin
+        pageNumber: 20
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 20
+            }
+        }
+    )
+
+    entry lookup-dashboard (
+        name: Lookup Dashboard
+        pageNumber: 16
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 16
+            }
+        }
+    )
+
+    entry order-to-cash (
+        name: Order to Cash
+        pageNumber: 4
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 4
+            }
+        }
+    )
+
+    entry procure-to-pay (
+        name: Procure to Pay
+        pageNumber: 2
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 2
+            }
+        }
+    )
+
+    entry segment-rules (
+        name: Segment Rules
+        pageNumber: 32
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 32
+            }
+        }
+    )
+
+    entry segment-values (
+        name: Segment Values
+        pageNumber: 33
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 33
+            }
+        }
+    )
+
+    entry source-combinations (
+        name: Source Combinations
+        pageNumber: 35
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 35
+            }
+        }
+    )
+
+    entry target-combinations (
+        name: Target Combinations
+        pageNumber: 36
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 36
+            }
+        }
+    )
+
+    entry upload-reference-guide (
+        name: Upload Reference Guide
+        pageNumber: 9
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 9
+            }
+        }
+    )
+
+    entry value-mapping (
+        name: Value Mapping
+        pageNumber: 17
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 17
+            }
+        }
+    )
+
+)
+

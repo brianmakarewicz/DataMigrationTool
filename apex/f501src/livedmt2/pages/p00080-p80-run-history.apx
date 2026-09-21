@@ -1,0 +1,331 @@
+page 80 (
+    name: Run History
+    alias: P80-RUN-HISTORY
+    title: Pipeline Run History
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region run-history (
+        name: Run History
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT RUN_ID, PIPELINE_CODES, NVL(SCENARIO_NAME,'(all)') AS SCENARIO, PREFIX, RUN_MODE, RUN_STATUS, DONE_COUNT || '/' || TOTAL_OBJECTS AS PROGRESS, CURRENT_STEP, FAILED_COUNT, TO_CHAR(SUBMITTED_DATE,'YYYY-MM-DD HH24:MI') AS SUBMITTED, SUBMITTED_BY FROM DMT_RUN_HISTORY_V ORDER BY RUN_ID DESC
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        link {
+            linkColumn: customTarget
+            target: {
+                page: 82
+                items: {
+                    P82_RUN_ID: #RUN_ID#
+                }
+                clearCache: 82
+            }
+            linkIcon: <span class="fa fa-chevron-right"></span>
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 100000
+        }
+        download {
+            formats: [
+                csv
+                html
+                excel
+            ]
+        }
+        advanced {
+            savedReportMappingIdentifier: 800001
+        }
+
+        column CURRENT_STEP (
+            type: plainText
+            heading {
+                heading: Current Step
+                alignment: center
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column FAILED_COUNT (
+            type: plainText
+            heading {
+                heading: Failed
+                alignment: center
+            }
+            layout {
+                sequence: 90
+                columnAlignment: center
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column PIPELINE_CODES (
+            type: plainText
+            heading {
+                heading: Pipelines
+                alignment: center
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+                alignment: center
+            }
+            layout {
+                sequence: 40
+                columnAlignment: center
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column PROGRESS (
+            type: plainText
+            heading {
+                heading: Progress
+                alignment: center
+            }
+            layout {
+                sequence: 70
+                columnAlignment: center
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run #
+                alignment: center
+            }
+            layout {
+                sequence: 10
+                columnAlignment: center
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column RUN_MODE (
+            type: plainText
+            heading {
+                heading: Mode
+                alignment: center
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Status
+                alignment: center
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column SCENARIO (
+            type: plainText
+            heading {
+                heading: Scenario
+                alignment: center
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column SUBMITTED (
+            type: plainText
+            heading {
+                heading: Submitted
+                alignment: center
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column SUBMITTED_BY (
+            type: plainText
+            heading {
+                heading: By
+                alignment: center
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport RH80RPT (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn CURRENT_STEP (
+                sequence: 8
+            )
+
+            displayColumn FAILED_COUNT (
+                sequence: 9
+            )
+
+            displayColumn PIPELINE_CODES (
+                sequence: 2
+            )
+
+            displayColumn PREFIX (
+                sequence: 4
+            )
+
+            displayColumn PROGRESS (
+                sequence: 7
+            )
+
+            displayColumn RUN_ID (
+                sequence: 1
+            )
+
+            displayColumn RUN_MODE (
+                sequence: 5
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 6
+            )
+
+            displayColumn SCENARIO (
+                sequence: 3
+            )
+
+            displayColumn SUBMITTED (
+                sequence: 10
+            )
+
+            displayColumn SUBMITTED_BY (
+                sequence: 11
+            )
+
+        )
+
+    )
+
+    button new-run (
+        buttonName: NEW_RUN
+        label: New Run
+        layout {
+            sequence: 10
+            region: @run-history
+            slot: rightOfInteractiveReportSearchBar
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+            icon: fa-plus
+        }
+        behavior {
+            action: redirectThisApp
+            target: {
+                page: 84
+                clearCache: 84
+            }
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+)
+

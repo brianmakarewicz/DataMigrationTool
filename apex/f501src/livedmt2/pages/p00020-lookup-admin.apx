@@ -1,0 +1,458 @@
+page 20 (
+    name: Lookup Admin
+    alias: LOOKUP-ADMIN
+    title: Lookup Admin
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region fuzzy-match-help (
+        name: Fuzzy Match Help
+        title: About Fuzzy Suggestions
+        type: staticContent
+        source {
+            htmlCode: <p>Generates mapping suggestions by fuzzy-matching EBS values against Fusion values. Uses two algorithms: <strong>Jaro-Winkler</strong> (prefix-weighted similarity) and <strong>Edit Distance</strong> (character-level similarity). Only matches scoring above the minimum thresholds (JW &ge; 80, ED &ge; 50) are suggested. Suggestions are inactive until you accept them on the Value Mapping page.</p>
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region lookup-admin (
+        name: Lookup Admin
+        type: interactiveGrid
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT lookup_type, description, module, bip_catalog_path, bip_report_path, default_fusion_value, active_flag FROM DMT_LOOKUP.DMT_LKP_TYPE_CONFIG
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        edit {
+            enabled: true
+            allowedOperations: [
+                add
+                update
+                delete
+            ]
+        }
+        toolbar {
+            controls: [
+                searchCol
+                searchField
+                actionsMenu
+                resetButton
+                saveButton
+            ]
+        }
+        download {
+            formats: [
+                csv
+                html
+                pdf
+                excel
+            ]
+        }
+        advanced {
+            savedReportMappingIdentifier: 49037690387871712
+        }
+
+        savedReport 490381 (
+            visibility: primary
+            view {
+                default: grid
+            }
+            singleRowView {
+                displayedColumns: true
+            }
+
+            displayColumn (
+                column: @DEFAULT_FUSION_VALUE
+                layout {
+                    sequence: 7
+                }
+            )
+
+            displayColumn (
+                column: @LOOKUP_TYPE
+                layout {
+                    sequence: 1
+                }
+            )
+
+            displayColumn (
+                column: @DESCRIPTION
+                layout {
+                    sequence: 2
+                }
+            )
+
+            displayColumn (
+                column: @MODULE
+                layout {
+                    sequence: 3
+                }
+            )
+
+            displayColumn (
+                column: @BIP_CATALOG_PATH
+                layout {
+                    sequence: 4
+                }
+            )
+
+            displayColumn (
+                column: @BIP_REPORT_PATH
+                layout {
+                    sequence: 5
+                }
+            )
+
+            displayColumn (
+                column: @ACTIVE_FLAG
+                layout {
+                    sequence: 6
+                }
+            )
+
+            displayColumn (
+                column: @APEX$ROW_ACTION
+                layout {
+                    sequence: 0
+                }
+            )
+
+        )
+
+        column ACTIVE_FLAG (
+            type: textField
+            heading {
+                heading: Active Flag
+            }
+            layout {
+                sequence: 80
+            }
+            validation {
+                valueRequired: true
+                maxLength: 1
+            }
+            source {
+                databaseColumn: ACTIVE_FLAG
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column APEX$ROW_ACTION (
+            type: actionsMenu
+            layout {
+                sequence: 20
+            }
+        )
+
+        column APEX$ROW_SELECTOR (
+            type: rowSelector
+            layout {
+                sequence: 10
+            }
+        )
+
+        column BIP_CATALOG_PATH (
+            type: textarea
+            heading {
+                heading: Bip Catalog Path
+            }
+            layout {
+                sequence: 60
+            }
+            validation {
+                maxLength: 500
+            }
+            source {
+                databaseColumn: BIP_CATALOG_PATH
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column BIP_REPORT_PATH (
+            type: textarea
+            heading {
+                heading: Bip Report Path
+            }
+            layout {
+                sequence: 70
+            }
+            validation {
+                maxLength: 500
+            }
+            source {
+                databaseColumn: BIP_REPORT_PATH
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column DEFAULT_FUSION_VALUE (
+            type: textField
+            heading {
+                heading: Default Fusion Value
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                databaseColumn: DEFAULT_FUSION_VALUE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column DESCRIPTION (
+            type: textarea
+            heading {
+                heading: Description
+            }
+            layout {
+                sequence: 40
+            }
+            validation {
+                maxLength: 500
+            }
+            source {
+                databaseColumn: DESCRIPTION
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column LOOKUP_TYPE (
+            type: textField
+            heading {
+                heading: Lookup Type
+            }
+            layout {
+                sequence: 30
+            }
+            validation {
+                valueRequired: true
+                maxLength: 150
+            }
+            source {
+                databaseColumn: LOOKUP_TYPE
+                dataType: varchar2
+                primaryKey: true
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column MODULE (
+            type: textField
+            heading {
+                heading: Module
+            }
+            layout {
+                sequence: 50
+            }
+            validation {
+                maxLength: 50
+            }
+            source {
+                databaseColumn: MODULE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+        pageHeader {
+            pageHeaderText: Lookup Admin
+        }
+    )
+
+    pageItem P20_SUGGEST_RESULT (
+        type: displayOnly
+        label {
+            label: Result
+            alignment: left
+        }
+        layout {
+            sequence: 20
+            region: @lookup-admin
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    button generate-suggestions (
+        buttonName: GENERATE_SUGGESTIONS
+        label: Generate Fuzzy Suggestions
+        layout {
+            sequence: 10
+            region: @lookup-admin
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    process generate-fuzzy-suggestions (
+        name: Generate Fuzzy Suggestions
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  v_cnt NUMBER;
+                BEGIN
+                  v_cnt := DMT_LOOKUP.DMT_LKP_SUGGEST_PKG.SUGGEST_ALL_MAPPINGS(p_min_jw => 80, p_min_ed => 50);
+                  :P20_SUGGEST_RESULT := v_cnt || ' suggestions generated across all types.';
+                END;
+                ```
+        }
+        execution {
+            sequence: 20
+        }
+        advanced {
+            executionMappingIdentifier: 49052025838010039
+        }
+        serverSideCondition {
+            whenButtonPressed: @generate-suggestions
+        }
+    )
+
+    process lookup-admin-save-interactive-grid-data (
+        name: Lookup Admin - Save Interactive Grid Data
+        type: interactiveGridAutoRowProcessing
+        editableRegion: @lookup-admin
+        execution {
+            sequence: 10
+        }
+        advanced {
+            executionMappingIdentifier: 49048743159010006
+        }
+    )
+
+)
+

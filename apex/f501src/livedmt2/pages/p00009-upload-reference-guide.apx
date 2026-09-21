@@ -1,0 +1,266 @@
+page 9 (
+    name: Upload Reference Guide
+    alias: UPLOAD-REFERENCE-GUIDE
+    title: Upload Reference Guide
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region column-specifications (
+        name: Column Specifications
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT d.COLUMN_ORDER "#", d.COLUMN_NAME, d.DATA_TYPE,
+                       CASE d.NULLABLE WHEN 'N' THEN 'Yes' ELSE 'No' END AS REQUIRED,
+                       d.DESCRIPTION, d.SAMPLE_VALUE
+                FROM DMT_UPLOAD_DICT_TBL d
+                WHERE d.OBJECT_CODE = :P9_OBJECT_CODE
+                  AND d.IS_ADMIN_COLUMN = 'N'
+                ORDER BY d.COLUMN_ORDER
+                ```
+            pageItemsToSubmit: P9_OBJECT_CODE
+        }
+        layout {
+            sequence: 15
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 13583126899270648
+        }
+
+        column # (
+            type: plainText
+            heading {
+                heading: #
+                alignment: end
+            }
+            layout {
+                sequence: 70
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column COLUMN_NAME (
+            type: plainText
+            heading {
+                heading: Column Name
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column DATA_TYPE (
+            type: plainText
+            heading {
+                heading: Data Type
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column DESCRIPTION (
+            type: plainText
+            heading {
+                heading: Description
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column REQUIRED (
+            type: plainText
+            heading {
+                heading: Required
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column SAMPLE_VALUE (
+            type: plainText
+            heading {
+                heading: Sample Value
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 223927 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn # (
+                sequence: 6
+            )
+
+            displayColumn COLUMN_NAME (
+                sequence: 1
+            )
+
+            displayColumn DATA_TYPE (
+                sequence: 2
+            )
+
+            displayColumn DESCRIPTION (
+                sequence: 4
+            )
+
+            displayColumn REQUIRED (
+                sequence: 3
+            )
+
+            displayColumn SAMPLE_VALUE (
+                sequence: 5
+            )
+
+        )
+
+    )
+
+    region object-selector (
+        name: Object Selector
+        type: staticContent
+        layout {
+            sequence: 5
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    pageItem P9_OBJECT_CODE (
+        type: selectList
+        label {
+            label: Select Object
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT DISPLAY_NAME || ' (' || OBJECT_CODE || ')' d, OBJECT_CODE r
+                FROM DMT_UPLOAD_OBJECT_TBL
+                WHERE IS_ACTIVE = 'Y'
+                ORDER BY PAGE_NUMBER, DISPLAY_ORDER
+                ```
+            nullDisplayValue: - Select Object -
+        }
+        layout {
+            sequence: 10
+            region: @object-selector
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+)
+

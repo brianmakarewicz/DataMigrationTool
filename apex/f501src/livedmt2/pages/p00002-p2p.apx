@@ -1,0 +1,6604 @@
+page 2 (
+    name: Procure to Pay
+    alias: P2P
+    title: Procure to Pay
+    appearance {
+        pageTemplate: @/standard
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        formAutoComplete: false
+    }
+
+    region ap-invoice-lines (
+        name: AP Invoice Lines
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT 1 AS PLACEHOLDER FROM DUAL WHERE 1=0
+        }
+        layout {
+            sequence: 35
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38345808026526828
+        }
+
+        column PLACEHOLDER (
+            type: plainText
+            heading {
+                heading: Placeholder
+                alignment: end
+            }
+            layout {
+                sequence: 10
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 387387 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn PLACEHOLDER (
+                sequence: 1
+            )
+
+        )
+
+    )
+
+    region ap-invoices (
+        name: AP Invoices
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT 1 AS PLACEHOLDER FROM DUAL WHERE 1=0
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 27426995824871712
+        }
+
+        column PLACEHOLDER (
+            type: plainText
+            heading {
+                heading: Placeholder
+                alignment: end
+            }
+            layout {
+                sequence: 10
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 358504 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+        )
+
+    )
+
+    region bulk-upload (
+        name: Bulk Upload
+        type: staticContent
+        source {
+            htmlCode: <p>Upload a CSV file to bulk import data into the selected object's staging table. Select the target object, choose your file, and click Upload. See the <a href="f?p=&APP_ID.:9:&SESSION.">Upload Reference Guide</a> for file format details.</p>
+        }
+        layout {
+            sequence: 40
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region po-distributions (
+        name: PO Distributions
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_PO_DISTS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 29
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38301027585547145
+        }
+
+        column AMOUNT_ORDERED (
+            type: plainText
+            heading {
+                heading: Amount Ordered
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column CHARGE_ACCOUNT_SEGMENT1 (
+            type: plainText
+            heading {
+                heading: Charge Account Segment1
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column CHARGE_ACCOUNT_SEGMENT2 (
+            type: plainText
+            heading {
+                heading: Charge Account Segment2
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column DELIVER_TO_LOCATION (
+            type: plainText
+            heading {
+                heading: Deliver To Location
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column DELIVER_TO_PERSON_FULL_NAME (
+            type: plainText
+            heading {
+                heading: Deliver To Person Full Name
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column DESTINATION_SUBINVENTORY (
+            type: plainText
+            heading {
+                heading: Destination Subinventory
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column DISTRIBUTION_NUM (
+            type: plainText
+            heading {
+                heading: Distribution Num
+                alignment: end
+            }
+            layout {
+                sequence: 50
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column INTERFACE_DISTRIBUTION_KEY (
+            type: plainText
+            heading {
+                heading: Interface Distribution Key
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column INTERFACE_LINE_LOCATION_KEY (
+            type: plainText
+            heading {
+                heading: Interface Line Location Key
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 1290
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: DY
+            }
+        )
+
+        column QUANTITY_ORDERED (
+            type: plainText
+            heading {
+                heading: Quantity Ordered
+                alignment: end
+            }
+            layout {
+                sequence: 100
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 1280
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: DX
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 1300
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: DZ
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 1260
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: DV
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 1270
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: DW
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 387380 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn AMOUNT_ORDERED (
+                sequence: 9
+            )
+
+            displayColumn ATTRIBUTE1 (
+                sequence: 73
+            )
+
+            displayColumn ATTRIBUTE10 (
+                sequence: 81
+            )
+
+            displayColumn ATTRIBUTE11 (
+                sequence: 82
+            )
+
+            displayColumn ATTRIBUTE12 (
+                sequence: 83
+            )
+
+            displayColumn ATTRIBUTE13 (
+                sequence: 84
+            )
+
+            displayColumn ATTRIBUTE14 (
+                sequence: 85
+            )
+
+            displayColumn ATTRIBUTE15 (
+                sequence: 86
+            )
+
+            displayColumn ATTRIBUTE16 (
+                sequence: 87
+            )
+
+            displayColumn ATTRIBUTE17 (
+                sequence: 88
+            )
+
+            displayColumn ATTRIBUTE18 (
+                sequence: 89
+            )
+
+            displayColumn ATTRIBUTE19 (
+                sequence: 90
+            )
+
+            displayColumn ATTRIBUTE2 (
+                sequence: 74
+            )
+
+            displayColumn ATTRIBUTE20 (
+                sequence: 91
+            )
+
+            displayColumn ATTRIBUTE3 (
+                sequence: 75
+            )
+
+            displayColumn ATTRIBUTE4 (
+                sequence: 76
+            )
+
+            displayColumn ATTRIBUTE6 (
+                sequence: 77
+            )
+
+            displayColumn ATTRIBUTE7 (
+                sequence: 78
+            )
+
+            displayColumn ATTRIBUTE8 (
+                sequence: 79
+            )
+
+            displayColumn ATTRIBUTE9 (
+                sequence: 80
+            )
+
+            displayColumn ATTRIBUTE_CATEGORY (
+                sequence: 72
+            )
+
+            displayColumn ATTRIBUTE_DATE1 (
+                sequence: 92
+            )
+
+            displayColumn ATTRIBUTE_DATE10 (
+                sequence: 101
+            )
+
+            displayColumn ATTRIBUTE_DATE2 (
+                sequence: 93
+            )
+
+            displayColumn ATTRIBUTE_DATE3 (
+                sequence: 94
+            )
+
+            displayColumn ATTRIBUTE_DATE4 (
+                sequence: 95
+            )
+
+            displayColumn ATTRIBUTE_DATE5 (
+                sequence: 96
+            )
+
+            displayColumn ATTRIBUTE_DATE6 (
+                sequence: 97
+            )
+
+            displayColumn ATTRIBUTE_DATE7 (
+                sequence: 98
+            )
+
+            displayColumn ATTRIBUTE_DATE8 (
+                sequence: 99
+            )
+
+            displayColumn ATTRIBUTE_DATE9 (
+                sequence: 100
+            )
+
+            displayColumn ATTRIBUTE_NUMBER1 (
+                sequence: 102
+            )
+
+            displayColumn ATTRIBUTE_NUMBER10 (
+                sequence: 111
+            )
+
+            displayColumn ATTRIBUTE_NUMBER2 (
+                sequence: 103
+            )
+
+            displayColumn ATTRIBUTE_NUMBER3 (
+                sequence: 104
+            )
+
+            displayColumn ATTRIBUTE_NUMBER4 (
+                sequence: 105
+            )
+
+            displayColumn ATTRIBUTE_NUMBER5 (
+                sequence: 106
+            )
+
+            displayColumn ATTRIBUTE_NUMBER6 (
+                sequence: 107
+            )
+
+            displayColumn ATTRIBUTE_NUMBER7 (
+                sequence: 108
+            )
+
+            displayColumn ATTRIBUTE_NUMBER8 (
+                sequence: 109
+            )
+
+            displayColumn ATTRIBUTE_NUMBER9 (
+                sequence: 110
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP1 (
+                sequence: 112
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP10 (
+                sequence: 121
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP2 (
+                sequence: 113
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP3 (
+                sequence: 114
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP4 (
+                sequence: 115
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP5 (
+                sequence: 116
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP6 (
+                sequence: 117
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP7 (
+                sequence: 118
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP8 (
+                sequence: 119
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP9 (
+                sequence: 120
+            )
+
+            displayColumn BUDGET_DATE (
+                sequence: 123
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT1 (
+                sequence: 11
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT10 (
+                sequence: 20
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT11 (
+                sequence: 21
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT12 (
+                sequence: 22
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT13 (
+                sequence: 23
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT14 (
+                sequence: 24
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT15 (
+                sequence: 25
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT16 (
+                sequence: 26
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT17 (
+                sequence: 27
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT18 (
+                sequence: 28
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT19 (
+                sequence: 29
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT2 (
+                sequence: 12
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT20 (
+                sequence: 30
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT21 (
+                sequence: 31
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT22 (
+                sequence: 32
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT23 (
+                sequence: 33
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT24 (
+                sequence: 34
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT25 (
+                sequence: 35
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT26 (
+                sequence: 36
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT27 (
+                sequence: 37
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT28 (
+                sequence: 38
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT29 (
+                sequence: 39
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT3 (
+                sequence: 13
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT30 (
+                sequence: 40
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT4 (
+                sequence: 14
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT5 (
+                sequence: 15
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT6 (
+                sequence: 16
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT7 (
+                sequence: 17
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT8 (
+                sequence: 18
+            )
+
+            displayColumn CHARGE_ACCOUNT_SEGMENT9 (
+                sequence: 19
+            )
+
+            displayColumn DELIVER_TO_LOCATION (
+                sequence: 6
+            )
+
+            displayColumn DELIVER_TO_PERSON_EMAIL_ADDR (
+                sequence: 122
+            )
+
+            displayColumn DELIVER_TO_PERSON_FULL_NAME (
+                sequence: 7
+            )
+
+            displayColumn DESTINATION_CONTEXT (
+                sequence: 41
+            )
+
+            displayColumn DESTINATION_SUBINVENTORY (
+                sequence: 8
+            )
+
+            displayColumn DISTRIBUTION_NUM (
+                sequence: 5
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn EXPENDITURE (
+                sequence: 45
+            )
+
+            displayColumn EXPENDITURE_ORGANIZATION (
+                sequence: 46
+            )
+
+            displayColumn INTEGRATION_ID (
+                sequence: 128
+            )
+
+            displayColumn INTERFACE_DISTRIBUTION_KEY (
+                sequence: 3
+            )
+
+            displayColumn INTERFACE_LINE_LOCATION_KEY (
+                sequence: 4
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 132
+            )
+
+            displayColumn PJC_BILLABLE_FLAG (
+                sequence: 47
+            )
+
+            displayColumn PJC_CAPITALIZABLE_FLAG (
+                sequence: 48
+            )
+
+            displayColumn PJC_CONTRACT_NUMBER (
+                sequence: 124
+            )
+
+            displayColumn PJC_EXPENDITURE_ITEM_DATE (
+                sequence: 44
+            )
+
+            displayColumn PJC_FUNDING_SOURCE (
+                sequence: 125
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE1 (
+                sequence: 50
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE10 (
+                sequence: 59
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE2 (
+                sequence: 51
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE3 (
+                sequence: 52
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE4 (
+                sequence: 53
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE5 (
+                sequence: 54
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE6 (
+                sequence: 55
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE7 (
+                sequence: 56
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE8 (
+                sequence: 57
+            )
+
+            displayColumn PJC_RESERVED_ATTRIBUTE9 (
+                sequence: 58
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE1 (
+                sequence: 60
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE10 (
+                sequence: 69
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE2 (
+                sequence: 61
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE3 (
+                sequence: 62
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE4 (
+                sequence: 63
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE5 (
+                sequence: 64
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE6 (
+                sequence: 65
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE7 (
+                sequence: 66
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE8 (
+                sequence: 67
+            )
+
+            displayColumn PJC_USER_DEF_ATTRIBUTE9 (
+                sequence: 68
+            )
+
+            displayColumn PJC_WORK_TYPE (
+                sequence: 49
+            )
+
+            displayColumn PREFIX (
+                sequence: 129
+            )
+
+            displayColumn PROJECT (
+                sequence: 42
+            )
+
+            displayColumn QUANTITY_ORDERED (
+                sequence: 10
+            )
+
+            displayColumn RATE (
+                sequence: 70
+            )
+
+            displayColumn RATE_DATE (
+                sequence: 71
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 130
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 126
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 131
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 127
+            )
+
+            displayColumn TASK (
+                sequence: 43
+            )
+
+        )
+
+    )
+
+    region po-lines (
+        name: PO Lines
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_PO_LINES_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 25
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38216674057572734
+        }
+
+        column ACTION (
+            type: plainText
+            heading {
+                heading: Action
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column AMOUNT (
+            type: plainText
+            heading {
+                heading: Amount
+                alignment: end
+            }
+            layout {
+                sequence: 120
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column CATEGORY (
+            type: plainText
+            heading {
+                heading: Category
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column INTERFACE_HEADER_KEY (
+            type: plainText
+            heading {
+                heading: Interface Header Key
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column INTERFACE_LINE_KEY (
+            type: plainText
+            heading {
+                heading: Interface Line Key
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column ITEM (
+            type: plainText
+            heading {
+                heading: Item
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column ITEM_DESCRIPTION (
+            type: plainText
+            heading {
+                heading: Item Description
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column ITEM_REVISION (
+            type: plainText
+            heading {
+                heading: Item Revision
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column LINE_NUM (
+            type: plainText
+            heading {
+                heading: Line Num
+                alignment: end
+            }
+            layout {
+                sequence: 40
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column LINE_TYPE (
+            type: plainText
+            heading {
+                heading: Line Type
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 1040
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CZ
+            }
+        )
+
+        column QUANTITY (
+            type: plainText
+            heading {
+                heading: Quantity
+                alignment: end
+            }
+            layout {
+                sequence: 130
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 1030
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CY
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 1050
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: DA
+            }
+        )
+
+        column SECONDARY_QUANTITY (
+            type: plainText
+            heading {
+                heading: Secondary Quantity
+                alignment: end
+            }
+            layout {
+                sequence: 160
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        column SECONDARY_UNIT_OF_MEASURE (
+            type: plainText
+            heading {
+                heading: Secondary Unit Of Measure
+            }
+            layout {
+                sequence: 170
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Q
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 1010
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CW
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 1020
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CX
+            }
+        )
+
+        column UNIT_OF_MEASURE (
+            type: plainText
+            heading {
+                heading: Unit Of Measure
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column UNIT_PRICE (
+            type: plainText
+            heading {
+                heading: Unit Price
+                alignment: end
+            }
+            layout {
+                sequence: 150
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column VENDOR_PRODUCT_NUM (
+            type: plainText
+            heading {
+                heading: Vendor Product Num
+            }
+            layout {
+                sequence: 180
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 387368 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ACTION (
+                sequence: 6
+            )
+
+            displayColumn AMOUNT (
+                sequence: 12
+            )
+
+            displayColumn ATTRIBUTE16 (
+                sequence: 40
+            )
+
+            displayColumn ATTRIBUTE17 (
+                sequence: 41
+            )
+
+            displayColumn ATTRIBUTE18 (
+                sequence: 42
+            )
+
+            displayColumn ATTRIBUTE19 (
+                sequence: 43
+            )
+
+            displayColumn ATTRIBUTE20 (
+                sequence: 44
+            )
+
+            displayColumn ATTRIBUTE_DATE1 (
+                sequence: 45
+            )
+
+            displayColumn ATTRIBUTE_DATE10 (
+                sequence: 54
+            )
+
+            displayColumn ATTRIBUTE_DATE2 (
+                sequence: 46
+            )
+
+            displayColumn ATTRIBUTE_DATE3 (
+                sequence: 47
+            )
+
+            displayColumn ATTRIBUTE_DATE4 (
+                sequence: 48
+            )
+
+            displayColumn ATTRIBUTE_DATE5 (
+                sequence: 49
+            )
+
+            displayColumn ATTRIBUTE_DATE6 (
+                sequence: 50
+            )
+
+            displayColumn ATTRIBUTE_DATE7 (
+                sequence: 51
+            )
+
+            displayColumn ATTRIBUTE_DATE8 (
+                sequence: 52
+            )
+
+            displayColumn ATTRIBUTE_DATE9 (
+                sequence: 53
+            )
+
+            displayColumn ATTRIBUTE_NUMBER1 (
+                sequence: 55
+            )
+
+            displayColumn ATTRIBUTE_NUMBER10 (
+                sequence: 64
+            )
+
+            displayColumn ATTRIBUTE_NUMBER2 (
+                sequence: 56
+            )
+
+            displayColumn ATTRIBUTE_NUMBER3 (
+                sequence: 57
+            )
+
+            displayColumn ATTRIBUTE_NUMBER4 (
+                sequence: 58
+            )
+
+            displayColumn ATTRIBUTE_NUMBER5 (
+                sequence: 59
+            )
+
+            displayColumn ATTRIBUTE_NUMBER6 (
+                sequence: 60
+            )
+
+            displayColumn ATTRIBUTE_NUMBER7 (
+                sequence: 61
+            )
+
+            displayColumn ATTRIBUTE_NUMBER8 (
+                sequence: 62
+            )
+
+            displayColumn ATTRIBUTE_NUMBER9 (
+                sequence: 63
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP1 (
+                sequence: 65
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP10 (
+                sequence: 74
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP2 (
+                sequence: 66
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP3 (
+                sequence: 67
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP4 (
+                sequence: 68
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP5 (
+                sequence: 69
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP6 (
+                sequence: 70
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP7 (
+                sequence: 71
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP8 (
+                sequence: 72
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP9 (
+                sequence: 73
+            )
+
+            displayColumn CATEGORY (
+                sequence: 11
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn HAZARD_CLASS (
+                sequence: 20
+            )
+
+            displayColumn INTEGRATION_ID (
+                sequence: 103
+            )
+
+            displayColumn INTERFACE_HEADER_KEY (
+                sequence: 3
+            )
+
+            displayColumn INTERFACE_LINE_KEY (
+                sequence: 5
+            )
+
+            displayColumn ITEM (
+                sequence: 8
+            )
+
+            displayColumn ITEM_ATTRIBUTE1 (
+                sequence: 83
+            )
+
+            displayColumn ITEM_ATTRIBUTE10 (
+                sequence: 92
+            )
+
+            displayColumn ITEM_ATTRIBUTE11 (
+                sequence: 93
+            )
+
+            displayColumn ITEM_ATTRIBUTE12 (
+                sequence: 94
+            )
+
+            displayColumn ITEM_ATTRIBUTE13 (
+                sequence: 95
+            )
+
+            displayColumn ITEM_ATTRIBUTE14 (
+                sequence: 96
+            )
+
+            displayColumn ITEM_ATTRIBUTE15 (
+                sequence: 97
+            )
+
+            displayColumn ITEM_ATTRIBUTE2 (
+                sequence: 84
+            )
+
+            displayColumn ITEM_ATTRIBUTE3 (
+                sequence: 85
+            )
+
+            displayColumn ITEM_ATTRIBUTE4 (
+                sequence: 86
+            )
+
+            displayColumn ITEM_ATTRIBUTE5 (
+                sequence: 87
+            )
+
+            displayColumn ITEM_ATTRIBUTE6 (
+                sequence: 88
+            )
+
+            displayColumn ITEM_ATTRIBUTE7 (
+                sequence: 89
+            )
+
+            displayColumn ITEM_ATTRIBUTE8 (
+                sequence: 90
+            )
+
+            displayColumn ITEM_ATTRIBUTE9 (
+                sequence: 91
+            )
+
+            displayColumn ITEM_ATTRIBUTE_CATEGORY (
+                sequence: 82
+            )
+
+            displayColumn ITEM_DESCRIPTION (
+                sequence: 9
+            )
+
+            displayColumn ITEM_REVISION (
+                sequence: 10
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 107
+            )
+
+            displayColumn LINE_ATTRIBUTE1 (
+                sequence: 25
+            )
+
+            displayColumn LINE_ATTRIBUTE10 (
+                sequence: 34
+            )
+
+            displayColumn LINE_ATTRIBUTE11 (
+                sequence: 35
+            )
+
+            displayColumn LINE_ATTRIBUTE12 (
+                sequence: 36
+            )
+
+            displayColumn LINE_ATTRIBUTE13 (
+                sequence: 37
+            )
+
+            displayColumn LINE_ATTRIBUTE14 (
+                sequence: 38
+            )
+
+            displayColumn LINE_ATTRIBUTE15 (
+                sequence: 39
+            )
+
+            displayColumn LINE_ATTRIBUTE2 (
+                sequence: 26
+            )
+
+            displayColumn LINE_ATTRIBUTE3 (
+                sequence: 27
+            )
+
+            displayColumn LINE_ATTRIBUTE4 (
+                sequence: 28
+            )
+
+            displayColumn LINE_ATTRIBUTE5 (
+                sequence: 29
+            )
+
+            displayColumn LINE_ATTRIBUTE6 (
+                sequence: 30
+            )
+
+            displayColumn LINE_ATTRIBUTE7 (
+                sequence: 31
+            )
+
+            displayColumn LINE_ATTRIBUTE8 (
+                sequence: 32
+            )
+
+            displayColumn LINE_ATTRIBUTE9 (
+                sequence: 33
+            )
+
+            displayColumn LINE_ATTRIBUTE_CATEGORY_LINES (
+                sequence: 24
+            )
+
+            displayColumn LINE_NUM (
+                sequence: 4
+            )
+
+            displayColumn LINE_TYPE (
+                sequence: 7
+            )
+
+            displayColumn NEGOTIATED_BY_PREPARER_FLAG (
+                sequence: 19
+            )
+
+            displayColumn NOTE_TO_RECEIVER (
+                sequence: 23
+            )
+
+            displayColumn NOTE_TO_VENDOR (
+                sequence: 22
+            )
+
+            displayColumn PREFIX (
+                sequence: 104
+            )
+
+            displayColumn QUANTITY (
+                sequence: 13
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 105
+            )
+
+            displayColumn SECONDARY_QUANTITY (
+                sequence: 16
+            )
+
+            displayColumn SECONDARY_UNIT_OF_MEASURE (
+                sequence: 17
+            )
+
+            displayColumn SOURCE_AGREEMENT (
+                sequence: 99
+            )
+
+            displayColumn SOURCE_AGREEMENT_LINE (
+                sequence: 100
+            )
+
+            displayColumn SOURCE_AGREEMENT_PRC_BU_NAME (
+                sequence: 98
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 101
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 106
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 102
+            )
+
+            displayColumn TEMPLATE_NAME (
+                sequence: 81
+            )
+
+            displayColumn UNIT_OF_MEASURE (
+                sequence: 14
+            )
+
+            displayColumn UNIT_PRICE (
+                sequence: 15
+            )
+
+            displayColumn UNIT_VOLUME (
+                sequence: 78
+            )
+
+            displayColumn UNIT_WEIGHT (
+                sequence: 75
+            )
+
+            displayColumn UN_NUMBER (
+                sequence: 21
+            )
+
+            displayColumn VENDOR_PRODUCT_NUM (
+                sequence: 18
+            )
+
+            displayColumn VOLUME_UNIT_OF_MEASURE (
+                sequence: 80
+            )
+
+            displayColumn VOLUME_UOM_CODE (
+                sequence: 79
+            )
+
+            displayColumn WEIGHT_UNIT_OF_MEASURE (
+                sequence: 77
+            )
+
+            displayColumn WEIGHT_UOM_CODE (
+                sequence: 76
+            )
+
+        )
+
+    )
+
+    region po-shipments (
+        name: PO Shipments
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_PO_LINE_LOCS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 27
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38257739034561142
+        }
+
+        column AMOUNT (
+            type: plainText
+            heading {
+                heading: Amount
+                alignment: end
+            }
+            layout {
+                sequence: 80
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column DESTINATION_TYPE_CODE (
+            type: plainText
+            heading {
+                heading: Destination Type Code
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column INTERFACE_LINE_KEY (
+            type: plainText
+            heading {
+                heading: Interface Line Key
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column INTERFACE_LINE_LOCATION_KEY (
+            type: plainText
+            heading {
+                heading: Interface Line Location Key
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column NEED_BY_DATE (
+            type: plainText
+            heading {
+                heading: Need By Date
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 990
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CU
+            }
+        )
+
+        column PROMISED_DATE (
+            type: plainText
+            heading {
+                heading: Promised Date
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column QUANTITY (
+            type: plainText
+            heading {
+                heading: Quantity
+                alignment: end
+            }
+            layout {
+                sequence: 90
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 980
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CT
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 1000
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CV
+            }
+        )
+
+        column SECONDARY_QUANTITY (
+            type: plainText
+            heading {
+                heading: Secondary Quantity
+                alignment: end
+            }
+            layout {
+                sequence: 120
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column SECONDARY_UNIT_OF_MEASURE (
+            type: plainText
+            heading {
+                heading: Secondary Unit Of Measure
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column SHIPMENT_NUM (
+            type: plainText
+            heading {
+                heading: Shipment Num
+                alignment: end
+            }
+            layout {
+                sequence: 40
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column SHIP_TO_LOCATION (
+            type: plainText
+            heading {
+                heading: Ship To Location
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column SHIP_TO_ORGANIZATION_CODE (
+            type: plainText
+            heading {
+                heading: Ship To Organization Code
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 960
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CR
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 970
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CS
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 387374 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ACCRUE_ON_RECEIPT_FLAG (
+                sequence: 15
+            )
+
+            displayColumn ALLOW_SUBSTITUTE_RECEIPTS_FLAG (
+                sequence: 16
+            )
+
+            displayColumn AMOUNT (
+                sequence: 8
+            )
+
+            displayColumn ASSESSABLE_VALUE (
+                sequence: 17
+            )
+
+            displayColumn ATTRIBUTE1 (
+                sequence: 38
+            )
+
+            displayColumn ATTRIBUTE10 (
+                sequence: 47
+            )
+
+            displayColumn ATTRIBUTE11 (
+                sequence: 48
+            )
+
+            displayColumn ATTRIBUTE12 (
+                sequence: 49
+            )
+
+            displayColumn ATTRIBUTE13 (
+                sequence: 50
+            )
+
+            displayColumn ATTRIBUTE14 (
+                sequence: 51
+            )
+
+            displayColumn ATTRIBUTE15 (
+                sequence: 52
+            )
+
+            displayColumn ATTRIBUTE16 (
+                sequence: 53
+            )
+
+            displayColumn ATTRIBUTE17 (
+                sequence: 54
+            )
+
+            displayColumn ATTRIBUTE18 (
+                sequence: 55
+            )
+
+            displayColumn ATTRIBUTE19 (
+                sequence: 56
+            )
+
+            displayColumn ATTRIBUTE2 (
+                sequence: 39
+            )
+
+            displayColumn ATTRIBUTE20 (
+                sequence: 57
+            )
+
+            displayColumn ATTRIBUTE3 (
+                sequence: 40
+            )
+
+            displayColumn ATTRIBUTE4 (
+                sequence: 41
+            )
+
+            displayColumn ATTRIBUTE5 (
+                sequence: 42
+            )
+
+            displayColumn ATTRIBUTE6 (
+                sequence: 43
+            )
+
+            displayColumn ATTRIBUTE7 (
+                sequence: 44
+            )
+
+            displayColumn ATTRIBUTE8 (
+                sequence: 45
+            )
+
+            displayColumn ATTRIBUTE9 (
+                sequence: 46
+            )
+
+            displayColumn ATTRIBUTE_CATEGORY (
+                sequence: 37
+            )
+
+            displayColumn ATTRIBUTE_DATE1 (
+                sequence: 58
+            )
+
+            displayColumn ATTRIBUTE_DATE10 (
+                sequence: 67
+            )
+
+            displayColumn ATTRIBUTE_DATE2 (
+                sequence: 59
+            )
+
+            displayColumn ATTRIBUTE_DATE3 (
+                sequence: 60
+            )
+
+            displayColumn ATTRIBUTE_DATE4 (
+                sequence: 61
+            )
+
+            displayColumn ATTRIBUTE_DATE5 (
+                sequence: 62
+            )
+
+            displayColumn ATTRIBUTE_DATE6 (
+                sequence: 63
+            )
+
+            displayColumn ATTRIBUTE_DATE7 (
+                sequence: 64
+            )
+
+            displayColumn ATTRIBUTE_DATE8 (
+                sequence: 65
+            )
+
+            displayColumn ATTRIBUTE_DATE9 (
+                sequence: 66
+            )
+
+            displayColumn ATTRIBUTE_NUMBER1 (
+                sequence: 68
+            )
+
+            displayColumn ATTRIBUTE_NUMBER10 (
+                sequence: 77
+            )
+
+            displayColumn ATTRIBUTE_NUMBER2 (
+                sequence: 69
+            )
+
+            displayColumn ATTRIBUTE_NUMBER3 (
+                sequence: 70
+            )
+
+            displayColumn ATTRIBUTE_NUMBER4 (
+                sequence: 71
+            )
+
+            displayColumn ATTRIBUTE_NUMBER5 (
+                sequence: 72
+            )
+
+            displayColumn ATTRIBUTE_NUMBER6 (
+                sequence: 73
+            )
+
+            displayColumn ATTRIBUTE_NUMBER7 (
+                sequence: 74
+            )
+
+            displayColumn ATTRIBUTE_NUMBER8 (
+                sequence: 75
+            )
+
+            displayColumn ATTRIBUTE_NUMBER9 (
+                sequence: 76
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP1 (
+                sequence: 78
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP10 (
+                sequence: 87
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP2 (
+                sequence: 79
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP3 (
+                sequence: 80
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP4 (
+                sequence: 81
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP5 (
+                sequence: 82
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP6 (
+                sequence: 83
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP7 (
+                sequence: 84
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP8 (
+                sequence: 85
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP9 (
+                sequence: 86
+            )
+
+            displayColumn DAYS_EARLY_RECEIPT_ALLOWED (
+                sequence: 18
+            )
+
+            displayColumn DAYS_LATE_RECEIPT_ALLOWED (
+                sequence: 19
+            )
+
+            displayColumn DESTINATION_TYPE_CODE (
+                sequence: 14
+            )
+
+            displayColumn ENFORCE_SHIP_TO_LOCATION_CODE (
+                sequence: 20
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn FINAL_DISCHARGE_LOCATION_CODE (
+                sequence: 91
+            )
+
+            displayColumn FREIGHT_CARRIER (
+                sequence: 88
+            )
+
+            displayColumn INPUT_TAX_CLASSIFICATION_CODE (
+                sequence: 30
+            )
+
+            displayColumn INSPECTION_REQUIRED_FLAG (
+                sequence: 21
+            )
+
+            displayColumn INTEGRATION_ID (
+                sequence: 98
+            )
+
+            displayColumn INTERFACE_LINE_KEY (
+                sequence: 5
+            )
+
+            displayColumn INTERFACE_LINE_LOCATION_KEY (
+                sequence: 3
+            )
+
+            displayColumn INVOICE_CLOSE_TOLERANCE (
+                sequence: 23
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 102
+            )
+
+            displayColumn LINE_INTENDED_USE (
+                sequence: 31
+            )
+
+            displayColumn MODE_OF_TRANSPORT (
+                sequence: 89
+            )
+
+            displayColumn NEED_BY_DATE (
+                sequence: 10
+            )
+
+            displayColumn NOTE_TO_RECEIVER (
+                sequence: 29
+            )
+
+            displayColumn PREFIX (
+                sequence: 99
+            )
+
+            displayColumn PRODUCT_CATEGORY (
+                sequence: 32
+            )
+
+            displayColumn PRODUCT_FISC_CLASSIFICATION (
+                sequence: 33
+            )
+
+            displayColumn PRODUCT_TYPE (
+                sequence: 34
+            )
+
+            displayColumn PROMISED_DATE (
+                sequence: 11
+            )
+
+            displayColumn PROMISED_DELIVERY_DATE (
+                sequence: 95
+            )
+
+            displayColumn PROMISED_SHIP_DATE (
+                sequence: 93
+            )
+
+            displayColumn QTY_RCV_EXCEPTION_CODE (
+                sequence: 26
+            )
+
+            displayColumn QTY_RCV_TOLERANCE (
+                sequence: 25
+            )
+
+            displayColumn QUANTITY (
+                sequence: 9
+            )
+
+            displayColumn RECEIPT_DAYS_EXCEPTION_CODE (
+                sequence: 27
+            )
+
+            displayColumn RECEIPT_REQUIRED_FLAG (
+                sequence: 22
+            )
+
+            displayColumn RECEIVE_CLOSE_TOLERANCE (
+                sequence: 24
+            )
+
+            displayColumn RECEIVING_ROUTING (
+                sequence: 28
+            )
+
+            displayColumn REQUESTED_DELIVERY_DATE (
+                sequence: 94
+            )
+
+            displayColumn REQUESTED_SHIP_DATE (
+                sequence: 92
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 100
+            )
+
+            displayColumn SECONDARY_QUANTITY (
+                sequence: 12
+            )
+
+            displayColumn SECONDARY_UNIT_OF_MEASURE (
+                sequence: 13
+            )
+
+            displayColumn SERVICE_LEVEL (
+                sequence: 90
+            )
+
+            displayColumn SHIPMENT_NUM (
+                sequence: 4
+            )
+
+            displayColumn SHIP_TO_LOCATION (
+                sequence: 6
+            )
+
+            displayColumn SHIP_TO_ORGANIZATION_CODE (
+                sequence: 7
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 96
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 101
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 97
+            )
+
+            displayColumn TRX_BUSINESS_CATEGORY (
+                sequence: 35
+            )
+
+            displayColumn USER_DEFINED_FISC_CLASS (
+                sequence: 36
+            )
+
+        )
+
+    )
+
+    region purchase-orders (
+        name: Purchase Orders
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_PO_HEADERS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 22826940960313643
+        }
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 200
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: T
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 10
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 180
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 50
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column VENDOR_NAME (
+            type: plainText
+            heading {
+                heading: Vendor Name
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 358498 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn PREFIX (
+                sequence: 2
+            )
+
+            displayColumn RUN_ID (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 7
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 4
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 6
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 3
+            )
+
+            displayColumn VENDOR_NAME (
+                sequence: 5
+            )
+
+        )
+
+    )
+
+    region site-assignments (
+        name: Site Assignments
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_SUP_SITE_ASSN_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 19
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38131958499639910
+        }
+
+        column ACCTS_PAY_CONCAT_SEGMENTS (
+            type: plainText
+            heading {
+                heading: Accts Pay Concat Segments
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column ALLOW_AWT_FLAG (
+            type: plainText
+            heading {
+                heading: Allow Awt Flag
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column AWT_GROUP_NAME (
+            type: plainText
+            heading {
+                heading: Awt Group Name
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column BILL_TO_BU_NAME (
+            type: plainText
+            heading {
+                heading: Bill To Bu Name
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column BILL_TO_LOCATION_CODE (
+            type: plainText
+            heading {
+                heading: Bill To Location Code
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column BUSINESS_UNIT_NAME (
+            type: plainText
+            heading {
+                heading: Business Unit Name
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column IMPORT_ACTION (
+            type: plainText
+            heading {
+                heading: Import Action
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 210
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: U
+            }
+        )
+
+        column PROCUREMENT_BUSINESS_UNIT_NAME (
+            type: plainText
+            heading {
+                heading: Procurement Business Unit Name
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 200
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: T
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 220
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: V
+            }
+        )
+
+        column SHIP_TO_LOCATION_CODE (
+            type: plainText
+            heading {
+                heading: Ship To Location Code
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 180
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 190
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        column VENDOR_NAME (
+            type: plainText
+            heading {
+                heading: Vendor Name
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column VENDOR_SITE_CODE (
+            type: plainText
+            heading {
+                heading: Vendor Site Code
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 387355 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ACCTS_PAY_CONCAT_SEGMENTS (
+                sequence: 13
+            )
+
+            displayColumn ALLOW_AWT_FLAG (
+                sequence: 11
+            )
+
+            displayColumn AWT_GROUP_NAME (
+                sequence: 12
+            )
+
+            displayColumn BILL_TO_BU_NAME (
+                sequence: 8
+            )
+
+            displayColumn BILL_TO_LOCATION_CODE (
+                sequence: 10
+            )
+
+            displayColumn BUSINESS_UNIT_NAME (
+                sequence: 5
+            )
+
+            displayColumn DISTRIBUTION_SET_NAME (
+                sequence: 16
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn FUTURE_DATED_CONCAT_SEGMENTS (
+                sequence: 15
+            )
+
+            displayColumn IMPORT_ACTION (
+                sequence: 6
+            )
+
+            displayColumn INACTIVE_DATE (
+                sequence: 17
+            )
+
+            displayColumn INTEGRATION_ID (
+                sequence: 20
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 24
+            )
+
+            displayColumn PREFIX (
+                sequence: 21
+            )
+
+            displayColumn PREPAY_CONCAT_SEGMENTS (
+                sequence: 14
+            )
+
+            displayColumn PROCUREMENT_BUSINESS_UNIT_NAME (
+                sequence: 7
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 22
+            )
+
+            displayColumn SHIP_TO_LOCATION_CODE (
+                sequence: 9
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 18
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 23
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 19
+            )
+
+            displayColumn VENDOR_NAME (
+                sequence: 3
+            )
+
+            displayColumn VENDOR_SITE_CODE (
+                sequence: 4
+            )
+
+        )
+
+    )
+
+    region supplier-addresses (
+        name: Supplier Addresses
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_SUP_ADDR_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 15
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38058356078761825
+        }
+
+        column ADDRESS_LINE1 (
+            type: plainText
+            heading {
+                heading: Address Line1
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column ADDRESS_LINE2 (
+            type: plainText
+            heading {
+                heading: Address Line2
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column ADDRESS_LINE3 (
+            type: plainText
+            heading {
+                heading: Address Line3
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column ADDRESS_LINE4 (
+            type: plainText
+            heading {
+                heading: Address Line4
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column ADDRESS_LINES_PHONETIC (
+            type: plainText
+            heading {
+                heading: Address Lines Phonetic
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column ADDR_ELEMENT_ATTRIBUTE1 (
+            type: plainText
+            heading {
+                heading: Addr Element Attribute1
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column ADDR_ELEMENT_ATTRIBUTE2 (
+            type: plainText
+            heading {
+                heading: Addr Element Attribute2
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column ADDR_ELEMENT_ATTRIBUTE3 (
+            type: plainText
+            heading {
+                heading: Addr Element Attribute3
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column COUNTRY (
+            type: plainText
+            heading {
+                heading: Country
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column IMPORT_ACTION (
+            type: plainText
+            heading {
+                heading: Import Action
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column PARTY_SITE_NAME (
+            type: plainText
+            heading {
+                heading: Party Site Name
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column PARTY_SITE_NAME_NEW (
+            type: plainText
+            heading {
+                heading: Party Site Name New
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 1150
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: DK
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 1140
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: DJ
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 1160
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: DL
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 1120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: DH
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 1130
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: DI
+            }
+        )
+
+        column VENDOR_NAME (
+            type: plainText
+            heading {
+                heading: Vendor Name
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 387345 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ADDRESSEE (
+                sequence: 26
+            )
+
+            displayColumn ADDRESS_LINE1 (
+                sequence: 8
+            )
+
+            displayColumn ADDRESS_LINE2 (
+                sequence: 9
+            )
+
+            displayColumn ADDRESS_LINE3 (
+                sequence: 10
+            )
+
+            displayColumn ADDRESS_LINE4 (
+                sequence: 11
+            )
+
+            displayColumn ADDRESS_LINES_PHONETIC (
+                sequence: 12
+            )
+
+            displayColumn ADDR_ELEMENT_ATTRIBUTE1 (
+                sequence: 13
+            )
+
+            displayColumn ADDR_ELEMENT_ATTRIBUTE2 (
+                sequence: 14
+            )
+
+            displayColumn ADDR_ELEMENT_ATTRIBUTE3 (
+                sequence: 15
+            )
+
+            displayColumn ADDR_ELEMENT_ATTRIBUTE4 (
+                sequence: 16
+            )
+
+            displayColumn ADDR_ELEMENT_ATTRIBUTE5 (
+                sequence: 17
+            )
+
+            displayColumn ATTRIBUTE1 (
+                sequence: 41
+            )
+
+            displayColumn ATTRIBUTE10 (
+                sequence: 50
+            )
+
+            displayColumn ATTRIBUTE11 (
+                sequence: 51
+            )
+
+            displayColumn ATTRIBUTE12 (
+                sequence: 52
+            )
+
+            displayColumn ATTRIBUTE13 (
+                sequence: 53
+            )
+
+            displayColumn ATTRIBUTE14 (
+                sequence: 54
+            )
+
+            displayColumn ATTRIBUTE15 (
+                sequence: 55
+            )
+
+            displayColumn ATTRIBUTE16 (
+                sequence: 56
+            )
+
+            displayColumn ATTRIBUTE17 (
+                sequence: 57
+            )
+
+            displayColumn ATTRIBUTE18 (
+                sequence: 58
+            )
+
+            displayColumn ATTRIBUTE19 (
+                sequence: 59
+            )
+
+            displayColumn ATTRIBUTE2 (
+                sequence: 42
+            )
+
+            displayColumn ATTRIBUTE20 (
+                sequence: 60
+            )
+
+            displayColumn ATTRIBUTE21 (
+                sequence: 61
+            )
+
+            displayColumn ATTRIBUTE22 (
+                sequence: 62
+            )
+
+            displayColumn ATTRIBUTE23 (
+                sequence: 63
+            )
+
+            displayColumn ATTRIBUTE24 (
+                sequence: 64
+            )
+
+            displayColumn ATTRIBUTE25 (
+                sequence: 65
+            )
+
+            displayColumn ATTRIBUTE26 (
+                sequence: 66
+            )
+
+            displayColumn ATTRIBUTE27 (
+                sequence: 67
+            )
+
+            displayColumn ATTRIBUTE28 (
+                sequence: 68
+            )
+
+            displayColumn ATTRIBUTE29 (
+                sequence: 69
+            )
+
+            displayColumn ATTRIBUTE3 (
+                sequence: 43
+            )
+
+            displayColumn ATTRIBUTE30 (
+                sequence: 70
+            )
+
+            displayColumn ATTRIBUTE4 (
+                sequence: 44
+            )
+
+            displayColumn ATTRIBUTE5 (
+                sequence: 45
+            )
+
+            displayColumn ATTRIBUTE6 (
+                sequence: 46
+            )
+
+            displayColumn ATTRIBUTE7 (
+                sequence: 47
+            )
+
+            displayColumn ATTRIBUTE8 (
+                sequence: 48
+            )
+
+            displayColumn ATTRIBUTE9 (
+                sequence: 49
+            )
+
+            displayColumn ATTRIBUTE_CATEGORY (
+                sequence: 40
+            )
+
+            displayColumn ATTRIBUTE_DATE1 (
+                sequence: 83
+            )
+
+            displayColumn ATTRIBUTE_DATE10 (
+                sequence: 92
+            )
+
+            displayColumn ATTRIBUTE_DATE11 (
+                sequence: 93
+            )
+
+            displayColumn ATTRIBUTE_DATE12 (
+                sequence: 94
+            )
+
+            displayColumn ATTRIBUTE_DATE2 (
+                sequence: 84
+            )
+
+            displayColumn ATTRIBUTE_DATE3 (
+                sequence: 85
+            )
+
+            displayColumn ATTRIBUTE_DATE4 (
+                sequence: 86
+            )
+
+            displayColumn ATTRIBUTE_DATE5 (
+                sequence: 87
+            )
+
+            displayColumn ATTRIBUTE_DATE6 (
+                sequence: 88
+            )
+
+            displayColumn ATTRIBUTE_DATE7 (
+                sequence: 89
+            )
+
+            displayColumn ATTRIBUTE_DATE8 (
+                sequence: 90
+            )
+
+            displayColumn ATTRIBUTE_DATE9 (
+                sequence: 91
+            )
+
+            displayColumn ATTRIBUTE_NUMBER1 (
+                sequence: 71
+            )
+
+            displayColumn ATTRIBUTE_NUMBER10 (
+                sequence: 80
+            )
+
+            displayColumn ATTRIBUTE_NUMBER11 (
+                sequence: 81
+            )
+
+            displayColumn ATTRIBUTE_NUMBER12 (
+                sequence: 82
+            )
+
+            displayColumn ATTRIBUTE_NUMBER2 (
+                sequence: 72
+            )
+
+            displayColumn ATTRIBUTE_NUMBER3 (
+                sequence: 73
+            )
+
+            displayColumn ATTRIBUTE_NUMBER4 (
+                sequence: 74
+            )
+
+            displayColumn ATTRIBUTE_NUMBER5 (
+                sequence: 75
+            )
+
+            displayColumn ATTRIBUTE_NUMBER6 (
+                sequence: 76
+            )
+
+            displayColumn ATTRIBUTE_NUMBER7 (
+                sequence: 77
+            )
+
+            displayColumn ATTRIBUTE_NUMBER8 (
+                sequence: 78
+            )
+
+            displayColumn ATTRIBUTE_NUMBER9 (
+                sequence: 79
+            )
+
+            displayColumn BANK_INSTRUCTION1_CODE (
+                sequence: 97
+            )
+
+            displayColumn BANK_INSTRUCTION2_CODE (
+                sequence: 98
+            )
+
+            displayColumn BANK_INSTRUCTION_DETAILS (
+                sequence: 99
+            )
+
+            displayColumn BUILDING (
+                sequence: 18
+            )
+
+            displayColumn CITY (
+                sequence: 20
+            )
+
+            displayColumn COUNTRY (
+                sequence: 7
+            )
+
+            displayColumn COUNTY (
+                sequence: 23
+            )
+
+            displayColumn DELIVERY_CHANNEL_CODE (
+                sequence: 96
+            )
+
+            displayColumn EMAIL_ADDRESS (
+                sequence: 95
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn EXCLUSIVE_PAYMENT_FLAG (
+                sequence: 105
+            )
+
+            displayColumn FAX (
+                sequence: 36
+            )
+
+            displayColumn FAX_AREA_CODE (
+                sequence: 35
+            )
+
+            displayColumn FAX_COUNTRY_CODE (
+                sequence: 34
+            )
+
+            displayColumn FLOOR_NUMBER (
+                sequence: 19
+            )
+
+            displayColumn GLOBAL_LOCATION_NUMBER (
+                sequence: 27
+            )
+
+            displayColumn IBY_BANK_CHARGE_BEARER (
+                sequence: 106
+            )
+
+            displayColumn IMPORT_ACTION (
+                sequence: 5
+            )
+
+            displayColumn INACTIVE_DATE (
+                sequence: 29
+            )
+
+            displayColumn INTEGRATION_ID (
+                sequence: 114
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 118
+            )
+
+            displayColumn ORDERING_PURPOSE_FLAG (
+                sequence: 38
+            )
+
+            displayColumn PARTY_SITE_LANGUAGE (
+                sequence: 28
+            )
+
+            displayColumn PARTY_SITE_NAME (
+                sequence: 4
+            )
+
+            displayColumn PARTY_SITE_NAME_NEW (
+                sequence: 6
+            )
+
+            displayColumn PAYMENT_REASON_CODE (
+                sequence: 107
+            )
+
+            displayColumn PAYMENT_REASON_COMMENTS (
+                sequence: 108
+            )
+
+            displayColumn PAYMENT_TEXT_MESSAGE1 (
+                sequence: 101
+            )
+
+            displayColumn PAYMENT_TEXT_MESSAGE2 (
+                sequence: 102
+            )
+
+            displayColumn PAYMENT_TEXT_MESSAGE3 (
+                sequence: 103
+            )
+
+            displayColumn PHONE (
+                sequence: 32
+            )
+
+            displayColumn PHONE_AREA_CODE (
+                sequence: 31
+            )
+
+            displayColumn PHONE_COUNTRY_CODE (
+                sequence: 30
+            )
+
+            displayColumn PHONE_EXTENSION (
+                sequence: 33
+            )
+
+            displayColumn POSTAL_CODE (
+                sequence: 24
+            )
+
+            displayColumn POSTAL_PLUS4_CODE (
+                sequence: 25
+            )
+
+            displayColumn PREFIX (
+                sequence: 115
+            )
+
+            displayColumn PROVINCE (
+                sequence: 22
+            )
+
+            displayColumn REMIT_ADVICE_DELIVERY_METHOD (
+                sequence: 109
+            )
+
+            displayColumn REMIT_ADVICE_EMAIL (
+                sequence: 110
+            )
+
+            displayColumn REMIT_ADVICE_FAX (
+                sequence: 111
+            )
+
+            displayColumn REMIT_TO_PURPOSE_FLAG (
+                sequence: 39
+            )
+
+            displayColumn RFQ_OR_BIDDING_PURPOSE_FLAG (
+                sequence: 37
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 116
+            )
+
+            displayColumn SERVICE_LEVEL_CODE (
+                sequence: 104
+            )
+
+            displayColumn SETTLEMENT_PRIORITY (
+                sequence: 100
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 112
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 117
+            )
+
+            displayColumn STATE (
+                sequence: 21
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 113
+            )
+
+            displayColumn VENDOR_NAME (
+                sequence: 3
+            )
+
+        )
+
+    )
+
+    region supplier-contacts (
+        name: Supplier Contacts
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_SUP_CONTACTS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 21
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38134448618639935
+        }
+
+        column AREA_CODE (
+            type: plainText
+            heading {
+                heading: Area Code
+            }
+            layout {
+                sequence: 160
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        column EMAIL_ADDRESS (
+            type: plainText
+            heading {
+                heading: Email Address
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column EMAIL_ADDRESS_NEW (
+            type: plainText
+            heading {
+                heading: Email Address New
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column FAX_COUNTRY_CODE (
+            type: plainText
+            heading {
+                heading: Fax Country Code
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        column FIRST_NAME (
+            type: plainText
+            heading {
+                heading: First Name
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column FIRST_NAME_NEW (
+            type: plainText
+            heading {
+                heading: First Name New
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column IMPORT_ACTION (
+            type: plainText
+            heading {
+                heading: Import Action
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column LAST_NAME (
+            type: plainText
+            heading {
+                heading: Last Name
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column LAST_NAME_NEW (
+            type: plainText
+            heading {
+                heading: Last Name New
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column MIDDLE_NAME (
+            type: plainText
+            heading {
+                heading: Middle Name
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column NAME_PREFIX (
+            type: plainText
+            heading {
+                heading: Name Prefix
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column PHONE (
+            type: plainText
+            heading {
+                heading: Phone
+            }
+            layout {
+                sequence: 170
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Q
+            }
+        )
+
+        column PHONE_COUNTRY_CODE (
+            type: plainText
+            heading {
+                heading: Phone Country Code
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column PHONE_EXTENSION (
+            type: plainText
+            heading {
+                heading: Phone Extension
+            }
+            layout {
+                sequence: 180
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 950
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CQ
+            }
+        )
+
+        column PRIMARY_ADMIN_CONTACT (
+            type: plainText
+            heading {
+                heading: Primary Admin Contact
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 940
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CP
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 960
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CR
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 920
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CN
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 930
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CO
+            }
+        )
+
+        column TITLE (
+            type: plainText
+            heading {
+                heading: Title
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column VENDOR_NAME (
+            type: plainText
+            heading {
+                heading: Vendor Name
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 387362 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn AREA_CODE (
+                sequence: 16
+            )
+
+            displayColumn ATTRIBUTE1 (
+                sequence: 27
+            )
+
+            displayColumn ATTRIBUTE10 (
+                sequence: 36
+            )
+
+            displayColumn ATTRIBUTE11 (
+                sequence: 37
+            )
+
+            displayColumn ATTRIBUTE12 (
+                sequence: 38
+            )
+
+            displayColumn ATTRIBUTE13 (
+                sequence: 39
+            )
+
+            displayColumn ATTRIBUTE14 (
+                sequence: 40
+            )
+
+            displayColumn ATTRIBUTE15 (
+                sequence: 41
+            )
+
+            displayColumn ATTRIBUTE16 (
+                sequence: 42
+            )
+
+            displayColumn ATTRIBUTE17 (
+                sequence: 43
+            )
+
+            displayColumn ATTRIBUTE18 (
+                sequence: 44
+            )
+
+            displayColumn ATTRIBUTE19 (
+                sequence: 45
+            )
+
+            displayColumn ATTRIBUTE2 (
+                sequence: 28
+            )
+
+            displayColumn ATTRIBUTE20 (
+                sequence: 46
+            )
+
+            displayColumn ATTRIBUTE21 (
+                sequence: 47
+            )
+
+            displayColumn ATTRIBUTE22 (
+                sequence: 48
+            )
+
+            displayColumn ATTRIBUTE23 (
+                sequence: 49
+            )
+
+            displayColumn ATTRIBUTE24 (
+                sequence: 50
+            )
+
+            displayColumn ATTRIBUTE25 (
+                sequence: 51
+            )
+
+            displayColumn ATTRIBUTE26 (
+                sequence: 52
+            )
+
+            displayColumn ATTRIBUTE27 (
+                sequence: 53
+            )
+
+            displayColumn ATTRIBUTE28 (
+                sequence: 54
+            )
+
+            displayColumn ATTRIBUTE29 (
+                sequence: 55
+            )
+
+            displayColumn ATTRIBUTE3 (
+                sequence: 29
+            )
+
+            displayColumn ATTRIBUTE30 (
+                sequence: 56
+            )
+
+            displayColumn ATTRIBUTE4 (
+                sequence: 30
+            )
+
+            displayColumn ATTRIBUTE5 (
+                sequence: 31
+            )
+
+            displayColumn ATTRIBUTE6 (
+                sequence: 32
+            )
+
+            displayColumn ATTRIBUTE7 (
+                sequence: 33
+            )
+
+            displayColumn ATTRIBUTE8 (
+                sequence: 34
+            )
+
+            displayColumn ATTRIBUTE9 (
+                sequence: 35
+            )
+
+            displayColumn ATTRIBUTE_CATEGORY (
+                sequence: 26
+            )
+
+            displayColumn ATTRIBUTE_DATE1 (
+                sequence: 69
+            )
+
+            displayColumn ATTRIBUTE_DATE10 (
+                sequence: 78
+            )
+
+            displayColumn ATTRIBUTE_DATE11 (
+                sequence: 79
+            )
+
+            displayColumn ATTRIBUTE_DATE12 (
+                sequence: 80
+            )
+
+            displayColumn ATTRIBUTE_DATE2 (
+                sequence: 70
+            )
+
+            displayColumn ATTRIBUTE_DATE3 (
+                sequence: 71
+            )
+
+            displayColumn ATTRIBUTE_DATE4 (
+                sequence: 72
+            )
+
+            displayColumn ATTRIBUTE_DATE5 (
+                sequence: 73
+            )
+
+            displayColumn ATTRIBUTE_DATE6 (
+                sequence: 74
+            )
+
+            displayColumn ATTRIBUTE_DATE7 (
+                sequence: 75
+            )
+
+            displayColumn ATTRIBUTE_DATE8 (
+                sequence: 76
+            )
+
+            displayColumn ATTRIBUTE_DATE9 (
+                sequence: 77
+            )
+
+            displayColumn ATTRIBUTE_NUMBER1 (
+                sequence: 57
+            )
+
+            displayColumn ATTRIBUTE_NUMBER10 (
+                sequence: 66
+            )
+
+            displayColumn ATTRIBUTE_NUMBER11 (
+                sequence: 67
+            )
+
+            displayColumn ATTRIBUTE_NUMBER12 (
+                sequence: 68
+            )
+
+            displayColumn ATTRIBUTE_NUMBER2 (
+                sequence: 58
+            )
+
+            displayColumn ATTRIBUTE_NUMBER3 (
+                sequence: 59
+            )
+
+            displayColumn ATTRIBUTE_NUMBER4 (
+                sequence: 60
+            )
+
+            displayColumn ATTRIBUTE_NUMBER5 (
+                sequence: 61
+            )
+
+            displayColumn ATTRIBUTE_NUMBER6 (
+                sequence: 62
+            )
+
+            displayColumn ATTRIBUTE_NUMBER7 (
+                sequence: 63
+            )
+
+            displayColumn ATTRIBUTE_NUMBER8 (
+                sequence: 64
+            )
+
+            displayColumn ATTRIBUTE_NUMBER9 (
+                sequence: 65
+            )
+
+            displayColumn EMAIL_ADDRESS (
+                sequence: 13
+            )
+
+            displayColumn EMAIL_ADDRESS_NEW (
+                sequence: 14
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn FAX (
+                sequence: 21
+            )
+
+            displayColumn FAX_AREA_CODE (
+                sequence: 20
+            )
+
+            displayColumn FAX_COUNTRY_CODE (
+                sequence: 19
+            )
+
+            displayColumn FIRST_NAME (
+                sequence: 4
+            )
+
+            displayColumn FIRST_NAME_NEW (
+                sequence: 8
+            )
+
+            displayColumn IMPORT_ACTION (
+                sequence: 6
+            )
+
+            displayColumn INACTIVE_DATE (
+                sequence: 25
+            )
+
+            displayColumn INTEGRATION_ID (
+                sequence: 94
+            )
+
+            displayColumn LAST_NAME (
+                sequence: 5
+            )
+
+            displayColumn LAST_NAME_NEW (
+                sequence: 10
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 98
+            )
+
+            displayColumn MIDDLE_NAME (
+                sequence: 9
+            )
+
+            displayColumn MOBILE (
+                sequence: 24
+            )
+
+            displayColumn MOBILE_AREA_CODE (
+                sequence: 23
+            )
+
+            displayColumn MOBILE_COUNTRY_CODE (
+                sequence: 22
+            )
+
+            displayColumn NAME_PREFIX (
+                sequence: 7
+            )
+
+            displayColumn PHONE (
+                sequence: 17
+            )
+
+            displayColumn PHONE_COUNTRY_CODE (
+                sequence: 15
+            )
+
+            displayColumn PHONE_EXTENSION (
+                sequence: 18
+            )
+
+            displayColumn PREFIX (
+                sequence: 95
+            )
+
+            displayColumn PRIMARY_ADMIN_CONTACT (
+                sequence: 12
+            )
+
+            displayColumn ROLE1 (
+                sequence: 82
+            )
+
+            displayColumn ROLE10 (
+                sequence: 91
+            )
+
+            displayColumn ROLE2 (
+                sequence: 83
+            )
+
+            displayColumn ROLE3 (
+                sequence: 84
+            )
+
+            displayColumn ROLE4 (
+                sequence: 85
+            )
+
+            displayColumn ROLE5 (
+                sequence: 86
+            )
+
+            displayColumn ROLE6 (
+                sequence: 87
+            )
+
+            displayColumn ROLE7 (
+                sequence: 88
+            )
+
+            displayColumn ROLE8 (
+                sequence: 89
+            )
+
+            displayColumn ROLE9 (
+                sequence: 90
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 96
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 92
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 97
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 93
+            )
+
+            displayColumn TITLE (
+                sequence: 11
+            )
+
+            displayColumn USER_ACCOUNT_ACTION (
+                sequence: 81
+            )
+
+            displayColumn VENDOR_NAME (
+                sequence: 3
+            )
+
+        )
+
+    )
+
+    region supplier-sites (
+        name: Supplier Sites
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_SUP_SITE_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 17
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38111020653643901
+        }
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column IMPORT_ACTION (
+            type: plainText
+            heading {
+                heading: Import Action
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column INACTIVE_DATE (
+            type: plainText
+            heading {
+                heading: Inactive Date
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column PARTY_SITE_NAME (
+            type: plainText
+            heading {
+                heading: Party Site Name
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column PAY_SITE_FLAG (
+            type: plainText
+            heading {
+                heading: Pay Site Flag
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column PCARD_SITE_FLAG (
+            type: plainText
+            heading {
+                heading: Pcard Site Flag
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 2050
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: GW
+            }
+        )
+
+        column PRIMARY_PAY_SITE_FLAG (
+            type: plainText
+            heading {
+                heading: Primary Pay Site Flag
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column PROCUREMENT_BUSINESS_UNIT_NAME (
+            type: plainText
+            heading {
+                heading: Procurement Business Unit Name
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column PURCHASING_SITE_FLAG (
+            type: plainText
+            heading {
+                heading: Purchasing Site Flag
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column RFQ_ONLY_SITE_FLAG (
+            type: plainText
+            heading {
+                heading: Rfq Only Site Flag
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 2040
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: GV
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 2060
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: GX
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 2020
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: GT
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 2030
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: GU
+            }
+        )
+
+        column VENDOR_NAME (
+            type: plainText
+            heading {
+                heading: Vendor Name
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column VENDOR_SITE_CODE (
+            type: plainText
+            heading {
+                heading: Vendor Site Code
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column VENDOR_SITE_CODE_NEW (
+            type: plainText
+            heading {
+                heading: Vendor Site Code New
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 387350 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn AGING_ONSET_POINT (
+                sequence: 36
+            )
+
+            displayColumn AGING_PERIOD_DAYS (
+                sequence: 37
+            )
+
+            displayColumn ALLOW_SUBSTITUTE_RECEIPTS_FLAG (
+                sequence: 51
+            )
+
+            displayColumn ALLOW_UNORDERED_RECEIPTS_FLAG (
+                sequence: 52
+            )
+
+            displayColumn ALWAYS_TAKE_DISC_FLAG (
+                sequence: 73
+            )
+
+            displayColumn ATTRIBUTE1 (
+                sequence: 95
+            )
+
+            displayColumn ATTRIBUTE10 (
+                sequence: 104
+            )
+
+            displayColumn ATTRIBUTE11 (
+                sequence: 105
+            )
+
+            displayColumn ATTRIBUTE12 (
+                sequence: 106
+            )
+
+            displayColumn ATTRIBUTE13 (
+                sequence: 107
+            )
+
+            displayColumn ATTRIBUTE14 (
+                sequence: 108
+            )
+
+            displayColumn ATTRIBUTE15 (
+                sequence: 109
+            )
+
+            displayColumn ATTRIBUTE16 (
+                sequence: 110
+            )
+
+            displayColumn ATTRIBUTE17 (
+                sequence: 111
+            )
+
+            displayColumn ATTRIBUTE18 (
+                sequence: 112
+            )
+
+            displayColumn ATTRIBUTE19 (
+                sequence: 113
+            )
+
+            displayColumn ATTRIBUTE2 (
+                sequence: 96
+            )
+
+            displayColumn ATTRIBUTE20 (
+                sequence: 114
+            )
+
+            displayColumn ATTRIBUTE3 (
+                sequence: 97
+            )
+
+            displayColumn ATTRIBUTE4 (
+                sequence: 98
+            )
+
+            displayColumn ATTRIBUTE5 (
+                sequence: 99
+            )
+
+            displayColumn ATTRIBUTE6 (
+                sequence: 100
+            )
+
+            displayColumn ATTRIBUTE7 (
+                sequence: 101
+            )
+
+            displayColumn ATTRIBUTE8 (
+                sequence: 102
+            )
+
+            displayColumn ATTRIBUTE9 (
+                sequence: 103
+            )
+
+            displayColumn ATTRIBUTE_CATEGORY (
+                sequence: 94
+            )
+
+            displayColumn ATTRIBUTE_DATE1 (
+                sequence: 115
+            )
+
+            displayColumn ATTRIBUTE_DATE10 (
+                sequence: 124
+            )
+
+            displayColumn ATTRIBUTE_DATE2 (
+                sequence: 116
+            )
+
+            displayColumn ATTRIBUTE_DATE3 (
+                sequence: 117
+            )
+
+            displayColumn ATTRIBUTE_DATE4 (
+                sequence: 118
+            )
+
+            displayColumn ATTRIBUTE_DATE5 (
+                sequence: 119
+            )
+
+            displayColumn ATTRIBUTE_DATE6 (
+                sequence: 120
+            )
+
+            displayColumn ATTRIBUTE_DATE7 (
+                sequence: 121
+            )
+
+            displayColumn ATTRIBUTE_DATE8 (
+                sequence: 122
+            )
+
+            displayColumn ATTRIBUTE_DATE9 (
+                sequence: 123
+            )
+
+            displayColumn ATTRIBUTE_NUMBER1 (
+                sequence: 135
+            )
+
+            displayColumn ATTRIBUTE_NUMBER10 (
+                sequence: 144
+            )
+
+            displayColumn ATTRIBUTE_NUMBER2 (
+                sequence: 136
+            )
+
+            displayColumn ATTRIBUTE_NUMBER3 (
+                sequence: 137
+            )
+
+            displayColumn ATTRIBUTE_NUMBER4 (
+                sequence: 138
+            )
+
+            displayColumn ATTRIBUTE_NUMBER5 (
+                sequence: 139
+            )
+
+            displayColumn ATTRIBUTE_NUMBER6 (
+                sequence: 140
+            )
+
+            displayColumn ATTRIBUTE_NUMBER7 (
+                sequence: 141
+            )
+
+            displayColumn ATTRIBUTE_NUMBER8 (
+                sequence: 142
+            )
+
+            displayColumn ATTRIBUTE_NUMBER9 (
+                sequence: 143
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP1 (
+                sequence: 125
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP10 (
+                sequence: 134
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP2 (
+                sequence: 126
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP3 (
+                sequence: 127
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP4 (
+                sequence: 128
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP5 (
+                sequence: 129
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP6 (
+                sequence: 130
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP7 (
+                sequence: 131
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP8 (
+                sequence: 132
+            )
+
+            displayColumn ATTRIBUTE_TIMESTAMP9 (
+                sequence: 133
+            )
+
+            displayColumn AUTO_CALCULATE_INTEREST_FLAG (
+                sequence: 76
+            )
+
+            displayColumn B2B_COMM_METHOD_CODE (
+                sequence: 18
+            )
+
+            displayColumn B2B_SITE_CODE (
+                sequence: 19
+            )
+
+            displayColumn BANK_CHARGE_DEDUCTION_TYPE (
+                sequence: 72
+            )
+
+            displayColumn BANK_INSTRUCTION1_CODE (
+                sequence: 81
+            )
+
+            displayColumn BANK_INSTRUCTION2_CODE (
+                sequence: 82
+            )
+
+            displayColumn BANK_INSTRUCTION_DETAILS (
+                sequence: 83
+            )
+
+            displayColumn BUYER_MANAGED_TRANSPORT_FLAG (
+                sequence: 34
+            )
+
+            displayColumn CARRIER (
+                sequence: 27
+            )
+
+            displayColumn CONSUMPTION_ADVICE_FREQUENCY (
+                sequence: 38
+            )
+
+            displayColumn CONSUMPTION_ADVICE_SUMMARY (
+                sequence: 39
+            )
+
+            displayColumn COUNTRY_OF_ORIGIN_CODE (
+                sequence: 33
+            )
+
+            displayColumn CREATE_DEBIT_MEMO_FLAG (
+                sequence: 44
+            )
+
+            displayColumn CUSTOMER_NUM (
+                sequence: 17
+            )
+
+            displayColumn DAYS_EARLY_RECEIPT_ALLOWED (
+                sequence: 49
+            )
+
+            displayColumn DAYS_LATE_RECEIPT_ALLOWED (
+                sequence: 50
+            )
+
+            displayColumn DEFAULT_PAY_SITE_CODE (
+                sequence: 40
+            )
+
+            displayColumn DELIVERY_CHANNEL_CODE (
+                sequence: 80
+            )
+
+            displayColumn EMAIL_ADDRESS (
+                sequence: 21
+            )
+
+            displayColumn ENFORCE_SHIP_TO_LOCATION_CODE (
+                sequence: 45
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn EXCLUDE_FREIGHT_FROM_DISCOUNT (
+                sequence: 74
+            )
+
+            displayColumn EXCLUDE_TAX_FROM_DISCOUNT (
+                sequence: 75
+            )
+
+            displayColumn EXCLUSIVE_PAYMENT_FLAG (
+                sequence: 200
+            )
+
+            displayColumn FAX (
+                sequence: 24
+            )
+
+            displayColumn FAX_AREA_CODE (
+                sequence: 23
+            )
+
+            displayColumn FAX_COUNTRY_CODE (
+                sequence: 22
+            )
+
+            displayColumn FOB_LOOKUP_CODE (
+                sequence: 32
+            )
+
+            displayColumn FREIGHT_TERMS_LOOKUP_CODE (
+                sequence: 30
+            )
+
+            displayColumn GAPLESS_INV_NUM_FLAG (
+                sequence: 42
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE1 (
+                sequence: 146
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE10 (
+                sequence: 155
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE11 (
+                sequence: 156
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE12 (
+                sequence: 157
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE13 (
+                sequence: 158
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE14 (
+                sequence: 159
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE15 (
+                sequence: 160
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE16 (
+                sequence: 161
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE17 (
+                sequence: 162
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE18 (
+                sequence: 163
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE19 (
+                sequence: 164
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE2 (
+                sequence: 147
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE20 (
+                sequence: 165
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE3 (
+                sequence: 148
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE4 (
+                sequence: 149
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE5 (
+                sequence: 150
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE6 (
+                sequence: 151
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE7 (
+                sequence: 152
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE8 (
+                sequence: 153
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE9 (
+                sequence: 154
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_CATEGORY (
+                sequence: 145
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE1 (
+                sequence: 166
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE10 (
+                sequence: 175
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE2 (
+                sequence: 167
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE3 (
+                sequence: 168
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE4 (
+                sequence: 169
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE5 (
+                sequence: 170
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE6 (
+                sequence: 171
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE7 (
+                sequence: 172
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE8 (
+                sequence: 173
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_DATE9 (
+                sequence: 174
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER1 (
+                sequence: 186
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER10 (
+                sequence: 195
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER2 (
+                sequence: 187
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER3 (
+                sequence: 188
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER4 (
+                sequence: 189
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER5 (
+                sequence: 190
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER6 (
+                sequence: 191
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER7 (
+                sequence: 192
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER8 (
+                sequence: 193
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_NUMBER9 (
+                sequence: 194
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP1 (
+                sequence: 176
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP10 (
+                sequence: 185
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP2 (
+                sequence: 177
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP3 (
+                sequence: 178
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP4 (
+                sequence: 179
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP5 (
+                sequence: 180
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP6 (
+                sequence: 181
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP7 (
+                sequence: 182
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP8 (
+                sequence: 183
+            )
+
+            displayColumn GLOBAL_ATTRIBUTE_TIMESTAMP9 (
+                sequence: 184
+            )
+
+            displayColumn HOLD_ALL_PAYMENTS_FLAG (
+                sequence: 63
+            )
+
+            displayColumn HOLD_BY (
+                sequence: 66
+            )
+
+            displayColumn HOLD_FLAG (
+                sequence: 25
+            )
+
+            displayColumn HOLD_FUTURE_PAYMENTS_FLAG (
+                sequence: 65
+            )
+
+            displayColumn HOLD_REASON (
+                sequence: 68
+            )
+
+            displayColumn HOLD_UNMATCHED_INVOICES_FLAG (
+                sequence: 64
+            )
+
+            displayColumn IBY_BANK_CHARGE_BEARER (
+                sequence: 88
+            )
+
+            displayColumn IMPORT_ACTION (
+                sequence: 5
+            )
+
+            displayColumn INACTIVE_DATE (
+                sequence: 9
+            )
+
+            displayColumn INVOICE_AMOUNT_LIMIT (
+                sequence: 55
+            )
+
+            displayColumn INVOICE_CHANNEL (
+                sequence: 198
+            )
+
+            displayColumn INVOICE_CURRENCY_CODE (
+                sequence: 54
+            )
+
+            displayColumn MATCH_APPROVAL_LEVEL (
+                sequence: 57
+            )
+
+            displayColumn MATCH_OPTION (
+                sequence: 56
+            )
+
+            displayColumn MODE_OF_TRANSPORT_CODE (
+                sequence: 28
+            )
+
+            displayColumn OVERRIDE_B2B_COMM_CODE (
+                sequence: 201
+            )
+
+            displayColumn PARTY_SITE_NAME (
+                sequence: 7
+            )
+
+            displayColumn PAYEE_SERVICE_LEVEL_CODE (
+                sequence: 199
+            )
+
+            displayColumn PAYMENT_CURRENCY_CODE (
+                sequence: 58
+            )
+
+            displayColumn PAYMENT_HOLD_DATE (
+                sequence: 67
+            )
+
+            displayColumn PAYMENT_METHOD_LOOKUP_CODE (
+                sequence: 79
+            )
+
+            displayColumn PAYMENT_PRIORITY (
+                sequence: 59
+            )
+
+            displayColumn PAYMENT_REASON_CODE (
+                sequence: 89
+            )
+
+            displayColumn PAYMENT_REASON_COMMENTS (
+                sequence: 90
+            )
+
+            displayColumn PAYMENT_TEXT_MESSAGE1 (
+                sequence: 85
+            )
+
+            displayColumn PAYMENT_TEXT_MESSAGE2 (
+                sequence: 86
+            )
+
+            displayColumn PAYMENT_TEXT_MESSAGE3 (
+                sequence: 87
+            )
+
+            displayColumn PAY_DATE_BASIS_LOOKUP_CODE (
+                sequence: 71
+            )
+
+            displayColumn PAY_GROUP_LOOKUP_CODE (
+                sequence: 60
+            )
+
+            displayColumn PAY_ON_CODE (
+                sequence: 31
+            )
+
+            displayColumn PAY_ON_RECEIPT_SUMMARY_CODE (
+                sequence: 41
+            )
+
+            displayColumn PAY_ON_USE_FLAG (
+                sequence: 35
+            )
+
+            displayColumn PAY_SITE_FLAG (
+                sequence: 13
+            )
+
+            displayColumn PCARD_SITE_FLAG (
+                sequence: 12
+            )
+
+            displayColumn PO_ACK_REQD_CODE (
+                sequence: 196
+            )
+
+            displayColumn PO_ACK_REQD_DAYS (
+                sequence: 197
+            )
+
+            displayColumn PRIMARY_PAY_SITE_FLAG (
+                sequence: 14
+            )
+
+            displayColumn PROCUREMENT_BUSINESS_UNIT_NAME (
+                sequence: 6
+            )
+
+            displayColumn PURCHASING_HOLD_REASON (
+                sequence: 26
+            )
+
+            displayColumn PURCHASING_SITE_FLAG (
+                sequence: 11
+            )
+
+            displayColumn QTY_RCV_EXCEPTION_CODE (
+                sequence: 48
+            )
+
+            displayColumn QTY_RCV_TOLERANCE (
+                sequence: 47
+            )
+
+            displayColumn RECEIPT_DAYS_EXCEPTION_CODE (
+                sequence: 53
+            )
+
+            displayColumn RECEIVING_ROUTING_ID (
+                sequence: 46
+            )
+
+            displayColumn REMITTANCE_EMAIL (
+                sequence: 92
+            )
+
+            displayColumn REMITTANCE_FAX (
+                sequence: 93
+            )
+
+            displayColumn REMIT_ADVICE_DELIVERY_METHOD (
+                sequence: 91
+            )
+
+            displayColumn RFQ_ONLY_SITE_FLAG (
+                sequence: 10
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SELLING_COMPANY_IDENTIFIER (
+                sequence: 43
+            )
+
+            displayColumn SERVICES_TOLERANCE (
+                sequence: 62
+            )
+
+            displayColumn SERVICE_LEVEL_CODE (
+                sequence: 29
+            )
+
+            displayColumn SETTLEMENT_PRIORITY (
+                sequence: 84
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 202
+            )
+
+            displayColumn SUPPLIER_NOTIF_METHOD (
+                sequence: 20
+            )
+
+            displayColumn TAX_REPORTING_SITE_FLAG (
+                sequence: 15
+            )
+
+            displayColumn TERMS_DATE_BASIS (
+                sequence: 70
+            )
+
+            displayColumn TERMS_NAME (
+                sequence: 69
+            )
+
+            displayColumn TOLERANCE_NAME (
+                sequence: 61
+            )
+
+            displayColumn VAT_CODE (
+                sequence: 77
+            )
+
+            displayColumn VAT_REGISTRATION_NUM (
+                sequence: 78
+            )
+
+            displayColumn VENDOR_NAME (
+                sequence: 3
+            )
+
+            displayColumn VENDOR_SITE_CODE (
+                sequence: 4
+            )
+
+            displayColumn VENDOR_SITE_CODE_ALT (
+                sequence: 16
+            )
+
+            displayColumn VENDOR_SITE_CODE_NEW (
+                sequence: 8
+            )
+
+        )
+
+    )
+
+    region suppliers (
+        name: Suppliers
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_SUPPLIERS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 22825064489313624
+        }
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 200
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: T
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 10
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 180
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 50
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column VENDOR_NAME (
+            type: plainText
+            heading {
+                heading: Vendor Name
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 358493 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn PREFIX (
+                sequence: 2
+            )
+
+            displayColumn RUN_ID (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 7
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 4
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 6
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 3
+            )
+
+            displayColumn VENDOR_NAME (
+                sequence: 5
+            )
+
+        )
+
+    )
+
+    pageItem P2_SCENARIO (
+        type: selectList
+        label {
+            label: Scenario
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT scenario_name d, scenario_name r FROM dmt_scenario_tbl WHERE status = 'ACTIVE' ORDER BY scenario_name
+            displayExtraValues: false
+            nullDisplayValue: -- No Scenario --
+        }
+        layout {
+            sequence: 15
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P2_UPLOAD_FILE (
+        type: fileUpload
+        label {
+            label: Upload File
+            alignment: left
+        }
+        storage {
+            type: appTempFiles
+        }
+        layout {
+            sequence: 20
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 30
+        }
+    )
+
+    pageItem P2_UPLOAD_OBJECT (
+        type: selectList
+        label {
+            label: Target Object
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT DISPLAY_NAME d, OBJECT_CODE r
+                FROM DMT_UPLOAD_OBJECT_TBL
+                WHERE PAGE_NUMBER = 2 AND IS_ACTIVE = 'Y'
+                ORDER BY DISPLAY_ORDER
+                ```
+        }
+        layout {
+            sequence: 10
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button upload-csv (
+        buttonName: UPLOAD_CSV
+        label: Upload CSV
+        layout {
+            sequence: 30
+            region: @bulk-upload
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    process upload-csv (
+        name: Upload CSV
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                    l_rows_loaded  NUMBER;
+                    l_rows_errored NUMBER;
+                    l_batch_id     NUMBER;
+                    l_error_msg    VARCHAR2(4000);
+                BEGIN
+                    DMT_CSV_UPLOAD_PKG.UPLOAD_CSV(
+                        p_file_name    => :P2_UPLOAD_FILE,
+                        p_object_code  => :P2_UPLOAD_OBJECT,
+                        p_rows_loaded  => l_rows_loaded,
+                        p_rows_errored => l_rows_errored,
+                        p_batch_id_out => l_batch_id,
+                        p_error_msg     => l_error_msg,
+                        p_scenario_name => :P2_SCENARIO
+                    );
+                    IF l_error_msg IS NOT NULL THEN
+                        APEX_ERROR.ADD_ERROR(p_message => l_error_msg, p_display_location => 'INLINE_IN_NOTIFICATION');
+                    ELSE
+                        APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
+                            l_rows_loaded || ' rows loaded, ' || l_rows_errored || ' errors. Batch ID: ' || l_batch_id;
+                    END IF;
+                END;
+                ```
+        }
+        execution {
+            sequence: 10
+        }
+        advanced {
+            executionMappingIdentifier: 22378271216102605
+        }
+        serverSideCondition {
+            whenButtonPressed: @upload-csv
+        }
+    )
+
+)
+

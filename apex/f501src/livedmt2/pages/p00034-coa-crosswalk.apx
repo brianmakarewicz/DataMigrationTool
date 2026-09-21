@@ -1,0 +1,807 @@
+page 34 (
+    name: COA Crosswalk
+    alias: COA-CROSSWALK
+    title: COA Crosswalk
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region coa-crosswalk (
+        name: COA Crosswalk
+        type: interactiveGrid
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT coa_mapping_id, map_config_id,
+                       source_concat, target_concat,
+                       target_segment1, target_segment2, target_segment3, target_segment4,
+                       target_segment5, target_segment6, target_segment7, target_segment8,
+                       source_type, active_flag, notes,
+                       created_by, created_date
+                FROM DMT_COA_MAPPING
+                WHERE map_config_id = (
+                    SELECT map_config_id FROM DMT_COA_MAP_CONFIG WHERE config_code = :P34_CONFIG_CODE
+                )
+                ORDER BY source_concat
+                ```
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        toolbar {
+            controls: [
+                searchCol
+                searchField
+                actionsMenu
+                resetButton
+                saveButton
+            ]
+        }
+        download {
+            formats: [
+                csv
+                html
+                pdf
+                excel
+            ]
+        }
+        advanced {
+            savedReportMappingIdentifier: 50060876907959424
+        }
+
+        savedReport 500613 (
+            visibility: primary
+            view {
+                default: grid
+            }
+            singleRowView {
+                displayedColumns: true
+            }
+
+            displayColumn (
+                column: @COA_MAPPING_ID
+                layout {
+                    sequence: 1
+                }
+            )
+
+            displayColumn (
+                column: @MAP_CONFIG_ID
+                layout {
+                    sequence: 2
+                }
+            )
+
+            displayColumn (
+                column: @SOURCE_CONCAT
+                layout {
+                    sequence: 3
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_CONCAT
+                layout {
+                    sequence: 4
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT1
+                layout {
+                    sequence: 5
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT2
+                layout {
+                    sequence: 6
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT3
+                layout {
+                    sequence: 7
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT4
+                layout {
+                    sequence: 8
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT5
+                layout {
+                    sequence: 9
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT6
+                layout {
+                    sequence: 10
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT7
+                layout {
+                    sequence: 11
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT8
+                layout {
+                    sequence: 12
+                }
+            )
+
+            displayColumn (
+                column: @SOURCE_TYPE
+                layout {
+                    sequence: 13
+                }
+            )
+
+            displayColumn (
+                column: @ACTIVE_FLAG
+                layout {
+                    sequence: 14
+                }
+            )
+
+            displayColumn (
+                column: @NOTES
+                layout {
+                    sequence: 15
+                }
+            )
+
+            displayColumn (
+                column: @CREATED_BY
+                layout {
+                    sequence: 16
+                }
+            )
+
+            displayColumn (
+                column: @CREATED_DATE
+                layout {
+                    sequence: 17
+                }
+            )
+
+        )
+
+        column ACTIVE_FLAG (
+            type: textField
+            heading {
+                heading: Active Flag
+            }
+            layout {
+                sequence: 140
+            }
+            validation {
+                valueRequired: true
+                maxLength: 1
+            }
+            source {
+                databaseColumn: ACTIVE_FLAG
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column COA_MAPPING_ID (
+            type: numberField
+            heading {
+                heading: Coa Mapping Id
+                alignment: end
+            }
+            layout {
+                sequence: 10
+                columnAlignment: end
+            }
+            validation {
+                valueRequired: true
+            }
+            source {
+                databaseColumn: COA_MAPPING_ID
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column CREATED_BY (
+            type: textField
+            heading {
+                heading: Created By
+            }
+            layout {
+                sequence: 160
+            }
+            validation {
+                maxLength: 100
+            }
+            source {
+                databaseColumn: CREATED_BY
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column CREATED_DATE (
+            type: datePicker
+            heading {
+                heading: Created Date
+            }
+            layout {
+                sequence: 170
+            }
+            source {
+                databaseColumn: CREATED_DATE
+                dataType: date
+            }
+        )
+
+        column MAP_CONFIG_ID (
+            type: numberField
+            heading {
+                heading: Map Config Id
+                alignment: end
+            }
+            layout {
+                sequence: 20
+                columnAlignment: end
+            }
+            validation {
+                valueRequired: true
+            }
+            source {
+                databaseColumn: MAP_CONFIG_ID
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column NOTES (
+            type: textarea
+            heading {
+                heading: Notes
+            }
+            layout {
+                sequence: 150
+            }
+            validation {
+                maxLength: 500
+            }
+            source {
+                databaseColumn: NOTES
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column SOURCE_CONCAT (
+            type: textarea
+            heading {
+                heading: Source Concat
+            }
+            layout {
+                sequence: 30
+            }
+            validation {
+                valueRequired: true
+                maxLength: 500
+            }
+            source {
+                databaseColumn: SOURCE_CONCAT
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column SOURCE_TYPE (
+            type: textField
+            heading {
+                heading: Source Type
+            }
+            layout {
+                sequence: 130
+            }
+            validation {
+                valueRequired: true
+                maxLength: 20
+            }
+            source {
+                databaseColumn: SOURCE_TYPE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column TARGET_CONCAT (
+            type: textarea
+            heading {
+                heading: Target Concat
+            }
+            layout {
+                sequence: 40
+            }
+            validation {
+                valueRequired: true
+                maxLength: 500
+            }
+            source {
+                databaseColumn: TARGET_CONCAT
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column TARGET_SEGMENT1 (
+            type: textField
+            heading {
+                heading: Target Segment1
+            }
+            layout {
+                sequence: 50
+            }
+            validation {
+                maxLength: 30
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT1
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column TARGET_SEGMENT2 (
+            type: textField
+            heading {
+                heading: Target Segment2
+            }
+            layout {
+                sequence: 60
+            }
+            validation {
+                maxLength: 30
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT2
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column TARGET_SEGMENT3 (
+            type: textField
+            heading {
+                heading: Target Segment3
+            }
+            layout {
+                sequence: 70
+            }
+            validation {
+                maxLength: 30
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT3
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column TARGET_SEGMENT4 (
+            type: textField
+            heading {
+                heading: Target Segment4
+            }
+            layout {
+                sequence: 80
+            }
+            validation {
+                maxLength: 30
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT4
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column TARGET_SEGMENT5 (
+            type: textField
+            heading {
+                heading: Target Segment5
+            }
+            layout {
+                sequence: 90
+            }
+            validation {
+                maxLength: 30
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT5
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column TARGET_SEGMENT6 (
+            type: textField
+            heading {
+                heading: Target Segment6
+            }
+            layout {
+                sequence: 100
+            }
+            validation {
+                maxLength: 30
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT6
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column TARGET_SEGMENT7 (
+            type: textField
+            heading {
+                heading: Target Segment7
+            }
+            layout {
+                sequence: 110
+            }
+            validation {
+                maxLength: 30
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT7
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column TARGET_SEGMENT8 (
+            type: textField
+            heading {
+                heading: Target Segment8
+            }
+            layout {
+                sequence: 120
+            }
+            validation {
+                maxLength: 30
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT8
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+        pageHeader {
+            pageHeaderText: COA Crosswalk
+        }
+    )
+
+    region unmapped-source-combos (
+        name: Unmapped Source Combos
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT sc.concat_segments,
+                       sc.segment1, sc.segment2, sc.segment3, sc.segment4, sc.segment5, sc.segment6
+                FROM DMT_LOOKUP.DMT_COA_SOURCE_COMBOS sc
+                JOIN DMT_LOOKUP.DMT_COA_MAP_CONFIG mc ON mc.source_coa_set_id = sc.coa_set_id
+                WHERE mc.config_code = :P34_CONFIG_CODE
+                  AND sc.enabled_flag = 'Y'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM DMT_LOOKUP.DMT_COA_MAPPING m
+                      WHERE m.map_config_id = mc.map_config_id
+                      AND m.source_concat = sc.concat_segments
+                      AND m.active_flag = 'Y'
+                  )
+                ORDER BY sc.concat_segments
+                ```
+        }
+        layout {
+            sequence: 20
+            parentRegion: @coa-crosswalk
+            slot: regionBody
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        componentAppearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Report--altRowsDefault
+                t-Report--rowHighlight
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+
+        column CONCAT_SEGMENTS (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Concat Segments
+            }
+            layout {
+                sequence: 10
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column SEGMENT1 (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Segment1
+            }
+            layout {
+                sequence: 20
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column SEGMENT2 (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Segment2
+            }
+            layout {
+                sequence: 30
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column SEGMENT3 (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Segment3
+            }
+            layout {
+                sequence: 40
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column SEGMENT4 (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Segment4
+            }
+            layout {
+                sequence: 50
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column SEGMENT5 (
+            reportColumnQueryId: 6
+            derivedColumn: N
+            heading {
+                heading: Segment5
+            }
+            layout {
+                sequence: 60
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column SEGMENT6 (
+            reportColumnQueryId: 7
+            derivedColumn: N
+            heading {
+                heading: Segment6
+            }
+            layout {
+                sequence: 70
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+    )
+
+    pageItem P34_CONFIG_CODE (
+        type: selectList
+        label {
+            label: Mapping Config
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT config_code || ' — ' || description AS d, config_code AS r FROM DMT_COA_MAP_CONFIG WHERE active_flag = 'Y' ORDER BY config_code
+        }
+        layout {
+            sequence: 10
+            region: @coa-crosswalk
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+)
+

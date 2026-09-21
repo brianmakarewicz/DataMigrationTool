@@ -1,0 +1,1482 @@
+page 17 (
+    name: Value Mapping
+    alias: VALUE-MAPPING
+    title: Value Mapping
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region ebs-values-with-no-fusion-equivalent (
+        name: EBS Values With No Fusion Equivalent
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT APEX_ITEM.HIDDEN(10, e.ebs_value_id) ||
+                       APEX_ITEM.POPUP_FROM_QUERY(
+                         p_idx        => 11,
+                         p_value      => e.mapped_to,
+                         p_lov_query  => 'select fusion_value d, fusion_value r from DMT_LOOKUP.DMT_LKP_FUSION_VALUES where lookup_type = ''' || REPLACE(NVL(:P17_LOOKUP_TYPE,'~'), '''', '''''') || ''' order by 1',
+                         p_width      => 30,
+                         p_max_length => 500,
+                         p_attributes => 'style="width:240px;"'
+                       ) AS map_to,
+                       e.ebs_value,
+                       e.ebs_description,
+                       e.default_fusion_value,
+                       CASE WHEN e.mapped_to IS NOT NULL THEN 'MAPPED'
+                            WHEN e.default_fusion_value IS NOT NULL THEN 'HAS DEFAULT'
+                            ELSE 'NEEDS MAPPING'
+                       END AS resolution_status
+                  FROM DMT_LOOKUP.DMT_LKP_EBS_UNMATCHED_V e
+                 WHERE e.lookup_type = :P17_LOOKUP_TYPE
+                 ORDER BY resolution_status DESC, e.ebs_value
+                ```
+            pageItemsToSubmit: P17_LOOKUP_TYPE
+        }
+        layout {
+            sequence: 40
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        componentAppearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Report--altRowsDefault
+                t-Report--rowHighlight
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+
+        column DEFAULT_FUSION_VALUE (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Default Fusion Value
+            }
+            layout {
+                sequence: 40
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column EBS_DESCRIPTION (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Ebs Description
+            }
+            layout {
+                sequence: 20
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column EBS_VALUE (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Ebs Value
+            }
+            layout {
+                sequence: 10
+            }
+            sorting {
+                sortable: false
+            }
+            security {
+                escapeSpecialChars: false
+            }
+        )
+
+        column MAP_TO (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Map To
+            }
+            layout {
+                sequence: 60
+            }
+            sorting {
+                sortable: false
+            }
+            security {
+                escapeSpecialChars: false
+            }
+        )
+
+        column RESOLUTION_STATUS (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Resolution Status
+            }
+            layout {
+                sequence: 50
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+    )
+
+    region suggested-mappings (
+        name: Suggested Mappings
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT APEX_ITEM.CHECKBOX2(1, mapping_id) AS select_row,
+                       mapping_id,
+                       ebs_value,
+                       fusion_value,
+                       match_score AS combined_score,
+                       REGEXP_SUBSTR(notes, 'JW=(\d+)', 1, 1, NULL, 1) AS jaro_winkler,
+                       REGEXP_SUBSTR(notes, 'ED=(\d+)', 1, 1, NULL, 1) AS edit_distance,
+                       notes
+                  FROM DMT_LOOKUP.DMT_LKP_MAPPING
+                 WHERE lookup_type = :P17_LOOKUP_TYPE
+                   AND suggested_flag = 'Y'
+                   AND active_flag = 'N'
+                 ORDER BY match_score DESC
+                ```
+            pageItemsToSubmit: P17_LOOKUP_TYPE
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        componentAppearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Report--altRowsDefault
+                t-Report--rowHighlight
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+
+        column COMBINED_SCORE (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Combined
+                alignment: end
+            }
+            layout {
+                sequence: 70
+                columnAlignment: end
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column EBS_VALUE (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Ebs Value
+            }
+            layout {
+                sequence: 30
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column EDIT_DISTANCE (
+            reportColumnQueryId: 7
+            derivedColumn: N
+            heading {
+                heading: Edit Distance
+            }
+            layout {
+                sequence: 90
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column FUSION_VALUE (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Fusion Value
+            }
+            layout {
+                sequence: 40
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column JARO_WINKLER (
+            reportColumnQueryId: 6
+            derivedColumn: N
+            heading {
+                heading: Jaro-Winkler
+            }
+            layout {
+                sequence: 80
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column MAPPING_ID (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Mapping Id
+                alignment: end
+            }
+            layout {
+                sequence: 20
+                columnAlignment: end
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column NOTES (
+            reportColumnQueryId: 8
+            derivedColumn: N
+            heading {
+                heading: Match Notes
+            }
+            layout {
+                sequence: 60
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column SELECT_ROW (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Select Row
+            }
+            layout {
+                sequence: 10
+            }
+            sorting {
+                sortable: false
+            }
+            security {
+                escapeSpecialChars: false
+            }
+        )
+
+    )
+
+    region unmatched-ebs-values-ig-version (
+        name: Unmatched EBS Values (IG version)
+        type: interactiveGrid
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT e.ebs_value_id,
+                       e.lookup_type,
+                       e.ebs_value,
+                       e.ebs_description,
+                       e.mapped_to,
+                       e.default_fusion_value,
+                       CASE WHEN e.mapped_to IS NOT NULL THEN 'MAPPED'
+                            WHEN e.default_fusion_value IS NOT NULL THEN 'HAS DEFAULT'
+                            ELSE 'NEEDS MAPPING'
+                       END AS resolution_status
+                  FROM DMT_LOOKUP.DMT_LKP_EBS_UNMATCHED_V e
+                 WHERE e.lookup_type = :P17_LOOKUP_TYPE
+                ```
+            pageItemsToSubmit: P17_LOOKUP_TYPE
+        }
+        layout {
+            sequence: 50
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        toolbar {
+            controls: [
+                searchCol
+                searchField
+                actionsMenu
+                resetButton
+                saveButton
+            ]
+        }
+        download {
+            formats: [
+                csv
+                html
+                excel
+                pdf
+            ]
+        }
+        advanced {
+            savedReportMappingIdentifier: 49620808035489210
+        }
+
+        savedReport 499662 (
+            visibility: primary
+            view {
+                default: grid
+            }
+            singleRowView {
+                displayedColumns: true
+            }
+
+            displayColumn (
+                column: @EBS_VALUE_ID
+                layout {
+                    sequence: 1
+                }
+            )
+
+            displayColumn (
+                column: @LOOKUP_TYPE
+                layout {
+                    sequence: 2
+                }
+            )
+
+            displayColumn (
+                column: @EBS_VALUE
+                layout {
+                    sequence: 3
+                }
+            )
+
+            displayColumn (
+                column: @EBS_DESCRIPTION
+                layout {
+                    sequence: 4
+                }
+            )
+
+            displayColumn (
+                column: @MAPPED_TO
+                layout {
+                    sequence: 5
+                }
+            )
+
+            displayColumn (
+                column: @DEFAULT_FUSION_VALUE
+                layout {
+                    sequence: 6
+                }
+            )
+
+            displayColumn (
+                column: @RESOLUTION_STATUS
+                layout {
+                    sequence: 7
+                }
+            )
+
+        )
+
+        column DEFAULT_FUSION_VALUE (
+            type: textarea
+            heading {
+                heading: Default Fusion Value
+            }
+            layout {
+                sequence: 60
+            }
+            validation {
+                maxLength: 500
+            }
+            source {
+                databaseColumn: DEFAULT_FUSION_VALUE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column EBS_DESCRIPTION (
+            type: textarea
+            heading {
+                heading: Ebs Description
+            }
+            layout {
+                sequence: 40
+            }
+            validation {
+                maxLength: 500
+            }
+            source {
+                databaseColumn: EBS_DESCRIPTION
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column EBS_VALUE (
+            type: textarea
+            heading {
+                heading: Ebs Value
+            }
+            layout {
+                sequence: 30
+            }
+            validation {
+                valueRequired: true
+                maxLength: 500
+            }
+            source {
+                databaseColumn: EBS_VALUE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column EBS_VALUE_ID (
+            type: numberField
+            heading {
+                heading: Ebs Value Id
+                alignment: end
+            }
+            layout {
+                sequence: 10
+                columnAlignment: end
+            }
+            validation {
+                valueRequired: true
+            }
+            source {
+                databaseColumn: EBS_VALUE_ID
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column LOOKUP_TYPE (
+            type: textField
+            heading {
+                heading: Lookup Type
+            }
+            layout {
+                sequence: 20
+            }
+            validation {
+                valueRequired: true
+                maxLength: 150
+            }
+            source {
+                databaseColumn: LOOKUP_TYPE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column MAPPED_TO (
+            type: textarea
+            heading {
+                heading: Mapped To
+            }
+            layout {
+                sequence: 50
+            }
+            validation {
+                maxLength: 500
+            }
+            source {
+                databaseColumn: MAPPED_TO
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column RESOLUTION_STATUS (
+            type: textField
+            heading {
+                heading: Resolution Status
+            }
+            layout {
+                sequence: 70
+            }
+            validation {
+                maxLength: 13
+            }
+            source {
+                databaseColumn: RESOLUTION_STATUS
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+    )
+
+    region value-mapping (
+        name: Value Mapping
+        type: interactiveGrid
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT mapping_id, lookup_type, ebs_value, fusion_value, match_score, active_flag, notes, created_by, created_date, last_update_by, last_update_date FROM DMT_LOOKUP.DMT_LKP_MAPPING WHERE LOOKUP_TYPE = :P17_LOOKUP_TYPE AND NVL(SUGGESTED_FLAG,'N') = 'N'
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        edit {
+            enabled: true
+            allowedOperations: [
+                add
+                update
+                delete
+            ]
+        }
+        toolbar {
+            controls: [
+                searchCol
+                searchField
+                actionsMenu
+                resetButton
+                saveButton
+            ]
+        }
+        download {
+            formats: [
+                csv
+                html
+                pdf
+                excel
+            ]
+        }
+        advanced {
+            savedReportMappingIdentifier: 49014630882841307
+        }
+
+        savedReport 490151 (
+            visibility: primary
+            view {
+                default: grid
+            }
+            singleRowView {
+                displayedColumns: true
+            }
+
+            displayColumn (
+                column: @MATCH_SCORE
+                layout {
+                    sequence: 11
+                }
+            )
+
+            displayColumn (
+                column: @MAPPING_ID
+                layout {
+                    sequence: 1
+                }
+            )
+
+            displayColumn (
+                column: @LOOKUP_TYPE
+                layout {
+                    sequence: 2
+                }
+            )
+
+            displayColumn (
+                column: @EBS_VALUE
+                layout {
+                    sequence: 3
+                }
+            )
+
+            displayColumn (
+                column: @FUSION_VALUE
+                layout {
+                    sequence: 4
+                }
+            )
+
+            displayColumn (
+                column: @ACTIVE_FLAG
+                layout {
+                    sequence: 5
+                }
+            )
+
+            displayColumn (
+                column: @NOTES
+                layout {
+                    sequence: 6
+                }
+            )
+
+            displayColumn (
+                column: @CREATED_BY
+                layout {
+                    sequence: 7
+                }
+            )
+
+            displayColumn (
+                column: @CREATED_DATE
+                layout {
+                    sequence: 8
+                }
+            )
+
+            displayColumn (
+                column: @LAST_UPDATE_BY
+                layout {
+                    sequence: 9
+                }
+            )
+
+            displayColumn (
+                column: @LAST_UPDATE_DATE
+                layout {
+                    sequence: 10
+                }
+            )
+
+            displayColumn (
+                column: @APEX$ROW_ACTION
+                layout {
+                    sequence: 0
+                }
+            )
+
+        )
+
+        column ACTIVE_FLAG (
+            type: selectList
+            heading {
+                heading: Active Flag
+            }
+            lov {
+                type: staticValues
+                staticValues: STATIC:Yes;Y,No;N
+            }
+            layout {
+                sequence: 70
+            }
+            validation {
+                valueRequired: true
+            }
+            source {
+                databaseColumn: ACTIVE_FLAG
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: useLov
+            }
+        )
+
+        column APEX$ROW_ACTION (
+            type: actionsMenu
+            layout {
+                sequence: 20
+            }
+        )
+
+        column APEX$ROW_SELECTOR (
+            type: rowSelector
+            layout {
+                sequence: 10
+            }
+        )
+
+        column CREATED_BY (
+            type: hidden
+            layout {
+                sequence: 90
+            }
+            source {
+                databaseColumn: CREATED_BY
+                dataType: varchar2
+            }
+            exportPrinting {
+                includeInExportPrint: false
+            }
+        )
+
+        column CREATED_DATE (
+            type: hidden
+            layout {
+                sequence: 100
+            }
+            source {
+                databaseColumn: CREATED_DATE
+                dataType: date
+            }
+            exportPrinting {
+                includeInExportPrint: false
+            }
+        )
+
+        column EBS_VALUE (
+            type: selectList
+            heading {
+                heading: Ebs Value
+            }
+            lov {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    SELECT ebs_value || NVL2(ebs_description, ' -- ' || ebs_description, '') AS d,
+                           ebs_value AS r
+                      FROM DMT_LOOKUP.DMT_LKP_EBS_VALUES
+                     WHERE lookup_type = :P17_LOOKUP_TYPE
+                       AND active_flag = 'Y'
+                     ORDER BY ebs_value
+                    ```
+                nullDisplayValue: - Select EBS Value -
+            }
+            layout {
+                sequence: 50
+            }
+            validation {
+                valueRequired: true
+            }
+            source {
+                databaseColumn: EBS_VALUE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: useLov
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column FUSION_VALUE (
+            type: selectList
+            heading {
+                heading: Fusion Value
+            }
+            lov {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    SELECT fusion_value || NVL2(fusion_description, ' -- ' || fusion_description, '') AS d,
+                           fusion_value AS r
+                      FROM DMT_LOOKUP.DMT_LKP_FUSION_VALUES
+                     WHERE lookup_type = :P17_LOOKUP_TYPE
+                       AND active_flag = 'Y'
+                     ORDER BY fusion_value
+                    ```
+                nullDisplayValue: - Select Fusion Value -
+            }
+            layout {
+                sequence: 60
+            }
+            validation {
+                valueRequired: true
+            }
+            source {
+                databaseColumn: FUSION_VALUE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: useLov
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column LAST_UPDATE_BY (
+            type: hidden
+            layout {
+                sequence: 110
+            }
+            source {
+                databaseColumn: LAST_UPDATE_BY
+                dataType: varchar2
+            }
+            exportPrinting {
+                includeInExportPrint: false
+            }
+        )
+
+        column LAST_UPDATE_DATE (
+            type: hidden
+            layout {
+                sequence: 120
+            }
+            source {
+                databaseColumn: LAST_UPDATE_DATE
+                dataType: date
+            }
+            exportPrinting {
+                includeInExportPrint: false
+            }
+        )
+
+        column LOOKUP_TYPE (
+            type: hidden
+            layout {
+                sequence: 40
+            }
+            source {
+                databaseColumn: LOOKUP_TYPE
+                dataType: varchar2
+            }
+            default {
+                type: item
+                item: P17_LOOKUP_TYPE
+            }
+            exportPrinting {
+                includeInExportPrint: false
+            }
+        )
+
+        column MAPPING_ID (
+            type: hidden
+            layout {
+                sequence: 30
+            }
+            source {
+                databaseColumn: MAPPING_ID
+                dataType: number
+                primaryKey: true
+            }
+            exportPrinting {
+                includeInExportPrint: false
+            }
+        )
+
+        column MATCH_SCORE (
+            type: displayOnly
+            heading {
+                heading: Match Score
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                databaseColumn: MATCH_SCORE
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column NOTES (
+            type: textarea
+            heading {
+                heading: Notes
+            }
+            layout {
+                sequence: 80
+            }
+            validation {
+                maxLength: 500
+            }
+            source {
+                databaseColumn: NOTES
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+        pageHeader {
+            pageHeaderText: Value Mapping
+        }
+    )
+
+    pageItem P17_DEFAULT_VALUE (
+        type: selectList
+        label {
+            label: Type Default
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT fusion_value || NVL2(fusion_description, ' -- ' || fusion_description, '') AS d, fusion_value AS r FROM DMT_LOOKUP.DMT_LKP_FUSION_VALUES WHERE lookup_type = :P17_LOOKUP_TYPE AND active_flag = 'Y' ORDER BY fusion_value
+            nullDisplayValue: - No Default (pass-through) -
+        }
+        cascadingLov {
+            parentItems: P17_LOOKUP_TYPE
+        }
+        layout {
+            sequence: 10
+            region: @value-mapping
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+        advanced {
+            postText: <button type="button" class="t-Button t-Button--simple t-Button--primary" style="margin-left:8px;" onclick="apex.event.trigger('#P17_DEFAULT_VALUE','change');">Save</button>
+        }
+        source {
+            type: sqlQuerySingleValue
+            sqlQuery: SELECT NVL(default_fusion_value, '(Not set)') FROM DMT_LOOKUP.DMT_LKP_TYPE_CONFIG WHERE lookup_type = :P17_LOOKUP_TYPE
+            used: always
+        }
+    )
+
+    pageItem P17_LOOKUP_TYPE (
+        type: selectList
+        label {
+            label: Lookup Type
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT lookup_type d, lookup_type r FROM DMT_LOOKUP.DMT_LKP_TYPE_CONFIG ORDER BY 1
+        }
+        layout {
+            sequence: 1
+            region: @value-mapping
+            slot: regionBody
+            alignment: left
+            startNewRow: false
+            newColumn: false
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button accept-all (
+        buttonName: ACCEPT_ALL
+        label: Accept All for Type
+        layout {
+            sequence: 30
+            region: @suggested-mappings
+            slot: regionBody
+            startNewRow: false
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button accept-selected (
+        buttonName: ACCEPT_SELECTED
+        label: Accept Selected
+        layout {
+            sequence: 10
+            region: @suggested-mappings
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button reject-all (
+        buttonName: REJECT_ALL
+        label: Reject All for Type
+        layout {
+            sequence: 40
+            region: @suggested-mappings
+            slot: regionBody
+            startNewRow: false
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: t-Button--danger
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button reject-selected (
+        buttonName: REJECT_SELECTED
+        label: Reject Selected
+        layout {
+            sequence: 20
+            region: @suggested-mappings
+            slot: regionBody
+            startNewRow: false
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: t-Button--danger
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button save-unmatched-mappings (
+        buttonName: SAVE_UNMATCHED_MAPPINGS
+        label: Save Quick Mappings
+        layout {
+            sequence: 10
+            region: @ebs-values-with-no-fusion-equivalent
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    dynamicAction refresh-default-value-on-type-change (
+        name: Refresh Default Value on Type Change
+        execution {
+            sequence: 20
+        }
+        when {
+            selectionType: items
+            items: P17_LOOKUP_TYPE
+        }
+
+        action native-set-value (
+            action: setValue
+            settings {
+                type: sqlQuery
+                sqlQuery: SELECT default_fusion_value FROM DMT_LOOKUP.DMT_LKP_TYPE_CONFIG WHERE lookup_type = :P17_LOOKUP_TYPE
+                itemsToSubmit: P17_LOOKUP_TYPE
+            }
+            affectedElements {
+                selectionType: items
+                items: P17_DEFAULT_VALUE
+            }
+            execution {
+                sequence: 10
+            }
+        )
+
+    )
+
+    dynamicAction save-default-value-on-change (
+        name: Save Default Value on Change
+        execution {
+            sequence: 10
+        }
+        when {
+            selectionType: items
+            items: P17_DEFAULT_VALUE
+        }
+
+        action native-execute-plsql-code (
+            action: executeServerSideCode
+            settings {
+                plsqlCode:
+                    ```plsql
+                    UPDATE DMT_LOOKUP.DMT_LKP_TYPE_CONFIG
+                       SET default_fusion_value = NULLIF(:P17_DEFAULT_VALUE, '')
+                     WHERE lookup_type = :P17_LOOKUP_TYPE;
+                    COMMIT;
+                    ```
+                itemsToSubmit: [
+                    P17_DEFAULT_VALUE
+                    P17_LOOKUP_TYPE
+                ]
+            }
+            execution {
+                sequence: 10
+                fireOnInit: false
+            }
+        )
+
+        action native-javascript-code (
+            action: executeJsCode
+            settings {
+                jsCode: apex.message.showPageSuccess('Default value saved.');
+            }
+            execution {
+                sequence: 20
+                fireOnInit: false
+            }
+        )
+
+    )
+
+    process accept-all-suggestions-for-type (
+        name: Accept All Suggestions for Type
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                BEGIN
+                  DMT_LOOKUP.DMT_LKP_SUGGEST_PKG.ACCEPT_ALL_FOR_TYPE(:P17_LOOKUP_TYPE);
+                END;
+                ```
+        }
+        execution {
+            sequence: 40
+        }
+        advanced {
+            executionMappingIdentifier: 49051601255010035
+        }
+        serverSideCondition {
+            whenButtonPressed: @accept-all
+        }
+    )
+
+    process accept-selected-suggestions (
+        name: Accept Selected Suggestions
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  l_ids VARCHAR2(32767);
+                BEGIN
+                  FOR i IN 1..APEX_APPLICATION.G_F01.COUNT LOOP
+                    l_ids := l_ids || ':' || APEX_APPLICATION.G_F01(i);
+                  END LOOP;
+                  l_ids := LTRIM(l_ids, ':');
+                  IF l_ids IS NOT NULL THEN
+                    DMT_LOOKUP.DMT_LKP_SUGGEST_PKG.ACCEPT_SUGGESTIONS(l_ids);
+                  END IF;
+                END;
+                ```
+        }
+        execution {
+            sequence: 20
+        }
+        advanced {
+            executionMappingIdentifier: 49051449049010033
+        }
+        serverSideCondition {
+            whenButtonPressed: @accept-selected
+        }
+    )
+
+    process reject-all-suggestions-for-type (
+        name: Reject All Suggestions for Type
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                BEGIN
+                  DMT_LOOKUP.DMT_LKP_SUGGEST_PKG.REJECT_ALL_FOR_TYPE(:P17_LOOKUP_TYPE);
+                END;
+                ```
+        }
+        execution {
+            sequence: 50
+        }
+        advanced {
+            executionMappingIdentifier: 49051738024010036
+        }
+        serverSideCondition {
+            whenButtonPressed: @reject-all
+        }
+    )
+
+    process reject-selected-suggestions (
+        name: Reject Selected Suggestions
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  l_ids VARCHAR2(32767);
+                BEGIN
+                  FOR i IN 1..APEX_APPLICATION.G_F01.COUNT LOOP
+                    l_ids := l_ids || ':' || APEX_APPLICATION.G_F01(i);
+                  END LOOP;
+                  l_ids := LTRIM(l_ids, ':');
+                  IF l_ids IS NOT NULL THEN
+                    DMT_LOOKUP.DMT_LKP_SUGGEST_PKG.REJECT_SUGGESTIONS(l_ids);
+                  END IF;
+                END;
+                ```
+        }
+        execution {
+            sequence: 30
+        }
+        advanced {
+            executionMappingIdentifier: 49051561998010034
+        }
+        serverSideCondition {
+            whenButtonPressed: @reject-selected
+        }
+    )
+
+    process save-quick-mappings-from-unmatched (
+        name: Save Quick Mappings from Unmatched
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                   l_user VARCHAR2(100) := COALESCE(:APP_USER, USER);
+                BEGIN
+                   IF APEX_APPLICATION.G_F10.COUNT = 0 THEN
+                      RETURN;
+                   END IF;
+                
+                   FOR i IN 1 .. APEX_APPLICATION.G_F10.COUNT LOOP
+                      DECLARE
+                         l_ebs_value_id NUMBER := TO_NUMBER(APEX_APPLICATION.G_F10(i));
+                         l_mapped_to    VARCHAR2(500) := NULLIF(APEX_APPLICATION.G_F11(i), '');
+                         l_lookup_type  VARCHAR2(150);
+                         l_ebs_value    VARCHAR2(500);
+                      BEGIN
+                         IF l_mapped_to IS NULL THEN
+                            CONTINUE;
+                         END IF;
+                
+                         SELECT lookup_type, ebs_value
+                           INTO l_lookup_type, l_ebs_value
+                           FROM DMT_LOOKUP.DMT_LKP_EBS_VALUES
+                          WHERE ebs_value_id = l_ebs_value_id;
+                
+                         MERGE INTO DMT_LOOKUP.DMT_LKP_MAPPING m
+                         USING (SELECT l_lookup_type AS lookup_type, l_ebs_value AS ebs_value FROM dual) src
+                            ON (m.lookup_type = src.lookup_type AND m.ebs_value = src.ebs_value)
+                         WHEN MATCHED THEN
+                            UPDATE SET m.fusion_value = l_mapped_to,
+                                       m.active_flag  = 'Y',
+                                       m.notes        = 'Quick-mapped from unmatched'
+                         WHEN NOT MATCHED THEN
+                            INSERT (lookup_type, ebs_value, fusion_value, active_flag, notes)
+                            VALUES (l_lookup_type, l_ebs_value, l_mapped_to, 'Y', 'Quick-mapped from unmatched');
+                      END;
+                   END LOOP;
+                
+                   COMMIT;
+                END;
+                ```
+        }
+        execution {
+            sequence: 60
+        }
+        advanced {
+            executionMappingIdentifier: 49052685887010045
+        }
+        serverSideCondition {
+            whenButtonPressed: @save-unmatched-mappings
+        }
+    )
+
+    process value-mapping-save-interactive-grid-data (
+        name: Value Mapping - Save Interactive Grid Data
+        type: interactiveGridAutoRowProcessing
+        editableRegion: @value-mapping
+        execution {
+            sequence: 10
+        }
+        advanced {
+            executionMappingIdentifier: 49048293289010001
+        }
+    )
+
+    branch (
+        name: Refresh Page 17 After Quick Save
+        execution {
+            sequence: 10
+        }
+        behavior {
+            target: {
+                page: 17
+                items: {
+                    P17_LOOKUP_TYPE: &P17_LOOKUP_TYPE.
+                }
+                clearCache: 17
+            }
+        }
+        serverSideCondition {
+            whenButtonPressed: @save-unmatched-mappings
+        }
+    )
+
+)
+

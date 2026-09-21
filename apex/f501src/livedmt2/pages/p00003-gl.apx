@@ -1,0 +1,4690 @@
+page 3 (
+    name: ERP Financials
+    alias: GL
+    title: ERP Financials
+    appearance {
+        pageTemplate: @/standard
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        formAutoComplete: false
+    }
+
+    region asset-assignments (
+        name: Asset Assignments
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT * FROM DMT_V_ASSET_ASSIGN_DETAIL
+                WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+                ```
+        }
+        layout {
+            sequence: 22
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        comments {
+            comments: Asset Assignments — Asset location/employee assignments
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38415157430472249
+        }
+
+        column ASSET_NUMBER (
+            type: plainText
+            heading {
+                heading: Asset Number
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: C
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT1 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment1
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT10 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment10
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT2 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment2
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT3 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment3
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT4 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment4
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT5 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment5
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT6 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment6
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT7 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment7
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT8 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment8
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column EXPENSE_ACCOUNT_SEGMENT9 (
+            type: plainText
+            heading {
+                heading: Expense Account Segment9
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 270
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: AB
+            }
+        )
+
+        column LOCATION_SEGMENT1 (
+            type: plainText
+            heading {
+                heading: Location Segment1
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column LOCATION_SEGMENT2 (
+            type: plainText
+            heading {
+                heading: Location Segment2
+            }
+            layout {
+                sequence: 160
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Q
+            }
+        )
+
+        column LOCATION_SEGMENT3 (
+            type: plainText
+            heading {
+                heading: Location Segment3
+            }
+            layout {
+                sequence: 170
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        column LOCATION_SEGMENT4 (
+            type: plainText
+            heading {
+                heading: Location Segment4
+            }
+            layout {
+                sequence: 180
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        column LOCATION_SEGMENT5 (
+            type: plainText
+            heading {
+                heading: Location Segment5
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: T
+            }
+        )
+
+        column LOCATION_SEGMENT6 (
+            type: plainText
+            heading {
+                heading: Location Segment6
+            }
+            layout {
+                sequence: 200
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: U
+            }
+        )
+
+        column LOCATION_SEGMENT7 (
+            type: plainText
+            heading {
+                heading: Location Segment7
+            }
+            layout {
+                sequence: 210
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: V
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 250
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Z
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 240
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: Y
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 280
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: AC
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 220
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: W
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 260
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: AA
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 230
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: X
+            }
+        )
+
+        column UNITS_ASSIGNED (
+            type: plainText
+            heading {
+                heading: Units Assigned
+                alignment: end
+            }
+            layout {
+                sequence: 50
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+    )
+
+    region asset-books (
+        name: Asset Books
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT * FROM DMT_V_ASSET_BOOK_DETAIL
+                WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+                ```
+        }
+        layout {
+            sequence: 24
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        comments {
+            comments: Asset Books — Depreciation book details per asset
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38543664317267202
+        }
+
+        column ASSET_NUMBER (
+            type: plainText
+            heading {
+                heading: Asset Number
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column BONUS_DEPRN_RESERVE (
+            type: plainText
+            heading {
+                heading: Bonus Deprn Reserve
+                alignment: end
+            }
+            layout {
+                sequence: 180
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        column BONUS_YTD_DEPRN (
+            type: plainText
+            heading {
+                heading: Bonus Ytd Deprn
+                alignment: end
+            }
+            layout {
+                sequence: 170
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        column BOOK_TYPE_CODE (
+            type: plainText
+            heading {
+                heading: Book Type Code
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column COST (
+            type: plainText
+            heading {
+                heading: Cost
+                alignment: end
+            }
+            layout {
+                sequence: 50
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column CURRENT_UNITS (
+            type: plainText
+            heading {
+                heading: Current Units
+                alignment: end
+            }
+            layout {
+                sequence: 130
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column DATE_PLACED_IN_SERVICE (
+            type: plainText
+            heading {
+                heading: Date Placed In Service
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column DEPRECIATION_METHOD (
+            type: plainText
+            heading {
+                heading: Depreciation Method
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column DEPRN_RESERVE (
+            type: plainText
+            heading {
+                heading: Deprn Reserve
+                alignment: end
+            }
+            layout {
+                sequence: 160
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: Q
+            }
+        )
+
+        column DEPRN_START_DATE (
+            type: plainText
+            heading {
+                heading: Deprn Start Date
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: C
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 240
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: Y
+            }
+        )
+
+        column LIFE_IN_MONTHS (
+            type: plainText
+            heading {
+                heading: Life In Months
+                alignment: end
+            }
+            layout {
+                sequence: 80
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column ORIGINAL_COST (
+            type: plainText
+            heading {
+                heading: Original Cost
+                alignment: end
+            }
+            layout {
+                sequence: 60
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 220
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: W
+            }
+        )
+
+        column PRORATE_CONVENTION_CODE (
+            type: plainText
+            heading {
+                heading: Prorate Convention Code
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 210
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: V
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column SALVAGE_VALUE (
+            type: plainText
+            heading {
+                heading: Salvage Value
+                alignment: end
+            }
+            layout {
+                sequence: 70
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 250
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: Z
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: T
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 230
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: X
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 200
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: U
+            }
+        )
+
+        column UNREVALUED_COST (
+            type: plainText
+            heading {
+                heading: Unrevalued Cost
+                alignment: end
+            }
+            layout {
+                sequence: 140
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column YTD_DEPRN (
+            type: plainText
+            heading {
+                heading: Ytd Deprn
+                alignment: end
+            }
+            layout {
+                sequence: 150
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+    )
+
+    region asset-headers (
+        name: Asset Headers
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT * FROM DMT_V_ASSET_HDR_DETAIL
+                WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+                ```
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        comments {
+            comments: Asset Headers — Fixed asset master records
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 27443935265845501
+        }
+
+        column ASSET_CATEGORY_SEGMENT1 (
+            type: plainText
+            heading {
+                heading: Asset Category Segment1
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: W
+            }
+        )
+
+        column ASSET_CATEGORY_SEGMENT2 (
+            type: plainText
+            heading {
+                heading: Asset Category Segment2
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: X
+            }
+        )
+
+        column ASSET_CATEGORY_SEGMENT3 (
+            type: plainText
+            heading {
+                heading: Asset Category Segment3
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Y
+            }
+        )
+
+        column ASSET_CATEGORY_SEGMENT4 (
+            type: plainText
+            heading {
+                heading: Asset Category Segment4
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Z
+            }
+        )
+
+        column ASSET_CATEGORY_SEGMENT5 (
+            type: plainText
+            heading {
+                heading: Asset Category Segment5
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AA
+            }
+        )
+
+        column ASSET_CATEGORY_SEGMENT6 (
+            type: plainText
+            heading {
+                heading: Asset Category Segment6
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AB
+            }
+        )
+
+        column ASSET_CATEGORY_SEGMENT7 (
+            type: plainText
+            heading {
+                heading: Asset Category Segment7
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AC
+            }
+        )
+
+        column ASSET_NUMBER (
+            type: plainText
+            heading {
+                heading: Asset Number
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: U
+            }
+        )
+
+        column ASSET_TYPE (
+            type: plainText
+            heading {
+                heading: Asset Type
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AD
+            }
+        )
+
+        column ATTRIBUTE1 (
+            type: plainText
+            heading {
+                heading: Attribute1
+            }
+            layout {
+                sequence: 240
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AP
+            }
+        )
+
+        column ATTRIBUTE10 (
+            type: plainText
+            heading {
+                heading: Attribute10
+            }
+            layout {
+                sequence: 330
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AY
+            }
+        )
+
+        column ATTRIBUTE11 (
+            type: plainText
+            heading {
+                heading: Attribute11
+            }
+            layout {
+                sequence: 340
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AZ
+            }
+        )
+
+        column ATTRIBUTE12 (
+            type: plainText
+            heading {
+                heading: Attribute12
+            }
+            layout {
+                sequence: 350
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BA
+            }
+        )
+
+        column ATTRIBUTE13 (
+            type: plainText
+            heading {
+                heading: Attribute13
+            }
+            layout {
+                sequence: 360
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BB
+            }
+        )
+
+        column ATTRIBUTE14 (
+            type: plainText
+            heading {
+                heading: Attribute14
+            }
+            layout {
+                sequence: 370
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BC
+            }
+        )
+
+        column ATTRIBUTE15 (
+            type: plainText
+            heading {
+                heading: Attribute15
+            }
+            layout {
+                sequence: 380
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BD
+            }
+        )
+
+        column ATTRIBUTE2 (
+            type: plainText
+            heading {
+                heading: Attribute2
+            }
+            layout {
+                sequence: 250
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AQ
+            }
+        )
+
+        column ATTRIBUTE3 (
+            type: plainText
+            heading {
+                heading: Attribute3
+            }
+            layout {
+                sequence: 260
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AR
+            }
+        )
+
+        column ATTRIBUTE4 (
+            type: plainText
+            heading {
+                heading: Attribute4
+            }
+            layout {
+                sequence: 270
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AS
+            }
+        )
+
+        column ATTRIBUTE5 (
+            type: plainText
+            heading {
+                heading: Attribute5
+            }
+            layout {
+                sequence: 280
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AT
+            }
+        )
+
+        column ATTRIBUTE6 (
+            type: plainText
+            heading {
+                heading: Attribute6
+            }
+            layout {
+                sequence: 290
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AU
+            }
+        )
+
+        column ATTRIBUTE7 (
+            type: plainText
+            heading {
+                heading: Attribute7
+            }
+            layout {
+                sequence: 300
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AV
+            }
+        )
+
+        column ATTRIBUTE8 (
+            type: plainText
+            heading {
+                heading: Attribute8
+            }
+            layout {
+                sequence: 310
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AW
+            }
+        )
+
+        column ATTRIBUTE9 (
+            type: plainText
+            heading {
+                heading: Attribute9
+            }
+            layout {
+                sequence: 320
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AX
+            }
+        )
+
+        column ATTRIBUTE_CATEGORY (
+            type: plainText
+            heading {
+                heading: Attribute Category
+            }
+            layout {
+                sequence: 230
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AO
+            }
+        )
+
+        column DATE_PLACED_IN_SERVICE (
+            type: plainText
+            heading {
+                heading: Date Placed In Service
+            }
+            layout {
+                sequence: 220
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: AN
+            }
+        )
+
+        column DESCRIPTION (
+            type: plainText
+            heading {
+                heading: Description
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: V
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: T
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column IN_USE_FLAG (
+            type: plainText
+            heading {
+                heading: In Use Flag
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AK
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 450
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: BK
+            }
+        )
+
+        column MANUFACTURER_NAME (
+            type: plainText
+            heading {
+                heading: Manufacturer Name
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AE
+            }
+        )
+
+        column MODEL_NUMBER (
+            type: plainText
+            heading {
+                heading: Model Number
+            }
+            layout {
+                sequence: 160
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AH
+            }
+        )
+
+        column NEW_USED (
+            type: plainText
+            heading {
+                heading: New Used
+            }
+            layout {
+                sequence: 210
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AM
+            }
+        )
+
+        column OWNED_LEASED (
+            type: plainText
+            heading {
+                heading: Owned Leased
+            }
+            layout {
+                sequence: 200
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AL
+            }
+        )
+
+        column PARENT_ASSET_NUMBER (
+            type: plainText
+            heading {
+                heading: Parent Asset Number
+            }
+            layout {
+                sequence: 390
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BE
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 430
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BI
+            }
+        )
+
+        column PROPERTY_1245_1250_CODE (
+            type: plainText
+            heading {
+                heading: Property 1245 1250 Code
+            }
+            layout {
+                sequence: 180
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AJ
+            }
+        )
+
+        column PROPERTY_TYPE_CODE (
+            type: plainText
+            heading {
+                heading: Property Type Code
+            }
+            layout {
+                sequence: 170
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AI
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 420
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: BH
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 460
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: BL
+            }
+        )
+
+        column SERIAL_NUMBER (
+            type: plainText
+            heading {
+                heading: Serial Number
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AF
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 400
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BF
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 440
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: BJ
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 410
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: BG
+            }
+        )
+
+        column TAG_NUMBER (
+            type: plainText
+            heading {
+                heading: Tag Number
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AG
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 358445 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+        )
+
+    )
+
+    region bulk-upload (
+        name: Bulk Upload
+        type: staticContent
+        source {
+            htmlCode: <p>Upload a CSV file to bulk import data into the selected object's staging table. Select the target object, choose your file, and click Upload. See the <a href="f?p=&APP_ID.:9:&SESSION.">Upload Reference Guide</a> for file format details.</p>
+        }
+        layout {
+            sequence: 70
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region gl-budget-entries (
+        name: GL Budget Entries
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT * FROM DMT_V_GL_BUDGET_DETAIL
+                WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+                ```
+        }
+        layout {
+            sequence: 12
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        comments {
+            comments: GL Budget Entries — General ledger budget lines
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38414582177472243
+        }
+
+        column BUDGET_AMOUNT (
+            type: plainText
+            heading {
+                heading: Budget Amount
+                alignment: end
+            }
+            layout {
+                sequence: 410
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: AP
+            }
+        )
+
+        column BUDGET_ENTITY_NAME (
+            type: plainText
+            heading {
+                heading: Budget Entity Name
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column BUDGET_NAME (
+            type: plainText
+            heading {
+                heading: Budget Name
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column CURRENCY_CODE (
+            type: plainText
+            heading {
+                heading: Currency Code
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: C
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column JOURNAL_STATUS (
+            type: plainText
+            heading {
+                heading: Journal Status
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 470
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: AV
+            }
+        )
+
+        column LEDGER_ID (
+            type: plainText
+            heading {
+                heading: Ledger Id
+                alignment: end
+            }
+            layout {
+                sequence: 60
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column LEDGER_NAME (
+            type: plainText
+            heading {
+                heading: Ledger Name
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column PERIOD_NAME (
+            type: plainText
+            heading {
+                heading: Period Name
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 450
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AT
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 440
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: AS
+            }
+        )
+
+        column RUN_NAME (
+            type: plainText
+            heading {
+                heading: Run Name
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 480
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: AW
+            }
+        )
+
+        column SEGMENT1 (
+            type: plainText
+            heading {
+                heading: Segment1
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column SEGMENT10 (
+            type: plainText
+            heading {
+                heading: Segment10
+            }
+            layout {
+                sequence: 200
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: U
+            }
+        )
+
+        column SEGMENT11 (
+            type: plainText
+            heading {
+                heading: Segment11
+            }
+            layout {
+                sequence: 210
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: V
+            }
+        )
+
+        column SEGMENT12 (
+            type: plainText
+            heading {
+                heading: Segment12
+            }
+            layout {
+                sequence: 220
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: W
+            }
+        )
+
+        column SEGMENT13 (
+            type: plainText
+            heading {
+                heading: Segment13
+            }
+            layout {
+                sequence: 230
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: X
+            }
+        )
+
+        column SEGMENT14 (
+            type: plainText
+            heading {
+                heading: Segment14
+            }
+            layout {
+                sequence: 240
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Y
+            }
+        )
+
+        column SEGMENT15 (
+            type: plainText
+            heading {
+                heading: Segment15
+            }
+            layout {
+                sequence: 250
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Z
+            }
+        )
+
+        column SEGMENT16 (
+            type: plainText
+            heading {
+                heading: Segment16
+            }
+            layout {
+                sequence: 260
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AA
+            }
+        )
+
+        column SEGMENT17 (
+            type: plainText
+            heading {
+                heading: Segment17
+            }
+            layout {
+                sequence: 270
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AB
+            }
+        )
+
+        column SEGMENT18 (
+            type: plainText
+            heading {
+                heading: Segment18
+            }
+            layout {
+                sequence: 280
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AC
+            }
+        )
+
+        column SEGMENT19 (
+            type: plainText
+            heading {
+                heading: Segment19
+            }
+            layout {
+                sequence: 290
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AD
+            }
+        )
+
+        column SEGMENT2 (
+            type: plainText
+            heading {
+                heading: Segment2
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column SEGMENT20 (
+            type: plainText
+            heading {
+                heading: Segment20
+            }
+            layout {
+                sequence: 300
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AE
+            }
+        )
+
+        column SEGMENT21 (
+            type: plainText
+            heading {
+                heading: Segment21
+            }
+            layout {
+                sequence: 310
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AF
+            }
+        )
+
+        column SEGMENT22 (
+            type: plainText
+            heading {
+                heading: Segment22
+            }
+            layout {
+                sequence: 320
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AG
+            }
+        )
+
+        column SEGMENT23 (
+            type: plainText
+            heading {
+                heading: Segment23
+            }
+            layout {
+                sequence: 330
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AH
+            }
+        )
+
+        column SEGMENT24 (
+            type: plainText
+            heading {
+                heading: Segment24
+            }
+            layout {
+                sequence: 340
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AI
+            }
+        )
+
+        column SEGMENT25 (
+            type: plainText
+            heading {
+                heading: Segment25
+            }
+            layout {
+                sequence: 350
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AJ
+            }
+        )
+
+        column SEGMENT26 (
+            type: plainText
+            heading {
+                heading: Segment26
+            }
+            layout {
+                sequence: 360
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AK
+            }
+        )
+
+        column SEGMENT27 (
+            type: plainText
+            heading {
+                heading: Segment27
+            }
+            layout {
+                sequence: 370
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AL
+            }
+        )
+
+        column SEGMENT28 (
+            type: plainText
+            heading {
+                heading: Segment28
+            }
+            layout {
+                sequence: 380
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AM
+            }
+        )
+
+        column SEGMENT29 (
+            type: plainText
+            heading {
+                heading: Segment29
+            }
+            layout {
+                sequence: 390
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AN
+            }
+        )
+
+        column SEGMENT3 (
+            type: plainText
+            heading {
+                heading: Segment3
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column SEGMENT30 (
+            type: plainText
+            heading {
+                heading: Segment30
+            }
+            layout {
+                sequence: 400
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AO
+            }
+        )
+
+        column SEGMENT4 (
+            type: plainText
+            heading {
+                heading: Segment4
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column SEGMENT5 (
+            type: plainText
+            heading {
+                heading: Segment5
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        column SEGMENT6 (
+            type: plainText
+            heading {
+                heading: Segment6
+            }
+            layout {
+                sequence: 160
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Q
+            }
+        )
+
+        column SEGMENT7 (
+            type: plainText
+            heading {
+                heading: Segment7
+            }
+            layout {
+                sequence: 170
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        column SEGMENT8 (
+            type: plainText
+            heading {
+                heading: Segment8
+            }
+            layout {
+                sequence: 180
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        column SEGMENT9 (
+            type: plainText
+            heading {
+                heading: Segment9
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: T
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 420
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AQ
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 460
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: AU
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 430
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: AR
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+    )
+
+    region gl-journal-entries (
+        name: GL Journal Entries
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT * FROM DMT_V_GL_JOURNAL_DETAIL
+                WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        comments {
+            comments: GL Journal Entries — General ledger journal lines
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 27428833141871731
+        }
+
+        column ACCOUNTED_CR (
+            type: plainText
+            heading {
+                heading: Accounted Cr
+                alignment: end
+            }
+            layout {
+                sequence: 480
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: BP
+            }
+        )
+
+        column ACCOUNTED_DR (
+            type: plainText
+            heading {
+                heading: Accounted Dr
+                alignment: end
+            }
+            layout {
+                sequence: 470
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: BO
+            }
+        )
+
+        column ACCOUNTING_DATE (
+            type: plainText
+            heading {
+                heading: Accounting Date
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: Z
+            }
+        )
+
+        column ACTUAL_FLAG (
+            type: plainText
+            heading {
+                heading: Actual Flag
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AD
+            }
+        )
+
+        column ATTRIBUTE1 (
+            type: plainText
+            heading {
+                heading: Attribute1
+            }
+            layout {
+                sequence: 610
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CC
+            }
+        )
+
+        column ATTRIBUTE10 (
+            type: plainText
+            heading {
+                heading: Attribute10
+            }
+            layout {
+                sequence: 700
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CL
+            }
+        )
+
+        column ATTRIBUTE11 (
+            type: plainText
+            heading {
+                heading: Attribute11
+            }
+            layout {
+                sequence: 710
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CM
+            }
+        )
+
+        column ATTRIBUTE12 (
+            type: plainText
+            heading {
+                heading: Attribute12
+            }
+            layout {
+                sequence: 720
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CN
+            }
+        )
+
+        column ATTRIBUTE13 (
+            type: plainText
+            heading {
+                heading: Attribute13
+            }
+            layout {
+                sequence: 730
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CO
+            }
+        )
+
+        column ATTRIBUTE14 (
+            type: plainText
+            heading {
+                heading: Attribute14
+            }
+            layout {
+                sequence: 740
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CP
+            }
+        )
+
+        column ATTRIBUTE15 (
+            type: plainText
+            heading {
+                heading: Attribute15
+            }
+            layout {
+                sequence: 750
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CQ
+            }
+        )
+
+        column ATTRIBUTE16 (
+            type: plainText
+            heading {
+                heading: Attribute16
+            }
+            layout {
+                sequence: 760
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CR
+            }
+        )
+
+        column ATTRIBUTE17 (
+            type: plainText
+            heading {
+                heading: Attribute17
+            }
+            layout {
+                sequence: 770
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CS
+            }
+        )
+
+        column ATTRIBUTE18 (
+            type: plainText
+            heading {
+                heading: Attribute18
+            }
+            layout {
+                sequence: 780
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CT
+            }
+        )
+
+        column ATTRIBUTE19 (
+            type: plainText
+            heading {
+                heading: Attribute19
+            }
+            layout {
+                sequence: 790
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CU
+            }
+        )
+
+        column ATTRIBUTE2 (
+            type: plainText
+            heading {
+                heading: Attribute2
+            }
+            layout {
+                sequence: 620
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CD
+            }
+        )
+
+        column ATTRIBUTE20 (
+            type: plainText
+            heading {
+                heading: Attribute20
+            }
+            layout {
+                sequence: 800
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CV
+            }
+        )
+
+        column ATTRIBUTE3 (
+            type: plainText
+            heading {
+                heading: Attribute3
+            }
+            layout {
+                sequence: 630
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CE
+            }
+        )
+
+        column ATTRIBUTE4 (
+            type: plainText
+            heading {
+                heading: Attribute4
+            }
+            layout {
+                sequence: 640
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CF
+            }
+        )
+
+        column ATTRIBUTE5 (
+            type: plainText
+            heading {
+                heading: Attribute5
+            }
+            layout {
+                sequence: 650
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CG
+            }
+        )
+
+        column ATTRIBUTE6 (
+            type: plainText
+            heading {
+                heading: Attribute6
+            }
+            layout {
+                sequence: 660
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CH
+            }
+        )
+
+        column ATTRIBUTE7 (
+            type: plainText
+            heading {
+                heading: Attribute7
+            }
+            layout {
+                sequence: 670
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CI
+            }
+        )
+
+        column ATTRIBUTE8 (
+            type: plainText
+            heading {
+                heading: Attribute8
+            }
+            layout {
+                sequence: 680
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CJ
+            }
+        )
+
+        column ATTRIBUTE9 (
+            type: plainText
+            heading {
+                heading: Attribute9
+            }
+            layout {
+                sequence: 690
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CK
+            }
+        )
+
+        column ATTRIBUTE_CATEGORY (
+            type: plainText
+            heading {
+                heading: Attribute Category
+            }
+            layout {
+                sequence: 600
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CB
+            }
+        )
+
+        column CREATED_BY (
+            type: plainText
+            heading {
+                heading: Created By
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AC
+            }
+        )
+
+        column CURRENCY_CODE (
+            type: plainText
+            heading {
+                heading: Currency Code
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AA
+            }
+        )
+
+        column CURRENCY_CONVERSION_DATE (
+            type: plainText
+            heading {
+                heading: Currency Conversion Date
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: AF
+            }
+        )
+
+        column CURRENCY_CONVERSION_RATE (
+            type: plainText
+            heading {
+                heading: Currency Conversion Rate
+                alignment: end
+            }
+            layout {
+                sequence: 140
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: AH
+            }
+        )
+
+        column DATE_CREATED (
+            type: plainText
+            heading {
+                heading: Date Created
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: AB
+            }
+        )
+
+        column ENTERED_CR (
+            type: plainText
+            heading {
+                heading: Entered Cr
+                alignment: end
+            }
+            layout {
+                sequence: 460
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: BN
+            }
+        )
+
+        column ENTERED_DR (
+            type: plainText
+            heading {
+                heading: Entered Dr
+                alignment: end
+            }
+            layout {
+                sequence: 450
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: BM
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: V
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column GROUP_ID (
+            type: plainText
+            heading {
+                heading: Group Id
+                alignment: end
+            }
+            layout {
+                sequence: 580
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: BZ
+            }
+        )
+
+        column JOURNAL_STATUS (
+            type: plainText
+            heading {
+                heading: Journal Status
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Y
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 860
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: DB
+            }
+        )
+
+        column LEDGER_NAME (
+            type: plainText
+            heading {
+                heading: Ledger Name
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: W
+            }
+        )
+
+        column PERIOD_NAME (
+            type: plainText
+            heading {
+                heading: Period Name
+            }
+            layout {
+                sequence: 590
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CA
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 840
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CZ
+            }
+        )
+
+        column REFERENCE1 (
+            type: plainText
+            heading {
+                heading: Reference1
+            }
+            layout {
+                sequence: 490
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BQ
+            }
+        )
+
+        column REFERENCE10 (
+            type: plainText
+            heading {
+                heading: Reference10
+            }
+            layout {
+                sequence: 560
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BX
+            }
+        )
+
+        column REFERENCE2 (
+            type: plainText
+            heading {
+                heading: Reference2
+            }
+            layout {
+                sequence: 500
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BR
+            }
+        )
+
+        column REFERENCE4 (
+            type: plainText
+            heading {
+                heading: Reference4
+            }
+            layout {
+                sequence: 510
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BS
+            }
+        )
+
+        column REFERENCE5 (
+            type: plainText
+            heading {
+                heading: Reference5
+            }
+            layout {
+                sequence: 520
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BT
+            }
+        )
+
+        column REFERENCE6 (
+            type: plainText
+            heading {
+                heading: Reference6
+            }
+            layout {
+                sequence: 530
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BU
+            }
+        )
+
+        column REFERENCE7 (
+            type: plainText
+            heading {
+                heading: Reference7
+            }
+            layout {
+                sequence: 540
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BV
+            }
+        )
+
+        column REFERENCE8 (
+            type: plainText
+            heading {
+                heading: Reference8
+            }
+            layout {
+                sequence: 550
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BW
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 830
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CY
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: U
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 870
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: DC
+            }
+        )
+
+        column SEGMENT1 (
+            type: plainText
+            heading {
+                heading: Segment1
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AI
+            }
+        )
+
+        column SEGMENT10 (
+            type: plainText
+            heading {
+                heading: Segment10
+            }
+            layout {
+                sequence: 240
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AR
+            }
+        )
+
+        column SEGMENT11 (
+            type: plainText
+            heading {
+                heading: Segment11
+            }
+            layout {
+                sequence: 250
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AS
+            }
+        )
+
+        column SEGMENT12 (
+            type: plainText
+            heading {
+                heading: Segment12
+            }
+            layout {
+                sequence: 260
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AT
+            }
+        )
+
+        column SEGMENT13 (
+            type: plainText
+            heading {
+                heading: Segment13
+            }
+            layout {
+                sequence: 270
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AU
+            }
+        )
+
+        column SEGMENT14 (
+            type: plainText
+            heading {
+                heading: Segment14
+            }
+            layout {
+                sequence: 280
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AV
+            }
+        )
+
+        column SEGMENT15 (
+            type: plainText
+            heading {
+                heading: Segment15
+            }
+            layout {
+                sequence: 290
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AW
+            }
+        )
+
+        column SEGMENT16 (
+            type: plainText
+            heading {
+                heading: Segment16
+            }
+            layout {
+                sequence: 300
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AX
+            }
+        )
+
+        column SEGMENT17 (
+            type: plainText
+            heading {
+                heading: Segment17
+            }
+            layout {
+                sequence: 310
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AY
+            }
+        )
+
+        column SEGMENT18 (
+            type: plainText
+            heading {
+                heading: Segment18
+            }
+            layout {
+                sequence: 320
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AZ
+            }
+        )
+
+        column SEGMENT19 (
+            type: plainText
+            heading {
+                heading: Segment19
+            }
+            layout {
+                sequence: 330
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BA
+            }
+        )
+
+        column SEGMENT2 (
+            type: plainText
+            heading {
+                heading: Segment2
+            }
+            layout {
+                sequence: 160
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AJ
+            }
+        )
+
+        column SEGMENT20 (
+            type: plainText
+            heading {
+                heading: Segment20
+            }
+            layout {
+                sequence: 340
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BB
+            }
+        )
+
+        column SEGMENT21 (
+            type: plainText
+            heading {
+                heading: Segment21
+            }
+            layout {
+                sequence: 350
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BC
+            }
+        )
+
+        column SEGMENT22 (
+            type: plainText
+            heading {
+                heading: Segment22
+            }
+            layout {
+                sequence: 360
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BD
+            }
+        )
+
+        column SEGMENT23 (
+            type: plainText
+            heading {
+                heading: Segment23
+            }
+            layout {
+                sequence: 370
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BE
+            }
+        )
+
+        column SEGMENT24 (
+            type: plainText
+            heading {
+                heading: Segment24
+            }
+            layout {
+                sequence: 380
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BF
+            }
+        )
+
+        column SEGMENT25 (
+            type: plainText
+            heading {
+                heading: Segment25
+            }
+            layout {
+                sequence: 390
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BG
+            }
+        )
+
+        column SEGMENT26 (
+            type: plainText
+            heading {
+                heading: Segment26
+            }
+            layout {
+                sequence: 400
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BH
+            }
+        )
+
+        column SEGMENT27 (
+            type: plainText
+            heading {
+                heading: Segment27
+            }
+            layout {
+                sequence: 410
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BI
+            }
+        )
+
+        column SEGMENT28 (
+            type: plainText
+            heading {
+                heading: Segment28
+            }
+            layout {
+                sequence: 420
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BJ
+            }
+        )
+
+        column SEGMENT29 (
+            type: plainText
+            heading {
+                heading: Segment29
+            }
+            layout {
+                sequence: 430
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BK
+            }
+        )
+
+        column SEGMENT3 (
+            type: plainText
+            heading {
+                heading: Segment3
+            }
+            layout {
+                sequence: 170
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AK
+            }
+        )
+
+        column SEGMENT30 (
+            type: plainText
+            heading {
+                heading: Segment30
+            }
+            layout {
+                sequence: 440
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: BL
+            }
+        )
+
+        column SEGMENT4 (
+            type: plainText
+            heading {
+                heading: Segment4
+            }
+            layout {
+                sequence: 180
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AL
+            }
+        )
+
+        column SEGMENT5 (
+            type: plainText
+            heading {
+                heading: Segment5
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AM
+            }
+        )
+
+        column SEGMENT6 (
+            type: plainText
+            heading {
+                heading: Segment6
+            }
+            layout {
+                sequence: 200
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AN
+            }
+        )
+
+        column SEGMENT7 (
+            type: plainText
+            heading {
+                heading: Segment7
+            }
+            layout {
+                sequence: 210
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AO
+            }
+        )
+
+        column SEGMENT8 (
+            type: plainText
+            heading {
+                heading: Segment8
+            }
+            layout {
+                sequence: 220
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AP
+            }
+        )
+
+        column SEGMENT9 (
+            type: plainText
+            heading {
+                heading: Segment9
+            }
+            layout {
+                sequence: 230
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AQ
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 810
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: CW
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 850
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: DA
+            }
+        )
+
+        column STAT_AMOUNT (
+            type: plainText
+            heading {
+                heading: Stat Amount
+                alignment: end
+            }
+            layout {
+                sequence: 570
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: BY
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 820
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: CX
+            }
+        )
+
+        column USER_CURRENCY_CONVERSION_TYPE (
+            type: plainText
+            heading {
+                heading: User Currency Conversion Type
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AG
+            }
+        )
+
+        column USER_JE_CATEGORY_NAME (
+            type: plainText
+            heading {
+                heading: User Je Category Name
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: X
+            }
+        )
+
+        column USER_JE_SOURCE_NAME (
+            type: plainText
+            heading {
+                heading: User Je Source Name
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: AE
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 358440 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+        )
+
+    )
+
+    region planning-budgets (
+        name: Planning Budgets
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT * FROM DMT_V_PLAN_BUDGET_DETAIL
+                WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+                ```
+        }
+        layout {
+            sequence: 14
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        comments {
+            comments: Planning Budgets — EPBCS planning budget lines
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 38414824297472246
+        }
+
+        column ACCOUNT (
+            type: plainText
+            heading {
+                heading: Account
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column AMOUNT (
+            type: plainText
+            heading {
+                heading: Amount
+                alignment: end
+            }
+            layout {
+                sequence: 80
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column ATTRIBUTE1 (
+            type: plainText
+            heading {
+                heading: Attribute1
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column ATTRIBUTE2 (
+            type: plainText
+            heading {
+                heading: Attribute2
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column ATTRIBUTE3 (
+            type: plainText
+            heading {
+                heading: Attribute3
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column ATTRIBUTE4 (
+            type: plainText
+            heading {
+                heading: Attribute4
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column ATTRIBUTE5 (
+            type: plainText
+            heading {
+                heading: Attribute5
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        column CURRENCY (
+            type: plainText
+            heading {
+                heading: Currency
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column DATA_LOAD_DEFINITION_NAME (
+            type: plainText
+            heading {
+                heading: Data Load Definition Name
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column ENTITY (
+            type: plainText
+            heading {
+                heading: Entity
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: C
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 210
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: V
+            }
+        )
+
+        column PERIOD (
+            type: plainText
+            heading {
+                heading: Period
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: T
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 180
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: S
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column SCENARIO (
+            type: plainText
+            heading {
+                heading: Scenario
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 220
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: W
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 160
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: Q
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 200
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: U
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 170
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        column VERSION (
+            type: plainText
+            heading {
+                heading: Version
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+    )
+
+    pageItem P3_SCENARIO (
+        type: selectList
+        label {
+            label: Scenario
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT scenario_name d, scenario_name r FROM dmt_scenario_tbl WHERE status = 'ACTIVE' ORDER BY scenario_name
+            displayExtraValues: false
+            nullDisplayValue: -- No Scenario --
+        }
+        layout {
+            sequence: 15
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P3_UPLOAD_FILE (
+        type: fileUpload
+        label {
+            label: Upload File
+            alignment: left
+        }
+        storage {
+            type: appTempFiles
+        }
+        layout {
+            sequence: 20
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 30
+        }
+    )
+
+    pageItem P3_UPLOAD_OBJECT (
+        type: selectList
+        label {
+            label: Target Object
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT DISPLAY_NAME d, OBJECT_CODE r
+                FROM DMT_UPLOAD_OBJECT_TBL
+                WHERE PAGE_NUMBER = 3 AND IS_ACTIVE = 'Y'
+                ORDER BY DISPLAY_ORDER
+                ```
+        }
+        layout {
+            sequence: 10
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button upload-csv (
+        buttonName: UPLOAD_CSV
+        label: Upload CSV
+        layout {
+            sequence: 30
+            region: @bulk-upload
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    process upload-csv (
+        name: Upload CSV
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                    l_rows_loaded  NUMBER;
+                    l_rows_errored NUMBER;
+                    l_batch_id     NUMBER;
+                    l_error_msg    VARCHAR2(4000);
+                BEGIN
+                    DMT_CSV_UPLOAD_PKG.UPLOAD_CSV(
+                        p_file_name    => :P3_UPLOAD_FILE,
+                        p_object_code  => :P3_UPLOAD_OBJECT,
+                        p_rows_loaded  => l_rows_loaded,
+                        p_rows_errored => l_rows_errored,
+                        p_batch_id_out => l_batch_id,
+                        p_error_msg     => l_error_msg,
+                        p_scenario_name => :P3_SCENARIO
+                    );
+                    IF l_error_msg IS NOT NULL THEN
+                        APEX_ERROR.ADD_ERROR(p_message => l_error_msg, p_display_location => 'INLINE_IN_NOTIFICATION');
+                    ELSE
+                        APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
+                            l_rows_loaded || ' rows loaded, ' || l_rows_errored || ' errors. Batch ID: ' || l_batch_id;
+                    END IF;
+                END;
+                ```
+        }
+        execution {
+            sequence: 10
+        }
+        advanced {
+            executionMappingIdentifier: 22378323335102606
+        }
+        serverSideCondition {
+            whenButtonPressed: @upload-csv
+        }
+    )
+
+)
+

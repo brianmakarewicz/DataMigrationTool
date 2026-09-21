@@ -1,0 +1,739 @@
+page 32 (
+    name: Segment Rules
+    alias: SEGMENT-RULES
+    title: Segment Rules
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region config-summary (
+        name: Config Summary
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                BEGIN
+                  FOR r IN (
+                    SELECT mc.config_code,
+                           ss.set_code AS src_code, ss.description AS src_desc,
+                           ts.set_code AS tgt_code, ts.description AS tgt_desc,
+                           (SELECT COUNT(*) FROM DMT_LOOKUP.DMT_COA_SEGMENT_DEF WHERE coa_set_id = mc.source_coa_set_id) src_segs,
+                           (SELECT COUNT(*) FROM DMT_LOOKUP.DMT_COA_SEGMENT_DEF WHERE coa_set_id = mc.target_coa_set_id) tgt_segs
+                    FROM DMT_LOOKUP.DMT_COA_MAP_CONFIG mc
+                    JOIN DMT_LOOKUP.DMT_COA_SET ss ON ss.coa_set_id = mc.source_coa_set_id
+                    JOIN DMT_LOOKUP.DMT_COA_SET ts ON ts.coa_set_id = mc.target_coa_set_id
+                    WHERE mc.config_code = :P32_CONFIG_CODE
+                  ) LOOP
+                    HTP.P('<div style="padding:12px;background:#f7f9fc;border:1px solid #d8e0ec;border-radius:6px;margin-bottom:12px;">');
+                    HTP.P('<div style="font-weight:600;color:#1a3661;margin-bottom:6px;">Config: '||r.config_code||' &mdash; '||r.src_desc||' &rarr; '||r.tgt_desc||'</div>');
+                    HTP.P('<div style="display:flex;gap:24px;font-size:13px;color:#3a5078;">');
+                    HTP.P('<div><b>Source:</b> '||r.src_code||' ('||r.src_segs||' segments)</div>');
+                    HTP.P('<div><b>Target:</b> '||r.tgt_code||' ('||r.tgt_segs||' segments)</div>');
+                    HTP.P('</div></div>');
+                  END LOOP;
+                END;
+                ```
+        }
+        layout {
+            sequence: 15
+            parentRegion: @segment-rules
+            slot: regionBody
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region segment-rules (
+        name: Segment Rules
+        type: interactiveGrid
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT sm.segment_map_id,
+                       sm.map_config_id,
+                       sm.source_segment_num,
+                       ssd.segment_name AS source_segment_name,
+                       sm.target_segment_num,
+                       tsd.segment_name AS target_segment_name,
+                       sm.mapping_rule,
+                       sm.default_value,
+                       sm.pad_length,
+                       sm.pad_char,
+                       sm.active_flag,
+                       sm.notes,
+                       NVL(sv.val_count, 0) AS value_map_count,
+                       NVL(sv.unmapped, 0)  AS unmapped_count
+                FROM DMT_COA_SEGMENT_MAP sm
+                JOIN DMT_COA_MAP_CONFIG mc ON mc.map_config_id = sm.map_config_id
+                LEFT JOIN DMT_COA_SEGMENT_DEF ssd
+                  ON ssd.coa_set_id = mc.source_coa_set_id AND ssd.segment_num = sm.source_segment_num
+                JOIN DMT_COA_SEGMENT_DEF tsd
+                  ON tsd.coa_set_id = mc.target_coa_set_id AND tsd.segment_num = sm.target_segment_num
+                LEFT JOIN (
+                    SELECT segment_map_id,
+                           COUNT(*) AS val_count,
+                           0 AS unmapped
+                    FROM DMT_COA_SEGMENT_VALUES
+                    WHERE active_flag = 'Y' AND suggested_flag = 'N'
+                    GROUP BY segment_map_id
+                ) sv ON sv.segment_map_id = sm.segment_map_id
+                WHERE mc.config_code = :P32_CONFIG_CODE
+                  AND sm.active_flag = 'Y'
+                ORDER BY sm.target_segment_num, sm.source_segment_num NULLS LAST
+                ```
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        toolbar {
+            controls: [
+                searchCol
+                searchField
+                actionsMenu
+                resetButton
+                saveButton
+            ]
+        }
+        download {
+            formats: [
+                csv
+                html
+                pdf
+                excel
+            ]
+        }
+        advanced {
+            savedReportMappingIdentifier: 50034943498921533
+        }
+
+        savedReport 500354 (
+            visibility: primary
+            view {
+                default: grid
+            }
+            singleRowView {
+                displayedColumns: true
+            }
+
+            displayColumn (
+                column: @SEGMENT_MAP_ID
+                layout {
+                    sequence: 1
+                }
+            )
+
+            displayColumn (
+                column: @MAP_CONFIG_ID
+                layout {
+                    sequence: 2
+                }
+            )
+
+            displayColumn (
+                column: @SOURCE_SEGMENT_NUM
+                layout {
+                    sequence: 3
+                }
+            )
+
+            displayColumn (
+                column: @SOURCE_SEGMENT_NAME
+                layout {
+                    sequence: 4
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT_NUM
+                layout {
+                    sequence: 5
+                }
+            )
+
+            displayColumn (
+                column: @TARGET_SEGMENT_NAME
+                layout {
+                    sequence: 6
+                }
+            )
+
+            displayColumn (
+                column: @MAPPING_RULE
+                layout {
+                    sequence: 7
+                }
+            )
+
+            displayColumn (
+                column: @DEFAULT_VALUE
+                layout {
+                    sequence: 8
+                }
+            )
+
+            displayColumn (
+                column: @PAD_LENGTH
+                layout {
+                    sequence: 9
+                }
+            )
+
+            displayColumn (
+                column: @PAD_CHAR
+                layout {
+                    sequence: 10
+                }
+            )
+
+            displayColumn (
+                column: @ACTIVE_FLAG
+                layout {
+                    sequence: 11
+                }
+            )
+
+            displayColumn (
+                column: @NOTES
+                layout {
+                    sequence: 12
+                }
+            )
+
+            displayColumn (
+                column: @VALUE_MAP_COUNT
+                layout {
+                    sequence: 13
+                }
+            )
+
+            displayColumn (
+                column: @UNMAPPED_COUNT
+                layout {
+                    sequence: 14
+                }
+            )
+
+        )
+
+        column ACTIVE_FLAG (
+            type: textField
+            heading {
+                heading: Active Flag
+            }
+            layout {
+                sequence: 110
+            }
+            validation {
+                valueRequired: true
+                maxLength: 1
+            }
+            source {
+                databaseColumn: ACTIVE_FLAG
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column DEFAULT_VALUE (
+            type: textField
+            heading {
+                heading: Default Value
+            }
+            layout {
+                sequence: 80
+            }
+            validation {
+                maxLength: 100
+            }
+            source {
+                databaseColumn: DEFAULT_VALUE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column MAPPING_RULE (
+            type: textField
+            heading {
+                heading: Mapping Rule
+            }
+            layout {
+                sequence: 70
+            }
+            validation {
+                valueRequired: true
+                maxLength: 30
+            }
+            source {
+                databaseColumn: MAPPING_RULE
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column MAP_CONFIG_ID (
+            type: numberField
+            heading {
+                heading: Map Config Id
+                alignment: end
+            }
+            layout {
+                sequence: 20
+                columnAlignment: end
+            }
+            validation {
+                valueRequired: true
+            }
+            source {
+                databaseColumn: MAP_CONFIG_ID
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column NOTES (
+            type: textarea
+            heading {
+                heading: Notes
+            }
+            layout {
+                sequence: 120
+            }
+            validation {
+                maxLength: 500
+            }
+            source {
+                databaseColumn: NOTES
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+                lovType: none
+            }
+            enableUsersTo {
+                sort: false
+            }
+        )
+
+        column PAD_CHAR (
+            type: textField
+            heading {
+                heading: Pad Char
+            }
+            layout {
+                sequence: 100
+            }
+            validation {
+                maxLength: 1
+            }
+            source {
+                databaseColumn: PAD_CHAR
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column PAD_LENGTH (
+            type: numberField
+            heading {
+                heading: Pad Length
+                alignment: end
+            }
+            layout {
+                sequence: 90
+                columnAlignment: end
+            }
+            source {
+                databaseColumn: PAD_LENGTH
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column SEGMENT_MAP_ID (
+            type: numberField
+            heading {
+                heading: Segment Map Id
+                alignment: end
+            }
+            layout {
+                sequence: 10
+                columnAlignment: end
+            }
+            validation {
+                valueRequired: true
+            }
+            source {
+                databaseColumn: SEGMENT_MAP_ID
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column SOURCE_SEGMENT_NAME (
+            type: textField
+            heading {
+                heading: Source Segment Name
+            }
+            layout {
+                sequence: 40
+            }
+            validation {
+                maxLength: 100
+            }
+            source {
+                databaseColumn: SOURCE_SEGMENT_NAME
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column SOURCE_SEGMENT_NUM (
+            type: numberField
+            heading {
+                heading: Source Segment Num
+                alignment: end
+            }
+            layout {
+                sequence: 30
+                columnAlignment: end
+            }
+            source {
+                databaseColumn: SOURCE_SEGMENT_NUM
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column TARGET_SEGMENT_NAME (
+            type: textField
+            heading {
+                heading: Target Segment Name
+            }
+            layout {
+                sequence: 60
+            }
+            validation {
+                valueRequired: true
+                maxLength: 100
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT_NAME
+                dataType: varchar2
+            }
+            columnFilter {
+                performanceImpactingOperators: [
+                    contains
+                    startsWith
+                    caseInsensitive
+                    regexp
+                ]
+            }
+        )
+
+        column TARGET_SEGMENT_NUM (
+            type: numberField
+            heading {
+                heading: Target Segment Num
+                alignment: end
+            }
+            layout {
+                sequence: 50
+                columnAlignment: end
+            }
+            validation {
+                valueRequired: true
+            }
+            source {
+                databaseColumn: TARGET_SEGMENT_NUM
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column UNMAPPED_COUNT (
+            type: numberField
+            heading {
+                heading: Unmapped Count
+                alignment: end
+            }
+            layout {
+                sequence: 140
+                columnAlignment: end
+            }
+            source {
+                databaseColumn: UNMAPPED_COUNT
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        column VALUE_MAP_COUNT (
+            type: link
+            heading {
+                heading: Value Map Count
+                alignment: end
+            }
+            layout {
+                sequence: 130
+                columnAlignment: end
+            }
+            link {
+                target: {
+                    page: 33
+                    items: {
+                        P33_SEGMENT_MAP_ID: &SEGMENT_MAP_ID.
+                    }
+                    clearCache: [
+                        Y
+                        33
+                    ]
+                }
+                linkText: &VALUE_MAP_COUNT.
+            }
+            source {
+                databaseColumn: VALUE_MAP_COUNT
+                dataType: number
+            }
+            columnFilter {
+                lovType: none
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+        pageHeader {
+            pageHeaderText: Segment Rules
+        }
+    )
+
+    pageItem P32_CONFIG_CODE (
+        type: selectList
+        label {
+            label: Mapping Config
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT config_code || ' — ' || description AS d, config_code AS r FROM DMT_COA_MAP_CONFIG WHERE active_flag = 'Y' ORDER BY config_code
+        }
+        layout {
+            sequence: 10
+            region: @segment-rules
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button clear-generated (
+        buttonName: CLEAR_GENERATED
+        label: Clear Generated
+        layout {
+            sequence: 40
+            region: @segment-rules
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button generate-mappings (
+        buttonName: GENERATE_MAPPINGS
+        label: Generate Mappings
+        layout {
+            sequence: 20
+            region: @segment-rules
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button validate-mappings (
+        buttonName: VALIDATE_MAPPINGS
+        label: Validate Mappings
+        layout {
+            sequence: 30
+            region: @segment-rules
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    process clear-generated (
+        name: Clear Generated
+        type: executeCode
+        source {
+            plsqlCode: BEGIN DMT_COA_MAP_PKG.CLEAR_GENERATED(:P32_CONFIG_CODE); APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE := 'Generated mappings cleared for ' || :P32_CONFIG_CODE; END;
+        }
+        execution {
+            sequence: 30
+        }
+        advanced {
+            executionMappingIdentifier: 49622224466489224
+        }
+        serverSideCondition {
+            whenButtonPressed: @clear-generated
+        }
+    )
+
+    process generate-mappings (
+        name: Generate Mappings
+        type: executeCode
+        source {
+            plsqlCode: DECLARE v_cnt NUMBER; BEGIN v_cnt := DMT_COA_MAP_PKG.GENERATE_MAPPINGS(:P32_CONFIG_CODE); APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE := v_cnt || ' mappings generated for ' || :P32_CONFIG_CODE; END;
+        }
+        execution {
+            sequence: 10
+        }
+        advanced {
+            executionMappingIdentifier: 49622087866489222
+        }
+        serverSideCondition {
+            whenButtonPressed: @generate-mappings
+        }
+    )
+
+    process validate-mappings (
+        name: Validate Mappings
+        type: executeCode
+        source {
+            plsqlCode: DECLARE v_cnt NUMBER; BEGIN v_cnt := DMT_COA_MAP_PKG.VALIDATE_MAPPINGS(:P32_CONFIG_CODE); APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE := v_cnt || ' invalid mappings flagged for ' || :P32_CONFIG_CODE; END;
+        }
+        execution {
+            sequence: 20
+        }
+        advanced {
+            executionMappingIdentifier: 49622147871489223
+        }
+        serverSideCondition {
+            whenButtonPressed: @validate-mappings
+        }
+    )
+
+)
+

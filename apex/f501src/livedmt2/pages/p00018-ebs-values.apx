@@ -1,0 +1,343 @@
+page 18 (
+    name: EBS Values
+    alias: EBS-VALUES
+    title: EBS Values
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region ebs-values (
+        name: EBS Values
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT e.ebs_value_id, e.lookup_type, e.ebs_value, e.ebs_description, e.ebs_id, e.active_flag, e.last_refresh_date, m.fusion_value AS mapped_to FROM DMT_LOOKUP.DMT_LKP_EBS_VALUES e LEFT JOIN DMT_LOOKUP.DMT_LKP_MAPPING m ON m.lookup_type = e.lookup_type AND m.ebs_value = e.ebs_value AND m.active_flag = 'Y' WHERE e.active_flag = 'Y' AND (NVL(:P18_LOOKUP_TYPE, '%') = '%' OR e.lookup_type = :P18_LOOKUP_TYPE) AND (NVL(:P18_UNMATCHED_ONLY,'N') = 'N' OR NOT EXISTS (SELECT 1 FROM DMT_LOOKUP.DMT_LKP_FUSION_VALUES f WHERE f.lookup_type = e.lookup_type AND UPPER(f.fusion_value) = UPPER(e.ebs_value) AND f.active_flag = 'Y'))
+            pageItemsToSubmit: [
+                P18_UNMATCHED_ONLY
+                P18_LOOKUP_TYPE
+            ]
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        messages {
+            whenNoDataFound: No data found.
+            whenMoreDataFound: The maximum row count for this report is #MAX_ROW_COUNT# rows.  Please apply a filter to reduce the number of records in your query.
+        }
+        advanced {
+            savedReportMappingIdentifier: 49026709924854374
+        }
+
+        column ACTIVE_FLAG (
+            type: plainText
+            heading {
+                heading: Active Flag
+            }
+            layout {
+                sequence: 6
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column EBS_DESCRIPTION (
+            type: plainText
+            heading {
+                heading: Ebs Description
+            }
+            layout {
+                sequence: 4
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column EBS_ID (
+            type: plainText
+            heading {
+                heading: Ebs Id
+                alignment: end
+            }
+            layout {
+                sequence: 5
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column EBS_VALUE (
+            type: plainText
+            heading {
+                heading: Ebs Value
+            }
+            layout {
+                sequence: 3
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column EBS_VALUE_ID (
+            type: plainText
+            heading {
+                heading: Ebs Value Id
+                alignment: end
+            }
+            layout {
+                sequence: 1
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column LAST_REFRESH_DATE (
+            type: plainText
+            heading {
+                heading: Last Refresh Date
+            }
+            layout {
+                sequence: 7
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column LOOKUP_TYPE (
+            type: link
+            heading {
+                heading: Lookup Type
+            }
+            layout {
+                sequence: 2
+            }
+            link {
+                target: {
+                    page: 17
+                    items: {
+                        P17_LOOKUP_TYPE: #LOOKUP_TYPE#
+                    }
+                    clearCache: [
+                        Y
+                        17
+                    ]
+                }
+                linkText: #LOOKUP_TYPE#
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column MAPPED_TO (
+            type: plainText
+            heading {
+                heading: Mapped To
+            }
+            layout {
+                sequence: 8
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+        pageHeader {
+            pageHeaderText: EBS Values
+        }
+
+        savedReport 490470 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ACTIVE_FLAG (
+                sequence: 6
+            )
+
+            displayColumn EBS_DESCRIPTION (
+                sequence: 4
+            )
+
+            displayColumn EBS_ID (
+                sequence: 5
+            )
+
+            displayColumn EBS_VALUE (
+                sequence: 3
+            )
+
+            displayColumn EBS_VALUE_ID (
+                sequence: 1
+            )
+
+            displayColumn LAST_REFRESH_DATE (
+                sequence: 7
+            )
+
+            displayColumn LOOKUP_TYPE (
+                sequence: 2
+            )
+
+            displayColumn MAPPED_TO (
+                sequence: 8
+            )
+
+        )
+
+    )
+
+    pageItem P18_LOOKUP_TYPE (
+        type: selectList
+        label {
+            label: Lookup Type
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT lookup_type || ' -- ' || description AS d, lookup_type AS r FROM DMT_LOOKUP.DMT_LKP_TYPE_CONFIG WHERE active_flag = 'Y' ORDER BY module, lookup_type
+            nullDisplayValue: - All Lookup Types -
+        }
+        layout {
+            sequence: 1
+            region: @ebs-values
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P18_UNMATCHED_ONLY (
+        type: switch
+        label {
+            label: Show only values with no Fusion equivalent
+            alignment: left
+        }
+        layout {
+            sequence: 10
+            region: @ebs-values
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+        }
+        default {
+            type: static
+            staticValue: N
+        }
+    )
+
+    dynamicAction new (
+        name: New
+        execution {
+            sequence: 10
+        }
+        when {
+            selectionType: items
+            items: P18_UNMATCHED_ONLY
+        }
+
+        action native-refresh (
+            action: refresh
+            affectedElements {
+                selectionType: region
+                region: @ebs-values
+            }
+            execution {
+                sequence: 10
+                fireOnInit: false
+            }
+        )
+
+    )
+
+)
+

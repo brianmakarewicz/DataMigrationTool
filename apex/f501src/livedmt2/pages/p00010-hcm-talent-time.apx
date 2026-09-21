@@ -1,0 +1,2525 @@
+page 10 (
+    name: HCM Talent & Time
+    alias: HCM-TALENT-TIME
+    title: HCM Talent & Time
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region bulk-upload (
+        name: Bulk Upload
+        type: staticContent
+        layout {
+            sequence: 999
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region performance-evaluations (
+        name: Performance Evaluations
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_PERF_EVAL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        comments {
+            comments: Performance Evaluations
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 39754923971267211
+        }
+
+        column APPROVAL_STATUS (
+            type: plainText
+            heading {
+                heading: Approval Status
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column DOCUMENT_NAME (
+            type: plainText
+            heading {
+                heading: Document Name
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column DOCUMENT_TYPE (
+            type: plainText
+            heading {
+                heading: Document Type
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column END_DATE (
+            type: plainText
+            heading {
+                heading: End Date
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 180
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: R
+            }
+        )
+
+        column MANAGER_PERSON_NUMBER (
+            type: plainText
+            heading {
+                heading: Manager Person Number
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column OVERALL_RATING (
+            type: plainText
+            heading {
+                heading: Overall Rating
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column PERSON_NUMBER (
+            type: plainText
+            heading {
+                heading: Person Number
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column REVIEW_PERIOD_NAME (
+            type: plainText
+            heading {
+                heading: Review Period Name
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 140
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 160
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 170
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: Q
+            }
+        )
+
+        column START_DATE (
+            type: plainText
+            heading {
+                heading: Start Date
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 130
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521762 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn APPROVAL_STATUS (
+                sequence: 9
+            )
+
+            displayColumn DOCUMENT_NAME (
+                sequence: 5
+            )
+
+            displayColumn DOCUMENT_TYPE (
+                sequence: 6
+            )
+
+            displayColumn END_DATE (
+                sequence: 11
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 18
+            )
+
+            displayColumn MANAGER_PERSON_NUMBER (
+                sequence: 4
+            )
+
+            displayColumn OVERALL_RATING (
+                sequence: 8
+            )
+
+            displayColumn PERSON_NUMBER (
+                sequence: 3
+            )
+
+            displayColumn PREFIX (
+                sequence: 15
+            )
+
+            displayColumn REVIEW_PERIOD_NAME (
+                sequence: 7
+            )
+
+            displayColumn RUN_ID (
+                sequence: 14
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 16
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 12
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 17
+            )
+
+            displayColumn START_DATE (
+                sequence: 10
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 13
+            )
+
+        )
+
+    )
+
+    region performance-ratings (
+        name: Performance Ratings
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_PERF_EVAL_RATING_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 40
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        comments {
+            comments: Performance Ratings
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 39756838958267230
+        }
+
+        column COMMENTS (
+            type: plainText
+            heading {
+                heading: Comments
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column DOCUMENT_NAME (
+            type: plainText
+            heading {
+                heading: Document Name
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column PERSON_NUMBER (
+            type: plainText
+            heading {
+                heading: Person Number
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column RATING_LEVEL_CODE (
+            type: plainText
+            heading {
+                heading: Rating Level Code
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column REVIEW_PERIOD_NAME (
+            type: plainText
+            heading {
+                heading: Review Period Name
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 110
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 130
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column SECTION_NAME (
+            type: plainText
+            heading {
+                heading: Section Name
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 100
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521768 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn COMMENTS (
+                sequence: 6
+            )
+
+            displayColumn DOCUMENT_NAME (
+                sequence: 8
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 15
+            )
+
+            displayColumn PERSON_NUMBER (
+                sequence: 3
+            )
+
+            displayColumn PREFIX (
+                sequence: 12
+            )
+
+            displayColumn RATING_LEVEL_CODE (
+                sequence: 5
+            )
+
+            displayColumn REVIEW_PERIOD_NAME (
+                sequence: 7
+            )
+
+            displayColumn RUN_ID (
+                sequence: 11
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 13
+            )
+
+            displayColumn SECTION_NAME (
+                sequence: 4
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 9
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 14
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 10
+            )
+
+        )
+
+    )
+
+    region talent-profile-items (
+        name: Talent Profile Items
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_TALENT_PROF_ITEM_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        comments {
+            comments: Talent Profile Items
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 39746824078444843
+        }
+
+        column CONTENT_ITEM_NAME (
+            type: plainText
+            heading {
+                heading: Content Item Name
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column CONTENT_TYPE_NAME (
+            type: plainText
+            heading {
+                heading: Content Type Name
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column DATE_FROM (
+            type: plainText
+            heading {
+                heading: Date From
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column DATE_TO (
+            type: plainText
+            heading {
+                heading: Date To
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column INTEREST_LEVEL (
+            type: plainText
+            heading {
+                heading: Interest Level
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 170
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: Q
+            }
+        )
+
+        column PERSON_NUMBER (
+            type: plainText
+            heading {
+                heading: Person Number
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column PROFILE_CODE (
+            type: plainText
+            heading {
+                heading: Profile Code
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column RATING (
+            type: plainText
+            heading {
+                heading: Rating
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 130
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 150
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 160
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 120
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521756 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn CONTENT_ITEM_NAME (
+                sequence: 5
+            )
+
+            displayColumn CONTENT_TYPE_NAME (
+                sequence: 4
+            )
+
+            displayColumn DATE_FROM (
+                sequence: 6
+            )
+
+            displayColumn DATE_TO (
+                sequence: 7
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn INTEREST_LEVEL (
+                sequence: 10
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 17
+            )
+
+            displayColumn PERSON_NUMBER (
+                sequence: 3
+            )
+
+            displayColumn PREFIX (
+                sequence: 14
+            )
+
+            displayColumn PROFILE_CODE (
+                sequence: 9
+            )
+
+            displayColumn RATING (
+                sequence: 8
+            )
+
+            displayColumn RUN_ID (
+                sequence: 13
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 15
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 11
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 16
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 12
+            )
+
+        )
+
+    )
+
+    region talent-profiles (
+        name: Talent Profiles
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_TALENT_PROF_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        headerAndFooter {
+            footerText: SELECT * FROM DMT_V_TALENT_PROF_DETAIL
+        }
+        comments {
+            comments: Talent Profiles
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 39743695159444811
+        }
+
+        column DESCRIPTION (
+            type: plainText
+            heading {
+                heading: Description
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column PERSON_NUMBER (
+            type: plainText
+            heading {
+                heading: Person Number
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column PROFILE_CODE (
+            type: plainText
+            heading {
+                heading: Profile Code
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column PROFILE_STATUS_CODE (
+            type: plainText
+            heading {
+                heading: Profile Status Code
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column PROFILE_TYPE_CODE (
+            type: plainText
+            heading {
+                heading: Profile Type Code
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column PROFILE_USAGE_CODE (
+            type: plainText
+            heading {
+                heading: Profile Usage Code
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 110
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 130
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 100
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521751 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn DESCRIPTION (
+                sequence: 8
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 15
+            )
+
+            displayColumn PERSON_NUMBER (
+                sequence: 3
+            )
+
+            displayColumn PREFIX (
+                sequence: 12
+            )
+
+            displayColumn PROFILE_CODE (
+                sequence: 4
+            )
+
+            displayColumn PROFILE_STATUS_CODE (
+                sequence: 6
+            )
+
+            displayColumn PROFILE_TYPE_CODE (
+                sequence: 5
+            )
+
+            displayColumn PROFILE_USAGE_CODE (
+                sequence: 7
+            )
+
+            displayColumn RUN_ID (
+                sequence: 11
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 13
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 9
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 14
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 10
+            )
+
+        )
+
+    )
+
+    region work-schedule-details (
+        name: Work Schedule Details
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_WORK_SCHED_DTL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 60
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        comments {
+            comments: Work Schedule Details
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 39760181005265413
+        }
+
+        column DURATION (
+            type: plainText
+            heading {
+                heading: Duration
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column END_TIME (
+            type: plainText
+            heading {
+                heading: End Time
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 160
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 120
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 140
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column SHIFT_DATE (
+            type: plainText
+            heading {
+                heading: Shift Date
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column SHIFT_NAME (
+            type: plainText
+            heading {
+                heading: Shift Name
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column START_TIME (
+            type: plainText
+            heading {
+                heading: Start Time
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 110
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column UNIT_OF_MEASURE (
+            type: plainText
+            heading {
+                heading: Unit Of Measure
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column WORK_SCHEDULE_NAME (
+            type: plainText
+            heading {
+                heading: Work Schedule Name
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521780 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn DURATION (
+                sequence: 8
+            )
+
+            displayColumn END_TIME (
+                sequence: 7
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 16
+            )
+
+            displayColumn PREFIX (
+                sequence: 13
+            )
+
+            displayColumn RUN_ID (
+                sequence: 12
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 14
+            )
+
+            displayColumn SHIFT_DATE (
+                sequence: 5
+            )
+
+            displayColumn SHIFT_NAME (
+                sequence: 4
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 10
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 15
+            )
+
+            displayColumn START_TIME (
+                sequence: 6
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 11
+            )
+
+            displayColumn UNIT_OF_MEASURE (
+                sequence: 9
+            )
+
+            displayColumn WORK_SCHEDULE_NAME (
+                sequence: 3
+            )
+
+        )
+
+    )
+
+    region work-schedules (
+        name: Work Schedules
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_V_WORK_SCHED_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+        }
+        layout {
+            sequence: 50
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        comments {
+            comments: Work Schedules
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 39758453426267246
+        }
+
+        column DESCRIPTION (
+            type: plainText
+            heading {
+                heading: Description
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column ERROR_TEXT (
+            type: plainText
+            heading {
+                heading: Error Text
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: CLOB
+            }
+            columnFilter {
+                type: none
+            }
+            advanced {
+                endUserAlias: B
+            }
+            enableUsersTo {
+                sort: false
+                controlBreak: false
+                aggregate: false
+                compute: false
+                chart: false
+                groupBy: false
+                pivot: false
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 160
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: P
+            }
+        )
+
+        column LEGISLATIVE_DATA_GROUP_NAME (
+            type: plainText
+            heading {
+                heading: Legislative Data Group Name
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column PERSON_NUMBER (
+            type: plainText
+            heading {
+                heading: Person Number
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column PREFIX (
+            type: plainText
+            heading {
+                heading: Prefix
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run Id
+                alignment: end
+            }
+            layout {
+                sequence: 120
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column RUN_STATUS (
+            type: plainText
+            heading {
+                heading: Run Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 140
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: N
+            }
+        )
+
+        column SCHEDULE_END_DATE (
+            type: plainText
+            heading {
+                heading: Schedule End Date
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column SCHEDULE_START_DATE (
+            type: plainText
+            heading {
+                heading: Schedule Start Date
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column SOURCE_ID (
+            type: plainText
+            heading {
+                heading: Source Id
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column STAGE_DATE (
+            type: plainText
+            heading {
+                heading: Stage Date
+            }
+            layout {
+                sequence: 150
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: O
+            }
+        )
+
+        column STG_SEQUENCE_ID (
+            type: plainText
+            heading {
+                heading: Stg Sequence Id
+                alignment: end
+            }
+            layout {
+                sequence: 110
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column WORK_SCHEDULE_NAME (
+            type: plainText
+            heading {
+                heading: Work Schedule Name
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column WORK_SCHEDULE_TYPE (
+            type: plainText
+            heading {
+                heading: Work Schedule Type
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521774 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn DESCRIPTION (
+                sequence: 8
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 2
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 16
+            )
+
+            displayColumn LEGISLATIVE_DATA_GROUP_NAME (
+                sequence: 9
+            )
+
+            displayColumn PERSON_NUMBER (
+                sequence: 3
+            )
+
+            displayColumn PREFIX (
+                sequence: 13
+            )
+
+            displayColumn RUN_ID (
+                sequence: 12
+            )
+
+            displayColumn RUN_STATUS (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 14
+            )
+
+            displayColumn SCHEDULE_END_DATE (
+                sequence: 6
+            )
+
+            displayColumn SCHEDULE_START_DATE (
+                sequence: 5
+            )
+
+            displayColumn SOURCE_ID (
+                sequence: 10
+            )
+
+            displayColumn STAGE_DATE (
+                sequence: 15
+            )
+
+            displayColumn STG_SEQUENCE_ID (
+                sequence: 11
+            )
+
+            displayColumn WORK_SCHEDULE_NAME (
+                sequence: 4
+            )
+
+            displayColumn WORK_SCHEDULE_TYPE (
+                sequence: 7
+            )
+
+        )
+
+    )
+
+    pageItem P10_SCENARIO (
+        type: selectList
+        label {
+            label: Scenario
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT scenario_name d, scenario_name r FROM dmt_scenario_tbl WHERE status = 'ACTIVE' ORDER BY scenario_name
+            displayExtraValues: false
+            nullDisplayValue: -- No Scenario --
+        }
+        layout {
+            sequence: 15
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P10_UPLOAD_FILE (
+        type: fileUpload
+        label {
+            label: Upload File
+            alignment: left
+        }
+        storage {
+            type: appTempFiles
+        }
+        layout {
+            sequence: 20
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 30
+        }
+    )
+
+    pageItem P10_UPLOAD_OBJECT (
+        type: selectList
+        label {
+            label: Target Object
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT DISPLAY_NAME d, OBJECT_CODE r
+                FROM DMT_UPLOAD_OBJECT_TBL
+                WHERE PAGE_NUMBER = 10 AND IS_ACTIVE = 'Y'
+                ORDER BY DISPLAY_ORDER
+                ```
+        }
+        layout {
+            sequence: 10
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button upload-csv (
+        buttonName: UPLOAD_CSV
+        label: Upload CSV
+        layout {
+            sequence: 30
+            region: @bulk-upload
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    process upload-csv (
+        name: Upload CSV
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                    l_rows_loaded  NUMBER;
+                    l_rows_errored NUMBER;
+                    l_batch_id     NUMBER;
+                    l_error_msg    VARCHAR2(4000);
+                BEGIN
+                    DMT_CSV_UPLOAD_PKG.UPLOAD_CSV(
+                        p_file_name    => :P10_UPLOAD_FILE,
+                        p_object_code  => :P10_UPLOAD_OBJECT,
+                        p_rows_loaded  => l_rows_loaded,
+                        p_rows_errored => l_rows_errored,
+                        p_batch_id_out => l_batch_id,
+                        p_error_msg     => l_error_msg,
+                        p_scenario_name => :P10_SCENARIO
+                    );
+                    IF l_error_msg IS NOT NULL THEN
+                        APEX_ERROR.ADD_ERROR(p_message => l_error_msg, p_display_location => 'INLINE_IN_NOTIFICATION');
+                    ELSE
+                        APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
+                            l_rows_loaded || ' rows loaded, ' || l_rows_errored || ' errors. Batch ID: ' || l_batch_id;
+                    END IF;
+                END;
+                ```
+        }
+        execution {
+            sequence: 10
+        }
+        advanced {
+            executionMappingIdentifier: 22378851010102611
+        }
+        serverSideCondition {
+            whenButtonPressed: @upload-csv
+        }
+    )
+
+)
+
