@@ -499,6 +499,7 @@ prompt == Views (dependency order) ==
 @@views/dmt_run_history_v.sql
 @@views/dmt_run_metrics_v.sql
 @@views/dmt_run_status_v.sql
+@@views/dmt_run_records_v.sql
 @@views/dmt_v_absence_detail.sql
 @@views/dmt_v_ap_invoices_detail.sql
 @@views/dmt_v_ap_inv_lines_detail.sql
@@ -741,6 +742,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_recon_engine_pkg.pks.sql
 @@packages/dmt_ref_id_pkg.pks.sql
 @@packages/dmt_regression_pkg.pks.sql
+@@packages/dmt_run_summary_pkg.pks.sql
 @@packages/dmt_report_pkg.pks.sql
 @@packages/dmt_req_fbdi_gen_pkg.pks.sql
 @@packages/dmt_req_results_pkg.pks.sql
@@ -956,6 +958,7 @@ prompt == Package bodies ==
 @@packages/dmt_recon_engine_pkg.pkb.sql
 @@packages/dmt_ref_id_pkg.pkb.sql
 @@packages/dmt_report_pkg.pkb.sql
+@@packages/dmt_run_summary_pkg.pkb.sql
 @@packages/dmt_req_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_req_results_pkg.pkb.sql
 @@packages/dmt_req_transform_pkg.pkb.sql
