@@ -2,7 +2,7 @@
 <dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
            defaultDataSourceRef="ApplicationDB_FSCM">
   <!--
-    DMT_PERF_EVAL_RECON_DM - Contract v1 (nine-column) reconciliation data model
+    DMT_PERFEVALUATIONS_RECON_DM - Contract v1 (nine-column) reconciliation data model
     for PerfEvaluations (design section 5, "BIP reconciliation report contract - v1";
     columns 8-9 SOURCE_REF / DMT_REFERENCE added 2026-09-20).
 

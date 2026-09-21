@@ -1,5 +1,5 @@
--- DMT_PERF_EVAL_RECON_DM query (Contract v1, nine-column, design section 5).
--- Mirror of the CDATA SQL in DMT_PERF_EVAL_RECON_DM.xdm, kept here for review and
+-- DMT_PERFEVALUATIONS_RECON_DM query (Contract v1, nine-column, design section 5).
+-- Mirror of the CDATA SQL in DMT_PERFEVALUATIONS_RECON_DM.xdm, kept here for review and
 -- for running the query standalone against live Fusion (bind the six parameters).
 --
 -- Returns the BASE tier for the PerfEvaluations HDL load: one row per migrated goal
