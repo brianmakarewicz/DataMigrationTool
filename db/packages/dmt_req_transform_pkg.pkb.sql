@@ -153,6 +153,21 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier template): stamp the header tier's
+        -- RECON_KEY so it equals the header RECORD_KEY the recon report emits.
+        -- The Requisitions Contract v1 data model (DMT_REQ_RECON_DM.xdm) emits the
+        -- BASE header RECORD_KEY as the prefixed REQUISITION_NUMBER (that is the
+        -- business key that survives to POR_REQUISITION_HEADERS_ALL). The shared
+        -- reconciler (DMT_REQ_RESULTS_PKG.APPLY_CONTRACT_V1_REQUISITIONS) joins the
+        -- report rows to this table on RECON_KEY = report RECORD_KEY, so this stamp
+        -- must match that expression exactly. Only NULL keys are set (never
+        -- overwrite); post-INSERT, run-scoped.
+        UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
+        SET    RECON_KEY = REQUISITION_NUMBER,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_POR_REQ_HEADERS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
@@ -409,6 +424,19 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier template): stamp the line tier's
+        -- RECON_KEY so it equals the line RECORD_KEY the recon report emits.
+        -- The Contract v1 data model emits the BASE line RECORD_KEY as
+        -- INTERFACE_LINE_KEY (= <run_id>_RQLN_<seq>), which is persisted on the
+        -- Fusion base line as INTERFACE_LINE_KEY and returns unchanged. The
+        -- reconciler joins report rows to this table on RECON_KEY = RECORD_KEY, so
+        -- this stamp must match exactly. Only NULL keys are set; post-INSERT.
+        UPDATE DMT_POR_REQ_LINES_TFM_TBL
+        SET    RECON_KEY = INTERFACE_LINE_KEY,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_POR_REQ_LINES_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
@@ -600,6 +628,20 @@
         ;
 
         l_ok_count := SQL%ROWCOUNT;
+
+        -- Contract v1 coupling (multi-tier template): stamp the distribution tier's
+        -- RECON_KEY so it equals the distribution RECORD_KEY the recon report emits.
+        -- A distribution has no interface key that survives to the Fusion base
+        -- distribution, so the Contract v1 data model derives the BASE dist
+        -- RECORD_KEY from the parent line's stamped key plus the distribution
+        -- number: INTERFACE_LINE_KEY || ':DIST:' || DISTRIBUTION_NUMBER. The
+        -- reconciler joins on RECON_KEY = RECORD_KEY, so this stamp must match that
+        -- composition exactly. Only NULL keys are set; post-INSERT.
+        UPDATE DMT_POR_REQ_DISTS_TFM_TBL
+        SET    RECON_KEY = INTERFACE_LINE_KEY || ':DIST:' || TO_CHAR(DISTRIBUTION_NUMBER),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_POR_REQ_DISTS_STG_TBL s

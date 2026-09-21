@@ -156,11 +156,15 @@ FROM (
 
     -- ========== INTERFACE tier: rejections only (PROCESS_FLAG <> SUCCESS) ==========
 
-    -- INTERFACE / headers. RECORD_KEY = the stamped header key.
-    -- Error text is the header-level rejection(s) for this key.
+    -- INTERFACE / headers. RECORD_KEY = the prefixed REQUISITION_NUMBER so it
+    -- matches the BASE header tier's RECORD_KEY AND the header TFM row's stamped
+    -- RECON_KEY (the reconciler joins report rows to the TFM table on
+    -- RECON_KEY = RECORD_KEY; a TFM row holds ONE RECON_KEY, so BASE and INTERFACE
+    -- must agree on the key). The interface_header_key is still carried as
+    -- SOURCE_REF and drives the error-text join below.
     SELECT
         'Requisitions'                       AS object_type,
-        h.interface_header_key               AS record_key,
+        h.requisition_number                 AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -223,10 +227,14 @@ FROM (
 
     UNION ALL
 
-    -- INTERFACE / distributions. RECORD_KEY = the stamped dist key.
+    -- INTERFACE / distributions. RECORD_KEY = parent line key + ':DIST:' + dist
+    -- number, so it matches the BASE distribution tier's RECORD_KEY AND the dist
+    -- TFM row's stamped RECON_KEY (BASE and INTERFACE must agree on the one key the
+    -- TFM row carries). The interface_distribution_key is still carried as
+    -- SOURCE_REF and drives the error-text join below.
     SELECT
         'Requisitions.Distribution'          AS object_type,
-        d.interface_distribution_key         AS record_key,
+        d.interface_line_key || ':DIST:' || d.distribution_number  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,

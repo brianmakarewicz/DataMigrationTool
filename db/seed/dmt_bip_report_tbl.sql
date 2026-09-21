@@ -1238,3 +1238,44 @@ when matched then update set
     t."APPLY_PROC"       = s.apply_proc;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- Requisitions — Contract v1 registration (design section 5), MULTI-TIER PILOT.
+-- Points the Requisitions CEMLI at the nine-column Contract v1 report and sets
+-- CONTRACT_VERSION = 1 so the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
+-- runs it (a NULL/absent CONTRACT_VERSION makes the shared fetch bail with
+-- "not registered as CONTRACT_VERSION = 1", the earlier-pilot 0-LOADED cause).
+-- This converges the existing Requisitions row (seeded earlier in this file at
+-- the OLD REQ_DM.xdm/REQ_RPT.xdo two-dataset report) onto the Contract v1
+-- report. Requisitions dispatches its APPLY through RECON_PROC
+-- (DMT_REQ_RESULTS_PKG.RECONCILE_BATCH -> APPLY_CONTRACT_V1_REQUISITIONS), which
+-- does one static per-tier UPDATE pair discriminated by OBJECT_TYPE, so
+-- APPLY_PROC is intentionally not set here. TFM_TABLE / FUSION_ID_COLUMN carry
+-- the primary (header) tier for documentation; the reconciler names all three
+-- tier tables statically. RECON_KEY per tier (stamped by DMT_REQ_TRANSFORM_PKG,
+-- = each tier's report RECORD_KEY): headers = REQUISITION_NUMBER (prefixed);
+-- lines = INTERFACE_LINE_KEY; dists = INTERFACE_LINE_KEY||':DIST:'||number.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Requisitions'                                          cemli_code,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_RPT.xdo'       report_catalog_path,
+           'Requisition import reconciliation (Contract v1, multi-tier)' notes,
+           1                                                        contract_version,
+           'DMT_POR_REQ_HEADERS_TFM_TBL'                           tfm_table,
+           'FUSION_REQUISITION_HEADER_ID'                          fusion_id_column,
+           'multi-tier: headers=REQUISITION_NUMBER; lines=INTERFACE_LINE_KEY; dists=INTERFACE_LINE_KEY||'':DIST:''||DISTRIBUTION_NUMBER' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;

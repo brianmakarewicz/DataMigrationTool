@@ -5,18 +5,22 @@ AUTHID DEFINER
 AS
 -- ============================================================
 -- DMT_REQ_RESULTS_PKG
--- Post-load BIP reconciliation for Requisitions — Two-Tier pattern.
+-- Post-load reconciliation for Requisitions — Contract v1, MULTI-TIER template.
 --
--- Tier 1: POR_REQ_HEADERS_INTERFACE_ALL (interface table, errors/status)
--- Tier 2: POR_REQUISITION_HEADERS_ALL (base table, positive confirmation)
--- No absence=LOADED fallback. Every row gets positive verification
--- or is marked FAILED with a reconciliation error.
+-- Reuses the ONE shared Contract v1 fetch DMT_RECON_CONTRACT_PKG.FETCH_ROWS
+-- (Option A, owner decision on PR #248), exactly as the Workers template does.
+-- A single fetch runs the Requisitions Contract v1 report (nine columns, keyset
+-- paginated) over BIP and returns ALL three tiers' rows in one collection; each
+-- row's OBJECT_TYPE says which tier it belongs to. The apply is STATIC SQL, one
+-- pair of UPDATEs per tier, joined on RECON_KEY = the report RECORD_KEY.
 --
--- Reconciles headers, cascades to lines and distributions TFM,
--- then echoes back to all 3 STG tables.
+--   Tier          OBJECT_TYPE literal           TFM table
+--   headers       'Requisitions'                DMT_POR_REQ_HEADERS_TFM_TBL
+--   lines         'Requisitions.Line'           DMT_POR_REQ_LINES_TFM_TBL
+--   distributions 'Requisitions.Distribution'   DMT_POR_REQ_DISTS_TFM_TBL
 --
--- BIP report path read from DMT_BIP_REPORT_TBL at runtime.
--- CEMLI_CODE: 'Requisitions'
+-- The BIP report path + CONTRACT_VERSION are read from DMT_BIP_REPORT_TBL at
+-- runtime by the shared fetch. CEMLI_CODE: 'Requisitions'.
 -- ============================================================
 
     -- GET_PARTITION_KEYS — distinct spawn-per-partition tokens (BATCH_ID) for
@@ -27,27 +31,16 @@ AS
         p_run_id IN NUMBER
     ) RETURN DMT_PARTITION_KEY_TBL;
 
-    -- Main entry point: call after POLL_ESS_JOB completes.
-    -- p_load_ess_id: the ESS job ID used as P_BATCH_ID in the BIP report
-    -- p_import_ess_id: the Import ESS job ID for base table lookup
+    -- Main entry point: call after POLL_ESS_JOB completes. Runs the shared
+    -- Contract v1 fetch + per-tier apply. p_load_ess_id is the Contract v1
+    -- P_LOAD_REQUEST_ID; the report's run-scoped selectors (P_RUN_ID, P_PREFIX)
+    -- pick up the whole run. p_import_ess_id / p_work_queue_id retained for the
+    -- registered-signature contract.
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
         p_load_ess_id     IN NUMBER,
         p_import_ess_id   IN NUMBER DEFAULT NULL,
         p_work_queue_id IN NUMBER DEFAULT NULL
-    );
-
-    -- Call Fusion BIP v2 SOAP runReport and return raw XML response.
-    FUNCTION FETCH_BIP_RESULTS (
-        p_run_id  IN NUMBER,
-        p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
-    ) RETURN CLOB;
-
-    -- Parse BIP XML response and update all 3 TFM + STG tables.
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id IN NUMBER,
-        p_xml_data       IN CLOB
     );
 
 END DMT_REQ_RESULTS_PKG;
