@@ -156,9 +156,19 @@
         -- GENERATED — correct: unaccounted, not failed).
         -- ============================================================
         <<cascade_and_echo>>
-        -- Cascade to book TFM — LOADED under a LOADED header.
+        -- Cascade to book TFM — LOADED under a LOADED header. The book row belongs
+        -- to the same asset as its header, so it carries the header's confirmed
+        -- Fusion asset id (backlog #11: a LOADED row must store its Fusion base id
+        -- for the audit trail). FUSION_ASSET_ID is stamped from the header's
+        -- already-captured id, not fabricated.
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS         = 'LOADED',
+               bk.FUSION_ASSET_ID    = (
+                   SELECT hdr.FUSION_ASSET_ID FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
+                   WHERE  hdr.RUN_ID       = bk.RUN_ID
+                   AND    hdr.ASSET_NUMBER = bk.ASSET_NUMBER
+                   AND    hdr.TFM_STATUS   = 'LOADED'
+                   AND    ROWNUM = 1),
                bk.LAST_UPDATED_DATE  = SYSDATE
         WHERE  bk.RUN_ID     = p_run_id
         AND    bk.TFM_STATUS = 'GENERATED'

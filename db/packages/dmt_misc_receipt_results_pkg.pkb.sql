@@ -149,8 +149,19 @@ AS
         -- parent, not a fabricated verdict. (Serial detail carries no stored
         -- parent-transaction key in the TFM table and cannot be linked here
         -- without a transform change; it is left for the honest sweep.)
+        -- A lot line loaded with its parent transaction, so it carries that
+        -- transaction's confirmed Fusion transaction id (backlog #11: a LOADED row
+        -- must store its Fusion base id for the audit trail). FUSION_TRANSACTION_ID
+        -- is stamped from the parent transaction's already-captured FUSION_ID (a
+        -- VARCHAR2 id column converted to the child's NUMBER column), not fabricated.
         UPDATE DMT_INV_TRX_LOTS_TFM_TBL l
-        SET    l.TFM_STATUS='LOADED', l.RESULTS_UPDATED_DATE=SYSDATE, l.LAST_UPDATED_DATE=SYSDATE
+        SET    l.TFM_STATUS='LOADED',
+               l.FUSION_TRANSACTION_ID=(
+                   SELECT TO_NUMBER(t.FUSION_ID) FROM DMT_INV_TRX_TFM_TBL t
+                   WHERE  t.RUN_ID=p_run_id
+                   AND    t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER
+                   AND    t.TFM_STATUS='LOADED' AND ROWNUM=1),
+               l.RESULTS_UPDATED_DATE=SYSDATE, l.LAST_UPDATED_DATE=SYSDATE
         WHERE  l.RUN_ID=p_run_id AND l.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND    EXISTS (SELECT 1 FROM DMT_INV_TRX_TFM_TBL t WHERE t.RUN_ID=p_run_id
                        AND t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER
