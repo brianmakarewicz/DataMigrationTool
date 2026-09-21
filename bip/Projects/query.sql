@@ -180,9 +180,15 @@ FROM (
     -- ---- TeamMembers tier : INTERFACE only --------------------------
     -- Team members do not land in PJF_PROJECT_PARTIES keyed to the
     -- converted project on this instance (a global-resource link, not a
-    -- prefix-scoped base row), so the reliable outcome is the interface
-    -- rejection. Keyed by project name + member name (the interface
-    -- table carries no project number).
+    -- prefix-scoped base row; confirmed live 2026-09-21, prefix 10265 --
+    -- projects loaded, PJF_PROJECT_PARTIES had zero rows for them). This
+    -- data model therefore cannot emit a BASE/SUCCESS row for a loaded
+    -- team member; positive-load confirmation comes from the Import
+    -- Project Report's LIST_TEAM_MEMBER_SUCCESS section, harvested by
+    -- DMT_PROJECT_RESULTS_PKG.apply_success_report (marks the TFM row
+    -- LOADED on RECON_KEY = PROJECT_NAME || '/TM/' || TEAM_MEMBER_NAME).
+    -- This INTERFACE block still catches rejections. Keyed by project
+    -- name + member name (the interface table carries no project number).
     SELECT
         'TeamMembers'                        AS object_type,
         tm.project_name || '/TM/' || tm.team_member_name AS record_key,
@@ -204,9 +210,14 @@ FROM (
     UNION ALL
 
     -- ---- TxnControls tier : INTERFACE only --------------------------
-    -- No base table for transaction controls under this schema; the
-    -- staging table (LOAD_STATUS only, no IMPORT_STATUS) is the outcome
-    -- source. Keyed by project number + control reference.
+    -- No base table for transaction controls under this schema, and the
+    -- staging table is emptied on success, so this data model cannot emit
+    -- a BASE/SUCCESS row for a loaded control. Positive-load confirmation
+    -- comes from the Import Project Report's LIST_TXN_CTRL_SUCCESS section,
+    -- harvested by DMT_PROJECT_RESULTS_PKG.apply_success_report (marks the
+    -- TFM row LOADED on the run-prefixed TXN_CTRL_REFERENCE). This
+    -- INTERFACE block still catches rejections left in staging. Keyed by
+    -- project number + control reference.
     SELECT
         'TxnControls'                        AS object_type,
         tc.project_number || '/TC/' || tc.txn_ctrl_reference AS record_key,
