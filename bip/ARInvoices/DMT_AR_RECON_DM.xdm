@@ -118,18 +118,26 @@ FROM (
     -- BASE / distributions. The base distribution carries NO interface key,
     -- so it is confirmed TRANSITIVELY through its loaded parent line (joined by
     -- CUSTOMER_TRX_LINE_ID). RECORD_KEY is the PARENT LINE's stamped recon key
-    -- (INTERFACE_LINE_ATTRIBUTE1) -- the SAME expression the INTERFACE
+    -- (INTERFACE_LINE_ATTRIBUTE1) suffixed with the distribution's ACCOUNT_CLASS
+    -- as a per-distribution discriminator -- the SAME expression the INTERFACE
     -- distribution block below emits, so a single distribution TFM RECON_KEY
-    -- (stamped = INTERFACE_LINE_ATTRIBUTE1) joins both tiers of this record
-    -- type. A base distribution row existing for that parent-line key is
-    -- positive proof the line's distributions landed (AutoInvoice creates a
-    -- line and its GL distributions atomically). FUSION_ID is the real base
-    -- distribution id CUST_TRX_LINE_GL_DIST_ID, stamped into
+    -- (stamped = INTERFACE_LINE_ATTRIBUTE1 || ':' || ACCOUNT_CLASS) joins both
+    -- tiers of this record type. ACCOUNT_CLASS is required in the key because a
+    -- real AR line carries 2+ distributions (double-entry: Receivable + Revenue),
+    -- so the bare parent-line key would be identical across all siblings -- which
+    -- would drop rows at a keyset page boundary and misattribute one sibling's
+    -- FUSION_ID onto all of them. ACCOUNT_CLASS is stable on both the BASE and the
+    -- INTERFACE side, so the same key value appears in both tiers; the diverging
+    -- numeric dist id is deliberately excluded (it is Fusion-assigned on BASE and
+    -- absent on INTERFACE, so it cannot join the two tiers). A base distribution
+    -- row existing for that key is positive proof the line's distributions landed
+    -- (AutoInvoice creates a line and its GL distributions atomically). FUSION_ID
+    -- is the real base distribution id CUST_TRX_LINE_GL_DIST_ID, stamped into
     -- DMT_RA_DISTS_TFM_TBL.FUSION_CUST_TRX_LINE_GL_DIST_ID. The base dist id and
     -- account class are carried as SOURCE_REF for traceability.
     SELECT
         'ARInvoices.Distribution'            AS object_type,
-        bl.interface_line_attribute1         AS record_key,
+        bl.interface_line_attribute1 || ':' || gd.account_class  AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
         gd.cust_trx_line_gl_dist_id          AS fusion_id,
@@ -187,14 +195,18 @@ FROM (
 
     -- INTERFACE / distributions. RECORD_KEY = the stamped recon key carried on
     -- the interface distribution (INTERFACE_LINE_ATTRIBUTE1, inherited from the
-    -- parent line) -- the SAME expression the BASE distribution block above
-    -- emits, so a single distribution TFM RECON_KEY joins both tiers. A
-    -- distribution is a rejection when its parent line has no base row. Error
-    -- text is correlated on INTERFACE_DISTRIBUTION_ID; the account class and
-    -- interface distribution id are carried as SOURCE_REF for traceability.
+    -- parent line) suffixed with the distribution's ACCOUNT_CLASS -- the SAME
+    -- expression the BASE distribution block above emits, so a single
+    -- distribution TFM RECON_KEY joins both tiers. ACCOUNT_CLASS discriminates the
+    -- 2+ double-entry siblings of a line (see the BASE distribution block); it is
+    -- present verbatim on the interface distribution, so the INTERFACE key value
+    -- matches the BASE key value for the same distribution. A distribution is a
+    -- rejection when its parent line has no base row. Error text is correlated on
+    -- INTERFACE_DISTRIBUTION_ID; the account class and interface distribution id
+    -- are carried as SOURCE_REF for traceability.
     SELECT
         'ARInvoices.Distribution'            AS object_type,
-        d.interface_line_attribute1          AS record_key,
+        d.interface_line_attribute1 || ':' || d.account_class    AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,

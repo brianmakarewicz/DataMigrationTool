@@ -633,11 +633,26 @@
         -- line at staging. When the parent line loads, its distributions load with
         -- it (AutoInvoice creates a line and its GL distributions atomically), so a
         -- BASE distribution row for that parent-line key is positive proof the
-        -- distribution landed. The reconciler joins report rows to this table on
-        -- RECON_KEY = report RECORD_KEY, so this stamp must match that parent-line
-        -- key exactly. Only NULL keys are set; post-INSERT, run-scoped.
+        -- distribution landed.
+        --
+        -- PER-DISTRIBUTION DISCRIMINATOR (PR #371 review fix): a real AR line
+        -- always carries 2+ distributions (double-entry: a Receivable and a Revenue
+        -- distribution at minimum). The bare parent-line key alone is therefore
+        -- IDENTICAL across every sibling distribution of a line, which would (a)
+        -- risk silent row loss in keyset pagination when a page boundary falls in
+        -- the middle of a run of same-key rows, and (b) misattribute one sibling's
+        -- FUSION_ID onto all of them in the per-tier apply. So the distribution key
+        -- appends ACCOUNT_CLASS -- a column already on this table, stable pre- and
+        -- post-load, that differs across the double-entry siblings -- as the
+        -- per-distribution discriminator. The diverging numeric dist id is
+        -- deliberately NOT part of the key (it is Fusion-assigned on BASE and does
+        -- not survive to the INTERFACE side, so it would break the BASE/INTERFACE
+        -- join). The reconciler joins report rows to this table on
+        -- RECON_KEY = report RECORD_KEY, so this stamp must match the data model's
+        -- distribution RECORD_KEY (parent-line key || ':' || account_class)
+        -- exactly. Only NULL keys are set; post-INSERT, run-scoped.
         UPDATE DMT_RA_DISTS_TFM_TBL
-        SET    RECON_KEY = INTERFACE_LINE_ATTRIBUTE1,
+        SET    RECON_KEY = INTERFACE_LINE_ATTRIBUTE1 || ':' || ACCOUNT_CLASS,
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id
         AND    RECON_KEY IS NULL;

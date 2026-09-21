@@ -31,12 +31,20 @@ AS
 --     INTERFACE/SUCCESS corroborates but is never sufficient for LOADED.
 --
 -- The RECON_KEY on each tier's TFM row is stamped by DMT_AR_TRANSFORM_PKG to
--- equal that tier's report RECORD_KEY. BOTH tiers stamp
--- RECON_KEY = INTERFACE_LINE_ATTRIBUTE1 (the prefixed TRX_NUMBER): AutoInvoice
--- persists INTERFACE_LINE_ATTRIBUTE1 onto the base line, and the base distribution
--- (which carries no interface key of its own) is confirmed TRANSITIVELY through
--- its parent line — the data model emits the parent line's stamped key as the
--- distribution RECORD_KEY. That coupling is what makes the join hit.
+-- equal that tier's report RECORD_KEY:
+--   * LINES stamp RECON_KEY = INTERFACE_LINE_ATTRIBUTE1 (the prefixed TRX_NUMBER).
+--     AutoInvoice persists INTERFACE_LINE_ATTRIBUTE1 onto the base line, so the
+--     base line is keyed directly on the stamped key.
+--   * DISTRIBUTIONS stamp RECON_KEY = INTERFACE_LINE_ATTRIBUTE1 || ':' ||
+--     ACCOUNT_CLASS. The base distribution carries no interface key of its own,
+--     so it is confirmed TRANSITIVELY through its parent line; the data model
+--     emits the parent line's stamped key suffixed with the distribution's
+--     ACCOUNT_CLASS as the distribution RECORD_KEY. ACCOUNT_CLASS is required as a
+--     per-distribution discriminator (PR #371 review fix): a real AR line carries
+--     2+ distributions (double-entry: Receivable + Revenue), so without it every
+--     sibling distribution would share one key -- dropping rows at a keyset page
+--     boundary and stamping one sibling's FUSION_ID onto all of them. That coupling
+--     is what makes the per-tier join hit exactly one TFM row.
 --
 -- After the two tiers settle, outcomes are echoed back to both STG tables. No
 -- composed parent/child roll-up is needed: each tier has its own BASE and
