@@ -139,5 +139,38 @@ AS
         p_scenario_name   IN  VARCHAR2 DEFAULT NULL
     );
 
+    -- ------------------------------------------------------------
+    -- EXPORT_SCENARIO_ZIP — the return leg of the round-trip.
+    -- Reads every registered, active staging table that has rows
+    -- for the given scenario and writes ONE header-bearing CSV per
+    -- table into a single zip. This is the exact inverse of
+    -- UPLOAD_ZIP_BUNDLE: the zip it produces re-ingests through
+    -- UPLOAD_ZIP_BUNDLE / UPLOAD_ZIP_AUTO at full fidelity, so a
+    -- multi-CSV object (supplier family, PO header/line/loc/dist,
+    -- customer hierarchy, ...) round-trips with every record type
+    -- intact -- not just the parent/header.
+    --
+    -- Per member CSV:
+    --   * filename  = <STAGING_TABLE>.csv (matches CSV_FILENAME, so
+    --                 the proprietary header-driven loader picks it up)
+    --   * header    = the exact set of columns the loader accepts:
+    --                 every non-admin dictionary column PLUS SOURCE_ID
+    --                 (the loader honours SOURCE_ID when supplied),
+    --                 ordered by COLUMN_ORDER
+    --   * data      = the scenario's rows, CSV-quoted; DATE/TIMESTAMP
+    --                 written as YYYY/MM/DD HH24:MI:SS to match what
+    --                 the loader parses back.
+    --
+    -- Files are added in DISPLAY_ORDER (parents first) so the zip is
+    -- also human-legible in dependency order. Tables with zero rows
+    -- for the scenario are skipped (no empty CSVs).
+    PROCEDURE EXPORT_SCENARIO_ZIP (
+        p_scenario_name IN  VARCHAR2,
+        p_zip_blob      OUT BLOB,
+        p_summary       OUT CLOB,
+        p_error_msg     OUT VARCHAR2,
+        p_object_code   IN  VARCHAR2 DEFAULT NULL  -- NULL = whole scenario; else this object (+ its children)
+    );
+
 END DMT_CSV_UPLOAD_PKG;
 /
