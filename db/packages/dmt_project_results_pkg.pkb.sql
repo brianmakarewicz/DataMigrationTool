@@ -22,6 +22,7 @@ AS
 --   Projects      'Projects'            DMT_PJF_PROJECTS_TFM_TBL        FUSION_PROJECT_ID
 --   Tasks         'Tasks'               DMT_PJF_TASKS_TFM_TBL           FUSION_TASK_ID
 --   TeamMembers   'TeamMembers'         DMT_PJF_TEAM_MEMBERS_TFM_TBL    FUSION_PROJECT_PARTY_ID
+--                 (BASE = PJT_PROJECT_RESOURCE.PROJ_RESOURCE_ID)
 --   TxnControls   'TxnControls'         DMT_PJC_TXN_CONTROLS_TFM_TBL    FUSION_TXN_CONTROL_ID
 --
 -- Per tier the rule is the shared Contract v1 apply rule:
@@ -72,17 +73,22 @@ AS
     --                   and the shared Contract v1 apply below marks it LOADED with
     --                   that real id -- Rule #1 satisfied exactly like every other
     --                   object. No import-report success harvest is needed.
-    --   TeamMembers  -> has NO queryable base row on this instance. PJF_PROJECT_
-    --                   PARTIES (a plain-passthrough view over the base storage,
-    --                   5005 rows total) held ZERO rows for either loaded project --
-    --                   and zero for ANY DMT-migrated project across all prefixes --
-    --                   even after the async provisioning window had passed. The
-    --                   interface table was also empty (Import accepted and purged
-    --                   the members). With no accessible base id, this tier CANNOT
-    --                   satisfy Rule #1 today, so it is honestly left UNACCOUNTED
-    --                   (the TFM rows stay GENERATED). We do NOT fabricate a LOADED
-    --                   from the import-report success list; the owner will decide
-    --                   whether to grant a documented exception for this tier later.
+    --   TeamMembers  -> HAS a real, queryable Fusion base table. PJT_PROJECT_RESOURCE
+    --                   (Project Management team-member assignments) holds one row per
+    --                   loaded member with a real id (PROJ_RESOURCE_ID), keyed to the
+    --                   project via PROJECT_ID and to the person via RESOURCE_ID. The
+    --                   earlier "no base table" claim only checked the FINANCIAL
+    --                   project-parties view PJF_PROJECT_PARTIES, a different
+    --                   representation that is empty for every DMT-migrated project;
+    --                   PJT_PROJECT_RESOURCE is where Import Project actually persists
+    --                   the accepted members. Confirmed live 2026-09-21 (run 327 /
+    --                   prefix 10267): Alan Cook -> PROJ_RESOURCE_ID 300000333829040,
+    --                   Mandy Steward -> 300000333829065. The recon data model now
+    --                   emits a proper BASE/SUCCESS row for this tier (see
+    --                   DMT_PROJECT_RECON_DM.xdm) and the shared Contract v1 apply
+    --                   below marks it LOADED, stamping FUSION_PROJECT_PARTY_ID with
+    --                   that real id -- Rule #1 satisfied exactly like every other
+    --                   tier. No import-report success harvest is needed.
 
     -- --------------------------------------------------------
     -- Private: resolve the CHILD Import Projects report job id.
@@ -592,11 +598,13 @@ AS
         -- other object uses. The former import-report SUCCESS harvest for this tier is
         -- removed (it invented a LOADED with no base id and was blocked in review).
         --
-        -- TeamMembers has NO queryable Fusion base row on this instance (confirmed
-        -- live 2026-09-21: PJF_PROJECT_PARTIES holds zero rows for any DMT-migrated
-        -- project). Its TFM rows are therefore left GENERATED = honestly UNACCOUNTED,
-        -- never a fabricated LOADED. If the owner later grants a documented Rule #1
-        -- exception for this tier, that is the place to add it -- not here.
+        -- TeamMembers now reconcile through the shared Contract v1 apply above too:
+        -- the recon data model emits a real BASE/SUCCESS row over PJT_PROJECT_RESOURCE
+        -- (id PROJ_RESOURCE_ID), so the apply stamps FUSION_PROJECT_PARTY_ID and marks
+        -- the row LOADED against a real Fusion base row -- the same Rule #1 path every
+        -- other tier uses. The earlier "no base table" claim only checked the FINANCIAL
+        -- project-parties view PJF_PROJECT_PARTIES (empty for every DMT project);
+        -- PJT_PROJECT_RESOURCE is where Import Project actually persists the members.
 
         -- Unresolved records are intentionally left GENERATED (unaccounted). No
         -- fabricated FAILED: the accounting gate reports the object not-DONE and
