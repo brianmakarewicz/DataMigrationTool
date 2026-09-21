@@ -2,13 +2,11 @@
 -- bip/Items/DMT_ITEM_RECON_DM.xdm (deploy target /Custom/DMT2/Items/).
 -- The SQL below is the byte-exact CDATA body of that .xdm; regenerate
 -- this file from the .xdm whenever the data model changes -- the mirror
--- must never drift. (The legacy pre-contract query lives alongside as
--- the CDATA of ITEM_DM.xdm and is not this file.)
+-- must never drift.
 -- ============================================================
 -- Items reconciliation data model -- BIP reconciliation report
 -- contract v1 (nine columns, keyset pagination, the six standard
--- parameters). Same shape as DMT_GL_BAL_RECON_DM.xdm and
--- DMT_REQ_RECON_DM.xdm.
+-- parameters).
 --
 -- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
@@ -17,132 +15,67 @@
 --
 -- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
 --   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
---   No P_OFFSET / P_LIMIT.
 --
--- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
--- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
--- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
--- with an empty cursor first, then passes the last RECORD_KEY it
--- received on each next call, until a page returns fewer than
--- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
--- (every non-null RECORD_KEY sorts after the empty string).
+-- TWO record types in one object (OBJECT_TYPE discriminates):
+--   'Item'         -> item master, keyed ITEM_NUMBER~ORGANIZATION_CODE
+--   'ItemCategory' -> category assignment, keyed
+--       ITEM_NUMBER~ORGANIZATION_CODE~CATEGORY_SET_NAME~CATEGORY_CODE
+-- RECORD_KEY equals the TFM row's RECON_KEY (stamped by the item and
+-- item-category transform packages), byte-for-byte.
 --
--- MULTI-TIER object. The Item Import ESS job loads TWO record types
--- from one FBDI zip -- the item master and the item-category
--- assignments -- each with its own interface table and its own base
--- table. OBJECT_TYPE discriminates the tier: 'Items' for the item
--- master and 'Items.Category' for category assignments. Four SELECT
--- blocks (item BASE, item INTERFACE, category BASE, category
--- INTERFACE) are UNION ALL-ed, then ordered by RECORD_KEY.
+-- RUN SCOPING is by P_PREFIX (embedded at the front of every ITEM_NUMBER,
+-- surviving to interface and base tables) so every chunk of a multi-request
+-- Item Import load is seen in one pass. P_LOAD_REQUEST_ID is stamped for
+-- traceability but does NOT filter rows.
 --
--- RECORD_KEY (= the object's TFM RECON_KEY, the business key read
--- back from Fusion). Items has NO persisted interface surrogate key
--- and NO native source-system reference on the demo data (the
--- SOURCE_SYSTEM_REFERENCE column is present but empty), so the read-
--- back key is the item business key. The Item Import interface can
--- carry the SAME item across several TRANSACTION_IDs (Fusion chunks
--- the load into parallel threads), and the source can even repeat the
--- exact same category assignment on two interface rows that share one
--- TRANSACTION_ID, so the business key is not unique. The interface
--- ROWID (unique and stable within a single query) is appended to make
--- RECORD_KEY unique and comparable, which keyset pagination requires
--- (a duplicate boundary key would otherwise skip rows). The
--- DMT_REFERENCE column carries the pure business key without the
--- transaction/rowid suffix.
---   Item master   RECORD_KEY = ITEM_NUMBER : ORGANIZATION_CODE : TRANSACTION_ID : ROWID
---   Item category RECORD_KEY = ITEM_NUMBER : ORGANIZATION_CODE :
---                              CATEGORY_SET_NAME : CATEGORY_CODE : TRANSACTION_ID : ROWID
---
--- Row selection (proven live against DMT run prefix 10195,
--- LOAD_REQUEST_ID 9991087):
---   Neither Fusion base table carries LOAD_REQUEST_ID, but BOTH
---   interface tables do. So every tier drives off the interface row
---   for this load (:P_LOAD_REQUEST_ID) and confirms the outcome from
---   there:
---     BASE  tiers: the interface row LEFT JOINed to its base table on
---           the ids the import stamped back on the interface row
---           (item: INVENTORY_ITEM_ID + ORGANIZATION_ID; category:
---           INVENTORY_ITEM_ID + ORGANIZATION_ID + CATEGORY_ID +
---           CATEGORY_SET_ID). A base row present => SUCCESS, its
---           surrogate id is FUSION_ID. (This is Rule #1 positive base
---           confirmation, not interface PROCESS_STATUS inference:
---           validated live 2026-07-14 that PROCESS_STATUS is not a
---           reliable loaded/failed signal.)
---     INTERFACE tiers: the SAME interface rows whose base row is
---           ABSENT are the rejections; their real Fusion error text
---           is joined from EGP_IMPORT_ERRORS on TRANSACTION_ID.
---   The two tiers are mutually exclusive on base presence, so no row
---   is counted twice. :P_PREFIX is the run-scoped fallback selector
---   (the run prefix is embedded at the front of ITEM_NUMBER, e.g.
---   '10195DMT-RT-PLAIN-001') for callers that pass a prefix instead
---   of a single load id. :P_RUN_ID / :P_IMPORT_ESS_ID are declared
---   for contract symmetry and stamped into LOAD_REQUEST_ID for
---   traceability.
---
--- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
---   BASE  (row present in the Fusion base table)  => SUCCESS
---   INTERFACE (no base row -- rejection)          => ERROR
--- FUSION_ID is non-null on every BASE row (the Fusion surrogate id:
---   INVENTORY_ITEM_ID for the master, ITEM_CATEGORY_ASSIGNMENT_ID
---   for a category assignment).
--- ERROR_MESSAGE is non-null on every ERROR row (the real Fusion
---   rejection text from EGP_IMPORT_ERRORS.MESSAGE_TEXT, prefixed with
---   the errored column when the source records one; a fallback string
---   is used only when Fusion left no error row for a rejected item).
---
--- Preprocessing interface rows (ORGANIZATION_CODE IS NULL) are
--- excluded on the item-master tiers -- they are the master-org
--- shadow rows, not real item-org records.
+-- TIER RULES (Contract v1):
+--   BASE       -> record present in its Fusion base table => SUCCESS,
+--                 FUSION_ID = the base surrogate id. ONLY path to LOADED.
+--   INTERFACE  -> interface row with NO base row => rejection.
+--                 FUSION_STATUS normalized to ERROR; ERROR_MESSAGE is the
+--                 REAL Fusion text from EGP_IMPORT_ERRORS.MESSAGE_TEXT
+--                 (keyed on TRANSACTION_ID, filtered by ERROR_TABLE_NAME),
+--                 with a short fallback only when Fusion left no error row.
 -- ============================================================
-SELECT
-    object_type, record_key, source_type, fusion_status,
-    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+SELECT object_type,
+       record_key,
+       source_type,
+       fusion_status,
+       fusion_id,
+       error_message,
+       load_request_id,
+       source_ref,
+       dmt_reference
 FROM (
-    -- ========== Item master BASE: positive base-table proof ==========
-    SELECT
-        'Items'                              AS object_type,
-        i.item_number || ':' || i.organization_code
-            || ':' || i.transaction_id || ':' || ROWIDTOCHAR(i.ROWID)  AS record_key,
-        'BASE'                               AS source_type,
-        'SUCCESS'                            AS fusion_status,
-        b.inventory_item_id                  AS fusion_id,
-        CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
-        i.source_system_reference            AS source_ref,
-        i.item_number || ':' || i.organization_code  AS dmt_reference
-    FROM   egp_system_items_interface i
-    JOIN   egp_system_items_b b
-           ON b.inventory_item_id = i.inventory_item_id
-          AND b.organization_id   = i.organization_id
-    WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
-    AND    i.organization_code IS NOT NULL
-
-    UNION ALL
-
-    -- ========== Item master INTERFACE: rejections (no base row) ======
-    SELECT
-        'Items'                              AS object_type,
-        i.item_number || ':' || i.organization_code
-            || ':' || i.transaction_id || ':' || ROWIDTOCHAR(i.ROWID)  AS record_key,
-        'INTERFACE'                          AS source_type,
-        'ERROR'                              AS fusion_status,
-        CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[ITEM] ' || NVL(ie.error_message,
-             'Rejected by Item Import (process_status=' || NVL(TO_CHAR(i.process_status),'NULL')
-             || '; item not created in base table EGP_SYSTEM_ITEMS_B).')
-                                             AS error_message,
-        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
-        i.source_system_reference            AS source_ref,
-        i.item_number || ':' || i.organization_code  AS dmt_reference
+    -- ---- Item master, INTERFACE tier (rejections carry real Fusion text) -----
+    -- An interface row whose base row is ABSENT is a rejection. Contract v1
+    -- requires FUSION_STATUS normalized to ERROR and a non-null ERROR_MESSAGE
+    -- carrying the real Fusion rejection text, harvested from EGP_IMPORT_ERRORS
+    -- (keyed on TRANSACTION_ID). Items records per-row error text there, so this
+    -- object does NOT use the #IMPORT_REPORT# marker. A short fallback string is
+    -- used only when Fusion left no error row for a rejected item, so the row
+    -- still reaches FAILED (never UNACCOUNTED) per THE MISSION.
+    SELECT 'Item'                                          AS object_type,
+           i.item_number || '~' || i.organization_code     AS record_key,
+           'INTERFACE'                                     AS source_type,
+           'ERROR'                                         AS fusion_status,
+           CAST(NULL AS NUMBER)                            AS fusion_id,
+           '[ITEM] ' || NVL(ie.error_message,
+               'Rejected by Item Import (process_status='
+               || NVL(TO_CHAR(i.process_status), 'NULL')
+               || '; item not created in base table EGP_SYSTEM_ITEMS_B).')
+                                                           AS error_message,
+           TO_CHAR(i.load_request_id)                      AS load_request_id,
+           i.item_number                                   AS source_ref,
+           CAST(NULL AS VARCHAR2(240))                     AS dmt_reference
     FROM   egp_system_items_interface i
     LEFT   JOIN egp_system_items_b b
-           ON b.inventory_item_id = i.inventory_item_id
-          AND b.organization_id   = i.organization_id
+           ON b.item_number     = i.item_number
+          AND b.organization_id = i.organization_id
     LEFT   JOIN (
-        -- Real Fusion error text per interface row, keyed on
-        -- TRANSACTION_ID. One transaction can raise several messages;
-        -- collapse them into one string, prefixed with the errored
-        -- column name when the source records one.
+        -- Real Fusion error text per interface row, keyed on TRANSACTION_ID.
+        -- One transaction can raise several messages; collapse them into one
+        -- string, prefixed with the errored column name when Fusion records one.
         SELECT e.transaction_id,
                LISTAGG(
                    CASE WHEN e.error_column_name IS NOT NULL
@@ -154,62 +87,58 @@ FROM (
         AND    e.error_table_name = 'EGP_SYSTEM_ITEMS_INTERFACE'
         GROUP BY e.transaction_id
     ) ie ON ie.transaction_id = i.transaction_id
-    WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
+    WHERE  :P_PREFIX IS NOT NULL
+    AND    i.item_number LIKE :P_PREFIX || '%'
     AND    i.organization_code IS NOT NULL
-    AND    b.inventory_item_id IS NULL
+    AND    b.item_number IS NULL
 
     UNION ALL
 
-    -- ========== Item category BASE: positive base-table proof ========
-    -- Fusion id is EGP_ITEM_CATEGORIES.ITEM_CATEGORY_ASSIGNMENT_ID
-    -- (the assignment table's surrogate key; there is no
-    -- ITEM_CATEGORY_ID column on that table).
-    SELECT
-        'Items.Category'                     AS object_type,
-        ic.item_number || ':' || ic.organization_code
-            || ':' || ic.category_set_name || ':' || ic.category_code
-            || ':' || ic.transaction_id || ':' || ROWIDTOCHAR(ic.ROWID)  AS record_key,
-        'BASE'                               AS source_type,
-        'SUCCESS'                            AS fusion_status,
-        cb.item_category_assignment_id       AS fusion_id,
-        CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
-        ic.source_system_reference           AS source_ref,
-        ic.item_number || ':' || ic.organization_code
-            || ':' || ic.category_set_name || ':' || ic.category_code  AS dmt_reference
-    FROM   egp_item_categories_interface ic
-    JOIN   egp_item_categories cb
-           ON cb.inventory_item_id = ic.inventory_item_id
-          AND cb.organization_id   = ic.organization_id
-          AND cb.category_id       = ic.category_id
-          AND cb.category_set_id   = ic.category_set_id
-    WHERE  ic.load_request_id = :P_LOAD_REQUEST_ID
+    -- ---- Item master, BASE tier (positive proof -> LOADED) ------------------
+    SELECT 'Item'                                          AS object_type,
+           i.item_number || '~' || i.organization_code     AS record_key,
+           'BASE'                                          AS source_type,
+           'SUCCESS'                                       AS fusion_status,
+           b.inventory_item_id                             AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))                    AS error_message,
+           TO_CHAR(i.load_request_id)                      AS load_request_id,
+           i.item_number                                   AS source_ref,
+           CAST(NULL AS VARCHAR2(240))                     AS dmt_reference
+    FROM   egp_system_items_interface i
+    JOIN   egp_system_items_b b
+           ON b.item_number     = i.item_number
+          AND b.organization_id = i.organization_id
+    WHERE  :P_PREFIX IS NOT NULL
+    AND    i.item_number LIKE :P_PREFIX || '%'
+    AND    i.organization_code IS NOT NULL
 
     UNION ALL
 
-    -- ========== Item category INTERFACE: rejections (no base row) ====
-    SELECT
-        'Items.Category'                     AS object_type,
-        ic.item_number || ':' || ic.organization_code
-            || ':' || ic.category_set_name || ':' || ic.category_code
-            || ':' || ic.transaction_id || ':' || ROWIDTOCHAR(ic.ROWID)  AS record_key,
-        'INTERFACE'                          AS source_type,
-        'ERROR'                              AS fusion_status,
-        CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[CATEGORY] ' || NVL(ce.error_message,
-             'Rejected by Item Import (process_status=' || NVL(TO_CHAR(ic.process_status),'NULL')
-             || '; category assignment not created in base table EGP_ITEM_CATEGORIES).')
-                                             AS error_message,
-        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
-        ic.source_system_reference           AS source_ref,
-        ic.item_number || ':' || ic.organization_code
-            || ':' || ic.category_set_name || ':' || ic.category_code  AS dmt_reference
+    -- ---- Item category, INTERFACE tier (rejections carry real Fusion text) ---
+    -- Same rule as the item-master INTERFACE tier: a category interface row with
+    -- no base assignment is a rejection; FUSION_STATUS='ERROR' and ERROR_MESSAGE
+    -- carries the real EGP_IMPORT_ERRORS text (EGP_ITEM_CATEGORIES_INTERFACE),
+    -- with a short fallback only when Fusion left no error row.
+    SELECT 'ItemCategory'                                                        AS object_type,
+           ic.item_number || '~' || ic.organization_code || '~'
+             || ic.category_set_name || '~' || ic.category_code                  AS record_key,
+           'INTERFACE'                                                          AS source_type,
+           'ERROR'                                                             AS fusion_status,
+           CAST(NULL AS NUMBER)                                                 AS fusion_id,
+           '[CATEGORY] ' || NVL(ce.error_message,
+               'Rejected by Item Import (process_status='
+               || NVL(TO_CHAR(ic.process_status), 'NULL')
+               || '; category assignment not created in base table '
+               || 'EGP_ITEM_CATEGORIES).')                                      AS error_message,
+           TO_CHAR(ic.load_request_id)                                          AS load_request_id,
+           ic.item_number                                                       AS source_ref,
+           CAST(NULL AS VARCHAR2(240))                                          AS dmt_reference
     FROM   egp_item_categories_interface ic
-    LEFT   JOIN egp_item_categories cb
-           ON cb.inventory_item_id = ic.inventory_item_id
-          AND cb.organization_id   = ic.organization_id
-          AND cb.category_id       = ic.category_id
-          AND cb.category_set_id   = ic.category_set_id
+    LEFT   JOIN egp_item_categories b
+           ON b.inventory_item_id = ic.inventory_item_id
+          AND b.organization_id   = ic.organization_id
+          AND b.category_id       = ic.category_id
+          AND b.category_set_id   = ic.category_set_id
     LEFT   JOIN (
         SELECT e.transaction_id,
                LISTAGG(
@@ -222,15 +151,32 @@ FROM (
         AND    e.error_table_name = 'EGP_ITEM_CATEGORIES_INTERFACE'
         GROUP BY e.transaction_id
     ) ce ON ce.transaction_id = ic.transaction_id
-    WHERE  ic.load_request_id = :P_LOAD_REQUEST_ID
-    AND    cb.item_category_assignment_id IS NULL
+    WHERE  :P_PREFIX IS NOT NULL
+    AND    ic.item_number LIKE :P_PREFIX || '%'
+    AND    b.item_category_assignment_id IS NULL
+
+    UNION ALL
+
+    -- ---- Item category, BASE tier (positive proof -> LOADED) ----------------
+    SELECT 'ItemCategory'                                                        AS object_type,
+           ic.item_number || '~' || ic.organization_code || '~'
+             || ic.category_set_name || '~' || ic.category_code                  AS record_key,
+           'BASE'                                                              AS source_type,
+           'SUCCESS'                                                           AS fusion_status,
+           b.item_category_assignment_id                                       AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))                                         AS error_message,
+           TO_CHAR(ic.load_request_id)                                          AS load_request_id,
+           ic.item_number                                                       AS source_ref,
+           CAST(NULL AS VARCHAR2(240))                                          AS dmt_reference
+    FROM   egp_item_categories_interface ic
+    JOIN   egp_item_categories b
+           ON b.inventory_item_id = ic.inventory_item_id
+          AND b.organization_id   = ic.organization_id
+          AND b.category_id       = ic.category_id
+          AND b.category_set_id   = ic.category_set_id
+    WHERE  :P_PREFIX IS NOT NULL
+    AND    ic.item_number LIKE :P_PREFIX || '%'
 )
--- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
--- BIP, so treat NULL as "from the start": return every row. On later
--- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
--- greater keys are returned. RECORD_KEY is compared as text (the recon
--- key is a string); the reconciler feeds back the exact key it received.
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
-      

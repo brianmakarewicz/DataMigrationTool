@@ -1864,3 +1864,51 @@ when matched then update set
     t."RECON_KEY_SQL"       = s.recon_key_sql;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- Items (100000025) — Contract v1 registration (design section 5). Items is ONE
+-- pipeline object carrying TWO record types (db/seed/dmt_cemli_catalog_tbl.sql:
+-- 'Items' -> 'Item Master' DMT_EGP_ITEM_TFM_TBL AND 'Item Categories'
+-- DMT_EGP_ITEM_CAT_TFM_TBL): its one FBDI zip loads two CSVs under one ESS job.
+-- So ONE nine-column recon report emits BOTH record types, discriminated by
+-- OBJECT_TYPE, and is edited IN PLACE at the #339 name DMT_ITEM_RECON_DM.xdm --
+-- one data model per folder, no orphans (design section 5):
+--   OBJECT_TYPE='Item'         -> DMT_EGP_ITEM_TFM_TBL, base tier
+--       EGP_SYSTEM_ITEMS_B, FUSION_ID = INVENTORY_ITEM_ID, RECON_KEY
+--       ITEM_NUMBER~ORGANIZATION_CODE (prefixed item number).
+--   OBJECT_TYPE='ItemCategory' -> DMT_EGP_ITEM_CAT_TFM_TBL, base tier
+--       EGP_ITEM_CATEGORIES, FUSION_ID = ITEM_CATEGORY_ASSIGNMENT_ID, RECON_KEY
+--       ITEM_NUMBER~ORGANIZATION_CODE~CATEGORY_SET_NAME~CATEGORY_CODE.
+-- The single-valued TFM_TABLE/FUSION_ID_COLUMN/RECON_KEY_SQL registry columns
+-- carry the primary Item tier (the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
+-- reads only CONTRACT_VERSION + the run PREFIX; the static APPLY in
+-- DMT_EGP_ITEM_RESULTS_PKG.APPLY_CONTRACT_V1_ITEMS handles both TFM tables). This
+-- MERGE converges the Contract v1 columns and re-points the DM/report paths (the
+-- Items row above still names the retired ITEM_DM.xdm) to the one recon report.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Items'                                             cemli_code,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_RPT.xdo'         report_catalog_path,
+           'Item Import base-table reconciliation (Contract v1 -- nine columns, '
+             || 'keyset). ONE report, two record types via OBJECT_TYPE: Item '
+             || '(DMT_EGP_ITEM_TFM_TBL <- EGP_SYSTEM_ITEMS_B) and ItemCategory '
+             || '(DMT_EGP_ITEM_CAT_TFM_TBL <- EGP_ITEM_CATEGORIES).'            notes,
+           1                                                    contract_version,
+           'DMT_EGP_ITEM_TFM_TBL'                              tfm_table,
+           'FUSION_INVENTORY_ITEM_ID'                          fusion_id_column,
+           'ITEM_NUMBER || ''~'' || ORGANIZATION_CODE -- item master: prefixed item number + org; ItemCategory tier uses ITEM_NUMBER || ''~'' || ORGANIZATION_CODE || ''~'' || CATEGORY_SET_NAME || ''~'' || CATEGORY_CODE' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
