@@ -52,9 +52,8 @@
 --   INTERFACE (rejection left behind by Import)  => ERROR
 -- FUSION_ID: Projects BASE = PROJECT_ID; Tasks BASE = PROJ_ELEMENT_ID;
 --   TxnControls BASE = TXN_CONTROL_ID (PJC_TRANSACTION_CONTROLS);
---   INTERFACE rows have no Fusion id yet (NULL). TeamMembers has no
---   queryable base row on this instance, so it emits only INTERFACE
---   rows -- a loaded team member is left UNACCOUNTED, never fabricated.
+--   TeamMembers BASE = PROJ_RESOURCE_ID (PJT_PROJECT_RESOURCE);
+--   INTERFACE rows have no Fusion id yet (NULL).
 -- ERROR_MESSAGE: the Projects interface tables carry no error-text
 --   column, so per Contract v1 an ERROR row returns the literal marker
 --   '#IMPORT_REPORT#'. That marker tells the reconciler the real per-row
@@ -155,17 +154,44 @@ FROM (
 
     UNION ALL
 
-    -- TeamMembers tier : INTERFACE only.
-    -- Team members have NO queryable Fusion base row on this instance. Confirmed
-    -- live 2026-09-21 (run 325 / prefix 10265, project ids 300000333828672 and
-    -- 300000333828697): PJF_PROJECT_PARTIES held zero rows for either loaded
-    -- project -- and zero for ANY DMT-migrated project across all prefixes -- even
-    -- after the async provisioning window had passed, while the interface table was
-    -- also empty (Import accepted and purged the members). With no accessible base
-    -- id, this data model cannot emit a BASE/SUCCESS row for a loaded team member,
-    -- so a LOADED team member is honestly left UNACCOUNTED (its TFM row stays
-    -- GENERATED); we do not fabricate a LOADED without base evidence. This INTERFACE
-    -- block still catches rejections Import leaves behind.
+    -- TeamMembers tier : BASE (positive LOADED confirmation).
+    -- Team members DO land in a queryable Fusion base table on this instance:
+    -- PJT_PROJECT_RESOURCE (Project Management team-member assignments), one row per
+    -- loaded member with a real id (PROJ_RESOURCE_ID), keyed to the project via
+    -- PROJECT_ID and to the person via RESOURCE_ID. The prior "no base table" claim
+    -- checked only the FINANCIAL project-parties view PJF_PROJECT_PARTIES, a
+    -- different representation that is empty for every DMT-migrated project;
+    -- PJT_PROJECT_RESOURCE is where Import Project actually persists accepted members.
+    -- Confirmed live 2026-09-21 (run 327 / prefix 10267): Alan Cook -> PROJ_RESOURCE_ID
+    -- 300000333829040, Mandy Steward -> 300000333829065. The base table carries no
+    -- project number, so join PJF_PROJECTS_ALL_VL for the prefix filter and the
+    -- descriptive project NAME, and PJT_PRJ_ENTERPRISE_RESOURCE_VL for the member
+    -- DISPLAY_NAME, so RECORD_KEY (project NAME || '/TM/' || display name) matches the
+    -- transform's RECON_KEY exactly (PROJECT_NAME || '/TM/' || TEAM_MEMBER_NAME).
+    -- FUSION_ID = PROJ_RESOURCE_ID so the reconciler marks the TFM row LOADED with a
+    -- real Fusion base id -- Rule #1 satisfied exactly like every other tier.
+    SELECT
+        'TeamMembers'                        AS object_type,
+        pv.name || '/TM/' || er.display_name AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        pr.proj_resource_id                  AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        pv.name || '/TM/' || er.display_name AS source_ref,
+        pv.name || '/TM/' || er.display_name AS dmt_reference,
+        CAST(NULL AS VARCHAR2(4000))         AS debug_disposition
+    FROM   pjt_project_resource            pr
+    JOIN   pjf_projects_all_vl             pv ON pv.project_id  = pr.project_id
+    JOIN   pjt_prj_enterprise_resource_vl er ON er.resource_id = pr.resource_id
+    WHERE  :P_PREFIX IS NOT NULL
+    AND    pv.segment1 LIKE :P_PREFIX || '%'
+
+    UNION ALL
+
+    -- TeamMembers tier : INTERFACE (rejections left behind).
+    -- Anything still in the interface table after import is a rejection (Import
+    -- purges the accepted members). Keyed by project name + member name.
     SELECT
         'TeamMembers'                        AS object_type,
         tm.project_name || '/TM/' || tm.team_member_name AS record_key,
