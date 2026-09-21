@@ -51,6 +51,14 @@
         l_buf  VARCHAR2(32767);
         l_out  CLOB;
         l_len  PLS_INTEGER;
+        -- envelope is written to the request in <=32767-char pieces:
+        -- UTL_HTTP.WRITE_TEXT with a CLOB longer than 32767 raises
+        -- ORA-06502 (the CLOB is coerced to a single VARCHAR2 buffer),
+        -- which blocks deploying any data model whose base64 envelope
+        -- exceeds 32K (e.g. Customers V2). Chunking keeps each write
+        -- inside the VARCHAR2 limit for envelopes of any size.
+        c_wchunk CONSTANT PLS_INTEGER := 32767;
+        l_woff   PLS_INTEGER := 1;
     BEGIN
         DBMS_LOB.CREATETEMPORARY(l_out, TRUE);
 
@@ -63,7 +71,11 @@
 
         l_len := DBMS_LOB.GETLENGTH(p_envelope);
         UTL_HTTP.SET_HEADER(l_req, 'Content-Length', TO_CHAR(l_len));
-        UTL_HTTP.WRITE_TEXT(l_req, p_envelope);
+        WHILE l_woff <= l_len LOOP
+            UTL_HTTP.WRITE_TEXT(l_req,
+                DBMS_LOB.SUBSTR(p_envelope, c_wchunk, l_woff));
+            l_woff := l_woff + c_wchunk;
+        END LOOP;
 
         l_resp := UTL_HTTP.GET_RESPONSE(l_req);
 
@@ -142,17 +154,31 @@
 
     -- --------------------------------------------------------
     -- Private: base64-encode a CLOB.
-    -- Converts to BLOB (AL32UTF8) then encodes in 24576-byte
-    -- chunks (must be divisible by 3 for correct base64 output).
+    -- Converts to BLOB (AL32UTF8) then encodes in fixed-size input
+    -- chunks. The chunk MUST be a multiple of 3 so each chunk encodes
+    -- to a complete base64 group (no mid-stream padding when chunks are
+    -- concatenated), AND small enough that the encoded output fits in
+    -- RAW(32767).
+    --
+    -- Sizing note: base64 expands 3 input bytes -> 4 output bytes, AND
+    -- UTL_ENCODE.BASE64_ENCODE inserts a newline (CHR(10)) after every
+    -- 64 output chars. So the true encoded length of N input bytes is
+    -- (N/3)*4 + floor((N/3)*4 / 64). The original 24576-byte chunk
+    -- therefore produced 32768 + 512 = 33280 bytes -- far over
+    -- RAW(32767) -- raising ORA-06502 for any DM >= ~24KB. Even 24573
+    -- (a multiple of 3) yields 33275 bytes and still overflows once the
+    -- newlines are counted. Use 22500 (22500/3 = 7500 groups ->
+    -- 30000 base64 chars + 468 newlines = 30468 bytes), which is a clean
+    -- multiple of 3 and stays safely within RAW(32767).
     -- Returns base64 as a CLOB with no embedded newlines.
     -- --------------------------------------------------------
     FUNCTION clob_to_b64 (p_clob IN CLOB) RETURN CLOB IS
         l_blob      BLOB := clob_to_blob_utf8(p_clob);
         l_b64blob   BLOB;
-        l_amt       PLS_INTEGER := 24576;
+        l_amt       PLS_INTEGER := 22500;
         l_offset    PLS_INTEGER := 1;
         l_blob_len  PLS_INTEGER;
-        l_chunk_raw RAW(24576);
+        l_chunk_raw RAW(22500);
         l_enc_raw   RAW(32767);
     BEGIN
         l_blob_len := DBMS_LOB.GETLENGTH(l_blob);
