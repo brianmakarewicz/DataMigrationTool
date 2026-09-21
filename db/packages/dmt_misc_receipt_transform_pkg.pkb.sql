@@ -204,6 +204,23 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (single-tier): stamp the transaction tier's
+        -- RECON_KEY so it equals the RECORD_KEY the recon report emits. The
+        -- MiscReceipts Contract v1 data model (bip/MiscReceipts/DMT_INV_TRX_RECON_DM.xdm)
+        -- emits RECORD_KEY = TO_CHAR(SOURCE_LINE_ID) on both the BASE tier
+        -- (INV_MATERIAL_TXNS) and the INTERFACE tier (INV_TRANSACTIONS_INTERFACE),
+        -- where SOURCE_LINE_ID is the value this transform stamps (= the TFM
+        -- STG_SEQUENCE_ID). The shared reconciler
+        -- (DMT_MISC_RECEIPT_RESULTS_PKG.APPLY_CONTRACT_V1_MISC_RECEIPTS) joins the
+        -- report rows to this table on RECON_KEY = report RECORD_KEY, so this stamp
+        -- must equal TO_CHAR(SOURCE_LINE_ID) exactly. Only NULL keys are set (never
+        -- overwrite); post-INSERT, run-scoped.
+        UPDATE DMT_INV_TRX_TFM_TBL
+        SET    RECON_KEY = TO_CHAR(SOURCE_LINE_ID),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Update STG stg_status
         UPDATE DMT_INV_TRX_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',

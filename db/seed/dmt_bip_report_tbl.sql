@@ -1547,3 +1547,46 @@ when not matched then insert
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- MiscReceipts — Contract v1 registration (design section 5), SINGLE-TIER.
+-- Points the MiscReceipts CEMLI at the nine-column Contract v1 report
+-- (DMT_INV_TRX_RECON_DM.xdm, merged #341) and sets CONTRACT_VERSION = 1 so the
+-- shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs it (a NULL/absent
+-- CONTRACT_VERSION makes the shared fetch bail with "not registered as
+-- CONTRACT_VERSION = 1"). This converges the existing MiscReceipts row (seeded
+-- earlier in this file at the OLD MISC_RECEIPT_DM.xdm/RPT two-status report) onto
+-- the Contract v1 report. MiscReceipts dispatches its APPLY through RECON_PROC
+-- (DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH ->
+-- APPLY_CONTRACT_V1_MISC_RECEIPTS), which does one static UPDATE pair for the
+-- single tier discriminated by OBJECT_TYPE = 'MiscReceipts', so APPLY_PROC is
+-- intentionally not set here. TFM_TABLE / FUSION_ID_COLUMN carry the single
+-- transaction tier. RECON_KEY (stamped by DMT_MISC_RECEIPT_TRANSFORM_PKG, = the
+-- report RECORD_KEY) = TO_CHAR(SOURCE_LINE_ID) (= TO_CHAR(the TFM
+-- STG_SEQUENCE_ID)); the base tier (INV_MATERIAL_TXNS) and interface tier
+-- (INV_TRANSACTIONS_INTERFACE at PROCESS_FLAG = 3, real error inline) never
+-- overlap on that key.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'MiscReceipts'                                          cemli_code,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_RPT.xdo'   report_catalog_path,
+           'Miscellaneous receiving receipt import reconciliation (Contract v1, single-tier)' notes,
+           1                                                        contract_version,
+           'DMT_INV_TRX_TFM_TBL'                                   tfm_table,
+           'FUSION_ID'                                             fusion_id_column,
+           'single-tier: TO_CHAR(SOURCE_LINE_ID) -- = TFM STG_SEQUENCE_ID; matches report RECORD_KEY on both BASE and INTERFACE tiers' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
