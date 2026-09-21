@@ -429,6 +429,24 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier template): stamp the LINE tier's
+        -- RECON_KEY so it equals the line RECORD_KEY the recon report emits.
+        -- The ARInvoices Contract v1 data model (DMT_AR_RECON_DM.xdm) emits BOTH
+        -- the BASE line RECORD_KEY and the INTERFACE line RECORD_KEY as
+        -- INTERFACE_LINE_ATTRIBUTE1 (= the prefixed TRX_NUMBER). AutoInvoice
+        -- PERSISTS INTERFACE_LINE_ATTRIBUTE1 onto the base line
+        -- RA_CUSTOMER_TRX_LINES_ALL, so the stamped value survives to the base
+        -- table and returns unchanged. The shared reconciler
+        -- (DMT_AR_RESULTS_PKG.APPLY_CONTRACT_V1_ARINVOICES) joins report rows to
+        -- this table on RECON_KEY = report RECORD_KEY, so this stamp must match
+        -- that expression exactly. Only NULL keys are set (never overwrite);
+        -- post-INSERT, run-scoped.
+        UPDATE DMT_RA_LINES_TFM_TBL
+        SET    RECON_KEY = INTERFACE_LINE_ATTRIBUTE1,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_RA_LINES_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
@@ -603,6 +621,79 @@
         ;
 
         l_ok_count := SQL%ROWCOUNT;
+
+        -- Contract v1 coupling (multi-tier template): stamp the DISTRIBUTION tier's
+        -- RECON_KEY so it equals the distribution RECORD_KEY the recon report emits.
+        -- An AR base distribution (RA_CUST_TRX_LINE_GL_DIST_ALL) carries NO
+        -- interface key that survives from the load, so a distribution cannot be
+        -- confirmed by its own stamped key. It is confirmed TRANSITIVELY through
+        -- its parent line: the Contract v1 data model emits BOTH the BASE and the
+        -- INTERFACE distribution RECORD_KEY as the parent line's stamped key
+        -- (INTERFACE_LINE_ATTRIBUTE1), which the distribution inherited from its
+        -- line at staging. When the parent line loads, its distributions load with
+        -- it (AutoInvoice creates a line and its GL distributions atomically), so a
+        -- BASE distribution row for that parent-line key is positive proof the
+        -- distribution landed.
+        --
+        -- PER-DISTRIBUTION DISCRIMINATOR (PR #371 review fix, second round).
+        -- A real AR line carries 2+ distributions, and -- proven against live
+        -- Fusion data -- a line commonly carries 2+ distributions of the SAME
+        -- ACCOUNT_CLASS (888 such lines exist in the demo base table). So
+        -- ACCOUNT_CLASS alone is NOT unique per distribution: the bare parent-line
+        -- key, and even parent-line-key || ':' || account_class, still collide
+        -- across sibling distributions of one line. A colliding key would (a) risk
+        -- silent row loss in the data model's keyset pagination when a page
+        -- boundary falls in the middle of a run of same-key rows, and (b)
+        -- misattribute one sibling's FUSION_ID onto another in the per-tier apply.
+        --
+        -- The base distribution table RA_CUST_TRX_LINE_GL_DIST_ALL carries NO
+        -- interface key at all (verified against the live data dictionary), so no
+        -- natural per-distribution reference survives the load onto the base row.
+        -- The columns that DO round-trip verbatim from the interface distribution
+        -- onto the base distribution are the business amounts AutoInvoice copies
+        -- unchanged: ACCOUNT_CLASS, AMOUNT, ACCTD_AMOUNT, PERCENT.
+        --
+        -- The key is therefore made unique with a DETERMINISTIC per-line ordinal
+        -- computed IDENTICALLY on all three sides (this TFM stamp, and the data
+        -- model's BASE and INTERFACE distribution blocks):
+        --   RECON_KEY = parent_line_key || ':' || account_class || ':' || <ordinal>
+        --   <ordinal> = ROW_NUMBER() OVER (
+        --       PARTITION BY parent_line_key, account_class
+        --       ORDER BY amount, acctd_amount, percent, <row id> )
+        -- The ORDER BY leads with the round-tripping business amounts, so the
+        -- ordinal a distribution receives agrees across all three sides for every
+        -- sibling that differs on any business amount (the overwhelming majority --
+        -- only 11 fully-identical same-class same-amount groups exist in the entire
+        -- demo base table). The trailing row id (STG_SEQUENCE_ID here; the
+        -- Fusion-assigned dist id / interface dist id in the data model) only breaks
+        -- ties among distributions that are IDENTICAL on every business amount; for
+        -- those the assignment is order-arbitrary but content-correct, because such
+        -- siblings are indistinguishable business records drawing FUSION_IDs from
+        -- the same pool. DOCUMENTED ASSUMPTION: for a fully-identical tie group the
+        -- exact FUSION_ID-to-TFM-row pairing is not guaranteed, but the KEY IS
+        -- GUARANTEED UNIQUE (no dropped page rows) and every FUSION_ID lands on a
+        -- real member of that identical group (no cross-line/cross-class leakage).
+        --
+        -- The reconciler joins report rows to this table on RECON_KEY = report
+        -- RECORD_KEY, so this stamp must match the data model's distribution
+        -- RECORD_KEY expression exactly. Only NULL keys are set; post-INSERT,
+        -- run-scoped.
+        MERGE INTO DMT_RA_DISTS_TFM_TBL t
+        USING (
+            SELECT TFM_SEQUENCE_ID,
+                   INTERFACE_LINE_ATTRIBUTE1 || ':' || ACCOUNT_CLASS || ':' ||
+                   ROW_NUMBER() OVER (
+                       PARTITION BY INTERFACE_LINE_ATTRIBUTE1, ACCOUNT_CLASS
+                       ORDER BY AMOUNT, ACCTD_AMOUNT, PERCENT, STG_SEQUENCE_ID
+                   )  AS new_recon_key
+            FROM   DMT_RA_DISTS_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    RECON_KEY IS NULL
+        ) src
+        ON (t.TFM_SEQUENCE_ID = src.TFM_SEQUENCE_ID)
+        WHEN MATCHED THEN UPDATE
+        SET    t.RECON_KEY = src.new_recon_key,
+               t.LAST_UPDATED_DATE = SYSDATE;
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_RA_DISTS_STG_TBL s
