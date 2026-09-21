@@ -1,8 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="project_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
 -- ============================================================
--- Projects reconciliation query -- BIP reconciliation report
--- contract v1 (nine columns, keyset pagination, six standard
--- parameters). Mirrors the SQL embedded in DMT_PROJECT_RECON_DM.xdm
--- for review; the .xdm is authoritative.
+-- Projects reconciliation data model -- BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination, the six
+-- standard parameters). Conforms to the GLBalances template.
 --
 -- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
@@ -15,73 +26,43 @@
 --
 -- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
 -- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
--- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
--- with an empty cursor first, then passes the last RECORD_KEY it
--- received on each next call, until a page returns fewer than
--- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
--- (every non-null RECORD_KEY sorts after the empty string).
+-- :P_CHUNK_SIZE of them. An empty :P_AFTER_KEY selects from the
+-- start (every non-null RECORD_KEY sorts after the empty string).
 --
--- Projects is ONE object loaded by one FBDI zip / one Import ESS job,
--- carrying four record types. OBJECT_TYPE discriminates the tier so
--- the reconciler knows which TFM table each row belongs to:
+-- Projects is ONE object (one FBDI zip / one Import ESS job) with
+-- four record types; OBJECT_TYPE discriminates the tier so the
+-- reconciler knows which TFM table each row belongs to:
 --   Projects, Tasks, TeamMembers, TxnControls.
 --
--- ROW SELECTION -- what actually works on this instance (proven live,
--- confirmed 2026-09-20 against loaded prefix 10061):
+-- ROW SELECTION -- proven live (confirmed 2026-09-20, prefix 10061):
 --   The FBDI reference columns the contract prefers are NOT populated
 --   for Projects on this demo: PJF_PROJECTS_ALL_B.REQUEST_ID is NULL
---   after import (so base->interface on :P_LOAD_REQUEST_ID cannot
---   match a base row), and PM_PROJECT_REFERENCE / ATTRIBUTE1 /
---   ATTRIBUTE_CATEGORY come back empty (so neither the DFF nor the
---   native source-ref path finds anything). The only reliable base
---   identity is the run prefix stamped into PROJECT_NUMBER (SEGMENT1).
---   This matches the object's proven reconciler (README DB-17).
---   So:
---     BASE  rows  -> matched by SEGMENT1 LIKE :P_PREFIX || '%'
---                    (positive LOADED confirmation).
---     INTERFACE   -> the interface rows the Import ESS job left behind,
---                    carrying :P_LOAD_REQUEST_ID. Import purges the
---                    successfully-imported rows, so anything still
---                    present is a rejection (IMPORT_STATUS / LOAD_STATUS
---                    carry the disposition; there is no per-row error
---                    text column -- see below).
+--   after import, and PM_PROJECT_REFERENCE / ATTRIBUTE1 /
+--   ATTRIBUTE_CATEGORY come back empty. The only reliable base
+--   identity is the run prefix stamped into PROJECT_NUMBER (SEGMENT1),
+--   matching the object's proven reconciler (README DB-17). So:
+--     BASE  rows  -> SEGMENT1 LIKE :P_PREFIX || '%'  (LOADED proof).
+--     INTERFACE   -> rows the Import ESS job left behind carrying
+--                    :P_LOAD_REQUEST_ID (Import purges the imported
+--                    rows; anything remaining is a rejection).
 --   :P_RUN_ID and :P_IMPORT_ESS_ID are declared for contract symmetry.
 --
--- FUSION_STATUS is normalized to exactly SUCCESS / ERROR here:
---   BASE (row exists in the Fusion base table)     => SUCCESS
---   INTERFACE (rejection left behind by Import)     => ERROR
---
--- FUSION_ID:
---   Projects BASE => PJF_PROJECTS_ALL_B.PROJECT_ID
---   Tasks    BASE => PJF_PROJ_ELEMENTS_B.PROJ_ELEMENT_ID
+-- FUSION_STATUS normalized to exactly SUCCESS / ERROR:
+--   BASE (row present in the Fusion base table)  => SUCCESS
+--   INTERFACE (rejection left behind by Import)  => ERROR
+-- FUSION_ID: Projects BASE = PROJECT_ID; Tasks BASE = PROJ_ELEMENT_ID;
 --   INTERFACE rows have no Fusion id yet (NULL).
---
--- ERROR_MESSAGE: the Projects interface tables carry NO error-text
---   column (confirmed: PJF_PROJECTS_ALL_XFACE has only IMPORT_STATUS /
---   LOAD_STATUS, no MESSAGE_TEXT / ERROR_MESSAGE). The real per-row
---   rejection message lives only in the Import Report XML that the
---   reconciler package pulls from the child ImportProjectReportJob.
---   Per Contract v1, an ERROR row therefore returns the literal marker
---   '#IMPORT_REPORT#' -- a wire-time signal telling the reconciler to
---   invoke the import-report fallback and overlay the true Fusion
---   message. The human-readable interface disposition (IMPORT_STATUS /
---   LOAD_STATUS) is kept for troubleshooting in DEBUG_DISPOSITION, a
---   debug-only tenth column PAST the nine contract columns; it is not
---   mapped into the report output.
---
--- SOURCE_REF / DMT_REFERENCE: the FBDI SOURCE_PROJECT_REFERENCE and
---   ATTRIBUTE1 the pipeline sends are not read back on this instance
---   (empty in the base table), so the reliable, always-present source
---   reference is PROJECT_NUMBER itself. SOURCE_REF = the record's
---   business key; DMT_REFERENCE = PROJECT_NUMBER (the prefix-scoped run
---   key). Both are populated on every row so the reconciler always has
---   a handle back to the originating record.
---
--- Keys per tier (RECORD_KEY, ordered, unique within a run):
---   Projects    : PROJECT_NUMBER
---   Tasks       : PROJECT_NUMBER || '/' || TASK_NUMBER
---   TeamMembers : PROJECT_NUMBER || '/TM/' || <party/member key>
---   TxnControls : PROJECT_NUMBER || '/TC/' || <control key>
+-- ERROR_MESSAGE: the Projects interface tables carry no error-text
+--   column, so per Contract v1 an ERROR row returns the literal marker
+--   '#IMPORT_REPORT#'. That marker tells the reconciler the real per-row
+--   message is NOT in this DM and must be overlaid from the Import Report
+--   XML (the child ImportProjectReportJob). The human-readable interface
+--   disposition (IMPORT_STATUS / LOAD_STATUS) is kept for troubleshooting
+--   in DEBUG_DISPOSITION -- a debug-only tenth column PAST the nine
+--   contract columns, not mapped into the report output.
+-- SOURCE_REF / DMT_REFERENCE: the FBDI SOURCE_PROJECT_REFERENCE /
+--   ATTRIBUTE1 are not read back on this instance, so both carry the
+--   record's business key (prefix-scoped), always present.
 -- ============================================================
 -- The nine contract columns are selected by the report. DEBUG_DISPOSITION
 -- is a tenth, debug-only column carried in the SQL for troubleshooting; it
@@ -91,9 +72,7 @@ SELECT
     fusion_id, error_message, load_request_id, source_ref, dmt_reference,
     debug_disposition
 FROM (
-    -- ---- Projects tier : BASE (positive LOADED confirmation) --------
-    -- Matched by run prefix on SEGMENT1; REQUEST_ID is NULL on the base
-    -- table so the prefix is the only reliable base identity.
+    -- Projects tier : BASE (positive LOADED confirmation by prefix).
     SELECT
         'Projects'                           AS object_type,
         p.segment1                           AS record_key,
@@ -111,7 +90,7 @@ FROM (
 
     UNION ALL
 
-    -- ---- Projects tier : INTERFACE (rejections left behind) ---------
+    -- Projects tier : INTERFACE (rejections left behind).
     SELECT
         'Projects'                           AS object_type,
         x.project_number                     AS record_key,
@@ -132,11 +111,7 @@ FROM (
 
     UNION ALL
 
-    -- ---- Tasks tier : BASE ------------------------------------------
-    -- PJF_PROJ_ELEMENTS_B holds one PJF_STRUCTURES row per project and
-    -- one PJF_TASKS row per task; only PJF_TASKS rows are real tasks.
-    -- The base table has no project number, so join to the project for
-    -- the prefix filter and the record key.
+    -- Tasks tier : BASE (PJF_TASKS rows only; join project for the key).
     SELECT
         'Tasks'                              AS object_type,
         p.segment1 || '/' || e.element_number AS record_key,
@@ -156,7 +131,7 @@ FROM (
 
     UNION ALL
 
-    -- ---- Tasks tier : INTERFACE (rejections left behind) ------------
+    -- Tasks tier : INTERFACE (rejections left behind).
     SELECT
         'Tasks'                              AS object_type,
         t.project_number || '/' || t.task_number AS record_key,
@@ -177,12 +152,7 @@ FROM (
 
     UNION ALL
 
-    -- ---- TeamMembers tier : INTERFACE only --------------------------
-    -- Team members do not land in PJF_PROJECT_PARTIES keyed to the
-    -- converted project on this instance (a global-resource link, not a
-    -- prefix-scoped base row), so the reliable outcome is the interface
-    -- rejection. Keyed by project name + member name (the interface
-    -- table carries no project number).
+    -- TeamMembers tier : INTERFACE only (no prefix-scoped base row).
     SELECT
         'TeamMembers'                        AS object_type,
         tm.project_name || '/TM/' || tm.team_member_name AS record_key,
@@ -203,10 +173,8 @@ FROM (
 
     UNION ALL
 
-    -- ---- TxnControls tier : INTERFACE only --------------------------
-    -- No base table for transaction controls under this schema; the
-    -- staging table (LOAD_STATUS only, no IMPORT_STATUS) is the outcome
-    -- source. Keyed by project number + control reference.
+    -- TxnControls tier : INTERFACE only (no base table; staging is the
+    -- outcome source, LOAD_STATUS only).
     SELECT
         'TxnControls'                        AS object_type,
         tc.project_number || '/TC/' || tc.txn_ctrl_reference AS record_key,
@@ -225,9 +193,56 @@ FROM (
     WHERE  tc.load_request_id = :P_LOAD_REQUEST_ID
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
--- BIP, so treat NULL as "from the start": return every row. On later
--- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
--- greater keys are returned. RECORD_KEY is compared as text.
+-- BIP, so treat NULL as "from the start". On later pages P_AFTER_KEY
+-- carries the previous page's last RECORD_KEY; only greater keys return.
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="project_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
