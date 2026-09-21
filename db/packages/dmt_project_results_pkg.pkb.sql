@@ -59,24 +59,30 @@ AS
     C_CEMLI  CONSTANT VARCHAR2(30) := 'Projects';
     C_MARKER CONSTANT VARCHAR2(20) := '#IMPORT_REPORT#';
 
-    -- Positive-load proof marker for the TeamMembers / TxnControls tiers. On this
-    -- demo instance those two tiers have NO queryable Fusion base table that
-    -- materializes a prefix-scoped row with a Fusion id: PJF_PROJECT_PARTIES is
-    -- provisioned asynchronously and holds no prefix-keyed row for the converted
-    -- project, and there is no accessible transaction-control base table. The
-    -- Contract v1 data model therefore cannot emit a BASE/SUCCESS row for them
-    -- (its SQL sees only the interface tables, which Import purges on success), so
-    -- both tiers fell to UNACCOUNTED after PR #372 — the regression this fix
-    -- addresses. The ONLY authoritative positive-load evidence Fusion produces for
-    -- these two tiers is the Import Project Report's SUCCESS sections
-    -- (LIST_TEAM_MEMBER_SUCCESS / LIST_TXN_CTRL_SUCCESS), which explicitly list
-    -- each accepted member / control by project and reference. APPLY_SUCCESS_REPORT
-    -- (below) harvests those success rows and marks the matching TFM row LOADED.
-    -- No Fusion id is available on this pod for these tiers, so FUSION_ID stays
-    -- NULL — this is honest LOADED-with-real-proof, not a fabricated verdict.
-    C_LOADED_VIA_REPORT CONSTANT VARCHAR2(200) :=
-        '[LOADED] Confirmed accepted by the Import Project Report success section '
-        || '(no Fusion base-table id materialized for this tier on this instance).';
+    -- Per-tier base-table evidence, confirmed live against the demo pod 2026-09-21
+    -- for run 325 / prefix 10265 (two loaded projects, ids 300000333828672 and
+    -- 300000333828697):
+    --   TxnControls  -> HAS a real, queryable Fusion base table. PJC_TRANSACTION_
+    --                   CONTROLS holds one row per loaded control with a real id
+    --                   (TXN_CONTROL_ID) and the source TXN_CTRL_REFERENCE, keyed
+    --                   to the project via PROJECT_ID. Confirmed: RT-TXC-RTPRJ001
+    --                   -> TXN_CONTROL_ID 100002642117705, RT-TXC-RTPRJ002 ->
+    --                   100002642117706. The recon data model now emits a proper
+    --                   BASE/SUCCESS row for this tier (see DMT_PROJECT_RECON_DM.xdm)
+    --                   and the shared Contract v1 apply below marks it LOADED with
+    --                   that real id -- Rule #1 satisfied exactly like every other
+    --                   object. No import-report success harvest is needed.
+    --   TeamMembers  -> has NO queryable base row on this instance. PJF_PROJECT_
+    --                   PARTIES (a plain-passthrough view over the base storage,
+    --                   5005 rows total) held ZERO rows for either loaded project --
+    --                   and zero for ANY DMT-migrated project across all prefixes --
+    --                   even after the async provisioning window had passed. The
+    --                   interface table was also empty (Import accepted and purged
+    --                   the members). With no accessible base id, this tier CANNOT
+    --                   satisfy Rule #1 today, so it is honestly left UNACCOUNTED
+    --                   (the TFM rows stay GENERATED). We do NOT fabricate a LOADED
+    --                   from the import-report success list; the owner will decide
+    --                   whether to grant a documented exception for this tier later.
 
     -- --------------------------------------------------------
     -- Private: resolve the CHILD Import Projects report job id.
@@ -312,169 +318,6 @@ AS
     END apply_import_report;
 
     -- --------------------------------------------------------
-    -- apply_success_report (private) — TeamMembers + TxnControls positive-load
-    -- harvest from the Import Project Report SUCCESS sections.
-    --
-    -- WHY THIS EXISTS: the Contract v1 recon report (DMT_PROJECT_RECON_DM.xdm) can
-    -- only see database tables. For TeamMembers and TxnControls the only DB
-    -- evidence is the interface tables, which Import PURGES on success, so the
-    -- report returns zero rows for those two tiers and the Contract v1 apply's
-    -- BASE/SUCCESS -> LOADED branch never fires. Their base tables hold no
-    -- prefix-scoped, id-bearing row on this instance (see C_LOADED_VIA_REPORT).
-    -- The Import Project Report XML, by contrast, carries an explicit per-row
-    -- SUCCESS list for each of these tiers. This routine downloads that child
-    -- report and marks each listed member / control LOADED, keyed on the same
-    -- RECON_KEY the transform stamped.
-    --
-    -- KEY ALIGNMENT (must match DMT_PROJECT_TRANSFORM_PKG exactly):
-    --   TeamMembers RECON_KEY = PROJECT_NAME || '/TM/' || TEAM_MEMBER_NAME
-    --     -> reconstructed from TM_SUCCESS_PROJECT_NAME + TM_SUCCESS_TM_NAME.
-    --   TxnControls RECON_KEY = PROJECT_NUMBER || '/TC/' || TXN_CTRL_REFERENCE
-    --     -> the report's TC_SUCCESS_PROJECT_NUMBER is empty on this instance, so
-    --        we match on the run-prefixed TXN_CTRL_REFERENCE, which is unique per
-    --        run (TC_SUCCESS_SOURCE_REFERENCE). Both the exact RECON_KEY suffix
-    --        and the reference itself are matched so the join is robust.
-    --
-    -- HONESTY: marks LOADED ONLY for a TFM row that is not already LOADED/FAILED
-    -- (never overrides a real Fusion error). No Fusion id is stamped because none
-    -- is available for these tiers on this instance; the ERROR_TEXT records the
-    -- positive-proof basis. NO COMMIT — the orchestrator owns the transaction.
-    -- --------------------------------------------------------
-    PROCEDURE apply_success_report (
-        p_run_id        IN  NUMBER,
-        p_import_ess_id IN  NUMBER,
-        x_tm_loaded     OUT NUMBER,
-        x_tc_loaded     OUT NUMBER
-    ) IS
-        C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_SUCCESS_REPORT';
-        l_report_id NUMBER;
-        l_ir_xml    CLOB;
-        l_xml       XMLTYPE;
-    BEGIN
-        x_tm_loaded := 0;
-        x_tc_loaded := 0;
-        IF p_import_ess_id IS NULL THEN
-            RETURN;
-        END IF;
-
-        l_report_id := resolve_report_ess_id(p_run_id, p_import_ess_id);
-        IF l_report_id IS NULL THEN
-            DMT_UTIL_PKG.LOG(
-                p_run_id  => p_run_id,
-                p_message => C_PROC || ': No ImportProjectReportJob child captured for import ESS ' ||
-                             p_import_ess_id || '; cannot confirm TeamMembers/TxnControls loads '
-                             || '(rows left as-is, never fabricated LOADED).',
-                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package   => C_PKG,
-                p_procedure => C_PROC);
-            RETURN;
-        END IF;
-
-        BEGIN
-            l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(l_report_id);
-        EXCEPTION
-            WHEN OTHERS THEN
-                DMT_UTIL_PKG.LOG(
-                    p_run_id  => p_run_id,
-                    p_message => C_PROC || ': Failed to download report XML for request ' ||
-                                 l_report_id || ': ' || SQLERRM,
-                    p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
-                    p_package   => C_PKG,
-                    p_procedure => C_PROC);
-                l_ir_xml := NULL;
-        END;
-
-        IF l_ir_xml IS NULL OR DBMS_LOB.GETLENGTH(l_ir_xml) = 0 THEN
-            RETURN;
-        END IF;
-
-        BEGIN
-            l_xml := XMLTYPE(l_ir_xml);
-        EXCEPTION
-            WHEN OTHERS THEN
-                DMT_UTIL_PKG.LOG(
-                    p_run_id  => p_run_id,
-                    p_message => C_PROC || ': Report XML is not well-formed (' || SQLERRM ||
-                                 '); skipping success harvest.',
-                    p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
-                    p_package   => C_PKG,
-                    p_procedure => C_PROC);
-                IF DBMS_LOB.ISTEMPORARY(l_ir_xml) = 1 THEN
-                    DBMS_LOB.FREETEMPORARY(l_ir_xml);
-                END IF;
-                RETURN;
-        END;
-
-        -- ===== TeamMembers SUCCESS: PROJECT_NAME + TM_NAME -> RECON_KEY =====
-        FOR r IN (
-            SELECT x.project_name, x.tm_name
-            FROM   XMLTABLE('//TEAM_MEMBER_SUCCESS' PASSING l_xml
-                     COLUMNS
-                       project_name VARCHAR2(240) PATH 'TM_SUCCESS_PROJECT_NAME',
-                       tm_name      VARCHAR2(240) PATH 'TM_SUCCESS_TM_NAME') x
-            WHERE  x.project_name IS NOT NULL AND x.tm_name IS NOT NULL
-        ) LOOP
-            UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
-            SET    TFM_STATUS           = 'LOADED',
-                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, C_LOADED_VIA_REPORT),
-                   RESULTS_UPDATED_DATE = SYSDATE,
-                   LAST_UPDATED_DATE    = SYSDATE
-            WHERE  RUN_ID    = p_run_id
-            AND    RECON_KEY = r.project_name || '/TM/' || r.tm_name
-            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-            x_tm_loaded := x_tm_loaded + SQL%ROWCOUNT;
-        END LOOP;
-
-        -- ===== TxnControls SUCCESS: SOURCE_REFERENCE -> RECON_KEY suffix =====
-        FOR r IN (
-            SELECT x.project_number, x.source_reference
-            FROM   XMLTABLE('//TXN_CTRL_SUCCESS' PASSING l_xml
-                     COLUMNS
-                       project_number   VARCHAR2(25)  PATH 'TC_SUCCESS_PROJECT_NUMBER',
-                       source_reference VARCHAR2(240) PATH 'TC_SUCCESS_SOURCE_REFERENCE') x
-            WHERE  x.source_reference IS NOT NULL
-        ) LOOP
-            UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
-            SET    TFM_STATUS           = 'LOADED',
-                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, C_LOADED_VIA_REPORT),
-                   RESULTS_UPDATED_DATE = SYSDATE,
-                   LAST_UPDATED_DATE    = SYSDATE
-            WHERE  RUN_ID    = p_run_id
-            AND    TXN_CTRL_REFERENCE = r.source_reference
-            AND    (r.project_number IS NULL
-                    OR RECON_KEY = r.project_number || '/TC/' || r.source_reference)
-            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-            x_tc_loaded := x_tc_loaded + SQL%ROWCOUNT;
-        END LOOP;
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id  => p_run_id,
-            p_message => C_PROC || ': Import Report success harvest from child job ' || l_report_id ||
-                         ' -> TeamMembers LOADED: ' || x_tm_loaded ||
-                         ', TxnControls LOADED: ' || x_tc_loaded || '.',
-            p_package   => C_PKG,
-            p_procedure => C_PROC);
-
-        IF DBMS_LOB.ISTEMPORARY(l_ir_xml) = 1 THEN
-            DBMS_LOB.FREETEMPORARY(l_ir_xml);
-        END IF;
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            IF l_ir_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_ir_xml) = 1 THEN
-                DBMS_LOB.FREETEMPORARY(l_ir_xml);
-            END IF;
-            DMT_UTIL_PKG.LOG(
-                p_run_id  => p_run_id,
-                p_message => C_PROC || ': success harvest failed (' || SQLERRM ||
-                             '); ' || x_tm_loaded || ' TeamMembers + ' || x_tc_loaded ||
-                             ' TxnControls marked before the error.',
-                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package   => C_PKG,
-                p_procedure => C_PROC);
-    END apply_success_report;
-
-    -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_PROJECTS (private)
     -- The Contract v1 apply for all four Projects tiers, Option A shape. One
     -- shared FETCH_ROWS call returns every tier's rows; the apply is STATIC SQL,
@@ -703,8 +546,6 @@ AS
         C_PROC       CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_ir_matched NUMBER := 0;
         l_still_gen  NUMBER := 0;
-        l_tm_loaded  NUMBER := 0;
-        l_tc_loaded  NUMBER := 0;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
@@ -744,19 +585,18 @@ AS
             apply_import_report(p_run_id, p_import_ess_id, l_ir_matched);
         END IF;
 
-        -- Import-report SUCCESS harvest for the TeamMembers + TxnControls tiers.
-        -- These two tiers have no queryable Fusion base row on this instance, so
-        -- the Contract v1 report cannot confirm their loads (the interface tables
-        -- it can see are purged on success). The Import Project Report's per-row
-        -- SUCCESS lists are the only positive-load evidence Fusion emits for them;
-        -- this marks each listed member / control LOADED (keyed on RECON_KEY),
-        -- restoring the tier coverage that regressed when Projects moved to the
-        -- Contract v1 template (PR #372). Runs whenever an import ESS id is
-        -- available; only rows not already LOADED/FAILED are touched, so a real
-        -- Fusion error is never overwritten and nothing is fabricated.
-        IF p_import_ess_id IS NOT NULL THEN
-            apply_success_report(p_run_id, p_import_ess_id, l_tm_loaded, l_tc_loaded);
-        END IF;
+        -- TxnControls now reconcile through the shared Contract v1 apply above: the
+        -- recon data model emits a real BASE/SUCCESS row over PJC_TRANSACTION_CONTROLS
+        -- (id TXN_CONTROL_ID), so the apply stamps FUSION_TXN_CONTROL_ID and marks the
+        -- row LOADED against a real Fusion base row -- the same Rule #1 path every
+        -- other object uses. The former import-report SUCCESS harvest for this tier is
+        -- removed (it invented a LOADED with no base id and was blocked in review).
+        --
+        -- TeamMembers has NO queryable Fusion base row on this instance (confirmed
+        -- live 2026-09-21: PJF_PROJECT_PARTIES holds zero rows for any DMT-migrated
+        -- project). Its TFM rows are therefore left GENERATED = honestly UNACCOUNTED,
+        -- never a fabricated LOADED. If the owner later grants a documented Rule #1
+        -- exception for this tier, that is the place to add it -- not here.
 
         -- Unresolved records are intentionally left GENERATED (unaccounted). No
         -- fabricated FAILED: the accounting gate reports the object not-DONE and
@@ -765,9 +605,7 @@ AS
 
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
-            p_message => C_PROC || ' complete. IR_MATCHED: ' || l_ir_matched ||
-                         ' | TeamMembers LOADED via report: ' || l_tm_loaded ||
-                         ' | TxnControls LOADED via report: ' || l_tc_loaded || '.',
+            p_message => C_PROC || ' complete. IR_MATCHED: ' || l_ir_matched || '.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
     EXCEPTION
