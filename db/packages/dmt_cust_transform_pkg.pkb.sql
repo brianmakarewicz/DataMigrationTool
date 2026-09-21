@@ -195,6 +195,15 @@
             AND    t.RUN_ID  = p_run_id
         );
 
+        -- Contract v1: stamp the recon match key on this run's TFM rows so the
+        -- reconciler can match on RECON_KEY = the report's RECORD_KEY. Byte-identical
+        -- to the RECORD_KEY the deployed recon report emits for this record type
+        -- ('Customers.Parties~' || <prefixed party reference>). Only where still NULL.
+        UPDATE DMT_HZ_PARTIES_TFM_TBL
+        SET    RECON_KEY = 'Customers.Parties~' || PARTY_ORIG_SYSTEM_REFERENCE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'TRANSFORM_PARTIES complete. OK: ' || l_ok_count
@@ -386,6 +395,13 @@
             AND    t.RUN_ID  = p_run_id
         );
 
+        -- Contract v1 recon match key (see TRANSFORM_PARTIES). Byte-identical to
+        -- the report's RECORD_KEY: 'Customers.Locations~' || <prefixed location ref>.
+        UPDATE DMT_HZ_LOCATIONS_TFM_TBL
+        SET    RECON_KEY = 'Customers.Locations~' || LOCATION_ORIG_SYSTEM_REFERENCE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'TRANSFORM_LOCATIONS complete. OK: ' || l_ok_count
@@ -551,6 +567,13 @@
             AND    t.RUN_ID  = p_run_id
         );
 
+        -- Contract v1 recon match key (see TRANSFORM_PARTIES). Byte-identical to
+        -- the report's RECORD_KEY: 'Customers.PartySites~' || <prefixed site ref>.
+        UPDATE DMT_HZ_PARTY_SITES_TFM_TBL
+        SET    RECON_KEY = 'Customers.PartySites~' || SITE_ORIG_SYSTEM_REFERENCE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'TRANSFORM_PARTY_SITES complete. OK: ' || l_ok_count
@@ -698,6 +721,15 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
+
+        -- Contract v1 recon match key (see TRANSFORM_PARTIES). Byte-identical to
+        -- the report's RECORD_KEY: 'Customers.PartySiteUses~' || <prefixed parent
+        -- site ref> || '/' || SITE_USE_TYPE (the use's own reference is NULL in
+        -- Fusion, so the report keys on the parent site ref + use type pair).
+        UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL
+        SET    RECON_KEY = 'Customers.PartySiteUses~' || SITE_ORIG_SYSTEM_REFERENCE || '/' || SITE_USE_TYPE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -852,6 +884,13 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
+
+        -- Contract v1 recon match key (see TRANSFORM_PARTIES). Byte-identical to
+        -- the report's RECORD_KEY: 'Customers.Accounts~' || <prefixed cust ref>.
+        UPDATE DMT_HZ_ACCOUNTS_TFM_TBL
+        SET    RECON_KEY = 'Customers.Accounts~' || CUST_ORIG_SYSTEM_REFERENCE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -1011,6 +1050,13 @@
             AND    t.RUN_ID  = p_run_id
         );
 
+        -- Contract v1 recon match key (see TRANSFORM_PARTIES). Byte-identical to
+        -- the report's RECORD_KEY: 'Customers.AccountSites~' || <prefixed cust site ref>.
+        UPDATE DMT_HZ_ACCT_SITES_TFM_TBL
+        SET    RECON_KEY = 'Customers.AccountSites~' || CUST_SITE_ORIG_SYS_REF
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'TRANSFORM_ACCT_SITES complete. OK: ' || l_ok_count
@@ -1162,6 +1208,13 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
+
+        -- Contract v1 recon match key (see TRANSFORM_PARTIES). Byte-identical to
+        -- the report's RECORD_KEY: 'Customers.AccountSiteUses~' || <prefixed cust site-use ref>.
+        UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL
+        SET    RECON_KEY = 'Customers.AccountSiteUses~' || CUST_SITEUSE_ORIG_SYS_REF
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
