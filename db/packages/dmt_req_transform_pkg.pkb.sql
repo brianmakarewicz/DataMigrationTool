@@ -196,6 +196,38 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- funnel's TRANSFORM_FAILED lane fills (design section 5 / section 7).
+            -- SQLERRM is captured into a local first: it is not a valid SQL
+            -- identifier inside the INSERT..SELECT below, only in PL/SQL scope.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Requisitions', 'Req Headers', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_POR_REQ_HEADERS_STG_TBL s
+                WHERE  (
+                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL')
+                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                      )
+                AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Req Headers');
+                UPDATE DMT_POR_REQ_HEADERS_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Req Headers')
+                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_HEADERS failed.',
@@ -465,6 +497,38 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- funnel's TRANSFORM_FAILED lane fills (design section 5 / section 7).
+            -- SQLERRM is captured into a local first: it is not a valid SQL
+            -- identifier inside the INSERT..SELECT below, only in PL/SQL scope.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Requisitions', 'Req Lines', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_POR_REQ_LINES_STG_TBL s
+                WHERE  (
+                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL')
+                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                      )
+                AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_POR_REQ_LINES_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Req Lines');
+                UPDATE DMT_POR_REQ_LINES_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Req Lines')
+                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_LINES failed.',
@@ -671,6 +735,38 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- funnel's TRANSFORM_FAILED lane fills (design section 5 / section 7).
+            -- SQLERRM is captured into a local first: it is not a valid SQL
+            -- identifier inside the INSERT..SELECT below, only in PL/SQL scope.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Requisitions', 'Req Distributions', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_POR_REQ_DISTS_STG_TBL s
+                WHERE  (
+                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL')
+                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                      )
+                AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_POR_REQ_DISTS_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Req Distributions');
+                UPDATE DMT_POR_REQ_DISTS_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Req Distributions')
+                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_DISTS failed.',
