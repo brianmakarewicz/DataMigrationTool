@@ -1329,3 +1329,49 @@ when matched then update set
     t."RECON_KEY_SQL"       = s.recon_key_sql;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- Projects — Contract v1 registration (design section 5), MULTI-TIER (4 tiers).
+-- Points the Projects CEMLI at the nine-column Contract v1 report
+-- (DMT_PROJECT_RECON_DM.xdm, fixed in PR #334) and sets CONTRACT_VERSION = 1 so
+-- the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs it (a NULL/absent
+-- CONTRACT_VERSION makes the shared fetch bail with "not registered as
+-- CONTRACT_VERSION = 1"). This converges the existing Projects row (seeded
+-- earlier in this file at the OLD PROJECT_DM.xdm/PROJECT_RPT.xdo report) onto the
+-- Contract v1 report. Projects dispatches its APPLY through RECON_PROC
+-- (DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH -> APPLY_CONTRACT_V1_PROJECTS), which
+-- does one static per-tier UPDATE pair discriminated by OBJECT_TYPE, so APPLY_PROC
+-- is intentionally not set here. TFM_TABLE / FUSION_ID_COLUMN carry the primary
+-- (Projects) tier for documentation; the reconciler names all four tier tables
+-- statically. RECON_KEY per tier (stamped by DMT_PROJECT_TRANSFORM_PKG, = each
+-- tier's report RECORD_KEY): Projects = PROJECT_NUMBER;
+-- Tasks = PROJECT_NUMBER||'/'||TASK_NUMBER;
+-- TeamMembers = PROJECT_NAME||'/TM/'||TEAM_MEMBER_NAME;
+-- TxnControls = PROJECT_NUMBER||'/TC/'||TXN_CTRL_REFERENCE.
+-- Projects interface tables carry NO error-text column, so ERROR rows return the
+-- literal '#IMPORT_REPORT#' marker; the reconciler leaves those GENERATED and the
+-- import-report harvest (child ImportProjectReportJob) supplies the real text.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Projects'                                             cemli_code,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_RPT.xdo'      report_catalog_path,
+           'Project import reconciliation (Contract v1, multi-tier, 4 tiers)' notes,
+           1                                                       contract_version,
+           'DMT_PJF_PROJECTS_TFM_TBL'                             tfm_table,
+           'FUSION_PROJECT_ID'                                    fusion_id_column,
+           'multi-tier: Projects=PROJECT_NUMBER; Tasks=PROJECT_NUMBER||''/''||TASK_NUMBER; TeamMembers=PROJECT_NAME||''/TM/''||TEAM_MEMBER_NAME; TxnControls=PROJECT_NUMBER||''/TC/''||TXN_CTRL_REFERENCE' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;

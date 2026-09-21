@@ -311,6 +311,21 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier template): stamp the Projects tier's
+        -- RECON_KEY so it equals the header RECORD_KEY the recon report emits.
+        -- The Projects Contract v1 data model (DMT_PROJECT_RECON_DM.xdm) emits the
+        -- BASE Projects RECORD_KEY as PROJECT_NUMBER (= PJF_PROJECTS_ALL_B.SEGMENT1,
+        -- the prefix-scoped run key that survives to the base table). The shared
+        -- reconciler (DMT_PROJECT_RESULTS_PKG.APPLY_CONTRACT_V1_PROJECTS) joins the
+        -- report rows to this table on RECON_KEY = report RECORD_KEY, so this stamp
+        -- must match that expression exactly. Only NULL keys are set (never
+        -- overwrite); post-INSERT, run-scoped.
+        UPDATE DMT_PJF_PROJECTS_TFM_TBL
+        SET    RECON_KEY = PROJECT_NUMBER,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_PJF_PROJECTS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
@@ -556,6 +571,21 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier template): stamp the Tasks tier's
+        -- RECON_KEY so it equals the Tasks RECORD_KEY the recon report emits.
+        -- The Contract v1 data model emits the Tasks RECORD_KEY as
+        -- PROJECT_NUMBER || '/' || TASK_NUMBER (BASE side uses SEGMENT1 || '/' ||
+        -- ELEMENT_NUMBER, which equals the prefixed project/task numbers). The TFM
+        -- PROJECT_NUMBER and TASK_NUMBER both already carry the run prefix, so this
+        -- composition matches the report key. The reconciler joins report rows to
+        -- this table on RECON_KEY = RECORD_KEY, so this stamp must match exactly.
+        -- Only NULL keys are set; post-INSERT, run-scoped.
+        UPDATE DMT_PJF_TASKS_TFM_TBL
+        SET    RECON_KEY = PROJECT_NUMBER || '/' || TASK_NUMBER,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_PJF_TASKS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
@@ -693,6 +723,19 @@
         ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
+
+        -- Contract v1 coupling (multi-tier template): stamp the TeamMembers tier's
+        -- RECON_KEY so it equals the TeamMembers RECORD_KEY the recon report emits.
+        -- Team members do not land in a prefix-scoped base row on this instance, so
+        -- the Contract v1 data model emits only an INTERFACE tier keyed
+        -- PROJECT_NAME || '/TM/' || TEAM_MEMBER_NAME. The reconciler joins report
+        -- rows to this table on RECON_KEY = RECORD_KEY, so this stamp must match
+        -- exactly. Only NULL keys are set; post-INSERT, run-scoped.
+        UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
+        SET    RECON_KEY = PROJECT_NAME || '/TM/' || TEAM_MEMBER_NAME,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_PJF_TEAM_MEMBERS_STG_TBL s
@@ -839,6 +882,20 @@
         ORDER BY s.STG_SEQUENCE_ID;
 
         l_ok_count := SQL%ROWCOUNT;
+
+        -- Contract v1 coupling (multi-tier template): stamp the TxnControls tier's
+        -- RECON_KEY so it equals the TxnControls RECORD_KEY the recon report emits.
+        -- There is no base table for transaction controls under this schema, so the
+        -- Contract v1 data model emits only an INTERFACE tier keyed
+        -- PROJECT_NUMBER || '/TC/' || TXN_CTRL_REFERENCE. The TFM PROJECT_NUMBER
+        -- already carries the run prefix, matching the staging TXN_CTRL_REFERENCE.
+        -- The reconciler joins report rows to this table on RECON_KEY = RECORD_KEY,
+        -- so this stamp must match exactly. Only NULL keys are set; post-INSERT.
+        UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
+        SET    RECON_KEY = PROJECT_NUMBER || '/TC/' || TXN_CTRL_REFERENCE,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_PJC_TXN_CONTROLS_STG_TBL s

@@ -4,138 +4,79 @@
 AS
 -- ============================================================
 -- DMT_PROJECT_RESULTS_PKG body
--- Projects BIP reconciliation — one object, four record types.
+-- Projects post-load reconciliation — Contract v1, MULTI-TIER template.
 --
--- Ported to the accepted architecture 2026-07-09:
---   * Transport is the shared DMT_UTIL_PKG.RUN_BIP_REPORT (no
---     private UTL_HTTP copy, no raw envelope logging — the shared
---     transport never logs the request envelope, which carries
---     credentials).
---   * Contract v1 parameters: P_RUN_ID / P_LOAD_REQUEST_ID /
---     P_IMPORT_ESS_ID / P_PREFIX (P_BATCH_ID retired).
---   * Outcomes are written to the four TFM tables only; nothing is
---     written back to staging — the TFM row is the sole record of
---     the Fusion outcome.
+-- Migrated 2026-09-20 to the proven multi-tier template (Requisitions PR #364 /
+-- Workers DMT_WORKER_RESULTS_PKG). It reuses the ONE shared Contract v1 fetch,
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS. A single FETCH_ROWS call runs the Projects
+-- Contract v1 report (nine columns, keyset paginated) over BIP and returns ALL
+-- four tiers' rows in one collection; each row's OBJECT_TYPE says which tier it
+-- belongs to.
 --
--- BIP query returns an OBJECT_TYPE discriminator that routes each
--- row to the correct TFM table:
---   Projects    -> PJF_PROJECTS_ALL_XFACE (Tier 1) + PJF_PROJECTS_ALL_B (Tier 2)
---   Tasks       -> PJF_PROJ_ELEMENTS_XFACE (Tier 1 only)
---   TeamMembers -> PJF_PROJECT_PARTIES_INT (Tier 1 only)
---   TxnControls -> PJC_TXN_CONTROLS_STAGE (Tier 1 only)
+-- The APPLY is STATIC SQL against the compile-time-known TFM tables (Option A,
+-- owner decision on PR #248): one MERGE-style pair PER TIER, filtering the report
+-- rows by OBJECT_TYPE and joining that tier's TFM table on RECON_KEY = RECORD_KEY.
 --
--- Import Report XML (ESS output) provides per-row error detail,
--- routed to the correct TFM table by error_source.
+--   Tier          OBJECT_TYPE literal   TFM table                       FUSION_ID column
+--   -----------   -------------------   -----------------------------   ----------------------
+--   Projects      'Projects'            DMT_PJF_PROJECTS_TFM_TBL        FUSION_PROJECT_ID
+--   Tasks         'Tasks'               DMT_PJF_TASKS_TFM_TBL           FUSION_TASK_ID
+--   TeamMembers   'TeamMembers'         DMT_PJF_TEAM_MEMBERS_TFM_TBL    FUSION_PROJECT_PARTY_ID
+--   TxnControls   'TxnControls'         DMT_PJC_TXN_CONTROLS_TFM_TBL    FUSION_TXN_CONTROL_ID
+--
+-- Per tier the rule is the shared Contract v1 apply rule:
+--   * BASE / SUCCESS / FUSION_ID NOT NULL -> LOADED, stamp FUSION_ID.
+--   * FUSION_STATUS = ERROR with a real ERROR_MESSAGE -> FAILED, message appended
+--     as '[FUSION_ERROR] ' || message (never composed).
+--   * Everything else is left GENERATED for the shared unaccounted sweep;
+--     INTERFACE/SUCCESS corroborates but is never sufficient for LOADED.
+--
+-- #IMPORT_REPORT# HANDLING (Projects-specific):
+--   The Projects interface tables carry NO error-text column, so the Contract v1
+--   data model emits the LITERAL marker '#IMPORT_REPORT#' as ERROR_MESSAGE on
+--   every ERROR (INTERFACE) row (DMT_PROJECT_RECON_DM.xdm, fixed in PR #334). The
+--   marker is a wire-time signal, NOT a real Fusion error, so the per-tier apply
+--   must NOT mark those rows FAILED with the marker. A tier row is only FAILED
+--   here when FUSION_STATUS='ERROR' AND ERROR_MESSAGE IS NOT NULL AND
+--   ERROR_MESSAGE != '#IMPORT_REPORT#'. Marker rows are left GENERATED for the
+--   import-report harvest path (apply_import_report) which downloads the child
+--   ImportProjectReportJob XML and overlays the true per-row Fusion message. That
+--   harvest path is preserved unchanged in RECONCILE_BATCH.
+--
+-- The RECON_KEY on each tier's TFM row is stamped by DMT_PROJECT_TRANSFORM_PKG to
+-- equal that tier's report RECORD_KEY (Projects = PROJECT_NUMBER; Tasks =
+-- PROJECT_NUMBER||'/'||TASK_NUMBER; TeamMembers =
+-- PROJECT_NAME||'/TM/'||TEAM_MEMBER_NAME; TxnControls =
+-- PROJECT_NUMBER||'/TC/'||TXN_CTRL_REFERENCE). That coupling is what makes the
+-- join hit.
+--
+-- Outcomes are written to the four TFM tables only; nothing is written back to
+-- staging (the TFM row is the sole record of the Fusion outcome). NO COMMIT —
+-- the orchestrator owns the transaction boundary.
 -- ============================================================
 
-    C_PKG   CONSTANT VARCHAR2(50) := 'DMT_PROJECT_RESULTS_PKG';
-    C_CEMLI CONSTANT VARCHAR2(30) := 'Projects';
-
-    -- --------------------------------------------------------
-    -- FETCH_BIP_RESULTS
-    -- Delegates to DMT_UTIL_PKG.RUN_BIP_REPORT with the Contract v1
-    -- parameters. PROCEDURE per the accepted error-code contract:
-    -- x_report_xml NULL with x_error_code = C_SUCCESS = zero rows;
-    -- failures are logged and reported via x_error_code — exceptions
-    -- never escape.
-    -- --------------------------------------------------------
-    PROCEDURE FETCH_BIP_RESULTS (
-        p_run_id         IN  NUMBER,
-        p_load_ess_id    IN  NUMBER,
-        x_report_xml     OUT XMLTYPE,
-        x_error_code     OUT NUMBER,
-        p_import_ess_id  IN  NUMBER DEFAULT NULL
-    ) IS
-        C_PROC   CONSTANT VARCHAR2(30) := 'FETCH_BIP_RESULTS';
-        l_step   VARCHAR2(500);
-        l_prefix VARCHAR2(20);
-    BEGIN
-        x_report_xml := NULL;
-        x_error_code := DMT_UTIL_PKG.C_ERROR;   -- pessimistic until proven
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id  => p_run_id,
-            p_message => 'FETCH_BIP_RESULTS start. CEMLI: ' || C_CEMLI ||
-                         ' | P_RUN_ID: ' || p_run_id ||
-                         ' | P_LOAD_REQUEST_ID: ' || p_load_ess_id ||
-                         ' | P_IMPORT_ESS_ID: ' || NVL(TO_CHAR(p_import_ess_id), '(null)'),
-            p_package   => C_PKG,
-            p_procedure => C_PROC);
-
-        l_step := 'reading run prefix for run ' || p_run_id;
-        SELECT PREFIX INTO l_prefix
-        FROM   DMT_PIPELINE_RUN_TBL
-        WHERE  RUN_ID = p_run_id;
-
-        -- Shared transport: resolves REPORT_CATALOG_PATH from
-        -- DMT_BIP_REPORT_TBL; HTTP/SOAP/decode failures are logged by
-        -- RUN_BIP_REPORT and surfaced through x_error_code. It never
-        -- logs the request envelope (credentials never reach DMT_LOG_TBL).
-        l_step := 'running Contract v1 reconciliation report for ' || C_CEMLI;
-        DMT_UTIL_PKG.RUN_BIP_REPORT(
-            p_run_id     => p_run_id,
-            p_cemli_code => C_CEMLI,
-            p_params     => 'P_RUN_ID|'           || TO_CHAR(p_run_id) ||
-                            '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
-                            '~P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
-                            '~P_PREFIX|'          || l_prefix,
-            x_report_xml => x_report_xml,
-            x_error_code => x_error_code);
-
-        IF x_error_code != DMT_UTIL_PKG.C_SUCCESS THEN
-            DMT_UTIL_PKG.LOG(
-                p_run_id  => p_run_id,
-                p_message => 'FETCH_BIP_RESULTS failed while ' || l_step ||
-                             ' (detail logged by RUN_BIP_REPORT).',
-                p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
-                p_package   => C_PKG,
-                p_procedure => C_PROC);
-            RETURN;
-        END IF;
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id  => p_run_id,
-            p_message => 'FETCH_BIP_RESULTS complete. CEMLI: ' || C_CEMLI ||
-                         CASE WHEN x_report_xml IS NULL
-                              THEN ' | Report returned zero rows.'
-                              ELSE ' | Report data received.'
-                         END,
-            p_package   => C_PKG,
-            p_procedure => C_PROC);
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            x_report_xml := NULL;
-            x_error_code := DMT_UTIL_PKG.C_ERROR;
-            DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id  => p_run_id,
-                p_message => 'FETCH_BIP_RESULTS failed while ' || l_step ||
-                             ' | CEMLI: ' || C_CEMLI,
-                p_sqlerrm   => SQLERRM,
-                p_package   => C_PKG,
-                p_procedure => C_PROC);
-    END FETCH_BIP_RESULTS;
+    C_PKG    CONSTANT VARCHAR2(50) := 'DMT_PROJECT_RESULTS_PKG';
+    C_CEMLI  CONSTANT VARCHAR2(30) := 'Projects';
+    C_MARKER CONSTANT VARCHAR2(20) := '#IMPORT_REPORT#';
 
     -- --------------------------------------------------------
     -- Private: resolve the CHILD Import Projects report job id.
     --
-    -- Fusion's ImportProjectJobDef (the "import" ESS job the loader
-    -- passes as p_import_ess_id) is only an async submit wrapper. Its
-    -- own ESS output is an essentially empty XML (~4 bytes). The real
-    -- per-row accept/reject report lives in a SEPARATE child job,
-    -- ImportProjectReportJob, which the wrapper spawns. Reading the
-    -- wrapper always yields zero errors and leaves every rejected row
-    -- unaccounted (run 234, "10115RT Project Bad-1").
+    -- Fusion's ImportProjectJobDef (the "import" ESS job the loader passes as
+    -- p_import_ess_id) is only an async submit wrapper. Its own ESS output is an
+    -- essentially empty XML (~4 bytes). The real per-row accept/reject report
+    -- lives in a SEPARATE child job, ImportProjectReportJob, which the wrapper
+    -- spawns. Reading the wrapper always yields zero errors and leaves every
+    -- rejected row unaccounted (run 234, "10115RT Project Bad-1").
     --
     -- The loader calls DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB before
-    -- reconciliation; that resolves the child request id (via the
-    -- seeded REPORT_JOB_DEF = 'ImportProjectReportJob') and stores it
-    -- in DMT_ESS_JOB_TBL with PARENT_REQUEST_ID = the wrapper import id
-    -- and JOB_SHORT_NAME / JOB_DEFINITION = 'ImportProjectReportJob'.
-    -- This helper reads that persisted linkage back. Returns the child
-    -- request id, or NULL if none was captured — in which case the
-    -- caller must NOT invent a report: it downloads nothing and the
-    -- affected rows stay unaccounted (never a fabricated FAILED).
+    -- reconciliation; that resolves the child request id (via the seeded
+    -- REPORT_JOB_DEF = 'ImportProjectReportJob') and stores it in DMT_ESS_JOB_TBL
+    -- with PARENT_REQUEST_ID = the wrapper import id and JOB_SHORT_NAME /
+    -- JOB_DEFINITION = 'ImportProjectReportJob'. This helper reads that persisted
+    -- linkage back. Returns the child request id, or NULL if none was captured —
+    -- in which case the caller must NOT invent a report: it downloads nothing and
+    -- the affected rows stay unaccounted (never a fabricated FAILED).
     -- --------------------------------------------------------
     FUNCTION resolve_report_ess_id (
         p_run_id        IN NUMBER,
@@ -162,15 +103,15 @@ AS
                 l_report_id := NULL;
         END;
 
-        -- If nothing was captured yet, capture it now — the reconcile path
-        -- (RECONCILE_ONE) does NOT pre-capture the report child, so relying on a
-        -- prior loader capture leaves every rejected row unaccounted (run 234/235
-        -- "RT Project Bad-1"). This mirrors DMT_BILLING_EVENT_RESULTS_PKG and
-        -- DMT_GRANTS_RESULTS_PKG, which capture the report child lazily inside
-        -- their own reconcile. CAPTURE_REPORT_ESS_JOB is idempotent and returns
-        -- the report request id (or NULL if this run genuinely produced no report,
-        -- in which case the caller downloads nothing and rows stay unaccounted —
-        -- never a fabricated FAILED).
+        -- If nothing was captured yet, capture it now — the reconcile path does
+        -- NOT pre-capture the report child, so relying on a prior loader capture
+        -- leaves every rejected row unaccounted (run 234/235 "RT Project Bad-1").
+        -- This mirrors DMT_BILLING_EVENT_RESULTS_PKG and DMT_GRANTS_RESULTS_PKG,
+        -- which capture the report child lazily inside their own reconcile.
+        -- CAPTURE_REPORT_ESS_JOB is idempotent and returns the report request id
+        -- (or NULL if this run genuinely produced no report, in which case the
+        -- caller downloads nothing and rows stay unaccounted — never a fabricated
+        -- FAILED).
         IF l_report_id IS NULL THEN
             l_report_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
                 p_run_id        => p_run_id,
@@ -182,15 +123,18 @@ AS
     END resolve_report_ess_id;
 
     -- --------------------------------------------------------
-    -- Private: apply Import Report per-row errors to the four TFM
-    -- tables, routing by error_source. Writes TFM only.
+    -- Private: apply Import Report per-row errors to the four TFM tables, routing
+    -- by error_source. Writes TFM only. This is the Projects import-report HARVEST
+    -- path — the ONLY source of real per-row Fusion error text for this object
+    -- (the interface tables have no error-text column; the Contract v1 report emits
+    -- the '#IMPORT_REPORT#' marker in its place). It overlays the true message onto
+    -- the marker rows that the Contract v1 apply left GENERATED.
     --
-    -- p_import_ess_id is the WRAPPER import job. We first resolve the
-    -- child ImportProjectReportJob (see resolve_report_ess_id) and
-    -- download the report XML from THAT job — the wrapper's own XML is
-    -- empty. If no child was captured, we do NOT fall back to the
-    -- (empty) wrapper: there is no real report to read, so we match
-    -- nothing and the rows stay GENERATED (unaccounted), never a
+    -- p_import_ess_id is the WRAPPER import job. We first resolve the child
+    -- ImportProjectReportJob (see resolve_report_ess_id) and download the report
+    -- XML from THAT job — the wrapper's own XML is empty. If no child was captured,
+    -- we do NOT fall back to the (empty) wrapper: there is no real report to read,
+    -- so we match nothing and the rows stay GENERATED (unaccounted), never a
     -- fabricated FAILED.
     -- --------------------------------------------------------
     PROCEDURE apply_import_report (
@@ -209,10 +153,10 @@ AS
             RETURN;
         END IF;
 
-        -- Resolve the child report job. If it was not captured, there is
-        -- no real per-row report to read (the wrapper's XML is empty),
-        -- so we stop here rather than reading the wrapper and finding
-        -- "0 errors" — which would leave a genuine rejection unaccounted.
+        -- Resolve the child report job. If it was not captured, there is no real
+        -- per-row report to read (the wrapper's XML is empty), so we stop here
+        -- rather than reading the wrapper and finding "0 errors" — which would
+        -- leave a genuine rejection unaccounted.
         l_report_id := resolve_report_ess_id(p_run_id, p_import_ess_id);
 
         IF l_report_id IS NULL THEN
@@ -262,11 +206,10 @@ AS
             l_src := UPPER(NVL(l_ir_errors(i).error_source, ''));
 
             -- Static UPDATEs, one per error_source. Each branch keeps its own
-            -- static match predicate (compound child/parent key, or the
-            -- project INSTR token match) — no dynamic SQL. The composed
-            -- [IMPORT_REPORT] message is built by the shared ERROR_TEXT_FOR
-            -- helper (backlog item 28) with the Project default literal
-            -- 'Import error', removing the copy-pasted tag/NVL.
+            -- static match predicate (compound child/parent key, or the project
+            -- INSTR token match) — no dynamic SQL. The composed [IMPORT_REPORT]
+            -- message is built by the shared ERROR_TEXT_FOR helper with the
+            -- Project default literal 'Import error'.
             IF l_src LIKE '%TASK%' THEN
                 UPDATE DMT_PJF_TASKS_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
@@ -335,282 +278,267 @@ AS
     EXCEPTION
         WHEN OTHERS THEN
             -- A malformed Import Report (PARSE_ERRORS throws) must NOT abort
-            -- reconciliation: degrade to the caller's final FAILED sweep so
-            -- unmatched GENERATED rows still reach FAILED with a reportable
-            -- error (Rule #1 intent). Log a WARN and return what we matched.
+            -- reconciliation: log a WARN and return what we matched. Unmatched
+            -- GENERATED rows are left for the honest unaccounted sweep.
             IF l_ir_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_ir_xml) = 1 THEN
                 DBMS_LOB.FREETEMPORARY(l_ir_xml);
             END IF;
             DMT_UTIL_PKG.LOG(
                 p_run_id  => p_run_id,
                 p_message => C_PROC || ': Import Report parse/apply failed (' || SQLERRM ||
-                             '); ' || x_matched || ' rows matched before the error. Falling'
-                             || ' back to the final reconcile sweep.',
+                             '); ' || x_matched || ' rows matched before the error.',
                 p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package   => C_PKG,
                 p_procedure => C_PROC);
     END apply_import_report;
 
     -- --------------------------------------------------------
-    -- PARSE_AND_UPDATE — Two-tier reconciliation + child objects.
-    -- Reads the already-decoded report XML and updates the four TFM
-    -- tables. TFM only — nothing is written back to staging.
+    -- APPLY_CONTRACT_V1_PROJECTS (private)
+    -- The Contract v1 apply for all four Projects tiers, Option A shape. One
+    -- shared FETCH_ROWS call returns every tier's rows; the apply is STATIC SQL,
+    -- one pair of UPDATEs per tier, discriminated by OBJECT_TYPE and joined on
+    -- RECON_KEY = RECORD_KEY.
+    --
+    -- CRITICAL: the FAILED branch is guarded on ERROR_MESSAGE != '#IMPORT_REPORT#'
+    -- so the Projects import-report marker rows are LEFT GENERATED for the
+    -- apply_import_report harvest path (which supplies the real Fusion text). They
+    -- are never marked FAILED carrying the marker.
     -- --------------------------------------------------------
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id         IN NUMBER,
-        p_report_xml     IN XMLTYPE,
-        p_import_ess_id  IN NUMBER DEFAULT NULL
+    PROCEDURE APPLY_CONTRACT_V1_PROJECTS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
     ) IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
-        l_prj_loaded NUMBER := 0;
-        l_prj_failed NUMBER := 0;
-        l_tsk_loaded NUMBER := 0;
-        l_tsk_failed NUMBER := 0;
-        l_tm_loaded  NUMBER := 0;
-        l_tm_failed  NUMBER := 0;
-        l_tc_loaded  NUMBER := 0;
-        l_tc_failed  NUMBER := 0;
-        l_not_recon  NUMBER := 0;
+        C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_PROJECTS';
+        l_gen_count NUMBER := 0;
+        l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
+        l_err_code  NUMBER;
+        l_prj_loaded NUMBER := 0;  l_prj_failed NUMBER := 0;
+        l_tsk_loaded NUMBER := 0;  l_tsk_failed NUMBER := 0;
+        l_tm_loaded  NUMBER := 0;  l_tm_failed  NUMBER := 0;
+        l_tc_loaded  NUMBER := 0;  l_tc_failed  NUMBER := 0;
+    BEGIN
+        -- Generated-row count across all four tiers drives the shared fetch's
+        -- keyset page-count cap. Done statically here (not in the shared pkg).
+        SELECT (SELECT COUNT(*) FROM DMT_PJF_PROJECTS_TFM_TBL     WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_PJF_TASKS_TFM_TBL        WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_PJF_TEAM_MEMBERS_TFM_TBL WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_PJC_TXN_CONTROLS_TFM_TBL WHERE RUN_ID = p_run_id)
+        INTO   l_gen_count
+        FROM   dual;
+
+        DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
+            p_cemli_code  => C_CEMLI,
+            p_run_id      => p_run_id,
+            p_load_ess_id => TO_NUMBER(p_request_id),
+            p_row_cap     => l_gen_count,
+            x_rows        => l_rows,
+            x_error_code  => l_err_code);
+
+        -- A transport / SOAP failure raises loudly (design section 5: never a
+        -- silent retry, never a zero-row "success"); the fetch already logged detail.
+        IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20094,
+                C_PROC || ': Contract v1 fetch failed for Projects '
+                || '(detail in DMT_LOG_TBL).');
+        END IF;
+
+        IF l_rows.COUNT = 0 THEN
+            -- Zero report rows is never success (design section 5): leave the
+            -- remaining GENERATED rows for the import-report harvest + unaccounted
+            -- sweep in RECONCILE_BATCH.
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': Projects recon report returned zero rows; '
+                               || 'GENERATED rows left for the import-report harvest '
+                               || '(never a silent success).',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+        ELSE
+            FOR i IN 1 .. l_rows.COUNT LOOP
+                -- ===== TIER: PROJECTS (OBJECT_TYPE = 'Projects') =====
+                IF l_rows(i).OBJECT_TYPE = 'Projects' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_PJF_PROJECTS_TFM_TBL
+                        SET    TFM_STATUS           = 'LOADED',
+                               FUSION_PROJECT_ID    = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_prj_loaded := l_prj_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL
+                          AND l_rows(i).ERROR_MESSAGE != C_MARKER THEN
+                        UPDATE DMT_PJF_PROJECTS_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_prj_failed := l_prj_failed + SQL%ROWCOUNT;
+                    END IF;
+                    -- ERROR + '#IMPORT_REPORT#' marker: left GENERATED for the
+                    -- import-report harvest path (which supplies the real text).
+
+                -- ===== TIER: TASKS (OBJECT_TYPE = 'Tasks') =====
+                ELSIF l_rows(i).OBJECT_TYPE = 'Tasks' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_PJF_TASKS_TFM_TBL
+                        SET    TFM_STATUS           = 'LOADED',
+                               FUSION_TASK_ID       = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_tsk_loaded := l_tsk_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL
+                          AND l_rows(i).ERROR_MESSAGE != C_MARKER THEN
+                        UPDATE DMT_PJF_TASKS_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_tsk_failed := l_tsk_failed + SQL%ROWCOUNT;
+                    END IF;
+
+                -- ===== TIER: TEAM MEMBERS (OBJECT_TYPE = 'TeamMembers') =====
+                ELSIF l_rows(i).OBJECT_TYPE = 'TeamMembers' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
+                        SET    TFM_STATUS              = 'LOADED',
+                               FUSION_PROJECT_PARTY_ID = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE    = SYSDATE,
+                               LAST_UPDATED_DATE       = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_tm_loaded := l_tm_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL
+                          AND l_rows(i).ERROR_MESSAGE != C_MARKER THEN
+                        UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_tm_failed := l_tm_failed + SQL%ROWCOUNT;
+                    END IF;
+
+                -- ===== TIER: TXN CONTROLS (OBJECT_TYPE = 'TxnControls') =====
+                ELSIF l_rows(i).OBJECT_TYPE = 'TxnControls' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
+                        SET    TFM_STATUS            = 'LOADED',
+                               FUSION_TXN_CONTROL_ID = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE  = SYSDATE,
+                               LAST_UPDATED_DATE     = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_tc_loaded := l_tc_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL
+                          AND l_rows(i).ERROR_MESSAGE != C_MARKER THEN
+                        UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_tc_failed := l_tc_failed + SQL%ROWCOUNT;
+                    END IF;
+                END IF;
+            END LOOP;
+        END IF;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
+                           || ' | Projects LOADED/FAILED: ' || l_prj_loaded || '/' || l_prj_failed
+                           || ' | Tasks LOADED/FAILED: '    || l_tsk_loaded || '/' || l_tsk_failed
+                           || ' | TeamMembers LOADED/FAILED: ' || l_tm_loaded || '/' || l_tm_failed
+                           || ' | TxnControls LOADED/FAILED: ' || l_tc_loaded || '/' || l_tc_failed
+                           || '. Marker/unmatched rows left for the import-report harvest.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END APPLY_CONTRACT_V1_PROJECTS;
+
+    -- --------------------------------------------------------
+    -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
+    -- Contract v1 apply, then runs the Projects import-report harvest to overlay
+    -- the real per-row Fusion error text onto the '#IMPORT_REPORT#' marker rows
+    -- the apply left GENERATED (the interface tables carry no error-text column,
+    -- so this harvest is the ONLY source of real per-row error detail). The
+    -- Projects load ESS id is the Contract v1 P_LOAD_REQUEST_ID; the report's
+    -- run-scoped selectors (P_RUN_ID, P_PREFIX) pick up the whole run.
+    -- --------------------------------------------------------
+    PROCEDURE RECONCILE_BATCH (
+        p_run_id         IN NUMBER,
+        p_load_ess_id    IN NUMBER,
+        p_import_ess_id  IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
+    ) IS
+        C_PROC       CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_ir_matched NUMBER := 0;
         l_still_gen  NUMBER := 0;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
-            p_message => C_PROC || ' start.',
+            p_message => C_PROC || ' start. load_ess_id: ' || p_load_ess_id ||
+                         ' | import_ess_id: ' || NVL(TO_CHAR(p_import_ess_id), 'NULL'),
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
-        IF p_report_xml IS NULL THEN
-            -- BIP returned zero rows from BOTH tiers. Try the Import
-            -- Report fallback before marking everything FAILED.
-            DMT_UTIL_PKG.LOG(
-                p_run_id  => p_run_id,
-                p_message => C_PROC || ': BIP returned zero rows. Attempting Import Report fallback.',
-                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package   => C_PKG,
-                p_procedure => C_PROC);
+        -- Contract v1 fetch + per-tier apply: BASE/SUCCESS rows -> LOADED (stamp
+        -- FUSION_ID); real Fusion ERROR rows -> FAILED. The '#IMPORT_REPORT#'
+        -- marker rows are intentionally left GENERATED.
+        APPLY_CONTRACT_V1_PROJECTS(p_run_id, TO_CHAR(p_load_ess_id));
 
-            apply_import_report(p_run_id, p_import_ess_id, l_ir_matched);
-
-            -- Any rows the Import Report fallback matched are now FAILED with a
-            -- REAL import error. The rows it did NOT match remain GENERATED: we
-            -- could determine neither a base-table LOADED nor a real Fusion
-            -- per-record error for them, so we do NOT fabricate a FAILED. They
-            -- are left unaccounted; the accounting gate reports the object
-            -- not-DONE and the funnel surfaces them as unreconciled.
-            DMT_UTIL_PKG.LOG(
-                p_run_id  => p_run_id,
-                p_message => C_PROC || ': zero-row path complete. IR_MATCHED: ' || l_ir_matched ||
-                             '. Remaining GENERATED rows left unaccounted (not marked FAILED).',
-                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package   => C_PKG,
-                p_procedure => C_PROC);
-            RETURN;
-        END IF;
-
-        -- ================================================================
-        -- Per-object-type reconciliation from the BIP XML. OBJECT_TYPE
-        -- routes each row to the correct TFM table.
-        -- Projects: Tier 1 (INTERFACE) + Tier 2 (BASE).
-        -- Tasks/TeamMembers/TxnControls: Tier 1 (INTERFACE) only —
-        --   successful child rows are purged from the interface tables;
-        --   only rejected/unprocessed rows remain.
-        -- ================================================================
-        FOR r IN (
-            SELECT UPPER(x.object_type)    AS object_type,
-                   x.project_name,
-                   x.project_number,
-                   x.task_name,
-                   x.team_member_name,
-                   x.txn_ctrl_reference,
-                   UPPER(x.source_type)    AS source_type,
-                   UPPER(x.import_status)  AS import_status,
-                   UPPER(x.load_status)    AS load_status,
-                   x.fusion_id,
-                   x.error_msg
-            FROM   XMLTABLE('/DATA_DS/G_1' PASSING p_report_xml
-                COLUMNS
-                    object_type        VARCHAR2(30)   PATH 'OBJECT_TYPE',
-                    project_name       VARCHAR2(240)  PATH 'PROJECT_NAME',
-                    project_number     VARCHAR2(25)   PATH 'PROJECT_NUMBER',
-                    task_name          VARCHAR2(240)  PATH 'TASK_NAME',
-                    team_member_name   VARCHAR2(240)  PATH 'TEAM_MEMBER_NAME',
-                    txn_ctrl_reference VARCHAR2(240)  PATH 'TXN_CTRL_REFERENCE',
-                    source_type        VARCHAR2(20)   PATH 'SOURCE_TYPE',
-                    import_status      VARCHAR2(50)   PATH 'IMPORT_STATUS',
-                    load_status        VARCHAR2(50)   PATH 'LOAD_STATUS',
-                    fusion_id          NUMBER         PATH 'FUSION_ID',
-                    error_msg          VARCHAR2(4000) PATH 'ERROR_MESSAGE'
-            ) x
-        ) LOOP
-
-            -- ---- PROJECTS ----
-            IF r.object_type = 'PROJECTS' THEN
-                IF r.source_type = 'BASE' THEN
-                    -- Tier 2: found in base table = positively LOADED.
-                    UPDATE DMT_PJF_PROJECTS_TFM_TBL
-                    SET    TFM_STATUS           = 'LOADED',
-                           FUSION_PROJECT_ID    = r.fusion_id,
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID         = p_run_id
-                    AND    PROJECT_NUMBER = r.project_number
-                    AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                    l_prj_loaded := l_prj_loaded + SQL%ROWCOUNT;
-
-                ELSIF r.source_type = 'INTERFACE' THEN
-                    IF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
-                        UPDATE DMT_PJF_PROJECTS_TFM_TBL
-                        SET    TFM_STATUS           = 'LOADED',
-                               FUSION_PROJECT_ID    = r.fusion_id,
-                               RESULTS_UPDATED_DATE = SYSDATE,
-                               LAST_UPDATED_DATE    = SYSDATE
-                        WHERE  RUN_ID         = p_run_id
-                        AND    PROJECT_NUMBER = r.project_number
-                        AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                        l_prj_loaded := l_prj_loaded + SQL%ROWCOUNT;
-                    ELSIF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                        -- SUBMITTED = loaded but not processed (e.g. parent missing).
-                        -- Only mark FAILED when Fusion actually returned an error
-                        -- message. When error_msg is NULL we have only a status
-                        -- label (which we compose), not a real Fusion error, so we
-                        -- leave the row GENERATED for the honest sweep to mark
-                        -- UNACCOUNTED.
-                        IF r.error_msg IS NOT NULL THEN
-                            UPDATE DMT_PJF_PROJECTS_TFM_TBL
-                            SET    TFM_STATUS           = 'FAILED',
-                                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                       '[FUSION_ERROR] ' || r.error_msg),
-                                   RESULTS_UPDATED_DATE = SYSDATE,
-                                   LAST_UPDATED_DATE    = SYSDATE
-                            WHERE  RUN_ID         = p_run_id
-                            AND    PROJECT_NUMBER = r.project_number
-                            AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                            l_prj_failed := l_prj_failed + SQL%ROWCOUNT;
-                        END IF;
-                    ELSE
-                        -- Unrecognized interface status and no real Fusion error to
-                        -- report. Do NOT compose a FAILED; leave the row GENERATED
-                        -- for the honest sweep to mark UNACCOUNTED.
-                        NULL;
-                    END IF;
-                END IF;
-
-            -- ---- TASKS ----
-            ELSIF r.object_type = 'TASKS' THEN
-                IF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                    -- No real Fusion error is returned for tasks (only a status
-                    -- label, which we would compose). Leave GENERATED for the
-                    -- honest sweep to mark UNACCOUNTED.
-                    NULL;
-                ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
-                    UPDATE DMT_PJF_TASKS_TFM_TBL
-                    SET    TFM_STATUS           = 'LOADED',
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID         = p_run_id
-                    AND    TASK_NAME      = r.task_name
-                    AND    PROJECT_NUMBER = r.project_number
-                    AND    TFM_STATUS     NOT IN ('LOADED','FAILED');
-                    l_tsk_loaded := l_tsk_loaded + SQL%ROWCOUNT;
-                ELSE
-                    -- Unrecognized status and no real Fusion error to report.
-                    -- Leave GENERATED for the honest sweep to mark UNACCOUNTED.
-                    NULL;
-                END IF;
-
-            -- ---- TEAM MEMBERS ----
-            ELSIF r.object_type = 'TEAMMEMBERS' THEN
-                IF r.import_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                    -- No real Fusion error is returned for team members (only a
-                    -- status label, which we would compose). Leave GENERATED for
-                    -- the honest sweep to mark UNACCOUNTED.
-                    NULL;
-                ELSIF r.import_status IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
-                    UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
-                    SET    TFM_STATUS           = 'LOADED',
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID           = p_run_id
-                    AND    TEAM_MEMBER_NAME = r.team_member_name
-                    AND    PROJECT_NAME     = r.project_name
-                    AND    TFM_STATUS       NOT IN ('LOADED','FAILED');
-                    l_tm_loaded := l_tm_loaded + SQL%ROWCOUNT;
-                ELSE
-                    -- Unrecognized status and no real Fusion error to report.
-                    -- Leave GENERATED for the honest sweep to mark UNACCOUNTED.
-                    NULL;
-                END IF;
-
-            -- ---- TXN CONTROLS ----
-            ELSIF r.object_type = 'TXNCONTROLS' THEN
-                -- PJC_TXN_CONTROLS_STAGE has LOAD_STATUS but no IMPORT_STATUS.
-                IF NVL(r.import_status, r.load_status) IN ('ERROR','REJECTED','FAILED','FAILURE','N','SUBMITTED') THEN
-                    -- No real Fusion error is returned for txn controls (only a
-                    -- status label, which we would compose). Leave GENERATED for
-                    -- the honest sweep to mark UNACCOUNTED.
-                    NULL;
-                ELSIF NVL(r.import_status, r.load_status) IN ('COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P','COMPLETE') THEN
-                    UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
-                    SET    TFM_STATUS           = 'LOADED',
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID             = p_run_id
-                    AND    TXN_CTRL_REFERENCE = r.txn_ctrl_reference
-                    AND    PROJECT_NUMBER     = r.project_number
-                    AND    TFM_STATUS         NOT IN ('LOADED','FAILED');
-                    l_tc_loaded := l_tc_loaded + SQL%ROWCOUNT;
-                ELSE
-                    -- Unrecognized status and no real Fusion error to report.
-                    -- Leave GENERATED for the honest sweep to mark UNACCOUNTED.
-                    NULL;
-                END IF;
-
-            END IF;
-        END LOOP;
-
-        -- Cascade project outcome to its tasks. A task imports with its project,
-        -- so a task under a base-confirmed LOADED project is LOADED. A task whose
-        -- project GENUINELY FAILED (TFM_STATUS='FAILED' with a real Fusion error)
-        -- inherits that parent's ACTUAL Fusion error string -- we propagate the
-        -- linked record's real error, never compose a "parent was rejected"
-        -- sentence (record-accounting rule 2(b); a Fusion error is always an
-        -- error). A task whose project is still unresolved (GENERATED) or is
-        -- ABSENT from this load has no real Fusion error to propagate, so it is
-        -- left GENERATED for the honest sweep to mark UNACCOUNTED -- never a
-        -- fabricated FAILED. Only touches tasks not already resolved above.
-        UPDATE DMT_PJF_TASKS_TFM_TBL t
-        SET    t.TFM_STATUS = 'LOADED', t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND    EXISTS (SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
-                       WHERE p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER
-                       AND   p.TFM_STATUS = 'LOADED');
-        UPDATE DMT_PJF_TASKS_TFM_TBL t
-        SET    t.TFM_STATUS = 'FAILED',
-               t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
-                   '[FUSION_ERROR] via project ' || t.PROJECT_NUMBER || ': ' ||
-                   (SELECT p.ERROR_TEXT FROM DMT_PJF_PROJECTS_TFM_TBL p
-                    WHERE p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER
-                    AND   p.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
-               t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND    EXISTS (SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
-                       WHERE p.RUN_ID = p_run_id AND p.PROJECT_NUMBER = t.PROJECT_NUMBER
-                       AND   p.TFM_STATUS = 'FAILED' AND p.ERROR_TEXT IS NOT NULL);
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id  => p_run_id,
-            p_message => C_PROC || ': BIP complete. Projects ' || l_prj_loaded || 'L/' || l_prj_failed || 'F' ||
-                         ', Tasks ' || l_tsk_loaded || 'L/' || l_tsk_failed || 'F' ||
-                         ', TeamMembers ' || l_tm_loaded || 'L/' || l_tm_failed || 'F' ||
-                         ', TxnControls ' || l_tc_loaded || 'L/' || l_tc_failed || 'F',
-            p_package   => C_PKG,
-            p_procedure => C_PROC);
-
-        -- ================================================================
-        -- Import Report fallback: if any TFM rows are still GENERATED,
-        -- match per-row errors from the ESS Import Report XML.
-        -- ================================================================
+        -- Import-report harvest: overlay the real per-row Fusion message onto the
+        -- marker rows (and any other still-GENERATED row) from the child
+        -- ImportProjectReportJob XML. This is the ONLY source of real per-row error
+        -- text for Projects. Run whenever rows remain GENERATED and an import ESS
+        -- id is available.
         SELECT (SELECT COUNT(*) FROM DMT_PJF_PROJECTS_TFM_TBL
                 WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED')
              + (SELECT COUNT(*) FROM DMT_PJF_TASKS_TFM_TBL
@@ -625,199 +553,21 @@ AS
             DMT_UTIL_PKG.LOG(
                 p_run_id  => p_run_id,
                 p_message => C_PROC || ': ' || l_still_gen ||
-                             ' rows still GENERATED after BIP. Attempting Import Report (ESS ' ||
-                             p_import_ess_id || ').',
+                             ' rows still GENERATED after the Contract v1 apply. Running Import'
+                             || ' Report harvest (ESS ' || p_import_ess_id || ').',
                 p_package   => C_PKG,
                 p_procedure => C_PROC);
             apply_import_report(p_run_id, p_import_ess_id, l_ir_matched);
         END IF;
 
-        -- ================================================================
-        -- Cascade: a child TFM row still GENERATED inherits its parent
-        -- project's outcome. Catches children purged from the interface
-        -- table after successful import (no BIP row returned).
-        -- ================================================================
-        -- Tasks: cascade LOADED from parent project
-        UPDATE DMT_PJF_TASKS_TFM_TBL tsk
-        SET    tsk.TFM_STATUS           = 'LOADED',
-               tsk.RESULTS_UPDATED_DATE = SYSDATE,
-               tsk.LAST_UPDATED_DATE    = SYSDATE
-        WHERE  tsk.RUN_ID     = p_run_id
-        AND    tsk.TFM_STATUS = 'GENERATED'
-        AND    EXISTS (
-            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
-            WHERE  p.RUN_ID         = p_run_id
-            AND    p.PROJECT_NUMBER = tsk.PROJECT_NUMBER
-            AND    p.TFM_STATUS     = 'LOADED');
-
-        -- Team Members: cascade LOADED from parent project
-        UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL tm
-        SET    tm.TFM_STATUS           = 'LOADED',
-               tm.RESULTS_UPDATED_DATE = SYSDATE,
-               tm.LAST_UPDATED_DATE    = SYSDATE
-        WHERE  tm.RUN_ID     = p_run_id
-        AND    tm.TFM_STATUS = 'GENERATED'
-        AND    EXISTS (
-            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
-            WHERE  p.RUN_ID       = p_run_id
-            AND    p.PROJECT_NAME = tm.PROJECT_NAME
-            AND    p.TFM_STATUS   = 'LOADED');
-
-        -- Txn Controls: cascade LOADED from parent project
-        UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL tc
-        SET    tc.TFM_STATUS           = 'LOADED',
-               tc.RESULTS_UPDATED_DATE = SYSDATE,
-               tc.LAST_UPDATED_DATE    = SYSDATE
-        WHERE  tc.RUN_ID     = p_run_id
-        AND    tc.TFM_STATUS = 'GENERATED'
-        AND    EXISTS (
-            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
-            WHERE  p.RUN_ID         = p_run_id
-            AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
-            AND    p.TFM_STATUS     = 'LOADED');
-
-        -- Tasks: cascade FAILED from parent project. The parent project only
-        -- reaches FAILED with a real Fusion error, so the child carries that
-        -- same real parent error in the prescribed linked-record form.
-        UPDATE DMT_PJF_TASKS_TFM_TBL tsk
-        SET    tsk.TFM_STATUS           = 'FAILED',
-               tsk.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(tsk.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT p.ERROR_TEXT FROM DMT_PJF_PROJECTS_TFM_TBL p
-                    WHERE  p.RUN_ID         = p_run_id
-                    AND    p.PROJECT_NUMBER = tsk.PROJECT_NUMBER
-                    AND    p.TFM_STATUS     = 'FAILED'
-                    AND    ROWNUM = 1)),
-               tsk.RESULTS_UPDATED_DATE = SYSDATE,
-               tsk.LAST_UPDATED_DATE    = SYSDATE
-        WHERE  tsk.RUN_ID     = p_run_id
-        AND    tsk.TFM_STATUS = 'GENERATED'
-        AND    EXISTS (
-            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
-            WHERE  p.RUN_ID         = p_run_id
-            AND    p.PROJECT_NUMBER = tsk.PROJECT_NUMBER
-            AND    p.TFM_STATUS     = 'FAILED');
-
-        -- Team Members: cascade FAILED from parent project. The parent project
-        -- only reaches FAILED with a real Fusion error, so the child carries that
-        -- same real parent error in the prescribed linked-record form.
-        UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL tm
-        SET    tm.TFM_STATUS           = 'FAILED',
-               tm.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(tm.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT p.ERROR_TEXT FROM DMT_PJF_PROJECTS_TFM_TBL p
-                    WHERE  p.RUN_ID       = p_run_id
-                    AND    p.PROJECT_NAME = tm.PROJECT_NAME
-                    AND    p.TFM_STATUS   = 'FAILED'
-                    AND    ROWNUM = 1)),
-               tm.RESULTS_UPDATED_DATE = SYSDATE,
-               tm.LAST_UPDATED_DATE    = SYSDATE
-        WHERE  tm.RUN_ID     = p_run_id
-        AND    tm.TFM_STATUS = 'GENERATED'
-        AND    EXISTS (
-            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
-            WHERE  p.RUN_ID       = p_run_id
-            AND    p.PROJECT_NAME = tm.PROJECT_NAME
-            AND    p.TFM_STATUS   = 'FAILED');
-
-        -- Txn Controls: cascade FAILED from parent project. The parent project
-        -- only reaches FAILED with a real Fusion error, so the child carries that
-        -- same real parent error in the prescribed linked-record form.
-        UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL tc
-        SET    tc.TFM_STATUS           = 'FAILED',
-               tc.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(tc.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT p.ERROR_TEXT FROM DMT_PJF_PROJECTS_TFM_TBL p
-                    WHERE  p.RUN_ID         = p_run_id
-                    AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
-                    AND    p.TFM_STATUS     = 'FAILED'
-                    AND    ROWNUM = 1)),
-               tc.RESULTS_UPDATED_DATE = SYSDATE,
-               tc.LAST_UPDATED_DATE    = SYSDATE
-        WHERE  tc.RUN_ID     = p_run_id
-        AND    tc.TFM_STATUS = 'GENERATED'
-        AND    EXISTS (
-            SELECT 1 FROM DMT_PJF_PROJECTS_TFM_TBL p
-            WHERE  p.RUN_ID         = p_run_id
-            AND    p.PROJECT_NUMBER = tc.PROJECT_NUMBER
-            AND    p.TFM_STATUS     = 'FAILED');
-
-        -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor given
-        -- a real Fusion error is left GENERATED (unaccounted) — no fabricated FAILED.)
-        l_not_recon := 0;
-
-        -- NO write-back to staging — the TFM row is the sole record of the
-        -- Fusion outcome (accepted rule: downstream outcomes are never
-        -- written back to staging). NO COMMIT — the orchestrator owns the
-        -- transaction boundary.
+        -- Unresolved records are intentionally left GENERATED (unaccounted). No
+        -- fabricated FAILED: the accounting gate reports the object not-DONE and
+        -- the funnel surfaces these as UNRECONCILED. NO COMMIT — the orchestrator
+        -- owns the transaction boundary.
 
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
-            p_message => C_PROC || ' complete.' ||
-                         ' Projects ' || l_prj_loaded || 'L/' || l_prj_failed || 'F' ||
-                         ', Tasks ' || l_tsk_loaded || 'L/' || l_tsk_failed || 'F' ||
-                         ', TeamMembers ' || l_tm_loaded || 'L/' || l_tm_failed || 'F' ||
-                         ', TxnControls ' || l_tc_loaded || 'L/' || l_tc_failed || 'F' ||
-                         ', IR_MATCHED: ' || l_ir_matched ||
-                         ', NOT_RECONCILED: ' || l_not_recon || '.',
-            p_package   => C_PKG,
-            p_procedure => C_PROC);
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id  => p_run_id,
-                p_message => C_PROC || ' failed.',
-                p_sqlerrm   => SQLERRM,
-                p_package   => C_PKG,
-                p_procedure => C_PROC);
-            RAISE;
-    END PARSE_AND_UPDATE;
-
-    -- --------------------------------------------------------
-    -- RECONCILE_BATCH
-    -- Orchestrates FETCH then PARSE. A fetch failure raises so the
-    -- work item fails loudly — never a silent zero-row "success".
-    -- --------------------------------------------------------
-    PROCEDURE RECONCILE_BATCH (
-        p_run_id         IN NUMBER,
-        p_load_ess_id    IN NUMBER,
-        p_import_ess_id  IN NUMBER DEFAULT NULL,
-        p_work_queue_id IN NUMBER DEFAULT NULL
-    ) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
-        l_xml  XMLTYPE;
-        l_err  NUMBER;
-    BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id  => p_run_id,
-            p_message => C_PROC || ' start. load_ess_id: ' || p_load_ess_id ||
-                         ' | import_ess_id: ' || NVL(TO_CHAR(p_import_ess_id), 'NULL'),
-            p_package   => C_PKG,
-            p_procedure => C_PROC);
-
-        FETCH_BIP_RESULTS(
-            p_run_id        => p_run_id,
-            p_load_ess_id   => p_load_ess_id,
-            x_report_xml    => l_xml,
-            x_error_code    => l_err,
-            p_import_ess_id => p_import_ess_id);
-
-        IF l_err != DMT_UTIL_PKG.C_SUCCESS THEN
-            RAISE_APPLICATION_ERROR(-20038,
-                'RECONCILE_BATCH: FETCH_BIP_RESULTS failed for CEMLI ' ||
-                C_CEMLI || ' (detail in DMT_LOG_TBL).');
-        END IF;
-
-        PARSE_AND_UPDATE(p_run_id, l_xml, p_import_ess_id);
-
-        -- Unresolved records intentionally left GENERATED (unaccounted).
-        -- No fabricated FAILED: the accounting gate reports the object
-        -- not-DONE and the funnel surfaces these as UNRECONCILED.
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id  => p_run_id,
-            p_message => C_PROC || ' complete.',
+            p_message => C_PROC || ' complete. IR_MATCHED: ' || l_ir_matched || '.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
     EXCEPTION
