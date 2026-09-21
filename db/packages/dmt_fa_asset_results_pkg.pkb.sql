@@ -113,36 +113,38 @@
                 p_procedure => C_PROC);
         ELSE
             FOR i IN 1 .. l_rows.COUNT LOOP
-                -- ===== TIER: ASSET/HEADER (OBJECT_TYPE starts with 'Assets') =====
-                -- The book is folded into OBJECT_TYPE for display ('Assets [BOOK]'),
-                -- so match the prefix, not one literal.
-                IF l_rows(i).OBJECT_TYPE LIKE 'Assets%' THEN
-                    IF l_rows(i).SOURCE_TYPE = 'BASE'
-                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
-                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
-                        UPDATE DMT_FA_ASSET_HDR_TFM_TBL
-                        SET    TFM_STATUS           = 'LOADED',
-                               FUSION_ASSET_ID      = l_rows(i).FUSION_ID,
-                               RESULTS_UPDATED_DATE = SYSDATE,
-                               LAST_UPDATED_DATE    = SYSDATE
-                        WHERE  RUN_ID    = p_run_id
-                        AND    RECON_KEY = l_rows(i).RECORD_KEY
-                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_hdr_loaded := l_hdr_loaded + SQL%ROWCOUNT;
-                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
-                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
-                        UPDATE DMT_FA_ASSET_HDR_TFM_TBL
-                        SET    TFM_STATUS           = 'FAILED',
-                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
-                                                        ERROR_TEXT,
-                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
-                               RESULTS_UPDATED_DATE = SYSDATE,
-                               LAST_UPDATED_DATE    = SYSDATE
-                        WHERE  RUN_ID    = p_run_id
-                        AND    RECON_KEY = l_rows(i).RECORD_KEY
-                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_hdr_failed := l_hdr_failed + SQL%ROWCOUNT;
-                    END IF;
+                -- ===== SINGLE TIER: ASSET/HEADER =====
+                -- Assets emits ONE apply tier (the asset header). FETCH_ROWS is
+                -- already scoped to the Assets CEMLI's own report, so every fetched
+                -- row is a header row; apply unconditionally (matching the single-tier
+                -- pattern in MiscReceipts/Projects). No OBJECT_TYPE discriminator is
+                -- needed here (and pattern-matching a controlled OBJECT_TYPE value with
+                -- LIKE is prohibited by the coding standard).
+                IF l_rows(i).SOURCE_TYPE = 'BASE'
+                   AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                   AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                    UPDATE DMT_FA_ASSET_HDR_TFM_TBL
+                    SET    TFM_STATUS           = 'LOADED',
+                           FUSION_ASSET_ID      = l_rows(i).FUSION_ID,
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID    = p_run_id
+                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                    AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                    l_hdr_loaded := l_hdr_loaded + SQL%ROWCOUNT;
+                ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                      AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
+                    UPDATE DMT_FA_ASSET_HDR_TFM_TBL
+                    SET    TFM_STATUS           = 'FAILED',
+                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                    ERROR_TEXT,
+                                                    '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID    = p_run_id
+                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                    AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                    l_hdr_failed := l_hdr_failed + SQL%ROWCOUNT;
                 END IF;
             END LOOP;
         END IF;
