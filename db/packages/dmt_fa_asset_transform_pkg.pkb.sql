@@ -67,6 +67,25 @@
 
         l_ok := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (single-tier header apply): stamp the header
+        -- tier's RECON_KEY so it equals the header RECORD_KEY the recon report
+        -- emits. The Assets Contract v1 data model (DMT_FA_ASSET_RECON_DM.xdm,
+        -- fixed in #344) emits BOTH the BASE and INTERFACE header RECORD_KEY as
+        -- the prefixed ASSET_NUMBER -- the business key that Fusion honours and
+        -- that survives to FA_ADDITIONS_B, so BASE and INTERFACE agree on the one
+        -- key the TFM row carries. The shared reconciler
+        -- (DMT_FA_ASSET_RESULTS_PKG.APPLY_CONTRACT_V1_ASSETS) joins the report
+        -- rows to this table on RECON_KEY = report RECORD_KEY, so this stamp must
+        -- match that expression exactly. Only NULL keys are set (never
+        -- overwrite); post-INSERT, run-scoped. Book and assignment tiers are NOT
+        -- emitted by the DM (they inherit the header's outcome by cascade in the
+        -- reconciler), so only the header tier is stamped.
+        UPDATE DMT_FA_ASSET_HDR_TFM_TBL
+        SET    RECON_KEY = ASSET_NUMBER,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         UPDATE DMT_FA_ASSET_HDR_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (

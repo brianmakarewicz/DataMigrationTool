@@ -3,12 +3,34 @@
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_FA_ASSET_RESULTS_PKG" AS
 -- ============================================================
 -- DMT_FA_ASSET_RESULTS_PKG body
--- Assets BIP reconciliation — Two-Tier pattern.
--- Tier 1: FA_MASS_ADDITIONS (interface table, POSTED rows removed by PostMassAdditions)
--- Tier 2: FA_ADDITIONS_B (base table, positive confirmation)
--- No absence=LOADED fallback. Every row gets positive verification
--- or is marked FAILED with a reconciliation error.
--- Cascades status to book and assignment TFM tables.
+-- Assets post-load reconciliation — Contract v1 (nine-column report).
+--
+-- Reuses the ONE shared Contract v1 fetch DMT_RECON_CONTRACT_PKG.FETCH_ROWS, the
+-- same template as Requisitions (PR #364) and Workers. A single FETCH_ROWS call
+-- runs the Assets Contract v1 report over BIP and returns its rows in one
+-- collection; the apply is STATIC SQL against the compile-time-known header TFM
+-- table, joined on RECON_KEY = the report RECORD_KEY.
+--
+-- Assets emits ONE apply tier (the ASSET/header). The Contract v1 data model
+-- reports one BASE row per ASSET_NUMBER from FA_ADDITIONS_B and one INTERFACE row
+-- per rejected asset from FA_MASS_ADDITIONS. Because the book is folded into
+-- OBJECT_TYPE for readability ('Assets' or 'Assets [<BOOK>]'), the apply matches
+-- on the OBJECT_TYPE prefix 'Assets', not one exact literal. Book and assignment
+-- outcomes are NOT reported as their own tiers; they inherit the header's outcome
+-- via the cascade below (unchanged behaviour from the prior two-tier reader).
+--
+-- Per the shared Contract v1 apply rule:
+--   * BASE / SUCCESS / FUSION_ID NOT NULL -> LOADED, stamp FUSION_ASSET_ID.
+--   * FUSION_STATUS = ERROR with a real ERROR_MESSAGE -> FAILED, message appended
+--     as '[FUSION_ERROR] ' || message (never composed).
+--   * Everything else is left GENERATED; INTERFACE/SUCCESS corroborates but is
+--     never sufficient for LOADED. Guarded on TFM_STATUS NOT IN ('LOADED','FAILED').
+--
+-- ALL-OR-NOTHING (Assets-only, PRESERVED verbatim): the SQL*Loader LOAD stage is
+-- atomic per book. When a whole book's load genuinely failed and nothing reached
+-- the interface, the report confirms nothing; ACCOUNT_ALL_OR_NOTHING then reads
+-- the SQL*Loader log to give those rows a real verdict. That log-based path is
+-- untouched by the Contract v1 migration.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_FA_ASSET_RESULTS_PKG';
@@ -18,14 +40,13 @@
     -- GET_PARTITION_KEYS — distinct BOOK_TYPE_CODE tokens for one run,
     -- STATIC SQL over the asset-book transform table (this object's own
     -- table). Spawn-per-partition (work-queue-ID core, 2026-07-20): one child
-    -- work item per book. Called through invoke_registered (style KEYS).
+    -- work item per book. Called through invoke_registered (style KEYS). Unchanged.
     -- --------------------------------------------------------
     FUNCTION GET_PARTITION_KEYS (
         p_run_id IN NUMBER
     ) RETURN DMT_PARTITION_KEY_TBL IS
         l_keys DMT_PARTITION_KEY_TBL;
     BEGIN
-        -- One JSON object per distinct book, keyed by the partition column name.
         SELECT DISTINCT JSON_OBJECT('BOOK_TYPE_CODE' VALUE TO_CHAR(BOOK_TYPE_CODE))
         BULK COLLECT INTO l_keys
         FROM   DMT_FA_ASSET_BOOK_TFM_TBL
@@ -36,343 +57,122 @@
     END GET_PARTITION_KEYS;
 
     -- --------------------------------------------------------
-    -- Private: POST a SOAP envelope; return full response CLOB.
+    -- APPLY_CONTRACT_V1_ASSETS (private)
+    -- The Contract v1 apply for the Assets header tier, Option A shape. One
+    -- shared FETCH_ROWS call returns the report's rows; the apply is STATIC SQL,
+    -- one pair of UPDATEs, discriminated by the OBJECT_TYPE prefix 'Assets' and
+    -- joined on RECON_KEY = RECORD_KEY. Book and assignment TFM rows inherit the
+    -- header outcome via the cascade at the end (LOADED down, real Fusion error
+    -- carried down); the STG echo is unchanged.
     -- --------------------------------------------------------
-    FUNCTION bip_soap_post (
-        p_url      IN VARCHAR2,
-        p_action   IN VARCHAR2,
-        p_body     IN CLOB
-    ) RETURN CLOB IS
-        l_req      UTL_HTTP.REQ;
-        l_resp     UTL_HTTP.RESP;
-        l_response CLOB;
-        l_chunk    VARCHAR2(32767);
-        l_offset   INTEGER := 1;
-        l_amount   INTEGER;
-        l_body_len INTEGER;
-    BEGIN
-        UTL_HTTP.SET_RESPONSE_ERROR_CHECK(FALSE);
-        UTL_HTTP.SET_TRANSFER_TIMEOUT(600);
-
-        l_req := UTL_HTTP.BEGIN_REQUEST(p_url, 'POST', 'HTTP/1.1');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Type',   'text/xml; charset=utf-8');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Length', DBMS_LOB.GETLENGTH(p_body));
-        UTL_HTTP.SET_HEADER(l_req, 'SOAPAction',     '"' || p_action || '"');
-        UTL_HTTP.SET_HEADER(l_req, 'Accept',         'text/xml');
-
-        l_body_len := DBMS_LOB.GETLENGTH(p_body);
-        WHILE l_offset <= l_body_len LOOP
-            l_amount := LEAST(8000, l_body_len - l_offset + 1);
-            l_chunk  := DBMS_LOB.SUBSTR(p_body, l_amount, l_offset);
-            UTL_HTTP.WRITE_TEXT(l_req, l_chunk);
-            l_offset := l_offset + l_amount;
-        END LOOP;
-
-        l_resp := UTL_HTTP.GET_RESPONSE(l_req);
-
-        DBMS_LOB.CREATETEMPORARY(l_response, TRUE);
-        BEGIN
-            LOOP
-                UTL_HTTP.READ_TEXT(l_resp, l_chunk, 32767);
-                DBMS_LOB.APPEND(l_response, l_chunk);
-            END LOOP;
-        EXCEPTION WHEN UTL_HTTP.END_OF_BODY THEN NULL;
-        END;
-        UTL_HTTP.END_RESPONSE(l_resp);
-
-        IF l_resp.status_code NOT BETWEEN 200 AND 299 THEN
-            RAISE_APPLICATION_ERROR(-20030,
-                'BIP SOAP call failed. Status: ' || l_resp.status_code ||
-                ' | Action: ' || p_action ||
-                ' | Response (first 500): ' || DBMS_LOB.SUBSTR(l_response, 500, 1));
-        END IF;
-
-        RETURN l_response;
-    EXCEPTION
-        WHEN OTHERS THEN
-            BEGIN UTL_HTTP.END_RESPONSE(l_resp); EXCEPTION WHEN OTHERS THEN NULL; END;
-            RAISE;
-    END bip_soap_post;
-
-    -- --------------------------------------------------------
-    -- (b64_to_clob removed — base64 decode is now centralised in
-    --  DMT_UTIL_PKG.BASE64_DECODE_CLOB / BIP_REPORT_XML, which decode CLOBs of
-    --  any size. The old local copy truncated at VARCHAR2(32767).)
-
-    -- --------------------------------------------------------
-    -- FETCH_BIP_RESULTS — passes P_BATCH_ID and P_IMPORT_ESS_ID
-    -- --------------------------------------------------------
-    FUNCTION FETCH_BIP_RESULTS (
-        p_run_id  IN NUMBER,
-        p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
-    ) RETURN CLOB IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'FETCH_BIP_RESULTS';
-        l_base_url   VARCHAR2(500);
-        l_username   VARCHAR2(100);
-        l_password   VARCHAR2(100);
-        l_rpt_path   VARCHAR2(500);
-        l_url        VARCHAR2(500);
-        l_action     CONSTANT VARCHAR2(200) :=
-            'http://xmlns.oracle.com/oxp/service/v2/ReportService/runReportRequest';
-        l_env        CLOB;
-        l_resp       CLOB;
-        l_import_str VARCHAR2(30) := NVL(TO_CHAR(p_import_ess_id), '');
-        l_prefix     VARCHAR2(30);
-    BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start. CEMLI: ' || C_CEMLI ||
-                                ' | load_ess_id: ' || p_load_ess_id ||
-                                ' | import_ess_id: ' || NVL(TO_CHAR(p_import_ess_id), 'NULL'),
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_username := DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
-        l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
-
-        IF l_base_url IS NULL OR l_username IS NULL OR l_password IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20031,
-                C_PROC || ': Fusion connection config is incomplete.');
-        END IF;
-
-        BEGIN
-            SELECT REPORT_CATALOG_PATH
-            INTO   l_rpt_path
-            FROM   DMT_BIP_REPORT_TBL
-            WHERE  CEMLI_CODE = C_CEMLI;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                RAISE_APPLICATION_ERROR(-20032,
-                    C_PROC || ': No row in DMT_BIP_REPORT_TBL for CEMLI_CODE = ''' || C_CEMLI || '''.');
-        END;
-
-        IF l_rpt_path IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20033,
-                C_PROC || ': REPORT_CATALOG_PATH is NULL for CEMLI_CODE = ''' || C_CEMLI || '''.');
-        END IF;
-
-        l_url := l_base_url || '/xmlpserver/services/v2/ReportService';
-
-        -- Look up prefix for Tier 2 base table matching (PostMassAdditions purges interface rows)
-        BEGIN
-            SELECT PREFIX INTO l_prefix
-            FROM   DMT_PIPELINE_RUN_TBL
-            WHERE  RUN_ID = p_run_id;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                l_prefix := NULL;
-                DMT_UTIL_PKG.LOG(
-                    p_run_id => p_run_id,
-                    p_message        => C_PROC || ': No CONVERSION_MASTER row for run_id ' ||
-                                        p_run_id || '. Tier 2 (base table) reconciliation will be skipped.',
-                    p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                    p_package        => C_PKG,
-                    p_procedure      => C_PROC);
-        END;
-
-        DBMS_LOB.CREATETEMPORARY(l_env, TRUE);
-        DBMS_LOB.APPEND(l_env, TO_CLOB(
-            '<soapenv:Envelope' ||
-            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"' ||
-            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">' ||
-            '  <soapenv:Header/>' ||
-            '  <soapenv:Body>' ||
-            '    <v2:runReport>' ||
-            '      <v2:reportRequest>' ||
-            '        <v2:reportAbsolutePath>' || l_rpt_path || '</v2:reportAbsolutePath>' ||
-            '        <v2:attributeFormat>xml</v2:attributeFormat>' ||
-            '        <v2:parameterNameValues>' ||
-            '          <v2:listOfParamNameValues>' ||
-            '            <v2:item>' ||
-            '              <v2:name>P_BATCH_ID</v2:name>' ||
-            '              <v2:values><v2:item>' || TO_CHAR(p_load_ess_id) || '</v2:item></v2:values>' ||
-            '            </v2:item>' ||
-            '            <v2:item>' ||
-            '              <v2:name>P_IMPORT_ESS_ID</v2:name>' ||
-            '              <v2:values><v2:item>' || l_import_str || '</v2:item></v2:values>' ||
-            '            </v2:item>' ||
-            '            <v2:item>' ||
-            '              <v2:name>P_PREFIX</v2:name>' ||
-            '              <v2:values><v2:item>' || NVL(l_prefix, '') || '</v2:item></v2:values>' ||
-            '            </v2:item>' ||
-            '          </v2:listOfParamNameValues>' ||
-            '        </v2:parameterNameValues>' ||
-            '        <v2:sizeOfDataChunkDownload>-1</v2:sizeOfDataChunkDownload>' ||
-            '      </v2:reportRequest>' ||
-            '      <v2:userID>' || l_username || '</v2:userID>' ||
-            '      <v2:password>' || l_password || '</v2:password>' ||
-            '    </v2:runReport>' ||
-            '  </soapenv:Body>' ||
-            '</soapenv:Envelope>'));
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => 'BIP runReport request built. Report: ' || l_rpt_path,
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        l_resp := bip_soap_post(l_url, l_action, l_env);
-        DBMS_LOB.FREETEMPORARY(l_env);
-
-        IF DBMS_LOB.INSTR(l_resp, 'soapenv:Fault') > 0 OR
-           DBMS_LOB.INSTR(l_resp, 'soap:Fault')    > 0 THEN
-            RAISE_APPLICATION_ERROR(-20034,
-                C_PROC || ': SOAP Fault from BIP runReport. Report: ' || l_rpt_path ||
-                ' | Response (first 1000): ' || DBMS_LOB.SUBSTR(l_resp, 1000, 1));
-        END IF;
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. Response bytes: ' || DBMS_LOB.GETLENGTH(l_resp),
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        RETURN l_resp;
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RAISE;
-    END FETCH_BIP_RESULTS;
-
-    -- --------------------------------------------------------
-    -- PARSE_AND_UPDATE — Two-tier reconciliation, no absence=LOADED
-    -- INTERFACE POSTED -> LOADED, INTERFACE other -> FAILED
-    -- BASE -> LOADED with asset_id
-    -- Remaining GENERATED -> FAILED (not reconciled)
-    -- Cascades to book and assignment TFM tables.
-    -- --------------------------------------------------------
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id IN NUMBER,
-        p_xml_data       IN CLOB
+    PROCEDURE APPLY_CONTRACT_V1_ASSETS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
     ) IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
-        l_xml        XMLTYPE;
-        l_loaded     NUMBER := 0;
-        l_failed     NUMBER := 0;
-        l_not_recon  NUMBER := 0;
+        C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_ASSETS';
+        l_gen_count NUMBER := 0;
+        l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
+        l_err_code  NUMBER;
+        l_hdr_loaded NUMBER := 0;  l_hdr_failed NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
+        -- Generated-row count drives the shared fetch's keyset page-count cap.
+        -- Done statically here (not in the shared pkg). Only the header tier is
+        -- reported by the DM, so only header rows are counted.
+        SELECT COUNT(*)
+        INTO   l_gen_count
+        FROM   DMT_FA_ASSET_HDR_TFM_TBL
+        WHERE  RUN_ID = p_run_id;
 
-        -- Decode the BIP report via the shared helper (handles any size, no
-        -- VARCHAR2(32767) truncation). Returns NULL when there are no rows.
-        l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
-        IF l_xml IS NULL THEN
-            -- No reportBytes at all — BIP returned 0 rows from BOTH tiers.
-            -- We could determine neither a base-table LOADED nor a real Fusion
-            -- per-record error, so we do NOT fabricate a FAILED. The GENERATED
-            -- rows are left as-is (unaccounted); the accounting gate reports the
-            -- object not-DONE and the funnel surfaces them as unreconciled.
-            DMT_UTIL_PKG.LOG(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ': No <reportBytes> in BIP response. ' ||
-                                    'GENERATED rows left unaccounted (not marked FAILED).',
-                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RETURN;
+        DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
+            p_cemli_code  => C_CEMLI,
+            p_run_id      => p_run_id,
+            p_load_ess_id => TO_NUMBER(p_request_id),
+            p_row_cap     => l_gen_count,
+            x_rows        => l_rows,
+            x_error_code  => l_err_code);
+
+        -- A transport / SOAP failure raises loudly (design section 5: never a
+        -- silent retry, never a zero-row "success"); the fetch already logged detail.
+        IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20094,
+                C_PROC || ': Contract v1 fetch failed for Assets '
+                || '(detail in DMT_LOG_TBL).');
         END IF;
 
-        -- Process rows from BIP XML — two-tier reconciliation
-        FOR r IN (
-            SELECT x.asset_number,
-                   UPPER(x.source_type)    AS source_type,
-                   UPPER(x.import_status)  AS import_status,
-                   x.fusion_id,
-                   x.error_msg
-            FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
-                COLUMNS
-                    asset_number    VARCHAR2(100)  PATH 'ASSET_NUMBER',
-                    import_status   VARCHAR2(50)   PATH 'IMPORT_STATUS',
-                    source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
-                    fusion_id       NUMBER         PATH 'FUSION_ID',
-                    error_msg       VARCHAR2(4000) PATH 'ERROR_MESSAGE'
-            ) x
-        ) LOOP
-            IF r.source_type = 'BASE' THEN
-                -- Tier 2: Found in FA_ADDITIONS_B = positively LOADED
-                UPDATE DMT_FA_ASSET_HDR_TFM_TBL
-                SET    TFM_STATUS               = 'LOADED',
-                       FUSION_ASSET_ID      = r.fusion_id,
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    ASSET_NUMBER         = r.asset_number
-                AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                l_loaded := l_loaded + SQL%ROWCOUNT;
-
-            ELSIF r.source_type = 'INTERFACE' THEN
-                -- Tier 1: Still in FA_MASS_ADDITIONS — check posting_status
-                IF r.import_status IN ('POSTED','POST','Y','PROCESSED','SUCCESS','COMPLETED') THEN
+        IF l_rows.COUNT = 0 THEN
+            -- Zero report rows is never success (design section 5): leave the
+            -- remaining GENERATED rows for the all-or-nothing path / unaccounted
+            -- sweep. A genuinely-failed book load reaches ACCOUNT_ALL_OR_NOTHING.
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': Assets recon report returned zero rows; '
+                               || 'GENERATED rows left for the all-or-nothing path / '
+                               || 'unaccounted sweep (never a silent success).',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+        ELSE
+            FOR i IN 1 .. l_rows.COUNT LOOP
+                -- ===== SINGLE TIER: ASSET/HEADER =====
+                -- Assets emits ONE apply tier (the asset header). FETCH_ROWS is
+                -- already scoped to the Assets CEMLI's own report, so every fetched
+                -- row is a header row; apply unconditionally (matching the single-tier
+                -- pattern in MiscReceipts/Projects). No OBJECT_TYPE discriminator is
+                -- needed here (and pattern-matching a controlled OBJECT_TYPE value with
+                -- LIKE is prohibited by the coding standard).
+                IF l_rows(i).SOURCE_TYPE = 'BASE'
+                   AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                   AND l_rows(i).FUSION_ID IS NOT NULL THEN
                     UPDATE DMT_FA_ASSET_HDR_TFM_TBL
-                    SET    TFM_STATUS               = 'LOADED',
-                           FUSION_ASSET_ID      = r.fusion_id,
+                    SET    TFM_STATUS           = 'LOADED',
+                           FUSION_ASSET_ID      = l_rows(i).FUSION_ID,
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    ASSET_NUMBER         = r.asset_number
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSIF r.error_msg IS NOT NULL THEN
-                    -- Not posted, WITH a real Fusion-returned rejection message = FAILED.
+                    WHERE  RUN_ID    = p_run_id
+                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                    AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                    l_hdr_loaded := l_hdr_loaded + SQL%ROWCOUNT;
+                ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                      AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
                     UPDATE DMT_FA_ASSET_HDR_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] ' || r.error_msg),
+                    SET    TFM_STATUS           = 'FAILED',
+                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                    ERROR_TEXT,
+                                                    '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    ASSET_NUMBER         = r.asset_number
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
-                ELSE
-                    -- Not posted but no Fusion error message returned.
-                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
-                    NULL;
+                    WHERE  RUN_ID    = p_run_id
+                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                    AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                    l_hdr_failed := l_hdr_failed + SQL%ROWCOUNT;
                 END IF;
-            END IF;
-        END LOOP;
+            END LOOP;
+        END IF;
 
-        -- NO header absence pass. A header neither confirmed in a base table
-        -- (marked LOADED above) nor carrying a real per-record Fusion error
-        -- (marked FAILED above from the BIP report) is LEFT GENERATED
-        -- (unaccounted). We do not fabricate a FAILED for "not found in base":
-        -- that asserts a failure we did not observe. The accounting gate then
-        -- reports the object not-DONE and the funnel surfaces it as UNRECONCILED.
-        -- The child cascade below keys off the header's terminal status
-        -- (LOADED or a REAL FAILED); a GENERATED header leaves its children
-        -- GENERATED too, which is correct — they are unaccounted, not failed.
-        l_not_recon := 0;
-
+        -- ============================================================
+        -- Cascade header outcomes to book + assignment TFM (unchanged behaviour:
+        -- book/assignment have no report tier of their own, so they inherit the
+        -- header's terminal status. A GENERATED header leaves its children
+        -- GENERATED — correct: unaccounted, not failed).
+        -- ============================================================
         <<cascade_and_echo>>
-        -- Cascade to book TFM — match header tfm_status
+        -- Cascade to book TFM — LOADED under a LOADED header.
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
-        SET    bk.TFM_STATUS            = 'LOADED',
-               bk.LAST_UPDATED_DATE = SYSDATE
-        WHERE  bk.RUN_ID    = p_run_id
-        AND    bk.TFM_STATUS            = 'GENERATED'
+        SET    bk.TFM_STATUS         = 'LOADED',
+               bk.LAST_UPDATED_DATE  = SYSDATE
+        WHERE  bk.RUN_ID     = p_run_id
+        AND    bk.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
-            WHERE  hdr.RUN_ID  = bk.RUN_ID
-            AND    hdr.ASSET_NUMBER    = bk.ASSET_NUMBER
-            AND    hdr.TFM_STATUS          = 'LOADED');
+            WHERE  hdr.RUN_ID       = bk.RUN_ID
+            AND    hdr.ASSET_NUMBER = bk.ASSET_NUMBER
+            AND    hdr.TFM_STATUS   = 'LOADED');
 
         -- The parent header only reaches FAILED with a real Fusion error, so the
         -- book row carries that same real parent error in the linked-record form.
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
-        SET    bk.TFM_STATUS            = 'FAILED',
-               bk.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
+        SET    bk.TFM_STATUS = 'FAILED',
+               bk.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
                    (SELECT hdr.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
                     WHERE  hdr.RUN_ID = bk.RUN_ID
@@ -380,31 +180,31 @@
                     AND    hdr.TFM_STATUS = 'FAILED'
                     AND    ROWNUM = 1)),
                bk.LAST_UPDATED_DATE = SYSDATE
-        WHERE  bk.RUN_ID    = p_run_id
-        AND    bk.TFM_STATUS            = 'GENERATED'
+        WHERE  bk.RUN_ID     = p_run_id
+        AND    bk.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
-            WHERE  hdr.RUN_ID  = bk.RUN_ID
-            AND    hdr.ASSET_NUMBER    = bk.ASSET_NUMBER
-            AND    hdr.TFM_STATUS          = 'FAILED');
+            WHERE  hdr.RUN_ID       = bk.RUN_ID
+            AND    hdr.ASSET_NUMBER = bk.ASSET_NUMBER
+            AND    hdr.TFM_STATUS   = 'FAILED');
 
-        -- Cascade to assignment TFM — match header tfm_status
+        -- Cascade to assignment TFM — LOADED under a LOADED header.
         UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
-        SET    asn.TFM_STATUS            = 'LOADED',
+        SET    asn.TFM_STATUS        = 'LOADED',
                asn.LAST_UPDATED_DATE = SYSDATE
-        WHERE  asn.RUN_ID    = p_run_id
-        AND    asn.TFM_STATUS            = 'GENERATED'
+        WHERE  asn.RUN_ID     = p_run_id
+        AND    asn.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
-            WHERE  hdr.RUN_ID  = asn.RUN_ID
-            AND    hdr.ASSET_NUMBER    = asn.ASSET_NUMBER
-            AND    hdr.TFM_STATUS          = 'LOADED');
+            WHERE  hdr.RUN_ID       = asn.RUN_ID
+            AND    hdr.ASSET_NUMBER = asn.ASSET_NUMBER
+            AND    hdr.TFM_STATUS   = 'LOADED');
 
         -- The parent header only reaches FAILED with a real Fusion error, so the
         -- assignment row carries that same real parent error in the linked-record form.
         UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
-        SET    asn.TFM_STATUS            = 'FAILED',
-               asn.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
+        SET    asn.TFM_STATUS = 'FAILED',
+               asn.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
                    '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
                    (SELECT hdr.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
                     WHERE  hdr.RUN_ID = asn.RUN_ID
@@ -412,24 +212,24 @@
                     AND    hdr.TFM_STATUS = 'FAILED'
                     AND    ROWNUM = 1)),
                asn.LAST_UPDATED_DATE = SYSDATE
-        WHERE  asn.RUN_ID    = p_run_id
-        AND    asn.TFM_STATUS            = 'GENERATED'
+        WHERE  asn.RUN_ID     = p_run_id
+        AND    asn.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
-            WHERE  hdr.RUN_ID  = asn.RUN_ID
-            AND    hdr.ASSET_NUMBER    = asn.ASSET_NUMBER
-            AND    hdr.TFM_STATUS          = 'FAILED');
+            WHERE  hdr.RUN_ID       = asn.RUN_ID
+            AND    hdr.ASSET_NUMBER = asn.ASSET_NUMBER
+            AND    hdr.TFM_STATUS   = 'FAILED');
 
-        -- Echo outcomes back to STG
+        -- Echo outcomes back to STG (headers).
         UPDATE DMT_FA_ASSET_HDR_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
+        SET    stg.STG_STATUS        = 'LOADED',
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_FA_ASSET_HDR_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_FA_ASSET_HDR_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
+        SET    stg.STG_STATUS = 'FAILED',
+               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL t
                     WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
                     AND    t.RUN_ID  = p_run_id)),
@@ -438,26 +238,27 @@
             SELECT t.STG_SEQUENCE_ID FROM DMT_FA_ASSET_HDR_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
-        -- NO COMMIT — orchestrator controls transaction boundaries
+        -- NO COMMIT — orchestrator controls transaction boundaries.
 
         DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. Assets LOADED: ' || l_loaded ||
-                                ', FAILED: ' || l_failed ||
-                                ', NOT_RECONCILED: ' || l_not_recon || '.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
+                           || ' | headers LOADED/FAILED: ' || l_hdr_loaded || '/' || l_hdr_failed
+                           || '. Book/assignment cascaded; unmatched rows left for the '
+                           || 'all-or-nothing path / unaccounted sweep.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
 
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
             RAISE;
-    END PARSE_AND_UPDATE;
+    END APPLY_CONTRACT_V1_ASSETS;
 
     -- --------------------------------------------------------
     -- ACCOUNT_ALL_OR_NOTHING — Assets-ONLY exception (DMT_DESIGN section 5,
@@ -465,7 +266,7 @@
     --
     -- Assets posts PER-ROW at Post Mass Additions (verified run 258: good assets
     -- reach FA_ADDITIONS_B = LOADED, a bad asset fails with its real Fusion error)
-    -- -- that shape is handled by the normal two-tier BIP reconcile above, NOT
+    -- -- that shape is handled by the Contract v1 nine-column apply above, NOT
     -- here. The all-or-nothing behavior is only at the SQL*LOADER LOAD stage: a
     -- load-file reject makes SQL*Loader return WARNING (= zero rows committed) and
     -- the load controller ERROR, so the whole book's records never reach the
@@ -488,9 +289,9 @@
     --       "Record N: Rejected ... ORA-#### ..." and map record N to the Nth
     --       CSV row using the generator's exact join + ORDER BY b.TFM_SEQUENCE_ID.
     --   (b) POST stage: rows loaded to the interface but Post Mass Additions
-    --       rejected the batch; the real error came back in the BIP report and
-    --       PARSE_AND_UPDATE already marked the bad asset(s) FAILED. Here we add
-    --       only the generic verdict to the good assets left unposted.
+    --       rejected the batch; the real error came back in the report and
+    --       APPLY_CONTRACT_V1_ASSETS already marked the bad asset(s) FAILED. Here
+    --       we add only the generic verdict to the good assets left unposted.
     -- --------------------------------------------------------
     PROCEDURE ACCOUNT_ALL_OR_NOTHING (
         p_run_id        IN NUMBER,
@@ -556,7 +357,7 @@
             RETURN;
         END IF;
 
-        -- Assets in this book already marked FAILED from the BIP report (post-stage).
+        -- Assets in this book already marked FAILED from the report (post-stage).
         SELECT COUNT(*) INTO l_failed_bip
         FROM   DMT_FA_ASSET_HDR_TFM_TBL h
         WHERE  h.RUN_ID = p_run_id
@@ -692,7 +493,7 @@
         l_marked := SQL%ROWCOUNT;
 
         -- Cascade the new header FAILEDs to book + assignment + STG echo, using
-        -- the same linked-record wording as PARSE_AND_UPDATE.
+        -- the same linked-record wording as APPLY_CONTRACT_V1_ASSETS.
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS = 'FAILED',
                bk.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
@@ -745,7 +546,10 @@
     END ACCOUNT_ALL_OR_NOTHING;
 
     -- --------------------------------------------------------
-    -- RECONCILE_BATCH
+    -- RECONCILE_BATCH — entry point (signature unchanged). Runs the shared
+    -- Contract v1 apply, then the Assets-only all-or-nothing SQL*Loader log path.
+    -- The Assets load ESS id is the Contract v1 P_LOAD_REQUEST_ID; the report's
+    -- run-scoped selectors (P_RUN_ID, P_PREFIX) pick up the whole run.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
@@ -754,7 +558,6 @@
         p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
-        l_xml CLOB;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -763,12 +566,7 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id, p_import_ess_id);
-        PARSE_AND_UPDATE(p_run_id, l_xml);
-
-        IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
-            DBMS_LOB.FREETEMPORARY(l_xml);
-        END IF;
+        APPLY_CONTRACT_V1_ASSETS(p_run_id, TO_CHAR(p_load_ess_id));
 
         -- Assets-ONLY exception: Fixed Assets loads/posts a book atomically, so
         -- a single rejected asset leaves the whole book unposted and the BIP

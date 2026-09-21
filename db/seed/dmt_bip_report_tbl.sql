@@ -1590,3 +1590,46 @@ when matched then update set
     t."RECON_KEY_SQL"       = s.recon_key_sql;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- Assets — Contract v1 registration (design section 5). Points the Assets CEMLI
+-- at the nine-column Contract v1 report (DMT_FA_ASSET_RECON_DM.xdm, fixed #344)
+-- and sets CONTRACT_VERSION = 1 so the shared parser
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs it (a NULL/absent CONTRACT_VERSION makes
+-- the shared fetch bail with "not registered as CONTRACT_VERSION = 1"). This
+-- converges the existing Assets row (seeded earlier at the OLD FA_ASSET_DM.xdm /
+-- FA_ASSET_RPT.xdo two-dataset report) onto the Contract v1 report. Assets
+-- dispatches its APPLY through RECON_PROC (DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH
+-- -> APPLY_CONTRACT_V1_ASSETS), which does one static UPDATE pair for the single
+-- ASSET/header tier discriminated by the OBJECT_TYPE prefix 'Assets', so APPLY_PROC
+-- is intentionally not set here. The DM reports ONE tier (the asset): one BASE row
+-- per ASSET_NUMBER (book folded into OBJECT_TYPE via a scalar subquery so the
+-- keyset stays one-row-per-ASSET_NUMBER) and one INTERFACE row per rejection.
+-- Book/assignment TFM rows have no report tier; they inherit the header outcome by
+-- cascade. RECON_KEY (stamped by DMT_FA_ASSET_TRANSFORM_PKG, = the header report
+-- RECORD_KEY) = prefixed ASSET_NUMBER on both BASE and INTERFACE. The SQL*Loader
+-- all-or-nothing log path (ACCOUNT_ALL_OR_NOTHING) is unchanged.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Assets'                                              cemli_code,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_RPT.xdo'      report_catalog_path,
+           'Fixed asset mass additions reconciliation (Contract v1, single ASSET tier; book/assignment cascade; SQL*Loader all-or-nothing preserved)' notes,
+           1                                                      contract_version,
+           'DMT_FA_ASSET_HDR_TFM_TBL'                            tfm_table,
+           'FUSION_ASSET_ID'                                     fusion_id_column,
+           'header (ASSET) tier: RECON_KEY = ASSET_NUMBER (prefixed); book/assignment inherit by cascade' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
