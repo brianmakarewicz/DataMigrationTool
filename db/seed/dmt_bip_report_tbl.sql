@@ -1331,6 +1331,48 @@ when matched then update set
 commit;
 
 -- ---------------------------------------------------------------------------
+-- BillingEvents — Contract v1 registration (design section 5). Single-tier FBDI
+-- object; follows the Workers / Expenditures template (Option A shape, owner
+-- decision on PR #248): the object's OWN reconciler
+-- (DMT_BILLING_EVENT_RESULTS_PKG.APPLY_CONTRACT_V1_BILLING_EVENTS) calls the
+-- shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies STATIC SQL against
+-- the compile-time-known TFM table, so no generic-engine APPLY_PROC is used.
+-- CONTRACT_VERSION = 1 gates FETCH_ROWS. The nine-column recon report lives at
+-- /Custom/DMT2/BillingEvents/BILLING_EVENT_DM.xdm + BILLING_EVENT_RPT.xdo
+-- (nine columns, keyset pagination; merged in #358). Base tier =
+-- PJB_BILLING_EVENTS; FUSION_ID = EVENT_ID stamped into FUSION_EVENT_ID.
+-- RECON_KEY = the prefixed SOURCEREF (also the report RECORD_KEY and the base-row
+-- SOURCEREF). The interface tier is a SPECIAL / no-carrier case: it is always
+-- purged after import, so a rejected row's ERROR_MESSAGE is the literal marker
+-- '#IMPORT_REPORT#' and the real per-row text is harvested from the import report
+-- XML by the reconciler's Tier 3. This MERGE converges the four Contract v1
+-- columns on the BillingEvents row seeded earlier in this file.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'BillingEvents'                                        cemli_code,
+           '/Custom/DMT2/BillingEvents/BILLING_EVENT_DM.xdm'      dm_catalog_path,
+           '/Custom/DMT2/BillingEvents/BILLING_EVENT_RPT.xdo'     report_catalog_path,
+           'Project billing event import reconciliation (Contract v1 -- nine columns, keyset; interface tier is the #IMPORT_REPORT# no-carrier special case)' notes,
+           1                                                      contract_version,
+           'DMT_PJB_BILL_EVENTS_TFM_TBL'                          tfm_table,
+           'FUSION_EVENT_ID'                                      fusion_id_column,
+           'RECON_KEY = SOURCEREF (prefixed native reference; report RECORD_KEY matched to TFM.RECON_KEY)' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Projects — Contract v1 registration (design section 5), MULTI-TIER (4 tiers).
 -- Points the Projects CEMLI at the nine-column Contract v1 report
 -- (DMT_PROJECT_RECON_DM.xdm, fixed in PR #334) and sets CONTRACT_VERSION = 1 so
