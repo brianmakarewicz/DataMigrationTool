@@ -199,10 +199,10 @@ using (
            'N/A (EPBCS internal)',
            'Planning budget import reconciliation - no BIP-accessible interface table; uses absence=LOADED pattern (EPBCS - dormant)' from dual
     union all select 100000018, 'Expenditures', 'Expenditure',
-           '/Custom/DMT2/Expenditures/EXPENDITURE_DM.xdm',
-           '/Custom/DMT2/Expenditures/EXPENDITURE_RPT.xdo',
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_DM.xdm',
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_RPT.xdo',
            'PJC_TXN_XFACE_STAGE_ALL',
-           'Project expenditure cost import reconciliation' from dual
+           'Project expenditure cost import reconciliation (Contract v1, nine-column)' from dual
     union all select 100000024, 'COMMON_LOOKUPS', 'Business Unit Lookups',
            '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_DM.xdm',
            '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_RPT.xdo',
@@ -1717,6 +1717,49 @@ using (
            'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
            'FUSION_PO_HEADER_ID'                                   fusion_id_column,
            'headers only: DOCUMENT_NUM'                            recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Expenditures — Contract v1 registration (design section 5), SINGLE-TIER FBDI.
+-- The reader was migrated to the nine-column contract in PR #363 but its registry
+-- row was never repointed, so a fresh install still ran the old two-dataset
+-- report and never set CONTRACT_VERSION. This MERGE points the Expenditures CEMLI
+-- at the nine-column Contract v1 report (DMT_EXP_RECON_DM.xdm / DMT_EXP_RECON_RPT.xdo)
+-- and sets CONTRACT_VERSION = 1 so the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
+-- runs it (a NULL/absent CONTRACT_VERSION makes the shared fetch bail with
+-- "not registered as CONTRACT_VERSION = 1"). This converges the existing
+-- Expenditures row (seeded earlier in this file at the OLD EXPENDITURE_DM.xdm/
+-- EXPENDITURE_RPT.xdo two-dataset report) onto the Contract v1 report.
+-- Expenditures is ONE object (one FBDI zip PjcExpendituresInterface, one interface
+-- table PJC_TXN_XFACE_STAGE_ALL, one base table PJC_EXP_ITEMS_ALL). It dispatches
+-- its APPLY through RECON_PROC (DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH ->
+-- APPLY_CONTRACT_V1_EXPENDITURES), which does one static UPDATE pair against its
+-- own TFM table, so APPLY_PROC is intentionally not set here. RECON_KEY (stamped by
+-- DMT_EXPENDITURE_TRANSFORM_PKG, = the report RECORD_KEY) = the run-prefixed
+-- ORIG_TRANSACTION_REFERENCE, which survives verbatim onto the base row.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Expenditures'                                          cemli_code,
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_RPT.xdo'       report_catalog_path,
+           'Project expenditure cost import reconciliation (Contract v1, nine-column)' notes,
+           1                                                        contract_version,
+           'DMT_PJC_EXPENDITURES_TFM_TBL'                          tfm_table,
+           'FUSION_EXPENDITURE_ITEM_ID'                            fusion_id_column,
+           'ORIG_TRANSACTION_REFERENCE -- run-prefixed native reference, survives verbatim onto the base row (report RECORD_KEY matched to TFM.RECON_KEY)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
