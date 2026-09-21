@@ -105,6 +105,28 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- ============================================================
+        -- Contract v1 RECON_KEY stamp (item-category tier).
+        -- The shared reconciler matches each report row's RECORD_KEY to the TFM
+        -- row's RECON_KEY. The Items recon data model
+        -- (bip/Items/DMT_ITEM_RECON_DM.xdm) emits, for OBJECT_TYPE='ItemCategory':
+        --   RECORD_KEY = ITEM_NUMBER || '~' || ORGANIZATION_CODE || '~'
+        --                || CATEGORY_SET_NAME || '~' || CATEGORY_CODE
+        -- where ITEM_NUMBER is the run-prefixed item number (survives to
+        -- EGP_ITEM_CATEGORIES_INTERFACE / EGP_ITEM_CATEGORIES). That prefixed
+        -- number plus org/set/code is exactly what the INSERT above wrote into
+        -- this TFM table. So RECON_KEY is set equal to the same four-part key
+        -- here, byte-for-byte the string the DM builds. The '~' delimiter never
+        -- appears in item numbers, org codes, category set names, or category
+        -- codes. Only newly-stamped rows (RECON_KEY IS NULL) for this run are
+        -- touched, so a rerun never disturbs rows already carrying a key.
+        -- ============================================================
+        UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
+        SET    RECON_KEY = ITEM_NUMBER || '~' || ORGANIZATION_CODE || '~'
+                           || CATEGORY_SET_NAME || '~' || CATEGORY_CODE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         UPDATE DMT_EGP_ITEM_CAT_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
