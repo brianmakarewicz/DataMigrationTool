@@ -108,7 +108,7 @@ page 57 (
                             WHEN rec.TFM_STATUS = 'FAILED' THEN '#F44336'
                             ELSE '#FFC107'
                           END || ';">' || APEX_ESCAPE.HTML(rec.TFM_STATUS) || '</td>');
-                    HTP.P('<td style="padding:8px;">' || NVL(TO_CHAR(rec.FUSION_ID),'-') || '</td>');
+                    HTP.P('<td style="padding:8px;">' || NVL(APEX_ESCAPE.HTML(TO_CHAR(rec.FUSION_ID)),'-') || '</td>');
                     HTP.P('<td style="padding:8px;">' || NVL(APEX_ESCAPE.HTML(rec.SOURCE_REF),'-') || '</td>');
                     HTP.P('<td style="padding:8px;">' || NVL(APEX_ESCAPE.HTML(rec.DMT_REFERENCE),'-') || '</td>');
                     HTP.P('<td style="padding:8px;">' || NVL(APEX_ESCAPE.HTML(rec.ERROR_CATEGORY),'-') || '</td>');
