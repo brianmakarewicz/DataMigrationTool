@@ -227,6 +227,63 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- Customers — Contract v1 registration (design section 5). Customers is ONE
+-- object carrying SEVEN HZ record types in ONE recon report, so unlike the
+-- single-tier readers it does NOT use the shared parser's generic TFM_TABLE /
+-- FUSION_ID_COLUMN / RECON_KEY_SQL columns: its reconciler
+-- (DMT_CUST_RESULTS_PKG.APPLY_CONTRACT_V1_CUSTOMERS) dispatches by OBJECT_TYPE
+-- to one of seven TFM tables with STATIC per-record-type SQL. What the shared
+-- fetch DMT_RECON_CONTRACT_PKG.FETCH_ROWS requires is CONTRACT_VERSION = 1;
+-- the earlier path-only MERGE above left it NULL, which made FETCH_ROWS reject
+-- Customers with "not registered as CONTRACT_VERSION = 1 (found NULL)". This
+-- block converges CONTRACT_VERSION = 1 (and records the Parties tier in the
+-- generic columns for reference / UI display). Kept in its own MERGE so
+-- re-running the seed converges the existing Customers row.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000012                                                    bip_report_id,
+           'Customers'                                                  cemli_code,
+           'Customer'                                                   object_type,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'            dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'          report_catalog_path,
+           'HZ_IMP_PARTIES_T'                                           interface_table,
+           'Customer party import reconciliation (Contract v1). V2 (Fix A): '
+              || 'adds NOT-LOADED error-tier blocks for all child interface tables '
+              || '(Locations, PartySites, PartySiteUses, AccountSites, AccountSiteUses) '
+              || 'so held/rejected child records report their real interface status '
+              || 'instead of the generic reconcile sweep. Deployed additively alongside '
+              || 'the v1 DMT_CUST_RECON_* artifacts.'                   notes,
+           1                                                            contract_version,
+           'DMT_HZ_PARTIES_TFM_TBL (+ 6 sibling TFM tables -- seven record types, dispatched by OBJECT_TYPE in DMT_CUST_RESULTS_PKG)' tfm_table,
+           'FUSION_PARTY_ID (+ per-record-type Fusion id columns)'      fusion_id_column,
+           'RECON_KEY stamped by DMT_CUST_TRANSFORM_PKG per record type: <OBJECT_TYPE>~<prefixed native reference> -- matches the report RECORD_KEY' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- ProjectBudgets (100000019) — Contract v1 registration (design section 5).
 -- Single-tier FBDI object; follows the Expenditures reader template (PR #363):
 -- the four Contract v1 columns (CONTRACT_VERSION, TFM_TABLE, FUSION_ID_COLUMN,
