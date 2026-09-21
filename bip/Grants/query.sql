@@ -103,9 +103,14 @@ FROM (
 
     -- Tier: INTERFACE -- award headers still in the interface table
     -- after import that Fusion did not mark successful = rejections.
+    -- RECORD_KEY aligned with the BASE tier: both tiers key on
+    -- SPONSOR_AWARD_NUMBER, falling back to the prefixed AWARD_NUMBER here
+    -- (no Fusion award id on the interface row). Structurally zero-rows on
+    -- this pod (Fusion purges the interface table after import).
     SELECT
         'Grants'                             AS object_type,
-        h.award_number                       AS record_key,
+        NVL(h.sponsor_award_number,
+            h.award_number)                  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,

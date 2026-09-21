@@ -163,6 +163,31 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier template, Grants award-header tier).
+        -- Stamp the award-header RECON_KEY so it equals the header RECORD_KEY the
+        -- nine-column Grants recon data model (DMT_GRANT_RECON_DM.xdm) emits. That
+        -- data model's BASE tier keys each award on
+        --   NVL(SPONSOR_AWARD_NUMBER, 'AWARD_ID:' || ID)
+        -- (the sponsor award number that survives to GMS_AWARD_HEADERS_B, falling
+        -- back to the Fusion award id when the sponsor number is null). The Fusion
+        -- award id does not exist until the row lands in the base table, so the
+        -- fallback branch cannot be reproduced at transform time; we stamp the
+        -- SPONSOR_AWARD_NUMBER that this TFM row carries (raw, unprefixed -- it is
+        -- copied straight from the source and survives unchanged onto the base row).
+        -- An award with no sponsor number therefore keys on the Fusion-side
+        -- 'AWARD_ID:' fallback only, which the TFM cannot predict, so such a row
+        -- stays GENERATED (honest unaccounted) rather than being fabricated LOADED.
+        -- The shared reconciler (DMT_GRANTS_RESULTS_PKG.APPLY_CONTRACT_V1_GRANTS)
+        -- joins report rows to this table on RECON_KEY = report RECORD_KEY, so this
+        -- stamp must match that expression. Only NULL keys are set (never
+        -- overwrite); post-INSERT, run-scoped.
+        UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL
+        SET    RECON_KEY = SPONSOR_AWARD_NUMBER,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL
+        AND    SPONSOR_AWARD_NUMBER IS NOT NULL;
+
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_GMS_AWD_HEADERS_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
