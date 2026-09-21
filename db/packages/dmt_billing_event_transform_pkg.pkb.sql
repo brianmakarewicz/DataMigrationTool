@@ -154,6 +154,25 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- ============================================================
+        -- Contract v1 RECON_KEY stamp (single-tier reader coupling).
+        -- The shared reconciler matches each report row's RECORD_KEY to the TFM
+        -- row's RECON_KEY. The BillingEvents recon data model
+        -- (bip/BillingEvents/BILLING_EVENT_DM.xdm) emits
+        --   RECORD_KEY = PJB_BILLING_EVENTS.SOURCEREF (BASE tier)
+        --              = PJB_BILLING_EVENTS_INT.SOURCEREF (INTERFACE tier)
+        -- i.e. the run-prefixed native reference. That prefixed value is exactly
+        -- what the INSERT above wrote into this TFM table's SOURCEREF (via
+        -- DMT_UTIL_PKG.PREFIXED). So RECON_KEY is set equal to SOURCEREF here, and
+        -- the DM's RECORD_KEY and this RECON_KEY are byte-for-byte the same string.
+        -- Only newly-stamped rows (RECON_KEY IS NULL) for this run are touched, so
+        -- a rerun never disturbs rows already carrying a key.
+        -- ============================================================
+        UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
+        SET    RECON_KEY = SOURCEREF
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Update STG stg_status to TRANSFORMED for rows that were inserted into TFM
         UPDATE DMT_PJB_BILL_EVENTS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE

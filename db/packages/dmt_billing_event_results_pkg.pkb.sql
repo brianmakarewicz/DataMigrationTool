@@ -674,6 +674,145 @@ AS
     END PARSE_AND_UPDATE;
 
     -- --------------------------------------------------------
+    -- APPLY_CONTRACT_V1_BILLING_EVENTS (private)
+    -- The Contract v1 base-tier positive proof for BillingEvents — the SINGLE-TIER
+    -- FBDI template (design section 5, Option A shape; copies the Expenditures
+    -- template from PR #363 and the Worker template DMT_WORKER_RESULTS_PKG).
+    --
+    -- The shared package DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs the BillingEvents
+    -- nine-column recon report over BIP (keyset paged, run-prefix scoped) and
+    -- returns the parsed rows — no dynamic SQL, no TFM reference there. The APPLY
+    -- here is STATIC SQL against the compile-time-known BillingEvents TFM table:
+    --   * BASE / SUCCESS / FUSION_ID NOT NULL  -> LOADED, stamp FUSION_ID into
+    --       FUSION_EVENT_ID. The ONLY path to LOADED.
+    --   * FUSION_STATUS = ERROR with a non-null ERROR_MESSAGE -> FAILED, message
+    --       appended as '[FUSION_ERROR] ' || message (never composed).
+    --   * everything else left for the existing import-report harvest and the
+    --       shared unaccounted sweep.
+    -- Match is on RECON_KEY = the report's RECORD_KEY (both are the run-prefixed
+    -- SOURCEREF — see the transform's RECON_KEY stamp). Rows already terminal
+    -- (LOADED/FAILED) are never touched, so this runs safely alongside the
+    -- existing PARSE_AND_UPDATE path without double-counting.
+    --
+    -- SPECIAL / no-carrier case (verified live): PJB_BILLING_EVENTS_INT is ALWAYS
+    -- purged after import and has no error-text column, so the DM's INTERFACE tier
+    -- emits ERROR_MESSAGE = the literal marker '#IMPORT_REPORT#' for a rejected
+    -- row. That marker is a non-null message, so this APPLY correctly marks the
+    -- row FAILED with '[FUSION_ERROR] #IMPORT_REPORT#' — the same treatment as any
+    -- ERROR. The REAL per-row Fusion text is supplied by the import-report harvest
+    -- in PARSE_AND_UPDATE (Tier 3), which appends to ERROR_TEXT. We do not
+    -- fabricate the text here; we honestly record that Fusion rejected the row and
+    -- defer to the report harvest for the human-readable reason.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_CONTRACT_V1_BILLING_EVENTS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
+    ) IS
+        C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_BILLING_EVENTS';
+        l_gen_count NUMBER := 0;
+        l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
+        l_err_code  NUMBER;
+        l_loaded    NUMBER := 0;
+        l_failed    NUMBER := 0;
+    BEGIN
+        -- Generated-row count (static, this object's own table) drives the shared
+        -- fetch's keyset page-count cap.
+        SELECT COUNT(*) INTO l_gen_count
+        FROM   DMT_PJB_BILL_EVENTS_TFM_TBL
+        WHERE  RUN_ID = p_run_id;
+
+        DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
+            p_cemli_code  => C_CEMLI,
+            p_run_id      => p_run_id,
+            p_load_ess_id => TO_NUMBER(p_request_id),
+            p_row_cap     => l_gen_count,
+            x_rows        => l_rows,
+            x_error_code  => l_err_code);
+
+        -- A transport / SOAP failure raises loudly (design section 5: never a
+        -- silent retry, never a zero-row "success"); the fetch already logged detail.
+        IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20096,
+                'APPLY_CONTRACT_V1_BILLING_EVENTS: Contract v1 fetch failed for '
+                || 'BillingEvents (detail in DMT_LOG_TBL).');
+        END IF;
+
+        IF l_rows.COUNT = 0 THEN
+            -- Zero report rows is never success (design section 5): leave the
+            -- remaining GENERATED rows for the import-report harvest / unaccounted sweep.
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': BillingEvents recon report returned zero rows; '
+                               || 'GENERATED rows left for the import-report harvest '
+                               || '(never a silent success).',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+        ELSE
+            FOR i IN 1 .. l_rows.COUNT LOOP
+                IF l_rows(i).SOURCE_TYPE = 'BASE'
+                   AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                   AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                    -- Positive proof: event found in PJB_BILLING_EVENTS with a real
+                    -- id. The ONLY path to LOADED. Static UPDATE keyed on RECON_KEY.
+                    UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
+                    SET    TFM_STATUS           = 'LOADED',
+                           FUSION_EVENT_ID      = l_rows(i).FUSION_ID,
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID    = p_run_id
+                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                    AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
+
+                ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                      AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
+                    -- A Fusion error -> FAILED on the exact message (never composed).
+                    -- For BillingEvents this message is normally the '#IMPORT_REPORT#'
+                    -- marker (interface purged, no carrier): still a genuine FAILED,
+                    -- with the real text supplied later by the import-report harvest.
+                    -- Static UPDATE keyed on RECON_KEY.
+                    UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
+                    SET    TFM_STATUS           = 'FAILED',
+                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                    ERROR_TEXT,
+                                                    '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID    = p_run_id
+                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                    AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                    l_failed := l_failed + SQL%ROWCOUNT;
+
+                ELSE
+                    -- INTERFACE/SUCCESS (corroborating, never sufficient) or a
+                    -- non-terminal status with no real error: leave the row for the
+                    -- import-report harvest / unaccounted sweep. Never fabricate.
+                    NULL;
+                END IF;
+            END LOOP;
+        END IF;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
+                           || ' | LOADED: ' || l_loaded
+                           || ' | FAILED: ' || l_failed || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END APPLY_CONTRACT_V1_BILLING_EVENTS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
@@ -691,6 +830,20 @@ AS
                                 ' | import_ess_id: ' || NVL(TO_CHAR(p_import_ess_id), 'NULL'),
             p_package        => C_PKG,
             p_procedure      => C_PROC);
+
+        -- Contract v1 base-tier positive proof (single-tier FBDI template): the
+        -- shared fetch returns the nine-column recon report rows and the APPLY is
+        -- STATIC SQL against this object's TFM table, keyed on RECON_KEY. This is
+        -- the ONLY path to LOADED (a real base-table row). It runs FIRST so a
+        -- genuinely-costed row is confirmed before the interface/import-report
+        -- harvest below looks at what is left. Rows already terminal are untouched.
+        -- The load ESS id feeds the report's LOAD_REQUEST_ID; run-scoped row
+        -- selection is by the stamped prefix (see the DM header). ERROR rows carry
+        -- the '#IMPORT_REPORT#' marker as a genuine FAILED here; the real per-row
+        -- text is harvested from the import report XML by PARSE_AND_UPDATE (Tier 3).
+        APPLY_CONTRACT_V1_BILLING_EVENTS(
+            p_run_id     => p_run_id,
+            p_request_id => TO_CHAR(NVL(p_import_ess_id, p_load_ess_id)));
 
         l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id, p_import_ess_id);
         PARSE_AND_UPDATE(p_run_id, l_xml, p_import_ess_id);
