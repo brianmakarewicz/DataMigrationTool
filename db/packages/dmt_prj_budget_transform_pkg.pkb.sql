@@ -92,6 +92,36 @@
 
         l_ok := SQL%ROWCOUNT;
 
+        -- ============================================================
+        -- Contract v1 RECON_KEY stamp (single-tier reader coupling).
+        -- The shared reconciler matches each report row's RECORD_KEY to the TFM
+        -- row's RECON_KEY. The ProjectBudgets recon data model
+        -- (bip/ProjectBudgets/PRJ_BUDGET_DM.xdm) emits, on the BASE tier,
+        --   RECORD_KEY = NVL(PJO_PLAN_VERSIONS_B.PM_BUDGET_REFERENCE,
+        --                    <synthetic project::version::plan_version_id>)
+        -- and, on the INTERFACE tier,
+        --   RECORD_KEY = NVL(PJO_PLAN_VERSIONS_XFACE.SRC_BUDGET_LINE_REFERENCE,
+        --                    <synthetic project_number::plan_version_name>).
+        -- The native source budget line reference (SRC_BUDGET_LINE_REFERENCE)
+        -- survives verbatim onto the base plan-version row as PM_BUDGET_REFERENCE
+        -- (verified live: values like ENDOW001-01 persist unchanged). The
+        -- transform prefixes PROJECT_NUMBER / PROJECT_NAME only and copies
+        -- SRC_BUDGET_LINE_REFERENCE through unchanged, so the value this TFM row
+        -- carries in SRC_BUDGET_LINE_REFERENCE is byte-for-byte the DM's
+        -- RECORD_KEY whenever the source ref is present. RECON_KEY is therefore
+        -- set equal to SRC_BUDGET_LINE_REFERENCE here. When the source ref is
+        -- null the DM falls back to a Fusion-side synthetic key (built from the
+        -- Fusion-assigned PLAN_VERSION_ID, which we cannot know pre-load), so
+        -- such a row keeps a null RECON_KEY and is honestly left for the sweep
+        -- rather than force-matched. Only newly-stamped rows (RECON_KEY IS NULL)
+        -- for this run are touched, so a rerun never disturbs rows already
+        -- carrying a key.
+        -- ============================================================
+        UPDATE DMT_PRJ_BUDGET_TFM_TBL
+        SET    RECON_KEY = SRC_BUDGET_LINE_REFERENCE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         UPDATE DMT_PRJ_BUDGET_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
