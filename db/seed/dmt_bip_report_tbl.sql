@@ -1419,6 +1419,52 @@ when matched then update set
 commit;
 
 -- ---------------------------------------------------------------------------
+-- ARInvoices — Contract v1 registration (design section 5), MULTI-TIER.
+-- Points the ARInvoices CEMLI at the nine-column Contract v1 report and sets
+-- CONTRACT_VERSION = 1 so the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
+-- runs it (a NULL/absent CONTRACT_VERSION makes the shared fetch bail with
+-- "not registered as CONTRACT_VERSION = 1"). This converges the existing
+-- ARInvoices row (seeded earlier in this file at the OLD AR_DM.xdm/AR_RPT.xdo
+-- single-dataset report) onto the Contract v1 report DMT_AR_RECON_DM.xdm /
+-- DMT_AR_RECON_RPT.xdo. ARInvoices dispatches its APPLY through RECON_PROC
+-- (DMT_AR_RESULTS_PKG.RECONCILE_BATCH -> APPLY_CONTRACT_V1_ARINVOICES), which
+-- does one static per-tier UPDATE pair discriminated by OBJECT_TYPE, so
+-- APPLY_PROC is intentionally not set here. TFM_TABLE / FUSION_ID_COLUMN carry
+-- the primary (line) tier for documentation; the reconciler names both tier
+-- tables statically. RECON_KEY per tier (stamped by DMT_AR_TRANSFORM_PKG, =
+-- each tier's report RECORD_KEY): lines = INTERFACE_LINE_ATTRIBUTE1 (the
+-- prefixed TRX_NUMBER); dists = INTERFACE_LINE_ATTRIBUTE1 || '':''|| ACCOUNT_CLASS.
+-- The base distribution has no interface key of its own and is confirmed
+-- transitively through its parent line's key; ACCOUNT_CLASS is appended as a
+-- per-distribution discriminator (PR #371 review) because a real AR line carries
+-- 2+ distributions (double-entry), so the bare parent-line key would collide
+-- across siblings.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'ARInvoices'                                             cemli_code,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_DM.xdm'           dm_catalog_path,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_RPT.xdo'          report_catalog_path,
+           'AR AutoInvoice import reconciliation (Contract v1, multi-tier)' notes,
+           1                                                        contract_version,
+           'DMT_RA_LINES_TFM_TBL'                                  tfm_table,
+           'FUSION_CUSTOMER_TRX_ID'                                fusion_id_column,
+           'multi-tier: lines=INTERFACE_LINE_ATTRIBUTE1 (prefixed TRX_NUMBER); dists=INTERFACE_LINE_ATTRIBUTE1||'':''||ACCOUNT_CLASS (parent line key + per-distribution discriminator, transitive)' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Grants (100000007) — Contract v1 registration (design section 5), MULTI-TIER
 -- template (award-header tier). The four Contract v1 columns (CONTRACT_VERSION,
 -- TFM_TABLE, FUSION_ID_COLUMN, RECON_KEY_SQL) drive the shared parser

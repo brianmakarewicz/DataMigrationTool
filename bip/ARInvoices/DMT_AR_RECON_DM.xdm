@@ -90,16 +90,23 @@ FROM (
     -- ========== BASE tier: positive proof, one block per record type ==========
 
     -- BASE / lines. RECORD_KEY = the stamped recon key, persisted
-    -- verbatim on the base line as INTERFACE_LINE_ATTRIBUTE1.
+    -- verbatim on the base line as INTERFACE_LINE_ATTRIBUTE1 -- the SAME
+    -- expression the INTERFACE line block below emits, so a single TFM
+    -- RECON_KEY joins both tiers of this record type. FUSION_ID is the base
+    -- line's parent CUSTOMER_TRX_ID: it is the non-null base-table id the
+    -- reconciler stamps into DMT_RA_LINES_TFM_TBL.FUSION_CUSTOMER_TRX_ID
+    -- (positive proof the line reached RA_CUSTOMER_TRX_LINES_ALL and links to
+    -- a created Fusion transaction). The base CUSTOMER_TRX_LINE_ID is carried
+    -- as SOURCE_REF for traceability.
     SELECT
         'ARInvoices'                         AS object_type,
         bl.interface_line_attribute1         AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
-        bl.customer_trx_line_id              AS fusion_id,
+        bh.customer_trx_id                   AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
         TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
-        TO_CHAR(bh.customer_trx_id)          AS source_ref,
+        TO_CHAR(bl.customer_trx_line_id)     AS source_ref,
         bl.interface_line_attribute2         AS dmt_reference
     FROM   ra_customer_trx_lines_all bl
     JOIN   ra_customer_trx_all bh
@@ -108,21 +115,27 @@ FROM (
 
     UNION ALL
 
-    -- BASE / distributions. The base distribution carries NO
-    -- interface key, so it is confirmed transitively through its
-    -- loaded parent line (joined by CUSTOMER_TRX_LINE_ID). RECORD_KEY
-    -- is derived from the parent's stamped recon key plus the account
-    -- class plus the base dist id so it is deterministic and unique.
+    -- BASE / distributions. The base distribution carries NO interface key,
+    -- so it is confirmed TRANSITIVELY through its loaded parent line (joined by
+    -- CUSTOMER_TRX_LINE_ID). RECORD_KEY is the PARENT LINE's stamped recon key
+    -- (INTERFACE_LINE_ATTRIBUTE1) -- the SAME expression the INTERFACE
+    -- distribution block below emits, so a single distribution TFM RECON_KEY
+    -- (stamped = INTERFACE_LINE_ATTRIBUTE1) joins both tiers of this record
+    -- type. A base distribution row existing for that parent-line key is
+    -- positive proof the line's distributions landed (AutoInvoice creates a
+    -- line and its GL distributions atomically). FUSION_ID is the real base
+    -- distribution id CUST_TRX_LINE_GL_DIST_ID, stamped into
+    -- DMT_RA_DISTS_TFM_TBL.FUSION_CUST_TRX_LINE_GL_DIST_ID. The base dist id and
+    -- account class are carried as SOURCE_REF for traceability.
     SELECT
         'ARInvoices.Distribution'            AS object_type,
-        bl.interface_line_attribute1 || ':DIST:' || gd.account_class
-            || ':' || gd.cust_trx_line_gl_dist_id                    AS record_key,
+        bl.interface_line_attribute1         AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
         gd.cust_trx_line_gl_dist_id          AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
         TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
-        bl.interface_line_attribute1         AS source_ref,
+        gd.account_class || ':' || gd.cust_trx_line_gl_dist_id       AS source_ref,
         bl.interface_line_attribute2         AS dmt_reference
     FROM   ra_cust_trx_line_gl_dist_all gd
     JOIN   ra_customer_trx_lines_all bl
@@ -172,14 +185,16 @@ FROM (
 
     UNION ALL
 
-    -- INTERFACE / distributions. RECORD_KEY = the stamped recon key
-    -- carried on the interface distribution plus the account class.
-    -- A distribution is a rejection when its parent line has no base
-    -- row. Error text is correlated on INTERFACE_DISTRIBUTION_ID.
+    -- INTERFACE / distributions. RECORD_KEY = the stamped recon key carried on
+    -- the interface distribution (INTERFACE_LINE_ATTRIBUTE1, inherited from the
+    -- parent line) -- the SAME expression the BASE distribution block above
+    -- emits, so a single distribution TFM RECON_KEY joins both tiers. A
+    -- distribution is a rejection when its parent line has no base row. Error
+    -- text is correlated on INTERFACE_DISTRIBUTION_ID; the account class and
+    -- interface distribution id are carried as SOURCE_REF for traceability.
     SELECT
         'ARInvoices.Distribution'            AS object_type,
-        d.interface_line_attribute1 || ':DIST:' || d.account_class
-            || ':' || d.interface_distribution_id                    AS record_key,
+        d.interface_line_attribute1          AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -187,7 +202,7 @@ FROM (
              'Rejected by AutoInvoice (no base distribution created for this key; '
              || 'parent line not imported).') AS error_message,
         d.load_request_id                    AS load_request_id,
-        d.interface_line_attribute1          AS source_ref,
+        d.account_class || ':' || d.interface_distribution_id        AS source_ref,
         CAST(NULL AS VARCHAR2(4000))         AS dmt_reference
     FROM   ra_interface_distributions_all d
     LEFT   JOIN (

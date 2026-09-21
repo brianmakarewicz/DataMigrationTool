@@ -429,6 +429,24 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier template): stamp the LINE tier's
+        -- RECON_KEY so it equals the line RECORD_KEY the recon report emits.
+        -- The ARInvoices Contract v1 data model (DMT_AR_RECON_DM.xdm) emits BOTH
+        -- the BASE line RECORD_KEY and the INTERFACE line RECORD_KEY as
+        -- INTERFACE_LINE_ATTRIBUTE1 (= the prefixed TRX_NUMBER). AutoInvoice
+        -- PERSISTS INTERFACE_LINE_ATTRIBUTE1 onto the base line
+        -- RA_CUSTOMER_TRX_LINES_ALL, so the stamped value survives to the base
+        -- table and returns unchanged. The shared reconciler
+        -- (DMT_AR_RESULTS_PKG.APPLY_CONTRACT_V1_ARINVOICES) joins report rows to
+        -- this table on RECON_KEY = report RECORD_KEY, so this stamp must match
+        -- that expression exactly. Only NULL keys are set (never overwrite);
+        -- post-INSERT, run-scoped.
+        UPDATE DMT_RA_LINES_TFM_TBL
+        SET    RECON_KEY = INTERFACE_LINE_ATTRIBUTE1,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_RA_LINES_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
@@ -603,6 +621,26 @@
         ;
 
         l_ok_count := SQL%ROWCOUNT;
+
+        -- Contract v1 coupling (multi-tier template): stamp the DISTRIBUTION tier's
+        -- RECON_KEY so it equals the distribution RECORD_KEY the recon report emits.
+        -- An AR base distribution (RA_CUST_TRX_LINE_GL_DIST_ALL) carries NO
+        -- interface key that survives from the load, so a distribution cannot be
+        -- confirmed by its own stamped key. It is confirmed TRANSITIVELY through
+        -- its parent line: the Contract v1 data model emits BOTH the BASE and the
+        -- INTERFACE distribution RECORD_KEY as the parent line's stamped key
+        -- (INTERFACE_LINE_ATTRIBUTE1), which the distribution inherited from its
+        -- line at staging. When the parent line loads, its distributions load with
+        -- it (AutoInvoice creates a line and its GL distributions atomically), so a
+        -- BASE distribution row for that parent-line key is positive proof the
+        -- distribution landed. The reconciler joins report rows to this table on
+        -- RECON_KEY = report RECORD_KEY, so this stamp must match that parent-line
+        -- key exactly. Only NULL keys are set; post-INSERT, run-scoped.
+        UPDATE DMT_RA_DISTS_TFM_TBL
+        SET    RECON_KEY = INTERFACE_LINE_ATTRIBUTE1,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_RA_DISTS_STG_TBL s
