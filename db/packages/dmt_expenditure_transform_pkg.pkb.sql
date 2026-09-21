@@ -314,6 +314,26 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- ============================================================
+        -- Contract v1 RECON_KEY stamp (single-tier reader coupling).
+        -- The shared reconciler matches each report row's RECORD_KEY to the TFM
+        -- row's RECON_KEY. The Expenditures recon data model
+        -- (bip/Expenditures/DMT_EXP_RECON_DM.xdm) emits
+        --   RECORD_KEY = PJC_EXP_ITEMS_ALL.ORIG_TRANSACTION_REFERENCE (BASE tier)
+        --              = PJC_TXN_XFACE_STAGE_ALL.ORIG_TRANSACTION_REFERENCE (INTERFACE tier)
+        -- i.e. the run-prefixed native reference. That prefixed value is exactly
+        -- what the INSERT above wrote into this TFM table's
+        -- ORIG_TRANSACTION_REFERENCE (via DMT_UTIL_PKG.PREFIXED). So RECON_KEY is
+        -- set equal to ORIG_TRANSACTION_REFERENCE here, and the DM's RECORD_KEY
+        -- and this RECON_KEY are byte-for-byte the same string. Only newly-stamped
+        -- rows (RECON_KEY IS NULL) for this run are touched, so a rerun never
+        -- disturbs rows already carrying a key.
+        -- ============================================================
+        UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+        SET    RECON_KEY = ORIG_TRANSACTION_REFERENCE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Update STG stg_status to TRANSFORMED for rows that were inserted into TFM
         UPDATE DMT_PJC_EXPENDITURES_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
