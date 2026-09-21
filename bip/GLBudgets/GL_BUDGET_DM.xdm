@@ -54,21 +54,28 @@
 --
 -- Row selection:
 --   BASE  rows are the loaded budget cells in GL_BUDGET_BALANCES for
---         THIS run. A budget cell carries no run/request/prefix, so
---         the run is scoped by joining each cell back to the run's
---         own footprint in GL_BUDGET_INTERFACE (matched on
---         load_request_id = :P_LOAD_REQUEST_ID by the cell's
---         ledger + budget_name + period_name + currency + account).
---         Import CONSUMES (deletes) successfully-loaded interface
---         rows, so a cell that has a balance AND is no longer
---         lingering as a FAILED interface row for the run = loaded.
---         FUSION_ID = the cell account's CODE_COMBINATION_ID.
+--         THIS run. A budget cell carries no run/request/prefix stamp,
+--         and import CONSUMES (deletes) the interface rows of every
+--         cell it loads successfully -- so on a clean all-success run
+--         there is NO surviving interface footprint to join a loaded
+--         cell back to. The only run signal that survives success is
+--         the balance row's own LAST_UPDATE_DATE: a cell this run
+--         loaded was touched at or after the run's Validate and Load
+--         Budgets job began. That job is :P_IMPORT_ESS_ID, whose
+--         PROCESSSTART in ESS_REQUEST_HISTORY is the run-start; BASE
+--         is scoped to cells with LAST_UPDATE_DATE >= that run-start.
+--         (Proven live 2026-09-20: the 06-26 cells this run loaded
+--         at 01:00:04 sit just after the job's 00:59:56 PROCESSSTART.)
+--         If :P_IMPORT_ESS_ID does not resolve to a PROCESSSTART the
+--         window is NULL and BASE returns nothing -- it never falls
+--         back to returning the whole cube. FUSION_ID = the cell
+--         account's CODE_COMBINATION_ID.
 --   INTERFACE rows are the GL_BUDGET_INTERFACE rows the load left
 --         behind carrying :P_LOAD_REQUEST_ID with STATUS='FAILED' --
 --         a per-cell rejection with its real Fusion ERROR_MESSAGE.
---   (:P_RUN_ID, :P_IMPORT_ESS_ID and :P_PREFIX are declared for
---    contract symmetry; the budget interface stamps neither the run
---    id nor a prefix, so LOAD_REQUEST_ID is the scoping key here.)
+--   (:P_RUN_ID and :P_PREFIX are declared for contract symmetry; the
+--    budget cube stamps neither, so the run-start window scopes BASE
+--    and LOAD_REQUEST_ID scopes the INTERFACE rejections.)
 --
 -- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
 --   BASE  (loaded cell present)                 => SUCCESS
@@ -91,9 +98,9 @@ SELECT
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
     -- Tier: BASE -- one row per loaded budget cell for this run.
-    -- The cell key is scoped to the run via its interface footprint
-    -- (load_request_id = :P_LOAD_REQUEST_ID); FUSION_ID is the real
-    -- GL account id the cell resolves to.
+    -- The cell is scoped to the run by a LAST_UPDATE_DATE window that
+    -- opens at the run's Validate and Load Budgets PROCESSSTART; the
+    -- 30-segment account join resolves the cell's real GL account id.
     SELECT
         'GLBudgets'                          AS object_type,
         bb.ledger_id || '|' || bb.budget_name || '|' || bb.period_name
@@ -131,6 +138,10 @@ FROM (
     FROM   gl_budget_balances bb
     JOIN   gl_ledgers led
       ON   led.ledger_id = bb.ledger_id
+    -- Resolve the cell's real GL account id from ALL 30 segments (the
+    -- same 30 that build RECORD_KEY). Matching only the first 10 could
+    -- bind the wrong CODE_COMBINATION_ID or fan the join out on any
+    -- chart of accounts that uses more than 10 significant segments.
     JOIN   gl_code_combinations gcc
       ON   gcc.chart_of_accounts_id = led.chart_of_accounts_id
      AND   NVL(gcc.segment1 ,'#') = NVL(bb.segment1 ,'#')
@@ -143,20 +154,35 @@ FROM (
      AND   NVL(gcc.segment8 ,'#') = NVL(bb.segment8 ,'#')
      AND   NVL(gcc.segment9 ,'#') = NVL(bb.segment9 ,'#')
      AND   NVL(gcc.segment10,'#') = NVL(bb.segment10,'#')
-    -- Scope each cell to THIS run via its interface footprint. The
-    -- run's interface rows carry load_request_id; a cell that also
-    -- has a balance is a loaded cell of the run.
-    WHERE  EXISTS (
-             SELECT 1
-             FROM   gl_budget_interface gi
-             WHERE  gi.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
-             AND    gi.ledger_id     = bb.ledger_id
-             AND    gi.budget_name   = bb.budget_name
-             AND    gi.period_name   = bb.period_name
-             AND    gi.currency_code = bb.currency_code
-             AND    NVL(gi.segment1 ,'#') = NVL(bb.segment1 ,'#')
-             AND    NVL(gi.segment2 ,'#') = NVL(bb.segment2 ,'#')
-             AND    NVL(gi.segment3 ,'#') = NVL(bb.segment3 ,'#')
+     AND   NVL(gcc.segment11,'#') = NVL(bb.segment11,'#')
+     AND   NVL(gcc.segment12,'#') = NVL(bb.segment12,'#')
+     AND   NVL(gcc.segment13,'#') = NVL(bb.segment13,'#')
+     AND   NVL(gcc.segment14,'#') = NVL(bb.segment14,'#')
+     AND   NVL(gcc.segment15,'#') = NVL(bb.segment15,'#')
+     AND   NVL(gcc.segment16,'#') = NVL(bb.segment16,'#')
+     AND   NVL(gcc.segment17,'#') = NVL(bb.segment17,'#')
+     AND   NVL(gcc.segment18,'#') = NVL(bb.segment18,'#')
+     AND   NVL(gcc.segment19,'#') = NVL(bb.segment19,'#')
+     AND   NVL(gcc.segment20,'#') = NVL(bb.segment20,'#')
+     AND   NVL(gcc.segment21,'#') = NVL(bb.segment21,'#')
+     AND   NVL(gcc.segment22,'#') = NVL(bb.segment22,'#')
+     AND   NVL(gcc.segment23,'#') = NVL(bb.segment23,'#')
+     AND   NVL(gcc.segment24,'#') = NVL(bb.segment24,'#')
+     AND   NVL(gcc.segment25,'#') = NVL(bb.segment25,'#')
+     AND   NVL(gcc.segment26,'#') = NVL(bb.segment26,'#')
+     AND   NVL(gcc.segment27,'#') = NVL(bb.segment27,'#')
+     AND   NVL(gcc.segment28,'#') = NVL(bb.segment28,'#')
+     AND   NVL(gcc.segment29,'#') = NVL(bb.segment29,'#')
+     AND   NVL(gcc.segment30,'#') = NVL(bb.segment30,'#')
+    -- Scope each cell to THIS run by a LAST_UPDATE_DATE window that
+    -- opens at the run's Validate and Load Budgets PROCESSSTART. This
+    -- survives a fully-successful load (unlike the consumed interface
+    -- rows). If :P_IMPORT_ESS_ID does not resolve, the window is NULL
+    -- and the >= comparison selects nothing -- never the whole cube.
+    WHERE  bb.last_update_date >= (
+             SELECT MIN(erh.processstart)
+             FROM   fusion.ess_request_history erh
+             WHERE  erh.requestid = TO_NUMBER(:P_IMPORT_ESS_ID)
            )
 
     UNION ALL

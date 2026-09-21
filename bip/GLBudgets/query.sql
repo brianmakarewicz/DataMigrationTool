@@ -28,9 +28,18 @@
 --     sits on: GL_CODE_COMBINATIONS.CODE_COMBINATION_ID.
 --
 -- Row selection:
---   BASE rows are loaded cells in GL_BUDGET_BALANCES scoped to the
---     run via its GL_BUDGET_INTERFACE footprint (load_request_id =
---     :P_LOAD_REQUEST_ID). FUSION_ID = the cell's CODE_COMBINATION_ID.
+--   BASE rows are loaded cells in GL_BUDGET_BALANCES scoped to the run
+--     by a LAST_UPDATE_DATE window. A budget cell carries no run id,
+--     request id or prefix, and import CONSUMES (deletes) the interface
+--     rows of every cell it loads successfully -- so on a clean
+--     all-success run there is no surviving interface footprint to join
+--     back to. The signal that survives success is the cell's own
+--     LAST_UPDATE_DATE: a cell this run loaded was touched at or after
+--     the run's Validate and Load Budgets job (:P_IMPORT_ESS_ID) began.
+--     BASE = cells with LAST_UPDATE_DATE >= that job's PROCESSSTART in
+--     ESS_REQUEST_HISTORY. If :P_IMPORT_ESS_ID does not resolve, the
+--     window is NULL and BASE returns nothing (never the whole cube).
+--     FUSION_ID = the cell's CODE_COMBINATION_ID (30-segment join).
 --   INTERFACE rows are the FAILED GL_BUDGET_INTERFACE rejections the
 --     load left carrying :P_LOAD_REQUEST_ID, with real error text.
 --
@@ -84,6 +93,10 @@ FROM (
     FROM   gl_budget_balances bb
     JOIN   gl_ledgers led
       ON   led.ledger_id = bb.ledger_id
+    -- Resolve the cell's real GL account id from ALL 30 segments (the
+    -- same 30 that build RECORD_KEY). Matching only the first 10 could
+    -- bind the wrong CODE_COMBINATION_ID or fan the join out on any
+    -- chart of accounts that uses more than 10 significant segments.
     JOIN   gl_code_combinations gcc
       ON   gcc.chart_of_accounts_id = led.chart_of_accounts_id
      AND   NVL(gcc.segment1 ,'#') = NVL(bb.segment1 ,'#')
@@ -96,17 +109,35 @@ FROM (
      AND   NVL(gcc.segment8 ,'#') = NVL(bb.segment8 ,'#')
      AND   NVL(gcc.segment9 ,'#') = NVL(bb.segment9 ,'#')
      AND   NVL(gcc.segment10,'#') = NVL(bb.segment10,'#')
-    WHERE  EXISTS (
-             SELECT 1
-             FROM   gl_budget_interface gi
-             WHERE  gi.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
-             AND    gi.ledger_id     = bb.ledger_id
-             AND    gi.budget_name   = bb.budget_name
-             AND    gi.period_name   = bb.period_name
-             AND    gi.currency_code = bb.currency_code
-             AND    NVL(gi.segment1 ,'#') = NVL(bb.segment1 ,'#')
-             AND    NVL(gi.segment2 ,'#') = NVL(bb.segment2 ,'#')
-             AND    NVL(gi.segment3 ,'#') = NVL(bb.segment3 ,'#')
+     AND   NVL(gcc.segment11,'#') = NVL(bb.segment11,'#')
+     AND   NVL(gcc.segment12,'#') = NVL(bb.segment12,'#')
+     AND   NVL(gcc.segment13,'#') = NVL(bb.segment13,'#')
+     AND   NVL(gcc.segment14,'#') = NVL(bb.segment14,'#')
+     AND   NVL(gcc.segment15,'#') = NVL(bb.segment15,'#')
+     AND   NVL(gcc.segment16,'#') = NVL(bb.segment16,'#')
+     AND   NVL(gcc.segment17,'#') = NVL(bb.segment17,'#')
+     AND   NVL(gcc.segment18,'#') = NVL(bb.segment18,'#')
+     AND   NVL(gcc.segment19,'#') = NVL(bb.segment19,'#')
+     AND   NVL(gcc.segment20,'#') = NVL(bb.segment20,'#')
+     AND   NVL(gcc.segment21,'#') = NVL(bb.segment21,'#')
+     AND   NVL(gcc.segment22,'#') = NVL(bb.segment22,'#')
+     AND   NVL(gcc.segment23,'#') = NVL(bb.segment23,'#')
+     AND   NVL(gcc.segment24,'#') = NVL(bb.segment24,'#')
+     AND   NVL(gcc.segment25,'#') = NVL(bb.segment25,'#')
+     AND   NVL(gcc.segment26,'#') = NVL(bb.segment26,'#')
+     AND   NVL(gcc.segment27,'#') = NVL(bb.segment27,'#')
+     AND   NVL(gcc.segment28,'#') = NVL(bb.segment28,'#')
+     AND   NVL(gcc.segment29,'#') = NVL(bb.segment29,'#')
+     AND   NVL(gcc.segment30,'#') = NVL(bb.segment30,'#')
+    -- Scope each cell to THIS run by a LAST_UPDATE_DATE window that
+    -- opens at the run's Validate and Load Budgets PROCESSSTART. This
+    -- survives a fully-successful load (unlike the consumed interface
+    -- rows). If :P_IMPORT_ESS_ID does not resolve, the window is NULL
+    -- and the >= comparison selects nothing -- never the whole cube.
+    WHERE  bb.last_update_date >= (
+             SELECT MIN(erh.processstart)
+             FROM   fusion.ess_request_history erh
+             WHERE  erh.requestid = TO_NUMBER(:P_IMPORT_ESS_ID)
            )
 
     UNION ALL
