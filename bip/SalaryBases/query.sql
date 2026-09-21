@@ -2,9 +2,14 @@
 -- Mirror of the CDATA SQL in DMT_SALARYBASES_RECON_DM.xdm, kept here for review and for
 -- running the query standalone against live Fusion (bind the six parameters).
 --
--- BASE-TIER-ONLY HDL recipe (mirrors Workers/Salaries): driven off the HDL integration
--- key map HRC_INTEGRATION_KEY_MAP, scoped to this object by OBJECT_NAME='SalaryBasis'
--- and to this run by SOURCE_SYSTEM_ID LIKE :P_PREFIX||'%'. OBJECT_TYPE is the literal
+-- BASE-TIER-ONLY HDL recipe (mirrors Salaries/Assignments/BenParticipant): driven off
+-- the HDL integration key map HRC_INTEGRATION_KEY_MAP, scoped to OUR loader by
+-- SOURCE_SYSTEM_OWNER='HRC_SQLLOADER', to this object by OBJECT_NAME='SalaryBasis', and
+-- to this run by SOURCE_SYSTEM_ID LIKE :P_PREFIX||'%'. The owner scope is essential:
+-- OBJECT_NAME='SalaryBasis' has 155 rows on the pod but only 8 are ours (owner
+-- HRC_SQLLOADER); the other 147 are FUSION-seeded and their numeric SOURCE_SYSTEM_ID
+-- (e.g. 300000047957113) could otherwise match a numeric run prefix and be misreported
+-- as a fabricated BASE/SUCCESS row. OBJECT_TYPE is the literal
 -- DMT object code 'SalaryBases' (the CEMLI_CODE, per the Contract v1 rule that
 -- single-record-type objects return the object-code constant); SURROGATE_ID is the
 -- real Fusion base-table PK. HDL per-record failures
@@ -36,6 +41,7 @@ FROM (
            CAST(NULL AS VARCHAR2(4000))    AS dmt_reference
     FROM   hrc_integration_key_map m
     WHERE  m.object_name = 'SalaryBasis'
+    AND    m.source_system_owner = 'HRC_SQLLOADER'
     AND    m.source_system_id LIKE :P_PREFIX || '%'
     AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
     GROUP BY m.source_system_id

@@ -15,10 +15,15 @@
     DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies them statically) promotes a
     SalaryBases TFM row to LOADED only from a BASE / SUCCESS / FUSION_ID-not-null row.
 
-    BASE-TIER-ONLY, HDL recipe (mirrors Workers/Salaries): the report is driven off
-    HRC_INTEGRATION_KEY_MAP, the mapping HDL writes for every loaded object. It is
-    scoped to this object by OBJECT_NAME = 'SalaryBasis' (the source-system object
-    name) and to this run by SOURCE_SYSTEM_ID LIKE :P_PREFIX || '%'. OBJECT_TYPE is
+    BASE-TIER-ONLY, HDL recipe (mirrors Salaries/Assignments/BenParticipant): the
+    report is driven off HRC_INTEGRATION_KEY_MAP, the mapping HDL writes for every
+    loaded object. It is scoped to OUR loader by SOURCE_SYSTEM_OWNER = 'HRC_SQLLOADER',
+    to this object by OBJECT_NAME = 'SalaryBasis' (the source-system object name), and
+    to this run by SOURCE_SYSTEM_ID LIKE :P_PREFIX || '%'. The owner predicate is
+    essential: OBJECT_NAME='SalaryBasis' has 155 rows on the pod but only 8 are ours
+    (owner HRC_SQLLOADER); the other 147 are FUSION-seeded with numeric SOURCE_SYSTEM_ID
+    values (e.g. 300000047957113) that could otherwise match a numeric run prefix and be
+    misreported as fabricated BASE/SUCCESS rows. OBJECT_TYPE is
     the literal DMT object code 'SalaryBases' (the CEMLI_CODE, per the Contract v1
     rule that single-record-type objects return the object-code constant), and
     SURROGATE_ID is the real Fusion base-table PK - verified live 2026-09-20:
@@ -71,6 +76,7 @@ FROM (
            CAST(NULL AS VARCHAR2(4000))    AS dmt_reference
     FROM   hrc_integration_key_map m
     WHERE  m.object_name = 'SalaryBasis'
+    AND    m.source_system_owner = 'HRC_SQLLOADER'
     AND    m.source_system_id LIKE :P_PREFIX || '%'
     AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
     GROUP BY m.source_system_id
