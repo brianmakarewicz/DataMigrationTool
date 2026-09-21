@@ -38,13 +38,21 @@ AS
 --   * DISTRIBUTIONS stamp RECON_KEY = INTERFACE_LINE_ATTRIBUTE1 || ':' ||
 --     ACCOUNT_CLASS. The base distribution carries no interface key of its own,
 --     so it is confirmed TRANSITIVELY through its parent line; the data model
---     emits the parent line's stamped key suffixed with the distribution's
---     ACCOUNT_CLASS as the distribution RECORD_KEY. ACCOUNT_CLASS is required as a
---     per-distribution discriminator (PR #371 review fix): a real AR line carries
---     2+ distributions (double-entry: Receivable + Revenue), so without it every
---     sibling distribution would share one key -- dropping rows at a keyset page
---     boundary and stamping one sibling's FUSION_ID onto all of them. That coupling
---     is what makes the per-tier join hit exactly one TFM row.
+--     emits the parent line's stamped key, the distribution's ACCOUNT_CLASS, and a
+--     DETERMINISTIC per-line ordinal as the distribution RECORD_KEY. The ordinal is
+--     required as a per-distribution discriminator (PR #371 review, second round):
+--     a real AR line commonly carries 2+ distributions of the SAME ACCOUNT_CLASS
+--     (888 such lines exist in the live demo base table), so parent-line-key ||
+--     account_class alone is NOT unique -- without the ordinal, sibling
+--     distributions would share one key, dropping rows at a keyset page boundary
+--     and stamping one sibling's FUSION_ID onto another. The ordinal is
+--     ROW_NUMBER() OVER (PARTITION BY parent_line_key, account_class ORDER BY
+--     amount, acctd_amount, percent, <dist id>), computed IDENTICALLY in the TFM
+--     stamp (DMT_AR_TRANSFORM_PKG) and both data model distribution blocks; leading
+--     the ORDER BY with the business amounts AutoInvoice copies verbatim from the
+--     interface distribution onto the base distribution keeps the ordinal in
+--     agreement across all three sides. That coupling is what makes the per-tier
+--     join hit exactly one TFM row.
 --
 -- After the two tiers settle, outcomes are echoed back to both STG tables. No
 -- composed parent/child roll-up is needed: each tier has its own BASE and

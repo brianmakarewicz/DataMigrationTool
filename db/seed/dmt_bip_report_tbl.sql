@@ -1433,12 +1433,16 @@ commit;
 -- the primary (line) tier for documentation; the reconciler names both tier
 -- tables statically. RECON_KEY per tier (stamped by DMT_AR_TRANSFORM_PKG, =
 -- each tier's report RECORD_KEY): lines = INTERFACE_LINE_ATTRIBUTE1 (the
--- prefixed TRX_NUMBER); dists = INTERFACE_LINE_ATTRIBUTE1 || '':''|| ACCOUNT_CLASS.
+-- prefixed TRX_NUMBER); dists = INTERFACE_LINE_ATTRIBUTE1 || '':''|| ACCOUNT_CLASS
+-- || '':''|| a deterministic per-line ordinal.
 -- The base distribution has no interface key of its own and is confirmed
--- transitively through its parent line's key; ACCOUNT_CLASS is appended as a
--- per-distribution discriminator (PR #371 review) because a real AR line carries
--- 2+ distributions (double-entry), so the bare parent-line key would collide
--- across siblings.
+-- transitively through its parent line's key. ACCOUNT_CLASS alone is NOT unique
+-- (PR #371 review, second round: a real AR line commonly carries 2+ distributions
+-- of the SAME ACCOUNT_CLASS -- 888 such lines exist in the live demo base table),
+-- so the key appends ROW_NUMBER() OVER (PARTITION BY parent_line_key,
+-- account_class ORDER BY amount, acctd_amount, percent, <dist id>). The ORDER BY
+-- leads with the business amounts AutoInvoice copies verbatim from interface to
+-- base, so the ordinal agrees across the TFM stamp and both data model tiers.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
@@ -1449,7 +1453,7 @@ using (
            1                                                        contract_version,
            'DMT_RA_LINES_TFM_TBL'                                  tfm_table,
            'FUSION_CUSTOMER_TRX_ID'                                fusion_id_column,
-           'multi-tier: lines=INTERFACE_LINE_ATTRIBUTE1 (prefixed TRX_NUMBER); dists=INTERFACE_LINE_ATTRIBUTE1||'':''||ACCOUNT_CLASS (parent line key + per-distribution discriminator, transitive)' recon_key_sql
+           'multi-tier: lines=INTERFACE_LINE_ATTRIBUTE1 (prefixed TRX_NUMBER); dists=INTERFACE_LINE_ATTRIBUTE1||'':''||ACCOUNT_CLASS||'':''||ROW_NUMBER() OVER (PARTITION BY parent_line_key,account_class ORDER BY amount,acctd_amount,percent,dist_id) (parent line key + per-distribution ordinal discriminator, transitive)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
