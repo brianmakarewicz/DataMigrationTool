@@ -1,70 +1,77 @@
--- DMT_WORKSCHEDULES_RECON_DM query (Contract v1, design section 5).
--- Mirror of the CDATA SQL in DMT_WORKSCHEDULES_RECON_DM.xdm, kept here for review
--- and for running the query standalone against live Fusion (bind the six parameters).
+-- DMT_WORKSCHEDULES_RECON_DM query (Contract v1: nine columns, six parameters,
+-- keyset pagination). Mirror of the CDATA SQL in DMT_WORKSCHEDULES_RECON_DM.xdm,
+-- kept here for review and for running the query standalone against live Fusion
+-- (bind the six parameters).
 --
--- Re-modelled 2026-09-17 (HCM re-model: WorkSchedules -> WorkPattern +
--- ScheduleAssignment). WorkSchedules is ONE DMT object carrying TWO Fusion HDL
--- business objects, each with its own base home:
---   (1) WorkPattern (pattern DEFINITION) -> HTS_WORK_PATTERNS_VL.WORK_PATTERN_ID
---   (2) ScheduleAssignment (assign schedule to WORKER) ->
---       PER_SCHEDULE_ASSIGNMENTS.SCHEDULE_ASSIGNMENT_ID
+-- Returns the BASE tier for the WorkSchedules HDL load. WorkSchedules is ONE DMT
+-- object that carries TWO Fusion HDL business objects, so the report is a UNION of
+-- two OBJECT_TYPE branches, each keyed by the SourceSystemId Fusion recorded in
+-- HRC_INTEGRATION_KEY_MAP (SOURCE_SYSTEM_OWNER='HRC_SQLLOADER', which excludes
+-- Fusion-seeded rows). A WorkSchedules TFM row is promoted to LOADED only from a
+-- BASE / SUCCESS / FUSION_ID-not-null row; HDL per-record failures are captured
+-- separately (RECONCILE_HDL tags [FUSION_ERROR] before this report runs).
 --
--- The report returns the BASE tier as a UNION of both proofs, each keyed by the
--- SAME prefixed work pattern/schedule name (= the TFM RECON_KEY). A WorkSchedule
--- TFM row is promoted to LOADED only from a BASE / SUCCESS / FUSION_ID-not-null
--- row. HDL per-record failures are captured separately (RECONCILE_HDL tags
--- [FUSION_ERROR] before this report runs), so this report returns BASE/SUCCESS
--- rows only.
+--   Branch (1) WorkPattern (pattern DEFINITION):
+--     OBJECT_NAME='WorkPattern', suffix '_WPAT' (= the TFM RECON_KEY),
+--     FUSION_ID = SURROGATE_ID (the Fusion-assigned base pattern id).
+--   Branch (2) ScheduleAssignment (assign schedule to a WORKER):
+--     OBJECT_NAME='ScheduleAssignment', suffix '_WSASG',
+--     FUSION_ID = PER_SCHEDULE_ASSIGNMENTS.SCHEDULE_ASSIGNMENT_ID.
+--     Config-blocked (the Work Schedule wrapper is a UI task HDL cannot create),
+--     so this branch returns zero until that config exists on the pod.
 --
--- Verified live 2026-09-17 (--cred fin_impl):
---   * HDL objects WorkPattern / WorkPatternShift / WorkPatternBreak /
---     ScheduleAssignment all present in HRC_INTEGRATION_KEY_MAP.
---   * Branch (1): hts_work_patterns_vl WHERE work_pattern_name LIKE '86348%'
---     -> '86348 DMT Work Schedule 1', WORK_PATTERN_ID 300000331553350.
---   * Branch (2) base table PER_SCHEDULE_ASSIGNMENTS carries RESOURCE_TYPE='ASSIGN',
---     RESOURCE_ID = worker assignment id, PRIMARY_FLAG='Y'. It links to a pattern
---     only through ZMM_SR_SCHEDULE_PATTERNS -> HTS_WORK_PATTERNS. HDL cannot
---     create the Work Schedule wrapper (ZMM_SR_SCHEDULES; a UI task), so branch
---     (2) returns zero until that config exists — the assignment side is
---     honestly config-blocked, while branch (1) continues to prove patterns.
+-- Verified live 2026-09-20 (--cred fin_impl / ApplicationDB_FSCM):
+--   * WorkPattern has 11 HRC_SQLLOADER rows (suffix _WPAT), each SURROGATE_ID a
+--     real Fusion base pattern id. Round-trip: every key-map row corresponds to a
+--     real pattern visible in HTS_WORK_PATTERNS_VL by WORK_PATTERN_NAME.
+--   * ScheduleAssignment has 0 HRC_SQLLOADER rows (config-blocked); 556
+--     FUSION-seeded rows exist and are excluded by the owner filter.
+--   * Standalone page/advance/empty keyset behaviour confirmed (see PR body).
 
-SELECT object_type, record_key, source_type, fusion_status,
-       fusion_id, error_message, load_request_id
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    SELECT object_type, record_key, source_type, fusion_status,
-           fusion_id, error_message, load_request_id
-    FROM (
-        -- Branch (1) WorkPattern definition
-        SELECT 'WorkSchedules'                 AS object_type,
-               v.work_pattern_name             AS record_key,
-               'BASE'                          AS source_type,
-               'SUCCESS'                       AS fusion_status,
-               MAX(v.work_pattern_id)          AS fusion_id,
-               CAST(NULL AS VARCHAR2(4000))    AS error_message,
-               :P_LOAD_REQUEST_ID              AS load_request_id
-        FROM   hts_work_patterns_vl v
-        WHERE  v.work_pattern_name LIKE :P_PREFIX || '%'
-        AND    (:P_AFTER_KEY IS NULL OR v.work_pattern_name > :P_AFTER_KEY)
-        GROUP BY v.work_pattern_name
+    -- Branch (1) WorkPattern definition
+    SELECT 'WorkSchedules'                AS object_type,
+           m.source_system_id             AS record_key,
+           'BASE'                         AS source_type,
+           'SUCCESS'                      AS fusion_status,
+           MAX(m.surrogate_id)            AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))   AS error_message,
+           CAST(NULL AS VARCHAR2(30))     AS load_request_id,
+           m.source_system_id             AS source_ref,
+           CAST(NULL AS VARCHAR2(4000))   AS dmt_reference
+    FROM   hrc_integration_key_map m
+    WHERE  m.object_name         = 'WorkPattern'
+    AND    m.source_system_owner = 'HRC_SQLLOADER'
+    AND    m.source_system_id LIKE :P_PREFIX || '%'
+    AND    m.source_system_id LIKE '%\_WPAT' ESCAPE '\'
+    GROUP BY m.source_system_id
 
-        UNION ALL
+    UNION ALL
 
-        -- Branch (2) ScheduleAssignment (config-blocked until a Work Schedule exists)
-        SELECT 'WorkSchedules'                 AS object_type,
-               v.work_pattern_name             AS record_key,
-               'BASE'                          AS source_type,
-               'SUCCESS'                       AS fusion_status,
-               MAX(sa.schedule_assignment_id)  AS fusion_id,
-               CAST(NULL AS VARCHAR2(4000))    AS error_message,
-               :P_LOAD_REQUEST_ID              AS load_request_id
-        FROM   per_schedule_assignments   sa
-        JOIN   zmm_sr_schedule_patterns   sp ON sp.schedule_id = sa.schedule_id
-        JOIN   hts_work_patterns_vl       v  ON v.work_pattern_id = sp.pattern_id
-        WHERE  sa.resource_type = 'ASSIGN'
-        AND    v.work_pattern_name LIKE :P_PREFIX || '%'
-        AND    (:P_AFTER_KEY IS NULL OR v.work_pattern_name > :P_AFTER_KEY)
-        GROUP BY v.work_pattern_name
-    )
-    ORDER BY record_key
+    -- Branch (2) ScheduleAssignment (config-blocked until a Work Schedule exists)
+    SELECT 'WorkSchedules'                AS object_type,
+           m.source_system_id             AS record_key,
+           'BASE'                         AS source_type,
+           'SUCCESS'                      AS fusion_status,
+           MAX(sa.schedule_assignment_id) AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))   AS error_message,
+           CAST(NULL AS VARCHAR2(30))     AS load_request_id,
+           m.source_system_id             AS source_ref,
+           CAST(NULL AS VARCHAR2(4000))   AS dmt_reference
+    FROM   hrc_integration_key_map m
+    JOIN   per_schedule_assignments sa
+           ON sa.schedule_assignment_id = m.surrogate_id
+    WHERE  m.object_name         = 'ScheduleAssignment'
+    AND    m.source_system_owner = 'HRC_SQLLOADER'
+    AND    m.source_system_id LIKE :P_PREFIX || '%'
+    AND    m.source_system_id LIKE '%\_WSASG' ESCAPE '\'
+    GROUP BY m.source_system_id
 )
-WHERE ROWNUM <= :P_CHUNK_SIZE;
+-- Keyset pagination by RECORD_KEY. First page: P_AFTER_KEY is NULL -> from start.
+-- Later pages: P_AFTER_KEY = previous page's last RECORD_KEY -> only greater keys.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY;

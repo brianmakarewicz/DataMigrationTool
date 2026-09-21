@@ -2,52 +2,79 @@
 <dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
            defaultDataSourceRef="ApplicationDB_FSCM">
   <!--
-    DMT_WORKSCHEDULES_RECON_DM — Contract v1 reconciliation data model for
-    WorkSchedules (design section 5, "BIP reconciliation report contract - v1").
+    DMT_WORKSCHEDULES_RECON_DM — BIP reconciliation report contract v1 for
+    WorkSchedules (loaded via HCM Data Loader). Design doc: "BIP reconciliation
+    report contract - v1" (nine columns, six parameters, keyset pagination) plus
+    its HDL note: "each HDL object gets a Contract v1 report whose rows are the
+    BASE tier (key + Fusion id); its ERROR rows are optional because HDL failures
+    arrive per-record in the HDL response and are tagged [FUSION_ERROR] before the
+    report runs."
 
-    Re-modelled 2026-09-17 (HCM re-model: WorkSchedules -> WorkPattern +
-    ScheduleAssignment). WorkSchedules is ONE DMT object whose zip carries TWO
-    distinct Fusion HDL business objects, each with its own Fusion base home:
-      (1) WorkPattern (the pattern DEFINITION) -> base view HTS_WORK_PATTERNS_VL
-          (translated view over HTS_WORK_PATTERNS_B + _TL; WORK_PATTERN_ID is the
-          base id). This is the object that has historically loaded on this pod.
-      (2) ScheduleAssignment (assigning the schedule to a WORKER) -> base table
-          PER_SCHEDULE_ASSIGNMENTS (SCHEDULE_ASSIGNMENT_ID is the base id;
-          RESOURCE_TYPE='ASSIGN', RESOURCE_ID = the worker's assignment id).
+    BASE-TIER ONLY. An HDL load has no interface table, so this report returns the
+    BASE tier: one row per migrated record that Fusion positively confirmed by
+    writing an HRC_INTEGRATION_KEY_MAP entry (SOURCE_SYSTEM_OWNER='HRC_SQLLOADER'),
+    with the Fusion-assigned SURROGATE_ID as FUSION_ID. This is the same base-tier
+    proof the Salaries, Absences and BenBeneficiary reconcilers use, and the design
+    doc endorses it for HDL objects.
 
-    This report returns the BASE tier as a UNION of both proofs, each keyed by the
-    SAME prefixed work-schedule/pattern name so the WorkSchedules reconciler
-    (DMT_RECON_CONTRACT_PKG.FETCH_ROWS -> APPLY_CONTRACT_V1_WORKSCHEDULES) can
-    match either against the TFM RECON_KEY. A WorkSchedule TFM row is promoted to
-    LOADED only from a BASE / SUCCESS / FUSION_ID-not-null row here. HDL
-    per-record failures arrive in the HDL response (tagged [FUSION_ERROR] by
-    RECONCILE_HDL before this report runs), so ERROR rows here are optional.
+    ONE DMT OBJECT, TWO HDL BUSINESS OBJECTS (DMT_WORK_SCHED_HDL_GEN_PKG,
+    2026-09-17 re-model). The generator writes one object zip carrying two .dat
+    files, so this report returns a UNION of two OBJECT_TYPE branches — each Fusion
+    HDL object reflected as its own row per the brief ("a work-schedule definition
+    and its person-assignment may be separate OBJECT_NAMEs — reflect each as its
+    own OBJECT_TYPE row"):
 
-    CONFIG PREREQUISITE for branch (2): a ScheduleAssignment can only succeed
-    when a Work Schedule (ZMM_SR_SCHEDULES) exists that wraps the pattern and is
-    referenced by ScheduleName. Verified live 2026-09-17 (cred fin_impl):
-    the four HDL objects WorkPattern / WorkPatternShift / WorkPatternBreak /
-    ScheduleAssignment all exist in HRC_INTEGRATION_KEY_MAP, and
-    PER_SCHEDULE_ASSIGNMENTS rows key off SCHEDULE_ID via ZMM_SR_SCHEDULE_PATTERNS
-    to HTS_WORK_PATTERNS. But HDL has NO object that creates the Work Schedule
-    wrapper itself (that is a UI task, "Manage Work Schedules"), and none of the
-    migrated DMT patterns is wrapped in a schedule today, so branch (2) returns
-    zero base rows until that config is created. Branch (1) is unaffected and
-    continues to prove loaded patterns.
+      (1) WorkPattern  — the pattern DEFINITION (+ its WorkPatternShift child).
+          SourceSystemOwner = 'HRC_SQLLOADER'
+          SourceSystemId    = (prefixed WORK_SCHEDULE_NAME) || '_WPAT'
+          That _WPAT value is also the WorkSchedules TFM row's RECON_KEY (one key
+          definition per object). On load Fusion records one
+          HRC_INTEGRATION_KEY_MAP row per pattern:
+            OBJECT_NAME='WorkPattern', SOURCE_SYSTEM_OWNER='HRC_SQLLOADER',
+            SOURCE_SYSTEM_ID = our _WPAT key,
+            SURROGATE_ID     = the Fusion-assigned base pattern id.
 
-    RECORD_KEY = the work schedule's business key = the prefixed work
-    pattern/schedule name, stamped on the WorkSchedule TFM row as RECON_KEY (the
-    run prefix applied to the source WORK_SCHEDULE_NAME at transform — one key
-    definition per object). Branch (1) matches on
-    HTS_WORK_PATTERNS_VL.WORK_PATTERN_NAME (verified live: WORK_PATTERN_NAME LIKE
-    '86348%' returns '86348 DMT Work Schedule 1', base WORK_PATTERN_ID
-    300000331553350). Branch (2) matches the same name by joining
-    PER_SCHEDULE_ASSIGNMENTS -> ZMM_SR_SCHEDULE_PATTERNS -> HTS_WORK_PATTERNS_VL.
+      (2) ScheduleAssignment — assign the schedule to a WORKER.
+          SourceSystemOwner = 'HRC_SQLLOADER'
+          SourceSystemId    = (prefixed PERSON_NUMBER) || '_WSASG'
+          Base table PER_SCHEDULE_ASSIGNMENTS.SCHEDULE_ASSIGNMENT_ID is the Fusion
+          id. HDL cannot create the Work Schedule wrapper (ZMM_SR_SCHEDULES; a UI
+          task), so on a demo pod without that config the assignment side loads
+          zero — honestly config-blocked — while branch (1) continues to prove
+          patterns. This branch is present with the correct nine-column shape so it
+          begins returning rows automatically once the wrapper config exists.
 
-    Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
-    P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base table for an
-    HDL load, so BASE-tier matching is by the run prefix (P_PREFIX). LOAD_REQUEST_ID
-    is echoed back unchanged for audit.
+    BASE TABLE / FUSION_ID — HONEST NOTE (branch 1). Fusion assigns the WorkPattern
+    a base id and records it as SURROGATE_ID in HRC_INTEGRATION_KEY_MAP. That
+    surrogate is the authoritative, verifiable Fusion base id and is returned here
+    as FUSION_ID. The pattern definition itself is visible to the FSCM BIP user
+    through HTS_WORK_PATTERNS_VL (by WORK_PATTERN_NAME), which confirms every
+    key-map row corresponds to a real, existing pattern (round-trip verified — see
+    the PR body). Following the design doc's HDL note and the BenBeneficiary
+    precedent, the key map (key + SURROGATE_ID) is the base-tier source of record.
+
+    LIVE STATE ON THIS POD (verified 2026-09-20, fin_impl / ApplicationDB_FSCM):
+      * WorkPattern:        11 HRC_SQLLOADER rows (our DMT loads, suffix _WPAT),
+                            each SURROGATE_ID a real Fusion base pattern id.
+      * WorkPatternShift:   22 HRC_SQLLOADER rows (children; not counted here — the
+                            RECON_KEY is the pattern, one row per WorkSchedule).
+      * ScheduleAssignment: 0 HRC_SQLLOADER rows (config-blocked as above; 556
+                            FUSION-seeded rows exist and are never counted — the
+                            SOURCE_SYSTEM_OWNER='HRC_SQLLOADER' filter excludes
+                            Fusion-seeded rows).
+      * Standalone rows + keyset paging (page -> advance -> empty) validated live;
+        see the PR body for the exact rows.
+
+    NINE response columns, in contract order:
+      OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE('BASE'), FUSION_STATUS('SUCCESS'),
+      FUSION_ID (SURROGATE_ID / SCHEDULE_ASSIGNMENT_ID), ERROR_MESSAGE (NULL),
+      LOAD_REQUEST_ID (NULL), SOURCE_REF (= SourceSystemId), DMT_REFERENCE (NULL).
+    SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID, P_PREFIX,
+      P_CHUNK_SIZE, P_AFTER_KEY.
+    KEYSET pagination by RECORD_KEY (P_AFTER_KEY cursor, P_CHUNK_SIZE page).
+      LOAD_REQUEST_ID / P_IMPORT_ESS_ID do not survive into the base for an HDL
+      load, so BASE-tier matching is by run prefix (P_PREFIX). LOAD_REQUEST_ID is
+      returned NULL per the brief's column mapping.
   -->
   <dataProperties>
     <property name="include_parameters" value="true"/>
@@ -56,63 +83,73 @@
     <property name="xml_tag_case" value="upper"/>
   </dataProperties>
   <dataSets>
-    <dataSet name="workschedules_recon" type="complex">
+    <dataSet name="work_sched_recon" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT object_type, record_key, source_type, fusion_status,
-       fusion_id, error_message, load_request_id
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    SELECT object_type, record_key, source_type, fusion_status,
-           fusion_id, error_message, load_request_id
-    FROM (
-        -- Branch (1) WorkPattern definition: positive proof in the HCM work
-        -- pattern base view. One row per migrated work pattern (GROUP BY
-        -- collapses translations). This is the historically-loading proof.
-        SELECT 'WorkSchedules'                 AS object_type,
-               v.work_pattern_name             AS record_key,
-               'BASE'                          AS source_type,
-               'SUCCESS'                       AS fusion_status,
-               MAX(v.work_pattern_id)          AS fusion_id,
-               CAST(NULL AS VARCHAR2(4000))    AS error_message,
-               :P_LOAD_REQUEST_ID              AS load_request_id
-        FROM   hts_work_patterns_vl v
-        WHERE  v.work_pattern_name LIKE :P_PREFIX || '%'
-        AND    (:P_AFTER_KEY IS NULL OR v.work_pattern_name > :P_AFTER_KEY)
-        GROUP BY v.work_pattern_name
+    -- Branch (1) WorkPattern (pattern DEFINITION). BASE tier: positive proof in
+    -- the HCM integration key map. The HDL load writes one HRC_INTEGRATION_KEY_MAP
+    -- row per pattern (OBJECT_NAME='WorkPattern',
+    -- SOURCE_SYSTEM_OWNER='HRC_SQLLOADER') whose SURROGATE_ID is the Fusion base
+    -- pattern id. One row per migrated work schedule (the _WPAT key == RECON_KEY).
+    SELECT 'WorkSchedules'                AS object_type,
+           m.source_system_id             AS record_key,
+           'BASE'                         AS source_type,
+           'SUCCESS'                      AS fusion_status,
+           MAX(m.surrogate_id)            AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))   AS error_message,
+           CAST(NULL AS VARCHAR2(30))     AS load_request_id,
+           m.source_system_id             AS source_ref,
+           CAST(NULL AS VARCHAR2(4000))   AS dmt_reference
+    FROM   hrc_integration_key_map m
+    WHERE  m.object_name         = 'WorkPattern'
+    AND    m.source_system_owner = 'HRC_SQLLOADER'
+    AND    m.source_system_id LIKE :P_PREFIX || '%'
+    AND    m.source_system_id LIKE '%\_WPAT' ESCAPE '\'
+    GROUP BY m.source_system_id
 
-        UNION ALL
+    UNION ALL
 
-        -- Branch (2) ScheduleAssignment: positive proof in the schedule
-        -- assignment base table PER_SCHEDULE_ASSIGNMENTS, keyed back to the same
-        -- prefixed pattern name via the schedule->pattern link so the reconciler
-        -- matches it against the same TFM RECON_KEY. Returns zero rows until a
-        -- Work Schedule wrapping the pattern is created (see header — config
-        -- prerequisite; HDL cannot create the schedule wrapper). ResourceType
-        -- 'ASSIGN' = a worker assignment.
-        SELECT 'WorkSchedules'                 AS object_type,
-               v.work_pattern_name             AS record_key,
-               'BASE'                          AS source_type,
-               'SUCCESS'                       AS fusion_status,
-               MAX(sa.schedule_assignment_id)  AS fusion_id,
-               CAST(NULL AS VARCHAR2(4000))    AS error_message,
-               :P_LOAD_REQUEST_ID              AS load_request_id
-        FROM   per_schedule_assignments   sa
-        JOIN   zmm_sr_schedule_patterns   sp ON sp.schedule_id = sa.schedule_id
-        JOIN   hts_work_patterns_vl       v  ON v.work_pattern_id = sp.pattern_id
-        WHERE  sa.resource_type = 'ASSIGN'
-        AND    v.work_pattern_name LIKE :P_PREFIX || '%'
-        AND    (:P_AFTER_KEY IS NULL OR v.work_pattern_name > :P_AFTER_KEY)
-        GROUP BY v.work_pattern_name
-    )
-    ORDER BY record_key
+    -- Branch (2) ScheduleAssignment (assign schedule to a WORKER). BASE tier:
+    -- positive proof in PER_SCHEDULE_ASSIGNMENTS, joined from the HDL key map
+    -- (OBJECT_NAME='ScheduleAssignment', SOURCE_SYSTEM_OWNER='HRC_SQLLOADER',
+    -- suffix _WSASG). Returns zero until the Work Schedule wrapper config exists
+    -- on the pod; the join to the base table is present so real Fusion
+    -- SCHEDULE_ASSIGNMENT_ID values flow through as FUSION_ID once it does.
+    SELECT 'WorkSchedules'                AS object_type,
+           m.source_system_id             AS record_key,
+           'BASE'                         AS source_type,
+           'SUCCESS'                      AS fusion_status,
+           MAX(sa.schedule_assignment_id) AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))   AS error_message,
+           CAST(NULL AS VARCHAR2(30))     AS load_request_id,
+           m.source_system_id             AS source_ref,
+           CAST(NULL AS VARCHAR2(4000))   AS dmt_reference
+    FROM   hrc_integration_key_map m
+    JOIN   per_schedule_assignments sa
+           ON sa.schedule_assignment_id = m.surrogate_id
+    WHERE  m.object_name         = 'ScheduleAssignment'
+    AND    m.source_system_owner = 'HRC_SQLLOADER'
+    AND    m.source_system_id LIKE :P_PREFIX || '%'
+    AND    m.source_system_id LIKE '%\_WSASG' ESCAPE '\'
+    GROUP BY m.source_system_id
 )
-WHERE ROWNUM <= :P_CHUNK_SIZE
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in BIP, so
+-- treat NULL as "from the start": every non-null RECORD_KEY sorts after the empty
+-- string. On later pages P_AFTER_KEY carries the previous page's last RECORD_KEY
+-- and only greater keys are returned.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
       ]]></sql>
     </dataSet>
   </dataSets>
   <output rootName="DATA_DS" uniqueRowName="false">
     <nodeList name="data-structure">
       <dataStructure tagName="DATA_DS">
-        <group name="G_1" label="G_1" source="workschedules_recon">
+        <group name="G_1" label="G_1" source="work_sched_recon">
           <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
           <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
           <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
@@ -120,6 +157,8 @@ WHERE ROWNUM <= :P_CHUNK_SIZE
           <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
           <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
           <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
         </group>
       </dataStructure>
     </nodeList>
@@ -130,19 +169,22 @@ WHERE ROWNUM <= :P_CHUNK_SIZE
     <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
                labelID="P_RUN_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
                labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="3"
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
                labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
                labelID="P_PREFIX" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="5"
+    <!-- Keyset pagination: page size + cursor. The reconciler calls with an empty
+         P_AFTER_KEY first, then passes the last RECORD_KEY received on each next
+         call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
                labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="6"
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
                labelID="P_AFTER_KEY" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
