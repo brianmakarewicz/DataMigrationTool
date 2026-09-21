@@ -90,11 +90,13 @@ def _oracle(target):
 # ---------------------------------------------------------------- DB deploy
 def deploy_db(target):
     """Idempotent sync of the working tree's db/ into an existing instance:
-    tables (idempotent add_col/exception-wrapped), package specs, bodies, views,
-    procedures, seeds - all continue-on-error - then recompile and assert 0 invalid.
+    tables (idempotent add_col/exception-wrapped), types, package specs, bodies,
+    views, procedures, seeds - all continue-on-error - then recompile and assert
+    0 invalid.
     (install.sql is fresh-install only: it exits on the first 'already exists'.)"""
     order = []
-    for pat in ("db/tables/*.sql", "db/packages/*.pks.sql", "db/packages/*.pkb.sql",
+    for pat in ("db/tables/*.sql", "db/types/*.sql",
+                "db/packages/*.pks.sql", "db/packages/*.pkb.sql",
                 "db/views/*.sql", "db/procedures/*.sql", "db/seed/*.sql"):
         order += sorted((REPO / p).as_posix() for p in
                         [q.relative_to(REPO).as_posix() for q in REPO.glob(pat)])
