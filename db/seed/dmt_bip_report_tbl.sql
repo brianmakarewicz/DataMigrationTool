@@ -203,11 +203,6 @@ using (
            '/Custom/DMT2/Expenditures/EXPENDITURE_RPT.xdo',
            'PJC_TXN_XFACE_STAGE_ALL',
            'Project expenditure cost import reconciliation' from dual
-    union all select 100000019, 'ProjectBudgets', 'Project Budget',
-           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_DM.xdm',
-           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_RPT.xdo',
-           'PJO_PLAN_VERSIONS_XFACE',
-           'Project budget import reconciliation - PjoPlanVersionsXface.csv via prj/projectControl/import' from dual
     union all select 100000024, 'COMMON_LOOKUPS', 'Business Unit Lookups',
            '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_DM.xdm',
            '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_RPT.xdo',
@@ -228,6 +223,61 @@ when not matched then insert
     values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
             s.report_catalog_path, s.interface_table, sysdate, s.notes,
             null, null);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- ProjectBudgets (100000019) — Contract v1 registration (design section 5).
+-- Single-tier FBDI object; follows the Expenditures reader template (PR #363):
+-- the four Contract v1 columns (CONTRACT_VERSION, TFM_TABLE, FUSION_ID_COLUMN,
+-- RECON_KEY_SQL) drive the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS, which
+-- runs the nine-column recon report at REPORT_CATALOG_PATH. One FBDI zip
+-- (PjoPlanVersionsXface.csv via prj/projectControl/import), interface table
+-- PJO_PLAN_VERSIONS_XFACE, base table PJO_PLAN_VERSIONS_B; FUSION_ID =
+-- PLAN_VERSION_ID stamped into FUSION_BUDGET_VERSION_ID. RECON_KEY =
+-- SRC_BUDGET_LINE_REFERENCE, the native source budget line reference the
+-- transform copies through unchanged; it survives verbatim onto the base row as
+-- PM_BUDGET_REFERENCE, which is the DM's BASE-tier RECORD_KEY (the transform
+-- prefixes PROJECT_NUMBER / PROJECT_NAME only, never the budget reference). Kept
+-- in its own MERGE so this block also converges the Contract v1 columns on the
+-- ProjectBudgets row seeded earlier in this file.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000019                                                    bip_report_id,
+           'ProjectBudgets'                                             cemli_code,
+           'Project Budget'                                             object_type,
+           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_DM.xdm'              dm_catalog_path,
+           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_RPT.xdo'            report_catalog_path,
+           'PJO_PLAN_VERSIONS_XFACE'                                    interface_table,
+           'Project budget import reconciliation (Contract v1) - '
+              || 'PjoPlanVersionsXface.csv via prj/projectControl/import'  notes,
+           1                                                            contract_version,
+           'DMT_PRJ_BUDGET_TFM_TBL'                                     tfm_table,
+           'FUSION_BUDGET_VERSION_ID'                                   fusion_id_column,
+           'SRC_BUDGET_LINE_REFERENCE -- source budget line ref, survives as PM_BUDGET_REFERENCE on the base row' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
 
 commit;
 
