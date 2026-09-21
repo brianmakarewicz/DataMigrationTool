@@ -255,8 +255,9 @@
     -- first wins and the other's guard skips it.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_GLBUDGETS (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_request_id    IN VARCHAR2,
+        p_import_ess_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1_GLBUDGETS';
         l_gen_count NUMBER := 0;
@@ -272,12 +273,13 @@
         WHERE  RUN_ID = p_run_id;
 
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => TO_NUMBER(p_request_id),
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -399,8 +401,9 @@
         -- p_run_start / p_ledger_id are accepted for signature compatibility with the
         -- loader dispatch and are intentionally not used.
         APPLY_CONTRACT_V1_GLBUDGETS(
-            p_run_id     => p_run_id,
-            p_request_id => TO_CHAR(p_load_ess_id));
+            p_run_id        => p_run_id,
+            p_request_id    => TO_CHAR(p_load_ess_id),
+            p_import_ess_id => p_import_ess_id);
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object
         -- not-DONE and the funnel surfaces these as UNRECONCILED.
