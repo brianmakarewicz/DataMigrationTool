@@ -155,9 +155,13 @@ FROM (
     UNION ALL
 
     -- BASE / PartySiteUses -- HZ_PARTY_SITE_USES, FUSION_ID = PARTY_SITE_USE_ID.
+    -- SITE_USE_TYPE is folded into RECORD_KEY (join to HZ_PARTY_SITE_USES on
+    -- PARTY_SITE_USE_ID = OWNER_TABLE_ID) to mirror the INTERFACE side, because
+    -- two uses (BILL_TO/SHIP_TO) can share one ORIG_SYSTEM_REFERENCE and would
+    -- otherwise collide on an identical key -- breaking RECORD_KEY uniqueness.
     SELECT
         'Customers.PartySiteUses',
-        'Customers.PartySiteUses~' || r.orig_system_reference,
+        'Customers.PartySiteUses~' || r.orig_system_reference || '/' || psu.site_use_type,
         'BASE', 'SUCCESS',
         r.owner_table_id,
         CAST(NULL AS VARCHAR2(4000)),
@@ -165,6 +169,7 @@ FROM (
         r.orig_system_reference,
         CAST(NULL AS VARCHAR2(4000))
     FROM   hz_orig_sys_references r
+    JOIN   hz_party_site_uses psu ON psu.party_site_use_id = r.owner_table_id
     WHERE  r.owner_table_name = 'HZ_PARTY_SITE_USES'
     AND    r.orig_system_reference LIKE :P_PREFIX || '%'
 
@@ -328,6 +333,15 @@ FROM (
     FROM   hz_imp_partysiteuses_t ipu
     WHERE  ipu.load_request_id = :P_LOAD_REQUEST_ID
     AND    NVL(ipu.import_status_code, 'X') <> 'S'
+    -- Anti-join must match the site-use-type-folded BASE key, so a use created
+    -- in base (BILL_TO) is not reported ERROR here while its sibling (SHIP_TO)
+    -- sharing the same ORIG_SYSTEM_REFERENCE was rejected. Match both the
+    -- reference AND SITE_USE_TYPE (via HZ_PARTY_SITE_USES on OWNER_TABLE_ID).
+    AND    NOT EXISTS (SELECT 1 FROM hz_orig_sys_references r
+                       JOIN   hz_party_site_uses psu ON psu.party_site_use_id = r.owner_table_id
+                       WHERE  r.owner_table_name = 'HZ_PARTY_SITE_USES'
+                       AND    r.orig_system_reference = ipu.siteuse_orig_system_ref
+                       AND    psu.site_use_type = ipu.site_use_type)
 
     UNION ALL
 
