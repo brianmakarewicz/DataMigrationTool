@@ -1487,3 +1487,63 @@ when not matched then insert
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- GLBudgets (100000023) — Contract v1 registration (design section 5). Follows
+-- the Expenditures single-tier template (PR #363): the object's OWN reconciler
+-- (DMT_GL_BUDGET_RESULTS_PKG) calls the shared parser
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies the rows statically, so no
+-- APPLY_PROC is registered (that column is only for objects dispatched through
+-- the generic recon engine, e.g. GLBalances). The data model was rewritten in
+-- place to the nine-column Contract v1 shape (PR #360), same catalog paths.
+--
+-- GLBudgets is structurally unlike a transaction object: budgets are CELLS.
+-- GL_BUDGET_BALANCES carries no surrogate id / run id / request id / prefix, so:
+--   * RECON_KEY = the composite cell key ledger|budget|period|currency|seg1..seg30
+--     (NVL each segment to '#'), stamped by the transform to equal the report's
+--     RECORD_KEY byte-for-byte. It is NOT run-prefixed; the report scopes cells to
+--     the run via the load request id, not via the key.
+--   * FUSION_ID_COLUMN = FUSION_BUDGET_VERSION_ID (the TFM's Fusion-id column). The
+--     honest, non-null Fusion base-table id the report returns is the cell's
+--     GL_CODE_COMBINATIONS.CODE_COMBINATION_ID, because GL_BUDGET_VERSIONS is
+--     VPD-blocked on the demo instance (live SELECT -> ORA-00942).
+-- This MERGE converges the four Contract v1 columns on the GLBudgets row seeded
+-- earlier in this file.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000023                                            bip_report_id,
+           'GLBudgets'                                          cemli_code,
+           'GL Budget Balance'                                  object_type,
+           '/Custom/DMT2/GLBudgets/GL_BUDGET_DM.xdm'            dm_catalog_path,
+           '/Custom/DMT2/GLBudgets/GL_BUDGET_RPT.xdo'           report_catalog_path,
+           'GL_BUDGET_INTERFACE'                                interface_table,
+           'GL budget cell reconciliation (Contract v1, nine-column keyset report)' notes,
+           1                                                    contract_version,
+           'DMT_GL_BUDGET_INT_TFM_TBL'                          tfm_table,
+           'FUSION_BUDGET_VERSION_ID'                           fusion_id_column,
+           'composite budget cell key ledger|budget|period|currency|seg1..seg30 (NVL each to ''#''), no run prefix; report RECORD_KEY matched to TFM.RECON_KEY' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;

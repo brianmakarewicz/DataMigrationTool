@@ -56,6 +56,43 @@
 
         l_ok := SQL%ROWCOUNT;
 
+        -- ============================================================
+        -- Contract v1 RECON_KEY stamp (single-tier reader coupling).
+        -- The shared reconciler matches each report row's RECORD_KEY to the TFM
+        -- row's RECON_KEY. The GLBudgets recon data model
+        -- (bip/GLBudgets/GL_BUDGET_DM.xdm) emits, for BOTH the BASE and INTERFACE
+        -- tiers, the same composite CELL key:
+        --   RECORD_KEY = ledger_id || '|' || budget_name || '|' || period_name
+        --                || '|' || currency_code || '|'
+        --                || NVL(segment1,'#') || '|' || ... || NVL(segment30,'#')
+        -- Budgets are cells, not transactions: GL_BUDGET_BALANCES carries no
+        -- surrogate id / run id / request id / prefix, so the cell key IS the
+        -- record identity and there is NO run prefix in it (the report scopes to
+        -- this run through the load request id, not through the key). We therefore
+        -- stamp RECON_KEY to that exact composite here, byte-for-byte equal to the
+        -- DM's RECORD_KEY expression (same '|' separators, same NVL(...,'#') on all
+        -- 30 segments, ledger_id concatenated as text). RECON_KEY is VARCHAR2(1000);
+        -- the key is at most ~150 chars, so it stores in full (no hashing needed).
+        -- Only newly-stamped rows (RECON_KEY IS NULL) for this run are touched, so a
+        -- rerun never disturbs rows already carrying a key.
+        -- ============================================================
+        UPDATE DMT_GL_BUDGET_INT_TFM_TBL
+        SET    RECON_KEY =
+                   LEDGER_ID || '|' || BUDGET_NAME || '|' || PERIOD_NAME
+                   || '|' || CURRENCY_CODE || '|' ||
+                   NVL(SEGMENT1 ,'#')||'|'||NVL(SEGMENT2 ,'#')||'|'||NVL(SEGMENT3 ,'#')||'|'||
+                   NVL(SEGMENT4 ,'#')||'|'||NVL(SEGMENT5 ,'#')||'|'||NVL(SEGMENT6 ,'#')||'|'||
+                   NVL(SEGMENT7 ,'#')||'|'||NVL(SEGMENT8 ,'#')||'|'||NVL(SEGMENT9 ,'#')||'|'||
+                   NVL(SEGMENT10,'#')||'|'||NVL(SEGMENT11,'#')||'|'||NVL(SEGMENT12,'#')||'|'||
+                   NVL(SEGMENT13,'#')||'|'||NVL(SEGMENT14,'#')||'|'||NVL(SEGMENT15,'#')||'|'||
+                   NVL(SEGMENT16,'#')||'|'||NVL(SEGMENT17,'#')||'|'||NVL(SEGMENT18,'#')||'|'||
+                   NVL(SEGMENT19,'#')||'|'||NVL(SEGMENT20,'#')||'|'||NVL(SEGMENT21,'#')||'|'||
+                   NVL(SEGMENT22,'#')||'|'||NVL(SEGMENT23,'#')||'|'||NVL(SEGMENT24,'#')||'|'||
+                   NVL(SEGMENT25,'#')||'|'||NVL(SEGMENT26,'#')||'|'||NVL(SEGMENT27,'#')||'|'||
+                   NVL(SEGMENT28,'#')||'|'||NVL(SEGMENT29,'#')||'|'||NVL(SEGMENT30,'#')
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         UPDATE DMT_GL_BUDGET_INT_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
