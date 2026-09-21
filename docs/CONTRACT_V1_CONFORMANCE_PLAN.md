@@ -1,9 +1,41 @@
 # Contract v1 Reconciliation — Conformance Plan and Final State
 
-**Status as of 2026-09-21.** This document tracks the effort to put every FBDI (and HDL)
-object onto one uniform reconciliation contract, the post-run reporting layer that reads it,
-and the APEX console that surfaces it. It is the companion to the Object Status Matrix in
-`docs/DMT_REBUILD_PLAN.html` section 0 and the session log in `docs/status.md`.
+**Status as of 2026-09-21 — BATCH CORE COMPLETE, two items still OPEN.** The batch core is done:
+every FBDI transactional reader is on the uniform nine-column contract and reconciles good rows to
+LOADED and bad rows to FAILED with real Fusion errors. But this batch is **not** fully closed —
+two items remain open and are called out below: (1) **Customers**, where the reconciler now runs but
+28 records came back UNACCOUNTED after a successful import; and (2) **Projects Team Members**, where
+a fix is in progress to reconcile from the real Fusion base table. Do not read this document as
+"both regressions closed."
+
+This document tracks the effort to put every FBDI (and HDL) object onto one uniform reconciliation
+contract, the post-run reporting layer that reads it, and the APEX console that surfaces it. It is
+the companion to the Object Status Matrix in `docs/DMT_REBUILD_PLAN.html` section 0 and the session
+log in `docs/status.md`.
+
+## Honest scorecard (2026-09-21)
+
+**Batch core — COMPLETE.** All FBDI transactional readers reconcile correctly on the confirmatory
+run 327 (prefix 10267): GL, AP, PO, BlanketPOs, Contracts, Requisitions, all five Suppliers objects,
+Assets, Expenditures, and BillingEvents each resolve good rows to LOADED and bad rows to FAILED with
+0 unaccounted. `dmt_run_assert` is clean, and the deploy-tool base64 overflow (PR #379) is fixed so
+the Customers reconcile report now deploys.
+
+**Two items still OPEN — do not call these closed:**
+
+1. **Customers — 28 records UNACCOUNTED after a successful import (STILL OPEN, backlog #70).** The
+   #379 deploy crash is fixed and the reconciler now runs, but no records reach LOADED or FAILED —
+   28 came back UNACCOUNTED. That is a real accounting gap. Root-cause needed: are the loaded rows
+   sitting in the base table under a key the Customers recon report does not match, or were they
+   rejected without their error being captured? Drive to zero unaccounted by finding the real
+   outcome, never inventing one.
+2. **Projects Team Members — reconcile from the real base table (IN PROGRESS, backlog #68).** This
+   is **not** an accepted UNACCOUNTED state and **not** a Rule #1 exception. A queryable Fusion base
+   table for project team members does exist — the earlier "no base table" claim was wrong, exactly
+   like Transaction Controls, which turned out to reconcile from `PJC_TRANSACTION_CONTROLS`. A fix is
+   in progress on branch `fix/projects-teammembers-basetable` to find that table and reconcile Team
+   Members to LOADED. Until it lands, Team Members records are honestly UNACCOUNTED, but that is a
+   defect to fix, not an end state.
 
 ## What "Contract v1" means
 
@@ -47,15 +79,15 @@ and a deep link via `DMT_UTIL_PKG.GET_DEEP_LINK`. It is golden-equivalent to the
 `DMT_RUN_STATUS_V`. Files: `db/packages/dmt_run_summary_pkg.{pks,pkb}.sql`,
 `db/views/dmt_run_records_v.sql`.
 
-### 3. APEX recon console — merged, one fix in flight
+### 3. APEX recon console — merged
 
-- **App 501 (alias LIVEDMT2R), copied from 500**, surfaces the LOADED / FAILED / UNACCOUNTED
-  tiles plus the nine-column reference columns on pages 52 and 57 (PR #378, merged).
-- **Record-drill fix (PR #381, OPEN):** the page-52 to page-57 record drill returned a blank
+- **App 501, copied from 500**, surfaces the LOADED / FAILED / UNACCOUNTED
+  tiles plus the nine-column reference columns on pages 52 and 57 (PR #378, merged). The old
+  app 500 was archived to a separate alias so 501 is the live console.
+- **Record-drill fix (PR #381, merged):** the page-52 to page-57 record drill returned a blank
   because the deployed record-detail view lacked columns the page selected (FUSION_ID /
   SOURCE_REF / DMT_REFERENCE) — PR #378's view change never actually deployed, so the region
-  silently rendered nothing. This PR restores the drill. It is the last recon-UI change and is
-  awaiting the automated reviewer.
+  silently rendered nothing. This PR restores the drill. It was the last recon-UI change.
 
 ### 4. Regression run 325 (2026-09-21) — net win, two regressions found and fixed
 
@@ -65,17 +97,44 @@ loading correctly. The run surfaced two regressions, both fixed:
 
 - **Customers — deploy-tool base64 overflow (PR #379).** `DMT_BIP_DEPLOY_PKG` used
   `RAW(32767)` for the base64 envelope, which overflowed on data models ≥ ~24 KB and blocked
-  the Customers reconcile. Fixed by chunking at 22,500 bytes.
+  the Customers reconcile. Fixed by chunking at 22,500 bytes. The Customers reconcile report now
+  deploys and reconciles.
 - **Projects — Txn Controls now reconciles from the real base table (PR #380).** Txn Controls
   is now marked LOADED from the real Fusion base table `PJC_TRANSACTION_CONTROLS`. Team Members
-  is honestly left UNACCOUNTED (no queryable base-table outcome for that tier yet) rather than
-  fabricating a verdict.
+  is still UNACCOUNTED, but this is **not** an accepted end state: a queryable base table for
+  project team members does exist and a fix is in progress (branch
+  `fix/projects-teammembers-basetable`) to reconcile Team Members to LOADED from it. See the
+  honest scorecard above and backlog #68.
 
-## Remaining gate
+### 5. Confirmatory regression run 327 (2026-09-21) — batch core proven, two items open
 
-**Confirmatory clean regression run** once PR #377 (reporting), PR #380 (Projects), and PR #381
-(APEX drill) are all merged, to prove the full set holds end-to-end with no new UNACCOUNTED.
-This is the only open gate for the Contract v1 conformance effort.
+The confirmatory clean regression (run 327, prefix 10267) confirmed the batch **core** holds
+end-to-end: the FBDI transactional readers reconcile with zero unaccounted, `dmt_run_assert` is
+clean, and no new regression appeared. It did **not** close the two items above.
+
+- **Zero GENERATED** left over — every record reached a terminal step.
+- **`dmt_run_assert` clean** — the automated post-run accounting check passed for the core set.
+- **Customers** reconcile report now deploys (PR #379) and the reconciler runs — but 28 records
+  came back UNACCOUNTED after a successful import (STILL OPEN, backlog #70).
+- **Projects** Txn Controls LOADED from `PJC_TRANSACTION_CONTROLS`; Team Members reconcile from the
+  real base table is IN PROGRESS (branch `fix/projects-teammembers-basetable`, backlog #68).
+
+**Run 327 totals: 173 records = 56 LOADED / 80 FAILED (real Fusion errors) / 37 UNACCOUNTED,
+0 GENERATED.** The 37 UNACCOUNTED break down as the known environment-blocked residuals
+(ARInvoices, GLBudgets, ProjectBudgets, Grants, TalentProfiles, Salaries-HDL) **plus** the two open
+items: the 28 Customers records and the Projects Team Members tier. The environment-blocked
+residuals are out of scope for this batch; the Customers and Team Members items are in scope and
+open.
+
+## Batch outcome — CORE COMPLETE, two follow-ups open
+
+The Contract v1 conformance **core is complete**: every FBDI transactional reader is on the uniform
+nine-column contract, the post-run reporting layer reads it, the APEX console (app 501) surfaces it,
+and the confirmatory regression (run 327, prefix 10267) proved the core set holds end-to-end. Two
+follow-ups remain open and are the next work: (1) root-cause the 28 UNACCOUNTED Customers records
+(backlog #70), and (2) land the Projects Team Members base-table reconcile (backlog #68, branch
+`fix/projects-teammembers-basetable`). This batch is **not** to be reported as "both regressions
+closed."
 
 ## Related
 
