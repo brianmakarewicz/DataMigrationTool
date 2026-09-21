@@ -1,5 +1,5 @@
--- DMT_WORK_SCHED_RECON_DM query (Contract v1: nine columns, six parameters,
--- keyset pagination). Mirror of the CDATA SQL in DMT_WORK_SCHED_RECON_DM.xdm,
+-- DMT_WORKSCHEDULES_RECON_DM query (Contract v1: nine columns, six parameters,
+-- keyset pagination). Mirror of the CDATA SQL in DMT_WORKSCHEDULES_RECON_DM.xdm,
 -- kept here for review and for running the query standalone against live Fusion
 -- (bind the six parameters).
 --

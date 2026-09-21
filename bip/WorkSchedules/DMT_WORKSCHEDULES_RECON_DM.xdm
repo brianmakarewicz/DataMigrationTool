@@ -2,7 +2,7 @@
 <dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
            defaultDataSourceRef="ApplicationDB_FSCM">
   <!--
-    DMT_WORK_SCHED_RECON_DM — BIP reconciliation report contract v1 for
+    DMT_WORKSCHEDULES_RECON_DM — BIP reconciliation report contract v1 for
     WorkSchedules (loaded via HCM Data Loader). Design doc: "BIP reconciliation
     report contract - v1" (nine columns, six parameters, keyset pagination) plus
     its HDL note: "each HDL object gets a Contract v1 report whose rows are the
