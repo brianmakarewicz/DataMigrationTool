@@ -152,23 +152,32 @@ FROM (
     UNION ALL
 
     -- BASE / PartySiteUses -- HZ_PARTY_SITE_USES, FUSION_ID = PARTY_SITE_USE_ID.
-    -- SITE_USE_TYPE is folded into RECORD_KEY (join to HZ_PARTY_SITE_USES on
-    -- PARTY_SITE_USE_ID = OWNER_TABLE_ID) to mirror the INTERFACE side, because
-    -- two uses (BILL_TO/SHIP_TO) can share one ORIG_SYSTEM_REFERENCE and would
-    -- otherwise collide on an identical key -- breaking RECORD_KEY uniqueness.
+    -- A loaded site use has NO orig-system reference of its own: TCA registers
+    -- HZ_ORIG_SYS_REFERENCES rows only for parties and party-sites, never for
+    -- site uses (confirmed live -- OWNER_TABLE_NAME='HZ_PARTY_SITE_USES'
+    -- returns zero run-prefixed rows, and the source has no SITEUSE_ORIG_SYSTEM_REF
+    -- column so it is NULL end to end). So we iterate the base HZ_PARTY_SITE_USES
+    -- rows and reach the identity carrier through the PARENT party-site's
+    -- reference (OWNER_TABLE_NAME='HZ_PARTY_SITES', OWNER_TABLE_ID=PARTY_SITE_ID),
+    -- folding SITE_USE_TYPE in to disambiguate the (at most one per type) uses
+    -- that share a site. This is the proven pattern from DMT_CUST_RECON_DM.xdm.
+    -- RECORD_KEY = parent-site reference '/' SITE_USE_TYPE, identical to the
+    -- INTERFACE side, and unique per site use (verified live: no duplicate
+    -- parent-ref+type across loaded data).
     SELECT
         'Customers.PartySiteUses',
-        'Customers.PartySiteUses~' || r.orig_system_reference || '/' || psu.site_use_type,
+        'Customers.PartySiteUses~' || pr.orig_system_reference || '/' || su.site_use_type,
         'BASE', 'SUCCESS',
-        r.owner_table_id,
+        su.party_site_use_id,
         CAST(NULL AS VARCHAR2(4000)),
         TO_NUMBER(:P_IMPORT_ESS_ID),
-        r.orig_system_reference,
+        pr.orig_system_reference,
         CAST(NULL AS VARCHAR2(4000))
-    FROM   hz_orig_sys_references r
-    JOIN   hz_party_site_uses psu ON psu.party_site_use_id = r.owner_table_id
-    WHERE  r.owner_table_name = 'HZ_PARTY_SITE_USES'
-    AND    r.orig_system_reference LIKE :P_PREFIX || '%'
+    FROM   hz_party_site_uses su
+    JOIN   hz_orig_sys_references pr
+      ON   pr.owner_table_name = 'HZ_PARTY_SITES'
+     AND   pr.owner_table_id   = su.party_site_id
+    WHERE  pr.orig_system_reference LIKE :P_PREFIX || '%'
 
     UNION ALL
 
@@ -308,11 +317,14 @@ FROM (
 
     UNION ALL
 
-    -- INTERFACE / PartySiteUses -- HZ_IMP_PARTYSITEUSES_T, ref SITEUSE_ORIG_SYSTEM_REF
-    -- (+ SITE_USE_TYPE folded into RECORD_KEY; two uses can share a site ref).
+    -- INTERFACE / PartySiteUses -- HZ_IMP_PARTYSITEUSES_T. The site use has no
+    -- reference of its own (SITEUSE_ORIG_SYSTEM_REF is NULL end to end), so the
+    -- identity carrier is the PARENT party-site reference SITE_ORIG_SYSTEM_REFERENCE,
+    -- exactly as on the BASE tier, so both keys are computed from the same value.
+    -- RECORD_KEY = parent-site reference '/' SITE_USE_TYPE.
     SELECT
         'Customers.PartySiteUses',
-        'Customers.PartySiteUses~' || ipu.siteuse_orig_system_ref || '/' || ipu.site_use_type,
+        'Customers.PartySiteUses~' || ipu.site_orig_system_reference || '/' || ipu.site_use_type,
         'INTERFACE', 'ERROR',
         CAST(NULL AS NUMBER),
         'Not created in base -- interface status ''' || ipu.import_status_code || ''''
@@ -325,20 +337,21 @@ FROM (
                                                FROM hz_imp_errors e WHERE e.batch_id = ipu.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITEUSES_T'),
                     ''),
         ipu.load_request_id,
-        ipu.siteuse_orig_system_ref,
+        ipu.site_orig_system_reference,
         CAST(NULL AS VARCHAR2(4000))
     FROM   hz_imp_partysiteuses_t ipu
     WHERE  ipu.load_request_id = :P_LOAD_REQUEST_ID
     AND    NVL(ipu.import_status_code, 'X') <> 'S'
-    -- Anti-join must match the site-use-type-folded BASE key, so a use created
-    -- in base (BILL_TO) is not reported ERROR here while its sibling (SHIP_TO)
-    -- sharing the same ORIG_SYSTEM_REFERENCE was rejected. Match both the
-    -- reference AND SITE_USE_TYPE (via HZ_PARTY_SITE_USES on OWNER_TABLE_ID).
-    AND    NOT EXISTS (SELECT 1 FROM hz_orig_sys_references r
-                       JOIN   hz_party_site_uses psu ON psu.party_site_use_id = r.owner_table_id
-                       WHERE  r.owner_table_name = 'HZ_PARTY_SITE_USES'
-                       AND    r.orig_system_reference = ipu.siteuse_orig_system_ref
-                       AND    psu.site_use_type = ipu.site_use_type)
+    -- Double-count anti-join: mirror the BASE tier exactly. A site use that WAS
+    -- created in base (reached via its parent party-site reference + SITE_USE_TYPE)
+    -- must not also be reported ERROR here. So exclude interface rows whose parent
+    -- site reference + site-use type already produced a base HZ_PARTY_SITE_USES row.
+    AND    NOT EXISTS (SELECT 1 FROM hz_party_site_uses su
+                       JOIN   hz_orig_sys_references pr
+                         ON   pr.owner_table_name = 'HZ_PARTY_SITES'
+                        AND   pr.owner_table_id   = su.party_site_id
+                       WHERE  pr.orig_system_reference = ipu.site_orig_system_reference
+                       AND    su.site_use_type        = ipu.site_use_type)
 
     UNION ALL
 
