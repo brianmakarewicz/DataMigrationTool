@@ -67,9 +67,9 @@
 --     Real per-award rejection messages come from the Award Batch
 --     Import Report path -- a SEPARATE child ESS request
 --     (ImportAwardReportJob / AwardBatchImportReportDm) parsed by
---     dmt_grants_results_pkg (apply_award_import_report /
---     PARSE_AND_UPDATE). Whoever wires this DM into the generic
---     Contract v1 recon engine MUST keep that fallback. Unlike
+--     dmt_grants_results_pkg (apply_award_import_report, invoked from
+--     APPLY_CONTRACT_V1_GRANTS). The Contract v1 reconciler KEEPS that
+--     fallback -- it is not optional. Unlike
 --     GLBalances / Requisitions -- whose interface tiers DO persist and
 --     populate -- this object's interface table is purged, so trusting
 --     interface-tier absence as LOADED would re-introduce the
@@ -110,9 +110,17 @@ FROM (
     UNION ALL
 
     -- Tier: INTERFACE -- award-header rejections left behind.
+    -- RECORD_KEY aligned with the BASE tier: both tiers key each award on its
+    -- SPONSOR_AWARD_NUMBER, falling back to the prefixed AWARD_NUMBER here (the
+    -- interface row has no Fusion award id for the BASE tier's 'AWARD_ID:'||ID
+    -- fallback). This keeps the reconciler's RECON_KEY join consistent across
+    -- tiers. (This tier is structurally zero-rows on this pod -- Fusion purges
+    -- GMS_AWARD_HEADERS_INT right after import -- so the real per-award rejection
+    -- messages come from the Award Batch Import Report path, not from here.)
     SELECT
         'Grants'                             AS object_type,
-        h.award_number                       AS record_key,
+        NVL(h.sponsor_award_number,
+            h.award_number)                  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
