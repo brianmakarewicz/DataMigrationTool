@@ -84,11 +84,10 @@ page 57 (
                   HTP.P('<h3 style="font-size:14px;font-weight:600;margin:8px 0;">Records</h3>');
                   HTP.P('<table style="width:100%;border-collapse:collapse;font-size:13px;">');
                   HTP.P('<thead><tr style="border-bottom:2px solid #555;text-align:left;">');
-                  HTP.P('<th style="padding:8px;">TFM ID</th><th style="padding:8px;">Display Key</th><th style="padding:8px;">Status</th><th style="padding:8px;">Fusion ID</th><th style="padding:8px;">Source Ref</th><th style="padding:8px;">DMT Reference</th><th style="padding:8px;">Error Category</th><th style="padding:8px;">Error Text</th><th style="padding:8px;">Updated</th><th style="padding:8px;text-align:center;">Verify</th></tr></thead><tbody>');
-
+                  HTP.P('<th style="padding:8px;">TFM ID</th><th style="padding:8px;">STG ID</th><th style="padding:8px;">Display Key</th><th style="padding:8px;">Status</th><th style="padding:8px;">Reconcile</th><th style="padding:8px;">Error Category</th><th style="padding:8px;">Error Text</th><th style="padding:8px;">Updated</th><th style="padding:8px;text-align:center;">Verify</th></tr></thead><tbody>');
+                
                   FOR rec IN (
-                    SELECT TFM_SEQUENCE_ID, DISPLAY_KEY, LOOKUP_KEY, TFM_STATUS, RECONCILIATION_STATUS, ERROR_CATEGORY, ERROR_TEXT,
-                           FUSION_ID, SOURCE_REF, DMT_REFERENCE,
+                    SELECT TFM_SEQUENCE_ID, STG_SEQUENCE_ID, DISPLAY_KEY, LOOKUP_KEY, TFM_STATUS, RECONCILIATION_STATUS, ERROR_CATEGORY, ERROR_TEXT,
                            TO_CHAR(RESULTS_UPDATED_DATE,'YYYY-MM-DD HH24:MI') UPD
                     FROM DMT_RECORD_DETAIL_V
                     WHERE INTEGRATION_ID = l_int AND SUB_OBJECT = l_sub
@@ -98,6 +97,7 @@ page 57 (
                     l_cnt := l_cnt + 1;
                     HTP.P('<tr style="border-bottom:1px solid #333;">');
                     HTP.P('<td style="padding:8px;">' || rec.TFM_SEQUENCE_ID || '</td>');
+                    HTP.P('<td style="padding:8px;">' || NVL(TO_CHAR(rec.STG_SEQUENCE_ID),'-') || '</td>');
                     HTP.P('<td style="padding:8px;">' || APEX_ESCAPE.HTML(rec.DISPLAY_KEY) || '</td>');
                     -- Status color: LOADED green, FAILED (with error) red, UNACCOUNTED dark red,
                     -- IN_PROGRESS / everything else amber.
@@ -108,9 +108,7 @@ page 57 (
                             WHEN rec.TFM_STATUS = 'FAILED' THEN '#F44336'
                             ELSE '#FFC107'
                           END || ';">' || APEX_ESCAPE.HTML(rec.TFM_STATUS) || '</td>');
-                    HTP.P('<td style="padding:8px;">' || NVL(APEX_ESCAPE.HTML(TO_CHAR(rec.FUSION_ID)),'-') || '</td>');
-                    HTP.P('<td style="padding:8px;">' || NVL(APEX_ESCAPE.HTML(rec.SOURCE_REF),'-') || '</td>');
-                    HTP.P('<td style="padding:8px;">' || NVL(APEX_ESCAPE.HTML(rec.DMT_REFERENCE),'-') || '</td>');
+                    HTP.P('<td style="padding:8px;">' || NVL(APEX_ESCAPE.HTML(rec.RECONCILIATION_STATUS),'-') || '</td>');
                     HTP.P('<td style="padding:8px;">' || NVL(APEX_ESCAPE.HTML(rec.ERROR_CATEGORY),'-') || '</td>');
                     HTP.P('<td style="padding:8px;max-width:400px;word-wrap:break-word;">' || NVL(APEX_ESCAPE.HTML(SUBSTR(rec.ERROR_TEXT,1,500)),'-') || '</td>');
                     HTP.P('<td style="padding:8px;">' || NVL(rec.UPD,'-') || '</td>');
@@ -124,8 +122,12 @@ page 57 (
                   HTP.P('</tbody></table>');
                   IF l_cnt = 0 THEN HTP.P('<div style="padding:16px;color:#888;">No records found.</div>'); END IF;
                 EXCEPTION
-                  WHEN VALUE_ERROR THEN NULL;
-                  WHEN NO_DATA_FOUND THEN NULL;
+                  WHEN NO_DATA_FOUND THEN
+                    HTP.P('<div style="padding:16px;color:#888;">No records found.</div>');
+                  WHEN OTHERS THEN
+                    -- Surface the error rather than rendering a silent blank page.
+                    HTP.P('<div style="padding:16px;color:#F44336;">Unable to load records: '
+                          || APEX_ESCAPE.HTML(SQLERRM) || '</div>');
                 END;
                 ```
         }

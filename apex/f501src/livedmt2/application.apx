@@ -1,4 +1,4 @@
-app LIVEDMT2R (
+app LIVEDMT2 (
     name: Data Migration Console (DMT2 Recon 501)
     logo {
         type: text
