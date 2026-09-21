@@ -121,8 +121,9 @@
     -- touched, so this runs safely and idempotently.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_CUSTOMERS (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_CUSTOMERS';
         l_gen_count NUMBER := 0;
@@ -144,11 +145,17 @@
         INTO   l_gen_count
         FROM   DUAL;
 
+        -- The report's INTERFACE tier filters HZ_IMP_*_T on
+        -- load_request_id = :P_LOAD_REQUEST_ID, and those interface rows carry the
+        -- LOAD ESS request id (InterfaceLoaderController), NOT the import ess id. So
+        -- P_LOAD_REQUEST_ID must be the load ess id or the INTERFACE tier matches
+        -- nothing and held/rejected records (import_status_code W/E) never come back.
+        -- The BASE tier is prefix-scoped (no request filter), so it is unaffected.
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
             p_cemli_code    => C_CEMLI,
             p_run_id        => p_run_id,
-            p_load_ess_id   => TO_NUMBER(p_request_id),
-            p_import_ess_id => NULL,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id,
             p_row_cap       => l_gen_count,
             x_rows          => l_rows,
             x_error_code    => l_err_code);
@@ -457,8 +464,9 @@
         -- LOAD_REQUEST_ID for traceability; run-scoped selection is by the stamped
         -- prefix (see the report DM header). Rows already terminal are untouched.
         APPLY_CONTRACT_V1_CUSTOMERS(
-            p_run_id     => p_run_id,
-            p_request_id => TO_CHAR(NVL(p_import_ess_id, p_load_ess_id)));
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id);
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object
