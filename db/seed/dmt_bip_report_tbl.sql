@@ -1592,6 +1592,54 @@ when matched then update set
 commit;
 
 -- ---------------------------------------------------------------------------
+-- PO family — Contract v1 registration (design section 5), MULTI-TIER.
+-- Three DISTINCT objects that share one shared transformer and four shared
+-- interface/base tables but differ by document type: PurchaseOrders (Standard
+-- PO, 4 tiers), BlanketPOs (BPA, 2 tiers) and Contracts (CPA, 1 tier). Each has
+-- its OWN nine-column Contract v1 recon report, its OWN results package
+-- (RECONCILE_BATCH -> APPLY_CONTRACT_V1_<obj>, static per-tier UPDATE pairs
+-- discriminated by OBJECT_TYPE) and its OWN registry row with CONTRACT_VERSION =
+-- 1 so the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs it. Each report
+-- is run with that object's OWN load + import ESS ids (ImportSPOJob /
+-- ImportBPAJob / ImportCPAJob), and its BASE tier is scoped by document type
+-- (Standard by request_id; BLANKET / CONTRACT by TYPE_LOOKUP_CODE), so a reader
+-- only ever sees its own rows in the shared tables.
+--
+-- APPLY dispatches through RECON_PROC, so APPLY_PROC is intentionally not set.
+-- TFM_TABLE / FUSION_ID_COLUMN carry the primary (header) tier for docs; the
+-- reconcilers name all tier tables statically. RECON_KEY per tier (stamped by
+-- DMT_PO_TRANSFORM_PKG, aligned so BASE and INTERFACE emit the same key, = each
+-- tier's report RECORD_KEY):
+--   headers      DOCUMENT_NUM (= base SEGMENT1 = prefixed document number)
+--   lines        DOCUMENT_NUM || ':LN:' || LINE_NUM
+--   line-locs    DOCUMENT_NUM || ':LN:' || LINE_NUM || ':LOC:' || SHIPMENT_NUM
+--   dists        (above) || ':DIST:' || DISTRIBUTION_NUM
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'PurchaseOrders'                                        cemli_code,
+           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_RPT.xdo'      report_catalog_path,
+           'Purchase order import reconciliation (Contract v1, multi-tier: headers/lines/line-locations/distributions)' notes,
+           1                                                        contract_version,
+           'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
+           'FUSION_PO_HEADER_ID'                                   fusion_id_column,
+           'multi-tier: headers=DOCUMENT_NUM; lines=DOCUMENT_NUM||'':LN:''||LINE_NUM; locs=+'':LOC:''||SHIPMENT_NUM; dists=+'':DIST:''||DISTRIBUTION_NUM' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Assets — Contract v1 registration (design section 5). Points the Assets CEMLI
 -- at the nine-column Contract v1 report (DMT_FA_ASSET_RECON_DM.xdm, fixed #344)
 -- and sets CONTRACT_VERSION = 1 so the shared parser
@@ -1620,6 +1668,55 @@ using (
            'DMT_FA_ASSET_HDR_TFM_TBL'                            tfm_table,
            'FUSION_ASSET_ID'                                     fusion_id_column,
            'header (ASSET) tier: RECON_KEY = ASSET_NUMBER (prefixed); book/assignment inherit by cascade' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- PO family (continued): BlanketPOs (BPA) and Contracts (CPA) registry rows.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'BlanketPOs'                                            cemli_code,
+           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_DM.xdm'   dm_catalog_path,
+           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_RPT.xdo'  report_catalog_path,
+           'Blanket purchase agreement import reconciliation (Contract v1, multi-tier: headers/lines)' notes,
+           1                                                        contract_version,
+           'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
+           'FUSION_PO_HEADER_ID'                                   fusion_id_column,
+           'multi-tier: headers=DOCUMENT_NUM; lines=DOCUMENT_NUM||'':LN:''||LINE_NUM' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Contracts'                                             cemli_code,
+           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_DM.xdm'      dm_catalog_path,
+           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_RPT.xdo'     report_catalog_path,
+           'Contract purchase agreement import reconciliation (Contract v1, headers only)' notes,
+           1                                                        contract_version,
+           'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
+           'FUSION_PO_HEADER_ID'                                   fusion_id_column,
+           'headers only: DOCUMENT_NUM'                            recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)

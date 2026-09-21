@@ -186,13 +186,18 @@ FROM (
 
     -- ========== INTERFACE tier: rejections only (PROCESS_CODE <> ACCEPTED) ==========
 
-    -- INTERFACE / headers. RECORD_KEY = the stamped header key.
+    -- INTERFACE / headers. RECORD_KEY = the base-aligned header key
+    -- (h.document_num = the prefixed DOCUMENT_NUM the loader wrote, which
+    -- equals the base SEGMENT1). BASE and INTERFACE must agree on the one
+    -- key the header TFM row carries (RECON_KEY = DOCUMENT_NUM, stamped by
+    -- dmt_po_transform_pkg), so this INTERFACE tier emits DOCUMENT_NUM too.
+    -- The stamped interface_header_key is still carried as SOURCE_REF.
     -- Error text is the header-level rejection(s): PO_INTERFACE_ERRORS
     -- rows whose INTERFACE_HEADER_ID matches AND that carry no deeper
     -- interface id (so the error belongs to the header itself).
     SELECT
         'PurchaseOrders'                     AS object_type,
-        h.interface_header_key               AS record_key,
+        h.document_num                       AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -222,12 +227,17 @@ FROM (
 
     UNION ALL
 
-    -- INTERFACE / lines. RECORD_KEY = the stamped line key. Error =
+    -- INTERFACE / lines. RECORD_KEY = the base-aligned line key
+    -- (parent header DOCUMENT_NUM + ':LN:' + LINE_NUM), matching the BASE
+    -- line tier and the line TFM row's stamped RECON_KEY. The parent
+    -- DOCUMENT_NUM is read from the sibling header interface row on the
+    -- stamped interface_header_key the line carries. The stamped
+    -- interface_line_key is still carried as SOURCE_REF. Error =
     -- PO_INTERFACE_ERRORS at the line level (INTERFACE_LINE_ID set, no
     -- deeper location/distribution id).
     SELECT
         'PurchaseOrders.Line'                AS object_type,
-        l.interface_line_key                 AS record_key,
+        lh.document_num || ':LN:' || l.line_num  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -239,6 +249,8 @@ FROM (
         l.interface_line_key                 AS source_ref,
         CAST(NULL AS VARCHAR2(240))          AS dmt_reference
     FROM   po_lines_interface l
+    JOIN   po_headers_interface lh
+           ON lh.interface_header_key = l.interface_header_key
     LEFT   JOIN (
         SELECT e.interface_line_id,
                NULLIF(LISTAGG(
@@ -256,12 +268,18 @@ FROM (
 
     UNION ALL
 
-    -- INTERFACE / line-locations. RECORD_KEY = the stamped location key.
-    -- Error = PO_INTERFACE_ERRORS at the location level
-    -- (INTERFACE_LINE_LOCATION_ID set, no deeper distribution id).
+    -- INTERFACE / line-locations. RECORD_KEY = the base-aligned location key
+    -- (parent header DOCUMENT_NUM + ':LN:' + LINE_NUM + ':LOC:' + SHIPMENT_NUM),
+    -- matching the BASE location tier and the location TFM row's stamped
+    -- RECON_KEY. The parent DOCUMENT_NUM and LINE_NUM are read up the interface
+    -- chain (location -> line -> header) on the stamped keys. The stamped
+    -- interface_line_location_key is still carried as SOURCE_REF. Error =
+    -- PO_INTERFACE_ERRORS at the location level (INTERFACE_LINE_LOCATION_ID
+    -- set, no deeper distribution id).
     SELECT
         'PurchaseOrders.LineLocation'        AS object_type,
-        ll.interface_line_location_key       AS record_key,
+        llh.document_num || ':LN:' || lll.line_num
+            || ':LOC:' || ll.shipment_num    AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -273,6 +291,8 @@ FROM (
         ll.interface_line_location_key       AS source_ref,
         CAST(NULL AS VARCHAR2(240))          AS dmt_reference
     FROM   po_line_locations_interface ll
+    JOIN   po_lines_interface   lll ON lll.interface_line_key   = ll.interface_line_key
+    JOIN   po_headers_interface llh ON llh.interface_header_key = lll.interface_header_key
     LEFT   JOIN (
         SELECT e.interface_line_location_id,
                NULLIF(LISTAGG(
@@ -289,12 +309,19 @@ FROM (
 
     UNION ALL
 
-    -- INTERFACE / distributions. RECORD_KEY = the stamped dist key.
-    -- Error = PO_INTERFACE_ERRORS at the distribution level
+    -- INTERFACE / distributions. RECORD_KEY = the base-aligned dist key
+    -- (parent header DOCUMENT_NUM + ':LN:' + LINE_NUM + ':LOC:' + SHIPMENT_NUM
+    -- + ':DIST:' + DISTRIBUTION_NUM), matching the BASE distribution tier and
+    -- the distribution TFM row's stamped RECON_KEY. The parent numbers are read
+    -- up the interface chain (dist -> location -> line -> header) on the stamped
+    -- keys. The stamped interface_distribution_key is still carried as
+    -- SOURCE_REF. Error = PO_INTERFACE_ERRORS at the distribution level
     -- (INTERFACE_DISTRIBUTION_ID set).
     SELECT
         'PurchaseOrders.Distribution'        AS object_type,
-        d.interface_distribution_key         AS record_key,
+        dh.document_num || ':LN:' || dl.line_num
+            || ':LOC:' || dll.shipment_num
+            || ':DIST:' || d.distribution_num  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -306,6 +333,9 @@ FROM (
         d.interface_distribution_key         AS source_ref,
         CAST(NULL AS VARCHAR2(240))          AS dmt_reference
     FROM   po_distributions_interface d
+    JOIN   po_line_locations_interface dll ON dll.interface_line_location_key = d.interface_line_location_key
+    JOIN   po_lines_interface          dl  ON dl.interface_line_key           = dll.interface_line_key
+    JOIN   po_headers_interface        dh  ON dh.interface_header_key         = dl.interface_header_key
     LEFT   JOIN (
         SELECT e.interface_distribution_id,
                NULLIF(LISTAGG(

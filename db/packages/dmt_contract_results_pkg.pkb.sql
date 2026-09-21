@@ -1,340 +1,148 @@
 -- PACKAGE BODY DMT_CONTRACT_RESULTS_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_CONTRACT_RESULTS_PKG" 
+  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_CONTRACT_RESULTS_PKG"
 AS
 -- ============================================================
 -- DMT_CONTRACT_RESULTS_PKG body
--- Contracts BIP reconciliation.
--- Pattern: identical to DMT_PO_RESULTS_PKG but scoped to
--- Contract Purchase Agreement headers only (no lines/locs/dists).
+-- Contracts post-load reconciliation — Contract v1 (headers only).
+--
+-- Reuses the ONE shared Contract v1 fetch DMT_RECON_CONTRACT_PKG.FETCH_ROWS
+-- (Option A, owner decision on PR #248), exactly as the Requisitions multi-tier
+-- template (PR #364) does. A single fetch runs the Contracts Contract v1 report
+-- (nine columns, keyset paginated) over BIP and returns the header tier's rows;
+-- the apply is STATIC SQL, one pair of UPDATEs, joined on RECON_KEY = the report
+-- RECORD_KEY.
+--
+--   Tier      OBJECT_TYPE literal    TFM table                    FUSION_ID column
+--   headers   'Contracts'            DMT_PO_HEADERS_INT_TFM_TBL   FUSION_PO_HEADER_ID
+--
+-- (The Contract Purchase Agreement FBDI carries only the header record type, so
+-- there is a single tier.)
+--
+-- Apply rule (shared Contract v1):
+--   * BASE / SUCCESS / FUSION_ID NOT NULL -> LOADED, stamp FUSION_ID.
+--   * FUSION_STATUS = ERROR with a real ERROR_MESSAGE (!= '#IMPORT_REPORT#')
+--     -> FAILED, message appended as '[FUSION_ERROR] ' || message.
+--   * Everything else is left GENERATED for the shared unaccounted sweep.
+-- The UPDATE is guarded with TFM_STATUS NOT IN ('LOADED','FAILED').
+--
+-- Doc-type scoping: PurchaseOrders, BlanketPOs and Contracts share the header
+-- TFM table. This reader touches only its OWN rows because it runs its OWN
+-- Contract v1 report (with the Contracts ImportCPAJob load + import request ids),
+-- whose BASE tier is filtered to TYPE_LOOKUP_CODE = 'CONTRACT' and whose
+-- RECORD_KEYs are unique per physical document (RECON_KEY = SEGMENT1 = prefixed
+-- DOCUMENT_NUM).
+--
+-- RECON_KEY on the header TFM row is stamped by DMT_PO_TRANSFORM_PKG to equal the
+-- report RECORD_KEY (DOCUMENT_NUM). No STG echo, no parent/child cascade.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_CONTRACT_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'Contracts';
 
     -- --------------------------------------------------------
-    -- Private: POST a SOAP envelope; return full response CLOB.
+    -- APPLY_CONTRACT_V1_CONTRACTS (private)
+    -- The Contract v1 apply for the single Contracts header tier, Option A shape.
     -- --------------------------------------------------------
-    FUNCTION bip_soap_post (
-        p_url      IN VARCHAR2,
-        p_action   IN VARCHAR2,
-        p_body     IN CLOB
-    ) RETURN CLOB IS
-        l_req      UTL_HTTP.REQ;
-        l_resp     UTL_HTTP.RESP;
-        l_response CLOB;
-        l_chunk    VARCHAR2(32767);
-        l_offset   INTEGER := 1;
-        l_amount   INTEGER;
-        l_body_len INTEGER;
-    BEGIN
-        UTL_HTTP.SET_RESPONSE_ERROR_CHECK(FALSE);
-        UTL_HTTP.SET_TRANSFER_TIMEOUT(600);
-
-        l_req := UTL_HTTP.BEGIN_REQUEST(p_url, 'POST', 'HTTP/1.1');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Type',   'text/xml; charset=utf-8');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Length', DBMS_LOB.GETLENGTH(p_body));
-        UTL_HTTP.SET_HEADER(l_req, 'SOAPAction',     '"' || p_action || '"');
-        UTL_HTTP.SET_HEADER(l_req, 'Accept',         'text/xml');
-
-        l_body_len := DBMS_LOB.GETLENGTH(p_body);
-        WHILE l_offset <= l_body_len LOOP
-            l_amount := LEAST(8000, l_body_len - l_offset + 1);
-            l_chunk  := DBMS_LOB.SUBSTR(p_body, l_amount, l_offset);
-            UTL_HTTP.WRITE_TEXT(l_req, l_chunk);
-            l_offset := l_offset + l_amount;
-        END LOOP;
-
-        l_resp := UTL_HTTP.GET_RESPONSE(l_req);
-
-        DBMS_LOB.CREATETEMPORARY(l_response, TRUE);
-        BEGIN
-            LOOP
-                UTL_HTTP.READ_TEXT(l_resp, l_chunk, 32767);
-                DBMS_LOB.APPEND(l_response, l_chunk);
-            END LOOP;
-        EXCEPTION WHEN UTL_HTTP.END_OF_BODY THEN NULL;
-        END;
-        UTL_HTTP.END_RESPONSE(l_resp);
-
-        IF l_resp.status_code NOT BETWEEN 200 AND 299 THEN
-            RAISE_APPLICATION_ERROR(-20030,
-                'BIP SOAP call failed. Status: ' || l_resp.status_code ||
-                ' | Action: ' || p_action ||
-                ' | Response (first 500): ' || DBMS_LOB.SUBSTR(l_response, 500, 1));
-        END IF;
-
-        RETURN l_response;
-    EXCEPTION
-        WHEN OTHERS THEN
-            BEGIN UTL_HTTP.END_RESPONSE(l_resp); EXCEPTION WHEN OTHERS THEN NULL; END;
-            RAISE;
-    END bip_soap_post;
-
-    -- --------------------------------------------------------
-    -- (b64_to_clob removed — base64 decode is now centralised in
-    --  DMT_UTIL_PKG.BASE64_DECODE_CLOB / BIP_REPORT_XML, which decode CLOBs of
-    --  any size. The old local copy truncated at VARCHAR2(32767).)
-
-    -- --------------------------------------------------------
-    -- FETCH_BIP_RESULTS
-    -- --------------------------------------------------------
-    FUNCTION FETCH_BIP_RESULTS (
-        p_run_id  IN NUMBER,
-        p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
-    ) RETURN CLOB IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'FETCH_BIP_RESULTS';
-        l_base_url   VARCHAR2(500);
-        l_username   VARCHAR2(100);
-        l_password   VARCHAR2(100);
-        l_rpt_path   VARCHAR2(500);
-        l_url        VARCHAR2(500);
-        l_action     CONSTANT VARCHAR2(200) :=
-            'http://xmlns.oracle.com/oxp/service/v2/ReportService/runReportRequest';
-        l_env        CLOB;
-        l_resp       CLOB;
-    BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start. CEMLI: ' || C_CEMLI ||
-                                ' | load_ess_id: ' || p_load_ess_id,
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_username := DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
-        l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
-
-        IF l_base_url IS NULL OR l_username IS NULL OR l_password IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20031,
-                C_PROC || ': Fusion connection config is incomplete.');
-        END IF;
-
-        BEGIN
-            SELECT REPORT_CATALOG_PATH
-            INTO   l_rpt_path
-            FROM   DMT_BIP_REPORT_TBL
-            WHERE  CEMLI_CODE = C_CEMLI;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                RAISE_APPLICATION_ERROR(-20032,
-                    C_PROC || ': No row in DMT_BIP_REPORT_TBL for CEMLI_CODE = ''' || C_CEMLI || '''.');
-        END;
-
-        IF l_rpt_path IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20033,
-                C_PROC || ': REPORT_CATALOG_PATH is NULL for CEMLI_CODE = ''' || C_CEMLI || '''.');
-        END IF;
-
-        l_url := l_base_url || '/xmlpserver/services/v2/ReportService';
-
-        DBMS_LOB.CREATETEMPORARY(l_env, TRUE);
-        DBMS_LOB.APPEND(l_env, TO_CLOB(
-            '<soapenv:Envelope' ||
-            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"' ||
-            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">' ||
-            '  <soapenv:Header/>' ||
-            '  <soapenv:Body>' ||
-            '    <v2:runReport>' ||
-            '      <v2:reportRequest>' ||
-            '        <v2:reportAbsolutePath>' || l_rpt_path || '</v2:reportAbsolutePath>' ||
-            '        <v2:attributeFormat>xml</v2:attributeFormat>' ||
-            '        <v2:parameterNameValues>' ||
-            '          <v2:listOfParamNameValues>' ||
-            '            <v2:item>' ||
-            '              <v2:name>P_BATCH_ID</v2:name>' ||
-            '              <v2:values><v2:item>' || TO_CHAR(p_load_ess_id) || '</v2:item></v2:values>' ||
-            '            </v2:item>' ||
-            '            <v2:item>' ||
-            '              <v2:name>P_IMPORT_ESS_ID</v2:name>' ||
-            '              <v2:values><v2:item>' || NVL(TO_CHAR(p_import_ess_id), '') || '</v2:item></v2:values>' ||
-            '            </v2:item>' ||
-            '          </v2:listOfParamNameValues>' ||
-            '        </v2:parameterNameValues>' ||
-            '        <v2:sizeOfDataChunkDownload>-1</v2:sizeOfDataChunkDownload>' ||
-            '      </v2:reportRequest>' ||
-            '      <v2:userID>' || l_username || '</v2:userID>' ||
-            '      <v2:password>' || l_password || '</v2:password>' ||
-            '    </v2:runReport>' ||
-            '  </soapenv:Body>' ||
-            '</soapenv:Envelope>'));
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => 'BIP runReport request built. Report: ' || l_rpt_path,
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        l_resp := bip_soap_post(l_url, l_action, l_env);
-        DBMS_LOB.FREETEMPORARY(l_env);
-
-        IF DBMS_LOB.INSTR(l_resp, 'soapenv:Fault') > 0 OR
-           DBMS_LOB.INSTR(l_resp, 'soap:Fault')    > 0 THEN
-            RAISE_APPLICATION_ERROR(-20034,
-                C_PROC || ': SOAP Fault from BIP runReport. Report: ' || l_rpt_path ||
-                ' | Response (first 1000): ' || DBMS_LOB.SUBSTR(l_resp, 1000, 1));
-        END IF;
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. Response bytes: ' || DBMS_LOB.GETLENGTH(l_resp),
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        RETURN l_resp;
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RAISE;
-    END FETCH_BIP_RESULTS;
-
-    -- --------------------------------------------------------
-    -- PARSE_AND_UPDATE
-    -- Parses BIP XML response (base64 reportBytes), updates
-    -- contract header TFM rows only (no lines/locs/dists),
-    -- then echoes back to STG.
-    -- --------------------------------------------------------
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id IN NUMBER,
-        p_xml_data       IN CLOB
+    PROCEDURE APPLY_CONTRACT_V1_CONTRACTS (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER DEFAULT NULL
     ) IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
-        l_xml        XMLTYPE;
-        l_loaded     NUMBER := 0;
-        l_failed     NUMBER := 0;
+        C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_CONTRACTS';
+        l_gen_count NUMBER := 0;
+        l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
+        l_err_code  NUMBER;
+        l_hdr_loaded NUMBER := 0;  l_hdr_failed NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
+        -- Generated-row count (header tier only) drives the keyset page-count cap.
+        SELECT COUNT(*)
+        INTO   l_gen_count
+        FROM   DMT_PO_HEADERS_INT_TFM_TBL
+        WHERE  RUN_ID = p_run_id;
 
-        -- Decode the BIP report via the shared helper (handles any size, no
-        -- VARCHAR2(32767) truncation). Returns NULL when there are no rows.
-        l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
-        IF l_xml IS NULL THEN
-            DMT_UTIL_PKG.LOG(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ': No <reportBytes> in BIP response. No rows updated.',
-                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RETURN;
+        DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
+
+        IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20094,
+                C_PROC || ': Contract v1 fetch failed for Contracts '
+                || '(detail in DMT_LOG_TBL).');
         END IF;
 
-        -- Process header rows from BIP XML — two-tier reconciliation.
-        --   BASE  rows (from PO_HEADERS_ALL, TYPE_LOOKUP_CODE = 'CONTRACT') positively
-        --         confirm a load; match the TFM record on its prefixed DOCUMENT_NUM
-        --         (= base SEGMENT1).
-        --   INTERFACE rows are left in PO_HEADERS_INTERFACE: PROCESS_CODE
-        --         ACCEPTED = success (match on INTERFACE_HEADER_KEY),
-        --         REJECTED/ERROR = failed (write the error text).
-        FOR r IN (
-            SELECT x.interface_header_key,
-                   x.document_num,
-                   x.po_header_id,
-                   UPPER(x.source_type)  AS source_type,
-                   UPPER(x.process_code) AS process_code,
-                   x.error_msg
-            FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
-                COLUMNS
-                    interface_header_key VARCHAR2(50)   PATH 'INTERFACE_HEADER_KEY',
-                    document_num         VARCHAR2(20)   PATH 'DOCUMENT_NUM',
-                    po_header_id         VARCHAR2(20)   PATH 'PO_HEADER_ID',
-                    source_type          VARCHAR2(20)   PATH 'SOURCE_TYPE',
-                    process_code         VARCHAR2(50)   PATH 'PROCESS_CODE',
-                    error_msg            VARCHAR2(4000) PATH 'ERROR_MESSAGE'
-            ) x
-        ) LOOP
-            IF r.source_type = 'BASE' THEN
-                -- Positive base-table confirmation. Key on the prefixed document
-                -- number the loader wrote, which equals the base SEGMENT1.
-                UPDATE DMT_PO_HEADERS_INT_TFM_TBL
-                SET    TFM_STATUS               = 'LOADED',
-                       FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
-                       FUSION_DOCUMENT_NUM  = r.document_num,
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    DOCUMENT_NUM          = r.document_num
-                -- Positive presence in PO_HEADERS_ALL is the strongest proof of a
-                -- load (Rule #1) and overrides any prior error verdict: the agreement
-                -- can come back with a "document number must be unique" interface
-                -- error yet still exist in the base table (a within-run re-submit
-                -- created it once). So confirm LOADED even over a prior FAILED.
-                AND    TFM_STATUS              != 'LOADED';
-                l_loaded := l_loaded + SQL%ROWCOUNT;
-
-            ELSIF r.source_type = 'INTERFACE' THEN
-                IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
-                    SET    TFM_STATUS               = 'LOADED',
-                           FUSION_PO_HEADER_ID  = TO_NUMBER(r.po_header_id),
-                           FUSION_DOCUMENT_NUM  = r.document_num,
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    UPDATE DMT_PO_HEADERS_INT_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] ' || r.error_msg),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
+        IF l_rows.COUNT = 0 THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': Contracts recon report returned zero rows; '
+                               || 'GENERATED rows left for the unaccounted sweep '
+                               || '(never a silent success).',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+        ELSE
+            FOR i IN 1 .. l_rows.COUNT LOOP
+                -- ===== TIER: HEADERS (OBJECT_TYPE = 'Contracts') =====
+                IF l_rows(i).OBJECT_TYPE = 'Contracts' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
+                        SET    TFM_STATUS           = 'LOADED',
+                               FUSION_PO_HEADER_ID  = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_hdr_loaded := l_hdr_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL
+                          AND l_rows(i).ERROR_MESSAGE != '#IMPORT_REPORT#' THEN
+                        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_hdr_failed := l_hdr_failed + SQL%ROWCOUNT;
+                    END IF;
                 END IF;
-            END IF;
-        END LOOP;
+            END LOOP;
+        END IF;
 
-        -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor
-        -- given a real Fusion error is left GENERATED (unaccounted). The
-        -- accounting gate then reports the object not-DONE and the funnel
-        -- surfaces it as UNRECONCILED — no fabricated FAILED.)
-        -- scoped to contract-style rows in the shared PO header table — §7.)
-
-        -- No child cascade needed — contracts have no lines/locs/dists
-
-        -- (Removed 2026-07-13, design section 5.) No STG echo-back: STG carries a
-        -- forward-only status written only by stage->transform; LOADED is TFM-only
-        -- and the TFM row is the sole outcome record. Contracts share the physical
-        -- DMT_PO_HEADERS_INT_STG_TBL with PurchaseOrders/BlanketPOs, so echoing
-        -- LOADED here would reintroduce the same illegal STG write PO just dropped.
-
-        -- NO COMMIT — orchestrator controls transaction boundaries
+        -- NO COMMIT — orchestrator controls transaction boundaries.
 
         DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. Headers LOADED: ' || l_loaded ||
-                                ', FAILED: ' || l_failed || '.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
+                           || ' | headers LOADED/FAILED: ' || l_hdr_loaded || '/' || l_hdr_failed
+                           || '. Unmatched rows left for the unaccounted sweep.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
 
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
             RAISE;
-    END PARSE_AND_UPDATE;
+    END APPLY_CONTRACT_V1_CONTRACTS;
 
     -- --------------------------------------------------------
-    -- RECONCILE_BATCH
+    -- RECONCILE_BATCH — entry point (signature unchanged).
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
@@ -343,29 +151,15 @@ AS
         p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
-        l_xml CLOB;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => C_PROC || ' start. load_ess_id: ' || p_load_ess_id,
+            p_message        => C_PROC || ' start. load_ess_id: ' || p_load_ess_id
+                                || ' | import_ess_id: ' || NVL(TO_CHAR(p_import_ess_id), 'NULL'),
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        -- Forward p_import_ess_id so the BIP report's P_IMPORT_ESS_ID is populated
-        -- and the BASE tier (PO_HEADERS_ALL WHERE request_id = :P_IMPORT_ESS_ID AND
-        -- type_lookup_code = 'CONTRACT') can confirm loaded contracts. Without it the
-        -- BASE tier never fires and every good contract whose interface row was purged
-        -- falls through to the RECONCILE_ERROR catch-all.
-        l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id, p_import_ess_id);
-        PARSE_AND_UPDATE(p_run_id, l_xml);
-
-        -- Unresolved records intentionally left GENERATED (unaccounted).
-        -- No fabricated FAILED: the accounting gate reports the object
-        -- not-DONE and the funnel surfaces these as UNRECONCILED.
-
-        IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
-            DBMS_LOB.FREETEMPORARY(l_xml);
-        END IF;
+        APPLY_CONTRACT_V1_CONTRACTS(p_run_id, p_load_ess_id, p_import_ess_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
