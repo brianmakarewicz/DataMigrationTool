@@ -1,381 +1,235 @@
 -- PACKAGE BODY DMT_AP_RESULTS_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_AP_RESULTS_PKG" 
+  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_AP_RESULTS_PKG"
 AS
 -- ============================================================
 -- DMT_AP_RESULTS_PKG body
--- APInvoices BIP reconciliation.
--- Pattern: identical to DMT_PO_RESULTS_PKG.
+-- APInvoices post-load reconciliation — Contract v1, MULTI-TIER template.
+--
+-- Reuses the ONE shared Contract v1 fetch, DMT_RECON_CONTRACT_PKG.FETCH_ROWS,
+-- exactly as the Requisitions template does (DMT_REQ_RESULTS_PKG). A single
+-- FETCH_ROWS call runs the APInvoices Contract v1 report (nine columns, keyset
+-- paginated) over BIP and returns BOTH tiers' rows in one collection; each row's
+-- OBJECT_TYPE says which tier it belongs to.
+--
+-- The APPLY is STATIC SQL against the compile-time-known TFM tables (Option A,
+-- owner decision on PR #248): one MERGE-style pair PER TIER, filtering the report
+-- rows by OBJECT_TYPE and joining that tier's TFM table on RECON_KEY = RECORD_KEY.
+--
+--   Tier      OBJECT_TYPE literal      TFM table                          FUSION_ID column
+--   -------   ----------------------   --------------------------------   ---------------------
+--   headers   'APInvoices'             DMT_AP_INVOICES_INT_TFM_TBL        FUSION_INVOICE_ID
+--   lines     'APInvoices.Line'        DMT_AP_INVOICE_LINES_INT_TFM_TBL   (no line surrogate id)
+--
+-- Per tier the rule is the shared Contract v1 apply rule:
+--   * BASE / SUCCESS / FUSION_ID NOT NULL -> LOADED (headers stamp FUSION_ID).
+--   * FUSION_STATUS = ERROR with a real ERROR_MESSAGE (not the #IMPORT_REPORT#
+--     marker) -> FAILED, message appended as '[FUSION_ERROR] ' || message.
+--   * Everything else is left GENERATED for the shared unaccounted sweep;
+--     INTERFACE/SUCCESS corroborates but is never sufficient for LOADED.
+--
+-- The base invoice line carries no independent surrogate id (a base line is
+-- identified by INVOICE_ID + LINE_NUMBER), so the report reports the parent
+-- invoice id as the line tier's FUSION_ID for traceability and there is no
+-- line-id TFM column to stamp — the line reaches LOADED on its own BASE/SUCCESS
+-- report row (same pattern as the Requisitions base distribution tier).
+--
+-- The RECON_KEY on each tier's TFM row is stamped by DMT_AP_TRANSFORM_PKG to
+-- equal that tier's report RECORD_KEY (headers = prefixed INVOICE_NUM; lines =
+-- prefixed parent INVOICE_NUM || ':LINE:' || LINE_NUMBER). That coupling is what
+-- makes the join hit.
+--
+-- After both tiers settle, outcomes are echoed back to the two STG tables.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_AP_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'APInvoices';
 
     -- --------------------------------------------------------
-    -- Private: POST a SOAP envelope; return full response CLOB.
-    -- (Same helper as PO/supplier results — duplicated to keep packages independent.)
+    -- APPLY_CONTRACT_V1_APINVOICES (private)
+    -- The Contract v1 apply for both APInvoices tiers, Option A shape.
+    -- One shared FETCH_ROWS call returns both tiers' rows; the apply is STATIC
+    -- SQL, one pair of UPDATEs per tier, discriminated by OBJECT_TYPE and joined
+    -- on RECON_KEY = RECORD_KEY.
     -- --------------------------------------------------------
-    FUNCTION bip_soap_post (
-        p_url      IN VARCHAR2,
-        p_action   IN VARCHAR2,
-        p_body     IN CLOB
-    ) RETURN CLOB IS
-        l_req      UTL_HTTP.REQ;
-        l_resp     UTL_HTTP.RESP;
-        l_response CLOB;
-        l_chunk    VARCHAR2(32767);
-        l_offset   INTEGER := 1;
-        l_amount   INTEGER;
-        l_body_len INTEGER;
-    BEGIN
-        UTL_HTTP.SET_RESPONSE_ERROR_CHECK(FALSE);
-        UTL_HTTP.SET_TRANSFER_TIMEOUT(600);
-
-        l_req := UTL_HTTP.BEGIN_REQUEST(p_url, 'POST', 'HTTP/1.1');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Type',   'text/xml; charset=utf-8');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Length', DBMS_LOB.GETLENGTH(p_body));
-        UTL_HTTP.SET_HEADER(l_req, 'SOAPAction',     '"' || p_action || '"');
-        UTL_HTTP.SET_HEADER(l_req, 'Accept',         'text/xml');
-
-        l_body_len := DBMS_LOB.GETLENGTH(p_body);
-        WHILE l_offset <= l_body_len LOOP
-            l_amount := LEAST(8000, l_body_len - l_offset + 1);
-            l_chunk  := DBMS_LOB.SUBSTR(p_body, l_amount, l_offset);
-            UTL_HTTP.WRITE_TEXT(l_req, l_chunk);
-            l_offset := l_offset + l_amount;
-        END LOOP;
-
-        l_resp := UTL_HTTP.GET_RESPONSE(l_req);
-
-        DBMS_LOB.CREATETEMPORARY(l_response, TRUE);
-        BEGIN
-            LOOP
-                UTL_HTTP.READ_TEXT(l_resp, l_chunk, 32767);
-                DBMS_LOB.APPEND(l_response, l_chunk);
-            END LOOP;
-        EXCEPTION WHEN UTL_HTTP.END_OF_BODY THEN NULL;
-        END;
-        UTL_HTTP.END_RESPONSE(l_resp);
-
-        IF l_resp.status_code NOT BETWEEN 200 AND 299 THEN
-            RAISE_APPLICATION_ERROR(-20030,
-                'BIP SOAP call failed. Status: ' || l_resp.status_code ||
-                ' | Action: ' || p_action ||
-                ' | Response (first 500): ' || DBMS_LOB.SUBSTR(l_response, 500, 1));
-        END IF;
-
-        RETURN l_response;
-    EXCEPTION
-        WHEN OTHERS THEN
-            BEGIN UTL_HTTP.END_RESPONSE(l_resp); EXCEPTION WHEN OTHERS THEN NULL; END;
-            RAISE;
-    END bip_soap_post;
-
-    -- --------------------------------------------------------
-    -- (b64_to_clob removed — base64 decode is now centralised in
-    --  DMT_UTIL_PKG.BASE64_DECODE_CLOB / BIP_REPORT_XML, which decode CLOBs of
-    --  any size. The old local copy truncated at VARCHAR2(32767).)
-
-    -- --------------------------------------------------------
-    -- FETCH_BIP_RESULTS
-    -- --------------------------------------------------------
-    FUNCTION FETCH_BIP_RESULTS (
-        p_run_id  IN NUMBER,
-        p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
-    ) RETURN CLOB IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'FETCH_BIP_RESULTS';
-        l_base_url   VARCHAR2(500);
-        l_username   VARCHAR2(100);
-        l_password   VARCHAR2(100);
-        l_rpt_path   VARCHAR2(500);
-        l_url        VARCHAR2(500);
-        l_action     CONSTANT VARCHAR2(200) :=
-            'http://xmlns.oracle.com/oxp/service/v2/ReportService/runReportRequest';
-        l_env        CLOB;
-        l_resp       CLOB;
-    BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start. CEMLI: ' || C_CEMLI ||
-                                ' | load_ess_id: ' || p_load_ess_id,
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_username := DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
-        l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
-
-        IF l_base_url IS NULL OR l_username IS NULL OR l_password IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20031,
-                C_PROC || ': Fusion connection config is incomplete.');
-        END IF;
-
-        BEGIN
-            SELECT REPORT_CATALOG_PATH
-            INTO   l_rpt_path
-            FROM   DMT_BIP_REPORT_TBL
-            WHERE  CEMLI_CODE = C_CEMLI;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                RAISE_APPLICATION_ERROR(-20032,
-                    C_PROC || ': No row in DMT_BIP_REPORT_TBL for CEMLI_CODE = ''' || C_CEMLI || '''.');
-        END;
-
-        IF l_rpt_path IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20033,
-                C_PROC || ': REPORT_CATALOG_PATH is NULL for CEMLI_CODE = ''' || C_CEMLI || '''.');
-        END IF;
-
-        l_url := l_base_url || '/xmlpserver/services/v2/ReportService';
-
-        DBMS_LOB.CREATETEMPORARY(l_env, TRUE);
-        DBMS_LOB.APPEND(l_env, TO_CLOB(
-            '<soapenv:Envelope' ||
-            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"' ||
-            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">' ||
-            '  <soapenv:Header/>' ||
-            '  <soapenv:Body>' ||
-            '    <v2:runReport>' ||
-            '      <v2:reportRequest>' ||
-            '        <v2:reportAbsolutePath>' || l_rpt_path || '</v2:reportAbsolutePath>' ||
-            '        <v2:attributeFormat>xml</v2:attributeFormat>' ||
-            '        <v2:parameterNameValues>' ||
-            '          <v2:listOfParamNameValues>' ||
-            '            <v2:item>' ||
-            '              <v2:name>P_BATCH_ID</v2:name>' ||
-            '              <v2:values><v2:item>' || TO_CHAR(p_load_ess_id) || '</v2:item></v2:values>' ||
-            '            </v2:item>' ||
-            '          </v2:listOfParamNameValues>' ||
-            '        </v2:parameterNameValues>' ||
-            '        <v2:sizeOfDataChunkDownload>-1</v2:sizeOfDataChunkDownload>' ||
-            '      </v2:reportRequest>' ||
-            '      <v2:userID>' || l_username || '</v2:userID>' ||
-            '      <v2:password>' || l_password || '</v2:password>' ||
-            '    </v2:runReport>' ||
-            '  </soapenv:Body>' ||
-            '</soapenv:Envelope>'));
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => 'BIP runReport request built. Report: ' || l_rpt_path,
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        l_resp := bip_soap_post(l_url, l_action, l_env);
-        DBMS_LOB.FREETEMPORARY(l_env);
-
-        IF DBMS_LOB.INSTR(l_resp, 'soapenv:Fault') > 0 OR
-           DBMS_LOB.INSTR(l_resp, 'soap:Fault')    > 0 THEN
-            RAISE_APPLICATION_ERROR(-20034,
-                C_PROC || ': SOAP Fault from BIP runReport. Report: ' || l_rpt_path ||
-                ' | Response (first 1000): ' || DBMS_LOB.SUBSTR(l_resp, 1000, 1));
-        END IF;
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. Response bytes: ' || DBMS_LOB.GETLENGTH(l_resp),
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        RETURN l_resp;
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RAISE;
-    END FETCH_BIP_RESULTS;
-
-    -- --------------------------------------------------------
-    -- PARSE_AND_UPDATE
-    -- Parses BIP XML response (base64 reportBytes), updates
-    -- AP invoice header TFM rows, cascades to lines,
-    -- then echoes back to STG tables.
-    -- --------------------------------------------------------
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id IN NUMBER,
-        p_xml_data       IN CLOB
+    PROCEDURE APPLY_CONTRACT_V1_APINVOICES (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2,
+        p_import_id  IN VARCHAR2
     ) IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
-        l_xml        XMLTYPE;
-        l_loaded     NUMBER := 0;
-        l_failed     NUMBER := 0;
+        C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_APINVOICES';
+        l_gen_count NUMBER := 0;
+        l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
+        l_err_code  NUMBER;
+        l_hdr_loaded  NUMBER := 0;  l_hdr_failed  NUMBER := 0;
+        l_line_loaded NUMBER := 0;  l_line_failed NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
+        -- Generated-row count across both tiers drives the shared fetch's keyset
+        -- page-count cap. Done statically here (not in the shared pkg).
+        SELECT (SELECT COUNT(*) FROM DMT_AP_INVOICES_INT_TFM_TBL      WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL WHERE RUN_ID = p_run_id)
+        INTO   l_gen_count
+        FROM   dual;
 
-        -- Decode the BIP report via the shared helper (handles any size, no
-        -- VARCHAR2(32767) truncation). Returns NULL when there are no rows.
-        l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
-        IF l_xml IS NULL THEN
-            DMT_UTIL_PKG.LOG(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ': No <reportBytes> in BIP response. No rows updated.',
-                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RETURN;
+        DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => TO_NUMBER(p_request_id),
+            p_import_ess_id => TO_NUMBER(p_import_id),
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
+
+        -- A transport / SOAP failure raises loudly (design section 5: never a
+        -- silent retry, never a zero-row "success"); the fetch already logged detail.
+        IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20094,
+                C_PROC || ': Contract v1 fetch failed for APInvoices '
+                || '(detail in DMT_LOG_TBL).');
         END IF;
 
-        -- Process header rows from BIP XML
-        -- AP_INVOICES_INTERFACE IMPORT_STATUS: 'Y' = success, anything else = failed
-        FOR r IN (
-            SELECT x.invoice_num,
-                   x.invoice_id,
-                   UPPER(x.import_status) AS import_status,
-                   x.vendor_name,
-                   x.vendor_num,
-                   x.error_msg
-            FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
-                COLUMNS
-                    invoice_num   VARCHAR2(50)   PATH 'INVOICE_NUM',
-                    invoice_id    VARCHAR2(20)   PATH 'INVOICE_ID',
-                    import_status VARCHAR2(50)   PATH 'IMPORT_STATUS',
-                    vendor_name   VARCHAR2(360)  PATH 'VENDOR_NAME',
-                    vendor_num    VARCHAR2(30)   PATH 'VENDOR_NUM',
-                    error_msg     VARCHAR2(4000) PATH 'ERROR_MESSAGE'
-            ) x
-        ) LOOP
-            IF r.import_status IN ('Y','PROCESSED','SUCCESS','COMPLETED') THEN
-                UPDATE DMT_AP_INVOICES_INT_TFM_TBL
-                SET    TFM_STATUS               = 'LOADED',
-                       FUSION_INVOICE_ID    = TO_NUMBER(r.invoice_id),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INVOICE_NUM          = r.invoice_num
-                AND    TFM_STATUS              != 'LOADED';
-                l_loaded := l_loaded + SQL%ROWCOUNT;
-            ELSIF r.import_status IN ('N','ERROR','REJECTED','FAILED','FAILURE') THEN
-                UPDATE DMT_AP_INVOICES_INT_TFM_TBL
-                SET    TFM_STATUS               = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                 '[FUSION_ERROR] ' || r.error_msg),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INVOICE_NUM          = r.invoice_num
-                AND    TFM_STATUS              != 'FAILED';
-                l_failed := l_failed + SQL%ROWCOUNT;
-            ELSIF r.import_status IN ('NEW', 'STAGING') THEN
-                -- Row is in interface table but APXIIMPT did not process it.
-                -- We have no real Fusion error for this invoice, only a
-                -- non-terminal interface status. Do NOT fabricate a FAILED:
-                -- leave the row GENERATED so the shared honest sweep flips it
-                -- to UNACCOUNTED.
-                NULL;
-            ELSE
-                -- Unknown interface status and no real Fusion error to report.
-                -- Do NOT fabricate a FAILED: leave the row GENERATED for the
-                -- honest sweep to mark UNACCOUNTED.
-                NULL;
-            END IF;
-        END LOOP;
+        IF l_rows.COUNT = 0 THEN
+            -- Zero report rows is never success (design section 5): leave the
+            -- remaining GENERATED rows for the existing unaccounted sweep.
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': APInvoices recon report returned zero rows; '
+                               || 'GENERATED rows left for the unaccounted sweep '
+                               || '(never a silent success).',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+        ELSE
+            FOR i IN 1 .. l_rows.COUNT LOOP
+                -- ===== TIER: HEADERS (OBJECT_TYPE = 'APInvoices') =====
+                IF l_rows(i).OBJECT_TYPE = 'APInvoices' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_AP_INVOICES_INT_TFM_TBL
+                        SET    TFM_STATUS           = 'LOADED',
+                               FUSION_INVOICE_ID    = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_hdr_loaded := l_hdr_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL
+                          AND l_rows(i).ERROR_MESSAGE != '#IMPORT_REPORT#' THEN
+                        UPDATE DMT_AP_INVOICES_INT_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_hdr_failed := l_hdr_failed + SQL%ROWCOUNT;
+                    END IF;
 
-        -- Cascade LOADED to child TFM table (lines via INVOICE_ID)
-        UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
-        SET    ln.TFM_STATUS            = 'LOADED',
-               ln.RESULTS_UPDATED_DATE = SYSDATE,
-               ln.LAST_UPDATED_DATE = SYSDATE
-        WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.TFM_STATUS           != 'LOADED'
-        AND    EXISTS (
-            SELECT 1 FROM DMT_AP_INVOICES_INT_TFM_TBL h
-            WHERE  h.RUN_ID = p_run_id
-            AND    h.INVOICE_ID     = ln.INVOICE_ID
-            AND    h.TFM_STATUS         = 'LOADED');
+                -- ===== TIER: LINES (OBJECT_TYPE = 'APInvoices.Line') =====
+                ELSIF l_rows(i).OBJECT_TYPE = 'APInvoices.Line' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        -- No line surrogate-id TFM column: the base line has no id
+                        -- of its own, so LOADED is the outcome; FUSION_ID (the
+                        -- parent invoice id) is carried only in the report.
+                        UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL
+                        SET    TFM_STATUS           = 'LOADED',
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_line_loaded := l_line_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL
+                          AND l_rows(i).ERROR_MESSAGE != '#IMPORT_REPORT#' THEN
+                        UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_line_failed := l_line_failed + SQL%ROWCOUNT;
+                    END IF;
+                END IF;
+            END LOOP;
+        END IF;
 
-        -- Cascade FAILED to child TFM table (lines via INVOICE_ID). The parent
-        -- header only reaches FAILED with a real Fusion error, so the line
-        -- carries that same real parent error in the prescribed linked-record form.
-        UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
-        SET    ln.TFM_STATUS            = 'FAILED',
-               ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT h.ERROR_TEXT FROM DMT_AP_INVOICES_INT_TFM_TBL h
-                    WHERE  h.RUN_ID = p_run_id
-                    AND    h.INVOICE_ID = ln.INVOICE_ID
-                    AND    h.TFM_STATUS = 'FAILED'
-                    AND    ROWNUM = 1)),
-               ln.RESULTS_UPDATED_DATE = SYSDATE,
-               ln.LAST_UPDATED_DATE = SYSDATE
-        WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.TFM_STATUS           != 'FAILED'
-        AND    EXISTS (
-            SELECT 1 FROM DMT_AP_INVOICES_INT_TFM_TBL h
-            WHERE  h.RUN_ID = p_run_id
-            AND    h.INVOICE_ID     = ln.INVOICE_ID
-            AND    h.TFM_STATUS         = 'FAILED');
-
-        -- Echo outcomes back to STG tables (2 types: headers + lines)
-        -- Headers — LOADED
+        -- ============================================================
+        -- Echo tier outcomes back to the two STG tables.
+        -- ============================================================
+        -- Headers
         UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
+        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        -- Headers — FAILED
         UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
+        SET    stg.STG_STATUS = 'FAILED',
+               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICES_INT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
+                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
-        -- Lines — LOADED
+        -- Lines
         UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
+        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        -- Lines — FAILED
         UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
+        SET    stg.STG_STATUS = 'FAILED',
+               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
+                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
-        -- NO COMMIT — orchestrator controls transaction boundaries
+        -- NO COMMIT — orchestrator controls transaction boundaries.
 
         DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. Headers LOADED: ' || l_loaded ||
-                                ', FAILED: ' || l_failed || '.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
+                           || ' | headers LOADED/FAILED: ' || l_hdr_loaded || '/' || l_hdr_failed
+                           || ' | lines LOADED/FAILED: '   || l_line_loaded || '/' || l_line_failed
+                           || '. Unmatched rows left for the unaccounted sweep.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
 
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
             RAISE;
-    END PARSE_AND_UPDATE;
+    END APPLY_CONTRACT_V1_APINVOICES;
 
     -- --------------------------------------------------------
-    -- RECONCILE_BATCH
+    -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
+    -- Contract v1 apply. The APInvoices load ESS id is the Contract v1
+    -- P_LOAD_REQUEST_ID; the import ESS id is P_IMPORT_ESS_ID (stamped into the
+    -- BASE rows' LOAD_REQUEST_ID for traceability). The report's run-scoped
+    -- selectors (P_RUN_ID, P_PREFIX) pick up the whole run regardless of how
+    -- many batches it submitted.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
@@ -384,7 +238,6 @@ AS
         p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
-        l_xml CLOB;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -392,152 +245,14 @@ AS
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id);
-        PARSE_AND_UPDATE(p_run_id, l_xml);
+        APPLY_CONTRACT_V1_APINVOICES(
+            p_run_id     => p_run_id,
+            p_request_id => TO_CHAR(p_load_ess_id),
+            p_import_id  => TO_CHAR(NVL(p_import_ess_id, p_load_ess_id)));
 
-        IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
-            DBMS_LOB.FREETEMPORARY(l_xml);
-        END IF;
-
-        -- Tier 2: Base table verification for rows still GENERATED after BIP.
-        -- ap_invoices_interface purges successfully imported rows, so BIP Tier 1
-        -- returns 0 for successes. Check ap_invoices_all via REST to confirm
-        -- each invoice actually made it to the base table.
-        DECLARE
-            l_remaining NUMBER;
-            l_loaded    NUMBER := 0;
-            l_failed    NUMBER := 0;
-            l_rest_json CLOB;
-            l_error_msg VARCHAR2(4000);
-        BEGIN
-            SELECT COUNT(*) INTO l_remaining
-            FROM   DMT_AP_INVOICES_INT_TFM_TBL
-            WHERE  RUN_ID = p_run_id
-            AND    TFM_STATUS = 'GENERATED';
-
-            IF l_remaining > 0 THEN
-                DMT_UTIL_PKG.LOG(
-                    p_run_id => p_run_id,
-                    p_message        => 'Tier 2: ' || l_remaining ||
-                                        ' AP invoices still GENERATED after BIP (interface table purged).' ||
-                                        ' Verifying each against ap_invoices_all via REST.',
-                    p_package        => C_PKG,
-                    p_procedure      => C_PROC);
-
-                FOR r IN (
-                    SELECT TFM_SEQUENCE_ID, INVOICE_NUM
-                    FROM   DMT_AP_INVOICES_INT_TFM_TBL
-                    WHERE  RUN_ID = p_run_id
-                    AND    TFM_STATUS = 'GENERATED'
-                ) LOOP
-                    BEGIN
-                        l_rest_json := DMT_REST_LOOKUP_PKG.LOOKUP_RECORD('APInvoices', r.INVOICE_NUM);
-
-                        -- Check if REST found the record
-                        l_error_msg := JSON_VALUE(l_rest_json, '$.error');
-
-                        IF l_error_msg IS NULL THEN
-                            -- Found in base table — extract InvoiceId
-                            DECLARE
-                                l_fusion_id VARCHAR2(100);
-                            BEGIN
-                                -- Parse first field value (InvoiceId)
-                                l_fusion_id := JSON_VALUE(l_rest_json, '$.fields[0].value');
-                                UPDATE DMT_AP_INVOICES_INT_TFM_TBL
-                                SET    TFM_STATUS               = 'LOADED',
-                                       FUSION_INVOICE_ID    = TO_NUMBER(l_fusion_id),
-                                       RESULTS_UPDATED_DATE = SYSDATE,
-                                       LAST_UPDATED_DATE    = SYSDATE
-                                WHERE  TFM_SEQUENCE_ID      = r.TFM_SEQUENCE_ID;
-                                l_loaded := l_loaded + 1;
-                            END;
-                        ELSE
-                            -- Not found in the base table after import. The REST
-                            -- lookup returned only "not found", not a real Fusion
-                            -- rejection message, so we have no Fusion error to
-                            -- report. Do NOT fabricate a FAILED: leave the row
-                            -- GENERATED for the honest sweep to mark UNACCOUNTED.
-                            NULL;
-                        END IF;
-                    EXCEPTION
-                        WHEN OTHERS THEN
-                            -- REST call itself failed — mark FAILED with error
-                            DECLARE
-                                l_sqlerrm VARCHAR2(4000) := SQLERRM;
-                            BEGIN
-                                UPDATE DMT_AP_INVOICES_INT_TFM_TBL
-                                SET    TFM_STATUS               = 'FAILED',
-                                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                           '[FUSION_ERROR] Base table verification failed: ' || l_sqlerrm),
-                                       RESULTS_UPDATED_DATE = SYSDATE,
-                                       LAST_UPDATED_DATE    = SYSDATE
-                                WHERE  TFM_SEQUENCE_ID      = r.TFM_SEQUENCE_ID;
-                                l_failed := l_failed + 1;
-                            END;
-                    END;
-                END LOOP;
-
-                -- Cascade to lines based on header outcomes
-                UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
-                SET    ln.TFM_STATUS = 'LOADED', ln.RESULTS_UPDATED_DATE = SYSDATE,
-                       ln.LAST_UPDATED_DATE = SYSDATE
-                WHERE  ln.RUN_ID = p_run_id
-                AND    ln.TFM_STATUS != 'LOADED'
-                AND    EXISTS (
-                    SELECT 1 FROM DMT_AP_INVOICES_INT_TFM_TBL h
-                    WHERE  h.RUN_ID = p_run_id
-                    AND    h.INVOICE_ID = ln.INVOICE_ID AND h.TFM_STATUS = 'LOADED');
-
-                -- Lines whose parent invoice was not found in the base table have
-                -- no real Fusion error to carry (the parent was left GENERATED,
-                -- not FAILED with a real error). Do NOT fabricate a FAILED cascade:
-                -- leave these lines GENERATED for the honest sweep to mark
-                -- UNACCOUNTED.
-
-                -- Echo to STG
-                UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
-                SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-                WHERE  stg.STG_SEQUENCE_ID IN (
-                    SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
-                    WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-                UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
-                SET    stg.STG_STATUS = 'FAILED',
-                       stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                           (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICES_INT_TFM_TBL t
-                            WHERE t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                            AND t.RUN_ID = p_run_id)),
-                       stg.LAST_UPDATED_DATE = SYSDATE
-                WHERE  stg.STG_SEQUENCE_ID IN (
-                    SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
-                    WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-                UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
-                SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-                WHERE  stg.STG_SEQUENCE_ID IN (
-                    SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
-                    WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-                UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
-                SET    stg.STG_STATUS = 'FAILED',
-                       stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                           (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
-                            WHERE t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                            AND t.RUN_ID = p_run_id)),
-                       stg.LAST_UPDATED_DATE = SYSDATE
-                WHERE  stg.STG_SEQUENCE_ID IN (
-                    SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
-                    WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-
-                DMT_UTIL_PKG.LOG(
-                    p_run_id => p_run_id,
-                    p_message        => 'Tier 2 complete. Base table verified: ' ||
-                                        l_loaded || ' LOADED, ' || l_failed || ' FAILED.',
-                    p_package        => C_PKG,
-                    p_procedure      => C_PROC);
-            END IF;
-        END;
-
-        -- Unresolved records intentionally left GENERATED (unaccounted).
-        -- No fabricated FAILED: the accounting gate reports the object
-        -- not-DONE and the funnel surfaces these as UNRECONCILED.
+        -- Unresolved records are intentionally left GENERATED (unaccounted).
+        -- No fabricated FAILED: the accounting gate reports the object not-DONE
+        -- and the funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
