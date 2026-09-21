@@ -1,0 +1,75 @@
+page 82 (
+    name: Run Detail
+    alias: P82-RUN-DETAIL
+    title: Run Detail
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region queue (
+        name: Queue
+        type: plSqlDynamicContent
+        source {
+            plsqlCode: BEGIN DMT_RUN_DETAIL_TILES(:P82_RUN_ID); END;
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+    )
+
+    region run-info (
+        name: Run Info
+        type: plSqlDynamicContent
+        source {
+            plsqlCode: BEGIN DMT_RUN_DETAIL_HEADER(:P82_RUN_ID); END;
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+    )
+
+    pageItem P82_RUN_ID (
+        type: hidden
+        layout {
+            sequence: 10
+            slot: body
+        }
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
+        }
+    )
+
+    button back (
+        buttonName: BACK
+        label: Run History
+        layout {
+            sequence: 5
+            region: @run-info
+            slot: PREVIOUS
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+            icon: fa-chevron-left
+        }
+        behavior {
+            action: redirectThisApp
+            target: {
+                page: 80
+            }
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+)
+

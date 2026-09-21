@@ -1,0 +1,106 @@
+appProcess download-ess-file (
+    name: DOWNLOAD_ESS_FILE
+    type: executeCode
+    source {
+        plsqlCode:
+            ```plsql
+            DECLARE
+              l_req_id    NUMBER := TO_NUMBER(APEX_APPLICATION.G_X01);
+              l_file_name VARCHAR2(200) := APEX_APPLICATION.G_X02;
+              l_action    VARCHAR2(50) := APEX_APPLICATION.G_X03;
+              l_username  VARCHAR2(200);
+              l_password  VARCHAR2(200);
+            BEGIN
+              IF l_action = 'ENUMERATE' THEN
+                DMT_ESS_UTIL_PKG.ENUMERATE_ESS_FILES(
+                  p_ess_job_id => NULL,
+                  p_request_id => l_req_id
+                );
+                APEX_JSON.OPEN_OBJECT;
+                APEX_JSON.WRITE('status', 'OK');
+                APEX_JSON.CLOSE_OBJECT;
+                RETURN;
+              END IF;
+              DMT_UTIL_PKG.GET_CREDENTIALS_FOR_REQUEST(
+                p_request_id => l_req_id,
+                x_username   => l_username,
+                x_password   => l_password
+              );
+              DMT_ESS_UTIL_PKG.DOWNLOAD_ESS_FILE_TO_BROWSER(
+                p_request_id => l_req_id,
+                p_file_name  => l_file_name,
+                p_username   => l_username,
+                p_password   => l_password
+              );
+            EXCEPTION
+              WHEN OTHERS THEN
+                IF SQLCODE = -20876 THEN RAISE; END IF;
+                APEX_JSON.OPEN_OBJECT;
+                APEX_JSON.WRITE('error', SQLERRM);
+                APEX_JSON.CLOSE_OBJECT;
+            END;
+            ```
+    }
+    execution {
+        sequence: 10
+        point: ajaxCallback
+    }
+)
+
+appProcess download-ess-file-v (
+    name: DOWNLOAD_ESS_FILE_V2
+    type: executeCode
+    source {
+        plsqlCode:
+            ```plsql
+            DECLARE
+              l_req_id    NUMBER := TO_NUMBER(APEX_APPLICATION.G_X01);
+              l_file_name VARCHAR2(200) := APEX_APPLICATION.G_X02;
+              l_action    VARCHAR2(50) := APEX_APPLICATION.G_X03;
+              l_username  VARCHAR2(200);
+              l_password  VARCHAR2(200);
+              l_cemli     VARCHAR2(100);
+            BEGIN
+              IF l_action = 'ENUMERATE' THEN
+                DMT_ESS_UTIL_PKG.ENUMERATE_ESS_FILES(
+                  p_ess_job_id => NULL,
+                  p_request_id => l_req_id
+                );
+                APEX_JSON.OPEN_OBJECT;
+                APEX_JSON.WRITE('status', 'OK');
+                APEX_JSON.CLOSE_OBJECT;
+                RETURN;
+              END IF;
+              BEGIN
+                SELECT CEMLI_CODE INTO l_cemli
+                FROM DMT_ESS_JOB_TBL
+                WHERE REQUEST_ID = l_req_id AND ROWNUM = 1;
+              EXCEPTION WHEN NO_DATA_FOUND THEN
+                l_cemli := NULL;
+              END;
+              DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(
+                p_cemli_code => l_cemli,
+                x_username   => l_username,
+                x_password   => l_password
+              );
+              DMT_ESS_UTIL_PKG.DOWNLOAD_ESS_FILE_TO_BROWSER(
+                p_request_id => l_req_id,
+                p_file_name  => l_file_name,
+                p_username   => l_username,
+                p_password   => l_password
+              );
+            EXCEPTION
+              WHEN OTHERS THEN
+                IF SQLCODE = -20876 THEN RAISE; END IF;
+                APEX_JSON.OPEN_OBJECT;
+                APEX_JSON.WRITE('error', SQLERRM);
+                APEX_JSON.CLOSE_OBJECT;
+            END;
+            ```
+    }
+    execution {
+        sequence: 20
+        point: ajaxCallback
+    }
+)
+

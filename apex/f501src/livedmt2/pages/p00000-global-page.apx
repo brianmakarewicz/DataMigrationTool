@@ -1,0 +1,194 @@
+page 0 (
+    name: Global Page
+
+    region filter-bar (
+        name: Filter Bar
+        type: staticContent
+        layout {
+            sequence: 1
+            slot: body
+        }
+        serverSideCondition {
+            type: currentPageInList
+            pages: [
+                1
+                2
+                3
+                4
+                5
+                6
+                7
+                10
+                11
+                12
+                21
+                22
+                23
+                24
+                50
+                51
+                52
+                53
+                54
+                55
+                56
+                57
+                58
+            ]
+        }
+    )
+
+    region filter-buttons (
+        name: Filter Buttons
+        type: staticContent
+        layout {
+            sequence: 30
+            parentRegion: @filter-bar
+            slot: regionBody
+        }
+    )
+
+    pageItem P0_PREFIX_INPUT (
+        type: textField
+        label {
+            label: Prefix
+            alignment: left
+        }
+        settings {
+            submitWhenEnterPressed: true
+        }
+        layout {
+            sequence: 20
+            region: @filter-bar
+            slot: regionBody
+            alignment: left
+            startNewRow: false
+            columnSpan: 4
+            labelColumnSpan: 1
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 8
+        }
+    )
+
+    pageItem P0_SCENARIO_SELECT (
+        type: selectList
+        label {
+            label: Scenario
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT scenario_name AS d, scenario_id AS r FROM dmt_scenario_tbl WHERE status = 'ACTIVE' ORDER BY scenario_name
+            displayExtraValues: false
+            nullDisplayValue: -- All Scenarios --
+        }
+        layout {
+            sequence: 10
+            region: @filter-bar
+            slot: regionBody
+            alignment: left
+            columnSpan: 6
+            labelColumnSpan: 2
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button apply-filter (
+        buttonName: APPLY_FILTER
+        label: Apply
+        layout {
+            sequence: 10
+            region: @filter-buttons
+            slot: templateDefault
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: [
+                #DEFAULT#
+                t-Button--small
+            ]
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button clear-filter (
+        buttonName: CLEAR_FILTER
+        label: Clear
+        layout {
+            sequence: 20
+            region: @filter-buttons
+            slot: templateDefault
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: [
+                #DEFAULT#
+                t-Button--small
+            ]
+        }
+        behavior {
+            action: definedByDynamicAction
+        }
+    )
+
+    dynamicAction clear-filter (
+        name: Clear Filter
+        execution {
+            sequence: 20
+        }
+        when {
+            event: click
+            selectionType: button
+            button: @clear-filter
+        }
+
+        action native-javascript-code (
+            action: executeJsCode
+            settings {
+                jsCode: apex.item("P0_SCENARIO_SELECT").setValue("");apex.item("P0_PREFIX_INPUT").setValue("");apex.page.submit("CLEAR_FILTER");
+            }
+            execution {
+                sequence: 10
+                fireOnInit: false
+            }
+        )
+
+    )
+
+    dynamicAction decorate-status-badges (
+        name: Decorate Status Badges
+        execution {
+            sequence: 10
+        }
+        when {
+            event: ready
+        }
+
+        action native-javascript-code (
+            action: executeJsCode
+            settings {
+                jsCode:
+                    ```javascript-browser
+                    (function(){var C={CONFIRMED:"u-Badge u-Badge--success",UNRECONCILED:"u-Badge u-Badge--danger",IN_PROGRESS:"u-Badge u-Badge--warning"};function d(s){(s||document).querySelectorAll(".a-IRR-table").forEach(function(t){var h=t.querySelectorAll("thead th"),si=-1,ri=-1;h.forEach(function(th,i){var l=(th.id||th.getAttribute("data-id")||(th.textContent||"").trim()).toUpperCase();if(ri<0&&l.indexOf("RECONCILIATION_STATUS")>=0)ri=i;else if(si<0&&l.indexOf("STATUS")>=0&&l.indexOf("RECONCILIATION")<0)si=i;});if(si<0||ri<0)return;t.querySelectorAll("tbody tr").forEach(function(r){if(r.dataset.ba==="1")return;var c=r.children;if(c.length<=Math.max(si,ri))return;var v=(c[ri].textContent||"").trim().toUpperCase(),cls=C[v];if(!cls)return;c[si].innerHTML='<span class="'+cls+'">'+(c[si].textContent||"").trim()+'</span>';r.dataset.ba="1";});});}
+                    if(!document.getElementById("dmt-badge-css")){var s=document.createElement("style");s.id="dmt-badge-css";s.textContent=".u-Badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;line-height:1.5}.u-Badge--success{background:#4CAF50;color:#fff}.u-Badge--danger{background:#F44336;color:#fff}.u-Badge--warning{background:#FFC107;color:#222}";document.head.appendChild(s);}d();if(window.apex&&apex.jQuery)apex.jQuery(document).on("apexafterrefresh",function(e){d(e.target);});})();
+                    ```
+            }
+            execution {
+                sequence: 10
+            }
+        )
+
+    )
+
+)
+

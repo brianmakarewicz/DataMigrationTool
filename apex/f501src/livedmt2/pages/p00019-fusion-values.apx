@@ -1,0 +1,296 @@
+page 19 (
+    name: Fusion Values
+    alias: FUSION-VALUES
+    title: Fusion Values
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region fusion-values (
+        name: Fusion Values
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT f.fusion_value_id, f.lookup_type, f.fusion_value, f.fusion_description, f.fusion_id, f.active_flag, f.last_refresh_date, (SELECT COUNT(*) FROM DMT_LOOKUP.DMT_LKP_MAPPING m WHERE m.lookup_type = f.lookup_type AND m.fusion_value = f.fusion_value AND m.active_flag = 'Y') AS mapped_from_count FROM DMT_LOOKUP.DMT_LKP_FUSION_VALUES f WHERE f.active_flag = 'Y' AND (NVL(:P19_LOOKUP_TYPE, '%') = '%' OR f.lookup_type = :P19_LOOKUP_TYPE)
+            pageItemsToSubmit: P19_LOOKUP_TYPE
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        messages {
+            whenNoDataFound: No data found.
+            whenMoreDataFound: The maximum row count for this report is #MAX_ROW_COUNT# rows.  Please apply a filter to reduce the number of records in your query.
+        }
+        advanced {
+            savedReportMappingIdentifier: 49031944905862904
+        }
+
+        column ACTIVE_FLAG (
+            type: plainText
+            heading {
+                heading: Active Flag
+            }
+            layout {
+                sequence: 6
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column FUSION_DESCRIPTION (
+            type: plainText
+            heading {
+                heading: Fusion Description
+            }
+            layout {
+                sequence: 4
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column FUSION_ID (
+            type: plainText
+            heading {
+                heading: Fusion Id
+                alignment: end
+            }
+            layout {
+                sequence: 5
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column FUSION_VALUE (
+            type: plainText
+            heading {
+                heading: Fusion Value
+            }
+            layout {
+                sequence: 3
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column FUSION_VALUE_ID (
+            type: plainText
+            heading {
+                heading: Fusion Value Id
+                alignment: end
+            }
+            layout {
+                sequence: 1
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column LAST_REFRESH_DATE (
+            type: plainText
+            heading {
+                heading: Last Refresh Date
+            }
+            layout {
+                sequence: 7
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column LOOKUP_TYPE (
+            type: link
+            heading {
+                heading: Lookup Type
+            }
+            layout {
+                sequence: 2
+            }
+            link {
+                target: {
+                    page: 17
+                    items: {
+                        P17_LOOKUP_TYPE: #LOOKUP_TYPE#
+                    }
+                    clearCache: [
+                        Y
+                        17
+                    ]
+                }
+                linkText: #LOOKUP_TYPE#
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column MAPPED_FROM_COUNT (
+            type: plainText
+            heading {
+                heading: Mapped From Count
+                alignment: end
+            }
+            layout {
+                sequence: 8
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+        pageHeader {
+            pageHeaderText: Fusion Values
+        }
+
+        savedReport 490476 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ACTIVE_FLAG (
+                sequence: 6
+            )
+
+            displayColumn FUSION_DESCRIPTION (
+                sequence: 4
+            )
+
+            displayColumn FUSION_ID (
+                sequence: 5
+            )
+
+            displayColumn FUSION_VALUE (
+                sequence: 3
+            )
+
+            displayColumn FUSION_VALUE_ID (
+                sequence: 1
+            )
+
+            displayColumn LAST_REFRESH_DATE (
+                sequence: 7
+            )
+
+            displayColumn LOOKUP_TYPE (
+                sequence: 2
+            )
+
+            displayColumn MAPPED_FROM_COUNT (
+                sequence: 8
+            )
+
+        )
+
+    )
+
+    pageItem P19_LOOKUP_TYPE (
+        type: selectList
+        label {
+            label: Lookup Type
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT lookup_type || ' -- ' || description AS d, lookup_type AS r FROM DMT_LOOKUP.DMT_LKP_TYPE_CONFIG WHERE active_flag = 'Y' ORDER BY module, lookup_type
+            nullDisplayValue: - All Lookup Types -
+        }
+        layout {
+            sequence: 1
+            region: @fusion-values
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+)
+

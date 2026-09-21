@@ -1,0 +1,551 @@
+page 14 (
+    name: Scenario Management
+    alias: SCENARIO-MANAGEMENT
+    title: Scenario Management
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region scenario-form (
+        name: Scenario Form
+        type: staticContent
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/inline-dialog
+            templateOptions: [
+                #DEFAULT#
+                js-dialog-size600x400
+            ]
+        }
+        advanced {
+            htmlDomId: scenario_form_dialog
+        }
+    )
+
+    region scenario-list (
+        name: Scenario List
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT
+                    s.SCENARIO_ID,
+                    s.SCENARIO_NAME,
+                    s.DESCRIPTION,
+                    s.STATUS,
+                    s.CREATED_BY,
+                    s.CREATED_DATE,
+                    s.LAST_UPDATED_DATE
+                FROM DMT_SCENARIO_TBL s
+                ORDER BY s.CREATED_DATE DESC
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        link {
+            linkColumn: customTarget
+            target: {
+                page: 14
+                items: {
+                    P14_SCENARIO_ID: #SCENARIO_ID#
+                    P14_SCENARIO_NAME: #SCENARIO_NAME#
+                    P14_DESCRIPTION: #DESCRIPTION#
+                    P14_STATUS: #STATUS#
+                }
+            }
+            linkIcon: <span role="img" aria-label="Edit" class="fa fa-edit" title="Edit"></span>
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 22379955646102622
+        }
+
+        column CREATED_BY (
+            type: plainText
+            heading {
+                heading: Created By
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column CREATED_DATE (
+            type: plainText
+            heading {
+                heading: Created Date
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column DESCRIPTION (
+            type: plainText
+            heading {
+                heading: Description
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column LAST_UPDATED_DATE (
+            type: plainText
+            heading {
+                heading: Last Updated Date
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column SCENARIO_ID (
+            type: plainText
+            heading {
+                heading: Scenario Id
+                alignment: end
+            }
+            layout {
+                sequence: 10
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column SCENARIO_NAME (
+            type: plainText
+            heading {
+                heading: Scenario Name
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column STATUS (
+            type: plainText
+            heading {
+                heading: Status
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 228202 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn CREATED_BY (
+                sequence: 5
+            )
+
+            displayColumn CREATED_DATE (
+                sequence: 6
+            )
+
+            displayColumn DESCRIPTION (
+                sequence: 3
+            )
+
+            displayColumn LAST_UPDATED_DATE (
+                sequence: 7
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 1
+            )
+
+            displayColumn SCENARIO_NAME (
+                sequence: 2
+            )
+
+            displayColumn STATUS (
+                sequence: 4
+            )
+
+        )
+
+    )
+
+    pageItem P14_DESCRIPTION (
+        type: textarea
+        label {
+            label: Description
+            alignment: left
+        }
+        layout {
+            sequence: 30
+            region: @scenario-form
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 30
+            height: 5
+        }
+    )
+
+    pageItem P14_SCENARIO_ID (
+        type: hidden
+        layout {
+            sequence: 10
+            region: @scenario-form
+            slot: regionBody
+        }
+    )
+
+    pageItem P14_SCENARIO_NAME (
+        type: textField
+        label {
+            label: Scenario Name
+            alignment: left
+        }
+        layout {
+            sequence: 20
+            region: @scenario-form
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 30
+        }
+    )
+
+    pageItem P14_STATUS (
+        type: selectList
+        label {
+            label: Status
+            alignment: left
+        }
+        lov {
+            type: staticValues
+            staticValues: STATIC:Active;ACTIVE,Archived;ARCHIVED
+            displayExtraValues: false
+            displayNullValue: false
+        }
+        layout {
+            sequence: 40
+            region: @scenario-form
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button cancel-dialog (
+        buttonName: CANCEL_DIALOG
+        label: Cancel
+        layout {
+            sequence: 50
+            region: @scenario-form
+            slot: close
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            action: definedByDynamicAction
+        }
+    )
+
+    button create-scenario (
+        buttonName: CREATE_SCENARIO
+        label: Create Scenario
+        layout {
+            sequence: 10
+            region: @scenario-list
+            slot: rightOfInteractiveReportSearchBar
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+            icon: fa-plus
+        }
+        behavior {
+            action: definedByDynamicAction
+        }
+    )
+
+    button save-scenario (
+        buttonName: SAVE_SCENARIO
+        label: Save
+        layout {
+            sequence: 50
+            region: @scenario-form
+            slot: create
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    dynamicAction auto-open-edit-dialog (
+        name: Auto-Open Edit Dialog
+        execution {
+            sequence: 30
+        }
+        when {
+            event: ready
+        }
+        clientSideCondition {
+            type: itemIsNotNull
+            item: P14_SCENARIO_ID
+        }
+
+        action native-open-region (
+            action: openRegion
+            affectedElements {
+                selectionType: region
+                region: @scenario-form
+            }
+            execution {
+                sequence: 10
+            }
+        )
+
+    )
+
+    dynamicAction close-scenario-dialog (
+        name: Close Scenario Dialog
+        execution {
+            sequence: 20
+        }
+        when {
+            event: click
+            selectionType: button
+            button: @cancel-dialog
+        }
+
+        action native-close-region (
+            action: closeRegion
+            affectedElements {
+                selectionType: region
+                region: @scenario-form
+            }
+            execution {
+                sequence: 10
+                fireOnInit: false
+            }
+        )
+
+    )
+
+    dynamicAction open-scenario-dialog (
+        name: Open Scenario Dialog
+        execution {
+            sequence: 10
+        }
+        when {
+            event: click
+            selectionType: button
+            button: @create-scenario
+        }
+
+        action native-clear (
+            action: clear
+            affectedElements {
+                selectionType: items
+                items: [
+                    P14_SCENARIO_ID
+                    P14_SCENARIO_NAME
+                    P14_DESCRIPTION
+                    P14_STATUS
+                ]
+            }
+            execution {
+                sequence: 20
+                fireOnInit: false
+            }
+        )
+
+        action native-open-region (
+            action: openRegion
+            affectedElements {
+                selectionType: region
+                region: @scenario-form
+            }
+            execution {
+                sequence: 10
+                fireOnInit: false
+            }
+        )
+
+    )
+
+    process save-scenario (
+        name: Save Scenario
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                IF :P14_SCENARIO_ID IS NULL THEN
+                    INSERT INTO DMT_SCENARIO_TBL (
+                            SCENARIO_NAME,
+                                    DESCRIPTION,
+                                            STATUS,
+                                                    CREATED_BY,
+                                                            CREATED_DATE
+                                                                ) VALUES (
+                                                                        :P14_SCENARIO_NAME,
+                                                                                :P14_DESCRIPTION,
+                                                                                        NVL(:P14_STATUS, 'ACTIVE'),
+                                                                                                :APP_USER,
+                                                                                                        SYSDATE
+                                                                                                            );
+                                                                                                            ELSE
+                                                                                                                UPDATE DMT_SCENARIO_TBL SET
+                                                                                                                        SCENARIO_NAME     = :P14_SCENARIO_NAME,
+                                                                                                                                DESCRIPTION       = :P14_DESCRIPTION,
+                                                                                                                                        STATUS            = :P14_STATUS,
+                                                                                                                                                LAST_UPDATED_DATE = SYSDATE
+                                                                                                                                                    WHERE SCENARIO_ID = :P14_SCENARIO_ID;
+                                                                                                                                                    END IF;
+                ```
+        }
+        execution {
+            sequence: 10
+        }
+        successMessage {
+            successMessage: Scenario saved successfully.
+        }
+        advanced {
+            executionMappingIdentifier: 22382066897102643
+        }
+        serverSideCondition {
+            whenButtonPressed: @save-scenario
+        }
+    )
+
+    branch (
+        name: After Save
+        execution {
+            sequence: 10
+        }
+        behavior {
+            target: {
+                page: 14
+                clearCache: 14
+            }
+        }
+        serverSideCondition {
+            whenButtonPressed: @save-scenario
+        }
+    )
+
+)
+

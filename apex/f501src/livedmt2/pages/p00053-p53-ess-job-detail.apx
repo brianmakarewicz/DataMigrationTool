@@ -1,0 +1,141 @@
+page 53 (
+    name: ESS Job Detail
+    alias: P53-ESS-JOB-DETAIL
+    title: ESS Job Detail
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: plSqlDynamicContent
+        source {
+            plsqlCode: BEGIN DMT_OBJECT_DETAIL_BREADCRUMB(:P53_RUN_ID, :P53_CEMLI_CODE); END;
+        }
+        layout {
+            sequence: 1
+            slot: body
+        }
+    )
+
+    region ess-job-detail (
+        name: ESS Job Detail
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  l_root NUMBER := TO_NUMBER(:P53_ESS_JOB_ID);
+                  l_url  VARCHAR2(600);
+                  l_cnt  NUMBER := 0;
+                BEGIN
+                  HTP.P('<style>.dmt-ess-tbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;}'
+                    ||'.dmt-ess-tbl th{text-align:left;padding:10px;border-bottom:2px solid #0072c6;color:#333;font-weight:600;}'
+                    ||'.dmt-ess-tbl td{padding:9px 10px;border-bottom:1px solid #e6e6e6;}'
+                    ||'.dmt-ess-req a{color:#0072c6;font-weight:600;text-decoration:none;}'
+                    ||'.dmt-ess-req a:hover{text-decoration:underline;}'
+                    ||'.dmt-att-btn{display:inline-block;padding:4px 12px;border-radius:4px;background:#0072c6;color:#fff;text-decoration:none;font-size:12px;}'
+                    ||'.dmt-att-btn:hover{background:#005a9e;}</style>');
+                  HTP.P('<h3 style="margin:4px 0 6px;font-size:16px;">ESS Job Tree</h3>');
+                  HTP.P('<table class="dmt-ess-tbl"><thead><tr>'
+                    ||'<th>Request ID</th><th>Job</th><th>State</th><th>Start</th><th>End</th><th>Attachments</th>'
+                    ||'</tr></thead><tbody>');
+                  FOR r IN (
+                    SELECT REQUEST_ID, PARENT_REQUEST_ID, JOB_SHORT_NAME, STATE_TEXT, START_TIME, END_TIME, NVL(DEPTH_LEVEL,0) DEPTH_LEVEL
+                    FROM DMT_ESS_JOB_TBL
+                    WHERE REQUEST_ID = l_root
+                       OR PARENT_REQUEST_ID = l_root
+                       OR PARENT_REQUEST_ID IN (SELECT REQUEST_ID FROM DMT_ESS_JOB_TBL WHERE PARENT_REQUEST_ID = l_root)
+                    ORDER BY DEPTH_LEVEL, REQUEST_ID
+                  ) LOOP
+                    l_cnt := l_cnt + 1;
+                    l_url := APEX_PAGE.GET_URL(p_page => 58, p_items => 'P58_REQUEST_ID', p_values => TO_CHAR(r.REQUEST_ID));
+                    HTP.P('<tr><td class="dmt-ess-req" style="padding-left:'||TO_CHAR(10 + r.DEPTH_LEVEL*22)||'px;"><a href="'||l_url||'">'||r.REQUEST_ID||'</a></td>'
+                      ||'<td>'||APEX_ESCAPE.HTML(r.JOB_SHORT_NAME)||'</td>'
+                      ||'<td>'||APEX_ESCAPE.HTML(r.STATE_TEXT)||'</td>'
+                      ||'<td>'||TO_CHAR(r.START_TIME,'HH24:MI:SS')||'</td>'
+                      ||'<td>'||TO_CHAR(r.END_TIME,'HH24:MI:SS')||'</td>'
+                      ||'<td><a class="dmt-att-btn" href="'||l_url||'">View attachments</a></td></tr>');
+                  END LOOP;
+                  IF l_cnt = 0 THEN
+                    HTP.P('<tr><td colspan="6" style="padding:16px;color:#888;">No ESS jobs found for this request.</td></tr>');
+                  END IF;
+                  HTP.P('</tbody></table>');
+                END;
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+    )
+
+    pageItem P53_CEMLI_CODE (
+        type: hidden
+        layout {
+            sequence: 30
+            slot: body
+        }
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
+        }
+    )
+
+    pageItem P53_ESS_JOB_ID (
+        type: hidden
+        layout {
+            sequence: 10
+            slot: body
+        }
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
+        }
+    )
+
+    pageItem P53_RUN_ID (
+        type: hidden
+        layout {
+            sequence: 20
+            slot: body
+        }
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
+        }
+    )
+
+    button back (
+        buttonName: BACK
+        label: Back
+        layout {
+            sequence: 5
+            region: @breadcrumb
+            slot: PREVIOUS
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+            icon: fa-chevron-left
+        }
+        behavior {
+            action: redirectThisApp
+            target: {
+                page: 52
+                items: {
+                    P52_RUN_ID: &P53_RUN_ID.
+                    P52_CEMLI_CODE: &P53_CEMLI_CODE.
+                }
+            }
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+)
+

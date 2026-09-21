@@ -1,0 +1,392 @@
+page 54 (
+    name: Activity Log
+    alias: ACTIVITY-LOG
+    title: Activity Log
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  v_int_id NUMBER := NVL(:P54_RUN_ID, 0);
+                  v_log_id NUMBER := NVL(:P54_LOG_ID, 0);
+                  v_cemli  VARCHAR2(200);
+                BEGIN
+                  BEGIN
+                    SELECT ORCHESTRATION_CODE INTO v_cemli
+                      FROM DMT_CONVERSION_MASTER_TBL
+                     WHERE INTEGRATION_ID = v_int_id
+                       AND ROWNUM = 1;
+                  EXCEPTION WHEN OTHERS THEN v_cemli := 'Unknown';
+                  END;
+                  htp.p('<nav style="font-size:13px;padding:4px 0 12px 0;color:#888;">');
+                  htp.p('<a href="' || APEX_PAGE.GET_URL(p_page => 50) || '" class="dmt-link">Pipeline Summary</a>');
+                  htp.p(' &rsaquo; ');
+                  htp.p('<a href="' || APEX_PAGE.GET_URL(p_page => 51, p_items => 'P51_CEMLI_CODE', p_values => v_cemli) || '" class="dmt-link">' || HTF.ESCAPE_SC(v_cemli) || '</a>');
+                  htp.p(' &rsaquo; ');
+                  htp.p('<a href="' || APEX_PAGE.GET_URL(p_page => 52, p_items => 'P52_RUN_ID', p_values => TO_CHAR(v_int_id)) || '" class="dmt-link">Run #' || v_int_id || '</a>');
+                  htp.p(' &rsaquo; ');
+                  htp.p('<span style="color:#ccc;">Log #' || v_log_id || '</span>');
+                  htp.p('</nav>');
+                END;
+                ```
+        }
+        layout {
+            sequence: 1
+            slot: body
+        }
+        advanced {
+            htmlDomId: breadcrumb_54
+        }
+    )
+
+    region breadcrumb-2 (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region log-entry-detail (
+        name: Log Entry Detail
+        type: plSqlDynamicContent
+        source {
+            plsqlCode: DECLARE v_log_id NUMBER; v_log_date DATE; v_log_type VARCHAR2(50); v_pkg VARCHAR2(200); v_proc VARCHAR2(200); v_msg CLOB; v_err VARCHAR2(4000); v_int_id NUMBER; BEGIN v_log_id := :P54_LOG_ID; IF v_log_id IS NULL THEN htp.p('<p>No log entry selected.</p>'); RETURN; END IF; SELECT LOG_DATE, LOG_TYPE, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, SQLERRM_TEXT, INTEGRATION_ID INTO v_log_date, v_log_type, v_pkg, v_proc, v_msg, v_err, v_int_id FROM DMT_LOG_TBL WHERE LOG_ID = v_log_id; htp.p('<div style="margin:10px 0">'); htp.p('<table class="t-Report-report" style="width:auto"><tbody>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Log ID</td><td style="padding:4px 12px">' || v_log_id || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Integration ID</td><td style="padding:4px 12px">' || v_int_id || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Date</td><td style="padding:4px 12px">' || TO_CHAR(v_log_date,'YYYY-MM-DD HH24:MI:SS') || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Type</td><td style="padding:4px 12px">' || v_log_type || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Package</td><td style="padding:4px 12px">' || v_pkg || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Procedure</td><td style="padding:4px 12px">' || v_proc || '</td></tr>'); IF v_err IS NOT NULL THEN htp.p('<tr><td style="font-weight:bold;padding:4px 12px;color:red">SQLERRM</td><td style="padding:4px 12px;color:red">' || HTF.ESCAPE_SC(v_err) || '</td></tr>'); END IF; htp.p('</tbody></table></div>'); htp.p('<h3 style="margin:16px 0 8px">Full Message</h3>'); htp.p('<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word;max-height:600px;overflow-y:auto">' || HTF.ESCAPE_SC(v_msg) || '</pre>'); EXCEPTION WHEN NO_DATA_FOUND THEN htp.p('<p>Log entry ' || v_log_id || ' not found.</p>'); END;
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+    )
+
+    region log-navigation (
+        name: Log Navigation
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  v_log_id  NUMBER := NVL(:P54_LOG_ID, 0);
+                  v_int_id  NUMBER := NVL(:P54_RUN_ID, 0);
+                  v_prev_id NUMBER;
+                  v_next_id NUMBER;
+                  v_app_id  VARCHAR2(20) := V('APP_ID');
+                  v_session VARCHAR2(40) := V('APP_SESSION');
+                BEGIN
+                  -- Find previous log entry (lower LOG_ID, same integration)
+                  BEGIN
+                    SELECT MAX(LOG_ID) INTO v_prev_id
+                      FROM DMT_LOG_TBL
+                     WHERE INTEGRATION_ID = v_int_id
+                       AND LOG_ID < v_log_id;
+                  EXCEPTION WHEN OTHERS THEN v_prev_id := NULL;
+                  END;
+                
+                  -- Find next log entry (higher LOG_ID, same integration)
+                  BEGIN
+                    SELECT MIN(LOG_ID) INTO v_next_id
+                      FROM DMT_LOG_TBL
+                     WHERE INTEGRATION_ID = v_int_id
+                       AND LOG_ID > v_log_id;
+                  EXCEPTION WHEN OTHERS THEN v_next_id := NULL;
+                  END;
+                
+                  htp.p('<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;margin-bottom:12px;">');
+                
+                  -- Prev button
+                  IF v_prev_id IS NOT NULL THEN
+                    htp.p('<a href="' || APEX_PAGE.GET_URL(p_page => 54, p_items => 'P54_LOG_ID,P54_RUN_ID', p_values => v_prev_id || ',' || v_int_id) || '" class="dmt-link" style="padding:8px 16px;border:1px solid #555;border-radius:4px;text-decoration:none;">&larr; Previous Entry (#' || v_prev_id || ')</a>');
+                  ELSE
+                    htp.p('<span style="padding:8px 16px;border:1px solid #333;border-radius:4px;color:#666;">&larr; No Previous</span>');
+                  END IF;
+                
+                  -- Current indicator
+                  htp.p('<span style="color:#aaa;">Log Entry #' || v_log_id || '</span>');
+                
+                  -- Next button
+                  IF v_next_id IS NOT NULL THEN
+                    htp.p('<a href="' || APEX_PAGE.GET_URL(p_page => 54, p_items => 'P54_LOG_ID,P54_RUN_ID', p_values => v_next_id || ',' || v_int_id) || '" class="dmt-link" style="padding:8px 16px;border:1px solid #555;border-radius:4px;text-decoration:none;">Next Entry (#' || v_next_id || ') &rarr;</a>');
+                  ELSE
+                    htp.p('<span style="padding:8px 16px;border:1px solid #333;border-radius:4px;color:#666;">No Next &rarr;</span>');
+                  END IF;
+                
+                  htp.p('</div>');
+                
+                  -- Back to Run Detail link
+                  htp.p('<div style="margin-bottom:12px;">');
+                  htp.p('<a href="' || APEX_PAGE.GET_URL(p_page => 53, p_items => 'P53_RUN_ID', p_values => TO_CHAR(v_int_id)) || '" class="dmt-link" style="font-size:13px;">&laquo; Back to Run Detail</a>');
+                  htp.p('</div>');
+                END;
+                ```
+        }
+        layout {
+            sequence: 5
+            slot: body
+        }
+        advanced {
+            htmlDomId: log_navigation
+        }
+    )
+
+    region run-log-entries (
+        name: Run Log Entries
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT l.LOG_ID,
+                       TO_CHAR(l.LOG_DATE, 'MM/DD HH24:MI:SS') AS LOG_TIME,
+                       l.LOG_TYPE,
+                       l.PACKAGE_NAME,
+                       l.PROCEDURE_NAME,
+                       SUBSTR(l.MESSAGE, 1, 300) AS MESSAGE,
+                       l.SQLERRM_TEXT AS ERROR
+                FROM DMT_LOG_TBL l
+                WHERE (:P54_RUN_ID IS NULL OR l.INTEGRATION_ID = :P54_RUN_ID)
+                  AND (:P54_CEMLI_CODE IS NULL OR l.QUEUE_ID IN (
+                         SELECT q.QUEUE_ID FROM DMT_WORK_QUEUE_TBL q
+                         WHERE q.RUN_ID = :P54_RUN_ID AND q.CEMLI_CODE = :P54_CEMLI_CODE))
+                ORDER BY l.LOG_DATE DESC
+                ```
+            pageItemsToSubmit: [
+                P54_RUN_ID
+                P54_CEMLI_CODE
+            ]
+        }
+        layout {
+            sequence: 25
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 500
+        }
+        messages {
+            whenNoDataFound: No log entries for this run.
+        }
+        advanced {
+            savedReportMappingIdentifier: 99540511
+        }
+
+        column ERROR (
+            type: plainText
+            heading {
+                heading: Error
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column LOG_ID (
+            type: plainText
+            heading {
+                heading: Log ID
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column LOG_TIME (
+            type: plainText
+            heading {
+                heading: Time
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column LOG_TYPE (
+            type: plainText
+            heading {
+                heading: Type
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column MESSAGE (
+            type: plainText
+            heading {
+                heading: Message
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column PACKAGE_NAME (
+            type: plainText
+            heading {
+                heading: Package
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column PROCEDURE_NAME (
+            type: plainText
+            heading {
+                heading: Procedure
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport RUNLOG123 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ERROR (
+                sequence: 7
+            )
+
+            displayColumn LOG_ID (
+                sequence: 1
+            )
+
+            displayColumn LOG_TIME (
+                sequence: 2
+            )
+
+            displayColumn LOG_TYPE (
+                sequence: 3
+            )
+
+            displayColumn MESSAGE (
+                sequence: 6
+            )
+
+            displayColumn PACKAGE_NAME (
+                sequence: 4
+            )
+
+            displayColumn PROCEDURE_NAME (
+                sequence: 5
+            )
+
+        )
+
+    )
+
+    pageItem P54_CEMLI_CODE (
+        type: hidden
+        layout {
+            sequence: 30
+            slot: body
+        }
+    )
+
+    pageItem P54_LOG_ID (
+        type: hidden
+        layout {
+            sequence: 20
+            slot: body
+        }
+    )
+
+    pageItem P54_RUN_ID (
+        type: hidden
+        layout {
+            sequence: 25
+            slot: body
+        }
+    )
+
+)
+

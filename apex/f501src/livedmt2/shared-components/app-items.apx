@@ -1,0 +1,15 @@
+appItem G_SECTION (
+)
+
+appItem P0_PREFIX_FILTER (
+    security {
+        sessionStateProtection: unrestricted
+    }
+)
+
+appItem P0_SCENARIO_ID (
+    security {
+        sessionStateProtection: unrestricted
+    }
+)
+

@@ -1,0 +1,12 @@
+buttonTemplate html-button-legacy-apex-5-migration (
+    name: HTML button (legacy - APEX 5 migration)
+    templateClass: custom8
+    button {
+        normal: " <input type=\"button\" value=\"#LABEL#\" onclick=\"#JAVASCRIPT#\" id=\"#BUTTON_ID#\" class=\"#BUTTON_CSS_CLASSES#\" #BUTTON_ATTRIBUTES#/>"
+        hot: " <input type=\"button\" value=\"#LABEL#\" onclick=\"#JAVASCRIPT#\" id=\"#BUTTON_ID#\" class=\"#BUTTON_CSS_CLASSES#\" #BUTTON_ATTRIBUTES#/>"
+    }
+    advanced {
+        identifier: HTML_BUTTON_LEGACY_APEX_5_MIGRATION
+    }
+)
+

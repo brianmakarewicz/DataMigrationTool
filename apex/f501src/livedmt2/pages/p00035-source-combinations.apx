@@ -1,0 +1,329 @@
+page 35 (
+    name: Source Combinations
+    alias: SOURCE-COMBINATIONS
+    title: Source Combinations
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region source-combinations (
+        name: Source Combinations
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT sc.concat_segments,
+                       sc.segment1, sc.segment2, sc.segment3, sc.segment4,
+                       sc.segment5, sc.segment6, sc.segment7, sc.segment8,
+                       sc.enabled_flag,
+                       sc.last_refresh_date,
+                       CASE WHEN m.coa_mapping_id IS NOT NULL THEN 'Y' ELSE 'N' END AS is_mapped,
+                       m.target_concat AS mapped_to
+                FROM DMT_COA_SOURCE_COMBOS sc
+                LEFT JOIN DMT_COA_MAP_CONFIG mc ON mc.source_coa_set_id = sc.coa_set_id AND mc.active_flag = 'Y'
+                LEFT JOIN DMT_COA_MAPPING m ON m.map_config_id = mc.map_config_id AND m.source_concat = sc.concat_segments AND m.active_flag = 'Y'
+                WHERE sc.coa_set_id = :P35_COA_SET_ID
+                ORDER BY sc.concat_segments
+                ```
+        }
+        layout {
+            sequence: 20
+            slot: body
+            startNewRow: false
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: [
+                #DEFAULT#
+                t-IRR-region--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        messages {
+            whenNoDataFound: No data found.
+            whenMoreDataFound: The maximum row count for this report is #MAX_ROW_COUNT# rows.  Please apply a filter to reduce the number of records in your query.
+        }
+        advanced {
+            savedReportMappingIdentifier: 50079911176967840
+        }
+
+        column CONCAT_SEGMENTS (
+            type: plainText
+            heading {
+                heading: Concat Segments
+            }
+            layout {
+                sequence: 1
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column ENABLED_FLAG (
+            type: plainText
+            heading {
+                heading: Enabled Flag
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column IS_MAPPED (
+            type: plainText
+            heading {
+                heading: Is Mapped
+            }
+            layout {
+                sequence: 12
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: L
+            }
+        )
+
+        column LAST_REFRESH_DATE (
+            type: plainText
+            heading {
+                heading: Last Refresh Date
+            }
+            layout {
+                sequence: 11
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column MAPPED_TO (
+            type: plainText
+            heading {
+                heading: Mapped To
+            }
+            layout {
+                sequence: 13
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
+
+        column SEGMENT1 (
+            type: plainText
+            heading {
+                heading: Segment1
+            }
+            layout {
+                sequence: 2
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column SEGMENT2 (
+            type: plainText
+            heading {
+                heading: Segment2
+            }
+            layout {
+                sequence: 3
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column SEGMENT3 (
+            type: plainText
+            heading {
+                heading: Segment3
+            }
+            layout {
+                sequence: 4
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column SEGMENT4 (
+            type: plainText
+            heading {
+                heading: Segment4
+            }
+            layout {
+                sequence: 5
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column SEGMENT5 (
+            type: plainText
+            heading {
+                heading: Segment5
+            }
+            layout {
+                sequence: 6
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column SEGMENT6 (
+            type: plainText
+            heading {
+                heading: Segment6
+            }
+            layout {
+                sequence: 7
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column SEGMENT7 (
+            type: plainText
+            heading {
+                heading: Segment7
+            }
+            layout {
+                sequence: 8
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column SEGMENT8 (
+            type: plainText
+            heading {
+                heading: Segment8
+            }
+            layout {
+                sequence: 9
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+        pageHeader {
+            pageHeaderText: Source Combinations
+        }
+    )
+
+    pageItem P35_COA_SET_ID (
+        type: selectList
+        label {
+            label: Source COA Set
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT set_code || ' — ' || ledger_name AS d, coa_set_id AS r FROM DMT_COA_SET WHERE set_type='SOURCE' AND active_flag='Y' ORDER BY set_code
+        }
+        layout {
+            sequence: 10
+            region: @source-combinations
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+)
+

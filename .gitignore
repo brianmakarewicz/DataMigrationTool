@@ -8,3 +8,6 @@ wallet/
 
 # requirements-doc change-approval sentinel (dmt_design_guard hook)
 docs/.design_change_approved
+
+# Playwright MCP session artifacts
+.playwright-mcp/

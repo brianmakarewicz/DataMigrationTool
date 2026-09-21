@@ -1,0 +1,470 @@
+page 22 (
+    name: Config - Procurement
+    alias: CONFIG-PROCUREMENT
+    title: Configuration Data - Procurement & Tax
+    appearance {
+        pageTemplate: @/standard
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        formAutoComplete: false
+    }
+
+    region bulk-upload (
+        name: Bulk Upload
+        type: staticContent
+        source {
+            htmlCode: <p>Upload CSV for procurement config objects.</p>
+        }
+        layout {
+            sequence: 50
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region payment-term-lines (
+        name: Payment Term Lines
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_CFG_PAY_TERM_LINES_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99221002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521681 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn DISCOUNT_DAYS (
+                sequence: 5
+            )
+
+            displayColumn DISCOUNT_PERCENT (
+                sequence: 4
+            )
+
+            displayColumn DUE_DAYS (
+                sequence: 3
+            )
+
+            displayColumn DUE_PERCENT (
+                sequence: 2
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 7
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 6
+            )
+
+            displayColumn PREFIX (
+                sequence: 9
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 8
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 10
+            )
+
+            displayColumn SEQUENCE_NUM (
+                sequence: 1
+            )
+
+        )
+
+    )
+
+    region payment-terms (
+        name: Payment Terms
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_CFG_PAY_TERMS_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99220002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521676 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn CUTOFF_DAY (
+                sequence: 8
+            )
+
+            displayColumn DESCRIPTION (
+                sequence: 2
+            )
+
+            displayColumn ENABLED_FLAG (
+                sequence: 3
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 6
+            )
+
+            displayColumn NAME (
+                sequence: 1
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 5
+            )
+
+            displayColumn PAY_TERM_TYPE (
+                sequence: 4
+            )
+
+            displayColumn PREFIX (
+                sequence: 10
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 9
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 11
+            )
+
+            displayColumn START_DATE_ACTIVE (
+                sequence: 7
+            )
+
+        )
+
+    )
+
+    region tax-rates (
+        name: Tax Rates
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_CFG_TAX_RATES_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 40
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99223002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521693 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ACTIVE_FLAG (
+                sequence: 6
+            )
+
+            displayColumn EFFECTIVE_FROM (
+                sequence: 5
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 8
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 7
+            )
+
+            displayColumn PERCENTAGE_RATE (
+                sequence: 4
+            )
+
+            displayColumn PREFIX (
+                sequence: 10
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 9
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 11
+            )
+
+            displayColumn TAX_RATE_CODE (
+                sequence: 2
+            )
+
+            displayColumn TAX_RATE_NAME (
+                sequence: 3
+            )
+
+            displayColumn TAX_REGIME_CODE (
+                sequence: 1
+            )
+
+        )
+
+    )
+
+    region tax-regimes (
+        name: Tax Regimes
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_CFG_TAX_REGIMES_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99222002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521687 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn COUNTRY_CODE (
+                sequence: 3
+            )
+
+            displayColumn EFFECTIVE_FROM (
+                sequence: 4
+            )
+
+            displayColumn EFFECTIVE_TO (
+                sequence: 5
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 7
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 6
+            )
+
+            displayColumn PREFIX (
+                sequence: 9
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 8
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 10
+            )
+
+            displayColumn TAX_REGIME_CODE (
+                sequence: 1
+            )
+
+            displayColumn TAX_REGIME_NAME (
+                sequence: 2
+            )
+
+        )
+
+    )
+
+    pageItem P22_SCENARIO (
+        type: selectList
+        label {
+            label: Scenario
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT scenario_name d, scenario_name r FROM dmt_scenario_tbl WHERE status = 'ACTIVE' ORDER BY scenario_name
+            displayExtraValues: false
+            nullDisplayValue: -- No Scenario --
+        }
+        layout {
+            sequence: 15
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P22_UPLOAD_FILE (
+        type: fileUpload
+        label {
+            label: Upload File
+            alignment: left
+        }
+        storage {
+            type: appTempFiles
+        }
+        layout {
+            sequence: 20
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 30
+        }
+    )
+
+    pageItem P22_UPLOAD_OBJECT (
+        type: selectList
+        label {
+            label: Object Type
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT display_name d, object_code r FROM dmt_upload_object_tbl WHERE page_number = 22 ORDER BY display_order
+            displayExtraValues: false
+            nullDisplayValue: -- Select Object --
+        }
+        layout {
+            sequence: 10
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button upload-csv (
+        buttonName: UPLOAD_CSV_22
+        label: Upload
+        layout {
+            sequence: 30
+            region: @bulk-upload
+            slot: belowBox
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+)
+

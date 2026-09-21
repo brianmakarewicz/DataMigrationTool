@@ -1,0 +1,982 @@
+list navigation-bar (
+    name: Navigation Bar
+
+    entry app-user (
+        label: &APP_USER.
+        icon {
+            imageIconCssClasses: fa-user
+        }
+        layout {
+            sequence: 10
+        }
+        link {
+            target: {
+                type: url
+                url: #
+            }
+        }
+        userDefinedAttributes {
+            2: has-username
+        }
+    )
+
+    entry list_item (
+        label: ---
+        layout {
+            sequence: 20
+            parentEntry: @app-user
+        }
+        link {
+            target: {
+                type: url
+                url: separator
+            }
+        }
+        serverSideCondition {
+            type: userIsAuthenticated
+        }
+    )
+
+    entry sign-out (
+        label: Sign Out
+        icon {
+            imageIconCssClasses: fa-sign-out
+        }
+        layout {
+            sequence: 30
+            parentEntry: @app-user
+        }
+        link {
+            target: {
+                type: url
+                url: &LOGOUT_URL.
+            }
+        }
+        serverSideCondition {
+            type: userIsAuthenticated
+        }
+    )
+
+)
+
+list navigation-menu (
+    name: Navigation Menu
+
+    entry administration (
+        label: Administration
+        icon {
+            imageIconCssClasses: fa-gear
+        }
+        layout {
+            sequence: 800
+        }
+        link {
+            target: {
+                page: 8
+            }
+        }
+    )
+
+    entry ap-invoices (
+        label: AP Invoices
+        layout {
+            sequence: 113
+            parentEntry: @procure-to-pay
+        }
+        link {
+            target: {
+                page: 2
+                items: {
+                    G_SECTION: AP
+                }
+            }
+        }
+    )
+
+    entry ar-invoices (
+        label: AR Invoices
+        layout {
+            sequence: 122
+            parentEntry: @order-to-cash
+        }
+        link {
+            target: {
+                page: 4
+                items: {
+                    G_SECTION: AR
+                }
+            }
+        }
+    )
+
+    entry banking (
+        label: Banking
+        layout {
+            sequence: 182
+            parentEntry: @master-data
+        }
+        link {
+            target: {
+                page: 24
+            }
+        }
+    )
+
+    entry bip-reports (
+        label: BIP Reports
+        layout {
+            sequence: 820
+            parentEntry: @administration
+        }
+        link {
+            target: {
+                page: 8
+                items: {
+                    G_SECTION: BIP
+                }
+            }
+        }
+    )
+
+    entry coa-crosswalk (
+        label: COA Crosswalk
+        layout {
+            sequence: 624
+            parentEntry: @coa-mapping
+        }
+        link {
+            target: {
+                page: 34
+            }
+        }
+    )
+
+    entry coa-mapping (
+        label: COA Mapping
+        icon {
+            imageIconCssClasses: fa-exchange
+        }
+        layout {
+            sequence: 620
+            parentEntry: @lookups-mapping
+        }
+        link {
+            target: {
+                page: 30
+            }
+        }
+    )
+
+    entry coa-sets (
+        label: COA Sets
+        layout {
+            sequence: 621
+            parentEntry: @coa-mapping
+        }
+        link {
+            target: {
+                page: 31
+            }
+        }
+    )
+
+    entry configuration (
+        label: Configuration
+        icon {
+            imageIconCssClasses: fa-cogs
+        }
+        layout {
+            sequence: 170
+            parentEntry: @conversion-data
+        }
+        link {
+            target: {
+                type: url
+                url: #
+            }
+        }
+    )
+
+    entry conversion-data (
+        label: Conversion Data
+        icon {
+            imageIconCssClasses: fa-database
+        }
+        layout {
+            sequence: 100
+        }
+        link {
+            target: {
+                type: url
+                url: #
+            }
+        }
+    )
+
+    entry customers (
+        label: Customers
+        layout {
+            sequence: 121
+            parentEntry: @order-to-cash
+        }
+        link {
+            target: {
+                page: 4
+                items: {
+                    G_SECTION: CUST
+                }
+            }
+        }
+    )
+
+    entry dashboard (
+        label: Dashboard
+        icon {
+            imageIconCssClasses: fa-home
+        }
+        layout {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 1
+            }
+        }
+    )
+
+    entry data-management (
+        label: Data Management
+        icon {
+            imageIconCssClasses: fa-cloud-upload
+        }
+        layout {
+            sequence: 500
+        }
+        link {
+            target: {
+                type: url
+                url: #
+            }
+        }
+    )
+
+    entry ebs-values (
+        label: EBS Values
+        layout {
+            sequence: 612
+            parentEntry: @lookup-mapping
+        }
+        link {
+            target: {
+                page: 18
+            }
+        }
+    )
+
+    entry employment (
+        label: Employment
+        layout {
+            sequence: 152
+            parentEntry: @hcm
+        }
+        link {
+            target: {
+                page: 7
+            }
+        }
+    )
+
+    entry erp-financials (
+        label: ERP Financials
+        icon {
+            imageIconCssClasses: fa-calculator
+        }
+        layout {
+            sequence: 130
+            parentEntry: @conversion-data
+        }
+        link {
+            target: {
+                page: 3
+            }
+        }
+    )
+
+    entry erp-projects (
+        label: ERP Projects
+        icon {
+            imageIconCssClasses: fa-briefcase
+        }
+        layout {
+            sequence: 140
+            parentEntry: @conversion-data
+        }
+        link {
+            target: {
+                page: 5
+            }
+        }
+    )
+
+    entry ess-job-monitor (
+        label: ESS Job Monitor
+        layout {
+            sequence: 810
+            parentEntry: @administration
+        }
+        link {
+            target: {
+                page: 8
+                items: {
+                    G_SECTION: ESS
+                }
+            }
+        }
+    )
+
+    entry expenditures (
+        label: Expenditures
+        layout {
+            sequence: 143
+            parentEntry: @erp-projects
+        }
+        link {
+            target: {
+                page: 5
+                items: {
+                    G_SECTION: EXP
+                }
+            }
+        }
+    )
+
+    entry financial-setup (
+        label: Financial Setup
+        layout {
+            sequence: 171
+            parentEntry: @configuration
+        }
+        link {
+            target: {
+                page: 21
+            }
+        }
+    )
+
+    entry fixed-assets (
+        label: Fixed Assets
+        layout {
+            sequence: 132
+            parentEntry: @erp-financials
+        }
+        link {
+            target: {
+                page: 3
+                items: {
+                    G_SECTION: FA
+                }
+            }
+        }
+    )
+
+    entry fusion-values (
+        label: Fusion Values
+        layout {
+            sequence: 613
+            parentEntry: @lookup-mapping
+        }
+        link {
+            target: {
+                page: 19
+            }
+        }
+    )
+
+    entry gl-journals (
+        label: GL Journals
+        layout {
+            sequence: 131
+            parentEntry: @erp-financials
+        }
+        link {
+            target: {
+                page: 3
+                items: {
+                    G_SECTION: GL
+                }
+            }
+        }
+    )
+
+    entry grants (
+        label: Grants
+        icon {
+            imageIconCssClasses: fa-file-text
+        }
+        layout {
+            sequence: 160
+            parentEntry: @conversion-data
+        }
+        link {
+            target: {
+                page: 12
+            }
+        }
+    )
+
+    entry hcm (
+        label: HCM
+        icon {
+            imageIconCssClasses: fa-users
+        }
+        layout {
+            sequence: 150
+            parentEntry: @conversion-data
+        }
+        link {
+            target: {
+                type: url
+                url: #
+            }
+        }
+    )
+
+    entry items-categories (
+        label: Items & Categories
+        layout {
+            sequence: 181
+            parentEntry: @master-data
+        }
+        link {
+            target: {
+                page: 23
+            }
+        }
+    )
+
+    entry lookup-admin (
+        label: Lookup Admin
+        layout {
+            sequence: 614
+            parentEntry: @lookup-mapping
+        }
+        link {
+            target: {
+                page: 20
+            }
+        }
+    )
+
+    entry lookup-mapping (
+        label: Lookup Mapping
+        icon {
+            imageIconCssClasses: fa-search
+        }
+        layout {
+            sequence: 610
+            parentEntry: @lookups-mapping
+        }
+        link {
+            target: {
+                page: 16
+            }
+        }
+    )
+
+    entry lookups-mapping (
+        label: Lookups & Mapping
+        icon {
+            imageIconCssClasses: fa-table
+        }
+        layout {
+            sequence: 600
+        }
+        link {
+            target: {
+                type: url
+                url: #
+            }
+        }
+    )
+
+    entry master-data (
+        label: Master Data
+        icon {
+            imageIconCssClasses: fa-cubes
+        }
+        layout {
+            sequence: 180
+            parentEntry: @conversion-data
+        }
+        link {
+            target: {
+                type: url
+                url: #
+            }
+        }
+    )
+
+    entry order-to-cash (
+        label: Order to Cash
+        icon {
+            imageIconCssClasses: fa-money-bill
+        }
+        layout {
+            sequence: 120
+            parentEntry: @conversion-data
+        }
+        link {
+            target: {
+                page: 4
+            }
+        }
+    )
+
+    entry payroll (
+        label: Payroll
+        layout {
+            sequence: 154
+            parentEntry: @hcm
+        }
+        link {
+            target: {
+                page: 11
+            }
+        }
+    )
+
+    entry prefix-management (
+        label: Prefix Management
+        layout {
+            sequence: 840
+            parentEntry: @administration
+        }
+        link {
+            target: {
+                page: 8
+                items: {
+                    G_SECTION: CONFIG
+                }
+            }
+        }
+    )
+
+    entry procure-to-pay (
+        label: Procure to Pay
+        icon {
+            imageIconCssClasses: fa-cart-full
+        }
+        layout {
+            sequence: 110
+            parentEntry: @conversion-data
+        }
+        link {
+            target: {
+                page: 2
+            }
+        }
+    )
+
+    entry procurement-tax (
+        label: Procurement & Tax
+        layout {
+            sequence: 172
+            parentEntry: @configuration
+        }
+        link {
+            target: {
+                page: 22
+            }
+        }
+    )
+
+    entry projects (
+        label: Projects
+        layout {
+            sequence: 141
+            parentEntry: @erp-projects
+        }
+        link {
+            target: {
+                page: 5
+                items: {
+                    G_SECTION: PROJ
+                }
+            }
+        }
+    )
+
+    entry purchase-orders (
+        label: Purchase Orders
+        layout {
+            sequence: 112
+            parentEntry: @procure-to-pay
+        }
+        link {
+            target: {
+                page: 2
+                items: {
+                    G_SECTION: PO
+                }
+            }
+        }
+    )
+
+    entry receipts (
+        label: Receipts
+        layout {
+            sequence: 123
+            parentEntry: @order-to-cash
+        }
+        link {
+            target: {
+                page: 4
+                items: {
+                    G_SECTION: RCPT
+                }
+            }
+        }
+    )
+
+    entry run-history (
+        label: Run History
+        icon {
+            imageIconCssClasses: fa-bar-chart
+        }
+        layout {
+            sequence: 19
+        }
+        link {
+            target: {
+                page: 80
+            }
+        }
+    )
+
+    entry run-metrics (
+        label: Run Metrics
+        layout {
+            sequence: 850
+            parentEntry: @administration
+        }
+        link {
+            target: {
+                page: 8
+                items: {
+                    G_SECTION: METRICS
+                }
+            }
+        }
+    )
+
+    entry scenario-management (
+        label: Scenario Management
+        icon {
+            imageIconCssClasses: fa-tags
+        }
+        layout {
+            sequence: 530
+            parentEntry: @data-management
+        }
+        link {
+            target: {
+                page: 14
+            }
+        }
+    )
+
+    entry segment-rules (
+        label: Segment Rules
+        layout {
+            sequence: 622
+            parentEntry: @coa-mapping
+        }
+        link {
+            target: {
+                page: 32
+            }
+        }
+    )
+
+    entry segment-values (
+        label: Segment Values
+        layout {
+            sequence: 623
+            parentEntry: @coa-mapping
+        }
+        link {
+            target: {
+                page: 33
+            }
+        }
+    )
+
+    entry smart-upload (
+        label: Smart Upload
+        icon {
+            imageIconCssClasses: fa-upload
+        }
+        layout {
+            sequence: 510
+            parentEntry: @data-management
+        }
+        link {
+            target: {
+                page: 25
+            }
+        }
+    )
+
+    entry source-combinations (
+        label: Source Combinations
+        layout {
+            sequence: 625
+            parentEntry: @coa-mapping
+        }
+        link {
+            target: {
+                page: 35
+            }
+        }
+    )
+
+    entry submit-pipeline (
+        label: Submit Pipeline
+        icon {
+            imageIconCssClasses: fa-send
+        }
+        layout {
+            sequence: 20
+        }
+        link {
+            target: {
+                page: 84
+            }
+        }
+    )
+
+    entry suppliers (
+        label: Suppliers
+        layout {
+            sequence: 111
+            parentEntry: @procure-to-pay
+        }
+        link {
+            target: {
+                page: 2
+                items: {
+                    G_SECTION: SUPPLIERS
+                }
+            }
+        }
+    )
+
+    entry system-configuration (
+        label: System Configuration
+        layout {
+            sequence: 830
+            parentEntry: @administration
+        }
+        link {
+            target: {
+                page: 8
+                items: {
+                    G_SECTION: CONFIG
+                }
+            }
+        }
+    )
+
+    entry talent-time (
+        label: Talent & Time
+        layout {
+            sequence: 153
+            parentEntry: @hcm
+        }
+        link {
+            target: {
+                page: 10
+            }
+        }
+    )
+
+    entry target-combinations (
+        label: Target Combinations
+        layout {
+            sequence: 626
+            parentEntry: @coa-mapping
+        }
+        link {
+            target: {
+                page: 36
+            }
+        }
+    )
+
+    entry tasks (
+        label: Tasks
+        layout {
+            sequence: 142
+            parentEntry: @erp-projects
+        }
+        link {
+            target: {
+                page: 5
+                items: {
+                    G_SECTION: TASKS
+                }
+            }
+        }
+    )
+
+    entry upload-reference (
+        label: Upload Reference
+        layout {
+            sequence: 860
+            parentEntry: @administration
+        }
+        link {
+            target: {
+                page: 9
+            }
+        }
+    )
+
+    entry value-mapping (
+        label: Value Mapping
+        layout {
+            sequence: 611
+            parentEntry: @lookup-mapping
+        }
+        link {
+            target: {
+                page: 17
+            }
+        }
+    )
+
+    entry workers-core (
+        label: Workers & Core
+        layout {
+            sequence: 151
+            parentEntry: @hcm
+        }
+        link {
+            target: {
+                page: 6
+            }
+        }
+    )
+
+)
+
+list page-navigation (
+    name: Page Navigation
+
+    entry administration (
+        label: Administration
+        icon {
+            imageIconCssClasses: fa-file-o
+        }
+        layout {
+            sequence: 80
+        }
+        link {
+            target: {
+                page: 8
+            }
+        }
+    )
+
+    entry erp-financials (
+        label: ERP Financials
+        icon {
+            imageIconCssClasses: fa-file-o
+        }
+        layout {
+            sequence: 30
+        }
+        link {
+            target: {
+                page: 3
+            }
+        }
+    )
+
+    entry erp-projects (
+        label: ERP Projects
+        icon {
+            imageIconCssClasses: fa-file-o
+        }
+        layout {
+            sequence: 50
+        }
+        link {
+            target: {
+                page: 5
+            }
+        }
+    )
+
+    entry hcm-time-and-labor (
+        label: HCM Time and Labor
+        icon {
+            imageIconCssClasses: fa-file-o
+        }
+        layout {
+            sequence: 70
+        }
+        link {
+            target: {
+                page: 7
+            }
+        }
+    )
+
+    entry hcm-workers (
+        label: HCM Workers
+        icon {
+            imageIconCssClasses: fa-file-o
+        }
+        layout {
+            sequence: 60
+        }
+        link {
+            target: {
+                page: 6
+            }
+        }
+    )
+
+    entry order-to-cash (
+        label: Order to Cash
+        icon {
+            imageIconCssClasses: fa-file-o
+        }
+        layout {
+            sequence: 40
+        }
+        link {
+            target: {
+                page: 4
+            }
+        }
+    )
+
+    entry procure-to-pay (
+        label: Procure to Pay
+        icon {
+            imageIconCssClasses: fa-file-o
+        }
+        layout {
+            sequence: 20
+        }
+        link {
+            target: {
+                page: 2
+            }
+        }
+    )
+
+)
+

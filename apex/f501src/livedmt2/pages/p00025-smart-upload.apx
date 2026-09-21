@@ -1,0 +1,878 @@
+page 25 (
+    name: Smart Upload
+    alias: SMART-UPLOAD
+    title: Upload Data Files
+    appearance {
+        pageTemplate: @/standard
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        formAutoComplete: false
+    }
+
+    region object-reference (
+        name: Object Reference
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT object_code, display_name, csv_filename AS expected_filename, fbdi_csv_filename AS fbdi_filename FROM dmt_upload_object_tbl WHERE is_active = 'Y' ORDER BY display_name
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99250031
+        }
+
+        column DISPLAY_NAME (
+            type: plainText
+            heading {
+                heading: Display Name
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column EXPECTED_FILENAME (
+            type: plainText
+            heading {
+                heading: Expected Filename
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column FBDI_FILENAME (
+            type: plainText
+            heading {
+                heading: FBDI Filename
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column OBJECT_CODE (
+            type: plainText
+            heading {
+                heading: Object Code
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521821 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn DISPLAY_NAME (
+                sequence: 2
+            )
+
+            displayColumn EXPECTED_FILENAME (
+                sequence: 3
+            )
+
+            displayColumn FBDI_FILENAME (
+                sequence: 4
+            )
+
+            displayColumn OBJECT_CODE (
+                sequence: 1
+            )
+
+        )
+
+    )
+
+    region upload-data-files (
+        name: Upload Data Files
+        type: staticContent
+        source {
+            htmlCode:
+                ```html
+                <div style="margin-bottom:16px">
+                <p><strong>Three ways to upload:</strong></p>
+                <ul>
+                <li><strong>Manual:</strong> Select the file type from the dropdown, then upload any CSV file. The file must have a header row &mdash; column names determine the mapping. Filename does not matter.</li>
+                <li><strong>Auto-detect CSV:</strong> Upload a CSV file named to match the expected format (e.g. <code>POZ_SUPPLIERS.csv</code>). Must have a header row.</li>
+                <li><strong>ZIP bundle:</strong> Upload a ZIP file containing multiple CSVs. Each CSV is routed by its filename:
+                  <ul>
+                    <li>If the filename matches a <strong>staging CSV name</strong> (e.g. <code>POZ_SUPPLIERS.csv</code>) &rarr; parsed with headers</li>
+                    <li>If the filename matches an <strong>FBDI template name</strong> (e.g. <code>PozSuppliersInt.csv</code>) &rarr; parsed positionally (no headers, column order per CTL spec)</li>
+                    <li>Unrecognized filenames are skipped</li>
+                  </ul>
+                  The ZIP filename itself does not matter.</li>
+                </ul>
+                </div>
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region upload-errors (
+        name: Upload Errors
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT e.BATCH_TAG,
+                       e.LOG_ID AS BATCH,
+                       e.ROW_NUMBER,
+                       e.COLUMN_NAME,
+                       e.ERROR_TYPE,
+                       e.ERROR_MESSAGE,
+                       e.RAW_VALUE,
+                       TO_CHAR(e.CREATED_DATE, 'MM/DD HH24:MI') AS LOGGED_AT
+                FROM DMT_UPLOAD_ERROR_TBL e
+                ORDER BY e.LOG_ID DESC, e.ROW_NUMBER
+                FETCH FIRST 200 ROWS ONLY
+                ```
+        }
+        layout {
+            sequence: 15
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 200
+        }
+        messages {
+            whenNoDataFound: No upload errors found.
+            whenMoreDataFound: Showing first 200 errors.
+        }
+        advanced {
+            savedReportMappingIdentifier: 99250951
+        }
+
+        column BATCH (
+            type: plainText
+            heading {
+                heading: Batch
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column BATCH_TAG (
+            type: plainText
+            heading {
+                heading: Load ID
+            }
+            layout {
+                sequence: 5
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column COLUMN_NAME (
+            type: plainText
+            heading {
+                heading: Column
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column ERROR_MESSAGE (
+            type: plainText
+            heading {
+                heading: Error Message
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column ERROR_TYPE (
+            type: plainText
+            heading {
+                heading: Error Type
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column LOGGED_AT (
+            type: plainText
+            heading {
+                heading: When
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column RAW_VALUE (
+            type: plainText
+            heading {
+                heading: Raw Value
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column ROW_NUMBER (
+            type: plainText
+            heading {
+                heading: Row #
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport UPL_ERR_DEF (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn BATCH (
+                sequence: 2
+            )
+
+            displayColumn BATCH_TAG (
+                sequence: 1
+            )
+
+            displayColumn COLUMN_NAME (
+                sequence: 4
+            )
+
+            displayColumn ERROR_MESSAGE (
+                sequence: 6
+            )
+
+            displayColumn ERROR_TYPE (
+                sequence: 5
+            )
+
+            displayColumn LOGGED_AT (
+                sequence: 8
+            )
+
+            displayColumn RAW_VALUE (
+                sequence: 7
+            )
+
+            displayColumn ROW_NUMBER (
+                sequence: 3
+            )
+
+        )
+
+    )
+
+    region upload-summary (
+        name: Upload Summary
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT OBJECT_CODE,
+                       ROWS_LOADED,
+                       ROWS_ERRORED,
+                       STATUS,
+                       SUBSTR(ERROR_MSG, 1, 200) AS ERROR_MSG
+                FROM DMT_UPLOAD_LOG_TBL
+                WHERE BATCH_ID = :P25_LAST_BATCH_ID
+                ORDER BY OBJECT_CODE
+                ```
+            pageItemsToSubmit: P25_LAST_BATCH_ID
+        }
+        layout {
+            sequence: 12
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 100
+        }
+        messages {
+            whenNoDataFound: Upload a file to see results here.
+        }
+        advanced {
+            savedReportMappingIdentifier: 99251001
+        }
+
+        column ERROR_MSG (
+            type: plainText
+            heading {
+                heading: Error
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column OBJECT_CODE (
+            type: plainText
+            heading {
+                heading: Object
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column ROWS_ERRORED (
+            type: plainText
+            heading {
+                heading: Errors
+                alignment: end
+            }
+            layout {
+                sequence: 30
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column ROWS_LOADED (
+            type: plainText
+            heading {
+                heading: Loaded
+                alignment: end
+            }
+            layout {
+                sequence: 20
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column STATUS (
+            type: plainText
+            heading {
+                heading: Status
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport UPL_SUM_DEF (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ERROR_MSG (
+                sequence: 5
+            )
+
+            displayColumn OBJECT_CODE (
+                sequence: 1
+            )
+
+            displayColumn ROWS_ERRORED (
+                sequence: 3
+            )
+
+            displayColumn ROWS_LOADED (
+                sequence: 2
+            )
+
+            displayColumn STATUS (
+                sequence: 4
+            )
+
+        )
+
+    )
+
+    pageItem P25_LAST_BATCH_ID (
+        type: hidden
+        layout {
+            sequence: 90
+            region: @upload-data-files
+            slot: regionBody
+        }
+        security {
+            sessionStateProtection: checksumRequiredSessionLevel
+        }
+    )
+
+    pageItem P25_OBJECT_TYPE (
+        type: selectList
+        label {
+            label: Object Type
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT display_name d, object_code r FROM dmt_upload_object_tbl WHERE is_active = 'Y' ORDER BY display_name
+            displayExtraValues: false
+            nullDisplayValue: -- Select Object Type --
+        }
+        layout {
+            sequence: 20
+            region: @upload-data-files
+            slot: regionBody
+            alignment: left
+            columnSpan: 6
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P25_SCENARIO (
+        type: selectList
+        label {
+            label: Scenario
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT scenario_name AS d, scenario_name AS r FROM dmt_scenario_tbl WHERE status = 'ACTIVE' ORDER BY scenario_name
+            displayExtraValues: false
+            nullDisplayValue: -- No Scenario --
+        }
+        layout {
+            sequence: 25
+            region: @upload-data-files
+            slot: regionBody
+            alignment: left
+            columnSpan: 6
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+        help {
+            helpText: Optional. Tag uploaded data with a scenario name so the pipeline can process subsets selectively.
+        }
+    )
+
+    pageItem P25_UPLOAD_FILE (
+        type: fileUpload
+        label {
+            label: File (CSV or ZIP)
+            alignment: left
+        }
+        storage {
+            type: appTempFiles
+        }
+        layout {
+            sequence: 30
+            region: @upload-data-files
+            slot: regionBody
+            alignment: left
+            columnSpan: 6
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 30
+        }
+    )
+
+    pageItem P25_UPLOAD_MODE (
+        type: radioGroup
+        label {
+            label: Upload Mode
+            alignment: left
+        }
+        lov {
+            type: staticValues
+            staticValues: STATIC:Manual - Pick Object Type;MANUAL,Auto-detect by Filename;AUTO
+            displayNullValue: false
+        }
+        layout {
+            sequence: 10
+            region: @upload-data-files
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    button upload-smart (
+        buttonName: UPLOAD_SMART
+        label: Upload
+        layout {
+            sequence: 40
+            region: @upload-data-files
+            slot: belowBox
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: [
+                #DEFAULT#
+                t-Button--large
+            ]
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    dynamicAction toggle-object-type (
+        name: Toggle Object Type
+        execution {
+            sequence: 10
+        }
+        when {
+            selectionType: items
+            items: P25_UPLOAD_MODE
+        }
+
+        action native-javascript-code (
+            action: executeJsCode
+            settings {
+                jsCode: var mode=apex.item("P25_UPLOAD_MODE").getValue();if(mode==="MANUAL"){apex.item("P25_OBJECT_TYPE").show();}else{apex.item("P25_OBJECT_TYPE").hide();apex.item("P25_OBJECT_TYPE").setValue("");}
+            }
+            execution {
+                sequence: 10
+            }
+        )
+
+    )
+
+    process smart-upload (
+        name: Smart Upload
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                
+                DECLARE
+                    l_filename     VARCHAR2(400);
+                    l_obj_code     VARCHAR2(100);
+                    l_ext          VARCHAR2(10);
+                    l_scenario     VARCHAR2(200) := :P25_SCENARIO;
+                    l_rows_loaded  NUMBER;
+                    l_rows_errored NUMBER;
+                    l_batch_id     NUMBER;
+                    l_error_msg    VARCHAR2(4000);
+                    l_summary      CLOB;
+                    l_has_stg      NUMBER := 0;
+                    l_has_fbdi     NUMBER := 0;
+                BEGIN
+                    SELECT filename INTO l_filename
+                    FROM apex_application_temp_files
+                    WHERE name = :P25_UPLOAD_FILE;
+                
+                    l_ext := UPPER(SUBSTR(l_filename, INSTR(l_filename, '.', -1) + 1));
+                
+                    IF :P25_UPLOAD_MODE = 'MANUAL' THEN
+                        -- Manual: user picked the object type
+                        IF :P25_OBJECT_TYPE IS NULL THEN
+                            RAISE_APPLICATION_ERROR(-20001, 'Please select an Object Type in Manual mode.');
+                        END IF;
+                        DMT_CSV_UPLOAD_PKG.UPLOAD_CSV(
+                            p_file_name    => :P25_UPLOAD_FILE,
+                            p_object_code  => :P25_OBJECT_TYPE,
+                            p_rows_loaded  => l_rows_loaded,
+                            p_rows_errored => l_rows_errored,
+                            p_batch_id_out => l_batch_id,
+                            p_error_msg    => l_error_msg,
+                            p_scenario_name => l_scenario
+                        );
+                        IF l_error_msg IS NOT NULL THEN
+                            APEX_ERROR.ADD_ERROR(p_message => l_error_msg, p_display_location => 'INLINE_IN_NOTIFICATION');
+                        ELSE
+                            APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
+                                l_rows_loaded || ' rows loaded, ' || l_rows_errored || ' errors.';
+                        END IF;
+                
+                    ELSIF l_ext = 'ZIP' THEN
+                        -- ZIP: peek inside to determine header-based vs FBDI
+                        DECLARE
+                            l_zip_blob  BLOB;
+                            l_files     APEX_ZIP.T_FILES;
+                            l_fname     VARCHAR2(500);
+                        BEGIN
+                            SELECT blob_content INTO l_zip_blob
+                            FROM apex_application_temp_files WHERE name = :P25_UPLOAD_FILE;
+                
+                            l_files := APEX_ZIP.GET_FILES(p_zipped_blob => l_zip_blob);
+                
+                            FOR i IN 1 .. l_files.COUNT LOOP
+                                l_fname := l_files(i);
+                                IF l_fname LIKE '%/' OR l_fname LIKE '.%' THEN CONTINUE; END IF;
+                                IF INSTR(l_fname, '/') > 0 THEN
+                                    l_fname := SUBSTR(l_fname, INSTR(l_fname, '/', -1) + 1);
+                                END IF;
+                
+                                SELECT COUNT(*) INTO l_has_stg FROM dmt_upload_object_tbl
+                                WHERE UPPER(csv_filename) = UPPER(l_fname) AND is_active = 'Y' AND ROWNUM = 1;
+                                IF l_has_stg > 0 THEN EXIT; END IF;
+                
+                                SELECT COUNT(*) INTO l_has_fbdi FROM dmt_upload_object_tbl
+                                WHERE UPPER(fbdi_csv_filename) = UPPER(l_fname) AND is_active = 'Y' AND ROWNUM = 1;
+                                IF l_has_fbdi > 0 THEN EXIT; END IF;
+                            END LOOP;
+                        END;
+                
+                        IF l_has_stg > 0 THEN
+                            DMT_CSV_UPLOAD_PKG.UPLOAD_ZIP_BUNDLE(
+                                p_file_name    => :P25_UPLOAD_FILE,
+                                p_summary      => l_summary,
+                                p_batch_id_out => l_batch_id,
+                                p_error_msg    => l_error_msg,
+                                p_scenario_name => l_scenario
+                            );
+                            IF l_error_msg IS NOT NULL THEN
+                                APEX_ERROR.ADD_ERROR(p_message => l_error_msg, p_display_location => 'INLINE_IN_NOTIFICATION');
+                            ELSE
+                                APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
+                                    SUBSTR(l_summary, 1, 2000);
+                            END IF;
+                
+                        ELSIF l_has_fbdi > 0 THEN
+                            DMT_CSV_UPLOAD_PKG.UPLOAD_FBDI_ZIP(
+                                p_file_name    => :P25_UPLOAD_FILE,
+                                p_summary      => l_summary,
+                                p_batch_id_out => l_batch_id,
+                                p_error_msg    => l_error_msg,
+                                p_scenario_name => l_scenario
+                            );
+                            IF l_error_msg IS NOT NULL THEN
+                                APEX_ERROR.ADD_ERROR(p_message => l_error_msg, p_display_location => 'INLINE_IN_NOTIFICATION');
+                            ELSE
+                                APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
+                                    SUBSTR(l_summary, 1, 2000);
+                            END IF;
+                
+                        ELSE
+                            APEX_ERROR.ADD_ERROR(
+                                p_message          => 'No files in the ZIP matched any known object filename. '
+                                                     || 'Check the Object Reference table below for expected filenames.',
+                                p_display_location => 'INLINE_IN_NOTIFICATION');
+                        END IF;
+                
+                    ELSE
+                        -- Auto-detect single CSV by filename
+                        BEGIN
+                            SELECT object_code INTO l_obj_code
+                            FROM dmt_upload_object_tbl
+                            WHERE UPPER(csv_filename) = UPPER(l_filename)
+                            AND   is_active = 'Y'
+                            AND   ROWNUM = 1;
+                        EXCEPTION
+                            WHEN NO_DATA_FOUND THEN
+                                RAISE_APPLICATION_ERROR(-20002,
+                                    'Could not auto-detect object type from filename "' || l_filename || '". '
+                                    || 'Use Manual mode or rename the file to match an expected filename.');
+                        END;
+                
+                        DMT_CSV_UPLOAD_PKG.UPLOAD_CSV(
+                            p_file_name    => :P25_UPLOAD_FILE,
+                            p_object_code  => l_obj_code,
+                            p_rows_loaded  => l_rows_loaded,
+                            p_rows_errored => l_rows_errored,
+                            p_batch_id_out => l_batch_id,
+                            p_error_msg    => l_error_msg,
+                            p_scenario_name => l_scenario
+                        );
+                        IF l_error_msg IS NOT NULL THEN
+                            APEX_ERROR.ADD_ERROR(p_message => l_error_msg, p_display_location => 'INLINE_IN_NOTIFICATION');
+                        ELSE
+                            APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
+                                l_rows_loaded || ' rows loaded, ' || l_rows_errored || ' errors. (' || l_obj_code || ')';
+                        END IF;
+                    END IF;
+                
+                    :P25_LAST_BATCH_ID := l_batch_id;
+                    :P25_UPLOAD_FILE := NULL;
+                END;
+                ```
+        }
+        execution {
+            sequence: 10
+        }
+        advanced {
+            executionMappingIdentifier: 99250040
+        }
+        serverSideCondition {
+            whenButtonPressed: @upload-smart
+        }
+    )
+
+)
+

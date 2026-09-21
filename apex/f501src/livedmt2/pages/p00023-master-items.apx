@@ -1,0 +1,298 @@
+page 23 (
+    name: Master Data - Items
+    alias: MASTER-ITEMS
+    title: Master Data - Items & Categories
+    appearance {
+        pageTemplate: @/standard
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        formAutoComplete: false
+    }
+
+    region bulk-upload (
+        name: Bulk Upload
+        type: staticContent
+        source {
+            htmlCode: <p>Upload CSV for item master data.</p>
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region item-categories (
+        name: Item Categories
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_MST_ITEM_CATS_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-collapsed
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99231002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521708 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn CATEGORY_CODE (
+                sequence: 4
+            )
+
+            displayColumn CATEGORY_NAME (
+                sequence: 5
+            )
+
+            displayColumn CATEGORY_SET_NAME (
+                sequence: 3
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 7
+            )
+
+            displayColumn ITEM_NUMBER (
+                sequence: 2
+            )
+
+            displayColumn ORGANIZATION_CODE (
+                sequence: 1
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 6
+            )
+
+            displayColumn PREFIX (
+                sequence: 9
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 8
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 10
+            )
+
+        )
+
+    )
+
+    region items (
+        name: Items
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery: SELECT * FROM DMT_MST_ITEMS_V WHERE (:P0_SCENARIO_SELECT IS NULL OR SCENARIO_ID = :P0_SCENARIO_SELECT) AND (:P0_PREFIX_INPUT IS NULL OR PREFIX = :P0_PREFIX_INPUT)
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+        advanced {
+            savedReportMappingIdentifier: 99230002
+        }
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 521703 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn DESCRIPTION (
+                sequence: 2
+            )
+
+            displayColumn ERROR_TEXT (
+                sequence: 8
+            )
+
+            displayColumn ITEM_CLASS_NAME (
+                sequence: 5
+            )
+
+            displayColumn ITEM_NUMBER (
+                sequence: 1
+            )
+
+            displayColumn ITEM_STATUS (
+                sequence: 6
+            )
+
+            displayColumn ORGANIZATION_CODE (
+                sequence: 3
+            )
+
+            displayColumn OVERALL_STATUS (
+                sequence: 7
+            )
+
+            displayColumn PREFIX (
+                sequence: 10
+            )
+
+            displayColumn PRIMARY_UOM_CODE (
+                sequence: 4
+            )
+
+            displayColumn RUN_DATE (
+                sequence: 9
+            )
+
+            displayColumn SCENARIO_ID (
+                sequence: 11
+            )
+
+        )
+
+    )
+
+    pageItem P23_SCENARIO (
+        type: selectList
+        label {
+            label: Scenario
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT scenario_name d, scenario_name r FROM dmt_scenario_tbl WHERE status = 'ACTIVE' ORDER BY scenario_name
+            displayExtraValues: false
+            nullDisplayValue: -- No Scenario --
+        }
+        layout {
+            sequence: 15
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P23_UPLOAD_FILE (
+        type: fileUpload
+        label {
+            label: Upload File
+            alignment: left
+        }
+        storage {
+            type: appTempFiles
+        }
+        layout {
+            sequence: 20
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 30
+        }
+    )
+
+    pageItem P23_UPLOAD_OBJECT (
+        type: selectList
+        label {
+            label: Object Type
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT display_name d, object_code r FROM dmt_upload_object_tbl WHERE page_number = 23 ORDER BY display_order
+            displayExtraValues: false
+            nullDisplayValue: -- Select Object --
+        }
+        layout {
+            sequence: 10
+            region: @bulk-upload
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    button upload-csv (
+        buttonName: UPLOAD_CSV_23
+        label: Upload
+        layout {
+            sequence: 30
+            region: @bulk-upload
+            slot: belowBox
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+)
+
