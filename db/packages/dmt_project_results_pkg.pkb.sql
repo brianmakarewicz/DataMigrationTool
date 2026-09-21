@@ -59,6 +59,31 @@ AS
     C_CEMLI  CONSTANT VARCHAR2(30) := 'Projects';
     C_MARKER CONSTANT VARCHAR2(20) := '#IMPORT_REPORT#';
 
+    -- Per-tier base-table evidence, confirmed live against the demo pod 2026-09-21
+    -- for run 325 / prefix 10265 (two loaded projects, ids 300000333828672 and
+    -- 300000333828697):
+    --   TxnControls  -> HAS a real, queryable Fusion base table. PJC_TRANSACTION_
+    --                   CONTROLS holds one row per loaded control with a real id
+    --                   (TXN_CONTROL_ID) and the source TXN_CTRL_REFERENCE, keyed
+    --                   to the project via PROJECT_ID. Confirmed: RT-TXC-RTPRJ001
+    --                   -> TXN_CONTROL_ID 100002642117705, RT-TXC-RTPRJ002 ->
+    --                   100002642117706. The recon data model now emits a proper
+    --                   BASE/SUCCESS row for this tier (see DMT_PROJECT_RECON_DM.xdm)
+    --                   and the shared Contract v1 apply below marks it LOADED with
+    --                   that real id -- Rule #1 satisfied exactly like every other
+    --                   object. No import-report success harvest is needed.
+    --   TeamMembers  -> has NO queryable base row on this instance. PJF_PROJECT_
+    --                   PARTIES (a plain-passthrough view over the base storage,
+    --                   5005 rows total) held ZERO rows for either loaded project --
+    --                   and zero for ANY DMT-migrated project across all prefixes --
+    --                   even after the async provisioning window had passed. The
+    --                   interface table was also empty (Import accepted and purged
+    --                   the members). With no accessible base id, this tier CANNOT
+    --                   satisfy Rule #1 today, so it is honestly left UNACCOUNTED
+    --                   (the TFM rows stay GENERATED). We do NOT fabricate a LOADED
+    --                   from the import-report success list; the owner will decide
+    --                   whether to grant a documented exception for this tier later.
+
     -- --------------------------------------------------------
     -- Private: resolve the CHILD Import Projects report job id.
     --
@@ -559,6 +584,19 @@ AS
                 p_procedure => C_PROC);
             apply_import_report(p_run_id, p_import_ess_id, l_ir_matched);
         END IF;
+
+        -- TxnControls now reconcile through the shared Contract v1 apply above: the
+        -- recon data model emits a real BASE/SUCCESS row over PJC_TRANSACTION_CONTROLS
+        -- (id TXN_CONTROL_ID), so the apply stamps FUSION_TXN_CONTROL_ID and marks the
+        -- row LOADED against a real Fusion base row -- the same Rule #1 path every
+        -- other object uses. The former import-report SUCCESS harvest for this tier is
+        -- removed (it invented a LOADED with no base id and was blocked in review).
+        --
+        -- TeamMembers has NO queryable Fusion base row on this instance (confirmed
+        -- live 2026-09-21: PJF_PROJECT_PARTIES holds zero rows for any DMT-migrated
+        -- project). Its TFM rows are therefore left GENERATED = honestly UNACCOUNTED,
+        -- never a fabricated LOADED. If the owner later grants a documented Rule #1
+        -- exception for this tier, that is the place to add it -- not here.
 
         -- Unresolved records are intentionally left GENERATED (unaccounted). No
         -- fabricated FAILED: the accounting gate reports the object not-DONE and

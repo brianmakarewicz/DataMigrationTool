@@ -52,9 +52,13 @@
 --   INTERFACE (rejection left behind by Import)     => ERROR
 --
 -- FUSION_ID:
---   Projects BASE => PJF_PROJECTS_ALL_B.PROJECT_ID
---   Tasks    BASE => PJF_PROJ_ELEMENTS_B.PROJ_ELEMENT_ID
+--   Projects    BASE => PJF_PROJECTS_ALL_B.PROJECT_ID
+--   Tasks       BASE => PJF_PROJ_ELEMENTS_B.PROJ_ELEMENT_ID
+--   TxnControls BASE => PJC_TRANSACTION_CONTROLS.TXN_CONTROL_ID
 --   INTERFACE rows have no Fusion id yet (NULL).
+--   TeamMembers has no queryable base row on this instance, so it emits
+--   only INTERFACE rows; a loaded team member is left UNACCOUNTED
+--   (never fabricated LOADED).
 --
 -- ERROR_MESSAGE: the Projects interface tables carry NO error-text
 --   column (confirmed: PJF_PROJECTS_ALL_XFACE has only IMPORT_STATUS /
@@ -178,11 +182,18 @@ FROM (
     UNION ALL
 
     -- ---- TeamMembers tier : INTERFACE only --------------------------
-    -- Team members do not land in PJF_PROJECT_PARTIES keyed to the
-    -- converted project on this instance (a global-resource link, not a
-    -- prefix-scoped base row), so the reliable outcome is the interface
-    -- rejection. Keyed by project name + member name (the interface
-    -- table carries no project number).
+    -- Team members have NO queryable Fusion base row on this instance.
+    -- Confirmed live 2026-09-21 (run 325 / prefix 10265, project ids
+    -- 300000333828672 and 300000333828697): PJF_PROJECT_PARTIES held zero
+    -- rows for either loaded project -- and zero for ANY DMT-migrated
+    -- project across all prefixes -- even after the async provisioning
+    -- window had passed, while the interface table was also empty (Import
+    -- accepted and purged the members). With no accessible base id, this
+    -- data model cannot emit a BASE/SUCCESS row for a loaded team member,
+    -- so a LOADED team member is honestly left UNACCOUNTED (the TFM row
+    -- stays GENERATED); we do not fabricate a LOADED without base evidence.
+    -- This INTERFACE block still catches rejections. Keyed by project name
+    -- + member name (the interface table carries no project number).
     SELECT
         'TeamMembers'                        AS object_type,
         tm.project_name || '/TM/' || tm.team_member_name AS record_key,
@@ -203,10 +214,42 @@ FROM (
 
     UNION ALL
 
-    -- ---- TxnControls tier : INTERFACE only --------------------------
-    -- No base table for transaction controls under this schema; the
-    -- staging table (LOAD_STATUS only, no IMPORT_STATUS) is the outcome
-    -- source. Keyed by project number + control reference.
+    -- ---- TxnControls tier : BASE (positive LOADED confirmation) -----
+    -- Transaction controls DO land in a queryable Fusion base table on this
+    -- instance: PJC_TRANSACTION_CONTROLS, one row per loaded control with a
+    -- real id (TXN_CONTROL_ID) and the source TXN_CTRL_REFERENCE, keyed to
+    -- the project via PROJECT_ID. Confirmed live 2026-09-21 (run 325 /
+    -- prefix 10265): RT-TXC-RTPRJ001 -> TXN_CONTROL_ID 100002642117705,
+    -- RT-TXC-RTPRJ002 -> 100002642117706. The base table carries no project
+    -- number, so join to PJF_PROJECTS_ALL_B for the prefix filter and the
+    -- RECORD_KEY (PROJECT_NUMBER || '/TC/' || TXN_CTRL_REFERENCE), which
+    -- matches the transform's RECON_KEY exactly. FUSION_ID = TXN_CONTROL_ID
+    -- so the reconciler marks the TFM row LOADED with a real Fusion base id
+    -- -- Rule #1 satisfied the same way every other object satisfies it.
+    SELECT
+        'TxnControls'                        AS object_type,
+        p.segment1 || '/TC/' || tc.txn_ctrl_reference AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        tc.txn_control_id                    AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        p.segment1 || '/TC/' || tc.txn_ctrl_reference AS source_ref,
+        p.segment1 || '/TC/' || tc.txn_ctrl_reference AS dmt_reference,
+        CAST(NULL AS VARCHAR2(4000))         AS debug_disposition
+    FROM   pjc_transaction_controls tc
+    JOIN   pjf_projects_all_b        p ON p.project_id = tc.project_id
+    WHERE  :P_PREFIX IS NOT NULL
+    AND    p.segment1 LIKE :P_PREFIX || '%'
+
+    UNION ALL
+
+    -- ---- TxnControls tier : INTERFACE (rejections left in staging) --
+    -- Anything still sitting in the staging table after import is a
+    -- rejection (the staging rows are emptied on success). Keyed by
+    -- project number + control reference. The staging table carries no
+    -- per-row error text, so return the '#IMPORT_REPORT#' marker and let
+    -- the reconciler overlay the true Fusion message from the child report.
     SELECT
         'TxnControls'                        AS object_type,
         tc.project_number || '/TC/' || tc.txn_ctrl_reference AS record_key,
