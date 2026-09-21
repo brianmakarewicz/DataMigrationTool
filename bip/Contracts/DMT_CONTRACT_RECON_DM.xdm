@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="contract_po_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- Contracts reconciliation data model -- BIP reconciliation report
+-- contract v1 (nine columns, keyset pagination, six standard
+-- parameters). Modeled on the PurchaseOrders exemplar
+-- (DMT_PO_RECON_DM.xdm); this is the Contract Purchase Agreement
+-- (CPA) sibling in the shared PO document family.
+--
+-- Contracts shares the SAME interface and base tables as
+-- PurchaseOrders and BlanketPOs (PO_HEADERS_INTERFACE /
+-- PO_HEADERS_ALL), the SAME shared transformer
+-- (dmt_po_transform_pkg) and the SAME stamped recon keys. It is a
+-- DISTINCT object because it is a distinct FBDI zip loaded by a
+-- distinct ESS job (ImportCPAJob), so it has its OWN recon data
+-- model, OWN results package and OWN registry row, and its report
+-- is run with the CPA load/import request ids so it returns ONLY
+-- Contract rows.
+--
+-- TIERS: CPA is HEADERS ONLY (the Contract Purchase Agreement FBDI
+-- carries only a header record type). Two SELECT blocks (one tier x
+-- BASE+INTERFACE) are UNION ALL-ed and ordered by RECORD_KEY.
+--
+-- OBJECT_TYPE literal (this object's own, distinct from the other
+-- two PO-family objects so a shared TFM table is never cross-hit):
+--   headers  'Contracts'
+--
+-- STAMPED RECON KEY (= dmt_po_transform_pkg RECON_KEY, aligned so
+-- BASE and INTERFACE emit the SAME key):
+--   headers  DOCUMENT_NUM (= base SEGMENT1 = prefixed document num)
+--
+-- Row selection: BASE rows confirmed by REQUEST_ID = :P_IMPORT_ESS_ID
+-- and TYPE_LOOKUP_CODE = 'CONTRACT' (the CPA base document type).
+-- INTERFACE rows are the rejections (PROCESS_CODE <> 'ACCEPTED')
+-- selected by LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID and the stamped
+-- header-key prefix :P_RUN_ID || '_HDR_' (run-scoped selectors so
+-- residue from other runs / other document types is excluded).
+--
+-- FUSION_STATUS normalized: BASE => SUCCESS, INTERFACE => ERROR.
+-- FUSION_ID non-null on every BASE row (PO_HEADER_ID). ERROR_MESSAGE
+-- non-null on every ERROR row (real Fusion rejection text from
+-- PO_INTERFACE_ERRORS at the header level).
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- ========== BASE tier: positive proof ==========
+
+    -- BASE / headers. RECORD_KEY = base SEGMENT1 (= prefixed DOCUMENT_NUM
+    -- = header TFM RECON_KEY). Confirmed by REQUEST_ID and CONTRACT type.
+    SELECT
+        'Contracts'                          AS object_type,
+        h.segment1                           AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        h.po_header_id                       AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        h.segment1                           AS source_ref,
+        h.interface_source_code              AS dmt_reference
+    FROM   po_headers_all h
+    WHERE  h.request_id = :P_IMPORT_ESS_ID
+    AND    :P_IMPORT_ESS_ID IS NOT NULL
+    AND    h.type_lookup_code = 'CONTRACT'
+
+    UNION ALL
+
+    -- ========== INTERFACE tier: rejections only (PROCESS_CODE <> ACCEPTED) ==========
+
+    -- INTERFACE / headers. RECORD_KEY = h.document_num (base-aligned;
+    -- = header TFM RECON_KEY). SOURCE_REF carries the stamped key.
+    SELECT
+        'Contracts'                          AS object_type,
+        h.document_num                       AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[HDR] ' || NVL(he.error_message,
+             'Rejected by Import Contract Agreements (process_code='
+             || NVL(h.process_code,'NULL')
+             || '; no header error row written -- e.g. rejected pre-validation).')
+                                             AS error_message,
+        h.load_request_id                    AS load_request_id,
+        h.interface_header_key               AS source_ref,
+        h.interface_source_code              AS dmt_reference
+    FROM   po_headers_interface h
+    LEFT   JOIN (
+        SELECT e.interface_header_id,
+               NULLIF(LISTAGG(
+                   e.column_name || ': ' || e.error_message,
+                   ' | ') WITHIN GROUP (ORDER BY e.interface_transaction_id), '') AS error_message
+        FROM   po_interface_errors e
+        WHERE  e.interface_header_id IS NOT NULL
+        AND    e.interface_line_id   IS NULL
+        AND    e.interface_line_location_id IS NULL
+        AND    e.interface_distribution_id  IS NULL
+        GROUP BY e.interface_header_id
+    ) he ON he.interface_header_id = h.interface_header_id
+    WHERE  h.load_request_id = :P_LOAD_REQUEST_ID
+    AND    h.interface_header_key LIKE :P_RUN_ID || '\_HDR\_%' ESCAPE '\'
+    AND    NVL(h.process_code,'X') <> 'ACCEPTED'
+)
+-- Keyset predicate (see PurchaseOrders exemplar for the loop contract).
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="contract_po_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

@@ -239,6 +239,23 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier PO family). Stamp the header tier's
+        -- RECON_KEY so it equals the header RECORD_KEY the three PO-family recon
+        -- reports emit. Every PO-family recon data model (PurchaseOrders,
+        -- BlanketPOs, Contracts) emits the BASE header RECORD_KEY as the base
+        -- SEGMENT1, which is the prefixed DOCUMENT_NUM the loader wrote here, and
+        -- the aligned INTERFACE header RECORD_KEY is the same DOCUMENT_NUM. The
+        -- three reconcilers join report rows to this table on
+        -- RECON_KEY = report RECORD_KEY, so this stamp must equal DOCUMENT_NUM
+        -- exactly. The formula is uniform across all three document types, so one
+        -- stamp set covers the whole run regardless of STYLE_DISPLAY_NAME. Only
+        -- NULL keys are set (never overwrite); post-INSERT, run-scoped.
+        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
+        SET    RECON_KEY = DOCUMENT_NUM,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    RECON_KEY IS NULL;
+
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_PO_HEADERS_INT_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
@@ -455,6 +472,25 @@
         ;
 
         l_ok_count := SQL%ROWCOUNT;
+
+        -- Contract v1 coupling (multi-tier PO family). Stamp the line tier's
+        -- RECON_KEY so it equals the line RECORD_KEY the recon reports emit:
+        -- the parent header's SEGMENT1 (= prefixed DOCUMENT_NUM) plus ':LN:' plus
+        -- the base LINE_NUM. The base PO line carries no stamped key, so both the
+        -- BASE and (aligned) INTERFACE line RECORD_KEY are this composite; the
+        -- reconciler joins on RECON_KEY = RECORD_KEY, so this stamp must match
+        -- exactly. The parent DOCUMENT_NUM is reached through this run's header
+        -- TFM row on INTERFACE_HEADER_KEY. Only NULL keys are set; post-INSERT,
+        -- run-scoped. Uniform across all document types.
+        UPDATE DMT_PO_LINES_INT_TFM_TBL l
+        SET    l.RECON_KEY = (SELECT h.DOCUMENT_NUM
+                              FROM   DMT_PO_HEADERS_INT_TFM_TBL h
+                              WHERE  h.RUN_ID = l.RUN_ID
+                              AND    h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY)
+                             || ':LN:' || TO_CHAR(l.LINE_NUM),
+               l.LAST_UPDATED_DATE = SYSDATE
+        WHERE  l.RUN_ID = p_run_id
+        AND    l.RECON_KEY IS NULL;
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_PO_LINES_INT_STG_TBL s
@@ -678,6 +714,29 @@
 
         l_ok_count := SQL%ROWCOUNT;
 
+        -- Contract v1 coupling (multi-tier PO family). Stamp the line-location
+        -- tier's RECON_KEY so it equals the location RECORD_KEY the recon reports
+        -- emit: the parent header SEGMENT1 (= prefixed DOCUMENT_NUM) plus ':LN:'
+        -- plus LINE_NUM plus ':LOC:' plus SHIPMENT_NUM. The base location carries
+        -- no stamped key, so both BASE and (aligned) INTERFACE location RECORD_KEY
+        -- are this composite; the reconciler joins on RECON_KEY = RECORD_KEY, so
+        -- this stamp must match exactly. The parent DOCUMENT_NUM and LINE_NUM are
+        -- reached through this run's line TFM row on INTERFACE_LINE_KEY and the
+        -- header TFM row on INTERFACE_HEADER_KEY. Only NULL keys are set;
+        -- post-INSERT, run-scoped.
+        UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL loc
+        SET    loc.RECON_KEY = (SELECT h.DOCUMENT_NUM || ':LN:' || TO_CHAR(l.LINE_NUM)
+                                FROM   DMT_PO_LINES_INT_TFM_TBL   l
+                                JOIN   DMT_PO_HEADERS_INT_TFM_TBL h
+                                       ON h.RUN_ID = l.RUN_ID
+                                      AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
+                                WHERE  l.RUN_ID = loc.RUN_ID
+                                AND    l.INTERFACE_LINE_KEY = loc.INTERFACE_LINE_KEY)
+                               || ':LOC:' || TO_CHAR(loc.SHIPMENT_NUM),
+               loc.LAST_UPDATED_DATE = SYSDATE
+        WHERE  loc.RUN_ID = p_run_id
+        AND    loc.RECON_KEY IS NULL;
+
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_PO_LINE_LOCS_INT_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
@@ -898,6 +957,34 @@
         ;
 
         l_ok_count := SQL%ROWCOUNT;
+
+        -- Contract v1 coupling (multi-tier PO family). Stamp the distribution
+        -- tier's RECON_KEY so it equals the distribution RECORD_KEY the recon
+        -- reports emit: the parent header SEGMENT1 (= prefixed DOCUMENT_NUM) plus
+        -- ':LN:' plus LINE_NUM plus ':LOC:' plus SHIPMENT_NUM plus ':DIST:' plus
+        -- DISTRIBUTION_NUM. PO_DISTRIBUTIONS_ALL does not stamp REQUEST_ID on this
+        -- pod, so the recon report confirms the base distribution transitively
+        -- through its parent line-location and derives this same composite; the
+        -- reconciler joins on RECON_KEY = RECORD_KEY, so this stamp must match
+        -- exactly. The parent numbers are reached through this run's location TFM
+        -- row on INTERFACE_LINE_LOCATION_KEY, line on INTERFACE_LINE_KEY and
+        -- header on INTERFACE_HEADER_KEY. Only NULL keys are set; post-INSERT.
+        UPDATE DMT_PO_DISTS_INT_TFM_TBL d
+        SET    d.RECON_KEY = (SELECT h.DOCUMENT_NUM || ':LN:' || TO_CHAR(l.LINE_NUM)
+                                     || ':LOC:' || TO_CHAR(loc.SHIPMENT_NUM)
+                              FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL loc
+                              JOIN   DMT_PO_LINES_INT_TFM_TBL     l
+                                     ON l.RUN_ID = loc.RUN_ID
+                                    AND l.INTERFACE_LINE_KEY = loc.INTERFACE_LINE_KEY
+                              JOIN   DMT_PO_HEADERS_INT_TFM_TBL   h
+                                     ON h.RUN_ID = l.RUN_ID
+                                    AND h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
+                              WHERE  loc.RUN_ID = d.RUN_ID
+                              AND    loc.INTERFACE_LINE_LOCATION_KEY = d.INTERFACE_LINE_LOCATION_KEY)
+                             || ':DIST:' || TO_CHAR(d.DISTRIBUTION_NUM),
+               d.LAST_UPDATED_DATE = SYSDATE
+        WHERE  d.RUN_ID = p_run_id
+        AND    d.RECON_KEY IS NULL;
 
         -- Set-based UPDATE: mark transformed STG rows
         UPDATE DMT_PO_DISTS_INT_STG_TBL s
