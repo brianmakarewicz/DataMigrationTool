@@ -75,13 +75,16 @@
         l_err_code  NUMBER;
         l_hdr_loaded NUMBER := 0;  l_hdr_failed NUMBER := 0;
     BEGIN
-        -- Generated-row count drives the shared fetch's keyset page-count cap.
-        -- Done statically here (not in the shared pkg). Only the header tier is
-        -- reported by the DM, so only header rows are counted.
-        SELECT COUNT(*)
+        -- Generated-row count drives the shared fetch's keyset page-count cap
+        -- (a safety page limit, not an exact total). Done statically here (not in
+        -- the shared pkg). The DM now returns two BASE tiers -- the header and the
+        -- backlog #11 'Assets Distribution' tier (one row per asset that has an
+        -- active distribution) -- so the header count plus the assign-child count
+        -- bounds the rows the report can return.
+        SELECT (SELECT COUNT(*) FROM DMT_FA_ASSET_HDR_TFM_TBL    WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_FA_ASSET_ASSIGN_TFM_TBL WHERE RUN_ID = p_run_id)
         INTO   l_gen_count
-        FROM   DMT_FA_ASSET_HDR_TFM_TBL
-        WHERE  RUN_ID = p_run_id;
+        FROM   dual;
 
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
             p_cemli_code  => C_CEMLI,
@@ -113,16 +116,37 @@
                 p_procedure => C_PROC);
         ELSE
             FOR i IN 1 .. l_rows.COUNT LOOP
-                -- ===== SINGLE TIER: ASSET/HEADER =====
-                -- Assets emits ONE apply tier (the asset header). FETCH_ROWS is
-                -- already scoped to the Assets CEMLI's own report, so every fetched
-                -- row is a header row; apply unconditionally (matching the single-tier
-                -- pattern in MiscReceipts/Projects). No OBJECT_TYPE discriminator is
-                -- needed here (and pattern-matching a controlled OBJECT_TYPE value with
-                -- LIKE is prohibited by the coding standard).
-                IF l_rows(i).SOURCE_TYPE = 'BASE'
+                -- Two apply tiers, discriminated by exact OBJECT_TYPE equality
+                -- (exact '=', not the prohibited LIKE): the asset HEADER tier
+                -- ('Assets' / 'Assets [<BOOK>]') and the backlog #11 DISTRIBUTION
+                -- tier ('Assets Distribution'), which carries the assignment
+                -- child's own Fusion base id (FA_DISTRIBUTION_HISTORY
+                -- .DISTRIBUTION_ID). The header RECON_KEY is the asset number; the
+                -- distribution row's RECORD_KEY is the asset number + '#DIST', its
+                -- SOURCE_REF is the bare asset number (= the assign child RECON_KEY).
+                IF l_rows(i).OBJECT_TYPE = 'Assets Distribution' THEN
+                    -- DISTRIBUTION tier: stamp the assign child's own Fusion id.
+                    -- Never sets status (the cascade below owns the assign verdict);
+                    -- only back-fills the real distribution id onto the assign row.
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        -- The assign child RECON_KEY is the bare asset number; the
+                        -- distribution row's RECORD_KEY is that plus the '#DIST'
+                        -- suffix, so strip the last 5 characters to match. (The
+                        -- shared recon record exposes no SOURCE_REF field.)
+                        UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL
+                        SET    FUSION_DISTRIBUTION_ID = l_rows(i).FUSION_ID,
+                               LAST_UPDATED_DATE      = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = SUBSTR(l_rows(i).RECORD_KEY, 1,
+                                                  LENGTH(l_rows(i).RECORD_KEY) - 5)
+                        AND    FUSION_DISTRIBUTION_ID IS NULL;
+                    END IF;
+                ELSIF l_rows(i).SOURCE_TYPE = 'BASE'
                    AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                    AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                    -- HEADER tier.
                     UPDATE DMT_FA_ASSET_HDR_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            FUSION_ASSET_ID      = l_rows(i).FUSION_ID,

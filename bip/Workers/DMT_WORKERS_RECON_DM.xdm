@@ -89,7 +89,9 @@ FROM (
     WHERE  :P_PREFIX IS NOT NULL
     AND    m.source_system_id LIKE :P_PREFIX || '%'
     AND    m.object_name IN ('Person','PersonName','PeriodOfService',
-                             'Assignment','WorkTerms','WorkRelationship')
+                             'Assignment','WorkTerms','WorkRelationship',
+                             'EmailAddress','Phone','Address',
+                             'NationalIdentifier','PersonLegislativeInfo')
     AND    (
              -- Person -> PER_ALL_PEOPLE_F (PERSON_ID)
              (m.object_name = 'Person'
@@ -108,6 +110,32 @@ FROM (
           OR (m.object_name IN ('Assignment','WorkTerms')
               AND EXISTS (SELECT 1 FROM per_all_assignments_m b
                           WHERE b.assignment_id = m.surrogate_id))
+             -- Backlog #11: person-component tiers. Each component HDL business
+             -- object is stamped in the same key map, and its SURROGATE_ID IS the
+             -- component's OWN Fusion base-table primary key (live-verified
+             -- 2026-09-21 that surrogate_id equals the base id, e.g. EmailAddress
+             -- key ..._EML surrogate 300000331523533 = PER_EMAIL_ADDRESSES
+             -- .EMAIL_ADDRESS_ID). Emitted only on real base-table proof.
+             -- EmailAddress -> PER_EMAIL_ADDRESSES (EMAIL_ADDRESS_ID)
+          OR (m.object_name = 'EmailAddress'
+              AND EXISTS (SELECT 1 FROM per_email_addresses b
+                          WHERE b.email_address_id = m.surrogate_id))
+             -- Phone -> PER_PHONES (PHONE_ID)
+          OR (m.object_name = 'Phone'
+              AND EXISTS (SELECT 1 FROM per_phones b
+                          WHERE b.phone_id = m.surrogate_id))
+             -- Address -> PER_ADDRESSES (ADDRESS_ID)
+          OR (m.object_name = 'Address'
+              AND EXISTS (SELECT 1 FROM per_addresses b
+                          WHERE b.address_id = m.surrogate_id))
+             -- NationalIdentifier -> PER_NATIONAL_IDENTIFIERS (NATIONAL_IDENTIFIER_ID)
+          OR (m.object_name = 'NationalIdentifier'
+              AND EXISTS (SELECT 1 FROM per_national_identifiers b
+                          WHERE b.national_identifier_id = m.surrogate_id))
+             -- PersonLegislativeInfo -> PER_PEOPLE_LEGISLATIVE_F (PERSON_LEGISLATIVE_ID)
+          OR (m.object_name = 'PersonLegislativeInfo'
+              AND EXISTS (SELECT 1 FROM per_people_legislative_f b
+                          WHERE b.person_legislative_id = m.surrogate_id))
            )
     AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
 )

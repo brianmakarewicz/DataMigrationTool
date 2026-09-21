@@ -66,6 +66,79 @@ AS
     END CONFIRM_REFERENCE_ROUNDTRIP;
 
     -- --------------------------------------------------------
+    -- STAMP_COMPONENT_FUSION_ID (private)  -- backlog #11
+    -- Write a person-component's OWN Fusion base id onto its component TFM row.
+    -- The Workers recon report returns one row per component with OBJECT_TYPE =
+    -- the HDL business-object name, RECORD_KEY = the suffixed SourceSystemId
+    -- (<prefixed person number>_<suffix>), and FUSION_ID = the component's base
+    -- primary key (SURROGATE_ID from HRC_INTEGRATION_KEY_MAP, confirmed present in
+    -- the component base table by the DM). The component TFM row is keyed on
+    -- PERSON_NUMBER = the prefixed person number (no suffix), so the 4-character
+    -- suffix (e.g. '_EML') is stripped to match. Only the mapped component's own
+    -- Fusion-id column is set; STATUS is never changed here (the cascade owns that).
+    -- Static UPDATEs, one per component type (compile-time-known table + column,
+    -- no dynamic SQL -- design section 7).
+    -- --------------------------------------------------------
+    PROCEDURE STAMP_COMPONENT_FUSION_ID (
+        p_run_id      IN NUMBER,
+        p_object_type IN VARCHAR2,
+        p_record_key  IN VARCHAR2,
+        p_fusion_id   IN NUMBER
+    ) IS
+        -- The prefixed person number = the report RECORD_KEY minus its 4-char
+        -- component suffix ('_NME','_EML','_PHN','_ADR','_NID','_LEG').
+        l_person_number DMT_WORKER_TFM_TBL.PERSON_NUMBER%TYPE :=
+            SUBSTR(p_record_key, 1, LENGTH(p_record_key) - 4);
+    BEGIN
+        CASE p_object_type
+            WHEN 'PersonName' THEN
+                UPDATE DMT_PERSON_NAME_TFM_TBL
+                SET    FUSION_PERSON_NAME_ID = p_fusion_id,
+                       LAST_UPDATED_DATE     = SYSDATE
+                WHERE  RUN_ID = p_run_id
+                AND    PERSON_NUMBER = l_person_number
+                AND    FUSION_PERSON_NAME_ID IS NULL;
+            WHEN 'EmailAddress' THEN
+                UPDATE DMT_PERSON_EMAIL_TFM_TBL
+                SET    FUSION_EMAIL_ADDRESS_ID = p_fusion_id,
+                       LAST_UPDATED_DATE       = SYSDATE
+                WHERE  RUN_ID = p_run_id
+                AND    PERSON_NUMBER = l_person_number
+                AND    FUSION_EMAIL_ADDRESS_ID IS NULL;
+            WHEN 'Phone' THEN
+                UPDATE DMT_PERSON_PHONE_TFM_TBL
+                SET    FUSION_PHONE_ID   = p_fusion_id,
+                       LAST_UPDATED_DATE = SYSDATE
+                WHERE  RUN_ID = p_run_id
+                AND    PERSON_NUMBER = l_person_number
+                AND    FUSION_PHONE_ID IS NULL;
+            WHEN 'Address' THEN
+                UPDATE DMT_PERSON_ADDR_TFM_TBL
+                SET    FUSION_ADDRESS_ID = p_fusion_id,
+                       LAST_UPDATED_DATE = SYSDATE
+                WHERE  RUN_ID = p_run_id
+                AND    PERSON_NUMBER = l_person_number
+                AND    FUSION_ADDRESS_ID IS NULL;
+            WHEN 'NationalIdentifier' THEN
+                UPDATE DMT_PERSON_NID_TFM_TBL
+                SET    FUSION_NATIONAL_IDENTIFIER_ID = p_fusion_id,
+                       LAST_UPDATED_DATE             = SYSDATE
+                WHERE  RUN_ID = p_run_id
+                AND    PERSON_NUMBER = l_person_number
+                AND    FUSION_NATIONAL_IDENTIFIER_ID IS NULL;
+            WHEN 'PersonLegislativeInfo' THEN
+                UPDATE DMT_PERSON_LEGISL_TFM_TBL
+                SET    FUSION_PERSON_ID  = p_fusion_id,
+                       LAST_UPDATED_DATE = SYSDATE
+                WHERE  RUN_ID = p_run_id
+                AND    PERSON_NUMBER = l_person_number
+                AND    FUSION_PERSON_ID IS NULL;
+            ELSE
+                NULL;  -- non-component object types are handled elsewhere
+        END CASE;
+    END STAMP_COMPONENT_FUSION_ID;
+
+    -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_WORKERS (private)
     -- The Contract v1 base-tier positive proof for the Worker record (design
     -- section 5), Option A shape (owner decision on PR #248). The shared package
@@ -128,7 +201,8 @@ AS
             FOR i IN 1 .. l_rows.COUNT LOOP
                 IF l_rows(i).SOURCE_TYPE = 'BASE'
                    AND l_rows(i).FUSION_STATUS = 'SUCCESS'
-                   AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                   AND l_rows(i).FUSION_ID IS NOT NULL
+                   AND l_rows(i).OBJECT_TYPE = 'Person' THEN
                     -- Positive proof: person found in PER_ALL_PEOPLE_F with a
                     -- real id. The ONLY path to LOADED. Static UPDATE.
                     UPDATE DMT_WORKER_TFM_TBL
@@ -150,8 +224,34 @@ AS
                         p_record_key => l_rows(i).RECORD_KEY,
                         p_fusion_id  => l_rows(i).FUSION_ID);
 
+                ELSIF l_rows(i).SOURCE_TYPE = 'BASE'
+                      AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                      AND l_rows(i).FUSION_ID IS NOT NULL
+                      AND l_rows(i).OBJECT_TYPE IN
+                          ('PersonName','EmailAddress','Phone','Address',
+                           'NationalIdentifier','PersonLegislativeInfo') THEN
+                    -- Backlog #11: person-component base id capture. The Workers
+                    -- recon report now returns each person-component's OWN Fusion
+                    -- base id (from HRC_INTEGRATION_KEY_MAP.SURROGATE_ID, confirmed
+                    -- against the component's base table). The report RECORD_KEY is
+                    -- the suffixed SourceSystemId (<prefixed person number>_NME/_EML/
+                    -- _PHN/_ADR/_NID/_LEG); the component TFM row is keyed by
+                    -- PERSON_NUMBER (the same prefixed person number, no suffix), so
+                    -- strip the 4-char suffix to match. Each component gets its own
+                    -- Fusion-id column stamped -- not the parent's id. This is the
+                    -- ONLY thing this branch does: it never marks LOADED (the
+                    -- person-component cascade below sets LOADED from the parent
+                    -- worker's confirmed verdict), it back-fills the real base id
+                    -- onto rows already accounted.
+                    STAMP_COMPONENT_FUSION_ID(
+                        p_run_id      => p_run_id,
+                        p_object_type => l_rows(i).OBJECT_TYPE,
+                        p_record_key  => l_rows(i).RECORD_KEY,
+                        p_fusion_id   => l_rows(i).FUSION_ID);
+
                 ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
-                      AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
+                      AND l_rows(i).ERROR_MESSAGE IS NOT NULL
+                      AND l_rows(i).OBJECT_TYPE = 'Person' THEN
                     -- A real, specific Fusion error -> FAILED on the exact
                     -- message (never composed). Static UPDATE.
                     UPDATE DMT_WORKER_TFM_TBL
