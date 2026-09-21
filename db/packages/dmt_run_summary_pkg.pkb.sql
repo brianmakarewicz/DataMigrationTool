@@ -96,18 +96,16 @@
                    r.FUSION_ID,
                    r.ERROR_TEXT,
                    r.DMT_REFERENCE,
-                   -- Deep link: the registry template with '{FUSION_ID}' filled
-                   -- in. NULL when the object has no template OR the row has no
-                   -- Fusion id — never a fabricated link to a record we did not
-                   -- confirm.
-                   CASE WHEN reg.DEEP_LINK_KEY_TEMPLATE IS NOT NULL
-                         AND r.FUSION_ID IS NOT NULL
-                        THEN REPLACE(reg.DEEP_LINK_KEY_TEMPLATE,
-                                     '{FUSION_ID}', TO_CHAR(r.FUSION_ID))
-                   END                                        AS FUSION_DEEP_LINK
+                   -- Deep link: built by the shared helper, the single
+                   -- source of truth for deep-link construction (correct
+                   -- '{ID}' token, Fusion base URL and hcmUI/fscmUI path).
+                   -- It returns NULL when the object has no template, no
+                   -- Fusion URL is configured, or the row has no Fusion id
+                   -- — never a fabricated or broken link.
+                   DMT_UTIL_PKG.GET_DEEP_LINK(
+                       r.CEMLI_CODE, TO_CHAR(r.FUSION_ID)
+                   )                                          AS FUSION_DEEP_LINK
             FROM   DMT_RUN_RECORDS_V r
-            LEFT   JOIN DMT_BIP_REPORT_TBL reg
-              ON   reg.CEMLI_CODE = r.CEMLI_CODE
             WHERE  r.RUN_ID = p_run_id
             AND    (p_object IS NULL OR r.OBJECT_TYPE = p_object)
             AND    (p_status IS NULL OR r.TFM_STATUS  = p_status)
