@@ -1,17 +1,45 @@
 -- PACKAGE BODY DMT_REQ_RESULTS_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_REQ_RESULTS_PKG" 
+  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_REQ_RESULTS_PKG"
 AS
 -- ============================================================
 -- DMT_REQ_RESULTS_PKG body
--- Requisitions BIP reconciliation — Two-Tier pattern.
--- Tier 1: POR_REQ_HEADERS_INTERFACE_ALL (interface table, errors/status)
--- Tier 2: POR_REQUISITION_HEADERS_ALL (base table, positive confirmation)
--- No absence=LOADED fallback. Every row gets positive verification
--- or is marked FAILED with a reconciliation error.
+-- Requisitions post-load reconciliation — Contract v1, MULTI-TIER template.
 --
--- Cascades header outcomes to lines and distributions TFM,
--- then echoes all outcomes back to all 3 STG tables.
+-- This is the multi-tier pilot (supersedes PR #362). It reuses the ONE shared
+-- Contract v1 fetch, DMT_RECON_CONTRACT_PKG.FETCH_ROWS, exactly as the Workers
+-- template does (DMT_WORKER_RESULTS_PKG). A single FETCH_ROWS call runs the
+-- Requisitions Contract v1 report (nine columns, keyset paginated) over BIP and
+-- returns ALL three tiers' rows in one collection; each row's OBJECT_TYPE says
+-- which tier it belongs to.
+--
+-- The APPLY is STATIC SQL against the compile-time-known TFM tables (Option A,
+-- owner decision on PR #248): one MERGE-style pair PER TIER, filtering the report
+-- rows by OBJECT_TYPE and joining that tier's TFM table on RECON_KEY = RECORD_KEY.
+--
+--   Tier         OBJECT_TYPE literal          TFM table                    FUSION_ID column
+--   ----------   --------------------------   --------------------------   ----------------------------
+--   headers      'Requisitions'               DMT_POR_REQ_HEADERS_TFM_TBL  FUSION_REQUISITION_HEADER_ID
+--   lines        'Requisitions.Line'          DMT_POR_REQ_LINES_TFM_TBL    FUSION_REQUISITION_LINE_ID
+--   distributions'Requisitions.Distribution'  DMT_POR_REQ_DISTS_TFM_TBL    FUSION_DISTRIBUTION_ID
+--
+-- Per tier the rule is the shared Contract v1 apply rule:
+--   * BASE / SUCCESS / FUSION_ID NOT NULL -> LOADED, stamp FUSION_ID.
+--   * FUSION_STATUS = ERROR with a real ERROR_MESSAGE -> FAILED, message
+--     appended as '[FUSION_ERROR] ' || message (never composed).
+--   * Everything else is left GENERATED for the shared unaccounted sweep;
+--     INTERFACE/SUCCESS corroborates but is never sufficient for LOADED.
+--
+-- The RECON_KEY on each tier's TFM row is stamped by DMT_REQ_TRANSFORM_PKG to
+-- equal that tier's report RECORD_KEY (headers = prefixed REQUISITION_NUMBER;
+-- lines = INTERFACE_LINE_KEY; dists = INTERFACE_LINE_KEY||':DIST:'||number). That
+-- coupling is what makes the join hit — its absence is why the earlier pilot got
+-- 0 LOADED.
+--
+-- After the three tiers settle, outcomes are echoed back to all three STG tables
+-- (unchanged from the prior reader). No composed parent/child roll-up is needed:
+-- each tier has its own BASE and INTERFACE rows in the report, so each tier
+-- accounts for itself directly.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_REQ_RESULTS_PKG';
@@ -21,14 +49,13 @@ AS
     -- GET_PARTITION_KEYS — distinct BATCH_ID tokens for one run, STATIC SQL
     -- over the requisition-headers transform table (this object's own table).
     -- Spawn-per-partition (work-queue-ID core, 2026-07-20): one child work item
-    -- per batch. Called through invoke_registered (style KEYS).
+    -- per batch. Called through invoke_registered (style KEYS). Unchanged.
     -- --------------------------------------------------------
     FUNCTION GET_PARTITION_KEYS (
         p_run_id IN NUMBER
     ) RETURN DMT_PARTITION_KEY_TBL IS
         l_keys DMT_PARTITION_KEY_TBL;
     BEGIN
-        -- One JSON object per distinct batch, keyed by the partition column name.
         SELECT DISTINCT JSON_OBJECT('BATCH_ID' VALUE TO_CHAR(BATCH_ID))
         BULK COLLECT INTO l_keys
         FROM   DMT_POR_REQ_HEADERS_TFM_TBL
@@ -39,555 +66,166 @@ AS
     END GET_PARTITION_KEYS;
 
     -- --------------------------------------------------------
-    -- Private: POST a SOAP envelope; return full response CLOB.
-    -- (Same helper as other results packages — duplicated to keep packages independent.)
+    -- APPLY_CONTRACT_V1_REQUISITIONS (private)
+    -- The Contract v1 apply for all three Requisitions tiers, Option A shape.
+    -- One shared FETCH_ROWS call returns every tier's rows; the apply is STATIC
+    -- SQL, one pair of UPDATEs per tier, discriminated by OBJECT_TYPE and joined
+    -- on RECON_KEY = RECORD_KEY. This is the copy-template for the other multi-tier
+    -- FBDI objects (AP, AR, MiscReceipts, Assets, PO family, Projects, Grants).
     -- --------------------------------------------------------
-    FUNCTION bip_soap_post (
-        p_url      IN VARCHAR2,
-        p_action   IN VARCHAR2,
-        p_body     IN CLOB
-    ) RETURN CLOB IS
-        l_req      UTL_HTTP.REQ;
-        l_resp     UTL_HTTP.RESP;
-        l_response CLOB;
-        l_chunk    VARCHAR2(32767);
-        l_offset   INTEGER := 1;
-        l_amount   INTEGER;
-        l_body_len INTEGER;
-    BEGIN
-        UTL_HTTP.SET_RESPONSE_ERROR_CHECK(FALSE);
-        UTL_HTTP.SET_TRANSFER_TIMEOUT(600);
-
-        l_req := UTL_HTTP.BEGIN_REQUEST(p_url, 'POST', 'HTTP/1.1');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Type',   'text/xml; charset=utf-8');
-        UTL_HTTP.SET_HEADER(l_req, 'Content-Length', DBMS_LOB.GETLENGTH(p_body));
-        UTL_HTTP.SET_HEADER(l_req, 'SOAPAction',     '"' || p_action || '"');
-        UTL_HTTP.SET_HEADER(l_req, 'Accept',         'text/xml');
-
-        l_body_len := DBMS_LOB.GETLENGTH(p_body);
-        WHILE l_offset <= l_body_len LOOP
-            l_amount := LEAST(8000, l_body_len - l_offset + 1);
-            l_chunk  := DBMS_LOB.SUBSTR(p_body, l_amount, l_offset);
-            UTL_HTTP.WRITE_TEXT(l_req, l_chunk);
-            l_offset := l_offset + l_amount;
-        END LOOP;
-
-        l_resp := UTL_HTTP.GET_RESPONSE(l_req);
-
-        DBMS_LOB.CREATETEMPORARY(l_response, TRUE);
-        BEGIN
-            LOOP
-                UTL_HTTP.READ_TEXT(l_resp, l_chunk, 32767);
-                DBMS_LOB.APPEND(l_response, l_chunk);
-            END LOOP;
-        EXCEPTION WHEN UTL_HTTP.END_OF_BODY THEN NULL;
-        END;
-        UTL_HTTP.END_RESPONSE(l_resp);
-
-        IF l_resp.status_code NOT BETWEEN 200 AND 299 THEN
-            RAISE_APPLICATION_ERROR(-20030,
-                'BIP SOAP call failed. Status: ' || l_resp.status_code ||
-                ' | Action: ' || p_action ||
-                ' | Response (first 500): ' || DBMS_LOB.SUBSTR(l_response, 500, 1));
-        END IF;
-
-        RETURN l_response;
-    EXCEPTION
-        WHEN OTHERS THEN
-            BEGIN UTL_HTTP.END_RESPONSE(l_resp); EXCEPTION WHEN OTHERS THEN NULL; END;
-            RAISE;
-    END bip_soap_post;
-
-    -- --------------------------------------------------------
-    -- (b64_to_clob removed — base64 decode is now centralised in
-    --  DMT_UTIL_PKG.BASE64_DECODE_CLOB / BIP_REPORT_XML, which decode CLOBs of
-    --  any size. The old local copy truncated at VARCHAR2(32767).)
-
-    -- --------------------------------------------------------
-    -- FETCH_BIP_RESULTS — passes P_IMPORT_ESS_ID as second parameter
-    -- --------------------------------------------------------
-    FUNCTION FETCH_BIP_RESULTS (
-        p_run_id  IN NUMBER,
-        p_load_ess_id     IN NUMBER,
-        p_import_ess_id   IN NUMBER DEFAULT NULL
-    ) RETURN CLOB IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'FETCH_BIP_RESULTS';
-        l_base_url   VARCHAR2(500);
-        l_username   VARCHAR2(100);
-        l_password   VARCHAR2(100);
-        l_rpt_path   VARCHAR2(500);
-        l_url        VARCHAR2(500);
-        l_action     CONSTANT VARCHAR2(200) :=
-            'http://xmlns.oracle.com/oxp/service/v2/ReportService/runReportRequest';
-        l_env        CLOB;
-        l_resp       CLOB;
-        l_import_str VARCHAR2(30) := NVL(TO_CHAR(p_import_ess_id), '');
-    BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start. CEMLI: ' || C_CEMLI ||
-                                ' | load_ess_id: ' || p_load_ess_id ||
-                                ' | import_ess_id: ' || NVL(TO_CHAR(p_import_ess_id), 'NULL'),
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_username := DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
-        l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
-
-        IF l_base_url IS NULL OR l_username IS NULL OR l_password IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20031,
-                C_PROC || ': Fusion connection config is incomplete.');
-        END IF;
-
-        BEGIN
-            SELECT REPORT_CATALOG_PATH
-            INTO   l_rpt_path
-            FROM   DMT_BIP_REPORT_TBL
-            WHERE  CEMLI_CODE = C_CEMLI;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                RAISE_APPLICATION_ERROR(-20032,
-                    C_PROC || ': No row in DMT_BIP_REPORT_TBL for CEMLI_CODE = ''' || C_CEMLI || '''.');
-        END;
-
-        IF l_rpt_path IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20033,
-                C_PROC || ': REPORT_CATALOG_PATH is NULL for CEMLI_CODE = ''' || C_CEMLI || '''.');
-        END IF;
-
-        l_url := l_base_url || '/xmlpserver/services/v2/ReportService';
-
-        DBMS_LOB.CREATETEMPORARY(l_env, TRUE);
-        DBMS_LOB.APPEND(l_env, TO_CLOB(
-            '<soapenv:Envelope' ||
-            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"' ||
-            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">' ||
-            '  <soapenv:Header/>' ||
-            '  <soapenv:Body>' ||
-            '    <v2:runReport>' ||
-            '      <v2:reportRequest>' ||
-            '        <v2:reportAbsolutePath>' || l_rpt_path || '</v2:reportAbsolutePath>' ||
-            '        <v2:attributeFormat>xml</v2:attributeFormat>' ||
-            '        <v2:parameterNameValues>' ||
-            '          <v2:listOfParamNameValues>' ||
-            '            <v2:item>' ||
-            '              <v2:name>P_BATCH_ID</v2:name>' ||
-            '              <v2:values><v2:item>' || TO_CHAR(p_load_ess_id) || '</v2:item></v2:values>' ||
-            '            </v2:item>' ||
-            '            <v2:item>' ||
-            '              <v2:name>P_IMPORT_ESS_ID</v2:name>' ||
-            '              <v2:values><v2:item>' || l_import_str || '</v2:item></v2:values>' ||
-            '            </v2:item>' ||
-            '          </v2:listOfParamNameValues>' ||
-            '        </v2:parameterNameValues>' ||
-            '        <v2:sizeOfDataChunkDownload>-1</v2:sizeOfDataChunkDownload>' ||
-            '      </v2:reportRequest>' ||
-            '      <v2:userID>' || l_username || '</v2:userID>' ||
-            '      <v2:password>' || l_password || '</v2:password>' ||
-            '    </v2:runReport>' ||
-            '  </soapenv:Body>' ||
-            '</soapenv:Envelope>'));
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => 'BIP runReport request built. Report: ' || l_rpt_path,
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        l_resp := bip_soap_post(l_url, l_action, l_env);
-        DBMS_LOB.FREETEMPORARY(l_env);
-
-        IF DBMS_LOB.INSTR(l_resp, 'soapenv:Fault') > 0 OR
-           DBMS_LOB.INSTR(l_resp, 'soap:Fault')    > 0 THEN
-            RAISE_APPLICATION_ERROR(-20034,
-                C_PROC || ': SOAP Fault from BIP runReport. Report: ' || l_rpt_path ||
-                ' | Response (first 1000): ' || DBMS_LOB.SUBSTR(l_resp, 1000, 1));
-        END IF;
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. Response bytes: ' || DBMS_LOB.GETLENGTH(l_resp),
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        RETURN l_resp;
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RAISE;
-    END FETCH_BIP_RESULTS;
-
-    -- --------------------------------------------------------
-    -- PARSE_AND_UPDATE — Two-tier reconciliation, no absence=LOADED
-    -- Parses BIP XML response (base64 reportBytes), updates
-    -- Requisition header TFM rows, cascades to lines/dists,
-    -- then echoes back to STG tables.
-    -- --------------------------------------------------------
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id IN NUMBER,
-        p_xml_data       IN CLOB
+    PROCEDURE APPLY_CONTRACT_V1_REQUISITIONS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
     ) IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
-        l_xml        XMLTYPE;
-        l_loaded     NUMBER := 0;
-        l_failed     NUMBER := 0;
-        l_not_recon  NUMBER := 0;
-        l_err_hdr    NUMBER := 0;
-        l_err_line   NUMBER := 0;
-        l_err_dist   NUMBER := 0;
+        C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_REQUISITIONS';
+        l_gen_count NUMBER := 0;
+        l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
+        l_err_code  NUMBER;
+        l_hdr_loaded  NUMBER := 0;  l_hdr_failed  NUMBER := 0;
+        l_line_loaded NUMBER := 0;  l_line_failed NUMBER := 0;
+        l_dist_loaded NUMBER := 0;  l_dist_failed NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
+        -- Generated-row count across all three tiers drives the shared fetch's
+        -- keyset page-count cap. Done statically here (not in the shared pkg).
+        SELECT (SELECT COUNT(*) FROM DMT_POR_REQ_HEADERS_TFM_TBL WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_POR_REQ_LINES_TFM_TBL   WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_POR_REQ_DISTS_TFM_TBL   WHERE RUN_ID = p_run_id)
+        INTO   l_gen_count
+        FROM   dual;
 
-        -- Decode the BIP report via the shared helper (handles any size, no
-        -- VARCHAR2(32767) truncation). Returns NULL when there are no rows.
-        l_xml := DMT_UTIL_PKG.BIP_REPORT_XML(p_xml_data);
-        IF l_xml IS NULL THEN
-            -- No reportBytes at all — BIP returned 0 rows from BOTH datasets.
-            -- We could determine neither a base-table LOADED nor a real Fusion
-            -- per-record error, so we do NOT fabricate a FAILED. The GENERATED
-            -- header, line and distribution rows are left as-is (unaccounted);
-            -- the accounting gate reports the object not-DONE and the funnel
-            -- surfaces them as unreconciled.
+        DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
+            p_cemli_code  => C_CEMLI,
+            p_run_id      => p_run_id,
+            p_load_ess_id => TO_NUMBER(p_request_id),
+            p_row_cap     => l_gen_count,
+            x_rows        => l_rows,
+            x_error_code  => l_err_code);
+
+        -- A transport / SOAP failure raises loudly (design section 5: never a
+        -- silent retry, never a zero-row "success"); the fetch already logged detail.
+        IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20094,
+                C_PROC || ': Contract v1 fetch failed for Requisitions '
+                || '(detail in DMT_LOG_TBL).');
+        END IF;
+
+        IF l_rows.COUNT = 0 THEN
+            -- Zero report rows is never success (design section 5): leave the
+            -- remaining GENERATED rows for the existing unaccounted sweep.
             DMT_UTIL_PKG.LOG(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ': No <reportBytes> in BIP response. ' ||
-                                    'GENERATED rows left unaccounted (not marked FAILED).',
-                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RETURN;
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': Requisitions recon report returned zero rows; '
+                               || 'GENERATED rows left for the unaccounted sweep '
+                               || '(never a silent success).',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+        ELSE
+            FOR i IN 1 .. l_rows.COUNT LOOP
+                -- ===== TIER: HEADERS (OBJECT_TYPE = 'Requisitions') =====
+                IF l_rows(i).OBJECT_TYPE = 'Requisitions' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
+                        SET    TFM_STATUS                   = 'LOADED',
+                               FUSION_REQUISITION_HEADER_ID = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE         = SYSDATE,
+                               LAST_UPDATED_DATE            = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_hdr_loaded := l_hdr_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
+                        UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_hdr_failed := l_hdr_failed + SQL%ROWCOUNT;
+                    END IF;
+
+                -- ===== TIER: LINES (OBJECT_TYPE = 'Requisitions.Line') =====
+                ELSIF l_rows(i).OBJECT_TYPE = 'Requisitions.Line' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_POR_REQ_LINES_TFM_TBL
+                        SET    TFM_STATUS                 = 'LOADED',
+                               FUSION_REQUISITION_LINE_ID = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE       = SYSDATE,
+                               LAST_UPDATED_DATE          = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_line_loaded := l_line_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
+                        UPDATE DMT_POR_REQ_LINES_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_line_failed := l_line_failed + SQL%ROWCOUNT;
+                    END IF;
+
+                -- ===== TIER: DISTRIBUTIONS (OBJECT_TYPE = 'Requisitions.Distribution') =====
+                ELSIF l_rows(i).OBJECT_TYPE = 'Requisitions.Distribution' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_POR_REQ_DISTS_TFM_TBL
+                        SET    TFM_STATUS            = 'LOADED',
+                               FUSION_DISTRIBUTION_ID = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE   = SYSDATE,
+                               LAST_UPDATED_DATE      = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_dist_loaded := l_dist_loaded + SQL%ROWCOUNT;
+                    ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
+                          AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
+                        UPDATE DMT_POR_REQ_DISTS_TFM_TBL
+                        SET    TFM_STATUS           = 'FAILED',
+                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
+                                                        ERROR_TEXT,
+                                                        '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_dist_failed := l_dist_failed + SQL%ROWCOUNT;
+                    END IF;
+                END IF;
+            END LOOP;
         END IF;
 
         -- ============================================================
-        -- STEP 1: Process G_STATUS — determine header LOADED/FAILED
-        --         (no error text written here — just tfm_status)
-        -- ============================================================
-        FOR r IN (
-            SELECT x.interface_header_key,
-                   x.requisition_number,
-                   UPPER(x.source_type)   AS source_type,
-                   UPPER(x.process_code)  AS process_code,
-                   x.fusion_id
-            FROM   XMLTABLE('/DATA_DS/G_STATUS' PASSING l_xml
-                COLUMNS
-                    interface_header_key VARCHAR2(50)   PATH 'INTERFACE_HEADER_KEY',
-                    requisition_number   VARCHAR2(64)   PATH 'REQUISITION_NUMBER',
-                    source_type          VARCHAR2(20)   PATH 'SOURCE_TYPE',
-                    process_code         VARCHAR2(50)   PATH 'PROCESS_CODE',
-                    fusion_id            NUMBER         PATH 'FUSION_ID'
-            ) x
-        ) LOOP
-            IF r.source_type = 'BASE' THEN
-                UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
-                SET    TFM_STATUS               = 'LOADED',
-                       FUSION_REQUISITION_HEADER_ID = r.fusion_id,
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    REQUISITION_NUMBER   = r.requisition_number
-                AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                l_loaded := l_loaded + SQL%ROWCOUNT;
-
-            ELSIF r.source_type = 'INTERFACE' THEN
-                IF r.process_code IN ('ACCEPTED','PROCESSED','SUCCESS','COMPLETED') THEN
-                    UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
-                    SET    TFM_STATUS               = 'LOADED',
-                           FUSION_REQUISITION_HEADER_ID = r.fusion_id,
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID       = p_run_id
-                    AND    INTERFACE_HEADER_KEY  = r.interface_header_key
-                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
-                ELSIF r.process_code IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
-                    -- Interface reports a rejection, but the status token alone is
-                    -- not a real Fusion error message. The real per-record errors
-                    -- are written from G_ERRORS in Step 2. Do NOT mark FAILED on a
-                    -- status label with no error text.
-                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
-                    NULL;
-                ELSE
-                    -- Unrecognized interface status and no real Fusion error to
-                    -- report. Do NOT fabricate a FAILED.
-                    -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
-                    NULL;
-                END IF;
-            END IF;
-        END LOOP;
-
-        -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor
-        -- given a real Fusion error is left GENERATED (unaccounted). The
-        -- accounting gate then reports the object not-DONE and the funnel
-        -- surfaces it as UNRECONCILED — no fabricated FAILED.)
-        l_not_recon := 0;
-
-        -- ============================================================
-        -- STEP 2: Process G_ERRORS — write specific error messages
-        --         to the exact TFM record that caused them.
-        --         INTERFACE_TYPE: HEADER / LINE / DISTRIBUTION
-        --         INTERFACE_KEY:  matches interface_header_key /
-        --                         interface_line_key / interface_distribution_key
-        -- ============================================================
-        FOR e IN (
-            SELECT x.interface_type,
-                   x.interface_key,
-                   x.error_msg
-            FROM   XMLTABLE('/DATA_DS/G_ERRORS' PASSING l_xml
-                COLUMNS
-                    interface_type VARCHAR2(20)   PATH 'INTERFACE_TYPE',
-                    interface_key  VARCHAR2(50)   PATH 'INTERFACE_KEY',
-                    error_msg      VARCHAR2(4000) PATH 'ERROR_MESSAGE'
-            ) x
-        ) LOOP
-            -- A row that receives a real Fusion error message IS failed: set
-            -- TFM_STATUS='FAILED' alongside the error text. Without this the row
-            -- kept the real [FUSION_ERROR] text but stayed GENERATED and was swept
-            -- to UNACCOUNTED (the Requisition BADHDR gap). Guard against a genuine
-            -- LOADED so a confirmed success is never downgraded.
-            IF UPPER(e.interface_type) = 'HEADER' THEN
-                -- A Fusion error is always an error (design rule 2026-09-15):
-                -- an "already exists" rejection is a failure, not a success.
-                -- LOADED comes only from a real base-table hit in STEP 1 above.
-                UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
-                SET    TFM_STATUS           = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                 '[FUSION_ERROR] [HDR] ' || e.error_msg),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_HEADER_KEY  = e.interface_key
-                AND    TFM_STATUS            NOT IN ('LOADED','FAILED');
-                l_err_hdr := l_err_hdr + SQL%ROWCOUNT;
-
-            ELSIF UPPER(e.interface_type) = 'LINE' THEN
-                UPDATE DMT_POR_REQ_LINES_TFM_TBL
-                SET    TFM_STATUS           = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                 '[FUSION_ERROR] [LINE] ' || e.error_msg),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_LINE_KEY    = e.interface_key
-                AND    TFM_STATUS            NOT IN ('LOADED','FAILED');
-                l_err_line := l_err_line + SQL%ROWCOUNT;
-
-            ELSIF UPPER(e.interface_type) = 'DISTRIBUTION' THEN
-                UPDATE DMT_POR_REQ_DISTS_TFM_TBL
-                SET    TFM_STATUS           = 'FAILED',
-                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                 '[FUSION_ERROR] [DIST] ' || e.error_msg),
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    INTERFACE_DISTRIBUTION_KEY = e.interface_key
-                AND    TFM_STATUS            NOT IN ('LOADED','FAILED');
-                l_err_dist := l_err_dist + SQL%ROWCOUNT;
-            END IF;
-        END LOOP;
-
-        -- ============================================================
-        -- STEP 3: Bottom-up cascade — propagate child errors upward.
-        --         Errors always APPEND (concatenate), never overwrite.
-        -- ============================================================
-
-        -- 3a. Dists with a real Fusion error → mark parent LINE as FAILED and
-        --     carry the child distribution's real Fusion error (from G_ERRORS).
-        UPDATE DMT_POR_REQ_LINES_TFM_TBL ln
-        SET    ln.TFM_STATUS            = 'FAILED',
-               ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                   '[FUSION_ERROR]The child record has the following Fusion error: ' ||
-                   (SELECT d.ERROR_TEXT FROM DMT_POR_REQ_DISTS_TFM_TBL d
-                    WHERE  d.RUN_ID = p_run_id
-                    AND    d.INTERFACE_LINE_KEY = ln.INTERFACE_LINE_KEY
-                    AND    d.ERROR_TEXT IS NOT NULL
-                    AND    ROWNUM = 1)),
-               ln.RESULTS_UPDATED_DATE = SYSDATE,
-               ln.LAST_UPDATED_DATE = SYSDATE
-        WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
-        AND    EXISTS (
-            SELECT 1 FROM DMT_POR_REQ_DISTS_TFM_TBL d
-            WHERE  d.RUN_ID    = p_run_id
-            AND    d.INTERFACE_LINE_KEY = ln.INTERFACE_LINE_KEY
-            AND    d.ERROR_TEXT        IS NOT NULL);
-
-        -- 3b. (Removed.) This appended a composed "Child line rejected by Fusion"
-        --     sentence to the parent header. The header's own real Fusion errors
-        --     are already written from G_ERRORS in Step 2; no composed child
-        --     summary is added. The header is left as-is for the honest sweep.
-
-        -- ============================================================
-        -- STEP 4: Top-down cascade LOADED to children of LOADED headers
-        -- ============================================================
-        UPDATE DMT_POR_REQ_LINES_TFM_TBL ln
-        SET    ln.TFM_STATUS            = 'LOADED',
-               ln.RESULTS_UPDATED_DATE = SYSDATE,
-               ln.LAST_UPDATED_DATE = SYSDATE
-        WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
-        AND    EXISTS (
-            SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL h
-            WHERE  h.RUN_ID      = p_run_id
-            AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
-            AND    h.TFM_STATUS              = 'LOADED');
-
-        UPDATE DMT_POR_REQ_DISTS_TFM_TBL d
-        SET    d.TFM_STATUS            = 'LOADED',
-               d.RESULTS_UPDATED_DATE = SYSDATE,
-               d.LAST_UPDATED_DATE = SYSDATE
-        WHERE  d.RUN_ID    = p_run_id
-        AND    d.TFM_STATUS           NOT IN ('LOADED','FAILED')
-        AND    EXISTS (
-            SELECT 1 FROM DMT_POR_REQ_LINES_TFM_TBL ln
-            WHERE  ln.RUN_ID    = p_run_id
-            AND    ln.INTERFACE_LINE_KEY = d.INTERFACE_LINE_KEY
-            AND    ln.TFM_STATUS            = 'LOADED');
-
-        -- ============================================================
-        -- STEP 5: Top-down cascade FAILED for remaining GENERATED children.
-        --         These have no errors of their own and weren't resolved
-        --         by bottom-up. Point to the correct parent level.
-        -- ============================================================
-
-        -- 5a. (Removed.) This failed lines under a rejected header with a composed
-        --     "Parent requisition header was rejected" sentence. The header no
-        --     longer reaches FAILED on a status label alone (it is left GENERATED
-        --     unless G_ERRORS wrote a real Fusion error), so there is no real
-        --     parent error to carry. Lines with no real error of their own are
-        --     left GENERATED for the honest sweep to mark UNACCOUNTED.
-
-        -- 5a2. Lines with their own error that are still GENERATED: just set FAILED
-        UPDATE DMT_POR_REQ_LINES_TFM_TBL ln
-        SET    ln.TFM_STATUS            = 'FAILED',
-               ln.RESULTS_UPDATED_DATE = SYSDATE,
-               ln.LAST_UPDATED_DATE = SYSDATE
-        WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
-        AND    ln.ERROR_TEXT       IS NOT NULL;
-
-        -- 5a3. Lines still GENERATED whose HEADER FAILED WITH A REAL Fusion error
-        --      did not import because the parent requisition header was rejected
-        --      (e.g. RT-REQ-BADHDR: nonexistent preparer). This is the sanctioned
-        --      child-inherits-parent's-REAL-error path: the header carries a real
-        --      G_ERRORS message (Step 2), so a good line under it is honestly
-        --      FAILED with that real header error rather than swept to UNACCOUNTED.
-        --      Guarded on h.ERROR_TEXT IS NOT NULL so nothing is ever fabricated;
-        --      Step 5b then carries the same real parent error onto the line's dists.
-        UPDATE DMT_POR_REQ_LINES_TFM_TBL ln
-        SET    ln.TFM_STATUS            = 'FAILED',
-               ln.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ln.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT h.ERROR_TEXT FROM DMT_POR_REQ_HEADERS_TFM_TBL h
-                    WHERE  h.RUN_ID = p_run_id
-                    AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
-                    AND    h.TFM_STATUS = 'FAILED'
-                    AND    h.ERROR_TEXT IS NOT NULL
-                    AND    ROWNUM = 1)),
-               ln.RESULTS_UPDATED_DATE = SYSDATE,
-               ln.LAST_UPDATED_DATE = SYSDATE
-        WHERE  ln.RUN_ID    = p_run_id
-        AND    ln.TFM_STATUS           NOT IN ('LOADED','FAILED')
-        AND    EXISTS (
-            SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL h
-            WHERE  h.RUN_ID    = p_run_id
-            AND    h.INTERFACE_HEADER_KEY = ln.INTERFACE_HEADER_KEY
-            AND    h.TFM_STATUS           = 'FAILED'
-            AND    h.ERROR_TEXT           IS NOT NULL);
-
-        -- 5b. Dists still GENERATED under a FAILED line, with no real error of
-        --     their own. The parent line only reaches FAILED carrying a real
-        --     Fusion error (its own from G_ERRORS, or a child distribution's real
-        --     error), so the distribution carries that same real parent error.
-        UPDATE DMT_POR_REQ_DISTS_TFM_TBL d
-        SET    d.TFM_STATUS            = 'FAILED',
-               d.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT ln.ERROR_TEXT FROM DMT_POR_REQ_LINES_TFM_TBL ln
-                    WHERE  ln.RUN_ID = p_run_id
-                    AND    ln.INTERFACE_LINE_KEY = d.INTERFACE_LINE_KEY
-                    AND    ln.TFM_STATUS = 'FAILED'
-                    AND    ROWNUM = 1)),
-               d.RESULTS_UPDATED_DATE = SYSDATE,
-               d.LAST_UPDATED_DATE = SYSDATE
-        WHERE  d.RUN_ID    = p_run_id
-        AND    d.TFM_STATUS           NOT IN ('LOADED','FAILED')
-        AND    d.ERROR_TEXT       IS NULL
-        AND    EXISTS (
-            SELECT 1 FROM DMT_POR_REQ_LINES_TFM_TBL ln
-            WHERE  ln.RUN_ID    = p_run_id
-            AND    ln.INTERFACE_LINE_KEY = d.INTERFACE_LINE_KEY
-            AND    ln.TFM_STATUS            = 'FAILED');
-
-        -- 5b2. Dists with their own error that are still GENERATED: just set FAILED
-        UPDATE DMT_POR_REQ_DISTS_TFM_TBL d
-        SET    d.TFM_STATUS            = 'FAILED',
-               d.RESULTS_UPDATED_DATE = SYSDATE,
-               d.LAST_UPDATED_DATE = SYSDATE
-        WHERE  d.RUN_ID    = p_run_id
-        AND    d.TFM_STATUS           NOT IN ('LOADED','FAILED')
-        AND    d.ERROR_TEXT       IS NOT NULL;
-
-        -- ============================================================
-        -- STEP 5c: Parent-cascade for a header that did NOT import.
-        -- A header still not LOADED/FAILED whose child line carries a REAL
-        -- Fusion error did not import BECAUSE that child was rejected. This
-        -- is the header's FOUND outcome (absent from the base table; a child
-        -- it owns was rejected by Fusion) -- not a composed status guess. Mark
-        -- it FAILED carrying the child's real Fusion error so the record is
-        -- honestly accounted instead of swept to UNACCOUNTED. Only headers
-        -- with no real error of their own reach here (Step 2 already wrote
-        -- header-level G_ERRORS); line/dist rejections have already settled
-        -- onto the line (Steps 2/3a/5).
-        -- ============================================================
-        UPDATE DMT_POR_REQ_HEADERS_TFM_TBL h
-        SET    h.TFM_STATUS            = 'FAILED',
-               h.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(h.ERROR_TEXT,
-                   '[FUSION_ERROR] Requisition not imported; a child record was rejected by Fusion: ' ||
-                   (SELECT ln.ERROR_TEXT FROM DMT_POR_REQ_LINES_TFM_TBL ln
-                    WHERE  ln.RUN_ID              = p_run_id
-                    AND    ln.INTERFACE_HEADER_KEY = h.INTERFACE_HEADER_KEY
-                    AND    ln.TFM_STATUS          = 'FAILED'
-                    AND    ln.ERROR_TEXT          IS NOT NULL
-                    AND    ROWNUM = 1)),
-               h.RESULTS_UPDATED_DATE = SYSDATE,
-               h.LAST_UPDATED_DATE = SYSDATE
-        WHERE  h.RUN_ID    = p_run_id
-        AND    h.TFM_STATUS           NOT IN ('LOADED','FAILED')
-        AND    EXISTS (
-            SELECT 1 FROM DMT_POR_REQ_LINES_TFM_TBL ln
-            WHERE  ln.RUN_ID              = p_run_id
-            AND    ln.INTERFACE_HEADER_KEY = h.INTERFACE_HEADER_KEY
-            AND    ln.TFM_STATUS          = 'FAILED'
-            AND    ln.ERROR_TEXT          IS NOT NULL);
-
-        <<echo_to_stg>>
-        -- ============================================================
-        -- STEP 5: Echo outcomes back to STG tables (all 3 types)
+        -- Echo tier outcomes back to the three STG tables (unchanged behaviour).
         -- ============================================================
         -- Headers
         UPDATE DMT_POR_REQ_HEADERS_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
+        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_HEADERS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_POR_REQ_HEADERS_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
+        SET    stg.STG_STATUS = 'FAILED',
+               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_POR_REQ_HEADERS_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
+                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_HEADERS_TFM_TBL t
@@ -595,17 +233,15 @@ AS
 
         -- Lines
         UPDATE DMT_POR_REQ_LINES_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
+        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_LINES_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_POR_REQ_LINES_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
+        SET    stg.STG_STATUS = 'FAILED',
+               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_POR_REQ_LINES_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
+                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_LINES_TFM_TBL t
@@ -613,48 +249,48 @@ AS
 
         -- Distributions
         UPDATE DMT_POR_REQ_DISTS_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
+        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_DISTS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
         UPDATE DMT_POR_REQ_DISTS_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
+        SET    stg.STG_STATUS = 'FAILED',
+               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
                    (SELECT t.ERROR_TEXT FROM DMT_POR_REQ_DISTS_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
+                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
                stg.LAST_UPDATED_DATE = SYSDATE
         WHERE  stg.STG_SEQUENCE_ID IN (
             SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_DISTS_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
-        -- NO COMMIT — orchestrator controls transaction boundaries
+        -- NO COMMIT — orchestrator controls transaction boundaries.
 
         DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. Headers LOADED: ' || l_loaded ||
-                                ', FAILED: ' || l_failed ||
-                                ', NOT_RECONCILED: ' || l_not_recon ||
-                                '. Errors attributed: HDR=' || l_err_hdr ||
-                                ', LINE=' || l_err_line ||
-                                ', DIST=' || l_err_dist || '.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
+                           || ' | headers LOADED/FAILED: ' || l_hdr_loaded || '/' || l_hdr_failed
+                           || ' | lines LOADED/FAILED: '   || l_line_loaded || '/' || l_line_failed
+                           || ' | dists LOADED/FAILED: '   || l_dist_loaded || '/' || l_dist_failed
+                           || '. Unmatched rows left for the unaccounted sweep.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
 
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
             RAISE;
-    END PARSE_AND_UPDATE;
+    END APPLY_CONTRACT_V1_REQUISITIONS;
 
     -- --------------------------------------------------------
-    -- RECONCILE_BATCH
+    -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
+    -- Contract v1 apply. The Requisitions load ESS id is the Contract v1
+    -- P_LOAD_REQUEST_ID; the report's run-scoped selectors (P_RUN_ID, P_PREFIX)
+    -- pick up the whole run regardless of how many batches it submitted.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
@@ -663,7 +299,6 @@ AS
         p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
-        l_xml CLOB;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -672,16 +307,11 @@ AS
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        l_xml := FETCH_BIP_RESULTS(p_run_id, p_load_ess_id, p_import_ess_id);
-        PARSE_AND_UPDATE(p_run_id, l_xml);
+        APPLY_CONTRACT_V1_REQUISITIONS(p_run_id, TO_CHAR(p_load_ess_id));
 
-        IF l_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_xml) = 1 THEN
-            DBMS_LOB.FREETEMPORARY(l_xml);
-        END IF;
-
-        -- Unresolved records intentionally left GENERATED (unaccounted).
-        -- No fabricated FAILED: the accounting gate reports the object
-        -- not-DONE and the funnel surfaces these as UNRECONCILED.
+        -- Unresolved records are intentionally left GENERATED (unaccounted).
+        -- No fabricated FAILED: the accounting gate reports the object not-DONE
+        -- and the funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

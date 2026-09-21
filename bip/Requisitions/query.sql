@@ -98,7 +98,7 @@ FROM (
     -- INTERFACE / headers -- rejections only
     SELECT
         'Requisitions'                       AS object_type,
-        h.interface_header_key               AS record_key,
+        h.requisition_number                 AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -162,7 +162,7 @@ FROM (
     -- INTERFACE / distributions -- rejections only
     SELECT
         'Requisitions.Distribution'          AS object_type,
-        d.interface_distribution_key         AS record_key,
+        d.interface_line_key || ':DIST:' || d.distribution_number  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
