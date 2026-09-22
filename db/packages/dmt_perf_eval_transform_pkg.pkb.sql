@@ -131,7 +131,7 @@ AS
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
+            DMT_XREF_PKG.PERSON_NUMBER(s.PERSON_NUMBER),
             s.SECTION_NAME,
             s.RATING_LEVEL_CODE,
             s.COMMENTS,
