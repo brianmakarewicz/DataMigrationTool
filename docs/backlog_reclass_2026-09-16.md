@@ -65,15 +65,16 @@ Legend for verdicts: **RESOLVED** = fix is in the tree and confirmed; **PARTIAL*
 | 55 | 2 invalid package bodies (INIT / REST_LOADER) | P3 | RESOLVED | 1 | 1 |
 | 56 | Retire superseded docs | P3 | STILL OPEN | 4 | 1 |
 | 57 | Browser-verify Page 82 tile grid | P3 | STILL OPEN | 2 | 1 |
+| 70 | Partitioned-object run-detail tiles misreport load/import IDs + parent placeholder | P1 | STILL OPEN | 4 | 3 |
 
 **Counts by priority**
 
 | Priority | RESOLVED | PARTIAL | STILL OPEN | STALE/OBSOLETE | Total |
 |----------|----------|---------|------------|----------------|-------|
-| P1 | 5 | 1 | 2 | 1 | 9 |
+| P1 | 5 | 1 | 3 | 1 | 10 |
 | P2 | 10 | 5 | 11 | 1 | 27 |
 | P3 | 3 | 1 | 17 | 0 | 21 |
-| **All** | **18** | **7** | **30** | **2** | **57** |
+| **All** | **18** | **7** | **31** | **2** | **58** |
 
 (Items 15 and 16 moved out of STILL OPEN on 2026-09-21. Item 16 is RESOLVED;
 item 15 is RESOLVED-EXCEPT-GLCalendar — counted here under RESOLVED, with the one
@@ -147,6 +148,18 @@ l_dummy := run_one_object_type(p_run_id, 'PurchaseOrders', v_scenario_id, p_run_
 **Impact:** Blocks the "insert STG once, lock, re-run by prefix" workflow — every re-run needs a fresh full reload.
 **Suggested fix:** Extend the upload to accept a single zip containing one header-bearing CSV per STG table (filename = object/table, header row = STG column names). STG-schema, not position-based FBDI. Must cover all 43 objects and every child table.
 **Cost 8 / Risk 5** — large UI/upload feature; low blast radius on existing pipeline code but touches every object's STG contract.
+
+## 70. Partitioned-object run-detail tiles misreport load/import IDs and don't distinguish the parent placeholder — P1
+**Verdict: STILL OPEN.**
+**What it is (plain):** On the run-detail screen, an object that *partitions* — one that spawns one child work item per partition key (for example Items or Customers by `BATCH_ID`, or GL by Ledger) — is drawn as a row of tiles that misrepresents what actually ran. Observed on run 138. Three things are wrong.
+**Developer detail:**
+1. **The parent placeholder tile shows a load ID and an import ID it should not have.** The first tile is the partition *parent* (the coordinator); it does not itself submit an ESS load or import job — those belong to the child partitions — so it must not display a load or import request ID.
+2. **The parent tile is not visually distinguished from the real load tiles.** It should render as a parent placeholder (the partition coordinator), visibly different from the child partition tiles, and it should show *what* it partitioned on (the partition key and the set of partition values), since surfacing that is the parent's actual role.
+3. **Every child partition tile shows the SAME load and import IDs, which is impossible.** Each partition is its own separate ESS load job plus import job with distinct request IDs. Every child tile currently shows identical load/import IDs; each must show its own distinct load and import request ID, and should indicate which partition it ran (the partition value, e.g. `BATCH_ID=5001`).
+
+**Required end state:** the run-detail UI for a partitioned object shows — (1) on the parent tile, what it partitioned on and that it is a parent placeholder with NO load/import ID; (2) on each child tile, which partition it ran; (3) each child's correct, distinct load and import request IDs.
+**Likely touch points (pointers, not a fix):** the run-detail view/records source (`DMT_RUN_RECORDS_V` / `DMT_RECORD_DETAIL_V`) and the run-detail APEX page tiles (p52/p57), plus how parent-vs-child work items and their per-child ESS job IDs are surfaced from `DMT_WORK_QUEUE_TBL` / `DMT_ESS_JOB_TBL`.
+**Cost 4 / Risk 3** — UI plus view plumbing across the run-detail tiles and the work-item/ESS-job join; medium.
 
 ---
 
