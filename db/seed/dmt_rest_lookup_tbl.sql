@@ -95,7 +95,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('PerfEvaluations','/hcmRestApi/resources/11.13.18.05/goalPlans','PersonNumber={KEY}','PERSON_NUMBER','GoalPlanId,GoalPlanName,GoalPlanTypeCode,PersonNumber,StartDate,EndDate','Plan ID,Name,Type,Person,Start,End','HCM','Y',NULL);
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('PerfEvaluations','/hcmRestApi/resources/11.13.18.05/performanceEvaluations','PersonNumber={KEY}','PERSON_NUMBER','EvaluationId,PerformanceDocumentName,EvalStatus,PersonNumber,StartDate,EndDate','Evaluation ID,Document,Status,Person,Start,End','HCM','Y',NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -296,7 +296,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Performance Evaluations','/hcmRestApi/resources/11.13.18.05/goalPlans','PersonNumber={KEY}','PERSON_NUMBER','GoalPlanId,GoalPlanName,GoalPlanTypeCode,PersonNumber,StartDate,EndDate','Plan ID,Name,Type,Person,Start,End','HCM','Y','Same as PerfEvaluations CEMLI entry - SUB_OBJECT display name');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Performance Evaluations','/hcmRestApi/resources/11.13.18.05/performanceEvaluations','PersonNumber={KEY}','PERSON_NUMBER','EvaluationId,PerformanceDocumentName,EvalStatus,PersonNumber,StartDate,EndDate','Evaluation ID,Document,Status,Person,Start,End','HCM','Y','Same as PerfEvaluations CEMLI entry - SUB_OBJECT display name');
 exception when dup_val_on_index then null;
 end;
 /

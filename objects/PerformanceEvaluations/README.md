@@ -45,8 +45,15 @@ METADATA|RatingsAndComments|AssignmentNumber|CustomaryName|ParticipantPersonNumb
   and is the reconciliation key (matched against `HRA_EVALUATIONS.NAME`).
 - `Operation` — `ORA_CREATE_PD` (Performance Administration Action lookup
   `ORA_HRA_ADMIN_ACTION`) to create the document.
-- `ManagerAssignmentNumber` — from `MANAGER_PERSON_NUMBER`.
-- `ParticipantRoleTypeCode` — `Manager` (the manager supplies the ratings).
+- `ManagerAssignmentNumber` — from `MANAGER_PERSON_NUMBER`. This is how the manager is
+  attributed to the document: the manager is named on the `PerfDocComplete` line via
+  `ManagerAssignmentNumber`, not on the ratings line.
+- `ParticipantPersonNumber` and `ParticipantRoleTypeCode` — intentionally left **empty** on
+  every `RatingsAndComments` line. The rating STG/TFM carry no participant source, so the
+  generator emits these two attributes blank. Do NOT populate them with the worker's own
+  person number or a `Manager` role code — an earlier build did that, which stamped each
+  worker as their own manager. That defect was removed. The manager is attributed only via
+  `ManagerAssignmentNumber` on the `PerfDocComplete` line (above).
 - `SectionTypeCode` — `REG`.
 - `RatingName` — the rating level (section or overall). Overall rating loads on the
   overall/summary section.
@@ -91,9 +98,11 @@ periods** on the pod, plus target workers loaded. Confirmed present:
   generator + BIP recon report re-pointed to `HRA_EVALUATIONS`; config prerequisites
   confirmed present live.
 
-## Shared-file deltas (reported, not edited here)
-- `db/seed/dmt_bip_report_tbl.sql` — the PerfEvaluations registry row's catalog paths are
-  unchanged and correct; only its descriptive comment still says GoalPlan / HRG_GOAL_PLANS_VL.
-- `db/seed/dmt_rest_lookup_tbl.sql` — the PerfEvaluations REST enrichment lookup still
-  points at `/goalPlans`; it should point at the performance-documents REST resource. This
-  is display-only enrichment, not on the LOADED path.
+## Shared-file deltas (updated 2026-09)
+- `db/seed/dmt_bip_report_tbl.sql` — the PerfEvaluations registry row's descriptive comment
+  was updated from GoalPlan / HRG_GOAL_PLANS_VL to PerformanceDocument / HRA_EVALUATIONS. The
+  catalog paths were already correct and are unchanged.
+- `db/seed/dmt_rest_lookup_tbl.sql` — the PerfEvaluations REST enrichment lookup was re-pointed
+  from `/goalPlans` to `/hcmRestApi/resources/11.13.18.05/performanceEvaluations` (filtered by
+  `PersonNumber`, returning `EvaluationId`, `PerformanceDocumentName`, `EvalStatus`, dates).
+  This is display-only enrichment, not on the LOADED path.
