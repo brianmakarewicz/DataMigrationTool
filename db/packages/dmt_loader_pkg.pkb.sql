@@ -1361,8 +1361,14 @@
         -- helpers), never through these p_cemli_code ladders. Any Suppliers code
         -- reaching here means a caller was wired to the wrong entry point — fail
         -- loudly rather than silently drive the (now dead) supplier ladder arms.
+        -- Purchasing family (PurchaseOrders, BlanketPOs, Contracts) migrated off
+        -- this monolith too (backlog #8, second family) -- each now runs through
+        -- its own self-contained RUN_<object>() recipe (validate/transform +
+        -- per-BU generate/submit/reconcile via the shared po_* helpers). Guard
+        -- them the same way as the Suppliers family.
         IF p_cemli_code IN ('Suppliers', 'SupplierAddresses', 'SupplierSites',
-                            'SupplierSiteAssignments', 'SupplierContacts') THEN
+                            'SupplierSiteAssignments', 'SupplierContacts',
+                            'PurchaseOrders', 'BlanketPOs', 'Contracts') THEN
             RAISE_APPLICATION_ERROR(-20046,
                 'RUN_ONE_OBJECT_TYPE: ' || p_cemli_code || ' is migrated to its own '
                 || 'RUN_' || UPPER(l_obj) || '() runner (backlog #8) and no longer '
@@ -3912,6 +3918,258 @@
             'Object type start: ' || p_cemli_code, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
     END sup_preamble;
 
+    -- ========================================================================
+    -- PURCHASING FAMILY — self-contained runners (backlog #8, second family).
+    --
+    -- PurchaseOrders, BlanketPOs and Contracts NO LONGER route through the
+    -- run_one_object_type p_cemli_code ladders. Each RUN_<object>() below is a
+    -- self-contained recipe (same shape as the Suppliers runners): it calls its
+    -- own validate + transform + per-BU generate directly and hands the
+    -- object-agnostic per-BU phases (submit, poll, load-failure marking, import,
+    -- reconcile) to the shared helpers in this block.
+    --
+    -- All three are GROUPED objects: one FBDI zip + one loadAndImportData +
+    -- one BIP reconcile per distinct Procurement BU (PRC_BU_NAME). They are NOT
+    -- spawn-per-partition (no row in DMT_CEMLI_SPLIT_CFG with a partition
+    -- column), so g_partition_key is always NULL for them and the whole grouped
+    -- loop runs inline in a single EXECUTE_ONE call for BOTH modes:
+    --   * ASYNC (live queue) — po_submit_and_reconcile_one polls each BU's load
+    --     + import and reconciles INLINE per BU; it sets g_reconciled_inline so
+    --     EXECUTE_ONE settles the item through the accounting gate (NOT
+    --     AWAITING_LOAD) and does NOT re-run RECON_PROC. g_load_ess_id stays
+    --     NULL (grouped objects never set it) -- exactly as the monolith did.
+    --   * SYNC (direct RUN_* call) — identical path; g_async_mode is unused here
+    --     because the grouped helper always polls+reconciles inline regardless.
+    --
+    -- Behaviour is preserved byte-for-byte with the pre-refactor path through
+    -- run_one_object_type + its nested submit_and_reconcile_one for these three
+    -- objects. po_submit_and_reconcile_one mirrors that nested helper but takes
+    -- the ERP-option values as explicit parameters (the nested one captured them
+    -- from the enclosing scope) and omits the ARInvoices two-job and Items
+    -- category special cases (never reachable for PO/BlanketPO/Contracts). The
+    -- objects that REMAIN in the monolith (ARInvoices, Customers, APInvoices)
+    -- still call the original nested submit_and_reconcile_one untouched.
+    -- ========================================================================
+
+    -- Shared helper: submit one BU's FBDI zip, poll load+import ESS, reconcile
+    -- via BIP. Object-agnostic; the ERP options (job name, interface details,
+    -- UCM account) and object label are passed in, not captured. Returns
+    -- x_success = FALSE when the Load ESS fails so the caller marks that BU's
+    -- GENERATED rows FAILED in its own (per-object) way. Sets g_reconciled_inline
+    -- TRUE on success -- same signal EXECUTE_ONE reads to avoid a second reconcile.
+    PROCEDURE po_submit_and_reconcile_one (
+        p_run_id          IN NUMBER,
+        p_cemli_code      IN VARCHAR2,
+        p_obj             IN VARCHAR2,
+        p_job_name        IN VARCHAR2,
+        p_interface_details IN NUMBER,
+        p_ucm_account     IN VARCHAR2,
+        p_fbdi_zip        IN OUT NOCOPY BLOB,
+        p_filename        IN VARCHAR2,
+        p_fbdi_csv_id     IN NUMBER,
+        p_param_list      IN VARCHAR2,
+        p_group_label     IN VARCHAR2,
+        p_username        IN VARCHAR2,
+        p_password        IN VARCHAR2,
+        x_load_ess_id     OUT VARCHAR2,
+        x_import_ess_id   OUT VARCHAR2,
+        x_success         OUT BOOLEAN
+    ) IS
+        C_PROC            CONSTANT VARCHAR2(40) := 'PO_SUBMIT_AND_RECONCILE_ONE';
+        l_load_status     VARCHAR2(50);
+    BEGIN
+        x_success := FALSE;
+
+        -- Submit loadAndImportData (combined load+import single call).
+        x_load_ess_id := SUBMIT_LOAD(
+            p_run_id            => p_run_id,
+            p_fbdi_zip          => p_fbdi_zip,
+            p_filename          => p_filename,
+            p_job_name          => p_job_name,
+            p_interface_details => p_interface_details,
+            p_doc_account       => p_ucm_account,
+            p_parameter_list    => p_param_list,
+            p_log_context       => p_obj,
+            p_username          => p_username,
+            p_password          => p_password);
+        DBMS_LOB.FREETEMPORARY(p_fbdi_zip);
+
+        -- Stamp the parameter list on the zip row (keyed via the primary csv id).
+        UPDATE DMT_FBDI_ZIP_TBL
+        SET    PARAMETER_LIST  = p_param_list
+        WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
+                              WHERE FBDI_CSV_ID = p_fbdi_csv_id);
+        COMMIT;
+
+        -- Poll Load job.
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Polling Load ESS job: ' || x_load_ess_id || ' (' || p_group_label || ')',
+            'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+        POLL_ESS_JOB(p_run_id, x_load_ess_id, 1800, FALSE, p_obj, p_cemli_code,
+                     l_load_status, p_username => p_username, p_password => p_password);
+
+        -- Load failed → caller marks that BU's GENERATED rows FAILED.
+        IF l_load_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Load ESS ' || x_load_ess_id || ' returned ' || l_load_status ||
+                ' for ' || p_group_label ||
+                '. No rows committed to interface table. Marking all GENERATED rows FAILED.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+            x_import_ess_id := NULL;
+            RETURN;  -- x_success stays FALSE
+        END IF;
+
+        -- Find the Import ESS job ID.
+        BEGIN
+            x_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'Could not find chained Import ESS for Load ' || x_load_ess_id,
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+                x_import_ess_id := NULL;
+        END;
+
+        -- Poll Import job.
+        IF x_import_ess_id IS NOT NULL THEN
+            COMMIT;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Polling Import ESS job: ' || x_import_ess_id || ' (' || p_group_label || ')',
+                'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+            POLL_ESS_JOB(p_run_id, x_import_ess_id, 1800, FALSE, p_obj, p_cemli_code,
+                         l_load_status, p_username => p_username, p_password => p_password);
+        END IF;
+
+        -- Capture the Report child ESS job + parse import-report errors (generic;
+        -- no-op for objects without a REPORT_JOB_DEF). Mirrors the nested helper.
+        IF x_import_ess_id IS NOT NULL THEN
+            DECLARE
+                l_report_ess_id NUMBER;
+            BEGIN
+                l_report_ess_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+                    p_run_id        => p_run_id,
+                    p_import_ess_id => TO_NUMBER(x_import_ess_id),
+                    p_cemli_code    => p_cemli_code);
+            END;
+
+            BEGIN
+                DECLARE
+                    l_ir_count NUMBER;
+                BEGIN
+                    l_ir_count := DMT_IMPORT_REPORT_PKG.PARSE_AND_LOG_ERRORS(
+                        p_run_id     => p_run_id,
+                        p_request_id => TO_NUMBER(x_import_ess_id),
+                        p_cemli_code => p_cemli_code);
+                    IF l_ir_count > 0 THEN
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'Import Report captured ' || l_ir_count || ' error(s) for ' ||
+                            p_cemli_code || ' (' || p_group_label || ', ESS ' || x_import_ess_id || ').',
+                            'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+                    END IF;
+                END;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                        'Import Report capture failed for ' || p_cemli_code ||
+                        ' (' || p_group_label || ', ESS ' || x_import_ess_id || '). Continuing to BIP.',
+                        SQLERRM, C_PKG, p_obj || ' > ' || C_PROC);
+            END;
+        END IF;
+
+        -- Reconcile via BIP — single registry-driven dispatch (once per BU/group).
+        DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => TO_NUMBER(x_load_ess_id),
+            p_import_ess_id => TO_NUMBER(x_import_ess_id),
+            p_work_queue_id => g_work_queue_id);
+
+        -- Inline reconcile happened: EXECUTE_ONE must NOT re-reconcile via RECON_PROC.
+        g_reconciled_inline := TRUE;
+
+        x_success := TRUE;
+    END po_submit_and_reconcile_one;
+
+    -- Shared helper: fail this BU's GENERATED rows across the PO TFM table(s) with a
+    -- reportable [LOAD_ERROR]. Static per-object statements (no dynamic SQL).
+    -- PurchaseOrders cascades header→line→line-loc→dist (multi-CSV); BlanketPOs and
+    -- Contracts fail the header table filtered by STYLE_DISPLAY_NAME. Each block is
+    -- identical to the original per-object on-fail cascade in run_one_object_type.
+    PROCEDURE po_mark_bu_failed (
+        p_run_id       IN NUMBER,
+        p_cemli_code   IN VARCHAR2,
+        p_prc_bu_name  IN VARCHAR2,
+        p_load_ess_id  IN VARCHAR2
+    ) IS
+        l_err VARCHAR2(500) :=
+            '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job '
+            || p_load_ess_id || ' logs for details.';
+    BEGIN
+        IF p_cemli_code = 'PurchaseOrders' THEN
+            UPDATE DMT_PO_HEADERS_INT_TFM_TBL
+            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND PRC_BU_NAME=p_prc_bu_name;
+            UPDATE DMT_PO_LINES_INT_TFM_TBL
+            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+            AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=p_prc_bu_name);
+            UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL
+            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+            AND INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_PO_LINES_INT_TFM_TBL WHERE RUN_ID=p_run_id
+                AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=p_prc_bu_name));
+            UPDATE DMT_PO_DISTS_INT_TFM_TBL
+            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+            AND INTERFACE_LINE_LOCATION_KEY IN (SELECT INTERFACE_LINE_LOCATION_KEY FROM DMT_PO_LINE_LOCS_INT_TFM_TBL WHERE RUN_ID=p_run_id
+                AND INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_PO_LINES_INT_TFM_TBL WHERE RUN_ID=p_run_id
+                AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=p_prc_bu_name)));
+            COMMIT;
+        ELSIF p_cemli_code = 'BlanketPOs' THEN
+            UPDATE DMT_PO_HEADERS_INT_TFM_TBL
+            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err),
+                LAST_UPDATED_DATE=SYSDATE
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND PRC_BU_NAME=p_prc_bu_name
+            AND STYLE_DISPLAY_NAME='Blanket Purchase Agreement';
+            COMMIT;
+        ELSIF p_cemli_code = 'Contracts' THEN
+            UPDATE DMT_PO_HEADERS_INT_TFM_TBL
+            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err),
+                LAST_UPDATED_DATE=SYSDATE
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND PRC_BU_NAME=p_prc_bu_name
+            AND STYLE_DISPLAY_NAME='Contract Purchase Agreement';
+            COMMIT;
+        ELSE
+            RAISE_APPLICATION_ERROR(-20047,
+                'po_mark_bu_failed: unexpected CEMLI ''' || p_cemli_code || '''.');
+        END IF;
+    END po_mark_bu_failed;
+
+    -- Shared tail: FAILED-row count warning + "object complete" log. Mirrors the
+    -- grouped_finish tail of run_one_object_type for the three purchasing objects
+    -- (all count the shared PO header TFM table). Static SELECT, no dynamic SQL.
+    PROCEDURE po_finish (
+        p_run_id     IN NUMBER,
+        p_cemli_code IN VARCHAR2,
+        p_obj        IN VARCHAR2
+    ) IS
+        C_PROC CONSTANT VARCHAR2(40) := 'PO_FINISH';
+        l_failed_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO l_failed_count
+        FROM DMT_PO_HEADERS_INT_TFM_TBL
+        WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
+
+        IF l_failed_count > 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                p_cemli_code || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                'Downstream object types will continue — check staging table for details.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+        END IF;
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Object type complete: ' || p_cemli_code, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+    END po_finish;
+
     -- --------------------------------------------------------
     -- RUN_SUPPLIER_PIPELINE
     -- Orchestrates all 5 object types in strict dependency order.
@@ -4171,14 +4429,135 @@
     END RUN_SUPPLIER_CONTACTS;
 
     PROCEDURE RUN_PURCHASE_ORDERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_PURCHASE_ORDERS';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_PURCHASE_ORDERS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'PurchaseOrders';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'PurchaseOrders';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_po_user      VARCHAR2(100);
+        l_po_pass      VARCHAR2(100);
+        l_bu_zip       BLOB;
+        l_bu_filename  VARCHAR2(200);
+        l_bu_csv_id    NUMBER;
+        l_bu_load_id   VARCHAR2(100);
+        l_bu_import_id VARCHAR2(100);
+        l_bu_param     VARCHAR2(500);
+        l_bu_id        VARCHAR2(30);
+        l_buyer_id     VARCHAR2(30);
+        l_req_bu_id    VARCHAR2(30);
+        l_bu_count     NUMBER := 0;
+        l_bu_ok        BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PURCHASE_ORDERS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'PurchaseOrders', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation (Purchase Order document type).
+        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => 'Purchase Order');
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM (headers, lines, line locations, distributions).
+        DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_PO_TRANSFORM_PKG.TRANSFORM_LINE_LOCS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_PO_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- ERP options + credentials for the load submissions.
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_po_user, l_po_pass);
+
+        -- Phase 3+4: multi-BU load cycle. Each distinct PRC_BU_NAME gets its own
+        -- FBDI zip, loadAndImportData call, and BIP reconciliation (inline per BU).
+        FOR bu_rec IN (
+            SELECT DISTINCT PRC_BU_NAME
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'STAGED'
+            ORDER BY PRC_BU_NAME
+        ) LOOP
+            l_bu_count := l_bu_count + 1;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'PO BU cycle start: ' || bu_rec.PRC_BU_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            DMT_PO_FBDI_GEN_PKG.GENERATE_FBDI(
+                p_run_id      => p_run_id,
+                p_prc_bu_name => bu_rec.PRC_BU_NAME,
+                x_fbdi_zip    => l_bu_zip,
+                x_filename    => l_bu_filename,
+                x_fbdi_csv_id => l_bu_csv_id);
+
+            IF l_bu_zip IS NULL OR DBMS_LOB.GETLENGTH(l_bu_zip) = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'No rows for BU ' || bu_rec.PRC_BU_NAME || '. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                CONTINUE;
+            END IF;
+
+            -- BU id via the one common lookup accessor (raises -20040 with a clear
+            -- halt message if the BU is not resolvable).
+            l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
+            l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
+            l_req_bu_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_REQ_BU_ID');
+
+            -- Arg 5 (Batch ID) is left blank on purpose: Import Orders then processes
+            -- all pending interface rows for this BU, so PO partitions by Procurement
+            -- BU only. The user's batch id still rides through on the interface
+            -- BATCH_ID column for traceability -- a tracking value, not a load filter.
+            l_bu_param := l_bu_id || ',' || l_buyer_id || ',' || 'SUBMIT' || ',' ||
+                          l_req_bu_id || ',,' || 'N' || ',,' || 'N' || ',' ||
+                          l_bu_id || '_' || TO_CHAR(p_run_id);
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'PO ParameterList for ' || bu_rec.PRC_BU_NAME || ': ' || l_bu_param,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            po_submit_and_reconcile_one(
+                p_run_id            => p_run_id,
+                p_cemli_code        => C_CEMLI,
+                p_obj               => C_OBJ,
+                p_job_name          => l_job_name,
+                p_interface_details => l_ifd,
+                p_ucm_account       => l_ucm_account,
+                p_fbdi_zip          => l_bu_zip,
+                p_filename          => l_bu_filename,
+                p_fbdi_csv_id       => l_bu_csv_id,
+                p_param_list        => l_bu_param,
+                p_group_label       => 'BU: ' || bu_rec.PRC_BU_NAME,
+                p_username          => l_po_user,
+                p_password          => l_po_pass,
+                x_load_ess_id       => l_bu_load_id,
+                x_import_ess_id     => l_bu_import_id,
+                x_success           => l_bu_ok);
+
+            IF NOT l_bu_ok THEN
+                po_mark_bu_failed(p_run_id, C_CEMLI, bu_rec.PRC_BU_NAME, l_bu_load_id);
+                CONTINUE;
+            END IF;
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'PO BU cycle complete: ' || bu_rec.PRC_BU_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        END LOOP;
+
+        IF l_bu_count = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No STAGED PO headers found. Skipping PurchaseOrders.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            RETURN;
+        END IF;
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        po_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PURCHASE_ORDERS complete.', 'INFO', C_PKG, C_PROC);
@@ -4566,14 +4945,106 @@
     -- RUN_BLANKET_POS (public)
     -- --------------------------------------------------------
     PROCEDURE RUN_BLANKET_POS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_BLANKET_POS';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_BLANKET_POS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'BlanketPOs';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'BlanketPOs';
+        C_STYLE  CONSTANT VARCHAR2(60) := 'Blanket Purchase Agreement';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_po_user      VARCHAR2(100);
+        l_po_pass      VARCHAR2(100);
+        l_bu_zip       BLOB;
+        l_bu_filename  VARCHAR2(200);
+        l_bu_csv_id    NUMBER;
+        l_bu_load_id   VARCHAR2(100);
+        l_bu_import_id VARCHAR2(100);
+        l_bu_param     VARCHAR2(500);
+        l_bu_id        VARCHAR2(30);
+        l_buyer_id     VARCHAR2(30);
+        l_bu_count     NUMBER := 0;
+        l_any_staged   NUMBER := 0;
+        l_bu_ok        BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BLANKET_POS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'BlanketPOs', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation (Blanket Purchase Agreement doc type).
+        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM (headers + lines).
+        DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_po_user, l_po_pass);
+
+        -- Phase 3+4: multi-BU load cycle (same grouping as standard POs).
+        FOR bu_rec IN (
+            SELECT DISTINCT PRC_BU_NAME
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+            AND    STYLE_DISPLAY_NAME = C_STYLE
+            ORDER BY PRC_BU_NAME
+        ) LOOP
+            l_bu_count := l_bu_count + 1;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'BlanketPO BU cycle start: ' || bu_rec.PRC_BU_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            DMT_BLANKET_PO_FBDI_GEN_PKG.GENERATE_FBDI(
+                p_run_id => p_run_id, p_prc_bu_name => bu_rec.PRC_BU_NAME,
+                x_fbdi_zip => l_bu_zip, x_filename => l_bu_filename, x_fbdi_csv_id => l_bu_csv_id);
+
+            IF l_bu_zip IS NULL OR DBMS_LOB.GETLENGTH(l_bu_zip) = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id, 'No blanket rows for BU ' || bu_rec.PRC_BU_NAME || '. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                CONTINUE;
+            END IF;
+
+            l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
+            l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
+
+            -- ImportBPAJob: 8 args.
+            l_bu_param := l_bu_id || ',' || l_buyer_id || ',N,SUBMIT,,,N,' || l_bu_id || '_' || TO_CHAR(p_run_id);
+
+            po_submit_and_reconcile_one(
+                p_run_id => p_run_id, p_cemli_code => C_CEMLI, p_obj => C_OBJ,
+                p_job_name => l_job_name, p_interface_details => l_ifd, p_ucm_account => l_ucm_account,
+                p_fbdi_zip => l_bu_zip, p_filename => l_bu_filename, p_fbdi_csv_id => l_bu_csv_id,
+                p_param_list => l_bu_param, p_group_label => 'BU: ' || bu_rec.PRC_BU_NAME,
+                p_username => l_po_user, p_password => l_po_pass,
+                x_load_ess_id => l_bu_load_id, x_import_ess_id => l_bu_import_id, x_success => l_bu_ok);
+
+            IF NOT l_bu_ok THEN
+                po_mark_bu_failed(p_run_id, C_CEMLI, bu_rec.PRC_BU_NAME, l_bu_load_id);
+                CONTINUE;
+            END IF;
+        END LOOP;
+
+        IF l_bu_count = 0 THEN
+            SELECT COUNT(*) INTO l_any_staged FROM DMT_PO_HEADERS_INT_TFM_TBL
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
+            AND STYLE_DISPLAY_NAME=C_STYLE AND ROWNUM=1;
+            IF l_any_staged = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id, 'No STAGED blanket PO headers. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                RETURN;
+            END IF;
+        END IF;
+
+        po_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BLANKET_POS complete.', 'INFO', C_PKG, C_PROC);
@@ -4588,14 +5059,105 @@
     -- RUN_CONTRACTS (public)
     -- --------------------------------------------------------
     PROCEDURE RUN_CONTRACTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_CONTRACTS';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_CONTRACTS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'Contracts';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'Contracts';
+        C_STYLE  CONSTANT VARCHAR2(60) := 'Contract Purchase Agreement';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_po_user      VARCHAR2(100);
+        l_po_pass      VARCHAR2(100);
+        l_bu_zip       BLOB;
+        l_bu_filename  VARCHAR2(200);
+        l_bu_csv_id    NUMBER;
+        l_bu_load_id   VARCHAR2(100);
+        l_bu_import_id VARCHAR2(100);
+        l_bu_param     VARCHAR2(500);
+        l_bu_id        VARCHAR2(30);
+        l_buyer_id     VARCHAR2(30);
+        l_bu_count     NUMBER := 0;
+        l_any_staged   NUMBER := 0;
+        l_bu_ok        BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CONTRACTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Contracts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation (Contract Purchase Agreement doc type).
+        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM (headers only).
+        DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_po_user, l_po_pass);
+
+        -- Phase 3+4: multi-BU load cycle (headers only).
+        FOR bu_rec IN (
+            SELECT DISTINCT PRC_BU_NAME
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+            AND    STYLE_DISPLAY_NAME = C_STYLE
+            ORDER BY PRC_BU_NAME
+        ) LOOP
+            l_bu_count := l_bu_count + 1;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Contract BU cycle start: ' || bu_rec.PRC_BU_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            DMT_CONTRACT_FBDI_GEN_PKG.GENERATE_FBDI(
+                p_run_id => p_run_id, p_prc_bu_name => bu_rec.PRC_BU_NAME,
+                x_fbdi_zip => l_bu_zip, x_filename => l_bu_filename, x_fbdi_csv_id => l_bu_csv_id);
+
+            IF l_bu_zip IS NULL OR DBMS_LOB.GETLENGTH(l_bu_zip) = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id, 'No contract rows for BU ' || bu_rec.PRC_BU_NAME || '. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                CONTINUE;
+            END IF;
+
+            l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
+            l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
+
+            -- ImportCPAJob: 7 args.
+            l_bu_param := l_bu_id || ',' || l_buyer_id || ',SUBMIT,,,N,' || l_bu_id || '_' || TO_CHAR(p_run_id);
+
+            po_submit_and_reconcile_one(
+                p_run_id => p_run_id, p_cemli_code => C_CEMLI, p_obj => C_OBJ,
+                p_job_name => l_job_name, p_interface_details => l_ifd, p_ucm_account => l_ucm_account,
+                p_fbdi_zip => l_bu_zip, p_filename => l_bu_filename, p_fbdi_csv_id => l_bu_csv_id,
+                p_param_list => l_bu_param, p_group_label => 'BU: ' || bu_rec.PRC_BU_NAME,
+                p_username => l_po_user, p_password => l_po_pass,
+                x_load_ess_id => l_bu_load_id, x_import_ess_id => l_bu_import_id, x_success => l_bu_ok);
+
+            IF NOT l_bu_ok THEN
+                po_mark_bu_failed(p_run_id, C_CEMLI, bu_rec.PRC_BU_NAME, l_bu_load_id);
+                CONTINUE;
+            END IF;
+        END LOOP;
+
+        IF l_bu_count = 0 THEN
+            SELECT COUNT(*) INTO l_any_staged FROM DMT_PO_HEADERS_INT_TFM_TBL
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
+            AND STYLE_DISPLAY_NAME=C_STYLE AND ROWNUM=1;
+            IF l_any_staged = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id, 'No STAGED contract headers. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                RETURN;
+            END IF;
+        END IF;
+
+        po_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CONTRACTS complete.', 'INFO', C_PKG, C_PROC);
