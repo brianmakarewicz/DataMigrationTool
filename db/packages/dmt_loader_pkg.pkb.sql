@@ -3292,23 +3292,65 @@
             l_exp_bu_id      VARCHAR2(30);
             l_exp_src_id     VARCHAR2(30);
             l_exp_doc_id     VARCHAR2(30);
+            -- Source/document NAMES used only to resolve the ParameterList ids. On a
+            -- spawned CHILD they are the decoded key (l_ex_src / l_ex_doc, both non-null).
+            -- On the legacy standalone path (g_partition_key NULL) the key decodes to NULL,
+            -- so read them informationally from the staged rows (first values seen), exactly
+            -- as the retired run_one_object_type Expenditures arm did on its un-partitioned
+            -- pass. These are LOCAL to the ParameterList build: the procedure-scoped
+            -- l_ex_src / l_ex_doc stay NULL on the standalone path so the generate / update /
+            -- count below scope over the WHOLE staged set (their "IS NULL OR ..." clauses),
+            -- matching the monolith's standalone submit which never narrowed to one group.
+            l_exp_src_name   VARCHAR2(240) := l_ex_src;
+            l_exp_doc_name   VARCHAR2(240) := l_ex_doc;
         BEGIN
             l_exp_bu_name := DMT_UTIL_PKG.GET_CONFIG('EXPENDITURE_BU_NAME');
             l_exp_bu_id   := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', l_exp_bu_name);
 
-            -- A real submit is always a CHILD here (the parent returned transform-only
-            -- above), so its decoded key must carry both names; guard defensively.
-            IF l_ex_src IS NULL OR l_ex_doc IS NULL THEN
+            -- Legacy standalone path: no spawn key, so populate the informational names.
+            IF g_partition_key IS NULL THEN
+                SELECT MAX(USER_TRANSACTION_SOURCE), MAX(DOCUMENT_NAME)
+                INTO   l_exp_src_name, l_exp_doc_name
+                FROM   DMT_PJC_EXPENDITURES_STG_TBL
+                WHERE  (v_scenario_id IS NULL OR SCENARIO_ID = v_scenario_id)
+                AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL') );
+            END IF;
+
+            -- Guard the no-usable-source/document case on the CHILD path only. A spawned
+            -- child whose decoded key is null cannot build the import filter safely.
+            -- (GET_PARTITION_KEYS excludes null-source/document rows, so a real child
+            -- always has both; this is a defensive backstop.) The legacy standalone path
+            -- (g_partition_key NULL) must NOT raise here — it runs the whole staged set.
+            IF g_partition_key IS NOT NULL AND (l_ex_src IS NULL OR l_ex_doc IS NULL) THEN
                 RAISE_APPLICATION_ERROR(-20057,
                     'Expenditures: partition child carries no USER_TRANSACTION_SOURCE '||
                     'and DOCUMENT_NAME (key '||g_partition_key||'). Import and Process '||
                     'Cost Transactions needs both to build its source/document filter.');
             END IF;
 
-            -- Source/document ids for the ParameterList. On the child path these must
-            -- resolve, so let GET_LOOKUP raise -20040 loudly.
-            l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_ex_src);
-            l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_ex_doc);
+            -- Source/document ids for the ParameterList. On the CHILD path (a real
+            -- partitioned submit) these must resolve, so let GET_LOOKUP raise -20040
+            -- loudly. On the legacy standalone path a picked informational source that
+            -- happens not to resolve (or a null multi-source read) must not crash the
+            -- run, so swallow it there and leave the id null — matching the monolith.
+            IF g_partition_key IS NOT NULL THEN
+                l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_exp_src_name);
+                l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_exp_doc_name);
+            ELSE
+                BEGIN
+                    IF l_exp_src_name IS NOT NULL THEN
+                        l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_exp_src_name);
+                    END IF;
+                    IF l_exp_doc_name IS NOT NULL THEN
+                        l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_exp_doc_name);
+                    END IF;
+                EXCEPTION WHEN OTHERS THEN
+                    l_exp_src_id := NULL;
+                    l_exp_doc_id := NULL;
+                END;
+            END IF;
 
             -- Expenditure Batch (arg 8): one batch name per (source, document) partition.
             -- Globally unique (a work-queue id) so it never collides on
