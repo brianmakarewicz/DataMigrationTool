@@ -22,8 +22,11 @@
 -- on the parent transaction's interface row, so there is no
 -- separate lot/serial recon tier.
 --
--- Row selection: run-scoped by the batch key
---   TRANSACTION_REFERENCE = 'DMT-' || :P_RUN_ID and SOURCE_CODE='DMT'.
+-- Row selection: run-scoped by the batch key. The transform ALWAYS prepends
+--   'DMT-' || run_id to TRANSACTION_REFERENCE, so a row is either exactly
+--   'DMT-'||:P_RUN_ID (no source-supplied reference) or 'DMT-'||:P_RUN_ID||'-...'
+--   (source supplied one). Match BOTH shapes, anchored on the '-' delimiter so
+--   run 34 never matches run 340's rows. SOURCE_CODE='DMT'.
 --   BASE tier    => INV_MATERIAL_TXNS (posted; FUSION_ID=TRANSACTION_ID).
 --   INTERFACE tier => INV_TRANSACTIONS_INTERFACE where PROCESS_FLAG=3
 --   (rejections). ERROR_CODE + ERROR_EXPLANATION are carried inline
@@ -52,7 +55,8 @@ FROM (
         TO_CHAR(t.source_line_id)            AS dmt_reference
     FROM   inv_material_txns t
     WHERE  t.source_code           = 'DMT'
-    AND    t.transaction_reference = 'DMT-' || :P_RUN_ID
+    AND    (t.transaction_reference = 'DMT-' || :P_RUN_ID
+            OR t.transaction_reference LIKE 'DMT-' || :P_RUN_ID || '-%')
 
     UNION ALL
 
@@ -73,7 +77,8 @@ FROM (
         TO_CHAR(t.source_line_id)            AS dmt_reference
     FROM   inv_transactions_interface t
     WHERE  t.source_code           = 'DMT'
-    AND    t.transaction_reference = 'DMT-' || :P_RUN_ID
+    AND    (t.transaction_reference = 'DMT-' || :P_RUN_ID
+            OR t.transaction_reference LIKE 'DMT-' || :P_RUN_ID || '-%')
     AND    t.process_flag          = 3
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in

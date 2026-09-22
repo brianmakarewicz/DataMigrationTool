@@ -3673,6 +3673,42 @@
             RAISE;
     END run_one_object_type;
 
+    -- Shared helper (backlog #70, extended for non-partitioned objects): stamp THIS
+    -- work item's own Load and Import ESS request ids onto its own work-queue row so
+    -- the run-detail tiles show the real ids.
+    --
+    -- Keyed on g_gen_queue_id — the QUEUE_ID of the work item currently generating /
+    -- loading, which EXECUTE_ONE sets UNCONDITIONALLY for EVERY object (a spawn
+    -- child's own QUEUE_ID, or a non-partitioned single item's QUEUE_ID), and leaves
+    -- NULL for a direct/standalone call outside the queue. This broadens the original
+    -- partition-child-only stamping (which keyed on g_work_queue_id, NULL for
+    -- non-partitioned objects) so that non-partitioned objects — MiscReceipts,
+    -- grouped ARInvoices / Customers / PurchaseOrders, and the single-load Suppliers
+    -- family — now also record their real load + import ess ids on the queue row
+    -- instead of leaving those columns NULL (which the #70 tiles rendered as a
+    -- skipped load). The NULL guard makes it a no-op for direct/standalone calls.
+    --
+    -- Only stamps when a Load ESS id is present, and only overwrites the import id
+    -- when a new one is given, so for a grouped object that submits several loads on
+    -- one queue row a failed group's NULL ids never wipe an earlier group's real ids
+    -- (the last group with real ids wins — a representative id for the single tile).
+    -- Static single-row UPDATE, no dynamic SQL. Defined here (ahead of the family
+    -- helper blocks) so every inline load path below can call it.
+    PROCEDURE stamp_item_ess_ids (
+        p_load_ess_id   IN VARCHAR2,
+        p_import_ess_id IN VARCHAR2
+    ) IS
+    BEGIN
+        IF g_gen_queue_id IS NULL OR p_load_ess_id IS NULL THEN
+            RETURN;
+        END IF;
+        UPDATE DMT_WORK_QUEUE_TBL
+        SET    LOAD_ESS_JOB_ID   = SUBSTR(p_load_ess_id, 1, 30),
+               IMPORT_ESS_JOB_ID = NVL(SUBSTR(p_import_ess_id, 1, 30), IMPORT_ESS_JOB_ID)
+        WHERE  QUEUE_ID = g_gen_queue_id;
+        COMMIT;
+    END stamp_item_ess_ids;
+
     -- ========================================================================
     -- SUPPLIERS FAMILY — self-contained runners (backlog #8, first family).
     --
@@ -3851,6 +3887,10 @@
         -- Find the Import ESS job ID.
         l_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, l_load_ess_id);
         COMMIT;
+
+        -- Backlog #70 (non-partitioned): stamp this item's own load + import ess ids
+        -- on its own queue row (no-op for a direct/standalone call, g_gen_queue_id NULL).
+        stamp_item_ess_ids(l_load_ess_id, l_import_ess_id);
 
         -- Poll Import job — do NOT raise on error.
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -4098,6 +4138,12 @@
             END;
         END IF;
 
+        -- Backlog #70 (non-partitioned + spawn children): stamp this work item's own
+        -- load + import ess ids on its own queue row. For a grouped object (several
+        -- groups on one queue row) the last group with real ids wins — a representative
+        -- id for the single tile. No-op for a direct/standalone call.
+        stamp_item_ess_ids(x_load_ess_id, x_import_ess_id);
+
         -- Reconcile via BIP — single registry-driven dispatch (once per BU/group).
         DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
             p_run_id        => p_run_id,
@@ -4230,7 +4276,7 @@
     -- never stamped LOAD_ESS_JOB_ID / IMPORT_ESS_JOB_ID onto the child's queue row,
     -- so the run-detail tiles showed no ids for Requisitions/Items children. The
     -- recipe now stamps each child's OWN distinct load + import request ids onto its
-    -- own DMT_WORK_QUEUE_TBL row via req_it_stamp_child_ess_ids (static SQL, keyed
+    -- own DMT_WORK_QUEUE_TBL row via stamp_item_ess_ids (static SQL, keyed
     -- on the child's QUEUE_ID). The load/reconcile semantics are unchanged; only the
     -- id columns are now populated.
     --
@@ -4239,30 +4285,6 @@
     -- then loops ALL of the run's batches inline (the legacy standalone path) and
     -- stamps nothing on the queue (g_work_queue_id is NULL outside the queue).
     -- ========================================================================
-
-    -- Shared helper (backlog #70): stamp THIS spawn-per-partition child's own Load
-    -- and Import ESS request ids onto its own work-queue row so the run-detail tiles
-    -- show the real, distinct ids per child. Keyed on the child's QUEUE_ID, which is
-    -- g_work_queue_id (EXECUTE_ONE sets it to the child's own QUEUE_ID for a real
-    -- partition child, and leaves it NULL for the un-partitioned parent and for any
-    -- direct/standalone call). The NULL guard therefore stamps ONLY for a genuine
-    -- queue-driven child and is a no-op everywhere else. Static single-row UPDATE,
-    -- no dynamic SQL. Import id may be NULL if the chained import was not found; the
-    -- column simply stays NULL in that case (same as any other object).
-    PROCEDURE req_it_stamp_child_ess_ids (
-        p_load_ess_id   IN VARCHAR2,
-        p_import_ess_id IN VARCHAR2
-    ) IS
-    BEGIN
-        IF g_work_queue_id IS NULL THEN
-            RETURN;
-        END IF;
-        UPDATE DMT_WORK_QUEUE_TBL
-        SET    LOAD_ESS_JOB_ID   = SUBSTR(p_load_ess_id, 1, 30),
-               IMPORT_ESS_JOB_ID = SUBSTR(p_import_ess_id, 1, 30)
-        WHERE  QUEUE_ID = g_work_queue_id;
-        COMMIT;
-    END req_it_stamp_child_ess_ids;
 
     -- ========================================================================
     -- O2C FAMILY — self-contained runners (backlog #8, fourth family).
@@ -4534,6 +4556,12 @@
                         SQLERRM, C_PKG, p_obj || ' > ' || C_PROC);
             END;
         END IF;
+
+        -- Backlog #70 (non-partitioned): stamp this work item's own load + import ess
+        -- ids on its own queue row. For AR the import id is the AutoInvoiceMasterEss
+        -- id (x_import_ess_id was re-pointed to it above), so the tile shows the job
+        -- that actually created the transactions. Last group with real ids wins.
+        stamp_item_ess_ids(x_load_ess_id, x_import_ess_id);
 
         -- Reconcile via BIP — single registry-driven dispatch (once per group).
         DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
@@ -5728,7 +5756,7 @@
 
             -- Backlog #70: stamp THIS child's own distinct load + import ess ids on
             -- its own queue row (no-op outside a queue-driven partition child).
-            req_it_stamp_child_ess_ids(l_rq_load_id, l_rq_import_id);
+            stamp_item_ess_ids(l_rq_load_id, l_rq_import_id);
 
             IF NOT l_rq_ok THEN
                 mark_batch_failed(grp_rec.BATCH_ID,
@@ -5948,7 +5976,7 @@
 
             -- Backlog #70: stamp THIS child's own distinct load + import ess ids on
             -- its own queue row (no-op outside a queue-driven partition child).
-            req_it_stamp_child_ess_ids(l_it_load_id, l_it_import_id);
+            stamp_item_ess_ids(l_it_load_id, l_it_import_id);
 
             IF NOT l_it_ok THEN
                 mark_batch_failed(grp_rec.BATCH_ID,
@@ -6193,6 +6221,11 @@
                 'PollTMEssJob submitted. ESS ID: ' || l_import_ess_id, 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
         END;
         COMMIT;
+
+        -- Backlog #70 (non-partitioned): stamp this item's own load + import (the
+        -- PollTMEssJob request) ess ids on its own queue row so the run-detail tiles
+        -- show real ids. No-op for a direct/standalone call (g_gen_queue_id NULL).
+        stamp_item_ess_ids(l_load_ess_id, l_import_ess_id);
 
         -- Poll Import job — do NOT raise on error.
         DMT_UTIL_PKG.LOG(p_run_id,

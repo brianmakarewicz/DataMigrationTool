@@ -133,7 +133,20 @@
             NVL(s.TRANSACTION_TYPE_NAME, 'Miscellaneous Receipt'),
             s.TRANSACTION_ACTION_NAME,
             s.TRANSACTION_SOURCE_NAME,   -- NULL for Miscellaneous Receipt (type 42, source_type=Inventory)
-            NVL(s.TRANSACTION_REFERENCE, 'DMT-' || TO_CHAR(p_run_id)),
+            -- Run-scoped transaction reference (hardening, backlog #8/#70 follow-on):
+            -- ALWAYS prepend the run key 'DMT-<run_id>' so the BIP base-table
+            -- reconcile filter run-scopes correctly even when the source supplies
+            -- its OWN TRANSACTION_REFERENCE. Before, a source-supplied value bypassed
+            -- the run key entirely, so the base-table selector (transaction_reference
+            -- run-scope) could match prior-run base rows -> a real false-LOADED risk.
+            -- When source has no value the reference is exactly 'DMT-<run_id>' (the
+            -- previous fallback, unchanged); when source has a value the reference is
+            -- 'DMT-<run_id>-<source value>'. The reconcile filter matches both shapes
+            -- (= 'DMT-'||run OR LIKE 'DMT-'||run||'-%'), anchored on the '-' so run 34
+            -- never matches run 340. Capped at the column's 240 chars.
+            SUBSTR('DMT-' || TO_CHAR(p_run_id)
+                   || CASE WHEN s.TRANSACTION_REFERENCE IS NOT NULL
+                           THEN '-' || s.TRANSACTION_REFERENCE END, 1, 240),
             NVL(s.TRANSACTION_MODE, '3'),   -- 3 = background processing (MCCS pattern)
             NVL(s.LOCK_FLAG, '2'),          -- 2 = not locked (MCCS pattern)
             NVL(s.PROCESS_FLAG, '1'),       -- 1 = pending (MCCS pattern)
