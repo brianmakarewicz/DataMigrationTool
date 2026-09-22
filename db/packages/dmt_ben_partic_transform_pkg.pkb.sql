@@ -75,12 +75,18 @@ AS
             s.ENROLLMENT_END_DATE,
             s.ENROLLMENT_STATUS,
             s.LEGAL_EMPLOYER_NAME,
-            -- Contract v1 RECON_KEY = the .dat SourceSystemId business key that
-            -- DMT_BEN_PARTIC_HDL_GEN_PKG writes for the PersonBenefitBalance
-            -- object: the prefixed PERSON_NUMBER concatenated with '_BENENRL'.
-            -- This is exactly what the recon report returns as RECORD_KEY, so the
-            -- shared parser matches Fusion base rows to this TFM row.
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_BENENRL',
+            -- Contract v1 RECON_KEY for the ParticipantEnrollment object
+            -- (re-modeled 2026-09-22). ParticipantEnrollment is create-only and
+            -- carries NO SourceSystemId; the .dat references the worker by
+            -- PersonNumber (the prefixed number the Workers pipeline already
+            -- loaded), and the enrollment base table BEN_PRTT_ENRT_RSLT has no
+            -- source-system columns. So the recon report matches the base row by
+            -- the prefixed PERSON_NUMBER (joined to PER_ALL_PEOPLE_F), and
+            -- RECON_KEY is exactly that prefixed PERSON_NUMBER -- what the recon
+            -- report returns as RECORD_KEY, so the shared parser matches Fusion
+            -- base rows to this TFM row. (Was PERSON_NUMBER || '_BENENRL' under
+            -- the wrong PersonBenefitBalance model.)
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
             'STAGED',
             SYSDATE
         FROM DMT_BEN_PARTIC_STG_TBL s
