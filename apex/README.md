@@ -1,43 +1,56 @@
 # DMT2 APEX app — git-first, like the database
 
-The Data Migration Console is **APEX application 500** (workspace `DMT2`, 40 pages).
-Its definition lives in git as a **split export** under `apex/f500/` — one file per
-page/component, so changes diff like source code.
+The Data Migration Console is version-controlled as **APEXLang source (`.apx`)**
+under `apex/f501src/livedmt2/` — one file per page/component (application.apx,
+`pages/`, `shared-components/`, `page-groups.apx`), so changes diff like source
+code.
 
-**`apex/f500/` is the single source of truth**, exactly like `db/` is for the schema.
-You do not edit an instance and hope it matches git; you import the committed export.
+**`apex/f501src/livedmt2/` is the single source of truth**, exactly like `db/`
+is for the schema. You do not edit an instance and hope it matches git; you
+import the committed source.
+
+> The older split-SQL export under `apex/f500/` is a legacy baseline kept for
+> reference only. It is no longer the deploy source and `apex_deploy.py` does
+> not use it.
 
 ## Instances
 
-| Role | Where | Parsing schema |
-|------|-------|----------------|
-| TEST | local Oracle Free Docker (port 1523) | `DMT_OWNER` |
-| GOLD (prod) | queryapp ATP | `DMT2_OWNER` |
+| Role | Where | App id | Workspace | Parsing schema |
+|------|-------|--------|-----------|----------------|
+| TEST (local dev) | Oracle Free Docker (port 1523) | 501 | `DMT` | `DMT_OWNER` |
+| GOLD (prod) | queryapp ATP | 500 | `DMT2` | `DMT2_OWNER` |
 
-Baseline captured 2026-09-17 by exporting the live ATP app 500 (the latest good
-version). The previous monolith `apex/DMTApplication.sql` was a stale app-155 export
-and has been removed.
+Both instances run **APEX 26.1**, so APEXLang import/export round-trips cleanly
+on both. The same committed source imports to app 501 locally and app 500 on
+ATP (the script overrides the app id and workspace per target).
 
 ## Workflow (change → TEST → gold)
 
-1. Make the change in the **local TEST** builder.
+1. Make the change in the **local TEST** builder (app 501).
 2. Export it back to git:
    `python scripts/apex_deploy.py export --target local`
-   then replace `apex/f500/` with the new tree so deleted pages show as git deletions.
+   then sync the exported tree into `apex/f501src/livedmt2/` so deleted pages
+   show as git deletions.
 3. Commit + open a PR (the diff shows exactly which pages changed).
 4. After review/merge, promote to gold:
    `python scripts/apex_deploy.py import --target atp`
 
 Never edit the ATP (gold) app directly — that is what creates drift.
 
-## Version parity — local upgraded to APEX 26.1 (2026-09-17)
+## CRLF gotcha (handled by the script)
 
-Local Docker APEX was upgraded **24.2 → 26.1** (container `dmt2-ords` on port 8182,
-workspace `DMT`) to match ATP. The `apex/f500` baseline (from ATP 26.1) now imports
-cleanly into local — app 500 is imported locally alongside the legacy app 172, and
-`import --target local` works in the CI pipeline.
+The committed `.apx` files are LF, but this Windows checkout has
+`core.autocrlf=true` and no `.gitattributes`, so the working-tree copies are
+CRLF. SQLcl's APEXLang parser rejects CRLF and imports fail spuriously.
+`apex_deploy.py import` stages a CRLF→LF copy into a temp directory and imports
+that; the committed source is never modified. (If you ever import by hand, strip
+CR first, or add `*.apx text eol=lf` to a `.gitattributes` and re-checkout.)
 
-Upgrade notes (for the next time / other environments):
+## Version parity — both instances on APEX 26.1
+
+Local Docker APEX was upgraded **24.2 → 26.1** (container `dmt2-ords` on port
+8182, workspace `DMT`) to match ATP, which is what makes the APEXLang round-trip
+work on both. Upgrade notes (for the next time / other environments):
 - Run `apexins.sql SYSAUX SYSAUX TEMP /i/` as SYS inside `FREEPDB1`.
 - If a prior attempt was interrupted, drop the partial version schema first
   (`alter session set "_oracle_script"=true; drop user APEX_<ver> cascade;`).
