@@ -1376,10 +1376,21 @@
         -- registered EXEC_PROC (RUN_REQUISITIONS / RUN_ITEMS) with g_partition_key
         -- set. Nothing for these codes routes through the ladders below any more,
         -- so guard them the same way as the earlier two families.
+        -- O2C family (Customers, ARInvoices, MiscReceipts) migrated off this
+        -- monolith too (backlog #8, fourth family) -- each now runs through its own
+        -- self-contained RUN_<object>() recipe:
+        --   * Customers and ARInvoices are GROUPED objects (one work-queue item;
+        --     Customers loops per BATCH_ID/source-system, ARInvoices per
+        --     BU_NAME/BATCH_SOURCE_NAME) -- same shape as the Purchasing family,
+        --     reconciling inline per group. Neither is spawn-per-partition (no
+        --     CHILD_PARTITION_COLUMN in DMT_CEMLI_SPLIT_CFG / no PARTITION_KEYS_PROC).
+        --   * MiscReceipts is the single-load SYNC object (PollTMEssJob import).
+        -- Guard all three the same way as the earlier three families.
         IF p_cemli_code IN ('Suppliers', 'SupplierAddresses', 'SupplierSites',
                             'SupplierSiteAssignments', 'SupplierContacts',
                             'PurchaseOrders', 'BlanketPOs', 'Contracts',
-                            'Requisitions', 'Items', 'ItemCategories') THEN
+                            'Requisitions', 'Items', 'ItemCategories',
+                            'Customers', 'ARInvoices', 'MiscReceipts') THEN
             RAISE_APPLICATION_ERROR(-20046,
                 'RUN_ONE_OBJECT_TYPE: ' || p_cemli_code || ' is migrated to its own '
                 || 'RUN_' || UPPER(l_obj) || '() runner (backlog #8) and no longer '
@@ -3662,6 +3673,42 @@
             RAISE;
     END run_one_object_type;
 
+    -- Shared helper (backlog #70, extended for non-partitioned objects): stamp THIS
+    -- work item's own Load and Import ESS request ids onto its own work-queue row so
+    -- the run-detail tiles show the real ids.
+    --
+    -- Keyed on g_gen_queue_id — the QUEUE_ID of the work item currently generating /
+    -- loading, which EXECUTE_ONE sets UNCONDITIONALLY for EVERY object (a spawn
+    -- child's own QUEUE_ID, or a non-partitioned single item's QUEUE_ID), and leaves
+    -- NULL for a direct/standalone call outside the queue. This broadens the original
+    -- partition-child-only stamping (which keyed on g_work_queue_id, NULL for
+    -- non-partitioned objects) so that non-partitioned objects — MiscReceipts,
+    -- grouped ARInvoices / Customers / PurchaseOrders, and the single-load Suppliers
+    -- family — now also record their real load + import ess ids on the queue row
+    -- instead of leaving those columns NULL (which the #70 tiles rendered as a
+    -- skipped load). The NULL guard makes it a no-op for direct/standalone calls.
+    --
+    -- Only stamps when a Load ESS id is present, and only overwrites the import id
+    -- when a new one is given, so for a grouped object that submits several loads on
+    -- one queue row a failed group's NULL ids never wipe an earlier group's real ids
+    -- (the last group with real ids wins — a representative id for the single tile).
+    -- Static single-row UPDATE, no dynamic SQL. Defined here (ahead of the family
+    -- helper blocks) so every inline load path below can call it.
+    PROCEDURE stamp_item_ess_ids (
+        p_load_ess_id   IN VARCHAR2,
+        p_import_ess_id IN VARCHAR2
+    ) IS
+    BEGIN
+        IF g_gen_queue_id IS NULL OR p_load_ess_id IS NULL THEN
+            RETURN;
+        END IF;
+        UPDATE DMT_WORK_QUEUE_TBL
+        SET    LOAD_ESS_JOB_ID   = SUBSTR(p_load_ess_id, 1, 30),
+               IMPORT_ESS_JOB_ID = NVL(SUBSTR(p_import_ess_id, 1, 30), IMPORT_ESS_JOB_ID)
+        WHERE  QUEUE_ID = g_gen_queue_id;
+        COMMIT;
+    END stamp_item_ess_ids;
+
     -- ========================================================================
     -- SUPPLIERS FAMILY — self-contained runners (backlog #8, first family).
     --
@@ -3840,6 +3887,10 @@
         -- Find the Import ESS job ID.
         l_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, l_load_ess_id);
         COMMIT;
+
+        -- Backlog #70 (non-partitioned): stamp this item's own load + import ess ids
+        -- on its own queue row (no-op for a direct/standalone call, g_gen_queue_id NULL).
+        stamp_item_ess_ids(l_load_ess_id, l_import_ess_id);
 
         -- Poll Import job — do NOT raise on error.
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -4087,6 +4138,12 @@
             END;
         END IF;
 
+        -- Backlog #70 (non-partitioned + spawn children): stamp this work item's own
+        -- load + import ess ids on its own queue row. For a grouped object (several
+        -- groups on one queue row) the last group with real ids wins — a representative
+        -- id for the single tile. No-op for a direct/standalone call.
+        stamp_item_ess_ids(x_load_ess_id, x_import_ess_id);
+
         -- Reconcile via BIP — single registry-driven dispatch (once per BU/group).
         DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
             p_run_id        => p_run_id,
@@ -4219,7 +4276,7 @@
     -- never stamped LOAD_ESS_JOB_ID / IMPORT_ESS_JOB_ID onto the child's queue row,
     -- so the run-detail tiles showed no ids for Requisitions/Items children. The
     -- recipe now stamps each child's OWN distinct load + import request ids onto its
-    -- own DMT_WORK_QUEUE_TBL row via req_it_stamp_child_ess_ids (static SQL, keyed
+    -- own DMT_WORK_QUEUE_TBL row via stamp_item_ess_ids (static SQL, keyed
     -- on the child's QUEUE_ID). The load/reconcile semantics are unchanged; only the
     -- id columns are now populated.
     --
@@ -4229,29 +4286,296 @@
     -- stamps nothing on the queue (g_work_queue_id is NULL outside the queue).
     -- ========================================================================
 
-    -- Shared helper (backlog #70): stamp THIS spawn-per-partition child's own Load
-    -- and Import ESS request ids onto its own work-queue row so the run-detail tiles
-    -- show the real, distinct ids per child. Keyed on the child's QUEUE_ID, which is
-    -- g_work_queue_id (EXECUTE_ONE sets it to the child's own QUEUE_ID for a real
-    -- partition child, and leaves it NULL for the un-partitioned parent and for any
-    -- direct/standalone call). The NULL guard therefore stamps ONLY for a genuine
-    -- queue-driven child and is a no-op everywhere else. Static single-row UPDATE,
-    -- no dynamic SQL. Import id may be NULL if the chained import was not found; the
-    -- column simply stays NULL in that case (same as any other object).
-    PROCEDURE req_it_stamp_child_ess_ids (
-        p_load_ess_id   IN VARCHAR2,
-        p_import_ess_id IN VARCHAR2
+    -- ========================================================================
+    -- O2C FAMILY — self-contained runners (backlog #8, fourth family).
+    --
+    -- Customers, ARInvoices and MiscReceipts NO LONGER route through the
+    -- run_one_object_type p_cemli_code ladders. Each RUN_<object>() below is a
+    -- self-contained recipe:
+    --   * Customers  — GROUPED by (BATCH_ID, source system). One FBDI zip + one
+    --     "Import Bulk Customer Data" (CDMAutoBulkImportJob) load + one BIP
+    --     reconcile per batch, all inline in a single work-queue item (it is NOT
+    --     spawn-per-partition: no CHILD_PARTITION_COLUMN in DMT_CEMLI_SPLIT_CFG,
+    --     no PARTITION_KEYS_PROC). Same shape as the Purchasing family; it reuses
+    --     po_submit_and_reconcile_one and settles inline (g_reconciled_inline).
+    --   * ARInvoices — GROUPED by (BU_NAME, BATCH_SOURCE_NAME). AR AutoInvoice is
+    --     a TWO-job flow: loadAndImportData chains AutoInvoiceImportEss (staging
+    --     only), then a SECOND AutoInvoiceMasterEss job actually creates the
+    --     transactions. That extra job is NOT in po_submit_and_reconcile_one, so
+    --     ARInvoices uses ar_submit_and_reconcile_one below (identical to the PO
+    --     helper plus the AR Master block copied verbatim from the retired nested
+    --     submit_and_reconcile_one).
+    --   * MiscReceipts — SINGLE-LOAD SYNC. loadAndImportData does not chain an
+    --     import for INV transactions (interfaceDetails is DMT-local, not a real
+    --     Fusion FUN_ERP_INTERFACE_OPTIONS row), so the import step submits
+    --     PollTMEssJob explicitly. Reconciles inline. Follows the single (Suppliers)
+    --     pattern with the PollTMEssJob import substituted for get_import_ess_id.
+    --
+    -- Behaviour is preserved byte-for-byte with the pre-refactor path through
+    -- run_one_object_type + its nested submit_and_reconcile_one for these three
+    -- objects. None of the three is spawn-per-partition, so g_partition_key is
+    -- always NULL for them and backlog #70's per-child ESS-id stamping does not
+    -- apply (their ESS ids ride the single work-queue item exactly as PO's do).
+    -- ========================================================================
+
+    -- Shared helper for ARInvoices: submit one (BU, batch source) group's FBDI zip,
+    -- poll load+import ESS, run the AutoInvoiceMasterEss second job, reconcile via
+    -- BIP. Identical to po_submit_and_reconcile_one EXCEPT for the AR two-job Master
+    -- block (copied verbatim from the retired nested submit_and_reconcile_one AR
+    -- special case): once the import (staging) job SUCCEEDs, submit
+    -- AutoInvoiceMasterEss and re-point x_import_ess_id at it -- THAT job creates the
+    -- transactions and is the one reconciliation keys against. Sets g_reconciled_inline.
+    PROCEDURE ar_submit_and_reconcile_one (
+        p_run_id          IN NUMBER,
+        p_cemli_code      IN VARCHAR2,
+        p_obj             IN VARCHAR2,
+        p_job_name        IN VARCHAR2,
+        p_interface_details IN NUMBER,
+        p_ucm_account     IN VARCHAR2,
+        p_fbdi_zip        IN OUT NOCOPY BLOB,
+        p_filename        IN VARCHAR2,
+        p_fbdi_csv_id     IN NUMBER,
+        p_param_list      IN VARCHAR2,
+        p_group_label     IN VARCHAR2,
+        p_username        IN VARCHAR2,
+        p_password        IN VARCHAR2,
+        x_load_ess_id     OUT VARCHAR2,
+        x_import_ess_id   OUT VARCHAR2,
+        x_success         OUT BOOLEAN
     ) IS
+        C_PROC            CONSTANT VARCHAR2(40) := 'AR_SUBMIT_AND_RECONCILE_ONE';
+        l_load_status     VARCHAR2(50);
     BEGIN
-        IF g_work_queue_id IS NULL THEN
-            RETURN;
-        END IF;
-        UPDATE DMT_WORK_QUEUE_TBL
-        SET    LOAD_ESS_JOB_ID   = SUBSTR(p_load_ess_id, 1, 30),
-               IMPORT_ESS_JOB_ID = SUBSTR(p_import_ess_id, 1, 30)
-        WHERE  QUEUE_ID = g_work_queue_id;
+        x_success := FALSE;
+
+        -- Submit loadAndImportData (combined load+import single call).
+        x_load_ess_id := SUBMIT_LOAD(
+            p_run_id            => p_run_id,
+            p_fbdi_zip          => p_fbdi_zip,
+            p_filename          => p_filename,
+            p_job_name          => p_job_name,
+            p_interface_details => p_interface_details,
+            p_doc_account       => p_ucm_account,
+            p_parameter_list    => p_param_list,
+            p_log_context       => p_obj,
+            p_username          => p_username,
+            p_password          => p_password);
+        DBMS_LOB.FREETEMPORARY(p_fbdi_zip);
+
+        -- Stamp the parameter list on the zip row (keyed via the primary csv id).
+        UPDATE DMT_FBDI_ZIP_TBL
+        SET    PARAMETER_LIST  = p_param_list
+        WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
+                              WHERE FBDI_CSV_ID = p_fbdi_csv_id);
         COMMIT;
-    END req_it_stamp_child_ess_ids;
+
+        -- Poll Load job.
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Polling Load ESS job: ' || x_load_ess_id || ' (' || p_group_label || ')',
+            'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+        POLL_ESS_JOB(p_run_id, x_load_ess_id, 1800, FALSE, p_obj, p_cemli_code,
+                     l_load_status, p_username => p_username, p_password => p_password);
+
+        -- Load failed → caller marks that group's GENERATED rows FAILED.
+        IF l_load_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Load ESS ' || x_load_ess_id || ' returned ' || l_load_status ||
+                ' for ' || p_group_label ||
+                '. No rows committed to interface table. Marking all GENERATED rows FAILED.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+            x_import_ess_id := NULL;
+            RETURN;  -- x_success stays FALSE
+        END IF;
+
+        -- Find the Import ESS job ID.
+        BEGIN
+            x_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'Could not find chained Import ESS for Load ' || x_load_ess_id,
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+                x_import_ess_id := NULL;
+        END;
+
+        -- Poll Import (staging) job.
+        IF x_import_ess_id IS NOT NULL THEN
+            COMMIT;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Polling Import ESS job: ' || x_import_ess_id || ' (' || p_group_label || ')',
+                'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+            POLL_ESS_JOB(p_run_id, x_import_ess_id, 1800, FALSE, p_obj, p_cemli_code,
+                         l_load_status, p_username => p_username, p_password => p_password);
+        END IF;
+
+        -- ============================================================
+        -- AR AutoInvoice is a TWO-job flow.
+        -- loadAndImportData chains AutoInvoiceImportEss, which ONLY stages
+        -- rows into RA_INTERFACE_LINES_ALL and reports SUCCEEDED without
+        -- importing anything. The transactions are actually created by a
+        -- SECOND job, AutoInvoiceMasterEss ("Import Receivables Transactions
+        -- Using AutoInvoice"). Without it, good invoices sit at
+        -- INTERFACE_STATUS = NULL forever. So once the import (staging) job
+        -- has SUCCEEDED, submit the Master job and make IT the job the
+        -- reconciler waits on. (Proven contract: MCCS RICE_005 AR package.)
+        -- ============================================================
+        IF x_import_ess_id IS NOT NULL
+           AND l_load_status IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+            DECLARE
+                l_master_ess_id  VARCHAR2(100);
+                l_trx_source_id  VARCHAR2(100);
+                l_batch_source   VARCHAR2(500);
+                l_bu_count       NUMBER;
+                l_param_master   VARCHAR2(4000);
+                l_resp           CLOB;
+                l_tag_s          INTEGER;
+                l_val_s          INTEGER;
+                l_val_e          INTEGER;
+                l_master_status  VARCHAR2(50);
+            BEGIN
+                -- Batch source name is the 2nd comma slot of the AR param list
+                -- (built as BU_NAME,BATCH_SOURCE_NAME,DATE,...).
+                l_batch_source := SUBSTR(p_param_list,
+                                         INSTR(p_param_list, ',') + 1,
+                                         INSTR(p_param_list, ',', 1, 2) - INSTR(p_param_list, ',') - 1);
+
+                -- Resolve the batch source NAME to its numeric transaction-source id
+                -- (no hardcoded Fusion ids -- setup table read at preflight).
+                l_trx_source_id := DMT_UTIL_PKG.GET_LOOKUP('BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID', l_batch_source);
+
+                -- Distinct BU count across this run's AR rows -- position 1 of the
+                -- Master param list.
+                SELECT COUNT(DISTINCT BU_NAME) INTO l_bu_count
+                FROM   DMT_RA_LINES_TFM_TBL
+                WHERE  RUN_ID = p_run_id;
+
+                -- Master param list: tilde(~)-separated with #NULL for empty
+                -- slots (NOT empty strings -- empty strings make Fusion collapse
+                -- the slots so the trailing flag lands in the wrong position;
+                -- that was the documented run-179 blocker). Slot layout, matching
+                -- MCCS exactly:
+                --   pos1  = COUNT(DISTINCT BU_NAME)
+                --   pos2  = #NULL
+                --   pos3  = numeric trx_source_id
+                --   pos4  = current date YYYY-MM-DD (an OPEN period)
+                --   pos5..24 = #NULL
+                --   then N, Y, trailing ~
+                l_param_master :=
+                    l_bu_count || '~#NULL~' || l_trx_source_id || '~' ||
+                    TO_CHAR(SYSDATE, 'YYYY-MM-DD') ||
+                    '~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~' ||
+                    '#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~N~Y~';
+
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'AR two-job flow: import (staging) job ' || x_import_ess_id ||
+                    ' SUCCEEDED. Submitting AutoInvoiceMasterEss. ParameterList: ' || l_param_master,
+                    'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+
+                -- Submit AutoInvoiceMasterEss via the same submitESSJobRequest
+                -- SOAP envelope pattern used for PollTMEssJob (MiscReceipts).
+                l_resp := soap_http(
+                    p_url            => erp_soap_url,
+                    p_soap_action    => 'http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/submitESSJobRequest',
+                    p_body           => TO_CLOB(
+                        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' ||
+                        'xmlns:typ="http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/types/">' ||
+                        '<soapenv:Header/><soapenv:Body>' ||
+                        '<typ:submitESSJobRequest>' ||
+                        '<typ:jobPackageName>/oracle/apps/ess/financials/receivables/transactions/autoInvoices</typ:jobPackageName>' ||
+                        '<typ:jobDefinitionName>AutoInvoiceMasterEss</typ:jobDefinitionName>' ||
+                        '<typ:paramList>' || l_param_master || '</typ:paramList>' ||
+                        '</typ:submitESSJobRequest>' ||
+                        '</soapenv:Body></soapenv:Envelope>'),
+                    p_run_id         => p_run_id,
+                    p_username       => p_username,
+                    p_password       => p_password);
+
+                l_tag_s := DBMS_LOB.INSTR(l_resp, '<result');
+                IF l_tag_s > 0 THEN
+                    l_val_s := DBMS_LOB.INSTR(l_resp, '>', l_tag_s) + 1;
+                    l_val_e := DBMS_LOB.INSTR(l_resp, '</result>', l_val_s);
+                    IF l_val_e > l_val_s THEN
+                        l_master_ess_id := DBMS_LOB.SUBSTR(l_resp, l_val_e - l_val_s, l_val_s);
+                    END IF;
+                END IF;
+
+                IF l_master_ess_id IS NULL THEN
+                    RAISE_APPLICATION_ERROR(-20051,
+                        'AR: failed to submit AutoInvoiceMasterEss. Response: ' ||
+                        DBMS_LOB.SUBSTR(l_resp, 500, 1));
+                END IF;
+
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'AutoInvoiceMasterEss submitted. ESS ID: ' || l_master_ess_id ||
+                    ' (' || p_group_label || ').',
+                    'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+
+                -- Poll the Master job to terminal -- do NOT raise on error.
+                POLL_ESS_JOB(p_run_id, l_master_ess_id, 1800, FALSE, p_obj, p_cemli_code,
+                             l_master_status, p_username => p_username, p_password => p_password);
+
+                -- Re-point x_import_ess_id at the Master job: THIS is the job that
+                -- creates the transactions, so it is the one reconciliation must
+                -- wait on and key against.
+                x_import_ess_id := l_master_ess_id;
+            END;
+        END IF;
+
+        -- Capture the Report child ESS job + parse import-report errors (generic;
+        -- no-op for objects without a REPORT_JOB_DEF). Mirrors the nested helper.
+        IF x_import_ess_id IS NOT NULL THEN
+            DECLARE
+                l_report_ess_id NUMBER;
+            BEGIN
+                l_report_ess_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+                    p_run_id        => p_run_id,
+                    p_import_ess_id => TO_NUMBER(x_import_ess_id),
+                    p_cemli_code    => p_cemli_code);
+            END;
+
+            BEGIN
+                DECLARE
+                    l_ir_count NUMBER;
+                BEGIN
+                    l_ir_count := DMT_IMPORT_REPORT_PKG.PARSE_AND_LOG_ERRORS(
+                        p_run_id     => p_run_id,
+                        p_request_id => TO_NUMBER(x_import_ess_id),
+                        p_cemli_code => p_cemli_code);
+                    IF l_ir_count > 0 THEN
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            'Import Report captured ' || l_ir_count || ' error(s) for ' ||
+                            p_cemli_code || ' (' || p_group_label || ', ESS ' || x_import_ess_id || ').',
+                            'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+                    END IF;
+                END;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                        'Import Report capture failed for ' || p_cemli_code ||
+                        ' (' || p_group_label || ', ESS ' || x_import_ess_id || '). Continuing to BIP.',
+                        SQLERRM, C_PKG, p_obj || ' > ' || C_PROC);
+            END;
+        END IF;
+
+        -- Backlog #70 (non-partitioned): stamp this work item's own load + import ess
+        -- ids on its own queue row. For AR the import id is the AutoInvoiceMasterEss
+        -- id (x_import_ess_id was re-pointed to it above), so the tile shows the job
+        -- that actually created the transactions. Last group with real ids wins.
+        stamp_item_ess_ids(x_load_ess_id, x_import_ess_id);
+
+        -- Reconcile via BIP — single registry-driven dispatch (once per group).
+        DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => TO_NUMBER(x_load_ess_id),
+            p_import_ess_id => TO_NUMBER(x_import_ess_id),
+            p_work_queue_id => g_work_queue_id);
+
+        -- Inline reconcile happened: EXECUTE_ONE must NOT re-reconcile via RECON_PROC.
+        g_reconciled_inline := TRUE;
+
+        x_success := TRUE;
+    END ar_submit_and_reconcile_one;
 
     -- --------------------------------------------------------
     -- RUN_SUPPLIER_PIPELINE
@@ -4788,18 +5112,193 @@
     END RUN_PROCURE_TO_PAY;
 
     -- --------------------------------------------------------
-    -- RUN_CUSTOMERS (public)
-    -- Customers: single FBDI with 7 CSVs, single BulkImportJob ESS.
+    -- RUN_CUSTOMERS (public) — self-contained recipe (backlog #8, fourth family).
+    -- GROUPED by (BATCH_ID, source system): one FBDI zip + one "Import Bulk
+    -- Customer Data" (CDMAutoBulkImportJob) load + one BIP reconcile per batch, all
+    -- inline in a single work-queue item. NOT spawn-per-partition (no
+    -- CHILD_PARTITION_COLUMN / PARTITION_KEYS_PROC), so g_partition_key is always
+    -- NULL and the whole batch loop runs in one EXECUTE_ONE call -- same shape as
+    -- the Purchasing family. Behaviour is byte-for-byte the pre-refactor Customers
+    -- block of run_one_object_type.
     -- --------------------------------------------------------
     PROCEDURE RUN_CUSTOMERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_CUSTOMERS';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_CUSTOMERS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'Customers';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'Customers';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_cu_user      VARCHAR2(100);
+        l_cu_pass      VARCHAR2(100);
+        l_cu_zip       BLOB;
+        l_cu_filename  VARCHAR2(200);
+        l_cu_csv_id    NUMBER;
+        l_cu_load_id   VARCHAR2(100);
+        l_cu_import_id VARCHAR2(100);
+        l_cu_param     VARCHAR2(500);
+        l_cu_count     NUMBER := 0;
+        l_cu_ok        BOOLEAN;
+
+        -- Fail every one of the 7 customer sub-object TFM tables' GENERATED rows for
+        -- this batch, with a reportable error. Static SQL, identical to the original
+        -- Customers on-fail cascade in run_one_object_type.
+        PROCEDURE mark_batch_failed(p_bid IN NUMBER, p_msg IN VARCHAR2) IS
+        BEGIN
+            UPDATE DMT_HZ_PARTIES_TFM_TBL         SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+            UPDATE DMT_HZ_LOCATIONS_TFM_TBL       SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+            UPDATE DMT_HZ_PARTY_SITES_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+            UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+            UPDATE DMT_HZ_ACCOUNTS_TFM_TBL        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+            UPDATE DMT_HZ_ACCT_SITES_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+            UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL  SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+            COMMIT;
+        END mark_batch_failed;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CUSTOMERS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Customers', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_CUST_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM across all 7 customer sub-object tables.
+        DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTIES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_CUST_TRANSFORM_PKG.TRANSFORM_LOCATIONS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTY_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTY_SITE_USES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCOUNTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITE_USES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- ERP options + credentials for the load submissions.
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_cu_user, l_cu_pass);
+
+        -- Phase 3+4: per-batch load cycle. One FBDI + one load per (BATCH_ID, source
+        -- system); the batch id comes from the CSV and one batch uses exactly one
+        -- source system. The load job MUST be "Import Bulk Customer Data" (job def
+        -- CDMAutoBulkImportJob), which CREATES the import batch from a 4-value
+        -- positional ParameterList and processes it (proven by manual ESS run
+        -- 9731634); the object arg MUST be the code 'CUSTOMER'.
+        FOR grp_rec IN (
+            SELECT BATCH_ID,
+                   MIN(PARTY_ORIG_SYSTEM)            AS SOURCE_SYSTEM,
+                   COUNT(DISTINCT PARTY_ORIG_SYSTEM) AS SRC_COUNT
+            FROM   DMT_HZ_PARTIES_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'STAGED'
+            AND    BATCH_ID IS NOT NULL
+            GROUP BY BATCH_ID
+            ORDER BY BATCH_ID
+        ) LOOP
+            l_cu_count := l_cu_count + 1;
+
+            -- One batch = one source system (a single positional ESS parameter).
+            IF grp_rec.SRC_COUNT > 1 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'Customer batch ' || grp_rec.BATCH_ID || ' mixes ' || grp_rec.SRC_COUNT ||
+                    ' source systems -- a batch must use exactly one. Marking FAILED.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                mark_batch_failed(grp_rec.BATCH_ID,
+                    '[PRE_VALIDATION] Batch ' || grp_rec.BATCH_ID ||
+                    ' mixes multiple source systems; one batch must use exactly one source system.');
+                CONTINUE;
+            END IF;
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Customer batch cycle start: BATCH_ID=' || grp_rec.BATCH_ID ||
+                ', Source=' || grp_rec.SOURCE_SYSTEM,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            DMT_CUST_FBDI_GEN_PKG.GENERATE_FBDI(
+                p_run_id      => p_run_id,
+                x_fbdi_zip    => l_cu_zip,
+                x_filename    => l_cu_filename,
+                x_fbdi_csv_id => l_cu_csv_id,
+                p_batch_id    => grp_rec.BATCH_ID);
+
+            IF l_cu_zip IS NULL OR DBMS_LOB.GETLENGTH(l_cu_zip) = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'No rows for customer batch ' || grp_rec.BATCH_ID || '. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                CONTINUE;
+            END IF;
+
+            -- ParameterList for "Import Bulk Customer Data" (CDMAutoBulkImportJob),
+            -- which CREATES the import batch from these 4 positional args:
+            -- 1=Batch ID (from the CSV), 2=Batch Name, 3=Object CODE ('CUSTOMER' --
+            -- NOT 'Customer and Consumer', which silently fails to create the batch),
+            -- 4=Source System.
+            l_cu_param := TO_CHAR(grp_rec.BATCH_ID)
+                || ',Batch ID ' || TO_CHAR(grp_rec.BATCH_ID) || ' ' || grp_rec.SOURCE_SYSTEM
+                || ',CUSTOMER'
+                || ',' || grp_rec.SOURCE_SYSTEM;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Customer ParameterList: ' || l_cu_param,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            po_submit_and_reconcile_one(
+                p_run_id            => p_run_id,
+                p_cemli_code        => C_CEMLI,
+                p_obj               => C_OBJ,
+                p_job_name          => l_job_name,
+                p_interface_details => l_ifd,
+                p_ucm_account       => l_ucm_account,
+                p_fbdi_zip          => l_cu_zip,
+                p_filename          => l_cu_filename,
+                p_fbdi_csv_id       => l_cu_csv_id,
+                p_param_list        => l_cu_param,
+                p_group_label       => 'Batch: ' || grp_rec.BATCH_ID,
+                p_username          => l_cu_user,
+                p_password          => l_cu_pass,
+                x_load_ess_id       => l_cu_load_id,
+                x_import_ess_id     => l_cu_import_id,
+                x_success           => l_cu_ok);
+
+            IF NOT l_cu_ok THEN
+                mark_batch_failed(grp_rec.BATCH_ID,
+                    '[LOAD_ERROR] Loading customer batch ' || grp_rec.BATCH_ID ||
+                    ' to the Fusion interface failed. Check ESS job ' || l_cu_load_id || ' logs.');
+                CONTINUE;
+            END IF;
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Customer batch cycle complete: BATCH_ID=' || grp_rec.BATCH_ID,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        END LOOP;
+
+        IF l_cu_count = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No STAGED Customer rows with a batch id found. Skipping Customers.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            RETURN;
+        END IF;
+
+        -- Phase 5: FAILED-row accounting + completion log (counts the parties TFM
+        -- table, as the monolith grouped_finish did for Customers).
+        DECLARE
+            l_failed_count NUMBER;
+        BEGIN
+            SELECT COUNT(*) INTO l_failed_count
+            FROM DMT_HZ_PARTIES_TFM_TBL
+            WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
+            IF l_failed_count > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_CEMLI || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                    'Downstream object types will continue — check staging table for details.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            END IF;
+        END;
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_CUSTOMERS complete.', 'INFO', C_PKG, C_PROC);
@@ -4811,20 +5310,180 @@
     END RUN_CUSTOMERS;
 
     -- --------------------------------------------------------
-    -- RUN_AR_INVOICES (public)
-    -- ARInvoices: grouped by (BU_NAME, BATCH_SOURCE_NAME).
-    -- Each group gets its own FBDI zip + loadAndImportData + BIP reconciliation.
-    -- Upstream dependency: customers must be LOADED.
+    -- RUN_AR_INVOICES (public) — self-contained recipe (backlog #8, fourth family).
+    -- GROUPED by (BU_NAME, BATCH_SOURCE_NAME): one FBDI zip + one loadAndImportData +
+    -- the AutoInvoiceMasterEss second job + one BIP reconcile per group, all inline
+    -- in a single work-queue item (NOT spawn-per-partition -- ARInvoices is in
+    -- DMT_CEMLI_SPLIT_CFG with CHILD_PARTITION_COLUMN NULL, so it loads as one work
+    -- item like the Purchasing family). Uses ar_submit_and_reconcile_one for the AR
+    -- two-job flow. Upstream dependency: customers must be LOADED. Behaviour is
+    -- byte-for-byte the pre-refactor ARInvoices block of run_one_object_type.
     -- --------------------------------------------------------
     PROCEDURE RUN_AR_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_AR_INVOICES';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_AR_INVOICES';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'ARInvoices';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'ARInvoices';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_ar_user      VARCHAR2(100);
+        l_ar_pass      VARCHAR2(100);
+        l_ar_zip       BLOB;
+        l_ar_filename  VARCHAR2(200);
+        l_ar_csv_id    NUMBER;
+        l_ar_load_id   VARCHAR2(100);
+        l_ar_import_id VARCHAR2(100);
+        l_ar_param     VARCHAR2(500);
+        l_ar_count     NUMBER := 0;
+        l_ar_ok        BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AR_INVOICES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'ARInvoices', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_AR_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM (lines + distributions).
+        DMT_AR_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_AR_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- ERP options + credentials for the load submissions.
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_ar_user, l_ar_pass);
+
+        -- Phase 3+4: per-group load cycle. Each distinct (BU_NAME, BATCH_SOURCE_NAME)
+        -- gets its own FBDI zip, loadAndImportData call, AutoInvoiceMasterEss second
+        -- job, and BIP reconciliation (inline per group).
+        FOR grp_rec IN (
+            SELECT DISTINCT BU_NAME, BATCH_SOURCE_NAME
+            FROM   DMT_RA_LINES_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'STAGED'
+            ORDER BY BU_NAME, BATCH_SOURCE_NAME
+        ) LOOP
+            l_ar_count := l_ar_count + 1;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'AR group cycle start: BU=' || grp_rec.BU_NAME ||
+                ', Source=' || grp_rec.BATCH_SOURCE_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            DMT_AR_FBDI_GEN_PKG.GENERATE_FBDI(
+                p_run_id            => p_run_id,
+                p_bu_name           => grp_rec.BU_NAME,
+                p_batch_source_name => grp_rec.BATCH_SOURCE_NAME,
+                x_fbdi_zip          => l_ar_zip,
+                x_filename          => l_ar_filename,
+                x_fbdi_csv_id       => l_ar_csv_id);
+
+            IF l_ar_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ar_zip) = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'No rows for BU=' || grp_rec.BU_NAME ||
+                    ', Source=' || grp_rec.BATCH_SOURCE_NAME || '. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                CONTINUE;
+            END IF;
+
+            -- 24-arg ParameterList for AutoInvoiceImportEss.
+            l_ar_param := grp_rec.BU_NAME || ',' || grp_rec.BATCH_SOURCE_NAME
+                || ',' || TO_CHAR(SYSDATE, 'YYYY-MM-DD')
+                || ',#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL'
+                || ',#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL'
+                || ',#NULL,N,#NULL';
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'AR ParameterList: ' || l_ar_param,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            ar_submit_and_reconcile_one(
+                p_run_id            => p_run_id,
+                p_cemli_code        => C_CEMLI,
+                p_obj               => C_OBJ,
+                p_job_name          => l_job_name,
+                p_interface_details => l_ifd,
+                p_ucm_account       => l_ucm_account,
+                p_fbdi_zip          => l_ar_zip,
+                p_filename          => l_ar_filename,
+                p_fbdi_csv_id       => l_ar_csv_id,
+                p_param_list        => l_ar_param,
+                p_group_label       => 'BU: ' || grp_rec.BU_NAME || ', Source: ' || grp_rec.BATCH_SOURCE_NAME,
+                p_username          => l_ar_user,
+                p_password          => l_ar_pass,
+                x_load_ess_id       => l_ar_load_id,
+                x_import_ess_id     => l_ar_import_id,
+                x_success           => l_ar_ok);
+
+            IF NOT l_ar_ok THEN
+                DECLARE
+                    l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ar_load_id || ' logs for details.';
+                BEGIN
+                    UPDATE DMT_RA_LINES_TFM_TBL
+                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
+                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+                    AND BU_NAME=grp_rec.BU_NAME AND BATCH_SOURCE_NAME=grp_rec.BATCH_SOURCE_NAME;
+                    UPDATE DMT_RA_DISTS_TFM_TBL
+                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
+                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+                    AND BU_NAME=grp_rec.BU_NAME;
+                    COMMIT;
+                END;
+                CONTINUE;
+            END IF;
+
+            -- Check for rows still at GENERATED after BIP reconciliation.
+            DECLARE
+                l_gen_count  NUMBER;
+            BEGIN
+                SELECT COUNT(*) INTO l_gen_count
+                FROM   DMT_RA_LINES_TFM_TBL
+                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                AND    BU_NAME = grp_rec.BU_NAME AND BATCH_SOURCE_NAME = grp_rec.BATCH_SOURCE_NAME;
+                IF l_gen_count > 0 THEN
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'WARNING: ' || l_gen_count || ' AR rows still at GENERATED after BIP reconciliation ' ||
+                        '(BU: ' || grp_rec.BU_NAME || ', Source: ' || grp_rec.BATCH_SOURCE_NAME || '). ' ||
+                        'These rows were not matched by BIP and require manual investigation.',
+                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                END IF;
+            END;
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'AR group cycle complete: BU=' || grp_rec.BU_NAME ||
+                ', Source=' || grp_rec.BATCH_SOURCE_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        END LOOP;
+
+        IF l_ar_count = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No STAGED AR invoice lines found. Skipping ARInvoices.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            RETURN;
+        END IF;
+
+        -- Phase 5: FAILED-row accounting + completion log (counts the AR lines TFM
+        -- table, as the monolith grouped_finish did for ARInvoices).
+        DECLARE
+            l_failed_count NUMBER;
+        BEGIN
+            SELECT COUNT(*) INTO l_failed_count
+            FROM DMT_RA_LINES_TFM_TBL
+            WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
+            IF l_failed_count > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_CEMLI || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                    'Downstream object types will continue — check staging table for details.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            END IF;
+        END;
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AR_INVOICES complete.', 'INFO', C_PKG, C_PROC);
@@ -5097,7 +5756,7 @@
 
             -- Backlog #70: stamp THIS child's own distinct load + import ess ids on
             -- its own queue row (no-op outside a queue-driven partition child).
-            req_it_stamp_child_ess_ids(l_rq_load_id, l_rq_import_id);
+            stamp_item_ess_ids(l_rq_load_id, l_rq_import_id);
 
             IF NOT l_rq_ok THEN
                 mark_batch_failed(grp_rec.BATCH_ID,
@@ -5317,7 +5976,7 @@
 
             -- Backlog #70: stamp THIS child's own distinct load + import ess ids on
             -- its own queue row (no-op outside a queue-driven partition child).
-            req_it_stamp_child_ess_ids(l_it_load_id, l_it_import_id);
+            stamp_item_ess_ids(l_it_load_id, l_it_import_id);
 
             IF NOT l_it_ok THEN
                 mark_batch_failed(grp_rec.BATCH_ID,
@@ -5399,17 +6058,235 @@
     END RUN_ITEM_CATEGORIES;
 
     -- --------------------------------------------------------
-    -- RUN_MISC_RECEIPTS (public)
+    -- RUN_MISC_RECEIPTS (public) — self-contained recipe (backlog #8, fourth family).
+    -- SINGLE-LOAD SYNC object. loadAndImportData does NOT chain an import for INV
+    -- transactions (interfaceDetails is a DMT-local id, not a real Fusion
+    -- FUN_ERP_INTERFACE_OPTIONS row), so the import step submits PollTMEssJob
+    -- explicitly -- it picks up all process_flag=1 rows and spawns SingleTMEssJob
+    -- internally. Follows the single (Suppliers) pattern with that PollTMEssJob
+    -- import substituted for get_import_ess_id. Reconciles inline. NOT
+    -- spawn-per-partition (g_partition_key always NULL). Behaviour is byte-for-byte
+    -- the pre-refactor MiscReceipts single-load path of run_one_object_type.
+    --
+    -- The dispatch registry marks MiscReceipts EXEC_MODE = SYNC, so the queue worker
+    -- leaves g_async_mode FALSE and this recipe polls + reconciles inline. A direct
+    -- RUN_MISC_RECEIPTS call is also g_async_mode FALSE. The g_async_mode guard is
+    -- kept (returns after SUBMIT_LOAD) so the recipe is correct if the object is ever
+    -- re-registered ASYNC -- mirrors sup_after_generate.
     -- --------------------------------------------------------
     PROCEDURE RUN_MISC_RECEIPTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_MISC_RECEIPTS';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_MISC_RECEIPTS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'MiscReceipts';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'MiscReceipts';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_mr_user      VARCHAR2(100);
+        l_mr_pass      VARCHAR2(100);
+        l_zip          BLOB;
+        l_filename     VARCHAR2(200);
+        l_csv_id       NUMBER;
+        l_load_ess_id  VARCHAR2(100);
+        l_import_ess_id VARCHAR2(100);
+        l_load_status  VARCHAR2(50);
+        l_param_list   VARCHAR2(500) := '#NULL';  -- MCCS RICE_011/012: PollTMEssJob, no params
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_MISC_RECEIPTS start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'MiscReceipts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+            'RUN_MISC_RECEIPTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_MISC_RECEIPT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM.
+        DMT_MISC_RECEIPT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- Phase 3: generate the FBDI zip.
+        DMT_MISC_RECEIPT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
+
+        -- If no rows, skip this object type.
+        IF l_zip IS NULL OR DBMS_LOB.GETLENGTH(l_zip) = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No rows for ' || C_CEMLI || '. Skipping.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            RETURN;
+        END IF;
+
+        -- ERP options + credentials for the load submission.
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_mr_user, l_mr_pass);
+
+        -- loadAndImportData — combined load+import single call.
+        l_load_ess_id := SUBMIT_LOAD(
+            p_run_id            => p_run_id,
+            p_fbdi_zip          => l_zip,
+            p_filename          => l_filename,
+            p_job_name          => l_job_name,
+            p_interface_details => l_ifd,
+            p_doc_account       => l_ucm_account,
+            p_parameter_list    => l_param_list,
+            p_log_context       => C_OBJ,
+            p_username          => l_mr_user,
+            p_password          => l_mr_pass);
+        DBMS_LOB.FREETEMPORARY(l_zip);
+
+        -- Stamp the parameter list on the ZIP row.
+        UPDATE DMT_FBDI_ZIP_TBL
+        SET    PARAMETER_LIST = l_param_list
+        WHERE  RUN_ID = p_run_id
+        AND    OBJECT_TYPE = SUBSTR(C_CEMLI, INSTR(C_CEMLI, '-') + 1);
+        COMMIT;
+
+        -- Async mode: stop here, let the queue poller handle ESS polling +
+        -- reconciliation. (MiscReceipts is registered SYNC so this is not taken on
+        -- the live path; kept for correctness if ever re-registered ASYNC.)
+        IF g_async_mode THEN
+            g_load_ess_id := l_load_ess_id;
+            RETURN;
+        END IF;
+
+        -- ---- SYNC path (the live path for MiscReceipts) ----
+
+        -- Poll Load job.
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Polling Load ESS job: ' || l_load_ess_id, 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        POLL_ESS_JOB(p_run_id, l_load_ess_id, 1800, FALSE, C_OBJ, C_CEMLI, l_load_status,
+                     p_username => l_mr_user, p_password => l_mr_pass);
+
+        -- Load failed → no rows reached the interface table. Mark all GENERATED rows
+        -- FAILED and return (no import job, no BIP).
+        IF l_load_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Load ESS ' || l_load_ess_id || ' returned ' || l_load_status ||
+                '. No rows committed to interface table. Marking all GENERATED rows FAILED.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            DECLARE
+                l_err_msg VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_load_ess_id || ' logs for details.';
+            BEGIN
+                UPDATE DMT_INV_TRX_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                COMMIT;
+            END;
+            RETURN;
+        END IF;
+
+        -- Import step: INV Transaction Manager doesn't chain from loadAndImportData,
+        -- so submit PollTMEssJob explicitly. It picks up all process_flag=1 rows and
+        -- spawns SingleTMEssJob internally to process them.
+        DECLARE
+            l_resp     CLOB;
+            l_tag_s    INTEGER;
+            l_val_s    INTEGER;
+            l_val_e    INTEGER;
+        BEGIN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Submitting PollTMEssJob explicitly (INV transactions).', 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+            l_resp := soap_http(
+                p_url            => erp_soap_url,
+                p_soap_action    => 'http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/submitESSJobRequest',
+                p_body           => TO_CLOB(
+                    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' ||
+                    'xmlns:typ="http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/types/">' ||
+                    '<soapenv:Header/><soapenv:Body>' ||
+                    '<typ:submitESSJobRequest>' ||
+                    '<typ:jobPackageName>/oracle/apps/ess/scm/inventory/materialTransactions/txnManager</typ:jobPackageName>' ||
+                    '<typ:jobDefinitionName>PollTMEssJob</typ:jobDefinitionName>' ||
+                    '<typ:paramList></typ:paramList>' ||
+                    '</typ:submitESSJobRequest>' ||
+                    '</soapenv:Body></soapenv:Envelope>'),
+                p_run_id         => p_run_id,
+                p_username       => l_mr_user,
+                p_password       => l_mr_pass);
+            l_tag_s := DBMS_LOB.INSTR(l_resp, '<result');
+            IF l_tag_s > 0 THEN
+                l_val_s := DBMS_LOB.INSTR(l_resp, '>', l_tag_s) + 1;
+                l_val_e := DBMS_LOB.INSTR(l_resp, '</result>', l_val_s);
+                IF l_val_e > l_val_s THEN
+                    l_import_ess_id := DBMS_LOB.SUBSTR(l_resp, l_val_e - l_val_s, l_val_s);
+                END IF;
+            END IF;
+            IF l_import_ess_id IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20050,
+                    'Failed to submit PollTMEssJob. Response: ' || DBMS_LOB.SUBSTR(l_resp, 500, 1));
+            END IF;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'PollTMEssJob submitted. ESS ID: ' || l_import_ess_id, 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        END;
+        COMMIT;
+
+        -- Backlog #70 (non-partitioned): stamp this item's own load + import (the
+        -- PollTMEssJob request) ess ids on its own queue row so the run-detail tiles
+        -- show real ids. No-op for a direct/standalone call (g_gen_queue_id NULL).
+        stamp_item_ess_ids(l_load_ess_id, l_import_ess_id);
+
+        -- Poll Import job — do NOT raise on error.
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Polling Import ESS job: ' || l_import_ess_id, 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        POLL_ESS_JOB(p_run_id, l_import_ess_id, 1800, FALSE, C_OBJ, C_CEMLI, l_load_status,
+                     p_username => l_mr_user, p_password => l_mr_pass);
+
+        -- Capture the Report child ESS job into the hierarchy (generic).
+        DECLARE l_report_ess_id NUMBER;
+        BEGIN
+            l_report_ess_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+                p_run_id        => p_run_id,
+                p_import_ess_id => TO_NUMBER(l_import_ess_id),
+                p_cemli_code    => C_CEMLI);
+        END;
+
+        -- BIP reconciliation — single registry-driven dispatch.
+        DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
+            p_run_id        => p_run_id,
+            p_cemli_code    => C_CEMLI,
+            p_load_ess_id   => TO_NUMBER(l_load_ess_id),
+            p_import_ess_id => TO_NUMBER(l_import_ess_id),
+            p_work_queue_id => g_work_queue_id);
+        g_reconciled_inline := TRUE;
+
+        -- Rows still GENERATED after reconciliation → warn + capture ESS output.
+        DECLARE
+            l_still_generated NUMBER := 0;
+        BEGIN
+            SELECT COUNT(*) INTO l_still_generated FROM DMT_INV_TRX_TFM_TBL
+            WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+            IF l_still_generated > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'WARNING: ' || l_still_generated || ' rows still at GENERATED after BIP reconciliation for ' ||
+                    C_CEMLI || '. BIP query returned no matching rows for these records. ' ||
+                    'Rows left at GENERATED for manual investigation — do NOT assume success.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                IF l_import_ess_id IS NOT NULL THEN
+                    DMT_ESS_UTIL_PKG.CAPTURE_ESS_OUTPUT(
+                        p_run_id     => p_run_id,
+                        p_request_id => TO_NUMBER(l_import_ess_id),
+                        p_cemli_code => C_CEMLI);
+                END IF;
+            END IF;
+        END;
+
+        -- FAILED-row accounting + completion log.
+        DECLARE
+            l_failed_count NUMBER;
+        BEGIN
+            SELECT COUNT(*) INTO l_failed_count
+            FROM DMT_INV_TRX_TFM_TBL
+            WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
+            IF l_failed_count > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_CEMLI || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                    'Downstream object types will continue — check staging table for details.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            END IF;
+        END;
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_MISC_RECEIPTS complete.', 'INFO', C_PKG, C_PROC);

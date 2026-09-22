@@ -46,15 +46,21 @@
 -- 259 and 262):
 --   The transformer stamps each transaction with
 --     SOURCE_CODE           = 'DMT'
---     TRANSACTION_REFERENCE = 'DMT-' || <run_id>   (the run batch key)
+--     TRANSACTION_REFERENCE = 'DMT-' || <run_id>[ || '-' || <source ref>]
+--                                                  (the run batch key; the
+--       optional source-supplied suffix is present only when the source row
+--       carried its own TRANSACTION_REFERENCE)
 --     SOURCE_LINE_ID        = the TFM STG_SEQUENCE_ID
 --   SOURCE_LINE_ID is unique per record within a run and is disjoint
 --   between the posted (base) and rejected (interface) sets, so it is
 --   the RECORD_KEY. The results package maps SOURCE_LINE_ID back to
 --   DMT_INV_TRX_TFM_TBL.STG_SEQUENCE_ID.
 --
--- Row selection: run-scoped by the batch key
---   TRANSACTION_REFERENCE = 'DMT-' || :P_RUN_ID and SOURCE_CODE='DMT'.
+-- Row selection: run-scoped by the batch key. The transform ALWAYS prepends
+--   'DMT-' || run_id to TRANSACTION_REFERENCE, so a row is either exactly
+--   'DMT-'||:P_RUN_ID (no source-supplied reference) or 'DMT-'||:P_RUN_ID||'-...'
+--   (source supplied its own reference). Both shapes are matched, anchored on the
+--   '-' delimiter so run 34 never matches run 340's rows. SOURCE_CODE='DMT'.
 --   BASE  rows: INV_MATERIAL_TXNS -- every posted transaction. A row
 --         in the base table IS the positive proof of success; the
 --         interface row for a success is purged, so the tiers never
@@ -95,7 +101,8 @@ FROM (
         TO_CHAR(t.source_line_id)            AS dmt_reference
     FROM   inv_material_txns t
     WHERE  t.source_code           = 'DMT'
-    AND    t.transaction_reference = 'DMT-' || :P_RUN_ID
+    AND    (t.transaction_reference = 'DMT-' || :P_RUN_ID
+            OR t.transaction_reference LIKE 'DMT-' || :P_RUN_ID || '-%')
 
     UNION ALL
 
@@ -118,7 +125,8 @@ FROM (
         TO_CHAR(t.source_line_id)            AS dmt_reference
     FROM   inv_transactions_interface t
     WHERE  t.source_code           = 'DMT'
-    AND    t.transaction_reference = 'DMT-' || :P_RUN_ID
+    AND    (t.transaction_reference = 'DMT-' || :P_RUN_ID
+            OR t.transaction_reference LIKE 'DMT-' || :P_RUN_ID || '-%')
     AND    t.process_flag          = 3
 
     UNION ALL
@@ -149,7 +157,8 @@ FROM (
     WHERE  EXISTS (SELECT 1 FROM inv_material_txns t
                    WHERE t.transaction_id       = s.last_transaction_id
                    AND   t.source_code          = 'DMT'
-                   AND   t.transaction_reference = 'DMT-' || :P_RUN_ID)
+                   AND   (t.transaction_reference = 'DMT-' || :P_RUN_ID
+                          OR t.transaction_reference LIKE 'DMT-' || :P_RUN_ID || '-%'))
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
 -- BIP, so treat NULL as "from the start": return every row. On later
