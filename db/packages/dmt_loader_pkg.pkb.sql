@@ -1366,9 +1366,20 @@
         -- its own self-contained RUN_<object>() recipe (validate/transform +
         -- per-BU generate/submit/reconcile via the shared po_* helpers). Guard
         -- them the same way as the Suppliers family.
+        -- Partitioned P2P family (Requisitions, Items, and the ItemCategories
+        -- bundled into the Items token) migrated off this monolith too (backlog
+        -- #8, third family) -- each now runs through its own self-contained
+        -- RUN_<object>() recipe. These are SPAWN-PER-PARTITION objects: the queue
+        -- worker transforms the parent once (via RUN_TRANSFORM_ONLY, which for
+        -- these codes now dispatches to the recipe's own transform-only pass) and
+        -- spawns one child per BATCH_ID; each child re-enters through the
+        -- registered EXEC_PROC (RUN_REQUISITIONS / RUN_ITEMS) with g_partition_key
+        -- set. Nothing for these codes routes through the ladders below any more,
+        -- so guard them the same way as the earlier two families.
         IF p_cemli_code IN ('Suppliers', 'SupplierAddresses', 'SupplierSites',
                             'SupplierSiteAssignments', 'SupplierContacts',
-                            'PurchaseOrders', 'BlanketPOs', 'Contracts') THEN
+                            'PurchaseOrders', 'BlanketPOs', 'Contracts',
+                            'Requisitions', 'Items', 'ItemCategories') THEN
             RAISE_APPLICATION_ERROR(-20046,
                 'RUN_ONE_OBJECT_TYPE: ' || p_cemli_code || ' is migrated to its own '
                 || 'RUN_' || UPPER(l_obj) || '() runner (backlog #8) and no longer '
@@ -4170,6 +4181,78 @@
             'Object type complete: ' || p_cemli_code, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
     END po_finish;
 
+    -- ========================================================================
+    -- PARTITIONED P2P FAMILY — self-contained runners (backlog #8, third family).
+    --
+    -- Requisitions and Items (ItemCategories is bundled into the Items token, one
+    -- FBDI ZIP) NO LONGER route through the run_one_object_type p_cemli_code
+    -- ladders. Each RUN_<object>() below is a self-contained recipe.
+    --
+    -- CRITICAL DIFFERENCE from the Suppliers/Purchasing families: these two are
+    -- SPAWN-PER-PARTITION objects (a row in DMT_CEMLI_SPLIT_CFG with
+    -- CHILD_PARTITION_COLUMN = BATCH_ID). The queue worker drives them in TWO
+    -- distinct EXECUTE_ONE calls, and the recipe below serves BOTH:
+    --   1. PARENT transform-only pass. EXECUTE_ONE sees a parent row
+    --      (PARTITION_KEY NULL), calls DMT_LOADER_PKG.RUN_TRANSFORM_ONLY, which now
+    --      dispatches Requisitions/Items to THIS recipe with g_transform_only=TRUE.
+    --      The recipe validates + transforms STG -> TFM STAGED and RETURNS before
+    --      any generate/submit. EXECUTE_ONE then reads the object's registered
+    --      GET_PARTITION_KEYS and spawns one READY child work item per distinct
+    --      BATCH_ID. (The partition-spawn mechanic itself lives in EXECUTE_ONE and
+    --      is UNTOUCHED by this refactor.)
+    --   2. CHILD load pass. EXECUTE_ONE dispatches each child through the
+    --      registered EXEC_PROC (RUN_REQUISITIONS / RUN_ITEMS) with g_partition_key
+    --      set to that child's single BATCH_ID (JSON, e.g. {"BATCH_ID":"8102"}),
+    --      g_work_queue_id and g_gen_queue_id both set to the child's QUEUE_ID.
+    --      The recipe's batch loop then runs EXACTLY ONCE (scoped to that batch),
+    --      generates + loads + reconciles ONLY that partition, and settles.
+    --
+    -- Both objects run their load INLINE inside the child's single EXECUTE_ONE call
+    -- (submit + poll load + import + BIP reconcile), then set g_reconciled_inline
+    -- so EXECUTE_ONE settles the child through the accounting gate rather than the
+    -- AWAITING_LOAD queue states. This is byte-for-byte the pre-refactor behaviour:
+    -- the monolith's Requisitions/Items grouped blocks also polled + reconciled
+    -- inline via the nested submit_and_reconcile_one regardless of g_async_mode.
+    --
+    -- Backlog #70 (per-child ESS-id tiles) is completed here: because the child
+    -- reconciles inline (never AWAITING_LOAD / AWAITING_IMPORT), the queue worker
+    -- never stamped LOAD_ESS_JOB_ID / IMPORT_ESS_JOB_ID onto the child's queue row,
+    -- so the run-detail tiles showed no ids for Requisitions/Items children. The
+    -- recipe now stamps each child's OWN distinct load + import request ids onto its
+    -- own DMT_WORK_QUEUE_TBL row via req_it_stamp_child_ess_ids (static SQL, keyed
+    -- on the child's QUEUE_ID). The load/reconcile semantics are unchanged; only the
+    -- id columns are now populated.
+    --
+    -- A direct RUN_REQUISITIONS / RUN_ITEMS call (e.g. from RUN_PROCURE_TO_PAY, or a
+    -- one-off test) has g_partition_key NULL and g_transform_only FALSE: the recipe
+    -- then loops ALL of the run's batches inline (the legacy standalone path) and
+    -- stamps nothing on the queue (g_work_queue_id is NULL outside the queue).
+    -- ========================================================================
+
+    -- Shared helper (backlog #70): stamp THIS spawn-per-partition child's own Load
+    -- and Import ESS request ids onto its own work-queue row so the run-detail tiles
+    -- show the real, distinct ids per child. Keyed on the child's QUEUE_ID, which is
+    -- g_work_queue_id (EXECUTE_ONE sets it to the child's own QUEUE_ID for a real
+    -- partition child, and leaves it NULL for the un-partitioned parent and for any
+    -- direct/standalone call). The NULL guard therefore stamps ONLY for a genuine
+    -- queue-driven child and is a no-op everywhere else. Static single-row UPDATE,
+    -- no dynamic SQL. Import id may be NULL if the chained import was not found; the
+    -- column simply stays NULL in that case (same as any other object).
+    PROCEDURE req_it_stamp_child_ess_ids (
+        p_load_ess_id   IN VARCHAR2,
+        p_import_ess_id IN VARCHAR2
+    ) IS
+    BEGIN
+        IF g_work_queue_id IS NULL THEN
+            RETURN;
+        END IF;
+        UPDATE DMT_WORK_QUEUE_TBL
+        SET    LOAD_ESS_JOB_ID   = SUBSTR(p_load_ess_id, 1, 30),
+               IMPORT_ESS_JOB_ID = SUBSTR(p_import_ess_id, 1, 30)
+        WHERE  QUEUE_ID = g_work_queue_id;
+        COMMIT;
+    END req_it_stamp_child_ess_ids;
+
     -- --------------------------------------------------------
     -- RUN_SUPPLIER_PIPELINE
     -- Orchestrates all 5 object types in strict dependency order.
@@ -4819,17 +4902,237 @@
     END RUN_GRANTS;
 
     -- --------------------------------------------------------
-    -- RUN_REQUISITIONS (public)
+    -- RUN_REQUISITIONS (public) — self-contained recipe (backlog #8, third family).
+    -- Spawn-per-partition by BATCH_ID. Handles all three passes the queue / a direct
+    -- caller can drive (see the family header above): parent transform-only, child
+    -- single-batch load, and the legacy standalone all-batches loop.
     -- --------------------------------------------------------
     PROCEDURE RUN_REQUISITIONS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_REQUISITIONS';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_REQUISITIONS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'Requisitions';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'Requisitions';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_rq_user      VARCHAR2(100);
+        l_rq_pass      VARCHAR2(100);
+        l_rq_zip       BLOB;
+        l_rq_filename  VARCHAR2(200);
+        l_rq_csv_id    NUMBER;
+        l_rq_load_id   VARCHAR2(100);
+        l_rq_import_id VARCHAR2(100);
+        l_rq_param     VARCHAR2(500);
+        l_rq_bu_id     VARCHAR2(30);
+        l_rq_count     NUMBER := 0;
+        l_rq_ok        BOOLEAN;
+
+        -- Fail this batch's GENERATED rows across all 3 REQ TFM tables. Headers
+        -- filter by BATCH_ID directly; lines/dists filter by their header's BATCH_ID
+        -- (they carry no batch column). Static SQL, identical to the original
+        -- Requisitions on-fail cascade in run_one_object_type.
+        PROCEDURE mark_batch_failed(p_bid IN VARCHAR2, p_msg IN VARCHAR2) IS
+        BEGIN
+            UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
+            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
+
+            UPDATE DMT_POR_REQ_LINES_TFM_TBL l
+            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+              AND EXISTS (SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL h
+                          WHERE h.RUN_ID=l.RUN_ID
+                            AND h.INTERFACE_HEADER_KEY=l.INTERFACE_HEADER_KEY
+                            AND h.BATCH_ID=p_bid);
+
+            UPDATE DMT_POR_REQ_DISTS_TFM_TBL d
+            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+              AND EXISTS (SELECT 1
+                          FROM DMT_POR_REQ_LINES_TFM_TBL l
+                          JOIN DMT_POR_REQ_HEADERS_TFM_TBL h
+                            ON h.RUN_ID=l.RUN_ID AND h.INTERFACE_HEADER_KEY=l.INTERFACE_HEADER_KEY
+                          WHERE l.RUN_ID=d.RUN_ID
+                            AND l.INTERFACE_LINE_KEY=d.INTERFACE_LINE_KEY
+                            AND h.BATCH_ID=p_bid);
+            COMMIT;
+        END mark_batch_failed;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_REQUISITIONS start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Requisitions', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+            'RUN_REQUISITIONS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1+2 run ONLY on the parent transform-only pass (g_partition_key NULL,
+        -- and not a spawned child). A spawned child (g_partition_key set) was already
+        -- validated + transformed by its parent, so re-transforming would reset its
+        -- STAGED rows — skip straight to the per-batch load. This mirrors the
+        -- g_partition_key gate the monolith used for Requisitions.
+        IF g_partition_key IS NULL THEN
+            DMT_REQ_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            COMMIT;
+            DMT_REQ_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            DMT_REQ_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            DMT_REQ_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            COMMIT;
+        END IF;
+
+        -- Parent transform-only pass: stop here. The queue worker reads the distinct
+        -- BATCH_IDs and spawns one child work item per batch (each re-enters this
+        -- recipe with g_partition_key set). Mirrors the monolith transform-only gate.
+        IF g_transform_only THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'RUN_REQUISITIONS transform-only pass complete (spawn-per-partition parent).',
+                'INFO', C_PKG, C_PROC);
+            RETURN;
+        END IF;
+
+        -- ERP options + credentials for the load submissions.
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_rq_user, l_rq_pass);
+
+        -- Per-batch load cycle. A spawned child (g_partition_key set to its single
+        -- BATCH_ID, JSON-encoded) runs the loop EXACTLY ONCE for that batch;
+        -- DECODE_PARTITION_KEY yields the raw BATCH_ID to bind. The un-partitioned
+        -- direct/standalone call (g_partition_key NULL) loops all of the run's
+        -- batches. One batch = one requisitioning business unit = one FBDI zip =
+        -- one RequisitionImportJob ESS run.
+        FOR grp_rec IN (
+            SELECT BATCH_ID,
+                   MIN(REQ_BU_NAME)            AS REQ_BU_NAME,
+                   COUNT(DISTINCT REQ_BU_NAME) AS BU_COUNT
+            FROM   DMT_POR_REQ_HEADERS_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'STAGED'
+            AND    BATCH_ID IS NOT NULL
+            AND    (g_partition_key IS NULL
+                    OR BATCH_ID = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
+            GROUP BY BATCH_ID
+            ORDER BY BATCH_ID
+        ) LOOP
+            l_rq_count := l_rq_count + 1;
+
+            -- One batch = one requisitioning business unit.
+            IF grp_rec.BU_COUNT > 1 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'Requisition batch ' || grp_rec.BATCH_ID || ' mixes ' || grp_rec.BU_COUNT ||
+                    ' business units -- a batch must use exactly one. Marking FAILED.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                mark_batch_failed(grp_rec.BATCH_ID,
+                    '[PRE_VALIDATION] Batch ' || grp_rec.BATCH_ID ||
+                    ' mixes multiple requisitioning business units; one batch must use exactly one BU.');
+                CONTINUE;
+            END IF;
+
+            -- Resolve the BU id from its name (no hardcoded ids).
+            BEGIN
+                l_rq_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', grp_rec.REQ_BU_NAME);
+            EXCEPTION WHEN OTHERS THEN
+                l_rq_bu_id := NULL;
+            END;
+            IF l_rq_bu_id IS NULL THEN
+                mark_batch_failed(grp_rec.BATCH_ID,
+                    '[PRE_VALIDATION] Requisitioning BU "' || grp_rec.REQ_BU_NAME ||
+                    '" for batch ' || grp_rec.BATCH_ID || ' did not resolve to a Fusion BU id.');
+                CONTINUE;
+            END IF;
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Requisition batch cycle start: BATCH_ID=' || grp_rec.BATCH_ID ||
+                ', BU=' || grp_rec.REQ_BU_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            DMT_REQ_FBDI_GEN_PKG.GENERATE_FBDI(
+                p_run_id      => p_run_id,
+                x_fbdi_zip    => l_rq_zip,
+                x_filename    => l_rq_filename,
+                x_fbdi_csv_id => l_rq_csv_id,
+                p_batch_id    => grp_rec.BATCH_ID);
+
+            IF l_rq_zip IS NULL OR DBMS_LOB.GETLENGTH(l_rq_zip) = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'No rows for requisition batch ' || grp_rec.BATCH_ID || '. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                CONTINUE;
+            END IF;
+
+            -- RequisitionImportJob, 8 positional args.
+            -- 1=ImportSource, 2=BatchId (this batch), 3=MaxBatchSize,
+            -- 4=RequisitioningBuId (resolved), 5=GroupBy, 6=NextReqNumber,
+            -- 7=InitiateApproval, 8=ErrorLevel.
+            l_rq_param := '#NULL,'
+                || grp_rec.BATCH_ID || ','
+                || '#NULL,'
+                || l_rq_bu_id || ','
+                || 'NONE,'
+                || '#NULL,'
+                || 'NO,'
+                || 'ALL';
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Requisition ParameterList: ' || l_rq_param,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            po_submit_and_reconcile_one(
+                p_run_id            => p_run_id,
+                p_cemli_code        => C_CEMLI,
+                p_obj               => C_OBJ,
+                p_job_name          => l_job_name,
+                p_interface_details => l_ifd,
+                p_ucm_account       => l_ucm_account,
+                p_fbdi_zip          => l_rq_zip,
+                p_filename          => l_rq_filename,
+                p_fbdi_csv_id       => l_rq_csv_id,
+                p_param_list        => l_rq_param,
+                p_group_label       => 'Batch: ' || grp_rec.BATCH_ID,
+                p_username          => l_rq_user,
+                p_password          => l_rq_pass,
+                x_load_ess_id       => l_rq_load_id,
+                x_import_ess_id     => l_rq_import_id,
+                x_success           => l_rq_ok);
+
+            -- Backlog #70: stamp THIS child's own distinct load + import ess ids on
+            -- its own queue row (no-op outside a queue-driven partition child).
+            req_it_stamp_child_ess_ids(l_rq_load_id, l_rq_import_id);
+
+            IF NOT l_rq_ok THEN
+                mark_batch_failed(grp_rec.BATCH_ID,
+                    '[LOAD_ERROR] Loading requisition batch ' || grp_rec.BATCH_ID ||
+                    ' to the Fusion interface failed. Check ESS job ' || l_rq_load_id || ' logs.');
+                CONTINUE;
+            END IF;
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Requisition batch cycle complete: BATCH_ID=' || grp_rec.BATCH_ID,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        END LOOP;
+
+        IF l_rq_count = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No STAGED Requisition rows with a batch id found. Skipping Requisitions.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            RETURN;
+        END IF;
+
+        -- FAILED-row accounting + completion log.
+        DECLARE
+            l_failed_count NUMBER;
+        BEGIN
+            SELECT COUNT(*) INTO l_failed_count
+            FROM DMT_POR_REQ_HEADERS_TFM_TBL
+            WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
+            IF l_failed_count > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_CEMLI || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                    'Downstream object types will continue — check staging table for details.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            END IF;
+        END;
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_REQUISITIONS complete.', 'INFO', C_PKG, C_PROC);
@@ -4841,20 +5144,218 @@
     END RUN_REQUISITIONS;
 
     -- --------------------------------------------------------
-    -- RUN_ITEMS (public)
+    -- RUN_ITEMS (public) — self-contained recipe (backlog #8, third family).
+    -- Spawn-per-partition by BATCH_ID. Items + bundled ItemCategories load in one
+    -- FBDI ZIP under one ItemImportJobDef run. Handles the same three passes as
+    -- RUN_REQUISITIONS (parent transform-only, child single-batch, standalone loop).
     -- --------------------------------------------------------
     PROCEDURE RUN_ITEMS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_ITEMS';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_ITEMS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'Items';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'Items';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_it_user      VARCHAR2(100);
+        l_it_pass      VARCHAR2(100);
+        l_it_zip       BLOB;
+        l_it_filename  VARCHAR2(200);
+        l_it_csv_id    NUMBER;
+        l_it_load_id   VARCHAR2(100);
+        l_it_import_id VARCHAR2(100);
+        l_it_param     VARCHAR2(500);
+        l_it_count     NUMBER := 0;
+        l_it_ok        BOOLEAN;
+
+        -- Fail this batch's GENERATED rows in BOTH bundled TFM tables. Each carries
+        -- its own BATCH_ID column, so filter directly (no join). Static SQL,
+        -- identical to the original Items on-fail cascade in run_one_object_type.
+        PROCEDURE mark_batch_failed(p_bid IN VARCHAR2, p_msg IN VARCHAR2) IS
+        BEGIN
+            UPDATE DMT_EGP_ITEM_TFM_TBL
+            SET TFM_STATUS='FAILED',
+                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg),
+                LAST_UPDATED_DATE=SYSDATE
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=TO_NUMBER(p_bid);
+
+            UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
+            SET TFM_STATUS='FAILED',
+                ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg),
+                LAST_UPDATED_DATE=SYSDATE
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=TO_NUMBER(p_bid);
+            COMMIT;
+        END mark_batch_failed;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_ITEMS start (includes ItemCategories bundled in same ZIP).', 'INFO', C_PKG, C_PROC);
+            'RUN_ITEMS start (includes ItemCategories bundled in same ZIP). Integration ID: ' || p_run_id,
+            'INFO', C_PKG, C_PROC);
 
-        -- Categories are validated, transformed, bundled into the FBDI ZIP, and reconciled
-        -- inside the 'Items' branch of run_one_object_type, so a single call covers both.
-        l_dummy := run_one_object_type(p_run_id, 'Items', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1+2 run ONLY on the parent transform-only pass (g_partition_key NULL).
+        -- A spawned child (g_partition_key set) was already validated + transformed by
+        -- its parent, so skip straight to the per-batch load. Categories are validated
+        -- + transformed under the Items token (bundled into the Items FBDI ZIP); there
+        -- is no separate ItemCategories step in the pipeline sequence.
+        IF g_partition_key IS NULL THEN
+            DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            COMMIT;
+            DMT_EGP_ITEM_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            -- Transform bundled categories before the Items FBDI generator picks them up
+            -- (DMT_EGP_ITEM_FBDI_GEN_PKG reads DMT_EGP_ITEM_CAT_TFM_TBL for the bundled CSV).
+            DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            COMMIT;
+        END IF;
+
+        -- Parent transform-only pass: stop here. The queue worker reads the distinct
+        -- BATCH_IDs and spawns one child work item per batch.
+        IF g_transform_only THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'RUN_ITEMS transform-only pass complete (spawn-per-partition parent).',
+                'INFO', C_PKG, C_PROC);
+            RETURN;
+        END IF;
+
+        -- ERP options + credentials for the load submissions (Items submits under
+        -- SCM_IMPL per the ItemImportJobDef interface-options row).
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_it_user, l_it_pass);
+
+        -- Per-batch load cycle. A batch may have item rows, category rows, or both,
+        -- so union both TFM tables for the complete set of distinct batch ids. A
+        -- spawned child (g_partition_key set) runs the loop exactly once for its
+        -- batch; the direct/standalone call (g_partition_key NULL) loops all batches.
+        FOR grp_rec IN (
+            SELECT TO_CHAR(BATCH_ID) AS BATCH_ID
+            FROM   DMT_EGP_ITEM_TFM_TBL
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
+            AND    (g_partition_key IS NULL
+                    OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
+            UNION
+            SELECT TO_CHAR(BATCH_ID)
+            FROM   DMT_EGP_ITEM_CAT_TFM_TBL
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
+            AND    (g_partition_key IS NULL
+                    OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
+            ORDER BY 1
+        ) LOOP
+            l_it_count := l_it_count + 1;
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Item batch cycle start: BATCH_ID=' || grp_rec.BATCH_ID,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            DMT_EGP_ITEM_FBDI_GEN_PKG.GENERATE_FBDI(
+                p_run_id      => p_run_id,
+                x_fbdi_zip    => l_it_zip,
+                x_filename    => l_it_filename,
+                x_fbdi_csv_id => l_it_csv_id,
+                p_batch_id    => grp_rec.BATCH_ID);
+
+            IF l_it_zip IS NULL OR DBMS_LOB.GETLENGTH(l_it_zip) = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'No rows for item batch ' || grp_rec.BATCH_ID || '. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                CONTINUE;
+            END IF;
+
+            -- ItemImportJobDef, 7 positional args (MCCS RICE_009 pattern).
+            -- 1=BatchID (this batch), 2=Organization(null), 3=ProcessOnly=CREATE,
+            -- 4=ProcessAllOrgs(null), 5=DeleteProcessedRows(null),
+            -- 6=ReprocessError=N, 7=ProcessSequentially=Y.
+            l_it_param := grp_rec.BATCH_ID || ',null,CREATE,null,null,N,Y';
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Item ParameterList: ' || l_it_param,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            po_submit_and_reconcile_one(
+                p_run_id            => p_run_id,
+                p_cemli_code        => C_CEMLI,
+                p_obj               => C_OBJ,
+                p_job_name          => l_job_name,
+                p_interface_details => l_ifd,
+                p_ucm_account       => l_ucm_account,
+                p_fbdi_zip          => l_it_zip,
+                p_filename          => l_it_filename,
+                p_fbdi_csv_id       => l_it_csv_id,
+                p_param_list        => l_it_param,
+                p_group_label       => 'Batch: ' || grp_rec.BATCH_ID,
+                p_username          => l_it_user,
+                p_password          => l_it_pass,
+                x_load_ess_id       => l_it_load_id,
+                x_import_ess_id     => l_it_import_id,
+                x_success           => l_it_ok);
+
+            -- Items special case (kept from the monolith, deliberately NOT
+            -- registry-expressible): the Items FBDI ZIP bundles the ItemCategories
+            -- CSV, so on a successful load this item conditionally reconciles the
+            -- categories too when this batch generated any category rows. A
+            -- data-dependent secondary reconciler does not fit the one-RECON_PROC-
+            -- per-object registry. Scoped by g_work_queue_id so a child touches only
+            -- its own rows. po_submit_and_reconcile_one already ran the primary Items
+            -- reconcile (RECONCILE_VIA_REGISTRY) and set g_reconciled_inline.
+            IF l_it_ok THEN
+                DECLARE l_cat_gen NUMBER;
+                BEGIN
+                    SELECT COUNT(*) INTO l_cat_gen FROM DMT_EGP_ITEM_CAT_TFM_TBL
+                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                    AND   (g_work_queue_id IS NULL OR WORK_QUEUE_ID = g_work_queue_id);
+                    IF l_cat_gen > 0 THEN
+                        DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(
+                            p_run_id, TO_NUMBER(l_it_load_id), TO_NUMBER(l_it_import_id),
+                            p_work_queue_id => g_work_queue_id);
+                    END IF;
+                END;
+            END IF;
+
+            -- Backlog #70: stamp THIS child's own distinct load + import ess ids on
+            -- its own queue row (no-op outside a queue-driven partition child).
+            req_it_stamp_child_ess_ids(l_it_load_id, l_it_import_id);
+
+            IF NOT l_it_ok THEN
+                mark_batch_failed(grp_rec.BATCH_ID,
+                    '[LOAD_ERROR] Loading item batch ' || grp_rec.BATCH_ID ||
+                    ' to the Fusion interface failed. Check ESS job ' || l_it_load_id || ' logs.');
+                CONTINUE;
+            END IF;
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Item batch cycle complete: BATCH_ID=' || grp_rec.BATCH_ID,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        END LOOP;
+
+        IF l_it_count = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No STAGED Item rows with a batch id found. Skipping Items.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            RETURN;
+        END IF;
+
+        -- FAILED-row accounting (items + bundled categories) + completion log.
+        DECLARE
+            l_failed_count NUMBER;
+        BEGIN
+            SELECT COUNT(*) INTO l_failed_count
+            FROM DMT_EGP_ITEM_TFM_TBL
+            WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
+            SELECT l_failed_count + COUNT(*) INTO l_failed_count
+            FROM DMT_EGP_ITEM_CAT_TFM_TBL
+            WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
+            IF l_failed_count > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_CEMLI || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                    'Downstream object types will continue — check staging table for details.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            END IF;
+        END;
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ITEMS complete.', 'INFO', C_PKG, C_PROC);
@@ -6203,7 +6704,20 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_TRANSFORM_ONLY start for ' || p_cemli_code || '.',
             'INFO', C_PKG, C_PROC);
         g_transform_only := TRUE;
-        l_dummy := run_one_object_type(p_run_id, p_cemli_code, v_scenario_id, p_run_mode, TRUE);
+        -- Partitioned P2P family (backlog #8, third family) is migrated out of
+        -- run_one_object_type, so its parent transform-only pass must dispatch to
+        -- the object's own recipe instead of the (now guarded) monolith. Each
+        -- recipe honours g_transform_only: it validates + transforms STG -> TFM
+        -- STAGED and returns before any generate/submit, exactly as the monolith's
+        -- transform-only gate did. Every other object still transforms through
+        -- run_one_object_type unchanged.
+        IF p_cemli_code = 'Requisitions' THEN
+            RUN_REQUISITIONS(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        ELSIF p_cemli_code = 'Items' THEN
+            RUN_ITEMS(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        ELSE
+            l_dummy := run_one_object_type(p_run_id, p_cemli_code, v_scenario_id, p_run_mode, TRUE);
+        END IF;
         g_transform_only := FALSE;
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_TRANSFORM_ONLY complete for ' || p_cemli_code || '.',
             'INFO', C_PKG, C_PROC);
