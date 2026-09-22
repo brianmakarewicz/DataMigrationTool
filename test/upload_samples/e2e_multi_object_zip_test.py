@@ -62,6 +62,24 @@ PWD = "DmtLocal#2026"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# Both scenario names this test stamps its fabricated rows with. Cleanup deletes
+# every row tagged with these, so nothing is left NEW for a real pipeline run to
+# sweep. (The Suppliers/PO pre-transform validators pick up STG_STATUS IN
+# ('NEW','RETRY') with no scenario scoping, so residual rows MUST be removed.)
+SCN_LEG1 = "E51_ZIP_BUNDLE_PROP"
+SCN_LEG2 = "E51_ZIP_AUTO_MIXED"
+
+# Every staging table this test loads into (across both legs).
+LOADED_STG_TABLES = [
+    "DMT_POZ_SUPPLIERS_STG_TBL",
+    "DMT_POZ_SUP_ADDR_STG_TBL",
+    "DMT_POZ_SUP_SITE_STG_TBL",
+    "DMT_PO_HEADERS_INT_STG_TBL",
+    "DMT_PO_LINES_INT_STG_TBL",
+    "DMT_PO_LINE_LOCS_INT_STG_TBL",
+    "DMT_PO_DISTS_INT_STG_TBL",
+]
+
 # ---------------------------------------------------------------------------
 # Proprietary CSV fixtures (header row + data). Filename MUST equal
 # DMT_UPLOAD_OBJECT_TBL.CSV_FILENAME so the loader routes it. Header names must
@@ -204,12 +222,75 @@ def scenario_id(cur, name):
     return r[0] if r else None
 
 
+def residual_count(cur):
+    """Count every row this test could have left behind, keyed on its own tags:
+    staging rows by SCENARIO_ID, log rows by object+scenario batch tag, error
+    rows by BATCH_TAG prefix. Returns the total (0 == fully cleaned)."""
+    sids = [s for s in (scenario_id(cur, SCN_LEG1), scenario_id(cur, SCN_LEG2)) if s is not None]
+    total = 0
+    if sids:
+        binds = ",".join(f":{i}" for i in range(len(sids)))
+        for t in LOADED_STG_TABLES:
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM {t} WHERE SCENARIO_ID IN ({binds})", sids)
+                total += cur.fetchone()[0]
+            except oracledb.DatabaseError:
+                pass
+    cur.execute(
+        "SELECT COUNT(*) FROM DMT_UPLOAD_ERROR_TBL WHERE BATCH_TAG LIKE :a OR BATCH_TAG LIKE :b",
+        a=SCN_LEG1 + "~%", b=SCN_LEG2 + "~%")
+    total += cur.fetchone()[0]
+    return total
+
+
+def cleanup(cur, conn, batch_ids):
+    """Delete every row this test inserted, keyed on the SCENARIO_ID / batch tag
+    it stamps. Mirrors the sibling roundtrip_test.py convention: delete by
+    scenario across the *_STG_TBL tables, and never touch scenario_id 1.
+    Also removes the matching DMT_UPLOAD_LOG_TBL and DMT_UPLOAD_ERROR_TBL rows."""
+    sids = [s for s in (scenario_id(cur, SCN_LEG1), scenario_id(cur, SCN_LEG2))
+            if s is not None and s != 1]
+    deleted = 0
+
+    # Staging tables: delete by scenario id (the tag stamped on every loaded row).
+    if sids:
+        binds = ",".join(f":{i}" for i in range(len(sids)))
+        for t in LOADED_STG_TABLES:
+            try:
+                cur.execute(f"DELETE FROM {t} WHERE SCENARIO_ID IN ({binds})", sids)
+                deleted += cur.rowcount
+            except oracledb.DatabaseError:
+                pass
+
+    # Upload log rows for the batches this run created.
+    bids = [b for b in batch_ids if b is not None]
+    if bids:
+        binds = ",".join(f":{i}" for i in range(len(bids)))
+        try:
+            cur.execute(f"DELETE FROM DMT_UPLOAD_LOG_TBL WHERE BATCH_ID IN ({binds})", bids)
+            deleted += cur.rowcount
+        except oracledb.DatabaseError:
+            pass
+
+    # Error rows tagged with either scenario name.
+    try:
+        cur.execute(
+            "DELETE FROM DMT_UPLOAD_ERROR_TBL WHERE BATCH_TAG LIKE :a OR BATCH_TAG LIKE :b",
+            a=SCN_LEG1 + "~%", b=SCN_LEG2 + "~%")
+        deleted += cur.rowcount
+    except oracledb.DatabaseError:
+        pass
+
+    conn.commit()
+    return deleted
+
+
 def run_leg1(cur, conn):
     print("#" * 72)
     print("# LEG 1 -- all-proprietary multi-object bundle")
     print("#          (identical routing/order/error path to UPLOAD_ZIP_BUNDLE)")
     print("#" * 72)
-    scenario = "E51_ZIP_BUNDLE_PROP"
+    scenario = SCN_LEG1
     zpath = os.path.join(HERE, "e51_multi_object_bundle.zip")
     data, order = build_prop_zip(zpath)
     print(f"Built {len(data)}-byte zip; member order inside zip (deliberately scrambled):")
@@ -312,14 +393,14 @@ def run_leg1(cur, conn):
     print("\nLeg 1 checks:")
     for k, v in checks.items():
         print(f"  [{'PASS' if v else 'FAIL'}] {k}")
-    return all(checks.values())
+    return all(checks.values()), batch_id
 
 
 def run_leg2(cur, conn):
     print("\n" + "#" * 72)
     print("# LEG 2 -- mixed proprietary + FBDI bundle (UPLOAD_ZIP_AUTO auto-detect)")
     print("#" * 72)
-    scenario = "E51_ZIP_AUTO_MIXED"
+    scenario = SCN_LEG2
     zpath = os.path.join(HERE, "e51_mixed_auto_bundle.zip")
     data = build_mixed_zip(zpath)
     print(f"Built {len(data)}-byte mixed zip: 2 proprietary (Suppliers, SupplierAddresses),")
@@ -360,7 +441,7 @@ def run_leg2(cur, conn):
     print("\nLeg 2 checks:")
     for k, v in checks.items():
         print(f"  [{'PASS' if v else 'FAIL'}] {k}")
-    return all(checks.values())
+    return all(checks.values()), batch_id
 
 
 def main():
@@ -368,15 +449,33 @@ def main():
     conn.autocommit = False
     cur = conn.cursor()
 
-    leg1 = run_leg1(cur, conn)
-    leg2 = run_leg2(cur, conn)
+    leg1 = leg2 = False
+    batch_ids = []
+    residual = None
+    try:
+        leg1, b1 = run_leg1(cur, conn)
+        batch_ids.append(b1)
+        leg2, b2 = run_leg2(cur, conn)
+        batch_ids.append(b2)
+    finally:
+        # Always clean up the fabricated rows, even if an assertion above failed,
+        # so nothing is left NEW for a real pipeline run to sweep.
+        print("\n" + "=" * 72)
+        print("CLEANUP -- removing every row this test inserted")
+        print("=" * 72)
+        deleted = cleanup(cur, conn, batch_ids)
+        residual = residual_count(cur)
+        print(f"  rows deleted (staging + log + error) : {deleted}")
+        print(f"  residual rows tagged by this test    : {residual}")
+        print(f"  [{'PASS' if residual == 0 else 'FAIL'}] zero residual after cleanup")
 
     print("\n" + "=" * 72)
     print("OVERALL VERDICT -- Requirement A (multi-CSV zip upload)")
     print("=" * 72)
     print(f"  Leg 1 (UPLOAD_ZIP_BUNDLE-equivalent, all proprietary): {'PASS' if leg1 else 'FAIL'}")
     print(f"  Leg 2 (UPLOAD_ZIP_AUTO, mixed proprietary + FBDI)    : {'PASS' if leg2 else 'FAIL'}")
-    overall = leg1 and leg2
+    print(f"  Cleanup left zero residual rows                      : {'PASS' if residual == 0 else 'FAIL'}")
+    overall = leg1 and leg2 and (residual == 0)
     print(f"\n  REQUIREMENT A: {'PASS' if overall else 'FAIL'}")
 
     cur.close()
