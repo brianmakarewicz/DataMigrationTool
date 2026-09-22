@@ -100,7 +100,7 @@
             s.BILL_TRNS_CURRENCY_CODE,
             s.BILL_TRNS_AMOUNT,
             DMT_XREF_PKG.PROJECT_NUMBER(s.PROJECT_NUMBER),
-            s.TASK_NUMBER,
+            DMT_XREF_PKG.TASK_NUMBER(s.TASK_NUMBER),
             s.BILL_HOLD_FLAG,
             s.REVENUE_HOLD_FLAG,
             s.ATTRIBUTE_CATEGORY,

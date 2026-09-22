@@ -11,17 +11,8 @@
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_ok         NUMBER := 0;
-        l_dep_prefix VARCHAR2(30);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM start.', C_PKG, 'TRANSFORM');
-
-        -- Prefix for project references: budgets load against projects
-        -- migrated in the same run, whose Fusion number/name carry the
-        -- run prefix (same pattern as DMT_EXPENDITURE_TRANSFORM_PKG).
-        SELECT PREFIX
-        INTO   l_dep_prefix
-        FROM   DMT_PIPELINE_RUN_TBL
-        WHERE  RUN_ID = p_run_id;
 
         INSERT INTO DMT_PRJ_BUDGET_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,
@@ -48,9 +39,9 @@
         SELECT
             s.STG_SEQUENCE_ID, p_run_id,
             s.AWARD_NUMBER, s.FINANCIAL_PLAN_TYPE,
-            DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NUMBER, 25),
-            DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.PROJECT_NAME, 240),
-            s.TASK_NAME, s.TASK_NUMBER,
+            DMT_XREF_PKG.PROJECT_NUMBER(s.PROJECT_NUMBER),
+            DMT_XREF_PKG.PROJECT_NAME(s.PROJECT_NAME),
+            s.TASK_NAME, DMT_XREF_PKG.TASK_NUMBER(s.TASK_NUMBER),
             s.PLAN_VERSION_NAME, s.PLAN_VERSION_DESCRIPTION, s.PLAN_VERSION_STATUS,
             s.RESOURCE_NAME, s.PERIOD_NAME, s.PLANNING_CURRENCY,
             s.TOTAL_QUANTITY, s.TOTAL_TC_RAW_COST, s.TOTAL_TC_REVENUE,
