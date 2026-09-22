@@ -741,20 +741,21 @@ commit;
 
 -- ---------------------------------------------------------------------------
 -- BenDependent (100000039) — Contract v1 registration (design section 5).
--- Loads via HDL as the PersonBenefitBalance object (PersonBenefitBalance.dat —
--- the shared discriminator for all three benefit sub-objects; DependentBenefitBalance
--- is NOT a valid discriminator, see DMT_BEN_DEPEND_HDL_GEN_PKG). No interface table
--- (INTERFACE_TABLE = 'N/A (HDL)'); base tier only from the HCM Benefits base table
--- BEN_PER_BNFTS_BAL_F (PER_BNFTS_BAL_ID) reached via HRC_INTEGRATION_KEY_MAP
--- (OBJECT_NAME='PersonBenefitBalance', SURROGATE_ID == PER_BNFTS_BAL_ID; join proven
--- live 2026-09-16 with --cred fin_impl). RECON_KEY = prefixed PERSON_NUMBER ||
--- '_BENDEP' (also the .dat SourceSystemId and the report RECORD_KEY). The
+-- Loads via HDL as the DependentEnrollment business object with its child component
+-- DesignateDependent (DependentEnrollment.dat -- re-modeled 2026-09-22; NOT the old
+-- PersonBenefitBalance object/filename, which was the wrong object and collided with
+-- the Participant/Beneficiary generators). No interface table
+-- (INTERFACE_TABLE = 'N/A (HDL)'); base tier only via HRC_INTEGRATION_KEY_MAP
+-- (OBJECT_NAME='DesignateDependent'), whose SURROGATE_ID is the Fusion designation id.
+-- RECON_KEY = the DesignateDependent child SourceSystemId:
+--   <prefixed PERSON_NUMBER>_<prefixed DEPENDENT_PERSON_NUMBER>_<LINE_NO>_BENDEP
+-- (also the report RECORD_KEY; the transform finalizes it with the SAME per-person
+-- LINE_NO window the generator uses, so they never disagree on retry). The
 -- when-not-matched insert makes this block self-contained. Appended after the
 -- WorkSchedules block (union-merge, append-only at EOF).
--- Blocker: employee benefit enrollment is not configured on the demo instance, so
--- our '_BENDEP' records are rejected upstream and none reach the base table yet
--- (documented BLOCKER, objects/Benefits/README.md); the report is correct and its
--- shape is proven live.
+-- Blocker: employee benefit enrollment is not configured for HDL load on the demo
+-- instance, so no designations reach Fusion yet (documented BLOCKER,
+-- objects/Benefits/README.md); the report is correct and its shape is doc-validated.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
@@ -768,7 +769,7 @@ using (
            1                                                               contract_version,
            'DMT_BEN_DEPEND_TFM_TBL'                                        tfm_table,
            'FUSION_DEPENDENT_ID'                                           fusion_id_column,
-           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_BENDEP''' recon_key_sql
+           'PREFIXED(PERSON_NUMBER) || ''_'' || PREFIXED(DEPENDENT_PERSON_NUMBER) || ''_'' || LINE_NO || ''_BENDEP'' (DesignateDependent child key; finalized in DMT_BEN_DEPEND_TRANSFORM_PKG)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)

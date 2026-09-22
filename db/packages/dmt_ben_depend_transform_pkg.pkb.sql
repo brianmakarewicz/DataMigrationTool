@@ -73,13 +73,12 @@ AS
             s.DESIGNATION_DATE,
             s.DESIGNATION_END_DATE,
             s.LEGAL_EMPLOYER_NAME,
-            -- RECON_KEY (Contract v1, design section 5): the business key that the
-            -- BIP reconciliation report returns as RECORD_KEY. It equals the value
-            -- written to PersonBenefitBalance.dat as SourceSystemId
-            -- (DMT_BEN_DEPEND_HDL_GEN_PKG: pv(PERSON_NUMBER) || '_BENDEP', where
-            -- PERSON_NUMBER is already the run-prefixed person number). One key
-            -- definition per object, so the '_BENDEP' suffix completes the key.
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_BENDEP',
+            -- RECON_KEY (Contract v1, design section 5): the DesignateDependent
+            -- child SourceSystemId the generator writes and that the BIP recon
+            -- report returns as RECORD_KEY. It is finalized in the MERGE right
+            -- after this INSERT (once TFM_SEQUENCE_ID exists, so the per-person
+            -- line number can be computed). Left NULL here.
+            NULL,
             'STAGED',
             SYSDATE
         FROM DMT_BEN_DEPEND_STG_TBL s
@@ -100,6 +99,40 @@ AS
         );
 
         l_ok_count := l_ok_count + SQL%ROWCOUNT;
+
+        -- Finalize RECON_KEY = the DesignateDependent child SourceSystemId that
+        -- DMT_BEN_DEPEND_HDL_GEN_PKG emits:
+        --     <prefixed PERSON_NUMBER>_<prefixed DEPENDENT_PERSON_NUMBER>_<LINE_NO>_BENDEP
+        -- LINE_NO is the dependent's position within the participant.
+        --
+        -- LINE_NO WINDOW MUST MATCH THE GENERATOR EXACTLY (defect fixed 2026-09-22):
+        -- the generator ranks with ROW_NUMBER() OVER (PARTITION BY PERSON_NUMBER
+        -- ORDER BY TFM_SEQUENCE_ID) over ALL of the run's STAGED rows. This MERGE
+        -- ranks over the SAME population (RUN_ID = p_run_id AND TFM_STATUS = 'STAGED')
+        -- -- it does NOT restrict the windowed row set to RECON_KEY IS NULL, which
+        -- was the prior bug: on a retry some rows already had a RECON_KEY, so the
+        -- transform ranked only the not-yet-keyed subset while the generator ranked
+        -- the full set, producing different LINE_NO values and a key that no longer
+        -- matched the emitted SourceSystemId. Both windows now cover the identical
+        -- rows, so LINE_NO agrees on every run. PERSON_NUMBER and
+        -- DEPENDENT_PERSON_NUMBER already carry the run prefix (set in the INSERT).
+        MERGE INTO DMT_BEN_DEPEND_TFM_TBL tgt
+        USING (
+            SELECT TFM_SEQUENCE_ID,
+                   PERSON_NUMBER || '_' ||
+                       DEPENDENT_PERSON_NUMBER || '_' ||
+                       TO_CHAR(ROW_NUMBER() OVER (
+                           PARTITION BY PERSON_NUMBER
+                           ORDER BY TFM_SEQUENCE_ID)) ||
+                       '_BENDEP' AS NEW_RECON_KEY
+            FROM   DMT_BEN_DEPEND_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'STAGED'
+        ) src
+        ON (tgt.TFM_SEQUENCE_ID = src.TFM_SEQUENCE_ID)
+        WHEN MATCHED THEN
+            UPDATE SET tgt.RECON_KEY = src.NEW_RECON_KEY
+            WHERE tgt.RECON_KEY IS NULL;
 
         UPDATE DMT_BEN_DEPEND_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
