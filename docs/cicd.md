@@ -74,5 +74,6 @@ Fusion. **ATP's sequence is the single source of truth.**
 
 ## The implementation loop
 
-Work `docs/backlog_ranked_2026-09-17.md` top-down (ROI order). For each item: branch →
+Work `docs/backlog.html` top-down in ROI order (open the "Rank by ROI" view, or sort by the
+ROI column descending — highest-ROI still-open items surface first). For each item: branch →
 implement → `test-local` (gate) → `merge` → `deploy-prod --yes` → `test-prod --yes`.
