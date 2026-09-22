@@ -212,11 +212,10 @@
             s.BILLABLE_FLAG,
             s.CAPITALIZABLE_FLAG,
             s.ACCRUAL_FLAG,
-            -- Apply dependent prefix to SUPPLIER_NUMBER if present
-            CASE WHEN s.SUPPLIER_NUMBER IS NOT NULL
-                 THEN DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.SUPPLIER_NUMBER)
-                 ELSE NULL
-            END,
+            -- SUPPLIER_NUMBER is a REFERENCE key: resolve to its Fusion value
+            -- (prefixed if migrated by this tool, unchanged if pre-existing).
+            -- Resolver is NULL-safe, so no CASE wrapper is needed.
+            DMT_XREF_PKG.SUPPLIER_NUMBER(s.SUPPLIER_NUMBER),
             s.SUPPLIER_NAME,
             s.VENDOR_ID,
             s.INVENTORY_ITEM_NAME,

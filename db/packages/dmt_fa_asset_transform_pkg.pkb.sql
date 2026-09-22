@@ -53,7 +53,11 @@
             s.ATTRIBUTE1, s.ATTRIBUTE2, s.ATTRIBUTE3, s.ATTRIBUTE4, s.ATTRIBUTE5,
             s.ATTRIBUTE6, s.ATTRIBUTE7, s.ATTRIBUTE8, s.ATTRIBUTE9, s.ATTRIBUTE10,
             s.ATTRIBUTE11, s.ATTRIBUTE12, s.ATTRIBUTE13, s.ATTRIBUTE14, s.ATTRIBUTE15,
-            CASE WHEN s.PARENT_ASSET_NUMBER IS NOT NULL THEN DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARENT_ASSET_NUMBER, 30) END,
+            -- PARENT_ASSET_NUMBER is a REFERENCE to a parent asset that may come
+            -- from a prior run or pre-exist in Fusion, so resolve it via the xref
+            -- (prefixed if this tool migrated it, unchanged otherwise). Resolver
+            -- is NULL-safe, so no CASE wrapper is needed.
+            DMT_XREF_PKG.ASSET_NUMBER(s.PARENT_ASSET_NUMBER),
             'STAGED'
         FROM   DMT_FA_ASSET_HDR_STG_TBL s
         WHERE  (
