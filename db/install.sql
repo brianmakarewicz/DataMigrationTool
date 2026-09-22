@@ -641,12 +641,10 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_cust_validator_pkg.pks.sql
 @@packages/dmt_egp_item_cat_fbdi_gen_pkg.pks.sql
 @@packages/dmt_egp_item_cat_results_pkg.pks.sql
-@@packages/dmt_egp_item_cat_runner_pkg.pks.sql
 @@packages/dmt_egp_item_cat_transform_pkg.pks.sql
 @@packages/dmt_egp_item_cat_validator_pkg.pks.sql
 @@packages/dmt_egp_item_fbdi_gen_pkg.pks.sql
 @@packages/dmt_egp_item_results_pkg.pks.sql
-@@packages/dmt_egp_item_runner_pkg.pks.sql
 @@packages/dmt_egp_item_transform_pkg.pks.sql
 @@packages/dmt_egp_item_validator_pkg.pks.sql
 @@packages/dmt_ess_util_pkg.pks.sql
@@ -674,7 +672,6 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_gl_budget_validator_pkg.pks.sql
 @@packages/dmt_gl_calendar_fbl_gen_pkg.pks.sql
 @@packages/dmt_gl_calendar_results_pkg.pks.sql
-@@packages/dmt_gl_calendar_runner_pkg.pks.sql
 @@packages/dmt_gl_calendar_transform_pkg.pks.sql
 @@packages/dmt_gl_calendar_validator_pkg.pks.sql
 @@packages/dmt_gl_fbdi_gen_pkg.pks.sql
@@ -858,12 +855,10 @@ prompt == Package bodies ==
 @@packages/dmt_cust_validator_pkg.pkb.sql
 @@packages/dmt_egp_item_cat_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_egp_item_cat_results_pkg.pkb.sql
-@@packages/dmt_egp_item_cat_runner_pkg.pkb.sql
 @@packages/dmt_egp_item_cat_transform_pkg.pkb.sql
 @@packages/dmt_egp_item_cat_validator_pkg.pkb.sql
 @@packages/dmt_egp_item_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_egp_item_results_pkg.pkb.sql
-@@packages/dmt_egp_item_runner_pkg.pkb.sql
 @@packages/dmt_egp_item_transform_pkg.pkb.sql
 @@packages/dmt_egp_item_validator_pkg.pkb.sql
 @@packages/dmt_ess_util_pkg.pkb.sql
@@ -891,7 +886,6 @@ prompt == Package bodies ==
 @@packages/dmt_gl_budget_validator_pkg.pkb.sql
 @@packages/dmt_gl_calendar_fbl_gen_pkg.pkb.sql
 @@packages/dmt_gl_calendar_results_pkg.pkb.sql
-@@packages/dmt_gl_calendar_runner_pkg.pkb.sql
 @@packages/dmt_gl_calendar_transform_pkg.pkb.sql
 @@packages/dmt_gl_calendar_validator_pkg.pkb.sql
 @@packages/dmt_gl_fbdi_gen_pkg.pkb.sql

@@ -22,8 +22,8 @@ Legend for verdicts: **RESOLVED** = fix is in the tree and confirmed; **PARTIAL*
 | 12 | Every object inject a run-scoped batch id | P2 | STILL OPEN | 7 | 6 |
 | 13 | ALL-mode transform bypasses pre-validation | P2 | STILL OPEN | 3 | 5 |
 | 14 | Build the stage→transform error table | P2 | PARTIAL | 5 | 4 |
-| 15 | Fold config objects into queue + retire runners/ | P2 | STILL OPEN | 6 | 6 |
-| 16 | Catalog-driven queue dispatch | P2 | STILL OPEN | 7 | 7 |
+| 15 | Fold config objects into queue + retire runners/ | P2 | RESOLVED-EXCEPT-GLCalendar | 6 | 6 |
+| 16 | Catalog-driven queue dispatch | P2 | RESOLVED | 7 | 7 |
 | 17 | Retire GLBudgets↔GLBudgetBalances dual identity | P2 | RESOLVED | 1 | 1 |
 | 18 | Retire 1099Invoices as a separate object | P2 | RESOLVED | 1 | 1 |
 | 19 | Convert cross-object key refs to DMT_XREF_PKG | P2 | PARTIAL | 5 | 4 |
@@ -71,9 +71,13 @@ Legend for verdicts: **RESOLVED** = fix is in the tree and confirmed; **PARTIAL*
 | Priority | RESOLVED | PARTIAL | STILL OPEN | STALE/OBSOLETE | Total |
 |----------|----------|---------|------------|----------------|-------|
 | P1 | 5 | 1 | 2 | 1 | 9 |
-| P2 | 8 | 5 | 13 | 1 | 27 |
+| P2 | 10 | 5 | 11 | 1 | 27 |
 | P3 | 3 | 1 | 17 | 0 | 21 |
-| **All** | **16** | **7** | **32** | **2** | **57** |
+| **All** | **18** | **7** | **30** | **2** | **57** |
+
+(Items 15 and 16 moved out of STILL OPEN on 2026-09-21. Item 16 is RESOLVED;
+item 15 is RESOLVED-EXCEPT-GLCalendar — counted here under RESOLVED, with the one
+deferred GLCalendar wiring noted in its detail below.)
 
 ---
 
@@ -186,20 +190,18 @@ l_dummy := run_one_object_type(p_run_id, 'PurchaseOrders', v_scenario_id, p_run_
 **Cost 5 / Risk 4** — many packages; prerequisite for the funnel's TRANSFORM_FAILED lane.
 
 ## 15. Fold config objects into the queue + retire packages/runners/ — P2
-**Verdict: STILL OPEN.**
-**What it is (plain):** Nine "runner" packages exist that nothing calls — configuration objects only run via manual SQL, invisible to Run History and the accounting rule. They should run through the normal queue like every other object, and the dead runners deleted.
-**Developer detail:** The nine `DMT_*_RUNNER_PKG` packages still exist in the tree (confirmed: `dmt_egp_item_runner_pkg`, `dmt_gl_calendar_runner_pkg`, `dmt_zx_runner_pkg`, `dmt_ce_bank_runner_pkg`, `dmt_ap_pay_term_runner_pkg`, `dmt_fnd_lookup_runner_pkg`, `dmt_inv_uom_runner_pkg`, `dmt_fnd_vs_runner_pkg`, `dmt_egp_item_cat_runner_pkg`, each `.pks`+`.pkb`). Config objects are not wired into queue dispatch.
-**Impact:** Config-object runs bypass Run History and the record-accounting rule.
-**Suggested fix:** Wire config objects into the queue dispatch (depends on item 16), then delete the runner packages + directory.
-**Cost 6 / Risk 6** — coupled to catalog-driven dispatch.
+**Verdict: RESOLVED-EXCEPT-GLCalendar** (2026-09-21).
+**What it changed (plain):** Six of the nine "runner" packages were never dead — they are the live queue path for six config objects, dispatched by a registry row, not manual SQL. Three runners really were dead and are now deleted. One config object (GLCalendar) is deliberately left un-wired for now.
+**Proof — six runners are LIVE (queue-wired via EXEC_PROC in `db/seed/dmt_pipeline_def_tbl.sql`):** ValueSets → `DMT_FND_VS_RUNNER_PKG.RUN_STANDARD` (line 199), Lookups → `DMT_FND_LOOKUP_RUNNER_PKG.RUN_STANDARD` (line 201), UnitsOfMeasure → `DMT_INV_UOM_RUNNER_PKG.RUN_STANDARD` (line 202), PaymentTerms → `DMT_AP_PAY_TERM_RUNNER_PKG.RUN_STANDARD` (line 203), TaxConfig → `DMT_ZX_RUNNER_PKG.RUN_STANDARD` (line 204), CashBanks → `DMT_CE_BANK_RUNNER_PKG.RUN_STANDARD` (line 209). These are dispatched (LOCAL exec mode) through `DMT_QUEUE_WORKER_PKG.EXECUTE_ONE`, so they run in the normal queue with Run History and accounting — no manual SQL.
+**Proof — three runners were DEAD and are deleted:** `DMT_EGP_ITEM_RUNNER_PKG`, `DMT_EGP_ITEM_CAT_RUNNER_PKG`, `DMT_GL_CALENDAR_RUNNER_PKG` had zero callers (grep across `db/`, `scripts/`, `apex/`, `test/` found only their own files, the `db/install.sql` `@@` lines, and README/backlog prose) and no EXEC_PROC row referenced them. Their six `.pks`/`.pkb` files are removed, their `@@` lines removed from `db/install.sql`, and they are dropped on the DB by the committed migration `db/migrations/2026-09-21_drop_dead_config_runner_packages.sql`. After the drop, DMT_OWNER shows 0 invalid objects — nothing depended on them. No package was orphaned: the Items-family support packages the two item runners called are still used by the live `DMT_LOADER_PKG.RUN_ITEMS` path, and the GLCalendar support packages are retained as the deferred object's own code.
+**Still open (the one exception):** GLCalendar is intentionally NOT queue-wired yet — its EXEC_PROC stays NULL (`db/seed/dmt_pipeline_def_tbl.sql` line 199, with an explanatory comment). Its validator/transform/FBL-gen/results packages exist but are unproven, and accounting calendars have no automated Fusion load (manual setup in Setup and Maintenance). Wiring it requires a proven live config run first.
+**Cost 6 / Risk 6** — done except the GLCalendar wiring, which needs a live run.
 
 ## 16. Catalog-driven queue dispatch — P2
-**Verdict: STILL OPEN.**
-**What it is (plain):** Adding a new object today means editing a big ~36-branch decision block inside the queue worker. It should instead be a single row inserted into a registry table.
-**Developer detail:** `DMT_QUEUE_WORKER_PKG.EXECUTE_ONE` still carries the hardcoded CASE (28 ELSIF/CASE/WHEN occurrences counted in `dmt_queue_worker_pkg.pkb.sql`). No `dmt_pipeline_reg*` registry table exists. The ERP-options credential-override rows would migrate into this registry.
-**Impact:** Every new object is a queue-worker code edit; root of the dual-registration drift in items 7 and 8.
-**Suggested fix:** One-row-per-object registry table (run procedure, post-run job, credential override, business-key definition); dispatch becomes a lookup + dynamic call.
-**Cost 7 / Risk 7** — central to the dispatch path; high blast radius but the enabler for items 7, 8, 15.
+**Verdict: RESOLVED** (re-confirmed 2026-09-21; the earlier "STILL OPEN" was stale).
+**What it is (plain):** Adding a new object no longer means editing a big decision block in the queue worker. Each object is one row in a registry table, and dispatch is a lookup plus a dynamic call.
+**Proof:** The registry table is `DMT_PIPELINE_DEF_TBL`, seeded one row per object in `db/seed/dmt_pipeline_def_tbl.sql` — each row carries EXEC_PROC / EXEC_MODE / RECON_PROC / RECON_HAS_CEMLI_ARG / PARTITION_KEYS_PROC (the run procedure, post-run reconcile, and partition function). `DMT_QUEUE_WORKER_PKG.EXECUTE_ONE` dispatches by reading that row (`get_dispatch`) and calling the registered procedure (`invoke_registered`) — there is no per-object CASE/ELSIF chain in the dispatch path. Reconcile dispatch is likewise registry-driven (RECONCILE_VIA_REGISTRY reads RECON_PROC). Adding an object is a new seed row, not a code edit.
+**Cost 7 / Risk 7** — was the enabler for items 7, 8, 15.
 
 ## 17. Retire the GLBudgets ↔ GLBudgetBalances dual identity — P2
 **Verdict: RESOLVED** (2026-07-15).
@@ -442,7 +444,7 @@ l_dummy := run_one_object_type(p_run_id, 'PurchaseOrders', v_scenario_id, p_run_
 
 ## Notes on method & confidence
 
-- Verdicts labelled RESOLVED were each confirmed against the current tree, not taken on the doc's word: the `-20044` guard (item 7) is at `dmt_loader_pkg.pkb.sql:1369`; `phase1_pipeline_redesign` (item 1) and `GLBudgetBalances`/`RUN_1099`/adaptor/1099 packages (items 17/18/40) are absent; the funnel/prefix-history views and `DMT_XREF_PKG`/`DMT_STG_TFM_ERROR_TBL` exist; the nine `*_RUNNER_PKG` packages and the ~28-branch queue-worker CASE still exist (items 15/16 open); `run_one_object_type` is still the ~2,600-line monolith (item 8 open).
+- Verdicts labelled RESOLVED were each confirmed against the current tree, not taken on the doc's word: the `-20044` guard (item 7) is at `dmt_loader_pkg.pkb.sql:1369`; `phase1_pipeline_redesign` (item 1) and `GLBudgetBalances`/`RUN_1099`/adaptor/1099 packages (items 17/18/40) are absent; the funnel/prefix-history views and `DMT_XREF_PKG`/`DMT_STG_TFM_ERROR_TBL` exist; item 16 (catalog-driven dispatch) is RESOLVED — `DMT_QUEUE_WORKER_PKG.EXECUTE_ONE` dispatches from the `DMT_PIPELINE_DEF_TBL` registry with no per-object CASE; item 15 is RESOLVED-EXCEPT-GLCalendar — six of the nine `*_RUNNER_PKG` are live queue-wired, three genuinely dead ones were deleted (2026-09-21), GLCalendar wiring deferred (re-verified 2026-09-21, superseding the earlier "items 15/16 open" note); `run_one_object_type` is still the ~2,600-line monolith (item 8 open).
 - Two items were reclassified to **STALE/OBSOLETE** because the owner explicitly parked or reversed them: db_full adoption (item 2) and the scenario-enforcement procedure change (item 37, now UI-only).
 - Cost/Risk are integers 1–10 as requested; where an item is RESOLVED the numbers reflect the trivial verify-only residual, not the original effort.
 - Several "verification only" P3 items (49, 51, 57) are open only in the sense that the browser smoke check hasn't been re-run; no code defect is known.
