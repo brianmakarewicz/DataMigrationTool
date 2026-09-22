@@ -621,10 +621,14 @@
                 END;
 
                 IF l_ds_msgs IS NOT NULL THEN
-                    l_fail_msg := '[FUSION_ERROR] HDL data set ' || p_request_id
-                        || ' completed in error (' || NVL(p_dataset_status, '?')
-                        || ') and loaded 0 objects; this record was not loaded. '
-                        || 'Data set message(s): ' || l_ds_msgs;
+                    -- Attach ONLY the data set's own real Fusion message(s). The
+                    -- non-load is verified (ObjectSuccessCount=0), so FAILED is honest,
+                    -- but the ERROR_TEXT carries no composed per-record verdict -- just
+                    -- the [FUSION_ERROR] tag and Fusion's own message text. (Previously
+                    -- this wrapped the real message in an invented "... loaded 0 objects;
+                    -- this record was not loaded." sentence -- a fabricated per-record
+                    -- assertion the honest-accounting rule bans.)
+                    l_fail_msg := '[FUSION_ERROR] ' || l_ds_msgs;
                     EXECUTE IMMEDIATE
                         'UPDATE ' || p_tfm_table ||
                         ' SET TFM_STATUS = ''FAILED'','
