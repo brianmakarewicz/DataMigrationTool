@@ -1355,6 +1355,21 @@
     BEGIN
         l_obj := SUBSTR(p_cemli_code, INSTR(p_cemli_code, '-') + 1);
 
+        -- Suppliers family migrated off this monolith (backlog #8). The five
+        -- supplier objects now run through their own self-contained
+        -- RUN_<object>() recipes (validate/transform/generate + shared phase
+        -- helpers), never through these p_cemli_code ladders. Any Suppliers code
+        -- reaching here means a caller was wired to the wrong entry point — fail
+        -- loudly rather than silently drive the (now dead) supplier ladder arms.
+        IF p_cemli_code IN ('Suppliers', 'SupplierAddresses', 'SupplierSites',
+                            'SupplierSiteAssignments', 'SupplierContacts') THEN
+            RAISE_APPLICATION_ERROR(-20046,
+                'RUN_ONE_OBJECT_TYPE: ' || p_cemli_code || ' is migrated to its own '
+                || 'RUN_' || UPPER(l_obj) || '() runner (backlog #8) and no longer '
+                || 'routes through the shared object ladders. Call the per-object '
+                || 'runner via the registered EXEC_PROC instead.');
+        END IF;
+
         -- Refresh BU lookup data (BU IDs, Ledger IDs) from Fusion via BIP.
         -- Pipeline orchestrators call this once up front and pass p_skip_bu_refresh => TRUE.
         -- Standalone one-off runs get the default FALSE and refresh automatically.
@@ -3630,15 +3645,283 @@
             RAISE;
     END run_one_object_type;
 
+    -- ========================================================================
+    -- SUPPLIERS FAMILY — self-contained runners (backlog #8, first family).
+    --
+    -- The five supplier objects (Suppliers, SupplierAddresses, SupplierSites,
+    -- SupplierSiteAssignments, SupplierContacts) NO LONGER route through the
+    -- run_one_object_type p_cemli_code ladders. Each RUN_<object>() below is a
+    -- self-contained recipe (the same shape as the config runners, e.g.
+    -- DMT_CE_BANK_RUNNER_PKG.RUN): it calls its own validate + transform +
+    -- generate directly and then hands the object-agnostic phases (submit,
+    -- async-return / poll, load-failure marking, import, reconcile, row-count
+    -- accounting) to the shared helpers in this block.
+    --
+    -- Behaviour is preserved byte-for-byte with the pre-refactor Suppliers path
+    -- through run_one_object_type for BOTH modes it is invoked in:
+    --   * ASYNC  — the queue worker (EXECUTE_ONE) sets g_async_mode = TRUE, so
+    --              sup_after_generate submits the load and returns at the async
+    --              gate (no poll / no inline reconcile). The queue then polls the
+    --              load ESS job and later runs the registered RECON_PROC.
+    --   * SYNC   — a direct RUN_SUPPLIERS / RUN_SUPPLIER_PIPELINE call leaves
+    --              g_async_mode FALSE, so sup_after_generate polls the load,
+    --              marks GENERATED rows FAILED on a load failure, submits+polls
+    --              the import job, and reconciles inline via RECONCILE_VIA_REGISTRY.
+    --
+    -- Non-supplier objects still route through run_one_object_type unchanged.
+    -- ========================================================================
+
+    -- Shared helper: fail every GENERATED row in one supplier TFM table with a
+    -- reportable [LOAD_ERROR] (mirrors the Suppliers arms of the retired
+    -- mark-GENERATED-FAILED ladder). Object-agnostic — the TFM table name is the
+    -- only per-object input. p_tfm_table is a validated identifier, never user data.
+    -- Static per-object statements (design doc Coding Standards section: all
+    -- runtime SQL in this package is static literal SQL, never dynamic). The
+    -- helper selects the one literal statement for the caller's supplier CEMLI;
+    -- each is identical to the original per-object arm in run_one_object_type.
+    -- The p_cemli ELSE raises, so a mis-wired caller fails loudly, not silently.
+    PROCEDURE sup_mark_generated_failed (
+        p_run_id      IN NUMBER,
+        p_cemli_code  IN VARCHAR2,
+        p_load_ess_id IN VARCHAR2
+    ) IS
+        l_err_msg VARCHAR2(500) :=
+            '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job '
+            || p_load_ess_id || ' logs for details.';
+    BEGIN
+        IF    p_cemli_code = 'Suppliers' THEN
+            UPDATE DMT_POZ_SUPPLIERS_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'SupplierAddresses' THEN
+            UPDATE DMT_POZ_SUP_ADDR_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'SupplierSites' THEN
+            UPDATE DMT_POZ_SUP_SITE_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
+            UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'SupplierContacts' THEN
+            UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL  SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSE
+            RAISE_APPLICATION_ERROR(-20047,
+                'sup_mark_generated_failed: unexpected CEMLI ''' || p_cemli_code || '''.');
+        END IF;
+        COMMIT;
+    END sup_mark_generated_failed;
+
+    -- Shared helper: count rows in one supplier TFM table at a given status
+    -- (used for the still-GENERATED and FAILED accounting checks). Static per
+    -- object — one literal SELECT per supplier TFM table, mirroring the original.
+    FUNCTION sup_count_status (
+        p_run_id     IN NUMBER,
+        p_cemli_code IN VARCHAR2,
+        p_status     IN VARCHAR2
+    ) RETURN NUMBER IS
+        l_cnt NUMBER;
+    BEGIN
+        IF    p_cemli_code = 'Suppliers' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUPPLIERS_TFM_TBL     WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'SupplierAddresses' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUP_ADDR_TFM_TBL      WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'SupplierSites' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUP_SITE_TFM_TBL      WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUP_SITE_ASSN_TFM_TBL WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'SupplierContacts' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUP_CONTACTS_TFM_TBL  WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSE
+            RAISE_APPLICATION_ERROR(-20047,
+                'sup_count_status: unexpected CEMLI ''' || p_cemli_code || '''.');
+        END IF;
+        RETURN l_cnt;
+    END sup_count_status;
+
+    -- Shared helper: everything after the FBDI zip is generated. Parameterised by
+    -- the object's registered CEMLI code + label. Replicates the Suppliers slice
+    -- of run_one_object_type's default single-load path (submit + stamp + async
+    -- gate + poll + load-failure marking + import + reconcile + counts). Returns
+    -- FALSE only for the empty-zip / load-failure skips, TRUE otherwise — exactly
+    -- as the old function did for these objects.
+    FUNCTION sup_after_generate (
+        p_run_id    IN NUMBER,
+        p_cemli_code        IN VARCHAR2,
+        p_obj               IN VARCHAR2,          -- object label for logging
+        p_zip               IN OUT NOCOPY BLOB,
+        p_filename          IN VARCHAR2
+    ) RETURN BOOLEAN IS
+        C_PROC        CONSTANT VARCHAR2(40) := 'SUP_AFTER_GENERATE';
+        l_ucm_account       VARCHAR2(200);
+        l_job_name          VARCHAR2(500);
+        l_interface_details NUMBER;
+        l_ess_user          VARCHAR2(100);
+        l_ess_pass          VARCHAR2(100);
+        l_load_ess_id       VARCHAR2(100);
+        l_import_ess_id     VARCHAR2(100);
+        l_load_status       VARCHAR2(50);
+        l_param_list        VARCHAR2(500) := 'NEW,N';  -- suppliers default
+    BEGIN
+        -- If no rows, skip this object type (mirrors the empty-zip guard).
+        IF p_zip IS NULL OR DBMS_LOB.GETLENGTH(p_zip) = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No rows for ' || p_cemli_code || '. Skipping.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+            RETURN FALSE;
+        END IF;
+
+        -- ERP options (UCM account, import job name, interface details id) + creds.
+        get_erp_options(
+            p_cemli_code           => p_cemli_code,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_interface_details);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code, l_ess_user, l_ess_pass);
+
+        -- loadAndImportData — combined load+import single call.
+        l_load_ess_id := SUBMIT_LOAD(
+            p_run_id            => p_run_id,
+            p_fbdi_zip          => p_zip,
+            p_filename          => p_filename,
+            p_job_name          => l_job_name,
+            p_interface_details => l_interface_details,
+            p_doc_account       => l_ucm_account,
+            p_parameter_list    => l_param_list,
+            p_log_context       => p_obj,
+            p_username          => l_ess_user,
+            p_password          => l_ess_pass);
+        DBMS_LOB.FREETEMPORARY(p_zip);
+
+        -- Stamp Load ESS job ID + parameter list on the ZIP row.
+        UPDATE DMT_FBDI_ZIP_TBL
+        SET    PARAMETER_LIST = l_param_list
+        WHERE  RUN_ID = p_run_id
+        AND    OBJECT_TYPE = SUBSTR(p_cemli_code, INSTR(p_cemli_code, '-') + 1);
+        COMMIT;
+
+        -- Async mode: stop here, let the queue poller handle ESS polling +
+        -- reconciliation (this is the live path for every queue-driven run).
+        IF g_async_mode THEN
+            g_load_ess_id := l_load_ess_id;
+            RETURN TRUE;
+        END IF;
+
+        -- ---- SYNC path (direct RUN_* / RUN_SUPPLIER_PIPELINE calls) ----
+
+        -- Poll Load job.
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Polling Load ESS job: ' || l_load_ess_id, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+        POLL_ESS_JOB(p_run_id, l_load_ess_id, 1800, FALSE, p_obj, p_cemli_code, l_load_status,
+                     p_username => l_ess_user, p_password => l_ess_pass);
+
+        -- Load failed → no rows reached the interface table. Mark all GENERATED
+        -- rows FAILED and return (no import job, no BIP).
+        IF l_load_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Load ESS ' || l_load_ess_id || ' returned ' || l_load_status ||
+                '. No rows committed to interface table. Marking all GENERATED rows FAILED.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+            sup_mark_generated_failed(p_run_id, p_cemli_code, l_load_ess_id);
+            RETURN FALSE;
+        END IF;
+
+        -- Find the Import ESS job ID.
+        l_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, l_load_ess_id);
+        COMMIT;
+
+        -- Poll Import job — do NOT raise on error.
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Polling Import ESS job: ' || l_import_ess_id, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+        POLL_ESS_JOB(p_run_id, l_import_ess_id, 1800, FALSE, p_obj, p_cemli_code, l_load_status,
+                     p_username => l_ess_user, p_password => l_ess_pass);
+
+        -- Capture the Report child ESS job into the hierarchy (generic).
+        DECLARE l_report_ess_id NUMBER;
+        BEGIN
+            l_report_ess_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+                p_run_id        => p_run_id,
+                p_import_ess_id => TO_NUMBER(l_import_ess_id),
+                p_cemli_code    => p_cemli_code);
+        END;
+
+        -- BIP reconciliation — single registry-driven dispatch.
+        DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => TO_NUMBER(l_load_ess_id),
+            p_import_ess_id => TO_NUMBER(l_import_ess_id),
+            p_work_queue_id => g_work_queue_id);
+        g_reconciled_inline := TRUE;
+
+        -- Rows still GENERATED after reconciliation → warn + capture ESS output.
+        DECLARE
+            l_still_generated NUMBER;
+        BEGIN
+            l_still_generated := sup_count_status(p_run_id, p_cemli_code, 'GENERATED');
+            IF l_still_generated > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'WARNING: ' || l_still_generated ||
+                    ' rows still at GENERATED after BIP reconciliation for ' || p_cemli_code ||
+                    '. BIP query returned no matching rows for these records. ' ||
+                    'Rows left at GENERATED for manual investigation — do NOT assume success.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+                IF l_import_ess_id IS NOT NULL THEN
+                    DMT_ESS_UTIL_PKG.CAPTURE_ESS_OUTPUT(
+                        p_run_id     => p_run_id,
+                        p_request_id => TO_NUMBER(l_import_ess_id),
+                        p_cemli_code => p_cemli_code);
+                END IF;
+            END IF;
+        END;
+
+        RETURN TRUE;
+    END sup_after_generate;
+
+    -- Shared tail: FAILED-row count warning + "object complete" log. Mirrors the
+    -- grouped_finish tail of run_one_object_type for the Suppliers objects.
+    PROCEDURE sup_finish (
+        p_run_id     IN NUMBER,
+        p_cemli_code IN VARCHAR2,
+        p_obj        IN VARCHAR2
+    ) IS
+        C_PROC CONSTANT VARCHAR2(40) := 'SUP_FINISH';
+        l_failed_count NUMBER;
+    BEGIN
+        l_failed_count := sup_count_status(p_run_id, p_cemli_code, 'FAILED');
+        IF l_failed_count > 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                p_cemli_code || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                'Downstream object types will continue — check staging table for details.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+        END IF;
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Object type complete: ' || p_cemli_code, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+    END sup_finish;
+
+    -- Shared preamble: BU-lookup refresh (standalone only) + object-start log.
+    -- Mirrors the head of run_one_object_type before the per-object phases.
+    PROCEDURE sup_preamble (
+        p_run_id          IN NUMBER,
+        p_cemli_code      IN VARCHAR2,
+        p_obj             IN VARCHAR2,
+        p_skip_bu_refresh IN BOOLEAN
+    ) IS
+        C_PROC CONSTANT VARCHAR2(40) := 'SUP_PREAMBLE';
+    BEGIN
+        IF NOT p_skip_bu_refresh THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Refreshing BU lookups (standalone run).', 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+            DMT_UTIL_PKG.REFRESH_BU_LOOKUPS;
+        END IF;
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Object type start: ' || p_cemli_code, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+    END sup_preamble;
+
     -- --------------------------------------------------------
     -- RUN_SUPPLIER_PIPELINE
     -- Orchestrates all 5 object types in strict dependency order.
     -- --------------------------------------------------------
     PROCEDURE RUN_SUPPLIER_PIPELINE (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC  CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_PIPELINE';
-        l_dummy BOOLEAN;
+        -- v_scenario_id is the OUT target of resolve_scenario, kept for its
+        -- scenario-existence validation side effect (the per-object runners each
+        -- re-resolve the scenario name themselves).
         v_scenario_id NUMBER;
-
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(
@@ -3651,20 +3934,24 @@
         -- status altitude -- RUN_STATUS is written only by the heartbeat
         -- rollup (DMT_QUEUE_PKG.rollup_run_statuses).
 
-        -- Process in strict dependency order
-        l_dummy := run_one_object_type(p_run_id, 'Suppliers', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+        -- Process in strict dependency order. Each object now runs through its own
+        -- self-contained RUN_<object>() recipe (backlog #8) rather than the
+        -- run_one_object_type ladders. The scenario name is passed through; the
+        -- per-object runner re-resolves it (idempotent). p_skip_bu_refresh => TRUE
+        -- so the pipeline refreshes BU lookups only once, up front.
+        RUN_SUPPLIERS(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
-        l_dummy := run_one_object_type(p_run_id, 'SupplierAddresses', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+        RUN_SUPPLIER_ADDRESSES(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
-        l_dummy := run_one_object_type(p_run_id, 'SupplierSites', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+        RUN_SUPPLIER_SITES(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
-        l_dummy := run_one_object_type(p_run_id, 'SupplierSiteAssignments', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+        RUN_SUPPLIER_SITE_ASSIGNMENTS(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
-        l_dummy := run_one_object_type(p_run_id, 'SupplierContacts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+        RUN_SUPPLIER_CONTACTS(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh);
         COMMIT;
 
         DMT_UTIL_PKG.LOG(
@@ -3694,14 +3981,37 @@
     -- and Python test scripts for unit testing or one-off loads.
     -- --------------------------------------------------------
     PROCEDURE RUN_SUPPLIERS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIERS';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIERS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'Suppliers';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'Suppliers';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIERS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Suppliers', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation (marks staging rows FAILED on bad data).
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SUPPLIERS(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM.
+        DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SUPPLIERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- Phase 3: generate the FBDI zip.
+        DMT_POZ_SUP_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
+
+        -- Phase 4: submit + (async return | poll + import + reconcile).
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIERS complete.', 'INFO', C_PKG, C_PROC);
@@ -3713,14 +4023,32 @@
     END RUN_SUPPLIERS;
 
     PROCEDURE RUN_SUPPLIER_ADDRESSES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_ADDRESSES';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIER_ADDRESSES';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'SupplierAddresses';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'SupplierAddresses';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_ADDRESSES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'SupplierAddresses', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_ADDRESSES(p_run_id);
+        COMMIT;
+
+        DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        DMT_POZ_SUP_ADDR_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
+
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
+
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_ADDRESSES complete.', 'INFO', C_PKG, C_PROC);
@@ -3732,14 +4060,32 @@
     END RUN_SUPPLIER_ADDRESSES;
 
     PROCEDURE RUN_SUPPLIER_SITES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_SITES';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIER_SITES';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'SupplierSites';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'SupplierSites';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'SupplierSites', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITES(p_run_id);
+        COMMIT;
+
+        DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        DMT_POZ_SUP_SITE_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
+
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
+
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITES complete.', 'INFO', C_PKG, C_PROC);
@@ -3751,14 +4097,32 @@
     END RUN_SUPPLIER_SITES;
 
     PROCEDURE RUN_SUPPLIER_SITE_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_SITE_ASSIGNMENTS';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIER_SITE_ASSIGNMENTS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'SupplierSiteAssignments';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'SupplierSiteAssignments';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITE_ASSIGNMENTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'SupplierSiteAssignments', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITE_ASSIGNMENTS(p_run_id);
+        COMMIT;
+
+        DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        DMT_POZ_SUP_SITE_ASSN_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
+
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
+
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_SITE_ASSIGNMENTS complete.', 'INFO', C_PKG, C_PROC);
@@ -3770,14 +4134,32 @@
     END RUN_SUPPLIER_SITE_ASSIGNMENTS;
 
     PROCEDURE RUN_SUPPLIER_CONTACTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_CONTACTS';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIER_CONTACTS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'SupplierContacts';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'SupplierContacts';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_CONTACTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'SupplierContacts', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_CONTACTS(p_run_id);
+        COMMIT;
+
+        DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_CONTACTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        DMT_POZ_SUP_CONT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
+
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
+
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_SUPPLIER_CONTACTS complete.', 'INFO', C_PKG, C_PROC);
