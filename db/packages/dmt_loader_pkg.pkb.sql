@@ -3675,51 +3675,74 @@
     -- reportable [LOAD_ERROR] (mirrors the Suppliers arms of the retired
     -- mark-GENERATED-FAILED ladder). Object-agnostic — the TFM table name is the
     -- only per-object input. p_tfm_table is a validated identifier, never user data.
+    -- Static per-object statements (design doc Coding Standards section: all
+    -- runtime SQL in this package is static literal SQL, never dynamic). The
+    -- helper selects the one literal statement for the caller's supplier CEMLI;
+    -- each is identical to the original per-object arm in run_one_object_type.
+    -- The p_cemli ELSE raises, so a mis-wired caller fails loudly, not silently.
     PROCEDURE sup_mark_generated_failed (
         p_run_id      IN NUMBER,
-        p_tfm_table   IN VARCHAR2,
+        p_cemli_code  IN VARCHAR2,
         p_load_ess_id IN VARCHAR2
     ) IS
         l_err_msg VARCHAR2(500) :=
             '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job '
             || p_load_ess_id || ' logs for details.';
     BEGIN
-        EXECUTE IMMEDIATE
-            'UPDATE ' || DBMS_ASSERT.SQL_OBJECT_NAME(p_tfm_table) ||
-            ' SET TFM_STATUS = ''FAILED'',' ||
-            '     ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, :msg)' ||
-            ' WHERE RUN_ID = :rid AND TFM_STATUS = ''GENERATED'''
-            USING l_err_msg, p_run_id;
+        IF    p_cemli_code = 'Suppliers' THEN
+            UPDATE DMT_POZ_SUPPLIERS_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'SupplierAddresses' THEN
+            UPDATE DMT_POZ_SUP_ADDR_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'SupplierSites' THEN
+            UPDATE DMT_POZ_SUP_SITE_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
+            UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'SupplierContacts' THEN
+            UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL  SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSE
+            RAISE_APPLICATION_ERROR(-20047,
+                'sup_mark_generated_failed: unexpected CEMLI ''' || p_cemli_code || '''.');
+        END IF;
         COMMIT;
     END sup_mark_generated_failed;
 
     -- Shared helper: count rows in one supplier TFM table at a given status
-    -- (used for the still-GENERATED and FAILED accounting checks). Object-agnostic.
+    -- (used for the still-GENERATED and FAILED accounting checks). Static per
+    -- object — one literal SELECT per supplier TFM table, mirroring the original.
     FUNCTION sup_count_status (
-        p_run_id    IN NUMBER,
-        p_tfm_table IN VARCHAR2,
-        p_status    IN VARCHAR2
+        p_run_id     IN NUMBER,
+        p_cemli_code IN VARCHAR2,
+        p_status     IN VARCHAR2
     ) RETURN NUMBER IS
         l_cnt NUMBER;
     BEGIN
-        EXECUTE IMMEDIATE
-            'SELECT COUNT(*) FROM ' || DBMS_ASSERT.SQL_OBJECT_NAME(p_tfm_table) ||
-            ' WHERE RUN_ID = :rid AND TFM_STATUS = :st'
-            INTO l_cnt USING p_run_id, p_status;
+        IF    p_cemli_code = 'Suppliers' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUPPLIERS_TFM_TBL     WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'SupplierAddresses' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUP_ADDR_TFM_TBL      WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'SupplierSites' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUP_SITE_TFM_TBL      WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUP_SITE_ASSN_TFM_TBL WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'SupplierContacts' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_POZ_SUP_CONTACTS_TFM_TBL  WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSE
+            RAISE_APPLICATION_ERROR(-20047,
+                'sup_count_status: unexpected CEMLI ''' || p_cemli_code || '''.');
+        END IF;
         RETURN l_cnt;
     END sup_count_status;
 
     -- Shared helper: everything after the FBDI zip is generated. Parameterised by
-    -- the object's registered metadata + its TFM table. Replicates the Suppliers
-    -- slice of run_one_object_type's default single-load path (submit + stamp +
-    -- async gate + poll + load-failure marking + import + reconcile + counts).
-    -- Returns FALSE only for the empty-zip / load-failure skips, TRUE otherwise —
-    -- exactly as the old function did for these objects.
+    -- the object's registered CEMLI code + label. Replicates the Suppliers slice
+    -- of run_one_object_type's default single-load path (submit + stamp + async
+    -- gate + poll + load-failure marking + import + reconcile + counts). Returns
+    -- FALSE only for the empty-zip / load-failure skips, TRUE otherwise — exactly
+    -- as the old function did for these objects.
     FUNCTION sup_after_generate (
         p_run_id    IN NUMBER,
         p_cemli_code        IN VARCHAR2,
         p_obj               IN VARCHAR2,          -- object label for logging
-        p_tfm_table         IN VARCHAR2,
         p_zip               IN OUT NOCOPY BLOB,
         p_filename          IN VARCHAR2
     ) RETURN BOOLEAN IS
@@ -3793,7 +3816,7 @@
                 'Load ESS ' || l_load_ess_id || ' returned ' || l_load_status ||
                 '. No rows committed to interface table. Marking all GENERATED rows FAILED.',
                 DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
-            sup_mark_generated_failed(p_run_id, p_tfm_table, l_load_ess_id);
+            sup_mark_generated_failed(p_run_id, p_cemli_code, l_load_ess_id);
             RETURN FALSE;
         END IF;
 
@@ -3829,7 +3852,7 @@
         DECLARE
             l_still_generated NUMBER;
         BEGIN
-            l_still_generated := sup_count_status(p_run_id, p_tfm_table, 'GENERATED');
+            l_still_generated := sup_count_status(p_run_id, p_cemli_code, 'GENERATED');
             IF l_still_generated > 0 THEN
                 DMT_UTIL_PKG.LOG(p_run_id,
                     'WARNING: ' || l_still_generated ||
@@ -3854,13 +3877,12 @@
     PROCEDURE sup_finish (
         p_run_id     IN NUMBER,
         p_cemli_code IN VARCHAR2,
-        p_obj        IN VARCHAR2,
-        p_tfm_table  IN VARCHAR2
+        p_obj        IN VARCHAR2
     ) IS
         C_PROC CONSTANT VARCHAR2(40) := 'SUP_FINISH';
         l_failed_count NUMBER;
     BEGIN
-        l_failed_count := sup_count_status(p_run_id, p_tfm_table, 'FAILED');
+        l_failed_count := sup_count_status(p_run_id, p_cemli_code, 'FAILED');
         IF l_failed_count > 0 THEN
             DMT_UTIL_PKG.LOG(p_run_id,
                 p_cemli_code || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
@@ -3896,9 +3918,10 @@
     -- --------------------------------------------------------
     PROCEDURE RUN_SUPPLIER_PIPELINE (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC  CONSTANT VARCHAR2(30) := 'RUN_SUPPLIER_PIPELINE';
-        l_dummy BOOLEAN;
+        -- v_scenario_id is the OUT target of resolve_scenario, kept for its
+        -- scenario-existence validation side effect (the per-object runners each
+        -- re-resolve the scenario name themselves).
         v_scenario_id NUMBER;
-
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(
@@ -3961,7 +3984,6 @@
         C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIERS';
         C_CEMLI  CONSTANT VARCHAR2(30) := 'Suppliers';
         C_OBJ    CONSTANT VARCHAR2(30) := 'Suppliers';
-        C_TFM    CONSTANT VARCHAR2(40) := 'DMT_POZ_SUPPLIERS_TFM_TBL';
         v_scenario_id NUMBER;
         l_zip         BLOB;
         l_filename    VARCHAR2(200);
@@ -3985,10 +4007,10 @@
         DMT_POZ_SUP_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
 
         -- Phase 4: submit + (async return | poll + import + reconcile).
-        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, C_TFM, l_zip, l_filename);
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
 
         -- Phase 5: FAILED-row accounting + completion log.
-        sup_finish(p_run_id, C_CEMLI, C_OBJ, C_TFM);
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
 
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -4004,7 +4026,6 @@
         C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIER_ADDRESSES';
         C_CEMLI  CONSTANT VARCHAR2(30) := 'SupplierAddresses';
         C_OBJ    CONSTANT VARCHAR2(30) := 'SupplierAddresses';
-        C_TFM    CONSTANT VARCHAR2(40) := 'DMT_POZ_SUP_ADDR_TFM_TBL';
         v_scenario_id NUMBER;
         l_zip         BLOB;
         l_filename    VARCHAR2(200);
@@ -4024,9 +4045,9 @@
 
         DMT_POZ_SUP_ADDR_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
 
-        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, C_TFM, l_zip, l_filename);
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
 
-        sup_finish(p_run_id, C_CEMLI, C_OBJ, C_TFM);
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
 
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -4042,7 +4063,6 @@
         C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIER_SITES';
         C_CEMLI  CONSTANT VARCHAR2(30) := 'SupplierSites';
         C_OBJ    CONSTANT VARCHAR2(30) := 'SupplierSites';
-        C_TFM    CONSTANT VARCHAR2(40) := 'DMT_POZ_SUP_SITE_TFM_TBL';
         v_scenario_id NUMBER;
         l_zip         BLOB;
         l_filename    VARCHAR2(200);
@@ -4062,9 +4082,9 @@
 
         DMT_POZ_SUP_SITE_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
 
-        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, C_TFM, l_zip, l_filename);
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
 
-        sup_finish(p_run_id, C_CEMLI, C_OBJ, C_TFM);
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
 
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -4080,7 +4100,6 @@
         C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIER_SITE_ASSIGNMENTS';
         C_CEMLI  CONSTANT VARCHAR2(30) := 'SupplierSiteAssignments';
         C_OBJ    CONSTANT VARCHAR2(30) := 'SupplierSiteAssignments';
-        C_TFM    CONSTANT VARCHAR2(40) := 'DMT_POZ_SUP_SITE_ASSN_TFM_TBL';
         v_scenario_id NUMBER;
         l_zip         BLOB;
         l_filename    VARCHAR2(200);
@@ -4100,9 +4119,9 @@
 
         DMT_POZ_SUP_SITE_ASSN_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
 
-        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, C_TFM, l_zip, l_filename);
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
 
-        sup_finish(p_run_id, C_CEMLI, C_OBJ, C_TFM);
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
 
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -4118,7 +4137,6 @@
         C_PROC   CONSTANT VARCHAR2(40) := 'RUN_SUPPLIER_CONTACTS';
         C_CEMLI  CONSTANT VARCHAR2(30) := 'SupplierContacts';
         C_OBJ    CONSTANT VARCHAR2(30) := 'SupplierContacts';
-        C_TFM    CONSTANT VARCHAR2(40) := 'DMT_POZ_SUP_CONTACTS_TFM_TBL';
         v_scenario_id NUMBER;
         l_zip         BLOB;
         l_filename    VARCHAR2(200);
@@ -4138,9 +4156,9 @@
 
         DMT_POZ_SUP_CONT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
 
-        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, C_TFM, l_zip, l_filename);
+        l_ok := sup_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename);
 
-        sup_finish(p_run_id, C_CEMLI, C_OBJ, C_TFM);
+        sup_finish(p_run_id, C_CEMLI, C_OBJ);
 
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
