@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DMT2 Backlog &mdash; Reclass 2026-09-16</title>
+<title>DMT2 Backlog &mdash; canonical live list</title>
 <style>
   :root{
     --ink:#1a2332; --muted:#5b6b82; --line:#e2e8f0; --bg:#f6f8fb; --card:#fff;
@@ -82,13 +82,13 @@
 <body>
 <div class="wrap">
   <h1>DMT2 Backlog</h1>
-  <p class="sub">Open-items list from the design document, re-triaged against the current code tree &mdash; 2026-09-16.
+  <p class="sub">The canonical, hand-maintained DMT2 backlog. Started as an audit of the design document's open-items list against the code tree (2026-09-16); now the single source of truth, kept current here as items are added and re-triaged.
      Each row: verdict, time-to-fix cost (1&ndash;10), and complexity/breakage risk (1&ndash;10). Click any row for the full proof and developer detail.</p>
 
   <div class="panel">
     <table class="counts">
       <thead><tr><th>Priority</th><th>RESOLVED</th><th>PARTIAL</th><th>STILL OPEN</th><th>STALE/OBSOLETE</th><th>Total</th></tr></thead>
-      <tbody><tr><th>P1</th><td>5</td><td>1</td><td>2</td><td>1</td><td class="tot">9</td></tr><tr><th>P2</th><td>9</td><td>6</td><td>12</td><td>1</td><td class="tot">28</td></tr><tr><th>P3</th><td>2</td><td>1</td><td>18</td><td>0</td><td class="tot">21</td></tr><tr class="allrow"><th>All</th><td>16</td><td>8</td><td>32</td><td>2</td><td class="tot">58</td></tr></tbody>
+      <tbody><tr><th>P1</th><td>6</td><td>1</td><td>3</td><td>1</td><td class="tot">11</td></tr><tr><th>P2</th><td>12</td><td>7</td><td>13</td><td>1</td><td class="tot">33</td></tr><tr><th>P3</th><td>2</td><td>1</td><td>23</td><td>0</td><td class="tot">26</td></tr><tr class="allrow"><th>All</th><td>20</td><td>9</td><td>39</td><td>2</td><td class="tot">70</td></tr></tbody>
     </table>
   </div>
 
@@ -134,7 +134,8 @@
   <div class="empty" id="empty" style="display:none">No items match these filters.</div>
 
   <p class="foot">Cost = time to resolve (1 = trivial, 10 = largest). Risk = complexity and chance of breaking existing behavior.
-     Source: <code>docs/backlog_reclass_2026-09-16.md</code>. This page is generated &mdash; edit the source and rebuild, do not hand-edit.</p>
+     This file is the canonical, hand-maintained backlog &mdash; edit it directly (the item list lives in the <code>DATA</code> array in this file's script; keep the counts table above in sync). There is no generator.
+     The two markdown files <code>docs/backlog_reclass_2026-09-16.md</code> and <code>docs/backlog_ranked_2026-09-17.md</code> are superseded historical snapshots, not sources.</p>
 </div>
 
 <script>
