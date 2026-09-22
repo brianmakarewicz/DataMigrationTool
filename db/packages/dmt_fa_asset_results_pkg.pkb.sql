@@ -131,16 +131,19 @@
                     IF l_rows(i).SOURCE_TYPE = 'BASE'
                        AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                        AND l_rows(i).FUSION_ID IS NOT NULL THEN
-                        -- The assign child RECON_KEY is the bare asset number; the
-                        -- distribution row's RECORD_KEY is that plus the '#DIST'
-                        -- suffix, so strip the last 5 characters to match. (The
-                        -- shared recon record exposes no SOURCE_REF field.)
+                        -- The assign child is keyed by its (prefixed) ASSET_NUMBER
+                        -- -- the assets transform does NOT stamp RECON_KEY on the
+                        -- assign TFM (it is blank), so the match is on ASSET_NUMBER.
+                        -- The distribution row's RECORD_KEY is the asset number plus
+                        -- the '#DIST' suffix, so strip the last 5 characters to
+                        -- recover the bare asset number. (The shared recon record
+                        -- exposes no SOURCE_REF field.)
                         UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL
                         SET    FUSION_DISTRIBUTION_ID = l_rows(i).FUSION_ID,
                                LAST_UPDATED_DATE      = SYSDATE
                         WHERE  RUN_ID    = p_run_id
-                        AND    RECON_KEY = SUBSTR(l_rows(i).RECORD_KEY, 1,
-                                                  LENGTH(l_rows(i).RECORD_KEY) - 5)
+                        AND    ASSET_NUMBER = SUBSTR(l_rows(i).RECORD_KEY, 1,
+                                                     LENGTH(l_rows(i).RECORD_KEY) - 5)
                         AND    FUSION_DISTRIBUTION_ID IS NULL;
                     END IF;
                 ELSIF l_rows(i).SOURCE_TYPE = 'BASE'
