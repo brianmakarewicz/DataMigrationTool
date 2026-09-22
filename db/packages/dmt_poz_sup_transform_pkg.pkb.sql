@@ -403,7 +403,10 @@
                     p_run_id,
                     NULL,
                     s.IMPORT_ACTION,
-                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.VENDOR_NAME),
+                    -- Cross-object reference to the parent Supplier. Resolve to the
+                    -- supplier's actual Fusion value (this run's prefix, a prior run's,
+                    -- or unprefixed if pre-existing) so this child runs standalone.
+                    DMT_XREF_PKG.SUPPLIER_NAME(s.VENDOR_NAME),
                     s.PARTY_SITE_NAME,
                     s.PARTY_SITE_NAME_NEW,
                     s.COUNTRY,
@@ -692,9 +695,12 @@
                     p_run_id,
                     NULL,
                     s.IMPORT_ACTION,
-                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.VENDOR_NAME),
+                    -- Cross-object reference to the parent Supplier: resolve via xref
+                    -- so this site can load against a supplier from any prior run.
+                    DMT_XREF_PKG.SUPPLIER_NAME(s.VENDOR_NAME),
                     s.PROCUREMENT_BUSINESS_UNIT_NAME,
                     s.PARTY_SITE_NAME,
+                    -- The site's OWN business key: stays PREFIXED (own-key, not a ref).
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.VENDOR_SITE_CODE, 15),
                     s.VENDOR_SITE_CODE_NEW,
                     s.INACTIVE_DATE,
@@ -929,8 +935,11 @@
                     p_run_id,
                     NULL,
                     s.IMPORT_ACTION,
-                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.VENDOR_NAME),
-                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.VENDOR_SITE_CODE, 15),
+                    -- Both keys here are cross-object references (a site assignment has
+                    -- no business key of its own; it links a supplier+site to a BU).
+                    -- Resolve each via xref so this object runs standalone.
+                    DMT_XREF_PKG.SUPPLIER_NAME(s.VENDOR_NAME),
+                    DMT_XREF_PKG.SUPPLIER_SITE(s.VENDOR_SITE_CODE),
                     s.PROCUREMENT_BUSINESS_UNIT_NAME,
                     s.BUSINESS_UNIT_NAME,
                     NVL(s.BILL_TO_BU_NAME, s.BUSINESS_UNIT_NAME),
@@ -1086,7 +1095,9 @@
                     p_run_id,
                     NULL,
                     s.IMPORT_ACTION,
-                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.VENDOR_NAME),
+                    -- Cross-object reference to the parent Supplier: resolve via xref
+                    -- so this contact loads against a supplier from any prior run.
+                    DMT_XREF_PKG.SUPPLIER_NAME(s.VENDOR_NAME),
                     s.PREFIX,
                     s.FIRST_NAME,
                     s.FIRST_NAME_NEW,
