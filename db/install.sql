@@ -540,7 +540,6 @@ prompt == Views (dependency order) ==
 @@views/dmt_v_grant_projects_detail.sql
 @@views/dmt_v_grant_references_detail.sql
 @@views/dmt_v_grant_terms_detail.sql
-@@views/dmt_v_pay_rel_detail.sql
 @@views/dmt_v_perf_eval_detail.sql
 @@views/dmt_v_perf_eval_rating_detail.sql
 @@views/dmt_v_person_addr_detail.sql

@@ -1,0 +1,25 @@
+DROP VIEW DMT_V_PAY_REL_DETAIL;
+-- ----------------------------------------------------------------------
+-- Migration 2026-09-22: drop the dead PayrollRelationships drill view
+-- (backlog #58). DMT_V_PAY_REL_DETAIL always returned zero rows after the
+-- Worker-object merge (PR #276/#277/#278) fully retired PayrollRelationships
+-- from the pipeline. It backed a "Payroll Relationships" interactive-report
+-- region on the HCM Payroll page (APEX app 500, page 11). That region is
+-- removed in the same change (apex/f501src/livedmt2/pages/p00011-hcm-payroll.apx),
+-- and the view's create file (db/views/dmt_v_pay_rel_detail.sql) plus its
+-- @@ line in db/install.sql are removed, so the database converges to git by
+-- dropping the view.
+--
+-- Order matters: the APEX region is removed BEFORE this view is dropped, so
+-- the live page never points at a missing view.
+--
+-- NOT dropped: DMT_V_ASSIGNMENT_DETAIL (assignments are live under the Time
+-- and Labor page) and the DMT_PAY_REL_STG_TBL / DMT_PAY_REL_TFM_TBL base
+-- tables (out of scope for this cleanup) -- only the dead drill view is dropped.
+--
+-- The DROP is the first statement on purpose: the deploy runner
+-- (scripts/dmt_deploy.py) splits a migration on ";\n" and skips any chunk that
+-- begins with "--", so the executable statement must lead. Re-run safety comes
+-- from DMT_MIGRATION_LOG, which records this file by name and skips it if it is
+-- already applied.
+-- ----------------------------------------------------------------------
