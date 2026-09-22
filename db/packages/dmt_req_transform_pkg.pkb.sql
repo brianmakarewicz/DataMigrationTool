@@ -635,7 +635,7 @@
                     s.DISTRIBUTION_QUANTITY,
                     s.DISTRIBUTION_CURRENCY_AMOUNT,
                     DMT_XREF_PKG.PROJECT_NAME(s.PJC_PROJECT_NAME),
-                    DMT_XREF_PKG.TASK_NUMBER(s.PJC_TASK_NAME),
+                    s.PJC_TASK_NAME,
                     s.PJC_EXPENDITURE_TYPE_NAME,
                     s.PJC_EXPENDITURE_ITEM_DATE,
                     s.PJC_ORGANIZATION_NAME,
