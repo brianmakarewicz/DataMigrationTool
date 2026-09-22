@@ -18,13 +18,14 @@ AS
     -- runs the BenDependent recon report over BIP and returns the parsed rows (no
     -- dynamic SQL, no TFM reference there); the APPLY here is STATIC SQL against the
     -- compile-time-known BenDependent TFM table. It confirms each migrated dependent
-    -- benefit balance in the Fusion HCM Benefits base table BEN_PER_BNFTS_BAL_F (via
-    -- the load's HRC_INTEGRATION_KEY_MAP row, OBJECT_NAME='PersonBenefitBalance')
-    -- by its SourceSystemId and marks that BenDependent TFM row LOADED with the real
-    -- Fusion PER_BNFTS_BAL_ID stamped into FUSION_DEPENDENT_ID; any ERROR row is
-    -- marked FAILED with the real Fusion error. This REPLACES the bulk
-    -- LOOKUP_FUSION_IDS positive path for BenDependent. The HDL data set request id
-    -- is the Contract v1 P_LOAD_REQUEST_ID.
+    -- designation by its DesignateDependent HRC_INTEGRATION_KEY_MAP row
+    -- (OBJECT_NAME='DesignateDependent', written by the DependentEnrollment HDL
+    -- load) matched on SourceSystemId, and marks that BenDependent TFM row LOADED
+    -- with the real Fusion designation id (SURROGATE_ID) stamped into
+    -- FUSION_DEPENDENT_ID; any ERROR row is marked FAILED with the real Fusion
+    -- error. This REPLACES the bulk LOOKUP_FUSION_IDS positive path for
+    -- BenDependent. The HDL data set request id is the Contract v1
+    -- P_LOAD_REQUEST_ID.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_BENDEPENDENT (
         p_run_id     IN NUMBER,
@@ -75,9 +76,9 @@ AS
                 IF l_rows(i).SOURCE_TYPE = 'BASE'
                    AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                    AND l_rows(i).FUSION_ID IS NOT NULL THEN
-                    -- Positive proof: dependent benefit balance found in
-                    -- BEN_PER_BNFTS_BAL_F with a real id. The ONLY path to LOADED.
-                    -- Static UPDATE.
+                    -- Positive proof: dependent designation confirmed by its
+                    -- DesignateDependent key-map row with a real Fusion id. The
+                    -- ONLY path to LOADED. Static UPDATE.
                     UPDATE DMT_BEN_DEPEND_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            FUSION_DEPENDENT_ID  = l_rows(i).FUSION_ID,
@@ -150,9 +151,9 @@ AS
         -- The per-record HDL error path still runs (real [FUSION_ERROR] rows are
         -- marked FAILED here), but LOADED promotion is DEFERRED to the shared
         -- Contract v1 parser below: a BenDependent row reaches LOADED only when the
-        -- dependent benefit balance is positively confirmed in the Fusion base table
-        -- (BEN_PER_BNFTS_BAL_F) with a real PER_BNFTS_BAL_ID, which the parser stamps
-        -- into FUSION_DEPENDENT_ID.
+        -- dependent designation is positively confirmed by its DesignateDependent
+        -- HRC_INTEGRATION_KEY_MAP row with a real Fusion designation id, which the
+        -- parser stamps into FUSION_DEPENDENT_ID.
         DMT_HDL_UTIL_PKG.RECONCILE_HDL(
             p_run_id => p_run_id,
             p_request_id       => p_request_id,

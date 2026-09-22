@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <!--
+    DMT_BENDEPENDENT_RECON_DM - Contract v1 (nine-column) reconciliation data model
+    for BenDependent (design section 5, "BIP reconciliation report contract - v1").
+
+    RE-POINTED 2026-09-22 to the CORRECT Fusion object. BenDependent loads through the
+    HCM Data Loader as the DependentEnrollment business object with its child component
+    DesignateDependent (DependentEnrollment.dat -- see
+    db/packages/dmt_ben_depend_hdl_gen_pkg.pkb.sql). The prior model loaded/reconciled
+    as PersonBenefitBalance against BEN_PER_BNFTS_BAL_F (benefit BALANCES, not dependent
+    designations) and collided on the file name PersonBenefitBalance.dat with the
+    Participant and Beneficiary generators. Corrected here.
+
+    ORACLE DOC AUTHORITY:
+      * HCM Data Loader "Example of Loading Dependent Enrollments" (DependentEnrollment
+        + DesignateDependent components; Plan / Program / Option / DependentPersonNumber
+        / LineNumber):
+        https://docs.oracle.com/en/cloud/saas/human-resources/24d/fahbo/example-of-loading-dependent-enrollments.html
+      * Enrollment results base table BEN_PRTT_ENRT_RSLT (oedmh), PK PRTT_ENRT_RSLT_ID:
+        https://docs.oracle.com/en/cloud/saas/human-resources/oedmh/benprttenrtrslt-4213.html
+
+    RECONCILIATION KEY: DesignateDependent registers a per-designation row in
+    HRC_INTEGRATION_KEY_MAP (OBJECT_NAME='DesignateDependent') whose SURROGATE_ID is the
+    Fusion designation id and whose SOURCE_SYSTEM_ID is the child key our generator
+    writes: <prefixed PERSON_NUMBER>_<prefixed DEPENDENT_PERSON_NUMBER>_<LINE_NO>_BENDEP.
+    That SourceSystemId equals the BenDependent TFM row's RECON_KEY (finalized in the
+    transform's MERGE with the SAME per-person LINE_NO window the generator uses, so the
+    two never disagree on retry). Base-tier matching is by that key under the run prefix;
+    keyset pagination by RECORD_KEY.
+
+    LIVE PROBE (original PR, cred fin_impl): HRC_INTEGRATION_KEY_MAP carries
+    ContactRelationship rows for dependents; DesignateDependent rows appear once a
+    DependentEnrollment load runs. Re-probe at re-cut was environment-blocked (BIP
+    credential 401). The key-map path and the enrollment base table are confirmed by the
+    Oracle references above.
+
+    THE NINE COLUMNS (design section 5, in order):
+      1 OBJECT_TYPE     - 'BenDependent'.
+      2 RECORD_KEY      - the DesignateDependent SourceSystemId (child key).
+      3 SOURCE_TYPE     - 'BASE'.
+      4 FUSION_STATUS   - 'SUCCESS' (BASE tier only; HDL per-record failures tagged
+                          [FUSION_ERROR] by RECONCILE_HDL before this runs).
+      5 FUSION_ID       - SURROGATE_ID (the real Fusion designation id).
+      6 ERROR_MESSAGE   - NULL.
+      7 LOAD_REQUEST_ID - :P_LOAD_REQUEST_ID echoed back for audit.
+      8 SOURCE_REF      - the SourceSystemId read back (= RECORD_KEY).
+      9 DMT_REFERENCE   - DFF stamp; not applicable to a key-map row, so NULL.
+
+    Six Contract v1 parameters; keyset pagination by RECORD_KEY (P_AFTER_KEY).
+  -->
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ben_depend_recon" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT object_type, record_key, source_type, fusion_status,
+       fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- BASE tier: positive proof that the dependent designation loaded. The
+    -- DependentEnrollment HDL load registers each DesignateDependent child in
+    -- HRC_INTEGRATION_KEY_MAP (OBJECT_NAME='DesignateDependent') with the real
+    -- Fusion designation id as SURROGATE_ID. One row per migrated designation.
+    SELECT 'BenDependent'                  AS object_type,
+           m.source_system_id              AS record_key,
+           'BASE'                          AS source_type,
+           'SUCCESS'                       AS fusion_status,
+           MAX(m.surrogate_id)             AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))    AS error_message,
+           :P_LOAD_REQUEST_ID              AS load_request_id,
+           m.source_system_id              AS source_ref,
+           CAST(NULL AS VARCHAR2(4000))    AS dmt_reference
+    FROM   hrc_integration_key_map m
+    WHERE  m.object_name = 'DesignateDependent'
+    AND    m.source_system_id LIKE :P_PREFIX || '%'
+    AND    m.source_system_id LIKE '%\_BENDEP' ESCAPE '\'
+    AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
+    GROUP BY m.source_system_id
+    ORDER BY m.source_system_id
+)
+WHERE ROWNUM <= :P_CHUNK_SIZE
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="ben_depend_recon">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls with an
+         empty P_AFTER_KEY first, then passes the last RECORD_KEY received on
+         each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
