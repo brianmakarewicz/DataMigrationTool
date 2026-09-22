@@ -24,23 +24,6 @@
                 'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
     END get_prefix;
 
-    -- --------------------------------------------------------
-    -- Private: read dependent prefix from CONVERSION_MASTER
-    -- --------------------------------------------------------
-    FUNCTION get_dep_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
-        l_dep_prefix VARCHAR2(30);
-    BEGIN
-        SELECT PREFIX
-        INTO   l_dep_prefix
-        FROM   DMT_PIPELINE_RUN_TBL
-        WHERE  RUN_ID = p_run_id;
-        RETURN l_dep_prefix;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20001,
-                'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
-    END get_dep_prefix;
-
 
     -- ============================================================
     -- TRANSFORM_HEADERS
@@ -53,9 +36,10 @@
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_prefix        VARCHAR2(30);
-        l_dep_prefix    VARCHAR2(30);
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
+        l_cemli_code    VARCHAR2(60);
+        l_sub_object    VARCHAR2(200);
 
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -65,7 +49,18 @@
             p_procedure      => 'TRANSFORM_HEADERS');
 
         l_prefix     := get_prefix(p_run_id);
-        l_dep_prefix := get_dep_prefix(p_run_id);
+
+        -- Derive CEMLI code / header SUB_OBJECT from the document style so any
+        -- [TRANSFORM_ERROR] rows this proc records land in the same funnel lane
+        -- the PO validator writes for this style (design section 5 / section 7).
+        CASE p_doc_type_filter
+            WHEN 'Blanket Purchase Agreement' THEN
+                l_cemli_code := 'BlanketPOs';   l_sub_object := 'Blanket PO Headers';
+            WHEN 'Contract Purchase Agreement' THEN
+                l_cemli_code := 'Contracts';    l_sub_object := 'Contract Headers';
+            ELSE
+                l_cemli_code := 'PurchaseOrders'; l_sub_object := 'PO Headers';
+        END CASE;
 
 
         -- On reprocess: clear staging errors for rows being retried
@@ -166,9 +161,9 @@
                     s.COMMENTS,
                     s.BILL_TO_LOCATION,
                     s.SHIP_TO_LOCATION,
-                    DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.VENDOR_NAME, 360),
-                    DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.VENDOR_NUM, 30),
-                    DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.VENDOR_SITE_CODE, 15),
+                    DMT_XREF_PKG.SUPPLIER_NAME(s.VENDOR_NAME),
+                    DMT_XREF_PKG.SUPPLIER_NUMBER(s.VENDOR_NUM),
+                    DMT_XREF_PKG.SUPPLIER_SITE(s.VENDOR_SITE_CODE),
                     s.VENDOR_CONTACT,
                     s.VENDOR_DOC_NUM,
                     s.FOB,
@@ -284,6 +279,39 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- funnel's TRANSFORM_FAILED lane fills (design section 5 / section 7).
+            -- SQLERRM is captured into a local first: it is not a valid SQL
+            -- identifier inside the INSERT..SELECT below, only in PL/SQL scope.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, l_cemli_code, l_sub_object, s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PO_HEADERS_INT_STG_TBL s
+                WHERE  (
+                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL')
+                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                      )
+                AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND (p_doc_type_filter IS NULL OR s.STYLE_DISPLAY_NAME = p_doc_type_filter)
+                AND NOT EXISTS (SELECT 1 FROM DMT_PO_HEADERS_INT_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = l_sub_object);
+                UPDATE DMT_PO_HEADERS_INT_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = l_sub_object)
+                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_HEADERS failed.',
@@ -306,6 +334,8 @@
     ) IS
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
+        l_cemli_code    VARCHAR2(60);
+        l_sub_object    VARCHAR2(200);
 
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -313,6 +343,18 @@
             p_message        => 'TRANSFORM_LINES start. doc_type_filter=' || NVL(p_doc_type_filter, '(none)'),
             p_package        => C_PKG,
             p_procedure      => 'TRANSFORM_LINES');
+
+        -- Derive CEMLI code / line SUB_OBJECT from the document style so any
+        -- [TRANSFORM_ERROR] rows this proc records land in the same funnel lane
+        -- the PO validator writes for this style (design section 5 / section 7).
+        CASE p_doc_type_filter
+            WHEN 'Blanket Purchase Agreement' THEN
+                l_cemli_code := 'BlanketPOs';     l_sub_object := 'Blanket PO Lines';
+            WHEN 'Contract Purchase Agreement' THEN
+                l_cemli_code := 'Contracts';      l_sub_object := 'Contract Lines';
+            ELSE
+                l_cemli_code := 'PurchaseOrders'; l_sub_object := 'PO Lines';
+        END CASE;
 
 
         -- On reprocess: clear staging errors for rows being retried
@@ -520,6 +562,42 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- funnel's TRANSFORM_FAILED lane fills (design section 5 / section 7).
+            -- SQLERRM is captured into a local first: it is not a valid SQL
+            -- identifier inside the INSERT..SELECT below, only in PL/SQL scope.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, l_cemli_code, l_sub_object, s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PO_LINES_INT_STG_TBL s
+                WHERE  (
+                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL')
+                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                      )
+                AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND (p_doc_type_filter IS NULL
+                     OR EXISTS (SELECT 1 FROM DMT_PO_HEADERS_INT_STG_TBL h
+                                WHERE h.INTERFACE_HEADER_KEY = s.INTERFACE_HEADER_KEY
+                                AND   h.STYLE_DISPLAY_NAME   = p_doc_type_filter))
+                AND NOT EXISTS (SELECT 1 FROM DMT_PO_LINES_INT_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = l_sub_object);
+                UPDATE DMT_PO_LINES_INT_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = l_sub_object)
+                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_LINES failed.',
@@ -542,6 +620,12 @@
     ) IS
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
+        -- Only the standard PurchaseOrders style registers line locations
+        -- (design/catalog); Blanket and Contract have no location tier. So the
+        -- [TRANSFORM_ERROR] funnel lane for this proc is always PurchaseOrders /
+        -- 'PO Line Locations' (the single SUB_OBJECT the PO validator writes).
+        l_cemli_code    CONSTANT VARCHAR2(60)  := 'PurchaseOrders';
+        l_sub_object    CONSTANT VARCHAR2(200) := 'PO Line Locations';
 
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -765,6 +849,38 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- funnel's TRANSFORM_FAILED lane fills (design section 5 / section 7).
+            -- SQLERRM is captured into a local first: it is not a valid SQL
+            -- identifier inside the INSERT..SELECT below, only in PL/SQL scope.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, l_cemli_code, l_sub_object, s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PO_LINE_LOCS_INT_STG_TBL s
+                WHERE  (
+                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL')
+                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                      )
+                AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_PO_LINE_LOCS_INT_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = l_sub_object);
+                UPDATE DMT_PO_LINE_LOCS_INT_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = l_sub_object)
+                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_LINE_LOCS failed.',
@@ -787,6 +903,12 @@
     ) IS
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
+        -- Only the standard PurchaseOrders style registers distributions
+        -- (design/catalog); Blanket and Contract have no distribution tier. So the
+        -- [TRANSFORM_ERROR] funnel lane for this proc is always PurchaseOrders /
+        -- 'PO Distributions' (the single SUB_OBJECT the PO validator writes).
+        l_cemli_code    CONSTANT VARCHAR2(60)  := 'PurchaseOrders';
+        l_sub_object    CONSTANT VARCHAR2(200) := 'PO Distributions';
 
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -1014,6 +1136,38 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- funnel's TRANSFORM_FAILED lane fills (design section 5 / section 7).
+            -- SQLERRM is captured into a local first: it is not a valid SQL
+            -- identifier inside the INSERT..SELECT below, only in PL/SQL scope.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, l_cemli_code, l_sub_object, s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PO_DISTS_INT_STG_TBL s
+                WHERE  (
+                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL')
+                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                      )
+                AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_PO_DISTS_INT_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = l_sub_object);
+                UPDATE DMT_PO_DISTS_INT_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = l_sub_object)
+                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_DISTS failed.',

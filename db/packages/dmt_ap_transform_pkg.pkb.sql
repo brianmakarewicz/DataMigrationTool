@@ -24,63 +24,11 @@
                 'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
     END get_prefix;
 
-    -- --------------------------------------------------------
-    -- Private: read dependent prefix from CONVERSION_MASTER
-    -- --------------------------------------------------------
-    FUNCTION get_dep_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
-        l_dep_prefix VARCHAR2(30);
-    BEGIN
-        SELECT PREFIX
-        INTO   l_dep_prefix
-        FROM   DMT_PIPELINE_RUN_TBL
-        WHERE  RUN_ID = p_run_id;
-        RETURN l_dep_prefix;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20001,
-                'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
-    END get_dep_prefix;
-
-
-    -- --------------------------------------------------------
-    -- Private: look up the prefix used by the most recent
-    -- successful run of an upstream CEMLI in this scenario.
-    -- Returns NULL if USE_PREFIX='N', no prior run found, or
-    -- the upstream CEMLI was never run in this scenario.
-    -- --------------------------------------------------------
-    FUNCTION get_upstream_prefix (
-        p_run_id IN NUMBER,
-        p_cemli_code     IN VARCHAR2
-    ) RETURN VARCHAR2 IS
-        l_prefix    VARCHAR2(30);
-        l_use_pfx   VARCHAR2(10);
-        l_orch_code VARCHAR2(100);
-    BEGIN
-        l_use_pfx := DMT_UTIL_PKG.GET_CONFIG('USE_PREFIX');
-        IF NVL(l_use_pfx, 'N') != 'Y' THEN RETURN NULL; END IF;
-
-        -- Check if THIS run is part of a composite pipeline.
-        -- If standalone (ORCHESTRATION_CODE = 'APInvoices' etc.), don't prefix
-        -- upstream refs — they reference pre-existing Fusion data.
-        -- If inside P2P, use this run's own prefix (suppliers were created
-        -- with the same prefix in the same run).
-        BEGIN
-            SELECT PIPELINE_CODES, PREFIX
-            INTO   l_orch_code, l_prefix
-            FROM   DMT_PIPELINE_RUN_TBL
-            WHERE  RUN_ID = p_run_id;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN RETURN NULL;
-        END;
-
-        IF l_orch_code = 'ProcureToPay' THEN
-            -- Running inside P2P: upstream CEMLIs share this prefix
-            RETURN l_prefix;
-        ELSE
-            -- Standalone: don't prefix upstream refs
-            RETURN NULL;
-        END IF;
-    END get_upstream_prefix;
+    -- Cross-object supplier and PO references are resolved through DMT_XREF_PKG
+    -- (SUPPLIER_NAME / SUPPLIER_NUMBER / SUPPLIER_SITE / PO_NUMBER), which return
+    -- the value the referenced record actually has in Fusion — prefixed if this
+    -- tool migrated it, raw if it pre-existed. This supersedes the former manual
+    -- get_upstream_prefix()/get_dep_prefix() prefixing (DMT_DESIGN.html section 7).
 
     -- ============================================================
     -- TRANSFORM_HEADERS
@@ -93,8 +41,6 @@
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_prefix        VARCHAR2(30);
-        l_dep_prefix    VARCHAR2(30);
-        l_sup_prefix    VARCHAR2(30);  -- upstream supplier prefix (NULL if standalone)
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
         l_err           VARCHAR2(512);
@@ -106,12 +52,6 @@
             p_procedure      => 'TRANSFORM_HEADERS');
 
         l_prefix     := get_prefix(p_run_id);
-        l_dep_prefix := get_dep_prefix(p_run_id);
-
-        -- Resolve upstream supplier prefix dynamically.
-        -- If running inside P2P, use this run's prefix (suppliers share it).
-        -- If standalone, don't prefix vendor refs (pre-existing in Fusion).
-        l_sup_prefix := get_upstream_prefix(p_run_id, 'Suppliers');
 
         -- Bulk INSERT into TFM from eligible STG rows
         INSERT INTO DMT_AP_INVOICES_INT_TFM_TBL (
@@ -237,9 +177,9 @@
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.INVOICE_NUM, 50),
             s.INVOICE_AMOUNT,
             s.INVOICE_DATE,
-            CASE WHEN l_sup_prefix IS NOT NULL THEN DMT_UTIL_PKG.PREFIXED(l_sup_prefix, s.VENDOR_NAME, 360) ELSE s.VENDOR_NAME END,
-            CASE WHEN l_sup_prefix IS NOT NULL THEN DMT_UTIL_PKG.PREFIXED(l_sup_prefix, s.VENDOR_NUM, 30) ELSE s.VENDOR_NUM END,
-            CASE WHEN l_sup_prefix IS NOT NULL THEN DMT_UTIL_PKG.PREFIXED(l_sup_prefix, s.VENDOR_SITE_CODE, 15) ELSE s.VENDOR_SITE_CODE END,
+            DMT_XREF_PKG.SUPPLIER_NAME(s.VENDOR_NAME),
+            DMT_XREF_PKG.SUPPLIER_NUMBER(s.VENDOR_NUM),
+            DMT_XREF_PKG.SUPPLIER_SITE(s.VENDOR_SITE_CODE),
             s.INVOICE_CURRENCY_CODE,
             s.PAYMENT_CURRENCY_CODE,
             s.DESCRIPTION,
@@ -383,6 +323,39 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- funnel's TRANSFORM_FAILED lane fills (DMT_DESIGN.html section 5).
+            -- SQLERRM is captured into a local first: it is not a valid SQL
+            -- identifier inside the INSERT..SELECT below, only in PL/SQL scope.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'APInvoices', 'AP Invoice Headers', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_AP_INVOICES_INT_STG_TBL s
+                WHERE  (
+                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL')
+                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                      )
+                AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND (p_inv_type_filter IS NULL OR s.INVOICE_TYPE_LOOKUP_CODE LIKE p_inv_type_filter)
+                AND NOT EXISTS (SELECT 1 FROM DMT_AP_INVOICES_INT_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'AP Invoice Headers');
+                UPDATE DMT_AP_INVOICES_INT_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'AP Invoice Headers')
+                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- diagnostics must never mask the real error
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_HEADERS failed.',
@@ -404,11 +377,7 @@
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_ok_count      NUMBER := 0;
-        l_po_prefix     VARCHAR2(30);  -- upstream PO prefix (NULL if standalone)
     BEGIN
-        -- Resolve upstream PO prefix for PO_NUMBER references.
-        -- If running inside P2P, use this run's prefix. If standalone, don't prefix.
-        l_po_prefix := get_upstream_prefix(p_run_id, 'PurchaseOrders');
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'TRANSFORM_LINES start. inv_type_filter=' || NVL(p_inv_type_filter, '(none)'),
@@ -555,7 +524,7 @@
             s.UNIT_PRICE,
             s.UNIT_OF_MEAS_LOOKUP_CODE,
             s.DESCRIPTION,
-            CASE WHEN l_po_prefix IS NOT NULL AND s.PO_NUMBER IS NOT NULL THEN DMT_UTIL_PKG.PREFIXED(l_po_prefix, s.PO_NUMBER, 50) ELSE s.PO_NUMBER END,
+            DMT_XREF_PKG.PO_NUMBER(s.PO_NUMBER),
             s.PO_LINE_NUMBER,
             s.PO_SHIPMENT_NUM,
             s.PO_DISTRIBUTION_NUM,
@@ -722,6 +691,42 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- funnel's TRANSFORM_FAILED lane fills (DMT_DESIGN.html section 5).
+            -- SQLERRM is captured into a local first: it is not a valid SQL
+            -- identifier inside the INSERT..SELECT below, only in PL/SQL scope.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'APInvoices', 'AP Invoice Lines', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_AP_INVOICE_LINES_INT_STG_TBL s
+                WHERE  (
+                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
+                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
+                        OR (p_run_mode = 'ALL')
+                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                      )
+                AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND (p_inv_type_filter IS NULL OR EXISTS (
+                        SELECT 1 FROM DMT_AP_INVOICES_INT_STG_TBL h
+                        WHERE  h.INVOICE_ID = s.INVOICE_ID
+                        AND    h.INVOICE_TYPE_LOOKUP_CODE LIKE p_inv_type_filter))
+                AND NOT EXISTS (SELECT 1 FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'AP Invoice Lines');
+                UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'AP Invoice Lines')
+                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- diagnostics must never mask the real error
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_LINES failed.',
