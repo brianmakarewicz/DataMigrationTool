@@ -1,65 +1,52 @@
--- DMT_BEN_PARTIC_RECON_DM query (BIP reconciliation report contract v1).
--- Mirror of the CDATA SQL in DMT_BEN_PARTIC_RECON_DM.xdm, kept here for review
--- and for running the query standalone against live Fusion (bind the six
--- Contract v1 parameters).
+-- DMT_BENPARTICIPANT_RECON_DM query (Contract v1, nine-column, design section 5).
+-- Mirror of the CDATA SQL in DMT_BENPARTICIPANT_RECON_DM.xdm, kept here for review and
+-- for running the query standalone against live Fusion (bind the six parameters).
 --
--- BenParticipant (Participant Enrollment) loads through HCM Data Loader as the
--- PersonBenefitBalance business object (DMT_BEN_PARTIC_HDL_GEN_PKG writes a
--- PersonBenefitBalance.dat). An HDL load has no interface table, so this report
--- returns the BASE tier only: one row per migrated record positively confirmed
--- by a HRC_INTEGRATION_KEY_MAP entry, with the Fusion-assigned SURROGATE_ID as
--- FUSION_ID. Per-record HDL failures are captured separately (RECONCILE tags
--- [FUSION_ERROR] from the HDL response before this report runs), so this report
--- returns BASE / SUCCESS rows only.
+-- RE-POINTED 2026-09-22 to the CORRECT Fusion object. BenParticipant loads through the
+-- HCM Data Loader as the ParticipantEnrollment business object (ParticipantEnrollment.dat
+-- -- see db/packages/dmt_ben_partic_hdl_gen_pkg.pkb.sql). The prior model loaded/
+-- reconciled as PersonBenefitBalance (benefit BALANCES, not enrollments) and collided on
+-- the file name PersonBenefitBalance.dat with the Dependent/Beneficiary generators.
 --
--- NINE response columns, in contract order:
---   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE('BASE'), FUSION_STATUS('SUCCESS'),
---   FUSION_ID (SURROGATE_ID), ERROR_MESSAGE (NULL), LOAD_REQUEST_ID (NULL),
---   SOURCE_REF (= SourceSystemId), DMT_REFERENCE (NULL).
--- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID, P_PREFIX,
---   P_CHUNK_SIZE, P_AFTER_KEY.  Keyset pagination by RECORD_KEY (P_AFTER_KEY).
+-- ORACLE DOC AUTHORITY:
+--   * Base table BEN_PRTT_ENRT_RSLT (Tables and Views for HCM, oedmh): identifies the
+--     plans/options a participant is enrolled in; PRTT_ENRT_RSLT_ID is the primary key.
+--     https://docs.oracle.com/en/cloud/saas/human-resources/oedmh/benprttenrtrslt-4213.html
 --
--- RECORD_KEY / SOURCE_REF = the SourceSystemId written into
--- PersonBenefitBalance.dat = (prefixed PERSON_NUMBER) || '_BENENRL' = the
--- BenParticipant TFM row's RECON_KEY. Rows are filtered to
--- SOURCE_SYSTEM_OWNER='HRC_SQLLOADER' so Fusion-seeded PersonBenefitBalance
--- rows (owner FUSION) are never counted.
+-- Returns the BASE tier for the BenParticipant HDL load: one row per migrated worker
+-- positively confirmed in BEN_PRTT_ENRT_RSLT (joined to PER_ALL_PEOPLE_F by PERSON_ID),
+-- with the real Fusion PRTT_ENRT_RSLT_ID as FUSION_ID. HDL per-record failures are
+-- captured separately (RECONCILE_HDL tags [FUSION_ERROR] before this report runs).
 --
--- Verified live 2026-09-20 (fin_impl / ApplicationDB_FSCM):
---   * OBJECT_NAME 'PersonBenefitBalance' exists (838 rows: 10 HRC_SQLLOADER-
---     owned = our loads, 828 FUSION-seeded). SURROGATE_ID = the Fusion base id.
---   * BASE-TABLE NOTE: the brief named base table BEN_PRTT_ENRT_RSLT with
---     FUSION_ID = PRTT_ENRT_RSLT_ID. That mapping is INCORRECT for this load
---     path: PersonBenefitBalance SURROGATE_IDs do NOT join to
---     BEN_PRTT_ENRT_RSLT.PRTT_ENRT_RSLT_ID (zero matches on the pod), because
---     PersonBenefitBalance is a benefit-balance object, not an enrollment-
---     result object. The benefit-balance base table is not selectable by name
---     from the BIP reporting user, so HRC_INTEGRATION_KEY_MAP is the
---     authoritative base-tier source and SURROGATE_ID is the Fusion base id
---     (same approach as Salaries; faithful to the design doc's HDL note).
---   * Standalone paging behaviour confirmed against the current pod data — see
---     the PR body for the exact rows returned and the empty-page confirmation.
+-- ParticipantEnrollment is create-only and carries NO SourceSystemId, and there is no
+-- HRC_INTEGRATION_KEY_MAP row for it, so base-tier matching is by the worker's prefixed
+-- PERSON_NUMBER; keyset pagination by RECORD_KEY. RECORD_KEY = the prefixed PERSON_NUMBER
+-- = the BenParticipant TFM row's RECON_KEY.
+--
+-- SOURCE_REF (col 8) = the prefixed PERSON_NUMBER read back (= RECORD_KEY).
+-- DMT_REFERENCE (col 9) = DFF stamp; not deployed for this HDL load, so NULL.
+--
+-- LIVE PROBE (original PR, cred fin_impl): BEN_PRTT_ENRT_RSLT ~38,411 rows; both tables
+-- reachable by name; PRTT_ENRT_RSLT_ID returns as FUSION_ID (e.g. person 39 -> 337499).
+-- Re-probe at re-cut was environment-blocked (BIP credential 401).
 
-SELECT
-    object_type, record_key, source_type, fusion_status,
-    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+SELECT object_type, record_key, source_type, fusion_status,
+       fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
     SELECT 'BenParticipant'               AS object_type,
-           m.source_system_id             AS record_key,
+           p.person_number                AS record_key,
            'BASE'                         AS source_type,
            'SUCCESS'                      AS fusion_status,
-           MAX(m.surrogate_id)            AS fusion_id,
+           MAX(r.prtt_enrt_rslt_id)       AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))   AS error_message,
-           CAST(NULL AS VARCHAR2(30))     AS load_request_id,
-           m.source_system_id             AS source_ref,
+           :P_LOAD_REQUEST_ID             AS load_request_id,
+           p.person_number                AS source_ref,
            CAST(NULL AS VARCHAR2(4000))   AS dmt_reference
-    FROM   hrc_integration_key_map m
-    WHERE  m.object_name         = 'PersonBenefitBalance'
-    AND    m.source_system_owner = 'HRC_SQLLOADER'
-    AND    m.source_system_id LIKE :P_PREFIX || '%'
-    AND    m.source_system_id LIKE '%\_BENENRL' ESCAPE '\'
-    GROUP BY m.source_system_id
+    FROM   ben_prtt_enrt_rslt r
+    JOIN   per_all_people_f   p ON p.person_id = r.person_id
+    WHERE  p.person_number LIKE :P_PREFIX || '%'
+    AND    (:P_AFTER_KEY IS NULL OR p.person_number > :P_AFTER_KEY)
+    GROUP BY p.person_number
+    ORDER BY p.person_number
 )
-WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
-ORDER BY record_key
-FETCH FIRST :P_CHUNK_SIZE ROWS ONLY;
+WHERE ROWNUM <= :P_CHUNK_SIZE

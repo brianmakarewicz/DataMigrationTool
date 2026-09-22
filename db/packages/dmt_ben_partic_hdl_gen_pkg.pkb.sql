@@ -1,30 +1,64 @@
 -- PACKAGE BODY DMT_BEN_PARTIC_HDL_GEN_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_BEN_PARTIC_HDL_GEN_PKG" 
+  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_BEN_PARTIC_HDL_GEN_PKG"
 AS
 -- ============================================================
 -- DMT_BEN_PARTIC_HDL_GEN_PKG body
--- BenefitParticipantEnrollment HDL DAT generation.
+-- ParticipantEnrollment HDL DAT generation.
 --
--- V2 fixes applied:
---   - Removed dfmt() — TFM columns are VARCHAR2, use pv()
---   - Added has_rows() guard around METADATA/data loop
---   - Removed PersonNumber from METADATA; added PersonId(SourceSystemId) FK hint
---   - SourceSystemId uses PERSON_NUMBER || '_BENENRL' convention
+-- HCM re-model (2026-09-17): this object loads through HCM Data Loader as the
+-- ParticipantEnrollment business object -- NOT PersonBenefitBalance. The prior
+-- version emitted the discriminator/header/file name 'PersonBenefitBalance',
+-- which is the benefit-BALANCE object, not participant enrollment, and it
+-- collided with the two other benefit generators (BeneficiaryDesignation,
+-- DependentEnrollment) that also emitted PersonBenefitBalance.dat. Corrected to
+-- the object verified in the Oracle HCM Data Loader guide ("Example of Loading
+-- Participant Enrollments") and probed live on this pod.
+--
+-- Verified from Oracle docs (docs.oracle.com/.../fahbo/example-of-loading-
+-- participant-enrollments.html):
+--   * Business object / DAT discriminator : ParticipantEnrollment
+--   * File name                           : ParticipantEnrollment.dat
+--   * METADATA attribute list (in order)  :
+--       PersonNumber|ParticipantLastName|ParticipantFirstName|
+--       BenefitRelationship|LifeEvent|LifeEventOccuredDate|EffectiveDate
+--   * Required attributes: PersonNumber, BenefitRelationship, LifeEvent,
+--     LifeEventOccuredDate, EffectiveDate.
+--   * Create-only object (no SourceSystemId key; the worker is referenced by its
+--     PersonNumber, which is already the prefixed number the Workers pipeline
+--     loaded -- so no worker record is repeated here).
+--
+-- Verified live 2026-09-17 (fusion_bip_query --cred fin_impl):
+--   * Benefits IS configured on the pod: BEN_PGM_F has 24 programs,
+--     BEN_PRTT_ENRT_RSLT has 38,411 enrollment results, BEN_LER_F lists real
+--     life events including 'New Hire'.
+--   * 'ParticipantEnrollment' is create-only and does NOT register a
+--     SourceSystemId row in HRC_INTEGRATION_KEY_MAP (confirmed absent), so
+--     reconciliation matches the base table BEN_PRTT_ENRT_RSLT by PersonNumber
+--     (see DMT_BENPARTICIPANT_RECON_DM.xdm), not by SourceSystemId.
+--
+-- Defaults for attributes with no dedicated TFM column:
+--   * BenefitRelationship : the TFM BENEFIT_RELATIONSHIP_NAME, else 'Default'.
+--   * LifeEvent           : 'New Hire' (valid on this pod) when TFM has none.
+--   * LifeEventOccuredDate: the enrollment start date.
+--   * ParticipantLastName / ParticipantFirstName: informational-only per the
+--     guide; left blank (the worker is already loaded with a name).
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_BEN_PARTIC_HDL_GEN_PKG';
 
-    -- METADATA column list for ParticipantEnrollment
-    -- V2: PersonNumber removed, PersonId(SourceSystemId) FK hint added
-    -- PersonBenefitBalance V2: all enrollment-specific attrs rejected.
-    -- Try bare minimum + PersonId to discover required attrs.
-    -- EffectiveStartDate required. Added after bare minimum validation.
-    -- BenefitBalanceName required. Added after load error.
-    C_PARTICIPANTENROLLMENT_COLS CONSTANT VARCHAR2(4000) :=
-        'SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|EffectiveStartDate|BenefitBalanceName';
+    -- HDL business object / DAT discriminator and file name for this object.
+    C_BUSINESS_OBJECT CONSTANT VARCHAR2(30) := 'ParticipantEnrollment';
+    C_DAT_FILENAME    CONSTANT VARCHAR2(40) := 'ParticipantEnrollment.dat';
 
-    C_SOURCE_SYSTEM CONSTANT VARCHAR2(30) := 'HRC_SQLLOADER';
+    -- METADATA column list for ParticipantEnrollment (Oracle HDL guide order).
+    C_PARTICIPANTENROLLMENT_COLS CONSTANT VARCHAR2(4000) :=
+        'PersonNumber|ParticipantLastName|ParticipantFirstName|'
+        || 'BenefitRelationship|LifeEvent|LifeEventOccuredDate|EffectiveDate';
+
+    -- Defaults when the TFM row carries no value for a required attribute.
+    C_DEFAULT_BEN_REL   CONSTANT VARCHAR2(30) := 'Default';
+    C_DEFAULT_LIFE_EVENT CONSTANT VARCHAR2(30) := 'New Hire';
 
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
@@ -51,6 +85,11 @@ AS
     BEGIN
         RETURN NVL(p_val, '');
     END pv;
+
+    FUNCTION nvl_val(p_val IN VARCHAR2, p_default IN VARCHAR2) RETURN VARCHAR2 IS
+    BEGIN
+        RETURN NVL(p_val, p_default);
+    END nvl_val;
 
     FUNCTION has_rows(p_tbl VARCHAR2, p_iid NUMBER) RETURN BOOLEAN IS
         l_cnt NUMBER;
@@ -91,8 +130,9 @@ AS
         -- 1. ParticipantEnrollment
         -- ============================================================
         IF has_rows('DMT_BEN_PARTIC_TFM_TBL', p_run_id) THEN
-            DBMS_LOB.WRITEAPPEND(l_dat, LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('PersonBenefitBalance', C_PARTICIPANTENROLLMENT_COLS)),
-                DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('PersonBenefitBalance', C_PARTICIPANTENROLLMENT_COLS));
+            DBMS_LOB.WRITEAPPEND(l_dat,
+                LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER(C_BUSINESS_OBJECT, C_PARTICIPANTENROLLMENT_COLS)),
+                DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER(C_BUSINESS_OBJECT, C_PARTICIPANTENROLLMENT_COLS));
 
             FOR r IN (
                 SELECT t.*
@@ -101,12 +141,17 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                      || '|' ||
-                          pv(r.PERSON_NUMBER) || '_BENENRL'    || '|' ||
-                          pv(r.PERSON_NUMBER)                  || '|' ||
-                          pv(r.ENROLLMENT_START_DATE)          || '|' ||
-                          pv(r.PLAN_NAME);  -- BenefitBalanceName = plan name
-                DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'PersonBenefitBalance');
+                -- PersonNumber references the already-loaded worker (prefixed
+                -- number); no worker record is repeated. Last/first name are
+                -- informational-only per the HDL guide and left blank.
+                l_vals := pv(r.PERSON_NUMBER)                                    || '|' ||
+                          ''                                                     || '|' ||  -- ParticipantLastName
+                          ''                                                     || '|' ||  -- ParticipantFirstName
+                          nvl_val(r.BENEFIT_RELATIONSHIP_NAME, C_DEFAULT_BEN_REL) || '|' ||
+                          C_DEFAULT_LIFE_EVENT                                   || '|' ||
+                          pv(r.ENROLLMENT_START_DATE)                           || '|' ||  -- LifeEventOccuredDate
+                          pv(r.ENROLLMENT_START_DATE);                                     -- EffectiveDate
+                DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => C_BUSINESS_OBJECT);
                 l_row_count := l_row_count + 1;
             END LOOP;
         END IF;
@@ -117,7 +162,7 @@ AS
         -- ============================================================
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
         IF DBMS_LOB.GETLENGTH(l_dat) > 0 THEN
-            UTL_ZIP.add1file(l_zip, 'PersonBenefitBalance.dat',
+            UTL_ZIP.add1file(l_zip, C_DAT_FILENAME,
                 clob_to_blob(l_dat));
         END IF;
         UTL_ZIP.finish_zip(l_zip);
@@ -132,7 +177,7 @@ AS
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
             l_csv_id, p_run_id, 'ParticipantEnrollments',
-            'PersonBenefitBalance.dat', l_row_count, l_dat, l_now
+            C_DAT_FILENAME, l_row_count, l_dat, l_now
         );
 
         INSERT INTO DMT_FBDI_ZIP_TBL (

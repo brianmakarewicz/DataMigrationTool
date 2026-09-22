@@ -690,12 +690,14 @@ commit;
 -- (CONTRACT_VERSION, TFM_TABLE, FUSION_ID_COLUMN, RECON_KEY_SQL) drive the
 -- shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS. Kept in its own MERGE so this
 -- block also converges the Contract v1 columns on an existing row. BenParticipant
--- loads via HDL as the PersonBenefitBalance business object, so there is no
--- interface table (INTERFACE_TABLE = 'N/A (HDL)'); reconciliation is base-tier
--- only, confirming each record in HRC_INTEGRATION_KEY_MAP
--- (OBJECT_NAME='PersonBenefitBalance'). RECON_KEY = the prefixed PERSON_NUMBER
--- concatenated with '_BENENRL' (also the .dat SourceSystemId and the report
--- RECORD_KEY). The when-not-matched insert makes this self-contained.
+-- loads via HDL as the ParticipantEnrollment business object (re-modeled
+-- 2026-09-22), so there is no interface table (INTERFACE_TABLE = 'N/A (HDL)');
+-- reconciliation is base-tier only, confirming each record in the benefit
+-- enrollment base table BEN_PRTT_ENRT_RSLT (joined to PER_ALL_PEOPLE_F by the
+-- prefixed PersonNumber; PRTT_ENRT_RSLT_ID is the Fusion id). ParticipantEnrollment
+-- is create-only and carries no SourceSystemId, so RECON_KEY = the prefixed
+-- PERSON_NUMBER (no suffix), which is also the report RECORD_KEY. The
+-- when-not-matched insert makes this self-contained.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
@@ -709,7 +711,7 @@ using (
            1                                                                contract_version,
            'DMT_BEN_PARTIC_TFM_TBL'                                         tfm_table,
            'FUSION_PARTICIPANT_ID'                                          fusion_id_column,
-           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_BENENRL''' recon_key_sql
+           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
