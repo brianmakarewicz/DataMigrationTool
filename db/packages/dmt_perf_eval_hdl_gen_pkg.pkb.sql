@@ -1,41 +1,61 @@
 -- PACKAGE BODY DMT_PERF_EVAL_HDL_GEN_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_PERF_EVAL_HDL_GEN_PKG" 
+  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_PERF_EVAL_HDL_GEN_PKG"
 AS
 -- ============================================================
 -- DMT_PERF_EVAL_HDL_GEN_PKG body
 -- PerformanceDocument HDL DAT generation.
 --
--- V2 fixes applied:
---   - Removed dfmt() — TFM columns are VARCHAR2, use pv()
---   - Added has_rows() guard around METADATA/data loops
---   - Removed PersonNumber + ManagerPersonNumber from parent METADATA
---   - Added PersonId(SourceSystemId) FK hint to parent
---   - Added ManagerPersonId(SourceSystemId) FK hint to parent
---   - Removed PersonNumber from child METADATA
---   - Added PerformanceDocumentId(SourceSystemId) FK hint to child
---   - Parent SourceSystemId: PERSON_NUMBER || '_PERF'
---   - Child SourceSystemId: PERSON_NUMBER || '_PERFRTG'
+-- Emits PerfDocComplete.dat with two components:
+--   1. PerfDocComplete    - the performance document (one per worker + evaluation).
+--   2. RatingsAndComments - section ratings, overall rating and comments.
+--
+-- Oracle-documented structure (Examples of Loading Performance Documents):
+--   METADATA|PerfDocComplete|AssignmentNumber|CustomaryName|StartDate|EndDate|Operation|ManagerAssignmentNumber
+--   METADATA|RatingsAndComments|AssignmentNumber|CustomaryName|ParticipantPersonNumber|ParticipantRoleTypeCode|SectionName|SectionTypeCode|RatingName|Comments
+--
+-- Worker reference: AssignmentNumber. The source stages PERSON_NUMBER; on this demo
+-- pod (and typically) the primary assignment number equals the person number, so
+-- PERSON_NUMBER is used as AssignmentNumber. If a client's assignment numbers differ,
+-- stage the assignment number into PERSON_NUMBER at load or extend the STG/TFM schema.
+--
+-- CustomaryName = the document name (prefixed DOCUMENT_NAME). It carries the run prefix
+-- and is the business key reconciliation matches against HRA_EVALUATIONS.NAME.
+--
+-- Operation ORA_CREATE_PD creates the document (Performance Administration Action
+-- lookup ORA_HRA_ADMIN_ACTION).
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_PERF_EVAL_HDL_GEN_PKG';
 
-    -- METADATA column list for PerformanceDocument
-    -- V2: PersonNumber+ManagerPersonNumber removed, PersonId+ManagerPersonId FK hints added
-    -- GoalPlan V1 — completely different from PerformanceDocument.
-    -- Minimal set to discover valid attributes iteratively.
-    -- GoalPlanType V1 invalid — correct name is GoalPlanTypeCode
-    -- ReqSubmittedByPersonId required for GoalPlan load.
-    -- Uses (SourceSystemId) FK hint to resolve PersonId dynamically.
-    C_PERFORMANCEDOCUMENT_COLS CONSTANT VARCHAR2(4000) :=
-        'SourceSystemOwner|SourceSystemId|GoalPlanName|GoalPlanTypeCode|StartDate|EndDate|ReqSubmittedByPersonId(SourceSystemId)';
+    -- METADATA column list for PerfDocComplete (the performance document).
+    -- Natural-key object: keyed by AssignmentNumber + CustomaryName; no SourceSystem keys.
+    C_PERFDOC_COLS CONSTANT VARCHAR2(4000) :=
+        'AssignmentNumber|CustomaryName|StartDate|EndDate|Operation|ManagerAssignmentNumber';
 
-    -- METADATA column list for PerformanceRating
-    -- V2: PersonNumber removed, PerformanceDocumentId(SourceSystemId) FK hint added
-    C_PERFORMANCERATING_COLS CONSTANT VARCHAR2(4000) :=
-        'SourceSystemOwner|SourceSystemId|PerformanceDocumentId(SourceSystemId)|SectionName|RatingLevelCode|Comments|ReviewPeriodName|DocumentName';
+    -- METADATA column list for RatingsAndComments (section + overall ratings, comments).
+    C_RATINGS_COLS CONSTANT VARCHAR2(4000) :=
+        'AssignmentNumber|CustomaryName|ParticipantPersonNumber|ParticipantRoleTypeCode|SectionName|SectionTypeCode|RatingName|Comments';
 
-    C_SOURCE_SYSTEM CONSTANT VARCHAR2(30) := 'HRC_SQLLOADER';
+    -- Operation that creates a performance document (ORA_HRA_ADMIN_ACTION lookup).
+    C_OP_CREATE_PD CONSTANT VARCHAR2(30) := 'ORA_CREATE_PD';
+
+    -- NOTE (manager attribution, fixed 2026-09-22): the RatingsAndComments component
+    -- must NOT invent a participant. The rating STG/TFM tables carry only PERSON_NUMBER
+    -- (the worker being evaluated) and no manager/participant column, so there is no
+    -- honest source for ParticipantPersonNumber. Stamping the worker as
+    -- ParticipantPersonNumber with ParticipantRoleTypeCode 'Manager' (the prior defect)
+    -- would load the worker as their own manager -- a fabricated attribution. We instead
+    -- OMIT both fields (emit empty). The manager is already correctly attributed on the
+    -- PerfDocComplete line via ManagerAssignmentNumber (the real MANAGER_PERSON_NUMBER),
+    -- and HDL attributes the section ratings to the document's manager. If a genuine
+    -- rating-participant source is added to the STG/TFM later, populate it here.
+
+    -- Regular section type (ORA_HRA sections default to REG).
+    C_SECTION_TYPE_REG CONSTANT VARCHAR2(10) := 'REG';
+
+    -- HDL DAT file name for the PerformanceDocument object.
+    C_DAT_FILENAME CONSTANT VARCHAR2(60) := 'PerfDocComplete.dat';
 
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
@@ -99,11 +119,12 @@ AS
 
 
         -- ============================================================
-        -- 1. PerformanceDocument
+        -- 1. PerfDocComplete - the performance document
         -- ============================================================
         IF has_rows('DMT_PERF_EVAL_TFM_TBL', p_run_id) THEN
-            DBMS_LOB.WRITEAPPEND(l_dat, LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('GoalPlan', C_PERFORMANCEDOCUMENT_COLS)),
-                DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('GoalPlan', C_PERFORMANCEDOCUMENT_COLS));
+            DBMS_LOB.WRITEAPPEND(l_dat,
+                LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('PerfDocComplete', C_PERFDOC_COLS)),
+                DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('PerfDocComplete', C_PERFDOC_COLS));
 
             FOR r IN (
                 SELECT t.*
@@ -112,27 +133,29 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                -- GoalPlan attributes — map from perf eval staging columns
-                -- ReqSubmittedByPersonId(SourceSystemId): FK hint resolves to Fusion PersonId
-                l_vals := C_SOURCE_SYSTEM                      || '|' ||
-                          pv(r.PERSON_NUMBER) || '_GOAL'       || '|' ||  -- SourceSystemId
-                          pv(r.DOCUMENT_NAME)                  || '|' ||  -- GoalPlanName
-                          NVL(pv(r.DOCUMENT_TYPE), 'ORA_HRG_WORKER') || '|' || -- GoalPlanTypeCode
-                          pv(r.START_DATE)                     || '|' ||
-                          pv(r.END_DATE)                       || '|' ||
-                          pv(r.PERSON_NUMBER);  -- ReqSubmittedByPersonId(SourceSystemId) = Worker's SSID
-                DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'GoalPlan');
+                -- AssignmentNumber = worker's assignment (PERSON_NUMBER on this pod).
+                -- CustomaryName    = prefixed DOCUMENT_NAME (the reconciliation key).
+                -- Operation        = ORA_CREATE_PD.
+                -- ManagerAssignmentNumber = the manager's assignment number.
+                l_vals := pv(r.PERSON_NUMBER)          || '|' ||  -- AssignmentNumber
+                          pv(r.DOCUMENT_NAME)          || '|' ||  -- CustomaryName
+                          pv(r.START_DATE)             || '|' ||  -- StartDate
+                          pv(r.END_DATE)               || '|' ||  -- EndDate
+                          C_OP_CREATE_PD               || '|' ||  -- Operation
+                          pv(r.MANAGER_PERSON_NUMBER);           -- ManagerAssignmentNumber
+                DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'PerfDocComplete');
                 l_row_count := l_row_count + 1;
             END LOOP;
         END IF;
 
 
         -- ============================================================
-        -- 2. PerformanceRating
+        -- 2. RatingsAndComments - section + overall ratings and comments
         -- ============================================================
         IF has_rows('DMT_PERF_EVAL_RATING_TFM_TBL', p_run_id) THEN
-            DBMS_LOB.WRITEAPPEND(l_dat, LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('GoalPlanGoal', C_PERFORMANCERATING_COLS)),
-                DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('GoalPlanGoal', C_PERFORMANCERATING_COLS));
+            DBMS_LOB.WRITEAPPEND(l_dat,
+                LENGTH(DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('RatingsAndComments', C_RATINGS_COLS)),
+                DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('RatingsAndComments', C_RATINGS_COLS));
 
             FOR r IN (
                 SELECT t.*
@@ -141,15 +164,30 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                      || '|' ||
-                          pv(r.PERSON_NUMBER) || '_PERFRTG'    || '|' ||  -- SourceSystemId
-                          pv(r.PERSON_NUMBER) || '_PERF'       || '|' ||  -- PerformanceDocumentId(SourceSystemId)
-                          pv(r.SECTION_NAME)                   || '|' ||
-                          pv(r.RATING_LEVEL_CODE)              || '|' ||
-                          pv(r.COMMENTS)                       || '|' ||
-                          pv(r.REVIEW_PERIOD_NAME)             || '|' ||
-                          pv(r.DOCUMENT_NAME);
-                DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'GoalPlanGoal');
+                -- AssignmentNumber        = worker (PERSON_NUMBER on this pod).
+                -- CustomaryName           = prefixed document name (ties to the doc above).
+                -- ParticipantPersonNumber = omitted (no honest participant source in
+                --   the rating STG/TFM; the manager is attributed on the PerfDocComplete
+                --   line via ManagerAssignmentNumber). Never the worker themselves.
+                -- ParticipantRoleTypeCode = omitted (not fabricated as 'Manager').
+                -- SectionName             = the rated section (overall rating loads on the
+                --                           overall/summary section).
+                -- SectionTypeCode         = REG.
+                -- RatingName              = the rating level (section or overall).
+                -- Comments                = section/overall comments.
+                -- ParticipantPersonNumber and ParticipantRoleTypeCode are emitted
+                -- EMPTY (see note by the constants): no honest participant source exists
+                -- in the rating STG/TFM, and the manager is attributed on the
+                -- PerfDocComplete line. Never stamp the worker as their own manager.
+                l_vals := pv(r.PERSON_NUMBER)          || '|' ||  -- AssignmentNumber
+                          pv(r.DOCUMENT_NAME)          || '|' ||  -- CustomaryName
+                          ''                           || '|' ||  -- ParticipantPersonNumber (omitted; no honest source)
+                          ''                           || '|' ||  -- ParticipantRoleTypeCode (omitted; not fabricated)
+                          pv(r.SECTION_NAME)           || '|' ||  -- SectionName
+                          C_SECTION_TYPE_REG           || '|' ||  -- SectionTypeCode
+                          pv(r.RATING_LEVEL_CODE)      || '|' ||  -- RatingName
+                          pv(r.COMMENTS);                        -- Comments
+                DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'RatingsAndComments');
                 l_row_count := l_row_count + 1;
             END LOOP;
         END IF;
@@ -160,7 +198,7 @@ AS
         -- ============================================================
         DBMS_LOB.CREATETEMPORARY(l_zip, TRUE);
         IF DBMS_LOB.GETLENGTH(l_dat) > 0 THEN
-            UTL_ZIP.add1file(l_zip, 'GoalPlan.dat',
+            UTL_ZIP.add1file(l_zip, C_DAT_FILENAME,
                 clob_to_blob(l_dat));
         END IF;
         UTL_ZIP.finish_zip(l_zip);
@@ -174,8 +212,8 @@ AS
             FBDI_CSV_ID, RUN_ID, OBJECT_TYPE, FILENAME, ROW_COUNT,
             CSV_CONTENT, CREATED_DATE
         ) VALUES (
-            l_csv_id, p_run_id, 'PerformanceDocuments',
-            'GoalPlan.dat', l_row_count, l_dat, l_now
+            l_csv_id, p_run_id, 'PerfEvaluations',
+            C_DAT_FILENAME, l_row_count, l_dat, l_now
         );
 
         INSERT INTO DMT_FBDI_ZIP_TBL (
@@ -183,7 +221,7 @@ AS
             ZIP_SIZE_BYTES, ZIP_CONTENT, CREATED_DATE
         ) VALUES (
             DMT_FBDI_ZIP_ID_SEQ.NEXTVAL, p_run_id,
-            'PerformanceDocuments', x_filename,
+            'PerfEvaluations', x_filename,
             DBMS_LOB.GETLENGTH(l_zip), l_zip, l_now
         );
 

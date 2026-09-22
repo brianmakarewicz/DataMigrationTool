@@ -1,64 +1,108 @@
-# PerformanceEvaluations
+# PerformanceEvaluations (PerfEvaluations)
 
 ## Status
-E2E LOADED (2L/1F, prefix 9210, 2026-04-04 DB-20)
+Re-modelled 2026-09 to the correct Fusion HDL object **PerformanceDocument**
+(discriminator `PerfDocComplete`). The prior build loaded `GoalPlan.dat`, which is
+Goal Management — the wrong object for performance evaluations. Goal Management is a
+separate future object, out of scope here.
+
+Generator + reconciliation report re-pointed and deployed VALID; generate + .dat
+inspection verified. Live submit-and-load is pending a test data run through the queue
+(config prerequisites confirmed present — see below).
 
 ## Pipeline
 - Module: HCM
-- HDL File: **GoalPlan.dat** (NOT PerformanceDocument.dat)
-- Discriminator: **GoalPlan** (V1)
-- Child: GoalPlanGoal (V1)
+- HDL File: **PerfDocComplete.dat**
+- Discriminator (document): **PerfDocComplete**
+- Discriminator (ratings/comments): **RatingsAndComments**
 - Loader Type: HDL (REST upload/submit/poll)
-- Auth User: hcm_impl (password: m?CDa6^6)
+- Auth User: hcm_impl
 
-## SourceSystemId Convention
-| Component | Suffix | Example |
-|-----------|--------|---------|
-| GoalPlan | _GOAL | 9210DMTW101_GOAL |
-| GoalPlanGoal (rating) | _PERFRTG | 9210DMTW101_PERFRTG |
+## Business object (Oracle-documented)
+`PerfDocComplete` is a natural-key object — no SourceSystem keys. It is keyed by
+`AssignmentNumber` + `CustomaryName` (the document name). `RatingsAndComments` hangs
+off the same document and carries section + overall ratings and comments.
 
-## METADATA (Validated — E2E LOADED)
+Sources:
+- Oracle Talent Management, "HCM Data Loader and Performance Document Business Objects".
+- Oracle HCM, "Examples of Loading Performance Documents" (fahbo).
+
+## METADATA
+Performance document:
 ```
-SourceSystemOwner|SourceSystemId|GoalPlanName|GoalPlanTypeCode|StartDate|EndDate|ReqSubmittedByPersonId(SourceSystemId)
+METADATA|PerfDocComplete|AssignmentNumber|CustomaryName|StartDate|EndDate|Operation|ManagerAssignmentNumber
+```
+Section + overall ratings and comments:
+```
+METADATA|RatingsAndComments|AssignmentNumber|CustomaryName|ParticipantPersonNumber|ParticipantRoleTypeCode|SectionName|SectionTypeCode|RatingName|Comments
 ```
 
-- `ReqSubmittedByPersonId(SourceSystemId)` — FK hint resolves to Fusion PersonId. Value = Worker's SourceSystemId (prefixed PERSON_NUMBER). Worker MUST be LOADED in Fusion before GoalPlan can reference them.
-- `GoalPlanTypeCode` — from ORA_HRG_GOAL_PLAN_TYPE LOV. Valid: `ORA_HRG_WORKER`.
+- `AssignmentNumber` — the worker. Source stages `PERSON_NUMBER`; on this demo pod the
+  primary assignment number equals the person number, so PERSON_NUMBER is used as the
+  assignment number. If a client's assignment numbers differ, stage the assignment
+  number into PERSON_NUMBER at load, or extend the STG/TFM schema.
+- `CustomaryName` — the prefixed document name (`DOCUMENT_NAME`). Carries the run prefix
+  and is the reconciliation key (matched against `HRA_EVALUATIONS.NAME`).
+- `Operation` — `ORA_CREATE_PD` (Performance Administration Action lookup
+  `ORA_HRA_ADMIN_ACTION`) to create the document.
+- `ManagerAssignmentNumber` — from `MANAGER_PERSON_NUMBER`. This is how the manager is
+  attributed to the document: the manager is named on the `PerfDocComplete` line via
+  `ManagerAssignmentNumber`, not on the ratings line.
+- `ParticipantPersonNumber` and `ParticipantRoleTypeCode` — intentionally left **empty** on
+  every `RatingsAndComments` line. The rating STG/TFM carry no participant source, so the
+  generator emits these two attributes blank. Do NOT populate them with the worker's own
+  person number or a `Manager` role code — an earlier build did that, which stamped each
+  worker as their own manager. That defect was removed. The manager is attributed only via
+  `ManagerAssignmentNumber` on the `PerfDocComplete` line (above).
+- `SectionTypeCode` — `REG`.
+- `RatingName` — the rating level (section or overall). Overall rating loads on the
+  overall/summary section.
 
-## Code References
-- STG Table DDL: `schema/tables/140_dmt_perf_eval_stg_tbl.sql`
-- STG Table DDL (Ratings): `schema/tables/142_dmt_perf_eval_rating_stg_tbl.sql`
-- TFM Table DDL: `schema/tables/141_dmt_perf_eval_tfm_tbl.sql`
-- TFM Table DDL (Ratings): `schema/tables/143_dmt_perf_eval_rating_tfm_tbl.sql`
-- Validator: `packages/validators/dmt_perf_eval_validator_pkg.*`
-- Transformer: `packages/transformers/dmt_perf_eval_transform_pkg.*`
-- HDL Generator: `packages/generators/hdl/dmt_perf_eval_hdl_gen_pkg.*`
-- Results/Reconciliation: `packages/reconciliation/dmt_perf_eval_results_pkg.*`
+## Config prerequisites (verified live 2026-09-17, --cred fin_impl)
+Performance evaluations require configured **performance templates** and **review
+periods** on the pod, plus target workers loaded. Confirmed present:
+- `HRA_EVALUATIONS` (the performance document base table) has 6,773 rows.
+- 39 distinct `TEMPLATE_DEFN_ID` and 5 distinct `REVIEW_PERIOD_ID` are in use across
+  those documents, so templates and review periods are configured.
+- A create-document HDL load is therefore viable on this pod.
 
-## Known Good Test Data (E2E LOADED prefix 9210)
+## Base table + reconciliation
+- Base table: `HRA_EVALUATIONS`. Base id: `EVALUATION_ID`. Business key: `NAME`
+  (the `CustomaryName`).
+- Report: `bip/PerfEvaluations/DMT_PERFEVALUATIONS_RECON_DM.xdm` (+ `.xdo`, `query.sql`)
+  returns the BASE tier: one row per migrated document confirmed in `HRA_EVALUATIONS`,
+  matched by run prefix against `NAME`, with `EVALUATION_ID` as `FUSION_ID`.
+- A PerfEvaluations TFM row reaches LOADED only from a BASE / SUCCESS / FUSION_ID-not-null
+  row. Per-record HDL failures are tagged `[FUSION_ERROR]` by `RECONCILE_HDL` first.
+
+## Code references
+- STG / TFM tables: `db/tables/dmt_perf_eval_*_tbl.sql`
+- Validator: `db/packages/dmt_perf_eval_validator_pkg.*`
+- Transformer: `db/packages/dmt_perf_eval_transform_pkg.*`
+- HDL Generator: `db/packages/dmt_perf_eval_hdl_gen_pkg.*`
+- Reconciliation: `db/packages/dmt_perf_eval_results_pkg.*`
+
+## Test data shape
 | Field | Value |
 |-------|-------|
-| PERSON_NUMBER | DMTW101, DMTW102 (must match loaded Workers) |
-| DOCUMENT_NAME | DMT Goal Plan 2024 A, DMT Goal Plan 2024 B |
-| DOCUMENT_TYPE | ORA_HRG_WORKER |
-| REVIEW_PERIOD_NAME | 2024 Annual Review |
-| START_DATE | 2024/01/01 |
-| END_DATE | 2024/12/31 |
-
-## Known Bad Test Data
-| PERSON_NUMBER | Failure Mode | Notes |
-|---------------|-------------|-------|
-| DMTW1BAD | INVALID_TYPE for GoalPlanTypeCode | Correctly rejected: "doesn't exist in ORA_HRG_GOAL_PLAN_TYPE list" |
-
-## Lessons Learned
-- HDL filename is **GoalPlan.dat** — NOT PerformanceDocument.dat. The original object matrix referenced PerformanceDocument.dat which is rejected by Fusion.
-- Uses V1 format (not V2 like most other HCM objects).
-- `ReqSubmittedByPersonId` was initially hardcoded as a raw Fusion PersonId. Changed to `(SourceSystemId)` FK hint pattern which resolves dynamically — much cleaner and works across prefixes.
-- Worker must be LOADED in Fusion (same prefix run) BEFORE GoalPlan can reference them via the FK hint.
-- GoalPlanGoal (rating child) was not tested in this run — no rating STG data inserted. Parent GoalPlan loads fine without ratings.
-- `ORA_HRG_WORKER` is confirmed valid for GoalPlanTypeCode. `INVALID_TYPE` correctly rejected.
+| PERSON_NUMBER | must match a worker + assignment that exists / is loaded in Fusion |
+| MANAGER_PERSON_NUMBER | the manager's assignment number |
+| DOCUMENT_NAME | the document name (prefixed at transform) |
+| REVIEW_PERIOD_NAME | a configured review period |
+| START_DATE / END_DATE | evaluation period, YYYY/MM/DD |
+| SECTION_NAME / RATING_LEVEL_CODE / COMMENTS | ratings child rows |
 
 ## History
-- 2026-03-25: METADATA validated. GoalPlan.dat filename discovered.
-- 2026-04-04 (DB-19): V2 audit completed. ReqSubmittedByPersonId hardcoded — blocked by PersonId lookup.
-- 2026-04-04 (DB-20): **E2E LOADED.** ReqSubmittedByPersonId changed to FK hint. 2L/1F (BAD correctly failed).
+- 2026-03/04: prior build loaded `GoalPlan.dat` (wrong object — Goal Management).
+- 2026-09: **re-modelled to PerformanceDocument** (`PerfDocComplete` + `RatingsAndComments`);
+  generator + BIP recon report re-pointed to `HRA_EVALUATIONS`; config prerequisites
+  confirmed present live.
+
+## Shared-file deltas (updated 2026-09)
+- `db/seed/dmt_bip_report_tbl.sql` — the PerfEvaluations registry row's descriptive comment
+  was updated from GoalPlan / HRG_GOAL_PLANS_VL to PerformanceDocument / HRA_EVALUATIONS. The
+  catalog paths were already correct and are unchanged.
+- `db/seed/dmt_rest_lookup_tbl.sql` — the PerfEvaluations REST enrichment lookup was re-pointed
+  from `/goalPlans` to `/hcmRestApi/resources/11.13.18.05/performanceEvaluations` (filtered by
+  `PersonNumber`, returning `EvaluationId`, `PerformanceDocumentName`, `EvalStatus`, dates).
+  This is display-only enrichment, not on the LOADED path.

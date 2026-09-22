@@ -953,16 +953,16 @@ commit;
 
 -- ---------------------------------------------------------------------------
 -- PerfEvaluations (100000037) — Contract v1 registration (design section 5).
--- Loads via HDL as the GoalPlan object (GoalPlan.dat — see
+-- Loads via HDL as the PerformanceDocument object (PerfDocComplete.dat — see
 -- db/packages/dmt_perf_eval_hdl_gen_pkg.pkb.sql); a loaded performance evaluation
--- lives in Fusion as a goal plan definition. Base tier HRG_GOAL_PLANS_VL
--- (GOAL_PLAN_ID as FUSION_ID), matched by the run prefix against GOAL_PLAN_NAME.
--- Verified live 2026-09-16 (--cred fin_impl): object_name 'GoalPlan' exists in
--- HRC_INTEGRATION_KEY_MAP; HRG_GOAL_PLANS_VL exposes GOAL_PLAN_ID + GOAL_PLAN_NAME;
--- migrated DMT goal plans carry the run prefix in GOAL_PLAN_NAME (e.g.
--- 300000331553042 '43426 DMT Goal Plan A'); no HRC_SQLLOADER / '_GOAL'
--- source_system_id rows exist, so base matching is by prefix, not SourceSystemId.
--- RECON_KEY = the prefixed DOCUMENT_NAME (= the goal plan name = report RECORD_KEY).
+-- lives in Fusion as a performance document. Base tier HRA_EVALUATIONS
+-- (EVALUATION_ID as FUSION_ID), matched by the run prefix against NAME (the
+-- CustomaryName / document name). Re-modelled 2026-09 from the prior GoalPlan build,
+-- which was the wrong object (Goal Management). Config prerequisites verified live
+-- 2026-09-17 (--cred fin_impl): HRA_EVALUATIONS has 6,773 rows with configured
+-- templates and review periods, so a create-document HDL load is viable on this pod.
+-- Base matching is by run prefix on NAME, not SourceSystemId.
+-- RECON_KEY = the prefixed DOCUMENT_NAME (= the CustomaryName = report RECORD_KEY).
 -- FUSION_ID_COLUMN = FUSION_EVALUATION_ID on DMT_PERF_EVAL_TFM_TBL. The
 -- when-not-matched insert makes this block self-contained.
 -- ---------------------------------------------------------------------------
