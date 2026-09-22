@@ -73,7 +73,7 @@
                     NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: user's BATCH_ID (same fallback as items so a batch's items+categories group together); run id fallback (always non-null at transform time — g_work_queue_id is NULL during the parent transform-only pass), never the prefix
                     s.BATCH_NUMBER,
                     s.ORGANIZATION_CODE,
-                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.ITEM_NUMBER),
+                    DMT_XREF_PKG.ITEM_NUMBER(s.ITEM_NUMBER),
                     s.CATEGORY_SET_NAME,
                     s.CATEGORY_CODE,
                     s.CATEGORY_NAME,
