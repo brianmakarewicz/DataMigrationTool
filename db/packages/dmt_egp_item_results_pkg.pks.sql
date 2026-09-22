@@ -38,17 +38,11 @@
         p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
-    -- Call Fusion BIP v2 SOAP runReport and return raw XML response.
-    FUNCTION FETCH_BIP_RESULTS (
-        p_run_id IN NUMBER,
-        p_load_ess_id    IN NUMBER,
-        p_import_ess_id  IN NUMBER DEFAULT NULL
-    ) RETURN CLOB;
-
-    -- Parse BIP XML response and update TFM + STG tables.
+    -- Parse the decoded BIP report XMLTYPE (from DMT_UTIL_PKG.RUN_BIP_REPORT)
+    -- and update TFM + STG tables.
     PROCEDURE PARSE_AND_UPDATE (
         p_run_id IN NUMBER,
-        p_xml_data       IN CLOB
+        p_xml            IN XMLTYPE
     );
 
     -- Standalone runner path (ESS-only, retained for dev/test).

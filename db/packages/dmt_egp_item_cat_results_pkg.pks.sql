@@ -24,15 +24,10 @@
         p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
-    FUNCTION FETCH_BIP_RESULTS (
-        p_run_id IN NUMBER,
-        p_load_ess_id    IN NUMBER,
-        p_import_ess_id  IN NUMBER DEFAULT NULL
-    ) RETURN CLOB;
-
+    -- Parse the decoded BIP report XMLTYPE (from DMT_UTIL_PKG.RUN_BIP_REPORT).
     PROCEDURE PARSE_AND_UPDATE (
         p_run_id IN NUMBER,
-        p_xml_data       IN CLOB
+        p_xml            IN XMLTYPE
     );
 
     PROCEDURE LOAD_AND_RECONCILE (

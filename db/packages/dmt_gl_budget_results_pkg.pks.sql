@@ -29,12 +29,11 @@
         p_work_queue_id IN NUMBER    DEFAULT NULL
     );
 
-    FUNCTION FETCH_BIP_RESULTS (
-        p_run_id     IN NUMBER,
-        p_run_start  IN TIMESTAMP DEFAULT NULL,
-        p_ledger_id  IN NUMBER    DEFAULT NULL
-    ) RETURN CLOB;
-
-    PROCEDURE PARSE_AND_UPDATE (p_run_id IN NUMBER, p_xml_data IN CLOB);
+    -- (FETCH_BIP_RESULTS + PARSE_AND_UPDATE removed — the old P_RUN_START /
+    --  P_LEDGER_ID run-start / cell-key path was retired when the GLBudgets data
+    --  model was rewritten to the nine-column Contract v1 shape (PR #360); the
+    --  sole reconciliation path is now APPLY_CONTRACT_V1_GLBUDGETS via the shared
+    --  DMT_RECON_CONTRACT_PKG.FETCH_ROWS. The private BIP SOAP transport those two
+    --  procedures used is gone with them.)
 END DMT_GL_BUDGET_RESULTS_PKG;
 /
