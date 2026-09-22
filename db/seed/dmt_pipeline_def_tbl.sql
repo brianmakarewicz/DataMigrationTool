@@ -190,6 +190,12 @@ using (
     union all select 'TalentProfiles', 'DMT_LOADER_PKG.RUN_TALENT_PROFILES', 'ASYNC', null, 'N', null from dual
     union all select 'PerfEvaluations', 'DMT_LOADER_PKG.RUN_PERF_EVALUATIONS', 'ASYNC', null, 'N', null from dual
     union all select 'WorkSchedules', 'DMT_LOADER_PKG.RUN_WORK_SCHEDULES', 'ASYNC', null, 'N', null from dual
+    -- GLCalendar: intentionally NOT queue-wired yet (EXEC_PROC left NULL). Its
+    -- validator/transform/FBL-gen/results packages exist but are UNPROVEN (no live
+    -- config run has exercised them), and there is no automated Fusion load for
+    -- accounting calendars (they are set up manually in Setup and Maintenance).
+    -- The stand-alone DMT_GL_CALENDAR_RUNNER_PKG was deleted as dead (backlog #15,
+    -- 2026-09-21); wiring GLCalendar into the queue requires a proven live run first.
     union all select 'GLCalendar', null, 'ASYNC', null, 'N', null from dual
     union all select 'ValueSets', 'DMT_FND_VS_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
     union all select 'Lookups', 'DMT_FND_LOOKUP_RUNNER_PKG.RUN_STANDARD', 'LOCAL', null, 'N', null from dual
