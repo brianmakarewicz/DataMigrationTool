@@ -13,6 +13,13 @@ Two instances, one source:
   * ATP  (gold/prod) : app 500, workspace DMT2, schema DMT2_OWNER, queryapp ATP.
 Both run APEX 26.1, so APEXLang import/export round-trips cleanly on both.
 
+Stable friendly URL: every import re-points the ONE generic alias LIVEDMT2 to
+the app it just imported (freeing it from any prior holder first), so
+  LOCAL: http://localhost:8182/ords/r/dmt/livedmt2/
+  ATP  : https://<atp-ords>/ords/r/dmt2/livedmt2/
+never drift to a stale app or 404. Done via the sanctioned APEX admin API, not
+raw wwv_flow_imp. See feedback_apex_stable_alias.
+
 Workflow this enforces:
   1. Make app changes in the LOCAL (TEST) builder (app 501).
   2. Re-export:   python scripts/apex_deploy.py export --target local
@@ -47,6 +54,13 @@ REPO   = Path(__file__).resolve().parents[1]
 # APEXLang source "root" directory (contains application.apx, pages/, etc.).
 SRC    = REPO / "apex" / "f501src" / "livedmt2"
 CONN   = Path.home() / "workspace" / "connections.json"
+
+# The ONE stable, generic friendly-URL alias for the DMT2 console. Every import
+# re-points this alias to the app it just imported, so /ords/r/<ws>/livedmt2/
+# always resolves to the current console regardless of app id. See the
+# apex_stable_alias discipline (memory feedback_apex_stable_alias). Deliberately
+# generic (no version/"Recon" suffix) so it never has to be repointed by hand.
+STABLE_ALIAS = "LIVEDMT2"
 
 # Target -> instance + the app id / workspace / schema that source imports as.
 TARGETS = {
@@ -146,6 +160,52 @@ def do_export(target):
     return 0
 
 
+def _repoint_stable_alias(schema, pw, dsn, tns, workspace, app_id):
+    """Make the imported app the sole holder of STABLE_ALIAS.
+
+    An APEX alias must be unique within a workspace, so any OLD app still
+    carrying STABLE_ALIAS would block the import (or strand the friendly URL on
+    a stale app). This frees the alias from every other app first, then sets it
+    on the app we just imported. Uses only the sanctioned APEX admin API
+    (apex_application_admin.set_application_alias) inside the workspace security
+    group -- never raw wwv_flow_imp (cowork_ui_only rule).
+
+    Returns True on success. Any ORA-/error text in the output is treated as a
+    failure so an import can never silently leave the stable URL pointing at
+    nothing.
+    """
+    plsql = f"""set serveroutput on
+DECLARE
+  v_ws NUMBER;
+BEGIN
+  SELECT workspace_id INTO v_ws FROM apex_workspaces
+   WHERE workspace = '{workspace}';
+  apex_util.set_security_group_id(v_ws);
+  -- 1. Free the stable alias from any OTHER app that still holds it.
+  FOR r IN (SELECT application_id
+              FROM apex_applications
+             WHERE workspace_id = v_ws
+               AND UPPER(alias) = '{STABLE_ALIAS}'
+               AND application_id <> {app_id}) LOOP
+    apex_application_admin.set_application_alias(
+      r.application_id, 'FREED_' || r.application_id);
+    dbms_output.put_line('freed ' || '{STABLE_ALIAS}' ||
+                         ' from app ' || r.application_id);
+  END LOOP;
+  -- 2. Point the stable alias at the app we just imported (positional args:
+  --    this APEX build's set_application_alias has no p_* named parameters).
+  apex_application_admin.set_application_alias({app_id}, '{STABLE_ALIAS}');
+  COMMIT;
+  dbms_output.put_line('{STABLE_ALIAS} now on app ' || {app_id});
+END;
+/
+exit
+"""
+    rc, out = _sqlcl(schema, pw, dsn, tns, plsql)
+    ok = rc == 0 and "ORA-" not in out and "PLS-" not in out
+    return ok
+
+
 def do_import(target):
     t = TARGETS[target]
     schema, pw, dsn, tns = _resolve(target)
@@ -171,7 +231,17 @@ def do_import(target):
     ok = rc == 0 and "ORA-" not in out and "APEXLANG-" not in out
     print(f"[apex_deploy] import to {target} (app {app_id}): "
           f"{'OK' if ok else 'FAILED'}")
-    return 0 if ok else 2
+    if not ok:
+        return 2
+    # Stable-alias discipline: EVERY import re-points the generic friendly-URL
+    # alias to the app just imported, so /ords/r/<ws>/livedmt2/ never drifts.
+    if _repoint_stable_alias(schema, pw, dsn, tns, workspace, app_id):
+        print(f"[apex_deploy] {STABLE_ALIAS} -> app {app_id} on {target} "
+              f"(/ords/r/{workspace.lower()}/{STABLE_ALIAS.lower()}/)")
+        return 0
+    print(f"[apex_deploy] WARNING: import OK but failed to set {STABLE_ALIAS} "
+          f"alias on app {app_id} ({target})", file=sys.stderr)
+    return 2
 
 
 def main():
