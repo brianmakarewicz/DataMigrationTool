@@ -1018,2660 +1018,16 @@
     END get_import_ess_id;
 
     -- --------------------------------------------------------
-    -- Private: run one object type through the full cycle:
-    --   generate → upload → poll load → find import job →
-    --   poll import → reconcile
+    -- run_one_object_type — DELETED (backlog #8, 2026-09).
+    -- The per-object load monolith is fully retired. Every object now runs through
+    -- its own self-contained RUN_<object>() recipe (validate/transform/generate +
+    -- the shared phase helpers: sup_*, po_*, ar_*, fin_*). The generic dispatchers
+    -- RUN_STANDALONE and RUN_TRANSFORM_ONLY route to those recipes (RUN_STANDALONE
+    -- via the registered EXEC_PROC through DMT_QUEUE_WORKER_PKG.INVOKE_REGISTERED;
+    -- RUN_TRANSFORM_ONLY via a static CASE over the spawn-per-partition objects).
+    -- Nothing calls run_one_object_type any longer, so the function and its private
+    -- nested submit_and_reconcile_one were removed.
     -- --------------------------------------------------------
-    -- (C2b/A12, 2026-07-08) update_master_totals DELETED. It was a
-    -- second run-status rollup (dynamic SQL over every TFM table) that
-    -- disagreed with the queue rollup. One writer per status altitude:
-    -- RUN_STATUS is written only by the heartbeat rollup
-    -- (DMT_QUEUE_PKG.rollup_run_statuses), whose row counts come from
-    -- the catalog-driven DMT_QUEUE_WORKER_PKG.ACCOUNT_ROWS.
-    -- --------------------------------------------------------
-
-    -- Returns TRUE if rows were generated and processed,
-    -- FALSE if no VALIDATED rows existed (object type skipped).
-    -- Raises on ESS failure or BIP reconciliation failure — caller must not proceed.
-    -- --------------------------------------------------------
-    FUNCTION run_one_object_type (
-        p_run_id   IN NUMBER,
-        p_cemli_code       IN VARCHAR2,
-        p_scenario_id      IN NUMBER   DEFAULT NULL,
-        p_run_mode         IN VARCHAR2  DEFAULT 'NEW',
-        p_skip_bu_refresh  IN BOOLEAN   DEFAULT FALSE
-    ) RETURN BOOLEAN IS
-        C_PROC               CONSTANT VARCHAR2(40) := 'RUN_ONE_OBJECT_TYPE';
-        l_zip                BLOB;
-        l_filename           VARCHAR2(200);
-        l_job_name           VARCHAR2(500);
-        l_ucm_account        VARCHAR2(200);
-        l_interface_details  NUMBER;
-        l_load_ess_id        VARCHAR2(100);
-        l_import_ess_id      VARCHAR2(100);
-        l_ess_user           VARCHAR2(100) := NULL;  -- per-CEMLI Fusion user override
-        l_ess_pass           VARCHAR2(100) := NULL;
-        l_param_list         VARCHAR2(500) := 'NEW,N';  -- default for suppliers
-        l_ex_batch           VARCHAR2(60);   -- Expenditures: the run's work-queue-id, used
-                                             -- as the single Expenditure Batch name (CSV col +
-                                             -- import filter arg 8) so a run's rows import in
-                                             -- isolation from other runs' pending interface rows.
-        l_load_status        VARCHAR2(50);  -- Fusion status from Load ESS poll
-        -- CEMLI-specific ParameterLists set below after ERP options lookup
-        -- Object type label extracted from CEMLI code (e.g. 'Suppliers').
-        -- Prefixed onto PROCEDURE_NAME in all LOG calls so multi-object runs are readable.
-        l_obj                VARCHAR2(60);
-
-        -- --------------------------------------------------------
-        -- Nested helper: submit FBDI zip, poll load+import ESS,
-        -- reconcile via BIP.  Captures l_job_name, l_interface_details,
-        -- l_ucm_account, p_run_id, p_cemli_code, l_obj from
-        -- the enclosing run_one_object_type scope.
-        --
-        -- Callers pass: FBDI zip (freed inside), filename, CSV ID,
-        -- ParameterList, group label (for logging), and optional
-        -- per-CEMLI credentials.
-        --
-        -- Returns x_success = FALSE when Load ESS fails so the
-        -- caller can mark GENERATED rows FAILED in its own way.
-        -- --------------------------------------------------------
-        PROCEDURE submit_and_reconcile_one (
-            p_fbdi_zip        IN OUT NOCOPY BLOB,
-            p_filename        IN VARCHAR2,
-            p_fbdi_csv_id     IN NUMBER,
-            p_param_list      IN VARCHAR2,
-            p_group_label     IN VARCHAR2,
-            p_username        IN VARCHAR2 DEFAULT NULL,
-            p_password        IN VARCHAR2 DEFAULT NULL,
-            x_load_ess_id     OUT VARCHAR2,
-            x_import_ess_id   OUT VARCHAR2,
-            x_success         OUT BOOLEAN
-        ) IS
-            l_sar_load_status VARCHAR2(50);
-        BEGIN
-            x_success := FALSE;
-
-            -- Submit loadAndImportData
-            x_load_ess_id := SUBMIT_LOAD(
-                p_run_id    => p_run_id,
-                p_fbdi_zip          => p_fbdi_zip,
-                p_filename          => p_filename,
-                p_job_name          => l_job_name,
-                p_interface_details => l_interface_details,
-                p_doc_account       => l_ucm_account,
-                p_parameter_list    => p_param_list,
-                p_log_context       => l_obj,
-                p_username          => p_username,
-                p_password          => p_password);
-            DBMS_LOB.FREETEMPORARY(p_fbdi_zip);
-
-            -- Stamp the parameter list on the zip row. Keyed on FBDI_ZIP_ID, looked
-            -- up from the primary csv id the generator returned (the ZIP table no
-            -- longer carries FBDI_CSV_ID).
-            UPDATE DMT_FBDI_ZIP_TBL
-            SET    PARAMETER_LIST  = p_param_list
-            WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
-                                  WHERE FBDI_CSV_ID = p_fbdi_csv_id);
-            COMMIT;
-
-            -- Poll Load job
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'Polling Load ESS job: ' || x_load_ess_id || ' (' || p_group_label || ')',
-                'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-            POLL_ESS_JOB(p_run_id, x_load_ess_id, 1800, FALSE, l_obj, p_cemli_code,
-                         l_sar_load_status, p_username => p_username, p_password => p_password);
-
-            -- If Load ESS failed, caller handles error marking
-            IF l_sar_load_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'Load ESS ' || x_load_ess_id || ' returned ' || l_sar_load_status ||
-                    ' for ' || p_group_label ||
-                    '. No rows committed to interface table. Marking all GENERATED rows FAILED.',
-                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                x_import_ess_id := NULL;
-                RETURN;  -- x_success stays FALSE
-            END IF;
-
-            -- Find Import ESS job ID
-            BEGIN
-                x_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id);
-            EXCEPTION
-                WHEN OTHERS THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Could not find chained Import ESS for Load ' || x_load_ess_id,
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    x_import_ess_id := NULL;
-            END;
-
-            -- Stamp Import ESS job ID
-            IF x_import_ess_id IS NOT NULL THEN
-                COMMIT;
-
-                -- Poll Import job
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'Polling Import ESS job: ' || x_import_ess_id || ' (' || p_group_label || ')',
-                    'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                POLL_ESS_JOB(p_run_id, x_import_ess_id, 1800, FALSE, l_obj, p_cemli_code,
-                             l_sar_load_status, p_username => p_username, p_password => p_password);
-            END IF;
-
-            -- ============================================================
-            -- AR AutoInvoice is a TWO-job flow.
-            -- loadAndImportData chains AutoInvoiceImportEss, which ONLY stages
-            -- rows into RA_INTERFACE_LINES_ALL and reports SUCCEEDED without
-            -- importing anything. The transactions are actually created by a
-            -- SECOND job, AutoInvoiceMasterEss ("Import Receivables Transactions
-            -- Using AutoInvoice"). Without it, good invoices sit at
-            -- INTERFACE_STATUS = NULL forever. So once the import (staging) job
-            -- has SUCCEEDED, submit the Master job and make IT the job the
-            -- reconciler waits on. (Proven contract: MCCS RICE_005 AR package.)
-            -- ============================================================
-            IF p_cemli_code = 'ARInvoices'
-               AND x_import_ess_id IS NOT NULL
-               AND l_sar_load_status IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
-                DECLARE
-                    l_master_ess_id  VARCHAR2(100);
-                    l_trx_source_id  VARCHAR2(100);
-                    l_batch_source   VARCHAR2(500);
-                    l_bu_count       NUMBER;
-                    l_param_master   VARCHAR2(4000);
-                    l_resp           CLOB;
-                    l_tag_s          INTEGER;
-                    l_val_s          INTEGER;
-                    l_val_e          INTEGER;
-                    l_master_status  VARCHAR2(50);
-                BEGIN
-                    -- Batch source name is the 2nd comma slot of the AR param list
-                    -- (built as BU_NAME,BATCH_SOURCE_NAME,DATE,...).
-                    l_batch_source := SUBSTR(p_param_list,
-                                             INSTR(p_param_list, ',') + 1,
-                                             INSTR(p_param_list, ',', 1, 2) - INSTR(p_param_list, ',') - 1);
-
-                    -- Resolve the batch source NAME to its numeric transaction-source id
-                    -- (no hardcoded Fusion ids -- setup table read at preflight).
-                    l_trx_source_id := DMT_UTIL_PKG.GET_LOOKUP('BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID', l_batch_source);
-
-                    -- Distinct BU count across this run's AR rows -- position 1 of the
-                    -- Master param list.
-                    SELECT COUNT(DISTINCT BU_NAME) INTO l_bu_count
-                    FROM   DMT_RA_LINES_TFM_TBL
-                    WHERE  RUN_ID = p_run_id;
-
-                    -- Master param list: tilde(~)-separated with #NULL for empty
-                    -- slots (NOT empty strings -- empty strings make Fusion collapse
-                    -- the slots so the trailing flag lands in the wrong position;
-                    -- that was the documented run-179 blocker). Slot layout, matching
-                    -- MCCS exactly:
-                    --   pos1  = COUNT(DISTINCT BU_NAME)
-                    --   pos2  = #NULL
-                    --   pos3  = numeric trx_source_id
-                    --   pos4  = current date YYYY-MM-DD (an OPEN period)
-                    --   pos5..24 = #NULL
-                    --   then N, Y, trailing ~
-                    l_param_master :=
-                        l_bu_count || '~#NULL~' || l_trx_source_id || '~' ||
-                        TO_CHAR(SYSDATE, 'YYYY-MM-DD') ||
-                        '~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~' ||
-                        '#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~N~Y~';
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'AR two-job flow: import (staging) job ' || x_import_ess_id ||
-                        ' SUCCEEDED. Submitting AutoInvoiceMasterEss. ParameterList: ' || l_param_master,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    -- Submit AutoInvoiceMasterEss via the same submitESSJobRequest
-                    -- SOAP envelope pattern used for PollTMEssJob (MiscReceipts).
-                    l_resp := soap_http(
-                        p_url            => erp_soap_url,
-                        p_soap_action    => 'http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/submitESSJobRequest',
-                        p_body           => TO_CLOB(
-                            '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' ||
-                            'xmlns:typ="http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/types/">' ||
-                            '<soapenv:Header/><soapenv:Body>' ||
-                            '<typ:submitESSJobRequest>' ||
-                            '<typ:jobPackageName>/oracle/apps/ess/financials/receivables/transactions/autoInvoices</typ:jobPackageName>' ||
-                            '<typ:jobDefinitionName>AutoInvoiceMasterEss</typ:jobDefinitionName>' ||
-                            '<typ:paramList>' || l_param_master || '</typ:paramList>' ||
-                            '</typ:submitESSJobRequest>' ||
-                            '</soapenv:Body></soapenv:Envelope>'),
-                        p_run_id         => p_run_id,
-                        p_username       => p_username,
-                        p_password       => p_password);
-
-                    l_tag_s := DBMS_LOB.INSTR(l_resp, '<result');
-                    IF l_tag_s > 0 THEN
-                        l_val_s := DBMS_LOB.INSTR(l_resp, '>', l_tag_s) + 1;
-                        l_val_e := DBMS_LOB.INSTR(l_resp, '</result>', l_val_s);
-                        IF l_val_e > l_val_s THEN
-                            l_master_ess_id := DBMS_LOB.SUBSTR(l_resp, l_val_e - l_val_s, l_val_s);
-                        END IF;
-                    END IF;
-
-                    IF l_master_ess_id IS NULL THEN
-                        RAISE_APPLICATION_ERROR(-20051,
-                            'AR: failed to submit AutoInvoiceMasterEss. Response: ' ||
-                            DBMS_LOB.SUBSTR(l_resp, 500, 1));
-                    END IF;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'AutoInvoiceMasterEss submitted. ESS ID: ' || l_master_ess_id ||
-                        ' (' || p_group_label || ').',
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    -- Poll the Master job to terminal -- do NOT raise on error.
-                    POLL_ESS_JOB(p_run_id, l_master_ess_id, 1800, FALSE, l_obj, p_cemli_code,
-                                 l_master_status, p_username => p_username, p_password => p_password);
-
-                    -- Re-point x_import_ess_id at the Master job: THIS is the job that
-                    -- creates the transactions, so it is the one reconciliation must
-                    -- wait on and key against.
-                    x_import_ess_id := l_master_ess_id;
-                END;
-            END IF;
-
-            -- Capture the Report child ESS job (e.g. APXIIMPT_BIP, ImportProjectReportJob).
-            -- Generic: returns NULL for CEMLIs without a REPORT_JOB_DEF in DMT_ERP_INTERFACE_OPTIONS_TBL.
-            IF x_import_ess_id IS NOT NULL THEN
-                DECLARE
-                    l_report_ess_id NUMBER;
-                BEGIN
-                    l_report_ess_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
-                        p_run_id => p_run_id,
-                        p_import_ess_id  => TO_NUMBER(x_import_ess_id),
-                        p_cemli_code     => p_cemli_code);
-                END;
-
-                -- Parse Import Report errors and log them.
-                -- Runs for any CEMLI whose import job produced report output.
-                BEGIN
-                    DECLARE
-                        l_ir_count NUMBER;
-                    BEGIN
-                        l_ir_count := DMT_IMPORT_REPORT_PKG.PARSE_AND_LOG_ERRORS(
-                            p_run_id => p_run_id,
-                            p_request_id     => TO_NUMBER(x_import_ess_id),
-                            p_cemli_code     => p_cemli_code);
-                        IF l_ir_count > 0 THEN
-                            DMT_UTIL_PKG.LOG(p_run_id,
-                                'Import Report captured ' || l_ir_count || ' error(s) for ' ||
-                                p_cemli_code || ' (' || p_group_label || ', ESS ' || x_import_ess_id || ').',
-                                'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                        END IF;
-                    END;
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        DMT_UTIL_PKG.LOG_ERROR(
-                            p_run_id => p_run_id,
-                            p_message        => 'Import Report capture failed for ' || p_cemli_code ||
-                                ' (' || p_group_label || ', ESS ' || x_import_ess_id || '). Continuing to BIP.',
-                            p_sqlerrm        => SQLERRM,
-                            p_package        => C_PKG,
-                            p_procedure      => l_obj || ' > ' || C_PROC);
-                END;
-            END IF;
-
-            -- Reconcile via BIP — SINGLE registry-driven dispatch (backlog #7).
-            -- Was a hardcoded ~19-arm ELSIF chain over CEMLI codes; that was the
-            -- SECOND source of truth for reconcile (the queue reads RECON_PROC).
-            -- Now both paths go through the one registry lookup + invoke_registered
-            -- site. The fail-open guard (RAISE -20044 for an unregistered object)
-            -- is preserved inside RECONCILE_VIA_REGISTRY. Grouped objects reconcile
-            -- INLINE here (once per BU/group); g_reconciled_inline is set below so
-            -- EXECUTE_ONE does NOT re-reconcile them via the queue.
-            DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
-                p_run_id        => p_run_id,
-                p_cemli_code    => p_cemli_code,
-                p_load_ess_id   => TO_NUMBER(x_load_ess_id),
-                p_import_ess_id => TO_NUMBER(x_import_ess_id),
-                p_work_queue_id => g_work_queue_id);
-
-            -- Items special case (kept from the retired chain, deliberately NOT
-            -- registry-expressible): the Items FBDI ZIP bundles the ItemCategories
-            -- CSV, so an Items work item conditionally reconciles the categories too
-            -- when this run generated any category rows. A data-dependent secondary
-            -- reconciler does not fit the one-RECON_PROC-per-object registry.
-            IF p_cemli_code = 'Items' THEN
-                DECLARE l_cat_gen2 NUMBER;
-                BEGIN
-                    -- Work-queue-ID core: only reconcile categories THIS item generated
-                    -- (scope by WORK_QUEUE_ID so a multi-batch load does not cross-touch).
-                    SELECT COUNT(*) INTO l_cat_gen2 FROM DMT_EGP_ITEM_CAT_TFM_TBL
-                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                    AND   (g_work_queue_id IS NULL OR WORK_QUEUE_ID = g_work_queue_id);
-                    IF l_cat_gen2 > 0 THEN
-                        DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(p_run_id, TO_NUMBER(x_load_ess_id), TO_NUMBER(x_import_ess_id), p_work_queue_id => g_work_queue_id);
-                    END IF;
-                END;
-            END IF;
-
-            -- Inline reconcile happened: tell EXECUTE_ONE not to re-reconcile via
-            -- RECON_PROC (the double-reconcile fix). Settlement then runs through the
-            -- single accounting gate in EXECUTE_ONE.
-            g_reconciled_inline := TRUE;
-
-            x_success := TRUE;
-        END submit_and_reconcile_one;
-
-    BEGIN
-        l_obj := SUBSTR(p_cemli_code, INSTR(p_cemli_code, '-') + 1);
-
-        -- Suppliers family migrated off this monolith (backlog #8). The five
-        -- supplier objects now run through their own self-contained
-        -- RUN_<object>() recipes (validate/transform/generate + shared phase
-        -- helpers), never through these p_cemli_code ladders. Any Suppliers code
-        -- reaching here means a caller was wired to the wrong entry point — fail
-        -- loudly rather than silently drive the (now dead) supplier ladder arms.
-        -- Purchasing family (PurchaseOrders, BlanketPOs, Contracts) migrated off
-        -- this monolith too (backlog #8, second family) -- each now runs through
-        -- its own self-contained RUN_<object>() recipe (validate/transform +
-        -- per-BU generate/submit/reconcile via the shared po_* helpers). Guard
-        -- them the same way as the Suppliers family.
-        -- Partitioned P2P family (Requisitions, Items, and the ItemCategories
-        -- bundled into the Items token) migrated off this monolith too (backlog
-        -- #8, third family) -- each now runs through its own self-contained
-        -- RUN_<object>() recipe. These are SPAWN-PER-PARTITION objects: the queue
-        -- worker transforms the parent once (via RUN_TRANSFORM_ONLY, which for
-        -- these codes now dispatches to the recipe's own transform-only pass) and
-        -- spawns one child per BATCH_ID; each child re-enters through the
-        -- registered EXEC_PROC (RUN_REQUISITIONS / RUN_ITEMS) with g_partition_key
-        -- set. Nothing for these codes routes through the ladders below any more,
-        -- so guard them the same way as the earlier two families.
-        -- O2C family (Customers, ARInvoices, MiscReceipts) migrated off this
-        -- monolith too (backlog #8, fourth family) -- each now runs through its own
-        -- self-contained RUN_<object>() recipe:
-        --   * Customers and ARInvoices are GROUPED objects (one work-queue item;
-        --     Customers loops per BATCH_ID/source-system, ARInvoices per
-        --     BU_NAME/BATCH_SOURCE_NAME) -- same shape as the Purchasing family,
-        --     reconciling inline per group. Neither is spawn-per-partition (no
-        --     CHILD_PARTITION_COLUMN in DMT_CEMLI_SPLIT_CFG / no PARTITION_KEYS_PROC).
-        --   * MiscReceipts is the single-load SYNC object (PollTMEssJob import).
-        -- Guard all three the same way as the earlier three families.
-        IF p_cemli_code IN ('Suppliers', 'SupplierAddresses', 'SupplierSites',
-                            'SupplierSiteAssignments', 'SupplierContacts',
-                            'PurchaseOrders', 'BlanketPOs', 'Contracts',
-                            'Requisitions', 'Items', 'ItemCategories',
-                            'Customers', 'ARInvoices', 'MiscReceipts') THEN
-            RAISE_APPLICATION_ERROR(-20046,
-                'RUN_ONE_OBJECT_TYPE: ' || p_cemli_code || ' is migrated to its own '
-                || 'RUN_' || UPPER(l_obj) || '() runner (backlog #8) and no longer '
-                || 'routes through the shared object ladders. Call the per-object '
-                || 'runner via the registered EXEC_PROC instead.');
-        END IF;
-
-        -- Refresh BU lookup data (BU IDs, Ledger IDs) from Fusion via BIP.
-        -- Pipeline orchestrators call this once up front and pass p_skip_bu_refresh => TRUE.
-        -- Standalone one-off runs get the default FALSE and refresh automatically.
-        IF NOT p_skip_bu_refresh THEN
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'Refreshing BU lookups (standalone run).',
-                'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-            DMT_UTIL_PKG.REFRESH_BU_LOOKUPS;
-        END IF;
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => 'Object type start: ' || p_cemli_code,
-            p_package        => C_PKG,
-            p_procedure      => l_obj || ' > ' || C_PROC);
-
-        -- Look up UCM account, ESS job name, and interface details ID once.
-        -- All three values come from DMT_ERP_INTERFACE_OPTIONS_TBL (local Fusion mirror).
-        get_erp_options(
-            p_cemli_code           => p_cemli_code,
-            x_ucm_account          => l_ucm_account,
-            x_import_job_name      => l_job_name,
-            x_interface_details_id => l_interface_details);
-
-        -- Override ParameterList per CEMLI (MCCS patterns).
-        -- Default is 'NEW,N' (suppliers). CEMLIs with different import jobs need different params.
-        -- Customers is a grouped object: it partitions by BATCH_ID and builds a
-        -- per-batch 4-value BulkImportJob ParameterList inside its grouped block
-        -- (below), so it sets no ParameterList here -- exactly like ARInvoices.
-        IF p_cemli_code = 'Projects' THEN
-            -- MCCS RICE_006: ImportProjectJobDef takes 3 args (,,Y)
-            l_param_list := ',,Y';
-        ELSIF p_cemli_code = 'Expenditures' THEN
-            -- "Import and Process Cost Transactions" job
-            -- (onestop,ImportAndProcessTxnsJob -> shadow proc
-            -- PJC_IMPORT_AND_PROCESS.IMPORT_AND_PROCESS_ESS), a 10-position,
-            -- tilde-delimited ParameterList. This REPLACES the earlier
-            -- ImportProcessParallelEssJob (14-arg) form, which crashed on this pod
-            -- with ORA-06502 in its own parameter parsing (it put a BU name / date
-            -- string into numeric argument slots) so zero rows ever posted to base.
-            -- See objects/Expenditures/README.md and the gold fixture GOLD_README.
-            --
-            -- 10 positions (Pos=ProcArg=Value):
-            --   1  P_MODE                 = IMPORT_AND_PROCESS
-            --   2  P_BU_ID                = numeric BU id (never the name)
-            --   3  P_TXN_STATUS           = ALL
-            --   4  P_BATCH_NAME           = #NULL (batch-name FILTER; leave null so
-            --                               all pending rows for the BU are selected)
-            --   5  P_INTERFACE_ID         = #NULL
-            --   6  P_TXN_SOURCE_ID        = numeric transaction-source id
-            --   7  P_DOCUMENT_ID          = numeric document id
-            --   8  P_START_PROJECT_NO     = #NULL
-            --   9  P_END_PROJECT_NO       = #NULL
-            --   10 P_PROCESS_THROUGH_DATE = #NULL
-            --
-            -- No-hardcoded-IDs standard (design section 7): every numeric id is
-            -- resolved from a prepopulated lookup at pipeline preflight, never baked
-            -- into code. The BU id comes from BU_NAME_TO_BU_ID (config
-            -- EXPENDITURE_BU_NAME). The transaction-source and document ids come from
-            -- PJC_TXN_SOURCE_NAME_TO_ID / PJC_DOC_NAME_TO_ID (populated by
-            -- REFRESH_LOOKUPS from pjf_txn_sources_vl / pjf_txn_document_vl), keyed by
-            -- the USER_TRANSACTION_SOURCE and DOCUMENT_NAME the run's rows carry.
-            -- Positions 6/7 are import filters, so they must match the source and
-            -- document those interface rows name.
-            DECLARE
-                l_exp_bu_name    VARCHAR2(240);
-                l_exp_bu_id      VARCHAR2(30);
-                l_exp_src_name   VARCHAR2(240);
-                l_exp_doc_name   VARCHAR2(240);
-                l_exp_src_id     VARCHAR2(30);
-                l_exp_doc_id     VARCHAR2(30);
-            BEGIN
-                l_exp_bu_name := DMT_UTIL_PKG.GET_CONFIG('EXPENDITURE_BU_NAME');
-                l_exp_bu_id   := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', l_exp_bu_name);
-
-                -- Spawn-per-partition (work-queue-ID core): Expenditures partitions
-                -- by the COMPOSITE key (USER_TRANSACTION_SOURCE, DOCUMENT_NAME) --
-                -- Import and Process Cost Transactions filters on exactly one of each
-                -- (ParameterList positions 6/7), so one child work item == one
-                -- (source, document) group. A spawned child (g_partition_key set to a
-                -- JSON object like {"USER_TRANSACTION_SOURCE":"...","DOCUMENT_NAME":"..."})
-                -- reads its two names straight from that key -- no STG scan, and no
-                -- "mixed run" guard is needed because partitioning makes a mix
-                -- impossible by construction (the old ORA-20058 guard is retired).
-                -- The un-partitioned PARENT pass (g_partition_key NULL) does NOT
-                -- submit: it transforms once and returns at the transform-only gate
-                -- below, after which the queue worker spawns the children. It still
-                -- reaches this block to build a nominal ParameterList, so read the
-                -- staged source/document informationally (first values seen) without
-                -- failing on a legitimately multi-source parent run.
-                IF g_partition_key IS NOT NULL THEN
-                    l_exp_src_name := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'USER_TRANSACTION_SOURCE');
-                    l_exp_doc_name := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'DOCUMENT_NAME');
-                ELSE
-                    -- Parent pass: informational only (this pass will not submit).
-                    SELECT MAX(USER_TRANSACTION_SOURCE), MAX(DOCUMENT_NAME)
-                    INTO   l_exp_src_name, l_exp_doc_name
-                    FROM   DMT_PJC_EXPENDITURES_STG_TBL
-                    WHERE  (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
-                    AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW','RETRY'))
-                            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
-                            OR (p_run_mode = 'ALL') );
-                END IF;
-
-                -- Keep the no-usable-source/document guard on the CHILD path: a child
-                -- whose decoded key is null cannot build the import filter safely.
-                -- (GET_PARTITION_KEYS excludes null-source/document rows, so a real
-                -- child always has both; this is a defensive backstop.)
-                IF g_partition_key IS NOT NULL
-                   AND (l_exp_src_name IS NULL OR l_exp_doc_name IS NULL) THEN
-                    RAISE_APPLICATION_ERROR(-20057,
-                        'Expenditures: partition child carries no USER_TRANSACTION_SOURCE '||
-                        'and DOCUMENT_NAME (key '||g_partition_key||'). Import and Process '||
-                        'Cost Transactions needs both to build its source/document filter.');
-                END IF;
-
-                -- Resolve the source/document ids for the ParameterList. On the CHILD
-                -- path (a real submit) these must resolve, so let GET_LOOKUP raise -20040
-                -- loudly. On the PARENT informational pass the built list is discarded
-                -- (the parent returns transform-only and never submits), so a picked
-                -- MAX() source that happens not to resolve must not crash the parent
-                -- before it can spawn its children -- swallow it there.
-                IF g_partition_key IS NOT NULL THEN
-                    l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_exp_src_name);
-                    l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_exp_doc_name);
-                ELSE
-                    BEGIN
-                        l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_exp_src_name);
-                        l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_exp_doc_name);
-                    EXCEPTION WHEN OTHERS THEN
-                        l_exp_src_id := NULL;
-                        l_exp_doc_id := NULL;
-                    END;
-                END IF;
-
-                -- Expenditure Batch (arg 8): one batch name per (source, document)
-                -- partition. Globally unique (a work-queue id) so it never collides on
-                -- PJC_UNIQUE_BATCH_NAME, and it isolates THIS child's rows from any other
-                -- pending interface rows (other children, other runs) at costing time (an
-                -- empty filter would process every pending row). The SAME value is stamped
-                -- onto BATCH_NAME in this child's generated CSV rows at the load step below.
-                -- Spawn-per-partition: use g_work_queue_id (THIS child's queue id) so each
-                -- child gets its own batch; the parent pass (g_work_queue_id NULL) falls
-                -- back to the max queue id but never submits (it returns transform-only).
-                IF g_work_queue_id IS NOT NULL THEN
-                    l_ex_batch := TO_CHAR(g_work_queue_id);
-                ELSE
-                    SELECT TO_CHAR(MAX(QUEUE_ID)) INTO l_ex_batch
-                    FROM   DMT_WORK_QUEUE_TBL
-                    WHERE  RUN_ID = p_run_id AND CEMLI_CODE = p_cemli_code;
-                END IF;
-
-                -- 13-arg ImportProcessParallelEssJob ParameterList (proven live, UI run
-                -- 9777408). '~'-delimited; SUBMIT_IMPORT_JOB emits one <paramList> element
-                -- per token. Positions:
-                --   1 BU name  2 BU id  3 IMPORT_AND_PROCESS  4 PREV_NOT_IMPORTED  5 (null)
-                --   6 txn-source id  7 document (null)  8 Expenditure Batch (work-queue-id)
-                --   9-12 (null)  13 ORA_PJC_DETAIL (spawns the BIP detail report child)
-                -- Replaces the earlier 10-arg onestop/ImportAndProcessTxnsJob form, which
-                -- ORA-01008'd on this pod regardless of content (wrong job + single-element
-                -- paramList). Document id (arg 7) is intentionally null, matching the run.
-                l_param_list := l_exp_bu_name
-                    || '~' || l_exp_bu_id
-                    || '~IMPORT_AND_PROCESS'
-                    || '~PREV_NOT_IMPORTED'
-                    || '~'
-                    || '~' || l_exp_src_id
-                    || '~'
-                    || '~' || l_ex_batch
-                    || '~~~~'
-                    || '~ORA_PJC_DETAIL';
-            END;
-        -- Requisitions: the ParameterList is built per batch inside the
-        -- grouped-by-BATCH_ID block below (position 2 = the batch id,
-        -- position 4 = that batch's requisitioning BU id), not here.
-        -- Items: the ParameterList is built per batch inside the grouped-by-BATCH_ID
-        -- block below (arg 1 = the batch id, matching that batch's interface rows),
-        -- not here.
-        ELSIF p_cemli_code = 'MiscReceipts' THEN
-            -- MCCS RICE_011/012: PollTMEssJob, no parameters
-            l_param_list := '#NULL';
-        ELSIF p_cemli_code = 'BillingEvents' THEN
-            -- Not in MCCS — use empty param list; will need discovery
-            l_param_list := '#NULL';
-        ELSIF p_cemli_code = 'Grants' THEN
-            -- AwardMassImportJob: 3 optional args (award number LOV IDs + boolean)
-            -- Discovered via Fusion MCCS UI-4 session 2026-04-01: #NULL,#NULL,#NULL
-            -- Prior 'NEW,N' caused ESS WAIT timeout (wrong param count)
-            l_param_list := '#NULL,#NULL,#NULL';
-        -- GLBalances: param_list built per-ledger inside grouped loop below.
-        ELSIF p_cemli_code = 'GLBudgets' THEN
-            l_param_list := '#NULL';
-        ELSIF p_cemli_code = 'PlanningBudgets' THEN
-            l_param_list := '#NULL';
-        ELSIF p_cemli_code = 'ProjectBudgets' THEN
-            l_param_list := '#NULL';
-        ELSIF p_cemli_code = 'Assets' THEN
-            -- PostMassAdditions: 3 args (from MCCS RICE_003):
-            -- <BookTypeCode>,,NORMAL
-            -- No-hardcoded-IDs standard (design section 7): the asset book is
-            -- named config (ASSET_BOOK_TYPE), not a literal, so other book types
-            -- load without a code change.
-            l_param_list := DMT_UTIL_PKG.GET_CONFIG('ASSET_BOOK_TYPE') || ',,NORMAL';
-        END IF;
-        -- POs/BlanketPOs/Contracts override l_param_list inside their grouped blocks.
-        -- AP/AR/1099 override inside their grouped blocks.
-
-        -- Early exit: if param_list lookup found no eligible rows (e.g. Requisitions
-        -- with no NEW rows in the scenario), skip the entire CEMLI gracefully.
-        IF l_param_list IS NULL THEN
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'No eligible rows for ' || p_cemli_code || ' in this scenario/run_mode. Skipping.',
-                'WARN', C_PKG, l_obj || ' > ' || C_PROC);
-            RETURN FALSE;
-        END IF;
-
-        -- Step 1: Pre-transform validation has been MOVED to Step 1.4b below — it must run
-        -- AFTER the ALL-mode reset, otherwise the reset (Step 1.4) wipes any FAILED status
-        -- the validator sets, letting bad rows flow into the FBDI/HDL and on to Fusion.
-
-        -- (A8/C2b, 2026-07-08) The "Step 1.4 ALL-mode reset" block is DELETED
-        -- (~70 reset_scenario_status calls). ALL mode selects every row in the
-        -- scenario directly via the p_run_mode predicates (Overview run-mode
-        -- table, ALL row) -- no status reset, and the retired RETRY status is
-        -- never written.
-
-        -- Step 1.4b: Pre-transform upstream dependency validation on staging rows.
-        -- Marks staging rows FAILED if their upstream parent is not LOADED.
-        -- MUST run after the Step 1.4 ALL-mode reset above so that FAILED status persists
-        -- (the reset only flips prior-run statuses to RETRY; validation then re-fails the
-        -- genuinely bad rows, and transform's NEW/RETRY filter excludes them from the FBDI).
-        IF    p_cemli_code = 'Suppliers' THEN
-            DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SUPPLIERS(p_run_id);
-        ELSIF p_cemli_code = 'SupplierAddresses' THEN
-            DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_ADDRESSES(p_run_id);
-        ELSIF p_cemli_code = 'SupplierSites' THEN
-            DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITES(p_run_id);
-        ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-            DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITE_ASSIGNMENTS(p_run_id);
-        ELSIF p_cemli_code = 'SupplierContacts' THEN
-            DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_CONTACTS(p_run_id);
-        ELSIF p_cemli_code = 'PurchaseOrders' THEN
-            DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => 'Purchase Order');
-        ELSIF p_cemli_code = 'BlanketPOs' THEN
-            DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => 'Blanket Purchase Agreement');
-        ELSIF p_cemli_code = 'Contracts' THEN
-            DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => 'Contract Purchase Agreement');
-        ELSIF p_cemli_code = 'Customers' THEN
-            DMT_CUST_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'ARInvoices' THEN
-            DMT_AR_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'APInvoices' THEN
-            DMT_AP_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'Projects' THEN
-            DMT_PROJECT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => p_scenario_id);
-        ELSIF p_cemli_code = 'BillingEvents' THEN
-            DMT_BILLING_EVENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'Expenditures' THEN
-            -- Spawn-per-partition child (g_partition_key set to a composite
-            -- {source,document} JSON key): already validated by the parent's
-            -- transform-only pass. Re-transforming below would reset STAGED rows,
-            -- so both are skipped for children (mirrors Requisitions/Items).
-            IF g_partition_key IS NULL THEN
-                DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-            END IF;
-        ELSIF p_cemli_code = 'Grants' THEN
-            DMT_GRANTS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'Items' THEN
-            -- Spawn-per-partition: a child row (g_partition_key set to a BATCH_ID) was
-            -- already validated by the parent's transform-only pass. Re-validating is
-            -- harmless but re-transforming below would reset STAGED rows, so both are
-            -- skipped for children (mirrors the Assets per-book path).
-            IF g_partition_key IS NULL THEN
-                DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-                -- ItemCategories bundle into the Items FBDI ZIP, so they are validated under the
-                -- Items token (no separate 'ItemCategories' CEMLI in the pipeline sequence).
-                DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-            END IF;
-        ELSIF p_cemli_code = 'ItemCategories' THEN
-            -- Dead in the standard pipeline (no 'ItemCategories' token); retained for the
-            -- RUN_ITEM_CATEGORIES standalone validate/transform helper.
-            DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'MiscReceipts' THEN
-            DMT_MISC_RECEIPT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'Requisitions' THEN
-            -- Spawn-per-partition child (g_partition_key set to a BATCH_ID): already
-            -- validated + transformed by the parent's transform-only pass.
-            IF g_partition_key IS NULL THEN
-                DMT_REQ_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-            END IF;
-        ELSIF p_cemli_code = 'GLBalances' THEN
-            DMT_GL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'GLBudgets' THEN
-            DMT_GL_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'PlanningBudgets' THEN
-            DMT_PLAN_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'ProjectBudgets' THEN
-            DMT_PRJ_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-        ELSIF p_cemli_code = 'Assets' THEN
-            -- Multi-book child rows (g_partition_key set) were already validated by the
-            -- parent's transform-only pass; skip to avoid re-processing STAGED rows.
-            IF g_partition_key IS NULL THEN
-                DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-            END IF;
-        END IF;
-        COMMIT;
-
-        -- Step 1.5: Transform staging rows → transformed table (applies prefix, derives fields).
-        -- Only rows with STG_STATUS IN ('NEW','RETRY') that passed pre-validation are picked up.
-        -- Scenario filter: when p_scenario_id is non-NULL, only rows matching
-        -- the scenario are transformed (scenarios are mandatory at ingestion).
-        IF    p_cemli_code = 'Suppliers' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SUPPLIERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'SupplierAddresses' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_ADDRESSES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'SupplierSites' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SITES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'SupplierContacts' THEN
-            DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_CONTACTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'PurchaseOrders' THEN
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_LINE_LOCS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'BlanketPOs' THEN
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Blanket Purchase Agreement', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => 'Blanket Purchase Agreement', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'Contracts' THEN
-            DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => 'Contract Purchase Agreement', p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'Customers' THEN
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTIES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_LOCATIONS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTY_SITES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_PARTY_SITE_USES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCOUNTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITE_USES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'ARInvoices' THEN
-            DMT_AR_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_AR_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'APInvoices' THEN
-            DMT_AP_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_AP_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'Projects' THEN
-            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_PROJECTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TASKS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TEAM_MEMBERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TXN_CONTROLS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'BillingEvents' THEN
-            DMT_BILLING_EVENT_TRANSFORM_PKG.TRANSFORM_EVENTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'Expenditures' THEN
-            -- Spawn-per-partition child (g_partition_key set to a composite
-            -- {source,document} JSON key): already transformed by the parent's
-            -- transform-only pass; re-transforming would reset STAGED rows.
-            IF g_partition_key IS NULL THEN
-                DMT_EXPENDITURE_TRANSFORM_PKG.TRANSFORM_EXPENDITURES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            END IF;
-        ELSIF p_cemli_code = 'Grants' THEN
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUNDING(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PROJECTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PERSONNEL(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUND_SOURCES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_FUND_SRCS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_KEYWORDS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_BUDGET_PERIODS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_CERTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_CFDAS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUND_ALLOCS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_ORG_CREDITS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_TASK_BURDEN(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_REFERENCES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_TERMS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'Items' THEN
-            -- Spawn-per-partition child (g_partition_key set): already transformed by the
-            -- parent's transform-only pass; re-transforming would reset STAGED rows.
-            IF g_partition_key IS NULL THEN
-                DMT_EGP_ITEM_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-                -- Transform bundled categories before the Items FBDI generator picks them up
-                -- (DMT_EGP_ITEM_FBDI_GEN_PKG reads DMT_EGP_ITEM_CAT_TFM_TBL for the bundled CSV).
-                DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            END IF;
-        ELSIF p_cemli_code = 'ItemCategories' THEN
-            -- Dead in the standard pipeline (categories run under the Items token); retained
-            -- for the RUN_ITEM_CATEGORIES standalone helper.
-            DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'MiscReceipts' THEN
-            DMT_MISC_RECEIPT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'Requisitions' THEN
-            -- Spawn-per-partition child (g_partition_key set): already transformed by the
-            -- parent's transform-only pass; re-transforming would reset STAGED rows.
-            IF g_partition_key IS NULL THEN
-                DMT_REQ_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-                DMT_REQ_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-                DMT_REQ_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            END IF;
-        ELSIF p_cemli_code = 'GLBalances' THEN
-            DMT_GL_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'GLBudgets' THEN
-            DMT_GL_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'PlanningBudgets' THEN
-            DMT_PLAN_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'ProjectBudgets' THEN
-            DMT_PRJ_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-        ELSIF p_cemli_code = 'Assets' THEN
-            -- Multi-book: a child row (g_partition_key set) is already transformed by the
-            -- parent's transform-only pass. Re-transforming would reset STAGED rows.
-            IF g_partition_key IS NULL THEN
-                DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-                DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-                DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_BOOKS(p_run_id, p_scenario_id => p_scenario_id, p_run_mode => p_run_mode);
-            END IF;
-        END IF;
-        COMMIT;
-
-        -- Work-queue-ID core (2026-07-20): a spawn-per-partition PARENT transforms
-        -- once (STG -> TFM STAGED) and returns here. The queue worker then reads the
-        -- distinct partition values and spawns one child work-queue item per value;
-        -- each child re-enters with g_partition_key set and generates/loads only its
-        -- own partition. Generalizes the Assets-only transform-only pass.
-        IF g_transform_only THEN
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'Transform-only pass complete for ' || p_cemli_code ||
-                ' (spawn-per-partition parent). Returning to spawn child work items.',
-                'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-            RETURN TRUE;
-        END IF;
-
-        -- ============================================================
-        -- PurchaseOrders: multi-BU load cycle
-        -- Each distinct PRC_BU_NAME gets its own FBDI zip,
-        -- loadAndImportData call, and BIP reconciliation.
-        -- ============================================================
-        IF p_cemli_code = 'PurchaseOrders' THEN
-            DECLARE
-                l_bu_zip       BLOB;
-                l_bu_filename  VARCHAR2(200);
-                l_bu_csv_id    NUMBER;
-                l_bu_load_id   VARCHAR2(100);
-                l_bu_import_id VARCHAR2(100);
-                l_bu_param     VARCHAR2(500);
-                l_bu_id        VARCHAR2(30);
-                l_buyer_id     VARCHAR2(30);
-                l_req_bu_id    VARCHAR2(30);
-                l_bu_count     NUMBER := 0;
-                l_bu_ok        BOOLEAN;
-                l_po_user      VARCHAR2(100);
-                l_po_pass      VARCHAR2(100);
-            BEGIN
-                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('PurchaseOrders', l_po_user, l_po_pass);
-                FOR bu_rec IN (
-                    SELECT DISTINCT PRC_BU_NAME
-                    FROM   DMT_PO_HEADERS_INT_TFM_TBL
-                    WHERE  RUN_ID = p_run_id
-                    AND    TFM_STATUS = 'STAGED'
-                    ORDER BY PRC_BU_NAME
-                ) LOOP
-                    l_bu_count := l_bu_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'PO BU cycle start: ' || bu_rec.PRC_BU_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    DMT_PO_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id => p_run_id,
-                        p_prc_bu_name    => bu_rec.PRC_BU_NAME,
-                        x_fbdi_zip       => l_bu_zip,
-                        x_filename       => l_bu_filename,
-                        x_fbdi_csv_id    => l_bu_csv_id);
-
-                    IF l_bu_zip IS NULL OR DBMS_LOB.GETLENGTH(l_bu_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            'No rows for BU ' || bu_rec.PRC_BU_NAME || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    -- BU id via the one common lookup accessor (raises -20040
-                    -- with a clear halt message if the BU is not resolvable).
-                    l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
-                    l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
-                    l_req_bu_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_REQ_BU_ID');
-
-                    -- Arg 5 (Batch ID) is left blank on purpose: Import Orders then
-                    -- processes all pending interface rows for this BU, so PO partitions
-                    -- by Procurement BU only. The user's batch id still rides through on
-                    -- the interface BATCH_ID column (transform: NVL(user BATCH_ID, run_id))
-                    -- for traceability -- it is a tracking value here, not a load filter.
-                    l_bu_param := l_bu_id || ',' || l_buyer_id || ',' || 'SUBMIT' || ',' ||
-                                  l_req_bu_id || ',,' || 'N' || ',,' || 'N' || ',' ||
-                                  l_bu_id || '_' || TO_CHAR(p_run_id);
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'PO ParameterList for ' || bu_rec.PRC_BU_NAME || ': ' || l_bu_param,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip    => l_bu_zip,
-                        p_filename    => l_bu_filename,
-                        p_fbdi_csv_id => l_bu_csv_id,
-                        p_param_list  => l_bu_param,
-                        p_group_label => 'BU: ' || bu_rec.PRC_BU_NAME,
-                        p_username    => l_po_user,
-                        p_password    => l_po_pass,
-                        x_load_ess_id   => l_bu_load_id,
-                        x_import_ess_id => l_bu_import_id,
-                        x_success       => l_bu_ok);
-
-                    IF NOT l_bu_ok THEN
-                        DECLARE
-                            l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.';
-                        BEGIN
-                            UPDATE DMT_PO_HEADERS_INT_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND PRC_BU_NAME=bu_rec.PRC_BU_NAME;
-                            UPDATE DMT_PO_LINES_INT_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=bu_rec.PRC_BU_NAME);
-                            UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_PO_LINES_INT_TFM_TBL WHERE RUN_ID=p_run_id
-                                AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=bu_rec.PRC_BU_NAME));
-                            UPDATE DMT_PO_DISTS_INT_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND INTERFACE_LINE_LOCATION_KEY IN (SELECT INTERFACE_LINE_LOCATION_KEY FROM DMT_PO_LINE_LOCS_INT_TFM_TBL WHERE RUN_ID=p_run_id
-                                AND INTERFACE_LINE_KEY IN (SELECT INTERFACE_LINE_KEY FROM DMT_PO_LINES_INT_TFM_TBL WHERE RUN_ID=p_run_id
-                                AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=bu_rec.PRC_BU_NAME)));
-                            COMMIT;
-                        END;
-                        CONTINUE;
-                    END IF;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'PO BU cycle complete: ' || bu_rec.PRC_BU_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                END LOOP;
-
-                IF l_bu_count = 0 THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'No STAGED PO headers found. Skipping PurchaseOrders.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    RETURN FALSE;
-                END IF;
-            END;
-
-            -- After all BUs: check failed rows + update master totals
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- ARInvoices: grouped load by (BU_NAME, BATCH_SOURCE_NAME)
-        -- Each distinct combination gets its own FBDI zip,
-        -- loadAndImportData call, and BIP reconciliation.
-        -- ParameterList: BU_NAME, BATCH_SOURCE_NAME, SYSDATE
-        -- ============================================================
-        IF p_cemli_code = 'ARInvoices' THEN
-            DECLARE
-                l_ar_zip        BLOB;
-                l_ar_filename   VARCHAR2(200);
-                l_ar_csv_id     NUMBER;
-                l_ar_load_id    VARCHAR2(100);
-                l_ar_import_id  VARCHAR2(100);
-                l_ar_param      VARCHAR2(500);
-                l_ar_count      NUMBER := 0;
-                l_ar_ok         BOOLEAN;
-            BEGIN
-                FOR grp_rec IN (
-                    SELECT DISTINCT BU_NAME, BATCH_SOURCE_NAME
-                    FROM   DMT_RA_LINES_TFM_TBL
-                    WHERE  RUN_ID = p_run_id
-                    AND    TFM_STATUS = 'STAGED'
-                    ORDER BY BU_NAME, BATCH_SOURCE_NAME
-                ) LOOP
-                    l_ar_count := l_ar_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'AR group cycle start: BU=' || grp_rec.BU_NAME ||
-                        ', Source=' || grp_rec.BATCH_SOURCE_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    DMT_AR_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id    => p_run_id,
-                        p_bu_name           => grp_rec.BU_NAME,
-                        p_batch_source_name => grp_rec.BATCH_SOURCE_NAME,
-                        x_fbdi_zip          => l_ar_zip,
-                        x_filename          => l_ar_filename,
-                        x_fbdi_csv_id       => l_ar_csv_id);
-
-                    IF l_ar_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ar_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            'No rows for BU=' || grp_rec.BU_NAME ||
-                            ', Source=' || grp_rec.BATCH_SOURCE_NAME || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    -- 24-arg ParameterList for AutoInvoiceImportEss
-                    l_ar_param := grp_rec.BU_NAME || ',' || grp_rec.BATCH_SOURCE_NAME
-                        || ',' || TO_CHAR(SYSDATE, 'YYYY-MM-DD')
-                        || ',#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL'
-                        || ',#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL'
-                        || ',#NULL,N,#NULL';
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'AR ParameterList: ' || l_ar_param,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip    => l_ar_zip,
-                        p_filename    => l_ar_filename,
-                        p_fbdi_csv_id => l_ar_csv_id,
-                        p_param_list  => l_ar_param,
-                        p_group_label => 'BU: ' || grp_rec.BU_NAME || ', Source: ' || grp_rec.BATCH_SOURCE_NAME,
-                        x_load_ess_id   => l_ar_load_id,
-                        x_import_ess_id => l_ar_import_id,
-                        x_success       => l_ar_ok);
-
-                    IF NOT l_ar_ok THEN
-                        DECLARE
-                            l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ar_load_id || ' logs for details.';
-                        BEGIN
-                            UPDATE DMT_RA_LINES_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND BU_NAME=grp_rec.BU_NAME AND BATCH_SOURCE_NAME=grp_rec.BATCH_SOURCE_NAME;
-                            UPDATE DMT_RA_DISTS_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND BU_NAME=grp_rec.BU_NAME;
-                            COMMIT;
-                        END;
-                        CONTINUE;
-                    END IF;
-
-                    -- Check for rows still at GENERATED after BIP reconciliation
-                    DECLARE
-                        l_gen_count  NUMBER;
-                    BEGIN
-                        SELECT COUNT(*) INTO l_gen_count
-                        FROM   DMT_RA_LINES_TFM_TBL
-                        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                        AND    BU_NAME = grp_rec.BU_NAME AND BATCH_SOURCE_NAME = grp_rec.BATCH_SOURCE_NAME;
-                        IF l_gen_count > 0 THEN
-                            DMT_UTIL_PKG.LOG(p_run_id,
-                                'WARNING: ' || l_gen_count || ' AR rows still at GENERATED after BIP reconciliation ' ||
-                                '(BU: ' || grp_rec.BU_NAME || ', Source: ' || grp_rec.BATCH_SOURCE_NAME || '). ' ||
-                                'These rows were not matched by BIP and require manual investigation.',
-                                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        END IF;
-                    END;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'AR group cycle complete: BU=' || grp_rec.BU_NAME ||
-                        ', Source=' || grp_rec.BATCH_SOURCE_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                END LOOP;
-
-                IF l_ar_count = 0 THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'No STAGED AR invoice lines found. Skipping ARInvoices.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    RETURN FALSE;
-                END IF;
-            END;
-
-            -- After all groups: check failed rows + update master totals
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- Customers: grouped load, partitioned by (BATCH_ID, Source System).
-        -- The load job MUST be "Import Bulk Customer Data" (job def
-        -- CDMAutoBulkImportJob at /oracle/apps/ess/cdm/foundation/bulkImport),
-        -- NOT BulkImportJob ("Import Trading Community Data in Bulk", which needs
-        -- a pre-existing batch and NPEs on a null batchId). CDMAutoBulkImportJob
-        -- CREATES the import batch from a 4-value positional ParameterList
-        -- (Batch ID, Batch Name, Object CODE 'CUSTOMER', Source System) and then
-        -- processes it -- proven by manual ESS run 9731634. The object arg MUST
-        -- be the code 'CUSTOMER' (not 'Customer and Consumer'). We emit one FBDI
-        -- + one load per (BATCH_ID, Source System); the batch id comes from the
-        -- CSV and one batch uses exactly one source system.
-        -- ============================================================
-        IF p_cemli_code = 'Customers' THEN
-            DECLARE
-                l_cu_zip        BLOB;
-                l_cu_filename   VARCHAR2(200);
-                l_cu_csv_id     NUMBER;
-                l_cu_load_id    VARCHAR2(100);
-                l_cu_import_id  VARCHAR2(100);
-                l_cu_param      VARCHAR2(500);
-                l_cu_count      NUMBER := 0;
-                l_cu_ok         BOOLEAN;
-
-                -- Fail every one of the 7 customer sub-object TFM tables'
-                -- GENERATED rows for this batch, with a reportable error.
-                PROCEDURE mark_batch_failed(p_bid IN NUMBER, p_msg IN VARCHAR2) IS
-                BEGIN
-                    UPDATE DMT_HZ_PARTIES_TFM_TBL         SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_HZ_LOCATIONS_TFM_TBL       SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_HZ_PARTY_SITES_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_HZ_ACCOUNTS_TFM_TBL        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_HZ_ACCT_SITES_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL  SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-                    COMMIT;
-                END mark_batch_failed;
-            BEGIN
-                FOR grp_rec IN (
-                    SELECT BATCH_ID,
-                           MIN(PARTY_ORIG_SYSTEM)            AS SOURCE_SYSTEM,
-                           COUNT(DISTINCT PARTY_ORIG_SYSTEM) AS SRC_COUNT
-                    FROM   DMT_HZ_PARTIES_TFM_TBL
-                    WHERE  RUN_ID = p_run_id
-                    AND    TFM_STATUS = 'STAGED'
-                    AND    BATCH_ID IS NOT NULL
-                    GROUP BY BATCH_ID
-                    ORDER BY BATCH_ID
-                ) LOOP
-                    l_cu_count := l_cu_count + 1;
-
-                    -- One batch = one source system (Source System is a single
-                    -- positional ESS parameter for the whole batch).
-                    IF grp_rec.SRC_COUNT > 1 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            'Customer batch ' || grp_rec.BATCH_ID || ' mixes ' || grp_rec.SRC_COUNT ||
-                            ' source systems -- a batch must use exactly one. Marking FAILED.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        mark_batch_failed(grp_rec.BATCH_ID,
-                            '[PRE_VALIDATION] Batch ' || grp_rec.BATCH_ID ||
-                            ' mixes multiple source systems; one batch must use exactly one source system.');
-                        CONTINUE;
-                    END IF;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Customer batch cycle start: BATCH_ID=' || grp_rec.BATCH_ID ||
-                        ', Source=' || grp_rec.SOURCE_SYSTEM,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    DMT_CUST_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id      => p_run_id,
-                        x_fbdi_zip    => l_cu_zip,
-                        x_filename    => l_cu_filename,
-                        x_fbdi_csv_id => l_cu_csv_id,
-                        p_batch_id    => grp_rec.BATCH_ID);
-
-                    IF l_cu_zip IS NULL OR DBMS_LOB.GETLENGTH(l_cu_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            'No rows for customer batch ' || grp_rec.BATCH_ID || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    -- ParameterList for "Import Bulk Customer Data"
-                    -- (job def CDMAutoBulkImportJob), which CREATES the import batch
-                    -- from these 4 positional args -- modelled on the proven manual run
-                    -- (ESS 9731634): 1=Batch ID (from the CSV), 2=Batch Name,
-                    -- 3=Object CODE ('CUSTOMER' -- NOT 'Customer and Consumer',
-                    -- which silently fails to create the batch), 4=Source System.
-                    l_cu_param := TO_CHAR(grp_rec.BATCH_ID)
-                        || ',Batch ID ' || TO_CHAR(grp_rec.BATCH_ID) || ' ' || grp_rec.SOURCE_SYSTEM
-                        || ',CUSTOMER'
-                        || ',' || grp_rec.SOURCE_SYSTEM;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Customer ParameterList: ' || l_cu_param,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip    => l_cu_zip,
-                        p_filename    => l_cu_filename,
-                        p_fbdi_csv_id => l_cu_csv_id,
-                        p_param_list  => l_cu_param,
-                        p_group_label => 'Batch: ' || grp_rec.BATCH_ID,
-                        x_load_ess_id   => l_cu_load_id,
-                        x_import_ess_id => l_cu_import_id,
-                        x_success       => l_cu_ok);
-
-                    IF NOT l_cu_ok THEN
-                        mark_batch_failed(grp_rec.BATCH_ID,
-                            '[LOAD_ERROR] Loading customer batch ' || grp_rec.BATCH_ID ||
-                            ' to the Fusion interface failed. Check ESS job ' || l_cu_load_id || ' logs.');
-                        CONTINUE;
-                    END IF;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Customer batch cycle complete: BATCH_ID=' || grp_rec.BATCH_ID,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                END LOOP;
-
-                IF l_cu_count = 0 THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'No STAGED Customer rows with a batch id found. Skipping Customers.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    RETURN FALSE;
-                END IF;
-            END;
-
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- Requisitions: grouped load by BATCH_ID.
-        -- One batch = one FBDI zip = one Import Requisitions ESS run.
-        -- The batch key lives on the HEADER only; lines and distributions
-        -- belong to a batch through their header link (INTERFACE_HEADER_KEY),
-        -- so the generator filters them by joining back to the header.
-        -- One batch must use exactly one requisitioning business unit
-        -- (RequisitioningBuId is a single positional ESS argument).
-        -- ============================================================
-        IF p_cemli_code = 'Requisitions' THEN
-            DECLARE
-                l_rq_zip        BLOB;
-                l_rq_filename   VARCHAR2(200);
-                l_rq_csv_id     NUMBER;
-                l_rq_load_id    VARCHAR2(100);
-                l_rq_import_id  VARCHAR2(100);
-                l_rq_param      VARCHAR2(500);
-                l_rq_count      NUMBER := 0;
-                l_rq_bu_id      VARCHAR2(30);
-                l_rq_ok         BOOLEAN;
-                l_rq_user       VARCHAR2(100);
-                l_rq_pass       VARCHAR2(100);
-
-                -- Fail this batch's GENERATED rows across all 3 REQ TFM tables.
-                -- Headers filter by BATCH_ID directly; lines/dists filter by
-                -- their header's BATCH_ID (they have no batch column).
-                PROCEDURE mark_batch_failed(p_bid IN VARCHAR2, p_msg IN VARCHAR2) IS
-                BEGIN
-                    UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
-                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=p_bid;
-
-                    UPDATE DMT_POR_REQ_LINES_TFM_TBL l
-                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                      AND EXISTS (SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL h
-                                  WHERE h.RUN_ID=l.RUN_ID
-                                    AND h.INTERFACE_HEADER_KEY=l.INTERFACE_HEADER_KEY
-                                    AND h.BATCH_ID=p_bid);
-
-                    UPDATE DMT_POR_REQ_DISTS_TFM_TBL d
-                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg)
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                      AND EXISTS (SELECT 1
-                                  FROM DMT_POR_REQ_LINES_TFM_TBL l
-                                  JOIN DMT_POR_REQ_HEADERS_TFM_TBL h
-                                    ON h.RUN_ID=l.RUN_ID AND h.INTERFACE_HEADER_KEY=l.INTERFACE_HEADER_KEY
-                                  WHERE l.RUN_ID=d.RUN_ID
-                                    AND l.INTERFACE_LINE_KEY=d.INTERFACE_LINE_KEY
-                                    AND h.BATCH_ID=p_bid);
-                    COMMIT;
-                END mark_batch_failed;
-            BEGIN
-                -- Requisitions submits under its own configured ESS user
-                -- (same credential the single-submit path used to load online).
-                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('Requisitions', l_rq_user, l_rq_pass);
-
-                -- Work-queue-ID core (2026-07-20): when this is a spawn-per-partition
-                -- child, g_partition_key holds its single BATCH_ID (JSON-encoded,
-                -- e.g. {"BATCH_ID":"8102"}) and the loop runs exactly once for that
-                -- batch. DECODE_PARTITION_KEY yields the raw BATCH_ID to bind into
-                -- the static cursor. The parent loop (g_partition_key NULL) is
-                -- retained only for the legacy/standalone single-item path.
-                FOR grp_rec IN (
-                    SELECT BATCH_ID,
-                           MIN(REQ_BU_NAME)            AS REQ_BU_NAME,
-                           COUNT(DISTINCT REQ_BU_NAME) AS BU_COUNT
-                    FROM   DMT_POR_REQ_HEADERS_TFM_TBL
-                    WHERE  RUN_ID = p_run_id
-                    AND    TFM_STATUS = 'STAGED'
-                    AND    BATCH_ID IS NOT NULL
-                    AND    (g_partition_key IS NULL
-                            OR BATCH_ID = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
-                    GROUP BY BATCH_ID
-                    ORDER BY BATCH_ID
-                ) LOOP
-                    l_rq_count := l_rq_count + 1;
-
-                    -- One batch = one requisitioning business unit.
-                    IF grp_rec.BU_COUNT > 1 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            'Requisition batch ' || grp_rec.BATCH_ID || ' mixes ' || grp_rec.BU_COUNT ||
-                            ' business units -- a batch must use exactly one. Marking FAILED.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        mark_batch_failed(grp_rec.BATCH_ID,
-                            '[PRE_VALIDATION] Batch ' || grp_rec.BATCH_ID ||
-                            ' mixes multiple requisitioning business units; one batch must use exactly one BU.');
-                        CONTINUE;
-                    END IF;
-
-                    -- Resolve the BU id from its name (no hardcoded ids).
-                    BEGIN
-                        l_rq_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', grp_rec.REQ_BU_NAME);
-                    EXCEPTION WHEN OTHERS THEN
-                        l_rq_bu_id := NULL;
-                    END;
-                    IF l_rq_bu_id IS NULL THEN
-                        mark_batch_failed(grp_rec.BATCH_ID,
-                            '[PRE_VALIDATION] Requisitioning BU "' || grp_rec.REQ_BU_NAME ||
-                            '" for batch ' || grp_rec.BATCH_ID || ' did not resolve to a Fusion BU id.');
-                        CONTINUE;
-                    END IF;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Requisition batch cycle start: BATCH_ID=' || grp_rec.BATCH_ID ||
-                        ', BU=' || grp_rec.REQ_BU_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    DMT_REQ_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id      => p_run_id,
-                        x_fbdi_zip    => l_rq_zip,
-                        x_filename    => l_rq_filename,
-                        x_fbdi_csv_id => l_rq_csv_id,
-                        p_batch_id    => grp_rec.BATCH_ID);
-
-                    IF l_rq_zip IS NULL OR DBMS_LOB.GETLENGTH(l_rq_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            'No rows for requisition batch ' || grp_rec.BATCH_ID || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    -- RequisitionImportJob, 8 positional args.
-                    -- 1=ImportSource, 2=BatchId (this batch), 3=MaxBatchSize,
-                    -- 4=RequisitioningBuId (resolved), 5=GroupBy, 6=NextReqNumber,
-                    -- 7=InitiateApproval, 8=ErrorLevel.
-                    l_rq_param := '#NULL,'
-                        || grp_rec.BATCH_ID || ','
-                        || '#NULL,'
-                        || l_rq_bu_id || ','
-                        || 'NONE,'
-                        || '#NULL,'
-                        || 'NO,'
-                        || 'ALL';
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Requisition ParameterList: ' || l_rq_param,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip    => l_rq_zip,
-                        p_filename    => l_rq_filename,
-                        p_fbdi_csv_id => l_rq_csv_id,
-                        p_param_list  => l_rq_param,
-                        p_group_label => 'Batch: ' || grp_rec.BATCH_ID,
-                        p_username    => l_rq_user,
-                        p_password    => l_rq_pass,
-                        x_load_ess_id   => l_rq_load_id,
-                        x_import_ess_id => l_rq_import_id,
-                        x_success       => l_rq_ok);
-
-                    IF NOT l_rq_ok THEN
-                        mark_batch_failed(grp_rec.BATCH_ID,
-                            '[LOAD_ERROR] Loading requisition batch ' || grp_rec.BATCH_ID ||
-                            ' to the Fusion interface failed. Check ESS job ' || l_rq_load_id || ' logs.');
-                        CONTINUE;
-                    END IF;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Requisition batch cycle complete: BATCH_ID=' || grp_rec.BATCH_ID,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                END LOOP;
-
-                IF l_rq_count = 0 THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'No STAGED Requisition rows with a batch id found. Skipping Requisitions.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    RETURN FALSE;
-                END IF;
-            END;
-
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- Items: grouped load by BATCH_ID.
-        -- One batch = one FBDI zip (items + bundled categories) =
-        -- one Item Import (ItemImportJobDef) ESS run. Both the item TFM
-        -- table and the bundled category TFM table carry their own
-        -- BATCH_ID column, so each is filtered directly (no join).
-        -- ============================================================
-        IF p_cemli_code = 'Items' THEN
-            DECLARE
-                l_it_zip        BLOB;
-                l_it_filename   VARCHAR2(200);
-                l_it_csv_id     NUMBER;
-                l_it_load_id    VARCHAR2(100);
-                l_it_import_id  VARCHAR2(100);
-                l_it_param      VARCHAR2(500);
-                l_it_count      NUMBER := 0;
-                l_it_ok         BOOLEAN;
-                l_it_user       VARCHAR2(100);
-                l_it_pass       VARCHAR2(100);
-
-                -- Fail this batch's GENERATED rows in BOTH bundled TFM tables.
-                -- Each has its own BATCH_ID column, so filter directly (no join).
-                PROCEDURE mark_batch_failed(p_bid IN VARCHAR2, p_msg IN VARCHAR2) IS
-                BEGIN
-                    UPDATE DMT_EGP_ITEM_TFM_TBL
-                    SET TFM_STATUS='FAILED',
-                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg),
-                        LAST_UPDATED_DATE=SYSDATE
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=TO_NUMBER(p_bid);
-
-                    UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
-                    SET TFM_STATUS='FAILED',
-                        ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,p_msg),
-                        LAST_UPDATED_DATE=SYSDATE
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND BATCH_ID=TO_NUMBER(p_bid);
-                    COMMIT;
-                END mark_batch_failed;
-            BEGIN
-                -- Items submits under its own configured ESS user (SCM_IMPL per the
-                -- ItemImportJobDef interface-options row) -- same credential the
-                -- single-submit path used to load online.
-                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('Items', l_it_user, l_it_pass);
-
-                -- A batch may have item rows, category rows, or both -- union both
-                -- TFM tables for the complete set of distinct batch ids.
-                -- Work-queue-ID core (2026-07-20): a spawn-per-partition child sets
-                -- g_partition_key to its single BATCH_ID (JSON-encoded, e.g.
-                -- {"BATCH_ID":"8102"}); DECODE_PARTITION_KEY yields the raw batch id
-                -- to bind, so the loop runs once for that batch. g_partition_key NULL
-                -- keeps the legacy all-batches loop.
-                FOR grp_rec IN (
-                    SELECT TO_CHAR(BATCH_ID) AS BATCH_ID
-                    FROM   DMT_EGP_ITEM_TFM_TBL
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
-                    AND    (g_partition_key IS NULL
-                            OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
-                    UNION
-                    SELECT TO_CHAR(BATCH_ID)
-                    FROM   DMT_EGP_ITEM_CAT_TFM_TBL
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED' AND BATCH_ID IS NOT NULL
-                    AND    (g_partition_key IS NULL
-                            OR TO_CHAR(BATCH_ID) = DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_ID'))
-                    ORDER BY 1
-                ) LOOP
-                    l_it_count := l_it_count + 1;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Item batch cycle start: BATCH_ID=' || grp_rec.BATCH_ID,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    DMT_EGP_ITEM_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id      => p_run_id,
-                        x_fbdi_zip    => l_it_zip,
-                        x_filename    => l_it_filename,
-                        x_fbdi_csv_id => l_it_csv_id,
-                        p_batch_id    => grp_rec.BATCH_ID);
-
-                    IF l_it_zip IS NULL OR DBMS_LOB.GETLENGTH(l_it_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            'No rows for item batch ' || grp_rec.BATCH_ID || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    -- ItemImportJobDef, 7 positional args (MCCS RICE_009 pattern).
-                    -- 1=BatchID (this batch), 2=Organization(null), 3=ProcessOnly=CREATE,
-                    -- 4=ProcessAllOrgs(null), 5=DeleteProcessedRows(null),
-                    -- 6=ReprocessError=N, 7=ProcessSequentially=Y.
-                    l_it_param := grp_rec.BATCH_ID || ',null,CREATE,null,null,N,Y';
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Item ParameterList: ' || l_it_param,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip    => l_it_zip,
-                        p_filename    => l_it_filename,
-                        p_fbdi_csv_id => l_it_csv_id,
-                        p_param_list  => l_it_param,
-                        p_group_label => 'Batch: ' || grp_rec.BATCH_ID,
-                        p_username    => l_it_user,
-                        p_password    => l_it_pass,
-                        x_load_ess_id   => l_it_load_id,
-                        x_import_ess_id => l_it_import_id,
-                        x_success       => l_it_ok);
-
-                    IF NOT l_it_ok THEN
-                        mark_batch_failed(grp_rec.BATCH_ID,
-                            '[LOAD_ERROR] Loading item batch ' || grp_rec.BATCH_ID ||
-                            ' to the Fusion interface failed. Check ESS job ' || l_it_load_id || ' logs.');
-                        CONTINUE;
-                    END IF;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Item batch cycle complete: BATCH_ID=' || grp_rec.BATCH_ID,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                END LOOP;
-
-                IF l_it_count = 0 THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'No STAGED Item rows with a batch id found. Skipping Items.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    RETURN FALSE;
-                END IF;
-            END;
-
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- BlanketPOs: grouped load by PRC_BU_NAME (same as standard POs)
-        -- ============================================================
-        IF p_cemli_code = 'BlanketPOs' THEN
-            DECLARE
-                l_bu_zip       BLOB;
-                l_bu_filename  VARCHAR2(200);
-                l_bu_csv_id    NUMBER;
-                l_bu_load_id   VARCHAR2(100);
-                l_bu_import_id VARCHAR2(100);
-                l_bu_param     VARCHAR2(500);
-                l_bu_id        VARCHAR2(30);
-                l_buyer_id     VARCHAR2(30);
-                l_bu_count     NUMBER := 0;
-                l_any_staged   NUMBER := 0;
-                l_bu_ok        BOOLEAN;
-                l_po_user      VARCHAR2(100);
-                l_po_pass      VARCHAR2(100);
-            BEGIN
-                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('BlanketPOs', l_po_user, l_po_pass);
-                FOR bu_rec IN (
-                    SELECT DISTINCT PRC_BU_NAME
-                    FROM   DMT_PO_HEADERS_INT_TFM_TBL
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
-                    AND    STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
-                    ORDER BY PRC_BU_NAME
-                ) LOOP
-                    l_bu_count := l_bu_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'BlanketPO BU cycle start: ' || bu_rec.PRC_BU_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    DMT_BLANKET_PO_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id => p_run_id, p_prc_bu_name => bu_rec.PRC_BU_NAME,
-                        x_fbdi_zip => l_bu_zip, x_filename => l_bu_filename, x_fbdi_csv_id => l_bu_csv_id);
-
-                    IF l_bu_zip IS NULL OR DBMS_LOB.GETLENGTH(l_bu_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id, 'No blanket rows for BU ' || bu_rec.PRC_BU_NAME || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
-                    l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
-
-                    -- ImportBPAJob: 8 args
-                    l_bu_param := l_bu_id || ',' || l_buyer_id || ',N,SUBMIT,,,N,' || l_bu_id || '_' || TO_CHAR(p_run_id);
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip => l_bu_zip, p_filename => l_bu_filename, p_fbdi_csv_id => l_bu_csv_id,
-                        p_param_list => l_bu_param, p_group_label => 'BU: ' || bu_rec.PRC_BU_NAME,
-                        p_username => l_po_user, p_password => l_po_pass,
-                        x_load_ess_id => l_bu_load_id, x_import_ess_id => l_bu_import_id, x_success => l_bu_ok);
-
-                    IF NOT l_bu_ok THEN
-                        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
-                        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                            '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.'),
-                            LAST_UPDATED_DATE=SYSDATE
-                        WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND PRC_BU_NAME=bu_rec.PRC_BU_NAME
-                        AND STYLE_DISPLAY_NAME='Blanket Purchase Agreement';
-                        COMMIT;
-                        CONTINUE;
-                    END IF;
-                END LOOP;
-
-                IF l_bu_count = 0 THEN
-                    SELECT COUNT(*) INTO l_any_staged FROM DMT_PO_HEADERS_INT_TFM_TBL
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
-                    AND STYLE_DISPLAY_NAME='Blanket Purchase Agreement' AND ROWNUM=1;
-                    IF l_any_staged = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id, 'No STAGED blanket PO headers. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        RETURN FALSE;
-                    END IF;
-                END IF;
-            END;
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- Contracts: grouped load by PRC_BU_NAME (headers only)
-        -- ============================================================
-        IF p_cemli_code = 'Contracts' THEN
-            DECLARE
-                l_bu_zip       BLOB;
-                l_bu_filename  VARCHAR2(200);
-                l_bu_csv_id    NUMBER;
-                l_bu_load_id   VARCHAR2(100);
-                l_bu_import_id VARCHAR2(100);
-                l_bu_param     VARCHAR2(500);
-                l_bu_id        VARCHAR2(30);
-                l_buyer_id     VARCHAR2(30);
-                l_bu_count     NUMBER := 0;
-                l_any_staged   NUMBER := 0;
-                l_bu_ok        BOOLEAN;
-                l_po_user      VARCHAR2(100);
-                l_po_pass      VARCHAR2(100);
-            BEGIN
-                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS('Contracts', l_po_user, l_po_pass);
-                FOR bu_rec IN (
-                    SELECT DISTINCT PRC_BU_NAME
-                    FROM   DMT_PO_HEADERS_INT_TFM_TBL
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
-                    AND    STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'
-                    ORDER BY PRC_BU_NAME
-                ) LOOP
-                    l_bu_count := l_bu_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Contract BU cycle start: ' || bu_rec.PRC_BU_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    DMT_CONTRACT_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id => p_run_id, p_prc_bu_name => bu_rec.PRC_BU_NAME,
-                        x_fbdi_zip => l_bu_zip, x_filename => l_bu_filename, x_fbdi_csv_id => l_bu_csv_id);
-
-                    IF l_bu_zip IS NULL OR DBMS_LOB.GETLENGTH(l_bu_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id, 'No contract rows for BU ' || bu_rec.PRC_BU_NAME || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
-                    l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
-
-                    -- ImportCPAJob: 7 args
-                    l_bu_param := l_bu_id || ',' || l_buyer_id || ',SUBMIT,,,N,' || l_bu_id || '_' || TO_CHAR(p_run_id);
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip => l_bu_zip, p_filename => l_bu_filename, p_fbdi_csv_id => l_bu_csv_id,
-                        p_param_list => l_bu_param, p_group_label => 'BU: ' || bu_rec.PRC_BU_NAME,
-                        p_username => l_po_user, p_password => l_po_pass,
-                        x_load_ess_id => l_bu_load_id, x_import_ess_id => l_bu_import_id, x_success => l_bu_ok);
-
-                    IF NOT l_bu_ok THEN
-                        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
-                        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                            '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_bu_load_id || ' logs for details.'),
-                            LAST_UPDATED_DATE=SYSDATE
-                        WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND PRC_BU_NAME=bu_rec.PRC_BU_NAME
-                        AND STYLE_DISPLAY_NAME='Contract Purchase Agreement';
-                        COMMIT;
-                        CONTINUE;
-                    END IF;
-                END LOOP;
-
-                IF l_bu_count = 0 THEN
-                    SELECT COUNT(*) INTO l_any_staged FROM DMT_PO_HEADERS_INT_TFM_TBL
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED'
-                    AND STYLE_DISPLAY_NAME='Contract Purchase Agreement' AND ROWNUM=1;
-                    IF l_any_staged = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id, 'No STAGED contract headers. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        RETURN FALSE;
-                    END IF;
-                END IF;
-            END;
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- APInvoices: grouped load by OPERATING_UNIT
-        -- Each OU gets its own FBDI zip, loadAndImportData, and BIP reconciliation.
-        -- ============================================================
-        IF p_cemli_code = 'APInvoices' THEN
-            DECLARE
-                l_ou_zip       BLOB;
-                l_ou_filename  VARCHAR2(200);
-                l_ou_csv_id    NUMBER;
-                l_ou_load_id   VARCHAR2(100);
-                l_ou_import_id VARCHAR2(100);
-                l_ou_param     VARCHAR2(500);
-                l_ou_count     NUMBER := 0;
-                l_any_staged   NUMBER := 0;
-                l_ou_ok        BOOLEAN;
-            BEGIN
-                FOR ou_rec IN (
-                    SELECT DISTINCT OPERATING_UNIT
-                    FROM   DMT_AP_INVOICES_INT_TFM_TBL
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
-                    ORDER BY OPERATING_UNIT
-                ) LOOP
-                    l_ou_count := l_ou_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'AP OU cycle start: ' || ou_rec.OPERATING_UNIT,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    DMT_AP_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id => p_run_id, p_operating_unit => ou_rec.OPERATING_UNIT,
-                        x_fbdi_zip => l_ou_zip, x_filename => l_ou_filename, x_fbdi_csv_id => l_ou_csv_id);
-
-                    IF l_ou_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ou_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id, 'No rows for OU ' || ou_rec.OPERATING_UNIT || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    -- AP APXIIMPT 14-arg ParameterList
-                    DECLARE
-                        l_ap_bu_id  VARCHAR2(50);
-                        l_ap_ledger VARCHAR2(50);
-                        l_ap_source VARCHAR2(100);
-                    BEGIN
-                        -- BU id + its primary ledger via the common lookup. Every active BU
-                        -- has a BU_NAME_TO_PRIMARY_LEDGER_ID row; it resolves to NULL when the
-                        -- BU has no primary ledger, so the NVL(...,'#NULL') below still applies
-                        -- (GET_LOOKUP raises only when the BU itself is unknown).
-                        l_ap_bu_id  := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', ou_rec.OPERATING_UNIT);
-                        l_ap_ledger := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_PRIMARY_LEDGER_ID', ou_rec.OPERATING_UNIT);
-                        SELECT SOURCE INTO l_ap_source FROM DMT_AP_INVOICES_INT_TFM_TBL
-                        WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT AND TFM_STATUS='GENERATED' AND ROWNUM=1;
-                        l_ou_param := ',' || l_ap_bu_id || ',N,' || TO_CHAR(SYSDATE,'YYYY-MM-DD') ||
-                            ',#NULL,#NULL,1000,' || l_ap_source || ',' || TO_CHAR(p_run_id) ||
-                            ',N,Y,' || NVL(l_ap_ledger,'#NULL') || ',#NULL,1';
-                    END;
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip => l_ou_zip, p_filename => l_ou_filename, p_fbdi_csv_id => l_ou_csv_id,
-                        p_param_list => l_ou_param, p_group_label => 'OU: ' || ou_rec.OPERATING_UNIT,
-                        x_load_ess_id => l_ou_load_id, x_import_ess_id => l_ou_import_id, x_success => l_ou_ok);
-
-                    IF NOT l_ou_ok THEN
-                        DECLARE
-                            l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ou_load_id || ' logs for details.';
-                        BEGIN
-                            UPDATE DMT_AP_INVOICES_INT_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND OPERATING_UNIT=ou_rec.OPERATING_UNIT;
-                            UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL
-                            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                            AND INVOICE_ID IN (SELECT INVOICE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT);
-                            COMMIT;
-                        END;
-                        CONTINUE;
-                    END IF;
-
-                    -- Check for rows still at GENERATED after BIP
-                    DECLARE l_gen_count NUMBER;
-                    BEGIN
-                        SELECT COUNT(*) INTO l_gen_count FROM DMT_AP_INVOICES_INT_TFM_TBL
-                        WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND OPERATING_UNIT=ou_rec.OPERATING_UNIT;
-                        IF l_gen_count > 0 THEN
-                            DMT_UTIL_PKG.LOG(p_run_id,
-                                'WARNING: ' || l_gen_count || ' AP invoice rows still at GENERATED after BIP reconciliation (OU: ' || ou_rec.OPERATING_UNIT || '). Require manual investigation.',
-                                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        END IF;
-                    END;
-                END LOOP;
-
-                IF l_ou_count = 0 THEN
-                    SELECT COUNT(*) INTO l_any_staged FROM DMT_AP_INVOICES_INT_TFM_TBL
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED' AND ROWNUM=1;
-                    IF l_any_staged = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id, 'No STAGED AP invoice headers found. Skipping APInvoices.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        RETURN FALSE;
-                    END IF;
-                END IF;
-            END;
-
-            -- After all groups: check failed rows + update master totals
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- GLBudgets: load once, then run "Validate and Load Budgets"
-        -- STANDALONE once per distinct Run Name (Column A). The chained import
-        -- that loadAndImportData triggers gets no run name and is a throwaway;
-        -- the real cube load happens in the per-run-name ValidateAndLoadBudgets
-        -- submissions below. Reconciliation is cell-grain against
-        -- GL_BUDGET_BALANCES scoped to a run-start window (budgets carry no
-        -- source-line identity). See DMT_GL_BUDGET_RESULTS_PKG.
-        -- ============================================================
-        IF p_cemli_code = 'GLBudgets' THEN
-            DECLARE
-                l_gb_zip        BLOB;
-                l_gb_filename   VARCHAR2(200);
-                l_gb_csv_id     NUMBER;
-                l_gb_load_id    VARCHAR2(100);
-                l_gb_import_id  VARCHAR2(100);
-                l_gb_status     VARCHAR2(50);
-                l_gb_run_start  TIMESTAMP := SYSTIMESTAMP;
-                l_gb_ledger     NUMBER;
-                l_gb_ledgers    NUMBER := 0;
-                l_gb_rows       NUMBER := 0;
-                l_gb_runs       NUMBER := 0;
-            BEGIN
-                -- Generate one FBDI zip for all STAGED budget rows this run.
-                DMT_GL_BUDGET_FBDI_GEN_PKG.GENERATE_FBDI(
-                    p_run_id       => p_run_id,
-                    x_fbdi_zip     => l_gb_zip,
-                    x_filename     => l_gb_filename,
-                    x_fbdi_csv_id  => l_gb_csv_id);
-
-                SELECT COUNT(*) INTO l_gb_rows
-                FROM   DMT_GL_BUDGET_INT_TFM_TBL
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-
-                IF l_gb_zip IS NULL OR DBMS_LOB.GETLENGTH(l_gb_zip) = 0 OR l_gb_rows = 0 THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'No STAGED GL budget rows found. Skipping GLBudgets.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    RETURN FALSE;
-                END IF;
-
-                -- Step 1: Load Interface File for Import (loadAndImportData).
-                -- Loads the CSV into GL_BUDGET_INTERFACE. Its chained
-                -- ValidateAndLoadBudgets (no run name) is ignored.
-                l_gb_load_id := SUBMIT_LOAD(
-                    p_run_id            => p_run_id,
-                    p_fbdi_zip          => l_gb_zip,
-                    p_filename          => l_gb_filename,
-                    p_job_name          => l_job_name,
-                    p_interface_details => l_interface_details,
-                    p_doc_account       => l_ucm_account,
-                    p_parameter_list    => l_param_list,
-                    p_log_context       => l_obj);
-                DBMS_LOB.FREETEMPORARY(l_gb_zip);
-
-                UPDATE DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = l_param_list
-                WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
-                                      WHERE FBDI_CSV_ID = l_gb_csv_id);
-                COMMIT;
-
-                POLL_ESS_JOB(p_run_id, l_gb_load_id, 1800, FALSE, l_obj, p_cemli_code, l_gb_status);
-                IF l_gb_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'GL Budget Load ESS ' || l_gb_load_id || ' returned ' || l_gb_status ||
-                        '. Marking GENERATED rows FAILED.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    UPDATE DMT_GL_BUDGET_INT_TFM_TBL
-                    SET    TFM_STATUS = 'FAILED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[LOAD_ERROR] Load to GL_BUDGET_INTERFACE failed. Check ESS job ' || l_gb_load_id || '.'),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-                    COMMIT;
-                    RETURN FALSE;
-                END IF;
-
-                -- Step 2: submit Validate and Load Budgets standalone per Run Name.
-                FOR rn IN (
-                    SELECT DISTINCT RUN_NAME
-                    FROM   DMT_GL_BUDGET_INT_TFM_TBL
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                    AND    RUN_NAME IS NOT NULL
-                    ORDER BY RUN_NAME
-                ) LOOP
-                    l_gb_runs := l_gb_runs + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Submitting ValidateAndLoadBudgets for Run Name: ' || rn.RUN_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                    l_gb_import_id := SUBMIT_IMPORT_JOB(
-                        p_run_id     => p_run_id,
-                        p_job_name   => l_job_name,
-                        p_param_list => rn.RUN_NAME);   -- single arg: the Run Name
-                    POLL_ESS_JOB(p_run_id, l_gb_import_id, 1800, FALSE, l_obj, p_cemli_code, l_gb_status);
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'ValidateAndLoadBudgets ' || l_gb_import_id || ' for ' || rn.RUN_NAME ||
-                        ' -> ' || l_gb_status, 'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                END LOOP;
-
-                -- Scope reconciliation to a single ledger when the run uses one.
-                SELECT COUNT(DISTINCT LEDGER_ID), MAX(LEDGER_ID)
-                INTO   l_gb_ledgers, l_gb_ledger
-                FROM   DMT_GL_BUDGET_INT_TFM_TBL
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED' AND LEDGER_ID IS NOT NULL;
-                IF l_gb_ledgers <> 1 THEN l_gb_ledger := NULL; END IF;
-
-                -- Step 3: reconcile cell-grain against GL_BUDGET_BALANCES + interface errors.
-                DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
-                    p_run_id        => p_run_id,
-                    p_load_ess_id   => TO_NUMBER(l_gb_load_id),
-                    p_import_ess_id => TO_NUMBER(l_gb_import_id),
-                    p_run_start     => l_gb_run_start,
-                    p_ledger_id     => l_gb_ledger);
-            END;
-            -- Reconcile already ran inline here; tell EXECUTE_ONE not to re-route
-            -- this work item to RECONCILING (which would double-reconcile). See #7.
-            g_reconciled_inline := TRUE;
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- Expenditures: TWO-STEP load (like GL Budgets).
-        -- loadAndImportData (interfaceDetails=20) ONLY stages rows into
-        -- PJC_TXN_XFACE_STAGE_ALL at TRANSACTION_STATUS_CODE='P' on this
-        -- product; it does NOT chain the costing import. A SEPARATE ESS
-        -- submission of "Import and Process Cost Transactions"
-        -- (onestop,ImportAndProcessTxnsJob) validates and costs the pending
-        -- rows into base PJC_EXP_ITEMS_ALL.
-        --
-        -- PR #216 already resolved the working job (seed row 20 ->
-        -- ImportAndProcessTxnsJob, so l_job_name is the comma form here) and
-        -- built the correct 10-position tilde-delimited ParameterList in
-        -- l_param_list upstream (BU id + transaction-source id + document id,
-        -- all from lookups, single-source validated). What #216 lacked was the
-        -- second submit: that ParameterList was handed to loadAndImportData,
-        -- which for PJC does NOT chain the costing job, so nothing costed and
-        -- every row sat in interface at 'P' (run 206). This block adds the
-        -- missing separate submit + poll + reconcile, mirroring the GLBudgets
-        -- block above, and runs for BOTH sync and async registration (it
-        -- completes inline and GOTOs grouped_finish, before the async return).
-        -- ============================================================
-        IF p_cemli_code = 'Expenditures' THEN
-            DECLARE
-                l_ex_zip       BLOB;
-                l_ex_filename  VARCHAR2(200);
-                l_ex_csv_id    NUMBER;
-                l_ex_load_id   VARCHAR2(100);
-                l_ex_import_id VARCHAR2(100);
-                l_ex_status    VARCHAR2(50);
-                l_ex_rows      NUMBER := 0;
-                l_ex_user      VARCHAR2(100);
-                l_ex_pass      VARCHAR2(100);
-                -- Spawn-per-partition: this block runs as a spawned CHILD scoped to one
-                -- (source, document) group (the parent transformed once and returned at
-                -- the transform-only gate). Decode the child's two partition names so the
-                -- BATCH_NAME stamp, the FBDI generate, and the GENERATED-row count all
-                -- touch ONLY this group's rows. Both null on the legacy/standalone path.
-                l_ex_src       VARCHAR2(240) := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'USER_TRANSACTION_SOURCE');
-                l_ex_doc       VARCHAR2(240) := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'DOCUMENT_NAME');
-            BEGIN
-                -- Stamp the run's single work-queue-id batch onto every row's BATCH_NAME
-                -- so the generated CSV carries it, and it matches the Expenditure Batch
-                -- filter (arg 8, l_ex_batch) submitted with ImportProcessParallelEssJob.
-                -- One shared, globally-unique batch groups the run's rows and isolates
-                -- them from other runs' pending interface rows at costing time. Scoped to
-                -- this partition so a child only stamps its own group's rows.
-                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                SET    BATCH_NAME = l_ex_batch
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
-                AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
-                AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
-
-                -- Generate one FBDI zip for this partition's STAGED expenditure rows
-                -- (rows move STAGED -> GENERATED).
-                DMT_EXPENDITURE_FBDI_GEN_PKG.GENERATE_FBDI(
-                    p_run_id, l_ex_zip, l_ex_filename, l_ex_csv_id,
-                    p_txn_source => l_ex_src, p_document => l_ex_doc);
-
-                -- Count only THIS partition's just-generated rows (the generator scopes
-                -- its STAGED->GENERATED flip by the same source/document), so an empty
-                -- group skips cleanly without seeing another child's rows.
-                SELECT COUNT(*) INTO l_ex_rows
-                FROM   DMT_PJC_EXPENDITURES_TFM_TBL
-                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
-                AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
-
-                IF l_ex_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ex_zip) = 0 OR l_ex_rows = 0 THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'No STAGED Expenditure rows found. Skipping Expenditures.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    RETURN FALSE;
-                END IF;
-
-                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code, l_ex_user, l_ex_pass);
-
-                -- Step 1: Load File to Interface Tables (loadAndImportData).
-                -- Stages the CSV into PJC_TXN_XFACE_STAGE_ALL at status 'P'.
-                -- The load step takes no costing ParameterList; the costing
-                -- ParameterList (l_param_list, built by #216) is submitted with
-                -- the SEPARATE import job in Step 2.
-                l_ex_load_id := SUBMIT_LOAD(
-                    p_run_id            => p_run_id,
-                    p_fbdi_zip          => l_ex_zip,
-                    p_filename          => l_ex_filename,
-                    p_job_name          => l_job_name,
-                    p_interface_details => l_interface_details,
-                    p_doc_account       => l_ucm_account,
-                    p_parameter_list    => '#NULL',
-                    p_log_context       => l_obj,
-                    p_username          => l_ex_user,
-                    p_password          => l_ex_pass);
-                DBMS_LOB.FREETEMPORARY(l_ex_zip);
-
-                UPDATE DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = l_param_list
-                WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
-                                      WHERE FBDI_CSV_ID = l_ex_csv_id);
-                COMMIT;
-
-                POLL_ESS_JOB(p_run_id, l_ex_load_id, 1800, FALSE, l_obj, p_cemli_code, l_ex_status,
-                             p_username => l_ex_user, p_password => l_ex_pass);
-                IF l_ex_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Expenditure Load ESS ' || l_ex_load_id || ' returned ' || l_ex_status ||
-                        '. No rows staged. Marking GENERATED rows FAILED.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    -- Fail only THIS partition's in-flight rows. Scoped by
-                    -- (source, document) so a failing child does not flip a sibling
-                    -- child's GENERATED rows to FAILED (spawn-per-partition isolation).
-                    UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                    SET    TFM_STATUS = 'FAILED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[LOAD_ERROR] Load to PJC_TXN_XFACE_STAGE_ALL failed. Check ESS job ' || l_ex_load_id || '.'),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                    AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
-                    AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
-                    COMMIT;
-                    RETURN FALSE;
-                END IF;
-
-                -- Step 2: submit ImportProcessParallelEssJob (the "Import Costs" costing
-                -- job) as a SEPARATE ESS request with the 13-arg ParameterList built
-                -- above. l_job_name is the comma form (onestop,ImportProcessParallelEssJob)
-                -- resolved by get_erp_options. SUBMIT_IMPORT_JOB emits each of the 13
-                -- '~'-delimited args as its own <paramList> element.
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'Submitting Import Costs / ImportProcessParallelEssJob (separate ESS request). ParamList: '
-                    || l_param_list, 'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                l_ex_import_id := SUBMIT_IMPORT_JOB(
-                    p_run_id     => p_run_id,
-                    p_job_name   => l_job_name,
-                    p_param_list => l_param_list);
-
-                -- Poll the costing import to terminal. WARNING is normal when
-                -- some rows reject; the reconciler settles per-record outcome.
-                POLL_ESS_JOB(p_run_id, l_ex_import_id, 1800, FALSE, l_obj, p_cemli_code, l_ex_status,
-                             p_username => l_ex_user, p_password => l_ex_pass);
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'Import and Process Cost Transactions ' || l_ex_import_id || ' -> ' || l_ex_status,
-                    'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                -- Capture the import report errors (per-record rejects) regardless
-                -- of BIP outcome, then reconcile against base PJC_EXP_ITEMS_ALL.
-                BEGIN
-                    DECLARE l_ir_count NUMBER;
-                    BEGIN
-                        l_ir_count := DMT_IMPORT_REPORT_PKG.PARSE_AND_LOG_ERRORS(
-                            p_run_id     => p_run_id,
-                            p_request_id => TO_NUMBER(l_ex_import_id),
-                            p_cemli_code => p_cemli_code);
-                    END;
-                EXCEPTION WHEN OTHERS THEN NULL;
-                END;
-
-                -- Step 3: reconcile. Good rows appear in base PJC_EXP_ITEMS_ALL
-                -- keyed by prefixed ORIG_TRANSACTION_REFERENCE -> LOADED. The
-                -- existing reconciler (dmt_expenditure_results_pkg) decides
-                -- per-record outcome; its classification is left untouched.
-                DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(
-                    p_run_id        => p_run_id,
-                    p_load_ess_id   => TO_NUMBER(l_ex_load_id),
-                    p_import_ess_id => TO_NUMBER(l_ex_import_id),
-                    p_work_queue_id => g_work_queue_id);
-            END;
-            -- Reconcile already ran inline here; tell EXECUTE_ONE not to re-route
-            -- this work item to RECONCILING (which would double-reconcile). See #7.
-            g_reconciled_inline := TRUE;
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- GLBalances: grouped load by LEDGER_NAME
-        -- Each distinct ledger gets its own FBDI zip,
-        -- JournalImportLauncher call, and BIP reconciliation.
-        -- ParameterList: DAS_ID,Source,LedgerID,GroupID,N,N,N
-        -- ============================================================
-        IF p_cemli_code = 'GLBalances' THEN
-            DECLARE
-                l_gl_zip       BLOB;
-                l_gl_filename  VARCHAR2(200);
-                l_gl_csv_id    NUMBER;
-                l_gl_load_id   VARCHAR2(100);
-                l_gl_import_id VARCHAR2(100);
-                l_gl_param     VARCHAR2(500);
-                l_gl_ledger_id VARCHAR2(50);
-                l_gl_das_id    VARCHAR2(50);
-                l_gl_source    VARCHAR2(240);
-                l_gl_count     NUMBER := 0;
-                l_gl_ok        BOOLEAN;
-            BEGIN
-                FOR led_rec IN (
-                    SELECT DISTINCT LEDGER_NAME
-                    FROM   DMT_GL_INTERFACE_TFM_TBL
-                    WHERE  RUN_ID = p_run_id
-                    AND    TFM_STATUS = 'STAGED'
-                    AND    LEDGER_NAME IS NOT NULL
-                    ORDER BY LEDGER_NAME
-                ) LOOP
-                    l_gl_count := l_gl_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'GL ledger cycle start: ' || led_rec.LEDGER_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    -- Generate FBDI for this ledger only
-                    DMT_GL_FBDI_GEN_PKG.GENERATE_FBDI(
-                        p_run_id => p_run_id,
-                        x_fbdi_zip       => l_gl_zip,
-                        x_filename       => l_gl_filename,
-                        x_fbdi_csv_id    => l_gl_csv_id,
-                        p_ledger_name    => led_rec.LEDGER_NAME);
-
-                    IF l_gl_zip IS NULL OR DBMS_LOB.GETLENGTH(l_gl_zip) = 0 THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            'No GL rows for ledger ' || led_rec.LEDGER_NAME || '. Skipping.',
-                            DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                        CONTINUE;
-                    END IF;
-
-                    -- Ledger id + data-access-set id via the one common lookup
-                    -- accessor. The canonical LEDGER_NAME_TO_LEDGER_ID return is
-                    -- ledger_id~access_set_id (the reserved ~ separator);
-                    -- GET_LOOKUP raises -20040 with a clear halt if unresolvable.
-                    DECLARE
-                        l_ledger_lkp VARCHAR2(500);
-                    BEGIN
-                        l_ledger_lkp   := DMT_UTIL_PKG.GET_LOOKUP('LEDGER_NAME_TO_LEDGER_ID', led_rec.LEDGER_NAME);
-                        l_gl_ledger_id := SUBSTR(l_ledger_lkp, 1, INSTR(l_ledger_lkp, '~') - 1);
-                        l_gl_das_id    := SUBSTR(l_ledger_lkp, INSTR(l_ledger_lkp, '~') + 1);
-                    END;
-
-                    -- Get source from TFM data — not hardcoded 'Spreadsheet'
-                    BEGIN
-                        SELECT USER_JE_SOURCE_NAME INTO l_gl_source
-                        FROM   DMT_GL_INTERFACE_TFM_TBL
-                        WHERE  RUN_ID = p_run_id
-                        AND    LEDGER_NAME = led_rec.LEDGER_NAME
-                        AND    TFM_STATUS = 'GENERATED'
-                        AND    ROWNUM = 1;
-                    EXCEPTION
-                        WHEN NO_DATA_FOUND THEN
-                            l_gl_source := 'Spreadsheet';  -- fallback
-                    END;
-
-                    -- JournalImportLauncher: 7 args
-                    -- DAS_ID, Source, LedgerID, GroupID, N, N, N
-                    l_gl_param := NVL(l_gl_das_id, '#NULL') || ',' ||
-                                  l_gl_source || ',' ||
-                                  l_gl_ledger_id || ',' ||
-                                  TO_CHAR(p_run_id) || ',N,N,N';
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'GL ParameterList for ' || led_rec.LEDGER_NAME || ': ' || l_gl_param,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-
-                    submit_and_reconcile_one(
-                        p_fbdi_zip    => l_gl_zip,
-                        p_filename    => l_gl_filename,
-                        p_fbdi_csv_id => l_gl_csv_id,
-                        p_param_list  => l_gl_param,
-                        p_group_label => 'Ledger: ' || led_rec.LEDGER_NAME,
-                        x_load_ess_id   => l_gl_load_id,
-                        x_import_ess_id => l_gl_import_id,
-                        x_success       => l_gl_ok);
-
-                    IF NOT l_gl_ok THEN
-                        UPDATE DMT_GL_INTERFACE_TFM_TBL
-                        SET    TFM_STATUS = 'FAILED',
-                               ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                   '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_gl_load_id || ' logs for details.'),
-                               LAST_UPDATED_DATE = SYSDATE
-                        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                        AND    LEDGER_NAME = led_rec.LEDGER_NAME;
-                        COMMIT;
-                        CONTINUE;
-                    END IF;
-
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'GL ledger cycle complete: ' || led_rec.LEDGER_NAME,
-                        'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                END LOOP;
-
-                IF l_gl_count = 0 THEN
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'No STAGED GL balance rows found. Skipping GLBalances.',
-                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-                    RETURN FALSE;
-                END IF;
-            END;
-            GOTO grouped_finish;
-        END IF;
-
-        -- ============================================================
-        -- Non-grouped CEMLIs: single-load flow
-        -- ============================================================
-
-        -- Step 2: Generate FBDI zip
-        IF    p_cemli_code = 'Suppliers' THEN
-            DMT_POZ_SUP_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
-        ELSIF p_cemli_code = 'SupplierAddresses' THEN
-            DMT_POZ_SUP_ADDR_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
-        ELSIF p_cemli_code = 'SupplierSites' THEN
-            DMT_POZ_SUP_SITE_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
-        ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-            DMT_POZ_SUP_SITE_ASSN_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
-        ELSIF p_cemli_code = 'SupplierContacts' THEN
-            DMT_POZ_SUP_CONT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
-        ELSIF p_cemli_code = 'Projects' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_PROJECT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
-        ELSIF p_cemli_code = 'BillingEvents' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_BILLING_EVENT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
-        ELSIF p_cemli_code = 'Expenditures' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_EXPENDITURE_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
-        ELSIF p_cemli_code = 'Grants' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_GRANTS_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
-        -- Items: handled in grouped loop above.
-        ELSIF p_cemli_code = 'ItemCategories' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_EGP_ITEM_CAT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
-        ELSIF p_cemli_code = 'MiscReceipts' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_MISC_RECEIPT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
-        -- Requisitions: handled in grouped loop above.
-        -- GLBalances: handled in grouped loop above.
-        ELSIF p_cemli_code = 'GLBudgets' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_GL_BUDGET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
-        ELSIF p_cemli_code = 'PlanningBudgets' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_PLAN_BUDGET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
-        ELSIF p_cemli_code = 'ProjectBudgets' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                DMT_PRJ_BUDGET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
-            END;
-        ELSIF p_cemli_code = 'Assets' THEN
-            DECLARE l_csv_id NUMBER;
-            BEGIN
-                -- Multi-book: generate FBDI for ONLY this book when partitioned.
-                -- g_partition_key is JSON-encoded for a spawn child (e.g.
-                -- {"BOOK_TYPE_CODE":"US CORP"}); decode to the raw book code the
-                -- generator's static cursor filters on. NULL passes through (all books).
-                DMT_FA_ASSET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id,
-                    DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BOOK_TYPE_CODE'));
-            END;
-        ELSE
-            RAISE_APPLICATION_ERROR(-20043,
-                'RUN_ONE_OBJECT_TYPE: Unknown CEMLI_CODE = ''' || p_cemli_code || '''.');
-        END IF;
-
-        -- If no rows, skip this object type
-        IF l_zip IS NULL OR DBMS_LOB.GETLENGTH(l_zip) = 0 THEN
-            DMT_UTIL_PKG.LOG(
-                p_run_id => p_run_id,
-                p_message        => 'No rows for ' || p_cemli_code || '. Skipping.',
-                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package        => C_PKG,
-                p_procedure      => l_obj || ' > ' || C_PROC);
-            RETURN FALSE;
-        END IF;
-
-        -- loadAndImportData — MCCS pattern: combined load+import in single call.
-        -- Per-CEMLI credentials: resolved from DMT_ERP_INTERFACE_OPTIONS_TBL.
-        -- Falls back to FUSION_USERNAME/PASSWORD if no override seeded.
-        BEGIN
-            DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code, l_ess_user, l_ess_pass);
-            l_load_ess_id := SUBMIT_LOAD(
-                p_run_id    => p_run_id,
-                p_fbdi_zip          => l_zip,
-                p_filename          => l_filename,
-                p_job_name          => l_job_name,
-                p_interface_details => l_interface_details,
-                p_doc_account       => l_ucm_account,
-                p_parameter_list    => l_param_list,
-                p_log_context       => l_obj,
-                p_username          => l_ess_user,
-                p_password          => l_ess_pass);
-        END;
-        DBMS_LOB.FREETEMPORARY(l_zip);
-
-        -- Stamp Load ESS job ID + parameter list on the ZIP row.
-        UPDATE DMT_FBDI_ZIP_TBL
-        SET    PARAMETER_LIST  = l_param_list
-        WHERE  RUN_ID  = p_run_id
-        AND    OBJECT_TYPE     = SUBSTR(p_cemli_code, INSTR(p_cemli_code, '-') + 1);
-        COMMIT;
-
-        -- Async mode: stop here, let queue poller handle ESS polling + reconciliation
-        IF g_async_mode THEN
-            g_load_ess_id := l_load_ess_id;
-            RETURN TRUE;
-        END IF;
-
-        -- Poll Load job
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'Polling Load ESS job: ' || l_load_ess_id, 'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-        POLL_ESS_JOB(p_run_id, l_load_ess_id, 1800, FALSE, l_obj, p_cemli_code, l_load_status,
-                     p_username => l_ess_user, p_password => l_ess_pass);
-
-        -- If Load ESS failed, no rows reached the interface table.
-        -- Mark all GENERATED rows FAILED and return — no import job, no BIP.
-        IF l_load_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'Load ESS ' || l_load_ess_id || ' returned ' || l_load_status ||
-                '. No rows committed to interface table. Marking all GENERATED rows FAILED.',
-                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-            -- Mark GENERATED → FAILED in the appropriate TFM table(s)
-            DECLARE
-                l_err_msg VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_load_ess_id || ' logs for details.';
-            BEGIN
-                IF    p_cemli_code = 'Suppliers' THEN
-                    UPDATE DMT_POZ_SUPPLIERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'SupplierAddresses' THEN
-                    UPDATE DMT_POZ_SUP_ADDR_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'SupplierSites' THEN
-                    UPDATE DMT_POZ_SUP_SITE_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-                    UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'SupplierContacts' THEN
-                    UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'Projects' THEN
-                    UPDATE DMT_PJF_PROJECTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'BillingEvents' THEN
-                    UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'Expenditures' THEN
-                    UPDATE DMT_PJC_EXPENDITURES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'Grants' THEN
-                    UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                -- Items: handled in grouped loop above.
-                ELSIF p_cemli_code = 'MiscReceipts' THEN
-                    UPDATE DMT_INV_TRX_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                -- Requisitions: handled in grouped loop above.
-                -- GLBalances: handled in grouped loop above.
-                ELSIF p_cemli_code = 'GLBudgets' THEN
-                    UPDATE DMT_GL_BUDGET_INT_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'PlanningBudgets' THEN
-                    UPDATE DMT_PLAN_BUDGET_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'ProjectBudgets' THEN
-                    UPDATE DMT_PRJ_BUDGET_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                ELSIF p_cemli_code = 'Assets' THEN
-                    UPDATE DMT_FA_ASSET_HDR_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
-                END IF;
-                COMMIT;
-            END;
-            RETURN FALSE;
-        END IF;
-
-        -- Find the Import ESS job ID.
-        -- MiscReceipts: INV Transaction Manager doesn't chain from loadAndImportData
-        -- (interfaceDetails=33 is DMT-local, not a real Fusion FUN_ERP_INTERFACE_OPTIONS row).
-        -- Submit PollTMEssJob explicitly — it picks up all process_flag=1 rows and
-        -- spawns SingleTMEssJob internally to process them.
-        IF p_cemli_code = 'MiscReceipts' THEN
-            DECLARE
-                l_resp     CLOB;
-                l_tag_s    INTEGER;
-                l_val_s    INTEGER;
-                l_val_e    INTEGER;
-            BEGIN
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'Submitting PollTMEssJob explicitly (INV transactions).', 'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-                l_resp := soap_http(
-                    p_url            => erp_soap_url,
-                    p_soap_action    => 'http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/submitESSJobRequest',
-                    p_body           => TO_CLOB(
-                        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' ||
-                        'xmlns:typ="http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/types/">' ||
-                        '<soapenv:Header/><soapenv:Body>' ||
-                        '<typ:submitESSJobRequest>' ||
-                        '<typ:jobPackageName>/oracle/apps/ess/scm/inventory/materialTransactions/txnManager</typ:jobPackageName>' ||
-                        '<typ:jobDefinitionName>PollTMEssJob</typ:jobDefinitionName>' ||
-                        '<typ:paramList></typ:paramList>' ||
-                        '</typ:submitESSJobRequest>' ||
-                        '</soapenv:Body></soapenv:Envelope>'),
-                    p_run_id => p_run_id,
-                    p_username       => l_ess_user,
-                    p_password       => l_ess_pass);
-                l_tag_s := DBMS_LOB.INSTR(l_resp, '<result');
-                IF l_tag_s > 0 THEN
-                    l_val_s := DBMS_LOB.INSTR(l_resp, '>', l_tag_s) + 1;
-                    l_val_e := DBMS_LOB.INSTR(l_resp, '</result>', l_val_s);
-                    IF l_val_e > l_val_s THEN
-                        l_import_ess_id := DBMS_LOB.SUBSTR(l_resp, l_val_e - l_val_s, l_val_s);
-                    END IF;
-                END IF;
-                IF l_import_ess_id IS NULL THEN
-                    RAISE_APPLICATION_ERROR(-20050,
-                        'Failed to submit PollTMEssJob. Response: ' || DBMS_LOB.SUBSTR(l_resp, 500, 1));
-                END IF;
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'PollTMEssJob submitted. ESS ID: ' || l_import_ess_id, 'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-            END;
-        ELSE
-            l_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, l_load_ess_id);
-        END IF;
-
-        -- Stamp Import ESS job ID on the ZIP row.
-        UPDATE DMT_FBDI_ZIP_TBL
-        SET    PARAMETER_LIST = PARAMETER_LIST  -- ESS IDs now on WORK_QUEUE
-        WHERE  RUN_ID    = p_run_id
-        AND    OBJECT_TYPE       = SUBSTR(p_cemli_code, INSTR(p_cemli_code, '-') + 1);
-        COMMIT;
-
-        -- Poll Import job — do NOT raise on error.
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'Polling Import ESS job: ' || l_import_ess_id, 'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-        POLL_ESS_JOB(p_run_id, l_import_ess_id, 1800, FALSE, l_obj, p_cemli_code, l_load_status,
-                     p_username => l_ess_user, p_password => l_ess_pass);
-
-        -- Capture the Report child ESS job (e.g. ImportBillingEventReportJob)
-        -- into the hierarchy so it's visible in the APEX UI alongside the import job.
-        -- Generic — runs for all CEMLIs. Any DB/report error is a hard stop.
-        DECLARE
-            l_report_ess_id NUMBER;
-        BEGIN
-            l_report_ess_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
-                p_run_id => p_run_id,
-                p_import_ess_id  => TO_NUMBER(l_import_ess_id),
-                p_cemli_code     => p_cemli_code);
-        END;
-
-        -- For Projects/Expenditures: capture Import Report errors from ESS output
-        -- regardless of BIP outcome. This logs errors even when BIP reconciliation succeeds.
-        IF p_cemli_code IN ('Projects', 'Expenditures', 'BillingEvents')
-           AND l_load_status IN (C_STATUS_ERROR, C_STATUS_WARNING, C_STATUS_FAILED) THEN
-            DECLARE
-                l_ir_count NUMBER;
-            BEGIN
-                l_ir_count := DMT_IMPORT_REPORT_PKG.PARSE_AND_LOG_ERRORS(
-                    p_run_id => p_run_id,
-                    p_request_id     => TO_NUMBER(l_import_ess_id),
-                    p_cemli_code     => p_cemli_code);
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'Import Report captured ' || l_ir_count || ' error(s) for ' || p_cemli_code ||
-                    ' (ESS ' || l_import_ess_id || ', status ' || l_load_status || ').',
-                    'INFO', C_PKG, l_obj || ' > ' || C_PROC);
-            EXCEPTION
-                WHEN OTHERS THEN
-                    DMT_UTIL_PKG.LOG_ERROR(
-                        p_run_id => p_run_id,
-                        p_message        => 'Import Report capture failed for ' || p_cemli_code ||
-                            ' (ESS ' || l_import_ess_id || '). Continuing to BIP reconciliation.',
-                        p_sqlerrm        => SQLERRM,
-                        p_package        => C_PKG,
-                        p_procedure      => l_obj || ' > ' || C_PROC);
-            END;
-        END IF;
-
-        -- BIP reconciliation — SINGLE registry-driven dispatch (backlog #7).
-        -- Was a hardcoded ELSIF chain (the SECOND source of truth, silently a
-        -- no-op for an unregistered object — no fail-open). Now routed through the
-        -- one registry lookup + invoke_registered site, which RAISEs -20044 for an
-        -- unregistered object (fail-open guard now covers this path too).
-        --
-        -- This path is reached ONLY when g_async_mode is FALSE: SYNC objects
-        -- (MiscReceipts) and direct non-queue RUN_* calls. Async objects already
-        -- RETURNed at the g_async_mode guard above and are reconciled exactly once
-        -- by the queue via RECON_PROC.
-        DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
-            p_run_id        => p_run_id,
-            p_cemli_code    => p_cemli_code,
-            p_load_ess_id   => TO_NUMBER(l_load_ess_id),
-            p_import_ess_id => TO_NUMBER(l_import_ess_id),
-            p_work_queue_id => g_work_queue_id);
-
-        -- Inline reconcile happened: tell EXECUTE_ONE not to re-reconcile via
-        -- RECON_PROC. Settlement runs through the single accounting gate.
-        g_reconciled_inline := TRUE;
-
-        -- Check for rows still at GENERATED after BIP reconciliation.
-        -- Do NOT assume success — leave at GENERATED for manual investigation.
-        DECLARE
-            l_still_generated NUMBER := 0;
-        BEGIN
-            -- Use the CEMLI-specific TFM table to count GENERATED rows
-            IF    p_cemli_code = 'Suppliers' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUPPLIERS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'SupplierAddresses' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUP_ADDR_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'SupplierSites' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUP_SITE_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUP_SITE_ASSN_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'SupplierContacts' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_POZ_SUP_CONTACTS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'Projects' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_PJF_PROJECTS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'BillingEvents' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_PJB_BILL_EVENTS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'Expenditures' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_PJC_EXPENDITURES_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'Grants' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_GMS_AWD_HEADERS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            -- Items: handled in grouped loop above.
-            ELSIF p_cemli_code = 'MiscReceipts' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_INV_TRX_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            -- Requisitions: handled in grouped loop above.
-            -- GLBalances: handled in grouped loop above.
-            ELSIF p_cemli_code = 'GLBudgets' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_GL_BUDGET_INT_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'PlanningBudgets' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_PLAN_BUDGET_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'ProjectBudgets' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_PRJ_BUDGET_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            ELSIF p_cemli_code = 'Assets' THEN
-                SELECT COUNT(*) INTO l_still_generated FROM DMT_FA_ASSET_HDR_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
-            END IF;
-
-            IF l_still_generated > 0 THEN
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'WARNING: ' || l_still_generated || ' rows still at GENERATED after BIP reconciliation for ' ||
-                    p_cemli_code || '. BIP query returned no matching rows for these records. ' ||
-                    'Rows left at GENERATED for manual investigation — do NOT assume success.',
-                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_obj || ' > ' || C_PROC);
-
-                -- Auto-download ESS output to diagnose silent rejections.
-                -- Try the Import ESS job first (most likely to contain rejection details).
-                -- Any DB/report error is a hard stop.
-                IF l_import_ess_id IS NOT NULL THEN
-                    DMT_ESS_UTIL_PKG.CAPTURE_ESS_OUTPUT(
-                        p_run_id => p_run_id,
-                        p_request_id     => TO_NUMBER(l_import_ess_id),
-                        p_cemli_code     => p_cemli_code);
-                END IF;
-            END IF;
-        END;
-
-        <<grouped_finish>>
-
-        -- Check for FAILED rows — log warning but do not abort
-        DECLARE
-            l_failed_count NUMBER;
-        BEGIN
-            IF    p_cemli_code = 'Suppliers' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_POZ_SUPPLIERS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'SupplierAddresses' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_POZ_SUP_ADDR_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'SupplierSites' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_POZ_SUP_SITE_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_POZ_SUP_SITE_ASSN_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'SupplierContacts' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_POZ_SUP_CONTACTS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code IN ('PurchaseOrders', 'BlanketPOs', 'Contracts') THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_PO_HEADERS_INT_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'Customers' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_HZ_PARTIES_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'ARInvoices' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_RA_LINES_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'APInvoices' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_AP_INVOICES_INT_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'Projects' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_PJF_PROJECTS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'BillingEvents' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_PJB_BILL_EVENTS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'Expenditures' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_PJC_EXPENDITURES_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'Grants' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_GMS_AWD_HEADERS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'Items' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_EGP_ITEM_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-                -- Also count bundled categories failures
-                SELECT l_failed_count + COUNT(*) INTO l_failed_count
-                FROM DMT_EGP_ITEM_CAT_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'MiscReceipts' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_INV_TRX_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'Requisitions' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_POR_REQ_HEADERS_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'GLBalances' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_GL_INTERFACE_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'GLBudgets' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_GL_BUDGET_INT_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'PlanningBudgets' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_PLAN_BUDGET_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'ProjectBudgets' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_PRJ_BUDGET_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSIF p_cemli_code = 'Assets' THEN
-                SELECT COUNT(*) INTO l_failed_count
-                FROM DMT_FA_ASSET_HDR_TFM_TBL
-                WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
-            ELSE
-                l_failed_count := 0;
-            END IF;
-
-            IF l_failed_count > 0 THEN
-                DMT_UTIL_PKG.LOG(
-                    p_run_id => p_run_id,
-                    p_message        => p_cemli_code || ': ' || l_failed_count ||
-                                        ' record(s) FAILED in Fusion. ' ||
-                                        'Downstream object types will continue — check staging table for details.',
-                    p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                    p_package        => C_PKG,
-                    p_procedure      => l_obj || ' > ' || C_PROC);
-            END IF;
-        END;
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => 'Object type complete: ' || p_cemli_code,
-            p_package        => C_PKG,
-            p_procedure      => l_obj || ' > ' || C_PROC);
-
-        RETURN TRUE;
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => 'RUN_ONE_OBJECT_TYPE failed. CEMLI: ' || p_cemli_code,
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => l_obj || ' > ' || C_PROC);
-            RAISE;
-    END run_one_object_type;
 
     -- Shared helper (backlog #70, extended for non-partitioned objects): stamp THIS
     -- work item's own Load and Import ESS request ids onto its own work-queue row so
@@ -4577,6 +1933,280 @@
         x_success := TRUE;
     END ar_submit_and_reconcile_one;
 
+    -- ========================================================================
+    -- FINANCIALS / PROJECTS SINGLE-LOAD FAMILY — shared helpers (backlog #8,
+    -- fifth/final family). These serve the remaining single-load objects that
+    -- migrated off run_one_object_type in this pass: Projects, BillingEvents,
+    -- Grants, PlanningBudgets, ProjectBudgets, Assets. They are NOT grouped
+    -- (one FBDI zip for the whole object) and, except Assets, not partitioned.
+    --
+    -- fin_after_generate is the single-load twin of sup_after_generate: same
+    -- submit / async-gate / poll / load-failure / import / reconcile / count
+    -- shape, but it takes the object's ParameterList explicitly (suppliers hard-
+    -- coded 'NEW,N'; these objects each need their own list) and it adds the
+    -- import-report-on-error capture the monolith ran for Projects/Expenditures/
+    -- BillingEvents. The per-object mark-GENERATED-FAILED and status counts are
+    -- static one-statement-per-object helpers (no dynamic SQL), each identical to
+    -- the corresponding arm of the retired run_one_object_type ladders.
+    -- ========================================================================
+
+    -- Static per-object: fail every GENERATED row in the object's own TFM table
+    -- (header table for multi-table objects) with a reportable [LOAD_ERROR].
+    -- Identical to the mark-GENERATED-FAILED arms of run_one_object_type.
+    PROCEDURE fin_mark_generated_failed (
+        p_run_id      IN NUMBER,
+        p_cemli_code  IN VARCHAR2,
+        p_load_ess_id IN VARCHAR2
+    ) IS
+        l_err_msg VARCHAR2(500) :=
+            '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job '
+            || p_load_ess_id || ' logs for details.';
+    BEGIN
+        IF    p_cemli_code = 'Projects' THEN
+            UPDATE DMT_PJF_PROJECTS_TFM_TBL    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'BillingEvents' THEN
+            UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'Grants' THEN
+            UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'PlanningBudgets' THEN
+            UPDATE DMT_PLAN_BUDGET_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'ProjectBudgets' THEN
+            UPDATE DMT_PRJ_BUDGET_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'Assets' THEN
+            UPDATE DMT_FA_ASSET_HDR_TFM_TBL    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'Expenditures' THEN
+            UPDATE DMT_PJC_EXPENDITURES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSIF p_cemli_code = 'GLBudgets' THEN
+            UPDATE DMT_GL_BUDGET_INT_TFM_TBL   SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+        ELSE
+            RAISE_APPLICATION_ERROR(-20047,
+                'fin_mark_generated_failed: unexpected CEMLI ''' || p_cemli_code || '''.');
+        END IF;
+        COMMIT;
+    END fin_mark_generated_failed;
+
+    -- Static per-object: count rows at a given status in the object's own TFM
+    -- table (header table for multi-table objects). One literal SELECT per object,
+    -- mirroring the still-GENERATED / FAILED counts of run_one_object_type.
+    FUNCTION fin_count_status (
+        p_run_id     IN NUMBER,
+        p_cemli_code IN VARCHAR2,
+        p_status     IN VARCHAR2
+    ) RETURN NUMBER IS
+        l_cnt NUMBER;
+    BEGIN
+        IF    p_cemli_code = 'Projects' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_PJF_PROJECTS_TFM_TBL    WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'BillingEvents' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_PJB_BILL_EVENTS_TFM_TBL WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'Grants' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_GMS_AWD_HEADERS_TFM_TBL WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'PlanningBudgets' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_PLAN_BUDGET_TFM_TBL     WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'ProjectBudgets' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_PRJ_BUDGET_TFM_TBL      WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'Assets' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_FA_ASSET_HDR_TFM_TBL    WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'Expenditures' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_PJC_EXPENDITURES_TFM_TBL WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSIF p_cemli_code = 'GLBudgets' THEN
+            SELECT COUNT(*) INTO l_cnt FROM DMT_GL_BUDGET_INT_TFM_TBL   WHERE RUN_ID=p_run_id AND TFM_STATUS=p_status;
+        ELSE
+            RAISE_APPLICATION_ERROR(-20047,
+                'fin_count_status: unexpected CEMLI ''' || p_cemli_code || '''.');
+        END IF;
+        RETURN l_cnt;
+    END fin_count_status;
+
+    -- Shared helper: everything after the FBDI zip is generated for a single-load
+    -- financial/project object. Twin of sup_after_generate but ParameterList-driven
+    -- and with the Projects/BillingEvents import-report-on-error capture. Preserves
+    -- byte-for-byte the single-load path of run_one_object_type for these objects,
+    -- including the g_async_mode gate (async submit-and-return; sync poll+reconcile).
+    -- Returns FALSE for the empty-zip / load-failure skips, TRUE otherwise.
+    FUNCTION fin_after_generate (
+        p_run_id     IN NUMBER,
+        p_cemli_code IN VARCHAR2,
+        p_obj        IN VARCHAR2,          -- object label for logging
+        p_zip        IN OUT NOCOPY BLOB,
+        p_filename   IN VARCHAR2,
+        p_param_list IN VARCHAR2
+    ) RETURN BOOLEAN IS
+        C_PROC        CONSTANT VARCHAR2(40) := 'FIN_AFTER_GENERATE';
+        l_ucm_account       VARCHAR2(200);
+        l_job_name          VARCHAR2(500);
+        l_interface_details NUMBER;
+        l_ess_user          VARCHAR2(100);
+        l_ess_pass          VARCHAR2(100);
+        l_load_ess_id       VARCHAR2(100);
+        l_import_ess_id     VARCHAR2(100);
+        l_load_status       VARCHAR2(50);
+    BEGIN
+        -- If no rows, skip this object type (mirrors the empty-zip guard).
+        IF p_zip IS NULL OR DBMS_LOB.GETLENGTH(p_zip) = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No rows for ' || p_cemli_code || '. Skipping.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+            RETURN FALSE;
+        END IF;
+
+        -- ERP options (UCM account, import job name, interface details id) + creds.
+        get_erp_options(
+            p_cemli_code           => p_cemli_code,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_interface_details);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code, l_ess_user, l_ess_pass);
+
+        -- loadAndImportData — combined load+import single call.
+        l_load_ess_id := SUBMIT_LOAD(
+            p_run_id            => p_run_id,
+            p_fbdi_zip          => p_zip,
+            p_filename          => p_filename,
+            p_job_name          => l_job_name,
+            p_interface_details => l_interface_details,
+            p_doc_account       => l_ucm_account,
+            p_parameter_list    => p_param_list,
+            p_log_context       => p_obj,
+            p_username          => l_ess_user,
+            p_password          => l_ess_pass);
+        DBMS_LOB.FREETEMPORARY(p_zip);
+
+        -- Stamp the parameter list on the ZIP row.
+        UPDATE DMT_FBDI_ZIP_TBL
+        SET    PARAMETER_LIST = p_param_list
+        WHERE  RUN_ID = p_run_id
+        AND    OBJECT_TYPE = SUBSTR(p_cemli_code, INSTR(p_cemli_code, '-') + 1);
+        COMMIT;
+
+        -- Async mode: stop here, let the queue poller handle ESS polling +
+        -- reconciliation (the live path for every queue-driven ASYNC object).
+        IF g_async_mode THEN
+            g_load_ess_id := l_load_ess_id;
+            RETURN TRUE;
+        END IF;
+
+        -- ---- SYNC path (direct RUN_* calls) ----
+
+        -- Poll Load job.
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Polling Load ESS job: ' || l_load_ess_id, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+        POLL_ESS_JOB(p_run_id, l_load_ess_id, 1800, FALSE, p_obj, p_cemli_code, l_load_status,
+                     p_username => l_ess_user, p_password => l_ess_pass);
+
+        -- Load failed → no rows reached the interface table. Mark all GENERATED
+        -- rows FAILED and return (no import job, no BIP).
+        IF l_load_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Load ESS ' || l_load_ess_id || ' returned ' || l_load_status ||
+                '. No rows committed to interface table. Marking all GENERATED rows FAILED.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+            fin_mark_generated_failed(p_run_id, p_cemli_code, l_load_ess_id);
+            RETURN FALSE;
+        END IF;
+
+        -- Find the Import ESS job ID (chained from loadAndImportData).
+        l_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, l_load_ess_id);
+        COMMIT;
+
+        -- Backlog #70: stamp this item's own load + import ess ids on its own queue
+        -- row (no-op for a direct/standalone call, g_gen_queue_id NULL).
+        stamp_item_ess_ids(l_load_ess_id, l_import_ess_id);
+
+        -- Poll Import job — do NOT raise on error.
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Polling Import ESS job: ' || l_import_ess_id, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+        POLL_ESS_JOB(p_run_id, l_import_ess_id, 1800, FALSE, p_obj, p_cemli_code, l_load_status,
+                     p_username => l_ess_user, p_password => l_ess_pass);
+
+        -- Capture the Report child ESS job into the hierarchy (generic).
+        DECLARE l_report_ess_id NUMBER;
+        BEGIN
+            l_report_ess_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+                p_run_id        => p_run_id,
+                p_import_ess_id => TO_NUMBER(l_import_ess_id),
+                p_cemli_code    => p_cemli_code);
+        END;
+
+        -- For Projects/Expenditures/BillingEvents: capture Import Report errors from
+        -- ESS output on a non-clean import, regardless of BIP outcome. Copied from
+        -- the run_one_object_type single-load path.
+        IF p_cemli_code IN ('Projects', 'Expenditures', 'BillingEvents')
+           AND l_load_status IN (C_STATUS_ERROR, C_STATUS_WARNING, C_STATUS_FAILED) THEN
+            DECLARE
+                l_ir_count NUMBER;
+            BEGIN
+                l_ir_count := DMT_IMPORT_REPORT_PKG.PARSE_AND_LOG_ERRORS(
+                    p_run_id     => p_run_id,
+                    p_request_id => TO_NUMBER(l_import_ess_id),
+                    p_cemli_code => p_cemli_code);
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'Import Report captured ' || l_ir_count || ' error(s) for ' || p_cemli_code ||
+                    ' (ESS ' || l_import_ess_id || ', status ' || l_load_status || ').',
+                    'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+            EXCEPTION
+                WHEN OTHERS THEN
+                    DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                        'Import Report capture failed for ' || p_cemli_code ||
+                        ' (ESS ' || l_import_ess_id || '). Continuing to BIP reconciliation.',
+                        SQLERRM, C_PKG, p_obj || ' > ' || C_PROC);
+            END;
+        END IF;
+
+        -- BIP reconciliation — single registry-driven dispatch.
+        DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => TO_NUMBER(l_load_ess_id),
+            p_import_ess_id => TO_NUMBER(l_import_ess_id),
+            p_work_queue_id => g_work_queue_id);
+        g_reconciled_inline := TRUE;
+
+        -- Rows still GENERATED after reconciliation → warn + capture ESS output.
+        DECLARE
+            l_still_generated NUMBER;
+        BEGIN
+            l_still_generated := fin_count_status(p_run_id, p_cemli_code, 'GENERATED');
+            IF l_still_generated > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'WARNING: ' || l_still_generated ||
+                    ' rows still at GENERATED after BIP reconciliation for ' || p_cemli_code ||
+                    '. BIP query returned no matching rows for these records. ' ||
+                    'Rows left at GENERATED for manual investigation — do NOT assume success.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+                IF l_import_ess_id IS NOT NULL THEN
+                    DMT_ESS_UTIL_PKG.CAPTURE_ESS_OUTPUT(
+                        p_run_id     => p_run_id,
+                        p_request_id => TO_NUMBER(l_import_ess_id),
+                        p_cemli_code => p_cemli_code);
+                END IF;
+            END IF;
+        END;
+
+        RETURN TRUE;
+    END fin_after_generate;
+
+    -- Shared tail: FAILED-row count warning + "object complete" log for the
+    -- single-load financial/project objects. Mirrors the grouped_finish tail.
+    PROCEDURE fin_finish (
+        p_run_id     IN NUMBER,
+        p_cemli_code IN VARCHAR2,
+        p_obj        IN VARCHAR2
+    ) IS
+        C_PROC CONSTANT VARCHAR2(40) := 'FIN_FINISH';
+        l_failed_count NUMBER;
+    BEGIN
+        l_failed_count := fin_count_status(p_run_id, p_cemli_code, 'FAILED');
+        IF l_failed_count > 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                p_cemli_code || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                'Downstream object types will continue — check staging table for details.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, p_obj || ' > ' || C_PROC);
+        END IF;
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Object type complete: ' || p_cemli_code, 'INFO', C_PKG, p_obj || ' > ' || C_PROC);
+    END fin_finish;
+
     -- --------------------------------------------------------
     -- RUN_SUPPLIER_PIPELINE
     -- Orchestrates all 5 object types in strict dependency order.
@@ -4991,7 +2621,6 @@
         l_run_id NUMBER;
         l_prefix         VARCHAR2(20);
         v_scenario_id    NUMBER;
-        l_dummy          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
 
@@ -5018,9 +2647,42 @@
             ' | Mode: ' || p_run_mode,
             'INFO', C_PKG, C_PROC);
 
-        l_dummy := run_one_object_type(
-            l_run_id, p_cemli_code, v_scenario_id,
-            p_run_mode);
+        -- Backlog #8: run_one_object_type is retired. Dispatch to the object's own
+        -- self-contained RUN_<object>() recipe with a STATIC CASE over the CEMLI code
+        -- -- no dynamic SQL (design doc Coding Standards). Each recipe defaults
+        -- p_skip_bu_refresh => FALSE, so it refreshes BU lookups up front exactly as
+        -- run_one_object_type did on a standalone (non-pipeline) run. The set of codes
+        -- below is exactly the set run_one_object_type handled; anything else raises
+        -- ORA-20043 'Unknown CEMLI_CODE', preserving the pre-refactor behaviour.
+        CASE p_cemli_code
+            WHEN 'Suppliers'               THEN RUN_SUPPLIERS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'SupplierAddresses'       THEN RUN_SUPPLIER_ADDRESSES(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'SupplierSites'           THEN RUN_SUPPLIER_SITES(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'SupplierSiteAssignments' THEN RUN_SUPPLIER_SITE_ASSIGNMENTS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'SupplierContacts'        THEN RUN_SUPPLIER_CONTACTS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'PurchaseOrders'          THEN RUN_PURCHASE_ORDERS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'BlanketPOs'              THEN RUN_BLANKET_POS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'Contracts'               THEN RUN_CONTRACTS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'Requisitions'            THEN RUN_REQUISITIONS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'Items'                   THEN RUN_ITEMS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'ItemCategories'          THEN RUN_ITEM_CATEGORIES(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'Customers'               THEN RUN_CUSTOMERS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'ARInvoices'              THEN RUN_AR_INVOICES(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'APInvoices'              THEN RUN_AP_INVOICES(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'MiscReceipts'            THEN RUN_MISC_RECEIPTS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'Projects'                THEN RUN_PROJECTS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'BillingEvents'           THEN RUN_BILLING_EVENTS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'Expenditures'            THEN RUN_EXPENDITURES(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'Grants'                  THEN RUN_GRANTS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'GLBalances'              THEN RUN_GL_BALANCES(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'GLBudgets'               THEN RUN_GL_BUDGETS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'PlanningBudgets'         THEN RUN_PLAN_BUDGETS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'ProjectBudgets'          THEN RUN_PROJECT_BUDGETS(l_run_id, p_scenario_name, p_run_mode);
+            WHEN 'Assets'                  THEN RUN_ASSETS(l_run_id, p_scenario_name, p_run_mode);
+            ELSE
+                RAISE_APPLICATION_ERROR(-20043,
+                    'RUN_STANDALONE: Unknown CEMLI_CODE = ''' || p_cemli_code || '''.');
+        END CASE;
 
         COMMIT;
 
@@ -5497,15 +3159,43 @@
     -- --------------------------------------------------------
     -- RUN_BILLING_EVENTS (public)
     -- --------------------------------------------------------
+    -- RUN_BILLING_EVENTS (public) — self-contained recipe (backlog #8, final family).
+    -- SINGLE-LOAD FBDI object (one zip for the whole object; not grouped, not
+    -- partitioned). ParameterList '#NULL'. Behaviour is byte-for-byte the pre-refactor
+    -- BillingEvents single-load path of run_one_object_type.
     PROCEDURE RUN_BILLING_EVENTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_BILLING_EVENTS';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_BILLING_EVENTS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'BillingEvents';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'BillingEvents';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_csv_id      NUMBER;
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_BILLING_EVENTS start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'BillingEvents', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+            'RUN_BILLING_EVENTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_BILLING_EVENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM.
+        DMT_BILLING_EVENT_TRANSFORM_PKG.TRANSFORM_EVENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- Phase 3: generate the FBDI zip.
+        DMT_BILLING_EVENT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
+
+        -- Phase 4: submit + (async return | poll + import + reconcile). '#NULL' param list.
+        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, '#NULL');
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        fin_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_BILLING_EVENTS complete.', 'INFO', C_PKG, C_PROC);
@@ -5519,15 +3209,254 @@
     -- --------------------------------------------------------
     -- RUN_EXPENDITURES (public)
     -- --------------------------------------------------------
+    -- RUN_EXPENDITURES (public) — self-contained recipe (backlog #8, final family).
+    -- SPAWN-PER-PARTITION by the COMPOSITE key (USER_TRANSACTION_SOURCE, DOCUMENT_NAME)
+    -- -- "Import and Process Cost Transactions" filters on exactly one of each, so one
+    -- child == one (source, document) group (row in DMT_CEMLI_SPLIT_CFG with
+    -- CHILD_PARTITION_COLUMN=USER_TRANSACTION_SOURCE + a GET_PARTITION_KEYS). Serves
+    -- the three passes: (1) PARENT transform-only pass validates + transforms once and
+    -- returns before generate; (2) CHILD load pass (g_partition_key set to the composite
+    -- JSON key) does the TWO-STEP load for ONLY that group; (3) legacy standalone.
+    -- TWO-STEP: loadAndImportData only STAGES rows into PJC_TXN_XFACE_STAGE_ALL (it does
+    -- NOT chain the costing import for PJC on this product), then a SEPARATE
+    -- ImportProcessParallelEssJob (the "Import Costs" job) validates + costs into base
+    -- PJC_EXP_ITEMS_ALL. Reconciles inline via DMT_EXPENDITURE_RESULTS_PKG (sets
+    -- g_reconciled_inline). Behaviour is byte-for-byte the pre-refactor Expenditures
+    -- block of run_one_object_type (both its top-of-function ParameterList build and
+    -- its two-step load block, relocated here).
     PROCEDURE RUN_EXPENDITURES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_EXPENDITURES';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_EXPENDITURES';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'Expenditures';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'Expenditures';
+        v_scenario_id   NUMBER;
+        l_ucm_account   VARCHAR2(200);
+        l_job_name      VARCHAR2(500);
+        l_ifd           NUMBER;
+        l_param_list    VARCHAR2(500);
+        l_ex_batch      VARCHAR2(60);
+        l_ex_zip        BLOB;
+        l_ex_filename   VARCHAR2(200);
+        l_ex_csv_id     NUMBER;
+        l_ex_load_id    VARCHAR2(100);
+        l_ex_import_id  VARCHAR2(100);
+        l_ex_status     VARCHAR2(50);
+        l_ex_rows       NUMBER := 0;
+        l_ex_user       VARCHAR2(100);
+        l_ex_pass       VARCHAR2(100);
+        -- Spawn-per-partition: a spawned CHILD is scoped to one (source, document)
+        -- group. Decode the child's two partition names; both null on the parent /
+        -- legacy standalone path.
+        l_ex_src        VARCHAR2(240) := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'USER_TRANSACTION_SOURCE');
+        l_ex_doc        VARCHAR2(240) := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'DOCUMENT_NAME');
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_EXPENDITURES start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Expenditures', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+            'RUN_EXPENDITURES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1+2 run ONLY on the parent transform-only pass (g_partition_key NULL).
+        -- A spawned child was already validated + transformed by its parent;
+        -- re-transforming would reset its STAGED rows. Mirrors the monolith gate.
+        IF g_partition_key IS NULL THEN
+            DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            COMMIT;
+            DMT_EXPENDITURE_TRANSFORM_PKG.TRANSFORM_EXPENDITURES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            COMMIT;
+        END IF;
+
+        -- Parent transform-only pass: stop here. The queue worker reads the distinct
+        -- (source, document) keys and spawns one child work item per key. Mirrors the
+        -- monolith transform-only gate.
+        IF g_transform_only THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'RUN_EXPENDITURES transform-only pass complete (spawn-per-partition parent).',
+                'INFO', C_PKG, C_PROC);
+            RETURN;
+        END IF;
+
+        -- ERP options + credentials. l_job_name resolves to the comma form
+        -- (onestop,ImportProcessParallelEssJob) via get_erp_options.
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_ex_user, l_ex_pass);
+
+        -- Build the 13-arg ImportProcessParallelEssJob ("Import Costs") ParameterList
+        -- (proven live, UI run 9777408). Relocated verbatim from the Expenditures arm
+        -- of the retired run_one_object_type top-of-function ParameterList ladder.
+        DECLARE
+            l_exp_bu_name    VARCHAR2(240);
+            l_exp_bu_id      VARCHAR2(30);
+            l_exp_src_id     VARCHAR2(30);
+            l_exp_doc_id     VARCHAR2(30);
+        BEGIN
+            l_exp_bu_name := DMT_UTIL_PKG.GET_CONFIG('EXPENDITURE_BU_NAME');
+            l_exp_bu_id   := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', l_exp_bu_name);
+
+            -- A real submit is always a CHILD here (the parent returned transform-only
+            -- above), so its decoded key must carry both names; guard defensively.
+            IF l_ex_src IS NULL OR l_ex_doc IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20057,
+                    'Expenditures: partition child carries no USER_TRANSACTION_SOURCE '||
+                    'and DOCUMENT_NAME (key '||g_partition_key||'). Import and Process '||
+                    'Cost Transactions needs both to build its source/document filter.');
+            END IF;
+
+            -- Source/document ids for the ParameterList. On the child path these must
+            -- resolve, so let GET_LOOKUP raise -20040 loudly.
+            l_exp_src_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_TXN_SOURCE_NAME_TO_ID', l_ex_src);
+            l_exp_doc_id := DMT_UTIL_PKG.GET_LOOKUP('PJC_DOC_NAME_TO_ID', l_ex_doc);
+
+            -- Expenditure Batch (arg 8): one batch name per (source, document) partition.
+            -- Globally unique (a work-queue id) so it never collides on
+            -- PJC_UNIQUE_BATCH_NAME and it isolates THIS child's rows from other pending
+            -- interface rows at costing time. Same value stamped onto BATCH_NAME in this
+            -- child's generated CSV rows below. Use g_work_queue_id (THIS child's queue
+            -- id); fall back to the max queue id on the legacy/standalone path.
+            IF g_work_queue_id IS NOT NULL THEN
+                l_ex_batch := TO_CHAR(g_work_queue_id);
+            ELSE
+                SELECT TO_CHAR(MAX(QUEUE_ID)) INTO l_ex_batch
+                FROM   DMT_WORK_QUEUE_TBL
+                WHERE  RUN_ID = p_run_id AND CEMLI_CODE = C_CEMLI;
+            END IF;
+
+            -- 13 positions: 1 BU name  2 BU id  3 IMPORT_AND_PROCESS  4 PREV_NOT_IMPORTED
+            --   5 (null)  6 txn-source id  7 document (null)  8 Expenditure Batch
+            --   9-12 (null)  13 ORA_PJC_DETAIL (spawns the BIP detail report child).
+            l_param_list := l_exp_bu_name
+                || '~' || l_exp_bu_id
+                || '~IMPORT_AND_PROCESS'
+                || '~PREV_NOT_IMPORTED'
+                || '~'
+                || '~' || l_exp_src_id
+                || '~'
+                || '~' || l_ex_batch
+                || '~~~~'
+                || '~ORA_PJC_DETAIL';
+        END;
+
+        -- Stamp the run's single work-queue-id batch onto every one of this partition's
+        -- rows' BATCH_NAME so the generated CSV carries it and it matches the arg-8
+        -- Expenditure Batch filter. Scoped to this (source, document) partition.
+        UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+        SET    BATCH_NAME = l_ex_batch
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
+        AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
+
+        -- Phase 3: generate one FBDI zip for this partition's STAGED rows
+        -- (rows move STAGED -> GENERATED).
+        DMT_EXPENDITURE_FBDI_GEN_PKG.GENERATE_FBDI(
+            p_run_id, l_ex_zip, l_ex_filename, l_ex_csv_id,
+            p_txn_source => l_ex_src, p_document => l_ex_doc);
+
+        -- Count only THIS partition's just-generated rows so an empty group skips cleanly.
+        SELECT COUNT(*) INTO l_ex_rows
+        FROM   DMT_PJC_EXPENDITURES_TFM_TBL
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+        AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
+        AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
+
+        IF l_ex_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ex_zip) = 0 OR l_ex_rows = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No STAGED Expenditure rows found. Skipping Expenditures.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            COMMIT;
+            RETURN;
+        END IF;
+
+        -- Step 1: Load File to Interface Tables (loadAndImportData). Stages the CSV into
+        -- PJC_TXN_XFACE_STAGE_ALL at status 'P'. Takes NO costing ParameterList; the
+        -- costing list is submitted with the SEPARATE import job in Step 2.
+        l_ex_load_id := SUBMIT_LOAD(
+            p_run_id            => p_run_id,
+            p_fbdi_zip          => l_ex_zip,
+            p_filename          => l_ex_filename,
+            p_job_name          => l_job_name,
+            p_interface_details => l_ifd,
+            p_doc_account       => l_ucm_account,
+            p_parameter_list    => '#NULL',
+            p_log_context       => C_OBJ,
+            p_username          => l_ex_user,
+            p_password          => l_ex_pass);
+        DBMS_LOB.FREETEMPORARY(l_ex_zip);
+
+        UPDATE DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = l_param_list
+        WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
+                              WHERE FBDI_CSV_ID = l_ex_csv_id);
+        COMMIT;
+
+        POLL_ESS_JOB(p_run_id, l_ex_load_id, 1800, FALSE, C_OBJ, C_CEMLI, l_ex_status,
+                     p_username => l_ex_user, p_password => l_ex_pass);
+        IF l_ex_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Expenditure Load ESS ' || l_ex_load_id || ' returned ' || l_ex_status ||
+                '. No rows staged. Marking GENERATED rows FAILED.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            -- Fail only THIS partition's in-flight rows (spawn-per-partition isolation).
+            UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+            SET    TFM_STATUS = 'FAILED',
+                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                       '[LOAD_ERROR] Load to PJC_TXN_XFACE_STAGE_ALL failed. Check ESS job ' || l_ex_load_id || '.'),
+                   LAST_UPDATED_DATE = SYSDATE
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+            AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
+            AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
+            COMMIT;
+            RETURN;
+        END IF;
+
+        -- Step 2: submit ImportProcessParallelEssJob (the "Import Costs" costing job) as
+        -- a SEPARATE ESS request with the 13-arg ParameterList built above.
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Submitting Import Costs / ImportProcessParallelEssJob (separate ESS request). ParamList: '
+            || l_param_list, 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+        l_ex_import_id := SUBMIT_IMPORT_JOB(
+            p_run_id     => p_run_id,
+            p_job_name   => l_job_name,
+            p_param_list => l_param_list);
+
+        -- Poll the costing import to terminal. WARNING is normal when some rows reject.
+        POLL_ESS_JOB(p_run_id, l_ex_import_id, 1800, FALSE, C_OBJ, C_CEMLI, l_ex_status,
+                     p_username => l_ex_user, p_password => l_ex_pass);
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'Import and Process Cost Transactions ' || l_ex_import_id || ' -> ' || l_ex_status,
+            'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+        -- Capture the import report errors (per-record rejects) regardless of BIP outcome.
+        BEGIN
+            DECLARE l_ir_count NUMBER;
+            BEGIN
+                l_ir_count := DMT_IMPORT_REPORT_PKG.PARSE_AND_LOG_ERRORS(
+                    p_run_id     => p_run_id,
+                    p_request_id => TO_NUMBER(l_ex_import_id),
+                    p_cemli_code => C_CEMLI);
+            END;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+
+        -- Backlog #70: stamp THIS child's own load + import ess ids on its own queue row.
+        stamp_item_ess_ids(l_ex_load_id, l_ex_import_id);
+
+        -- Step 3: reconcile. Good rows appear in base PJC_EXP_ITEMS_ALL keyed by prefixed
+        -- ORIG_TRANSACTION_REFERENCE -> LOADED. The reconciler decides per-record outcome.
+        DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(
+            p_run_id        => p_run_id,
+            p_load_ess_id   => TO_NUMBER(l_ex_load_id),
+            p_import_ess_id => TO_NUMBER(l_ex_import_id),
+            p_work_queue_id => g_work_queue_id);
+
+        -- Reconcile already ran inline here; EXECUTE_ONE must NOT re-reconcile. See #7.
+        g_reconciled_inline := TRUE;
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        fin_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_EXPENDITURES complete.', 'INFO', C_PKG, C_PROC);
@@ -5541,15 +3470,58 @@
     -- --------------------------------------------------------
     -- RUN_GRANTS (public)
     -- --------------------------------------------------------
+    -- RUN_GRANTS (public) — self-contained recipe (backlog #8, final family).
+    -- SINGLE-LOAD FBDI object (all award record types in one zip). ParameterList
+    -- '#NULL,#NULL,#NULL' (AwardMassImportJob 3 optional args; discovered via MCCS,
+    -- prior 'NEW,N' caused an ESS WAIT timeout). Behaviour is byte-for-byte the
+    -- pre-refactor Grants single-load path of run_one_object_type.
     PROCEDURE RUN_GRANTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_GRANTS';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_GRANTS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'Grants';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'Grants';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_csv_id      NUMBER;
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
-            'RUN_GRANTS start.', 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Grants', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+            'RUN_GRANTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_GRANTS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM across every award record type.
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUNDING(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PROJECTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PERSONNEL(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUND_SOURCES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_FUND_SRCS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_KEYWORDS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_BUDGET_PERIODS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_CERTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_CFDAS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_FUND_ALLOCS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_ORG_CREDITS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_TASK_BURDEN(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_REFERENCES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_TERMS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- Phase 3: generate the FBDI zip.
+        DMT_GRANTS_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
+
+        -- Phase 4: submit + (async return | poll + import + reconcile).
+        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, '#NULL,#NULL,#NULL');
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        fin_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GRANTS complete.', 'INFO', C_PKG, C_PROC);
@@ -6300,15 +4272,49 @@
     -- --------------------------------------------------------
     -- RUN_PROJECTS (public)
     -- --------------------------------------------------------
+    -- RUN_PROJECTS (public) — self-contained recipe (backlog #8, final family).
+    -- SINGLE-LOAD FBDI object (headers + tasks + team members + txn controls in one
+    -- zip). ParameterList ',,Y' (ImportProjectJobDef 3-arg). Behaviour is byte-for-byte
+    -- the pre-refactor Projects single-load path of run_one_object_type. The known
+    -- async-import race is tracked separately (backlog #71) and is NOT touched here —
+    -- this preserves the current behaviour exactly.
     PROCEDURE RUN_PROJECTS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_PROJECTS';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_PROJECTS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'Projects';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'Projects';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_csv_id      NUMBER;
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECTS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Projects', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_PROJECT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM (projects, tasks, team members, txn controls).
+        DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_PROJECTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TASKS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TEAM_MEMBERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TXN_CONTROLS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- Phase 3: generate the FBDI zip.
+        DMT_PROJECT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
+
+        -- Phase 4: submit + (async return | poll + import + reconcile). ',,Y' param list
+        -- (MCCS RICE_006 ImportProjectJobDef 3-arg).
+        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, ',,Y');
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        fin_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECTS complete.', 'INFO', C_PKG, C_PROC);
@@ -6552,15 +4558,171 @@
     -- Each group gets its own FBDI zip + loadAndImportData + BIP reconciliation.
     -- Upstream dependency: suppliers must be LOADED.
     -- --------------------------------------------------------
+    -- RUN_AP_INVOICES (public) — self-contained recipe (backlog #8, final family).
+    -- GROUPED by OPERATING_UNIT: one FBDI zip + one loadAndImportData (APXIIMPT
+    -- 14-arg) + one BIP reconcile per OU, all inline in a single work-queue item
+    -- (NOT spawn-per-partition -- APInvoices is in DMT_CEMLI_SPLIT_CFG with
+    -- CHILD_PARTITION_COLUMN NULL). AP's Import Payables Invoices chains its own import
+    -- from loadAndImportData (unlike AR AutoInvoice's two-job flow), so it reuses the
+    -- STANDARD po_submit_and_reconcile_one, not ar_submit_and_reconcile_one. 1099
+    -- invoices are a filtered subset of AP, not a separate object. Behaviour is
+    -- byte-for-byte the pre-refactor APInvoices grouped block of run_one_object_type.
     PROCEDURE RUN_AP_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_AP_INVOICES';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_AP_INVOICES';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'APInvoices';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'APInvoices';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_ou_zip       BLOB;
+        l_ou_filename  VARCHAR2(200);
+        l_ou_csv_id    NUMBER;
+        l_ou_load_id   VARCHAR2(100);
+        l_ou_import_id VARCHAR2(100);
+        l_ou_param     VARCHAR2(500);
+        l_ou_count     NUMBER := 0;
+        l_any_staged   NUMBER := 0;
+        l_ou_ok        BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AP_INVOICES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'APInvoices', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_AP_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM (headers + lines).
+        DMT_AP_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_AP_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- ERP options for the load submissions (AP uses default Fusion credentials --
+        -- the monolith passed none to submit_and_reconcile_one).
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+
+        -- Phase 3+4: per-OU load cycle. Each distinct OPERATING_UNIT gets its own FBDI
+        -- zip, loadAndImportData, and BIP reconciliation (inline per OU).
+        FOR ou_rec IN (
+            SELECT DISTINCT OPERATING_UNIT
+            FROM   DMT_AP_INVOICES_INT_TFM_TBL
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+            ORDER BY OPERATING_UNIT
+        ) LOOP
+            l_ou_count := l_ou_count + 1;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'AP OU cycle start: ' || ou_rec.OPERATING_UNIT,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            DMT_AP_FBDI_GEN_PKG.GENERATE_FBDI(
+                p_run_id => p_run_id, p_operating_unit => ou_rec.OPERATING_UNIT,
+                x_fbdi_zip => l_ou_zip, x_filename => l_ou_filename, x_fbdi_csv_id => l_ou_csv_id);
+
+            IF l_ou_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ou_zip) = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id, 'No rows for OU ' || ou_rec.OPERATING_UNIT || '. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                CONTINUE;
+            END IF;
+
+            -- AP APXIIMPT 14-arg ParameterList.
+            DECLARE
+                l_ap_bu_id  VARCHAR2(50);
+                l_ap_ledger VARCHAR2(50);
+                l_ap_source VARCHAR2(100);
+            BEGIN
+                -- BU id + its primary ledger via the common lookup. Every active BU has
+                -- a BU_NAME_TO_PRIMARY_LEDGER_ID row; it resolves to NULL when the BU
+                -- has no primary ledger, so the NVL(...,'#NULL') below still applies
+                -- (GET_LOOKUP raises only when the BU itself is unknown).
+                l_ap_bu_id  := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', ou_rec.OPERATING_UNIT);
+                l_ap_ledger := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_PRIMARY_LEDGER_ID', ou_rec.OPERATING_UNIT);
+                SELECT SOURCE INTO l_ap_source FROM DMT_AP_INVOICES_INT_TFM_TBL
+                WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT AND TFM_STATUS='GENERATED' AND ROWNUM=1;
+                l_ou_param := ',' || l_ap_bu_id || ',N,' || TO_CHAR(SYSDATE,'YYYY-MM-DD') ||
+                    ',#NULL,#NULL,1000,' || l_ap_source || ',' || TO_CHAR(p_run_id) ||
+                    ',N,Y,' || NVL(l_ap_ledger,'#NULL') || ',#NULL,1';
+            END;
+
+            po_submit_and_reconcile_one(
+                p_run_id            => p_run_id,
+                p_cemli_code        => C_CEMLI,
+                p_obj               => C_OBJ,
+                p_job_name          => l_job_name,
+                p_interface_details => l_ifd,
+                p_ucm_account       => l_ucm_account,
+                p_fbdi_zip          => l_ou_zip,
+                p_filename          => l_ou_filename,
+                p_fbdi_csv_id       => l_ou_csv_id,
+                p_param_list        => l_ou_param,
+                p_group_label       => 'OU: ' || ou_rec.OPERATING_UNIT,
+                p_username          => NULL,
+                p_password          => NULL,
+                x_load_ess_id       => l_ou_load_id,
+                x_import_ess_id     => l_ou_import_id,
+                x_success           => l_ou_ok);
+
+            IF NOT l_ou_ok THEN
+                DECLARE
+                    l_err VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_ou_load_id || ' logs for details.';
+                BEGIN
+                    UPDATE DMT_AP_INVOICES_INT_TFM_TBL
+                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
+                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND OPERATING_UNIT=ou_rec.OPERATING_UNIT;
+                    UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL
+                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
+                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
+                    AND INVOICE_ID IN (SELECT INVOICE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL WHERE RUN_ID=p_run_id AND OPERATING_UNIT=ou_rec.OPERATING_UNIT);
+                    COMMIT;
+                END;
+                CONTINUE;
+            END IF;
+
+            -- Check for rows still at GENERATED after BIP.
+            DECLARE l_gen_count NUMBER;
+            BEGIN
+                SELECT COUNT(*) INTO l_gen_count FROM DMT_AP_INVOICES_INT_TFM_TBL
+                WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND OPERATING_UNIT=ou_rec.OPERATING_UNIT;
+                IF l_gen_count > 0 THEN
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'WARNING: ' || l_gen_count || ' AP invoice rows still at GENERATED after BIP reconciliation (OU: ' || ou_rec.OPERATING_UNIT || '). Require manual investigation.',
+                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                END IF;
+            END;
+        END LOOP;
+
+        IF l_ou_count = 0 THEN
+            SELECT COUNT(*) INTO l_any_staged FROM DMT_AP_INVOICES_INT_TFM_TBL
+            WHERE RUN_ID=p_run_id AND TFM_STATUS='STAGED' AND ROWNUM=1;
+            IF l_any_staged = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id, 'No STAGED AP invoice headers found. Skipping APInvoices.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                RETURN;
+            END IF;
+        END IF;
+
+        -- Phase 5: FAILED-row accounting + completion log (counts the AP header TFM
+        -- table, as the monolith grouped_finish did for APInvoices).
+        DECLARE
+            l_failed_count NUMBER;
+        BEGIN
+            SELECT COUNT(*) INTO l_failed_count
+            FROM DMT_AP_INVOICES_INT_TFM_TBL
+            WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
+            IF l_failed_count > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_CEMLI || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                    'Downstream object types will continue — check staging table for details.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            END IF;
+        END;
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_AP_INVOICES complete.', 'INFO', C_PKG, C_PROC);
@@ -7427,15 +5589,178 @@
     -- --------------------------------------------------------
     -- RUN_GL_BALANCES (public) — FBDI pattern
     -- --------------------------------------------------------
+    -- RUN_GL_BALANCES (public) — self-contained recipe (backlog #8, final family).
+    -- GROUPED by LEDGER_NAME: one FBDI zip + one JournalImportLauncher load + one BIP
+    -- reconcile per ledger, all inline in a single work-queue item (NOT
+    -- spawn-per-partition -- GLBalances is in DMT_CEMLI_SPLIT_CFG with
+    -- CHILD_PARTITION_COLUMN NULL, so it loads as one work item like the Purchasing
+    -- family). Reuses po_submit_and_reconcile_one for the per-ledger submit/poll/
+    -- reconcile. Behaviour is byte-for-byte the pre-refactor GLBalances grouped block
+    -- of run_one_object_type.
     PROCEDURE RUN_GL_BALANCES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_GL_BALANCES';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_GL_BALANCES';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'GLBalances';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'GLBalances';
+        v_scenario_id  NUMBER;
+        l_ucm_account  VARCHAR2(200);
+        l_job_name     VARCHAR2(500);
+        l_ifd          NUMBER;
+        l_gl_zip       BLOB;
+        l_gl_filename  VARCHAR2(200);
+        l_gl_csv_id    NUMBER;
+        l_gl_load_id   VARCHAR2(100);
+        l_gl_import_id VARCHAR2(100);
+        l_gl_param     VARCHAR2(500);
+        l_gl_ledger_id VARCHAR2(50);
+        l_gl_das_id    VARCHAR2(50);
+        l_gl_source    VARCHAR2(240);
+        l_gl_count     NUMBER := 0;
+        l_gl_ok        BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BALANCES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'GLBalances', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_GL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM.
+        DMT_GL_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- ERP options for the load submissions (GLBalances uses the default Fusion
+        -- credentials -- the monolith passed none to submit_and_reconcile_one).
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+
+        -- Phase 3+4: per-ledger load cycle. Each distinct LEDGER_NAME gets its own
+        -- FBDI zip, JournalImportLauncher load, and BIP reconciliation (inline).
+        FOR led_rec IN (
+            SELECT DISTINCT LEDGER_NAME
+            FROM   DMT_GL_INTERFACE_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'STAGED'
+            AND    LEDGER_NAME IS NOT NULL
+            ORDER BY LEDGER_NAME
+        ) LOOP
+            l_gl_count := l_gl_count + 1;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'GL ledger cycle start: ' || led_rec.LEDGER_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            -- Generate FBDI for this ledger only.
+            DMT_GL_FBDI_GEN_PKG.GENERATE_FBDI(
+                p_run_id      => p_run_id,
+                x_fbdi_zip    => l_gl_zip,
+                x_filename    => l_gl_filename,
+                x_fbdi_csv_id => l_gl_csv_id,
+                p_ledger_name => led_rec.LEDGER_NAME);
+
+            IF l_gl_zip IS NULL OR DBMS_LOB.GETLENGTH(l_gl_zip) = 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'No GL rows for ledger ' || led_rec.LEDGER_NAME || '. Skipping.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+                CONTINUE;
+            END IF;
+
+            -- Ledger id + data-access-set id via the one common lookup accessor. The
+            -- canonical LEDGER_NAME_TO_LEDGER_ID return is ledger_id~access_set_id
+            -- (the reserved ~ separator); GET_LOOKUP raises -20040 if unresolvable.
+            DECLARE
+                l_ledger_lkp VARCHAR2(500);
+            BEGIN
+                l_ledger_lkp   := DMT_UTIL_PKG.GET_LOOKUP('LEDGER_NAME_TO_LEDGER_ID', led_rec.LEDGER_NAME);
+                l_gl_ledger_id := SUBSTR(l_ledger_lkp, 1, INSTR(l_ledger_lkp, '~') - 1);
+                l_gl_das_id    := SUBSTR(l_ledger_lkp, INSTR(l_ledger_lkp, '~') + 1);
+            END;
+
+            -- Get source from TFM data — not hardcoded 'Spreadsheet'.
+            BEGIN
+                SELECT USER_JE_SOURCE_NAME INTO l_gl_source
+                FROM   DMT_GL_INTERFACE_TFM_TBL
+                WHERE  RUN_ID = p_run_id
+                AND    LEDGER_NAME = led_rec.LEDGER_NAME
+                AND    TFM_STATUS = 'GENERATED'
+                AND    ROWNUM = 1;
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN
+                    l_gl_source := 'Spreadsheet';  -- fallback
+            END;
+
+            -- JournalImportLauncher: 7 args -- DAS_ID, Source, LedgerID, GroupID, N, N, N.
+            l_gl_param := NVL(l_gl_das_id, '#NULL') || ',' ||
+                          l_gl_source || ',' ||
+                          l_gl_ledger_id || ',' ||
+                          TO_CHAR(p_run_id) || ',N,N,N';
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'GL ParameterList for ' || led_rec.LEDGER_NAME || ': ' || l_gl_param,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            po_submit_and_reconcile_one(
+                p_run_id            => p_run_id,
+                p_cemli_code        => C_CEMLI,
+                p_obj               => C_OBJ,
+                p_job_name          => l_job_name,
+                p_interface_details => l_ifd,
+                p_ucm_account       => l_ucm_account,
+                p_fbdi_zip          => l_gl_zip,
+                p_filename          => l_gl_filename,
+                p_fbdi_csv_id       => l_gl_csv_id,
+                p_param_list        => l_gl_param,
+                p_group_label       => 'Ledger: ' || led_rec.LEDGER_NAME,
+                p_username          => NULL,
+                p_password          => NULL,
+                x_load_ess_id       => l_gl_load_id,
+                x_import_ess_id     => l_gl_import_id,
+                x_success           => l_gl_ok);
+
+            IF NOT l_gl_ok THEN
+                UPDATE DMT_GL_INTERFACE_TFM_TBL
+                SET    TFM_STATUS = 'FAILED',
+                       ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                           '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_gl_load_id || ' logs for details.'),
+                       LAST_UPDATED_DATE = SYSDATE
+                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                AND    LEDGER_NAME = led_rec.LEDGER_NAME;
+                COMMIT;
+                CONTINUE;
+            END IF;
+
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'GL ledger cycle complete: ' || led_rec.LEDGER_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        END LOOP;
+
+        IF l_gl_count = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No STAGED GL balance rows found. Skipping GLBalances.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            RETURN;
+        END IF;
+
+        -- Phase 5: FAILED-row accounting + completion log (counts the GL interface
+        -- TFM table, as the monolith grouped_finish did for GLBalances).
+        DECLARE
+            l_failed_count NUMBER;
+        BEGIN
+            SELECT COUNT(*) INTO l_failed_count
+            FROM DMT_GL_INTERFACE_TFM_TBL
+            WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
+            IF l_failed_count > 0 THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_CEMLI || ': ' || l_failed_count || ' record(s) FAILED in Fusion. ' ||
+                    'Downstream object types will continue — check staging table for details.',
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            END IF;
+        END;
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BALANCES complete.', 'INFO', C_PKG, C_PROC);
@@ -7449,15 +5774,154 @@
     -- --------------------------------------------------------
     -- RUN_GL_BUDGETS (public) — FBDI pattern
     -- --------------------------------------------------------
+    -- RUN_GL_BUDGETS (public) — self-contained recipe (backlog #8, final family).
+    -- TWO-STEP load (like Expenditures): loadAndImportData stages the CSV into
+    -- GL_BUDGET_INTERFACE (its chained ValidateAndLoadBudgets with no run name is a
+    -- throwaway), then a SEPARATE "Validate and Load Budgets" (ValidateAndLoadBudgets)
+    -- is submitted STANDALONE once per distinct Run Name -- that is the real cube load.
+    -- Reconciliation is cell-grain against GL_BUDGET_BALANCES over a run-start window
+    -- (budgets carry no source-line identity), inline via DMT_GL_BUDGET_RESULTS_PKG,
+    -- so it sets g_reconciled_inline. Not grouped, not partitioned. Behaviour is
+    -- byte-for-byte the pre-refactor GLBudgets block of run_one_object_type.
     PROCEDURE RUN_GL_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_GL_BUDGETS';
-        l_dummy BOOLEAN;
-        v_scenario_id NUMBER;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_GL_BUDGETS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'GLBudgets';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'GLBudgets';
+        v_scenario_id   NUMBER;
+        l_ucm_account   VARCHAR2(200);
+        l_job_name      VARCHAR2(500);
+        l_ifd           NUMBER;
+        l_gb_zip        BLOB;
+        l_gb_filename   VARCHAR2(200);
+        l_gb_csv_id     NUMBER;
+        l_gb_load_id    VARCHAR2(100);
+        l_gb_import_id  VARCHAR2(100);
+        l_gb_status     VARCHAR2(50);
+        l_gb_run_start  TIMESTAMP := SYSTIMESTAMP;
+        l_gb_ledger     NUMBER;
+        l_gb_ledgers    NUMBER := 0;
+        l_gb_rows       NUMBER := 0;
+        l_gb_runs       NUMBER := 0;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'GLBudgets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_GL_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM.
+        DMT_GL_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- ERP options (interface details id / import job name / UCM account).
+        get_erp_options(
+            p_cemli_code           => C_CEMLI,
+            x_ucm_account          => l_ucm_account,
+            x_import_job_name      => l_job_name,
+            x_interface_details_id => l_ifd);
+
+        -- Phase 3: generate one FBDI zip for all STAGED budget rows this run.
+        DMT_GL_BUDGET_FBDI_GEN_PKG.GENERATE_FBDI(
+            p_run_id      => p_run_id,
+            x_fbdi_zip    => l_gb_zip,
+            x_filename    => l_gb_filename,
+            x_fbdi_csv_id => l_gb_csv_id);
+
+        SELECT COUNT(*) INTO l_gb_rows
+        FROM   DMT_GL_BUDGET_INT_TFM_TBL
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+
+        IF l_gb_zip IS NULL OR DBMS_LOB.GETLENGTH(l_gb_zip) = 0 OR l_gb_rows = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'No STAGED GL budget rows found. Skipping GLBudgets.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            COMMIT;
+            RETURN;
+        END IF;
+
+        -- Step 1: Load Interface File for Import (loadAndImportData). Loads the CSV
+        -- into GL_BUDGET_INTERFACE; its chained ValidateAndLoadBudgets (no run name)
+        -- is ignored. ParameterList '#NULL'.
+        l_gb_load_id := SUBMIT_LOAD(
+            p_run_id            => p_run_id,
+            p_fbdi_zip          => l_gb_zip,
+            p_filename          => l_gb_filename,
+            p_job_name          => l_job_name,
+            p_interface_details => l_ifd,
+            p_doc_account       => l_ucm_account,
+            p_parameter_list    => '#NULL',
+            p_log_context       => C_OBJ);
+        DBMS_LOB.FREETEMPORARY(l_gb_zip);
+
+        UPDATE DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = '#NULL'
+        WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
+                              WHERE FBDI_CSV_ID = l_gb_csv_id);
+        COMMIT;
+
+        POLL_ESS_JOB(p_run_id, l_gb_load_id, 1800, FALSE, C_OBJ, C_CEMLI, l_gb_status);
+        IF l_gb_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'GL Budget Load ESS ' || l_gb_load_id || ' returned ' || l_gb_status ||
+                '. Marking GENERATED rows FAILED.',
+                DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
+            UPDATE DMT_GL_BUDGET_INT_TFM_TBL
+            SET    TFM_STATUS = 'FAILED',
+                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                       '[LOAD_ERROR] Load to GL_BUDGET_INTERFACE failed. Check ESS job ' || l_gb_load_id || '.'),
+                   LAST_UPDATED_DATE = SYSDATE
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+            COMMIT;
+            RETURN;
+        END IF;
+
+        -- Step 2: submit Validate and Load Budgets standalone per Run Name.
+        FOR rn IN (
+            SELECT DISTINCT RUN_NAME
+            FROM   DMT_GL_BUDGET_INT_TFM_TBL
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+            AND    RUN_NAME IS NOT NULL
+            ORDER BY RUN_NAME
+        ) LOOP
+            l_gb_runs := l_gb_runs + 1;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'Submitting ValidateAndLoadBudgets for Run Name: ' || rn.RUN_NAME,
+                'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+            l_gb_import_id := SUBMIT_IMPORT_JOB(
+                p_run_id     => p_run_id,
+                p_job_name   => l_job_name,
+                p_param_list => rn.RUN_NAME);   -- single arg: the Run Name
+            POLL_ESS_JOB(p_run_id, l_gb_import_id, 1800, FALSE, C_OBJ, C_CEMLI, l_gb_status);
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'ValidateAndLoadBudgets ' || l_gb_import_id || ' for ' || rn.RUN_NAME ||
+                ' -> ' || l_gb_status, 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+        END LOOP;
+
+        -- Scope reconciliation to a single ledger when the run uses one.
+        SELECT COUNT(DISTINCT LEDGER_ID), MAX(LEDGER_ID)
+        INTO   l_gb_ledgers, l_gb_ledger
+        FROM   DMT_GL_BUDGET_INT_TFM_TBL
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED' AND LEDGER_ID IS NOT NULL;
+        IF l_gb_ledgers <> 1 THEN l_gb_ledger := NULL; END IF;
+
+        -- Step 3: reconcile cell-grain against GL_BUDGET_BALANCES + interface errors.
+        DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
+            p_run_id        => p_run_id,
+            p_load_ess_id   => TO_NUMBER(l_gb_load_id),
+            p_import_ess_id => TO_NUMBER(l_gb_import_id),
+            p_run_start     => l_gb_run_start,
+            p_ledger_id     => l_gb_ledger);
+
+        -- Reconcile already ran inline here; tell EXECUTE_ONE not to re-route this work
+        -- item to RECONCILING (which would double-reconcile). See backlog #7.
+        g_reconciled_inline := TRUE;
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        fin_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BUDGETS complete.', 'INFO', C_PKG, C_PROC);
@@ -7477,15 +5941,47 @@
     --   be revived if EPBCS access appears. Do NOT wire it into a pipeline or the
     --   dispatch registry without an owner decision. Design doc §12 tracks this.
     -- --------------------------------------------------------
+    -- RUN_PLAN_BUDGETS (public) — self-contained recipe (backlog #8, final family).
+    -- DORMANT: PlanningBudgets has no queue dispatch (EXEC_PROC NULL in
+    -- DMT_PIPELINE_DEF_TBL) and no accounting-catalog row, so the queue never runs
+    -- it; it executes only via this direct RUN_PLAN_BUDGETS call. Migrated off the
+    -- monolith anyway (so the shell can be deleted) as a self-contained SINGLE-LOAD
+    -- recipe, ParameterList '#NULL', byte-for-byte the pre-refactor PlanningBudgets
+    -- single-load path. Do NOT wire it into a pipeline / dispatch registry without an
+    -- owner decision (design doc open-items list).
     PROCEDURE RUN_PLAN_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_PLAN_BUDGETS';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_PLAN_BUDGETS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'PlanningBudgets';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'PlanningBudgets';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_csv_id      NUMBER;
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PLAN_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'PlanningBudgets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_PLAN_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM.
+        DMT_PLAN_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- Phase 3: generate the FBDI zip.
+        DMT_PLAN_BUDGET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
+
+        -- Phase 4: submit + (async return | poll + import + reconcile). '#NULL' param list.
+        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, '#NULL');
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        fin_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PLAN_BUDGETS complete.', 'INFO', C_PKG, C_PROC);
@@ -7499,15 +5995,42 @@
     -- --------------------------------------------------------
     -- RUN_PROJECT_BUDGETS (public) — FBDI pattern
     -- --------------------------------------------------------
+    -- RUN_PROJECT_BUDGETS (public) — self-contained recipe (backlog #8, final family).
+    -- SINGLE-LOAD FBDI object. ParameterList '#NULL'. Behaviour is byte-for-byte the
+    -- pre-refactor ProjectBudgets single-load path of run_one_object_type.
     PROCEDURE RUN_PROJECT_BUDGETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_PROJECT_BUDGETS';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_PROJECT_BUDGETS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'ProjectBudgets';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'ProjectBudgets';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_csv_id      NUMBER;
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECT_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'ProjectBudgets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1: pre-transform validation.
+        DMT_PRJ_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        COMMIT;
+
+        -- Phase 2: transform STG -> TFM.
+        DMT_PRJ_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        COMMIT;
+
+        -- Phase 3: generate the FBDI zip.
+        DMT_PRJ_BUDGET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
+
+        -- Phase 4: submit + (async return | poll + import + reconcile). '#NULL' param list.
+        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, '#NULL');
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        fin_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_PROJECT_BUDGETS complete.', 'INFO', C_PKG, C_PROC);
@@ -7521,15 +6044,84 @@
     -- --------------------------------------------------------
     -- RUN_ASSETS (public) — FBDI pattern
     -- --------------------------------------------------------
+    -- RUN_ASSETS (public) — self-contained recipe (backlog #8, final family).
+    -- SPAWN-PER-PARTITION by BOOK_TYPE_CODE (row in DMT_CEMLI_SPLIT_CFG with
+    -- CHILD_PARTITION_COLUMN=BOOK_TYPE_CODE + a GET_PARTITION_KEYS). Like the
+    -- Requisitions/Items recipes it serves all three passes the queue / a direct
+    -- caller can drive: (1) PARENT transform-only pass (g_partition_key NULL,
+    -- g_transform_only TRUE) validates + transforms once and returns before generate,
+    -- after which the queue worker spawns one child per book; (2) CHILD load pass
+    -- (g_partition_key set to {"BOOK_TYPE_CODE":"..."}) generates + loads ONLY that
+    -- book and returns at the async gate for the queue to poll / post-run / reconcile;
+    -- (3) legacy standalone (g_partition_key NULL, g_transform_only FALSE) loads all
+    -- books in one zip. It is a SINGLE-LOAD object (one FBDI zip per pass, not a
+    -- grouped loop): the generator scopes to the child's book via DECODE_PARTITION_KEY.
+    -- The AWAITING_POSTRUN / PostMassAdditions report-job step is a queue-worker
+    -- concern (untouched); this recipe only submits the load with the book's
+    -- '<book>,,NORMAL' ParameterList. Behaviour is byte-for-byte the pre-refactor
+    -- Assets path of run_one_object_type.
     PROCEDURE RUN_ASSETS (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'RUN_ASSETS';
-        l_dummy BOOLEAN;
+        C_PROC   CONSTANT VARCHAR2(40) := 'RUN_ASSETS';
+        C_CEMLI  CONSTANT VARCHAR2(30) := 'Assets';
+        C_OBJ    CONSTANT VARCHAR2(30) := 'Assets';
         v_scenario_id NUMBER;
+        l_zip         BLOB;
+        l_filename    VARCHAR2(200);
+        l_csv_id      NUMBER;
+        l_param_list  VARCHAR2(500);
+        l_ok          BOOLEAN;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ASSETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
-        l_dummy := run_one_object_type(p_run_id, 'Assets', v_scenario_id, p_run_mode, p_skip_bu_refresh);
+
+        sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
+
+        -- Phase 1+2 run ONLY on the parent transform-only pass (g_partition_key NULL).
+        -- A spawned child (g_partition_key set to a book) was already validated +
+        -- transformed by its parent; re-transforming would reset its STAGED rows.
+        -- Mirrors the g_partition_key gate the monolith used for Assets.
+        IF g_partition_key IS NULL THEN
+            DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            COMMIT;
+            DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_BOOKS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            COMMIT;
+        END IF;
+
+        -- Parent transform-only pass: stop here. The queue worker reads the distinct
+        -- BOOK_TYPE_CODEs and spawns one child work item per book (each re-enters this
+        -- recipe with g_partition_key set). Mirrors the monolith transform-only gate.
+        IF g_transform_only THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'RUN_ASSETS transform-only pass complete (spawn-per-partition parent).',
+                'INFO', C_PKG, C_PROC);
+            RETURN;
+        END IF;
+
+        -- Phase 3: generate the FBDI zip for ONLY this book when partitioned.
+        -- g_partition_key is JSON-encoded for a spawn child (e.g. {"BOOK_TYPE_CODE":
+        -- "US CORP"}); decode to the raw book code the generator's static cursor
+        -- filters on. NULL passes through (all books) on the standalone path.
+        DMT_FA_ASSET_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id,
+            DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BOOK_TYPE_CODE'));
+
+        -- PostMassAdditions ParameterList: '<BookTypeCode>,,NORMAL' (MCCS RICE_003).
+        -- No hardcoded ids: the book is named config (ASSET_BOOK_TYPE), not a literal.
+        l_param_list := DMT_UTIL_PKG.GET_CONFIG('ASSET_BOOK_TYPE') || ',,NORMAL';
+
+        -- Phase 4: submit + (async return | poll + import + reconcile).
+        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, l_param_list);
+
+        -- Backlog #70: stamp THIS child's own load + import ess ids on its own queue
+        -- row. fin_after_generate already did so on the sync path; this is a no-op
+        -- outside a queue-driven partition child.
+        -- (The async live path stamps via the queue poller; nothing extra needed here.)
+
+        -- Phase 5: FAILED-row accounting + completion log.
+        fin_finish(p_run_id, C_CEMLI, C_OBJ);
+
         COMMIT;
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ASSETS complete.', 'INFO', C_PKG, C_PROC);
@@ -7575,8 +6167,9 @@
     ) IS
         C_PROC CONSTANT VARCHAR2(40) := 'RUN_TRANSFORM_ONLY';
         v_scenario_id NUMBER;
-        l_dummy       BOOLEAN;
     BEGIN
+        -- resolve_scenario validates the scenario name exists (side effect); the
+        -- recipes each re-resolve it themselves.
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_TRANSFORM_ONLY start for ' || p_cemli_code || '.',
             'INFO', C_PKG, C_PROC);
@@ -7588,12 +6181,30 @@
         -- STAGED and returns before any generate/submit, exactly as the monolith's
         -- transform-only gate did. Every other object still transforms through
         -- run_one_object_type unchanged.
+        -- Backlog #8: run_one_object_type is retired. Every spawn-per-partition object
+        -- (the only kind the queue worker drives through RUN_TRANSFORM_ONLY -- those
+        -- with CHILD_PARTITION_COLUMN + a PARTITION_KEYS_PROC in the registry) now has
+        -- its own self-contained recipe that honours g_transform_only: it validates +
+        -- transforms STG -> TFM STAGED and returns before any generate/submit, exactly
+        -- as the monolith's transform-only gate did. Dispatch each to its recipe with a
+        -- static CASE (no new dynamic-SQL site; design doc Coding Standards).
         IF p_cemli_code = 'Requisitions' THEN
             RUN_REQUISITIONS(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
         ELSIF p_cemli_code = 'Items' THEN
             RUN_ITEMS(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        ELSIF p_cemli_code = 'Assets' THEN
+            RUN_ASSETS(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        ELSIF p_cemli_code = 'Expenditures' THEN
+            RUN_EXPENDITURES(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
         ELSE
-            l_dummy := run_one_object_type(p_run_id, p_cemli_code, v_scenario_id, p_run_mode, TRUE);
+            -- Only spawn-per-partition objects are dispatched here by the queue worker,
+            -- and all four now have explicit cases above. A non-spawn object reaching
+            -- this point means a mis-seeded registry (CHILD_PARTITION_COLUMN set without
+            -- a matching recipe) -- fail loudly rather than silently no-op.
+            RAISE_APPLICATION_ERROR(-20048,
+                'RUN_TRANSFORM_ONLY: ' || p_cemli_code || ' has no spawn-per-partition '
+                || 'transform-only recipe. Only Requisitions/Items/Assets/Expenditures '
+                || 'are spawn-per-partition (backlog #8).');
         END IF;
         g_transform_only := FALSE;
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_TRANSFORM_ONLY complete for ' || p_cemli_code || '.',
