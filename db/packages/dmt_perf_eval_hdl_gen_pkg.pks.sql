@@ -1,16 +1,25 @@
 -- PACKAGE DMT_PERF_EVAL_HDL_GEN_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_PERF_EVAL_HDL_GEN_PKG" 
+  CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_PERF_EVAL_HDL_GEN_PKG"
 AUTHID DEFINER
 AS
 -- ============================================================
 -- DMT_PERF_EVAL_HDL_GEN_PKG
--- Generates the PerformanceDocument.dat HDL file from TFM staging records.
+-- Generates the PerformanceDocument HDL DAT file from TFM staging records.
 --
--- PerformanceDocument HDL is ONE zip containing ONE DAT file with 2 business object(s):
---   PerformanceDocument, PerformanceRating.
+-- Fusion business object: PerformanceDocument (HDL discriminator PerfDocComplete),
+-- with its ratings/comments child RatingsAndComments. This is the Oracle-documented
+-- object for creating performance documents and loading section/overall ratings and
+-- comments (Oracle Talent Management: "HCM Data Loader and Performance Document
+-- Business Objects"; Oracle HCM: "Examples of Loading Performance Documents").
 --
--- OBJECT_TYPE = 'PerformanceDocuments'.
+-- One HDL zip carries ONE DAT file (PerfDocComplete.dat) holding two business object
+-- components: PerfDocComplete (the document) and RatingsAndComments (section + overall
+-- ratings and comments). OBJECT_TYPE = 'PerfEvaluations'.
+--
+-- NOT GoalPlan: the prior version emitted GoalPlan / GoalPlanGoal (Goal Management),
+-- which is a separate future object, not performance evaluations. Re-modelled to
+-- PerformanceDocument 2026-09 (see PR "HCM re-model: PerfEvaluations -> PerformanceDocument").
 -- ============================================================
 
     PROCEDURE GENERATE_HDL (

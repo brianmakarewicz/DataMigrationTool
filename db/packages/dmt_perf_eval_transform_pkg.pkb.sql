@@ -64,8 +64,8 @@ AS
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
-            DMT_XREF_PKG.PERSON_NUMBER(s.PERSON_NUMBER),
-            DMT_XREF_PKG.PERSON_NUMBER(s.MANAGER_PERSON_NUMBER),
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.MANAGER_PERSON_NUMBER, 30),
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.DOCUMENT_NAME, 240),
             s.DOCUMENT_TYPE,
             s.REVIEW_PERIOD_NAME,
@@ -73,8 +73,8 @@ AS
             s.APPROVAL_STATUS,
             s.START_DATE,
             s.END_DATE,
-            -- Contract v1 reconciliation key (design section 5): the prefixed goal
-            -- plan name = the base HRG_GOAL_PLANS_VL.GOAL_PLAN_NAME = report RECORD_KEY.
+            -- Contract v1 reconciliation key (design section 5): the prefixed
+            -- document name = the base HRA_EVALUATIONS.NAME = report RECORD_KEY.
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.DOCUMENT_NAME, 240),
             'STAGED',
             SYSDATE
@@ -131,7 +131,7 @@ AS
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
-            DMT_XREF_PKG.PERSON_NUMBER(s.PERSON_NUMBER),
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
             s.SECTION_NAME,
             s.RATING_LEVEL_CODE,
             s.COMMENTS,
