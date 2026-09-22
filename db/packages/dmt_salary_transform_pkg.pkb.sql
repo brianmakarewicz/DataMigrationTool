@@ -76,7 +76,7 @@
             NULL,
             s.EFFECTIVE_START_DATE,
             s.EFFECTIVE_END_DATE,
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
+            DMT_XREF_PKG.PERSON_NUMBER(s.PERSON_NUMBER),
             CASE WHEN s.ASSIGNMENT_NUMBER IS NOT NULL
                  THEN DMT_UTIL_PKG.PREFIXED(l_prefix, s.ASSIGNMENT_NUMBER, 80)
                  ELSE NULL

@@ -65,7 +65,7 @@ AS
             s.STG_SEQUENCE_ID,
             p_run_id,
             NULL,
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30),
+            DMT_XREF_PKG.PERSON_NUMBER(s.PERSON_NUMBER),
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.BENEFICIARY_PERSON_NUMBER, 30),
             s.BENEFIT_RELATIONSHIP_NAME,
             s.PROGRAM_NAME,
