@@ -120,6 +120,36 @@ FROM (
     WHERE  t.source_code           = 'DMT'
     AND    t.transaction_reference = 'DMT-' || :P_RUN_ID
     AND    t.process_flag          = 3
+
+    UNION ALL
+
+    -- ========== BASE tier: serial detail (backlog #11) ==========
+    -- A serial line loaded with its parent Miscellaneous Receipt transaction and
+    -- has its OWN Fusion base id: INV_SERIAL_NUMBERS.GEN_OBJECT_ID (the serial
+    -- record's surrogate key). It is linked to this run's transactions by
+    -- LAST_TRANSACTION_ID = the receipt transaction id (the receipt is the last
+    -- transaction on a freshly migrated serial), scoped to the run's transactions
+    -- in INV_MATERIAL_TXNS. RECORD_KEY = the run-prefixed SERIAL_NUMBER (globally
+    -- unique, so the Contract v1 keyset invariant holds and it never collides with
+    -- a numeric SOURCE_LINE_ID). FUSION_ID = GEN_OBJECT_ID = the serial's own base
+    -- id (verified live 2026-09-21: serial 10054DMT-REG-SER-001 -> GEN_OBJECT_ID
+    -- 154134). The reconciler stamps this into DMT_INV_TRX_SERIALS_TFM_TBL
+    -- .FUSION_SERIAL_ID, matching on the prefixed serial number.
+    SELECT
+        'MiscReceipts Serial'                AS object_type,
+        s.serial_number                      AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        s.gen_object_id                      AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        s.serial_number                      AS source_ref,
+        s.serial_number                      AS dmt_reference
+    FROM   inv_serial_numbers s
+    WHERE  EXISTS (SELECT 1 FROM inv_material_txns t
+                   WHERE t.transaction_id       = s.last_transaction_id
+                   AND   t.source_code          = 'DMT'
+                   AND   t.transaction_reference = 'DMT-' || :P_RUN_ID)
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
 -- BIP, so treat NULL as "from the start": return every row. On later

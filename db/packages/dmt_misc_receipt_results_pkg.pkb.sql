@@ -63,11 +63,15 @@ AS
         l_loaded    NUMBER := 0;
         l_failed    NUMBER := 0;
     BEGIN
-        -- Generated-row count drives the shared fetch's keyset page-count cap.
-        -- Done statically here (not in the shared pkg).
-        SELECT COUNT(*) INTO l_gen_count
-        FROM   DMT_INV_TRX_TFM_TBL
-        WHERE  RUN_ID = p_run_id;
+        -- Generated-row count drives the shared fetch's keyset page-count cap
+        -- (a safety page limit, not an exact total). Done statically here (not in
+        -- the shared pkg). The DM now returns the transactions tier plus the
+        -- backlog #11 serial tier ('MiscReceipts Serial'), so the transaction
+        -- count plus the serial-child count bounds the rows the report can return.
+        SELECT (SELECT COUNT(*) FROM DMT_INV_TRX_TFM_TBL        WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_INV_TRX_SERIALS_TFM_TBL WHERE RUN_ID = p_run_id)
+        INTO   l_gen_count
+        FROM   dual;
 
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
             p_cemli_code  => C_CEMLI,
@@ -137,6 +141,30 @@ AS
                         -- the existing unaccounted sweep. Never fabricate.
                         NULL;
                     END IF;
+
+                -- ===== TIER: SERIAL detail (OBJECT_TYPE = 'MiscReceipts Serial') =====
+                -- Backlog #11: the serial line has its OWN Fusion base id
+                -- (INV_SERIAL_NUMBERS.GEN_OBJECT_ID), returned here as FUSION_ID and
+                -- keyed by the run-prefixed serial number (= the serials TFM
+                -- FM_SERIAL_NUMBER). Finding the serial in its base table is positive
+                -- proof the serial loaded, so this marks the serial row LOADED and
+                -- stamps its own FUSION_SERIAL_ID. This is the ONLY positive proof for
+                -- a serial (the lot/serial detail carries no stored parent-transaction
+                -- key, so the transaction cascade could not reach it before).
+                ELSIF l_rows(i).OBJECT_TYPE = 'MiscReceipts Serial' THEN
+                    IF l_rows(i).SOURCE_TYPE = 'BASE'
+                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                       AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        UPDATE DMT_INV_TRX_SERIALS_TFM_TBL
+                        SET    TFM_STATUS           = 'LOADED',
+                               FUSION_SERIAL_ID     = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID = p_run_id
+                        AND    FM_SERIAL_NUMBER = l_rows(i).RECORD_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_loaded := l_loaded + SQL%ROWCOUNT;
+                    END IF;
                 END IF;
             END LOOP;
         END IF;
@@ -149,8 +177,19 @@ AS
         -- parent, not a fabricated verdict. (Serial detail carries no stored
         -- parent-transaction key in the TFM table and cannot be linked here
         -- without a transform change; it is left for the honest sweep.)
+        -- A lot line loaded with its parent transaction, so it carries that
+        -- transaction's confirmed Fusion transaction id (backlog #11: a LOADED row
+        -- must store its Fusion base id for the audit trail). FUSION_TRANSACTION_ID
+        -- is stamped from the parent transaction's already-captured FUSION_ID (a
+        -- VARCHAR2 id column converted to the child's NUMBER column), not fabricated.
         UPDATE DMT_INV_TRX_LOTS_TFM_TBL l
-        SET    l.TFM_STATUS='LOADED', l.RESULTS_UPDATED_DATE=SYSDATE, l.LAST_UPDATED_DATE=SYSDATE
+        SET    l.TFM_STATUS='LOADED',
+               l.FUSION_TRANSACTION_ID=(
+                   SELECT TO_NUMBER(t.FUSION_ID) FROM DMT_INV_TRX_TFM_TBL t
+                   WHERE  t.RUN_ID=p_run_id
+                   AND    t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER
+                   AND    t.TFM_STATUS='LOADED' AND ROWNUM=1),
+               l.RESULTS_UPDATED_DATE=SYSDATE, l.LAST_UPDATED_DATE=SYSDATE
         WHERE  l.RUN_ID=p_run_id AND l.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND    EXISTS (SELECT 1 FROM DMT_INV_TRX_TFM_TBL t WHERE t.RUN_ID=p_run_id
                        AND t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER

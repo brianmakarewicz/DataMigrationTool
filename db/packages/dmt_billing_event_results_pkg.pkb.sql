@@ -250,14 +250,22 @@ AS
                 END IF;
 
             ELSIF r.import_status IN ('COMPLETE', 'COMPLETED', 'IMPORTED', 'Y', 'PROCESSED', 'SUCCESS', 'P') THEN
-                UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
-                SET    TFM_STATUS               = 'LOADED',
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
-                WHERE  RUN_ID       = p_run_id
-                AND    SOURCEREF            = r.sourceref
-                AND    TFM_STATUS              NOT IN ('LOADED', 'FAILED');
-                l_loaded := l_loaded + SQL%ROWCOUNT;
+                -- Backlog #11: the Import Report is a per-row STATUS carrier only --
+                -- its G_6 row has SOURCEREF and INT_REC_ID but NOT the base EVENT_ID.
+                -- A billing event that truly loaded IS in PJB_BILLING_EVENTS with an
+                -- EVENT_ID, and the Contract v1 BASE tier (APPLY_CONTRACT_V1_BILLING
+                -- _EVENTS, which runs FIRST on the same SOURCEREF key) already marked
+                -- it LOADED and stamped FUSION_EVENT_ID = PJB_BILLING_EVENTS.EVENT_ID
+                -- (verified live 2026-09-21: SOURCEREF 15949RT-BE-G1 -> EVENT_ID
+                -- 100002547480454). So a row still not LOADED here is NOT in the base
+                -- table; marking it LOADED on an import status alone -- with no base
+                -- id -- would be a fabricated verdict that violates the base-table
+                -- rule (LOADED only with a real base-table row and its Fusion id).
+                -- The former fabricated-LOADED path is therefore removed: such a row
+                -- is left GENERATED for the honest sweep (UNACCOUNTED, a real defect
+                -- to chase), never a made-up LOADED. Error harvesting below is
+                -- unchanged (real Fusion errors are still recorded).
+                NULL;
 
             ELSE
                 -- Unknown import status. If the Import Report carried real per-row

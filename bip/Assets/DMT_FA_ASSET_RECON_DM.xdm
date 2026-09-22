@@ -138,6 +138,43 @@ FROM (
     WHERE  fma.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
     AND    NVL(fma.posting_status, 'X')
            NOT IN ('POSTED', 'POST', 'Y', 'PROCESSED', 'SUCCESS', 'COMPLETED')
+
+    UNION ALL
+
+    -- Tier: BASE (Assets Distribution) -- backlog #11. The asset assignment
+    -- child (DMT_FA_ASSET_ASSIGN_TFM_TBL) has its OWN Fusion base id, the
+    -- distribution id in FA_DISTRIBUTION_HISTORY.DISTRIBUTION_ID (keyed by
+    -- asset_id, the currently-active row DATE_INEFFECTIVE IS NULL). This tier
+    -- returns that id so the reconciler can stamp FUSION_DISTRIBUTION_ID on the
+    -- assign child instead of leaving it null. RECORD_KEY is the asset number
+    -- with a '#DIST' suffix so it stays UNIQUE across the whole report (the
+    -- Contract v1 keyset invariant forbids two rows sharing a RECORD_KEY -- an
+    -- unsuffixed asset_number would collide with the header BASE row and could
+    -- be dropped at a page boundary). An asset may carry more than one active
+    -- distribution (split across cost centres/locations); the assign child is
+    -- one row per asset, so the lowest active distribution id is returned
+    -- (MIN) -- a real distribution id that belongs to this asset, not
+    -- fabricated. Verified live 2026-09-21: asset_number 100010 -> active
+    -- DISTRIBUTION_ID 18014.
+    SELECT
+        'Assets Distribution'                AS object_type,
+        a.asset_number || '#DIST'            AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        (SELECT MIN(d.distribution_id)
+           FROM fa_distribution_history d
+          WHERE d.asset_id = a.asset_id
+            AND d.date_ineffective IS NULL)  AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        a.asset_number                       AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference
+    FROM   fa_additions_b a
+    WHERE  a.asset_number LIKE :P_PREFIX || '%'
+    AND    :P_PREFIX IS NOT NULL
+    AND    EXISTS (SELECT 1 FROM fa_distribution_history d
+                   WHERE d.asset_id = a.asset_id
+                   AND   d.date_ineffective IS NULL)
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
 -- BIP, so treat NULL as "from the start": return every row. On later

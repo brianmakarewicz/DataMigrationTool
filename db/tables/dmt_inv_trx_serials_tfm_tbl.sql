@@ -118,9 +118,10 @@ begin
 	"LAST_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
 	"RECON_KEY" VARCHAR2(1000), 
-	"FUSION_TRANSACTION_ID" NUMBER, 
-	"FBDI_CSV_ID" NUMBER, 
-	"WORK_QUEUE_ID" NUMBER, 
+	"FUSION_TRANSACTION_ID" NUMBER,
+	"FUSION_SERIAL_ID" NUMBER,
+	"FBDI_CSV_ID" NUMBER,
+	"WORK_QUEUE_ID" NUMBER,
 	 CONSTRAINT "DMT_INV_TRX_SERIALS_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -151,6 +152,16 @@ begin
   where  table_name = 'DMT_INV_TRX_SERIALS_TFM_TBL' and column_name = 'FUSION_TRANSACTION_ID';
   if l_n = 0 then
     execute immediate 'ALTER TABLE "DMT_INV_TRX_SERIALS_TFM_TBL" ADD ("FUSION_TRANSACTION_ID" NUMBER)';
+  end if;
+end;
+/
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_INV_TRX_SERIALS_TFM_TBL' and column_name = 'FUSION_SERIAL_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_INV_TRX_SERIALS_TFM_TBL" ADD ("FUSION_SERIAL_ID" NUMBER)';
   end if;
 end;
 /
@@ -198,6 +209,7 @@ end;
 COMMENT ON COLUMN "DMT_INV_TRX_SERIALS_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
 COMMENT ON COLUMN "DMT_INV_TRX_SERIALS_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
 COMMENT ON COLUMN "DMT_INV_TRX_SERIALS_TFM_TBL"."FUSION_TRANSACTION_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';
+COMMENT ON COLUMN "DMT_INV_TRX_SERIALS_TFM_TBL"."FUSION_SERIAL_ID" IS 'The serial line''s OWN Fusion base id (INV_SERIAL_NUMBERS.GEN_OBJECT_ID), captured by BIP reconciliation matching the run-prefixed serial number - backlog #11 (positive proof of load).';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-09 conformance review F2 (STG/TFM infra-column dictionary, design
