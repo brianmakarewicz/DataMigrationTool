@@ -1,0 +1,34 @@
+BEGIN EXECUTE IMMEDIATE 'DROP VIEW DMT_V_PAY_REL_DETAIL'; EXCEPTION WHEN OTHERS THEN IF SQLCODE IN (-942, -4043) THEN NULL; ELSE RAISE; END IF; END; /
+-- ----------------------------------------------------------------------
+-- Migration 2026-09-22: drop the dead PayrollRelationships drill view
+-- (backlog #58). DMT_V_PAY_REL_DETAIL always returned zero rows after the
+-- Worker-object merge (PR #276/#277/#278) fully retired PayrollRelationships
+-- from the pipeline. It backed a "Payroll Relationships" interactive-report
+-- region on the HCM Payroll page (page 11). That region is removed in the same
+-- change from the single source of truth for the app,
+-- apex/f501src/livedmt2/pages/p00011-hcm-payroll.apx (the same APEXLang source
+-- imports to local TEST app 501 and ATP gold app 500), and the dead reference
+-- is also cleared from the legacy split-SQL baseline
+-- apex/f500/application/pages/page_00011.sql. The view's create file
+-- (db/views/dmt_v_pay_rel_detail.sql) plus its @@ line in db/install.sql are
+-- removed, so the database converges to git by dropping the view.
+--
+-- Order matters: the APEX region is removed BEFORE this view is dropped, so
+-- the live page never points at a missing view.
+--
+-- NOT dropped: DMT_V_ASSIGNMENT_DETAIL (assignments are live under the Time
+-- and Labor page) and the DMT_PAY_REL_STG_TBL / DMT_PAY_REL_TFM_TBL base
+-- tables (out of scope for this cleanup) -- only the dead drill view is dropped.
+--
+-- Idempotent (matches the sibling 2026-09-21 migration pattern): the drop is
+-- wrapped in a guarded block that swallows ORA-00942 (view does not exist) and
+-- ORA-04043 (object does not exist), so a re-run on a database where the view
+-- is already gone is a no-op -- re-run safety no longer relies solely on
+-- DMT_MIGRATION_LOG bookkeeping.
+--
+-- The executable block is the first statement on purpose: the deploy runner
+-- (scripts/dmt_deploy.py) splits a migration on ";\n" / "/\n" and skips any
+-- chunk that begins with "--", so the executable statement must lead. The
+-- block is written on a single line so that split never fragments it: the only
+-- statement-terminator followed by a newline is the trailing "/".
+-- ----------------------------------------------------------------------
