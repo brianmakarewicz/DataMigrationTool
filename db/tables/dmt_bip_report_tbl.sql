@@ -74,7 +74,7 @@ declare
   end;
 begin
   add_col('CONTRACT_VERSION', '"CONTRACT_VERSION" NUMBER');
-  add_col('TFM_TABLE',        '"TFM_TABLE" VARCHAR2(100)');
+  add_col('TFM_TABLE',        '"TFM_TABLE" VARCHAR2(240)');
   add_col('FUSION_ID_COLUMN', '"FUSION_ID_COLUMN" VARCHAR2(100)');
   add_col('RECON_KEY_SQL',    '"RECON_KEY_SQL" VARCHAR2(1000)');
   add_col('APPLY_PROC',       '"APPLY_PROC" VARCHAR2(200)');
