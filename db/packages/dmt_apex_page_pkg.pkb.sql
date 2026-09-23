@@ -991,6 +991,10 @@ BEGIN
         FOR i IN 1..l_col_cnt LOOP
           IF l_desc(i).col_name = 'FUSION_LINK' THEN
             htp.p('<th style="padding:10px 12px;text-align:center;border-bottom:2px solid #e2e8f0;color:#475569;font-weight:600;white-space:nowrap;">View in Fusion</th>');
+          ELSIF l_desc(i).col_name = 'INTEGRATION_ID' THEN
+            -- #53 follow-up: the value is the run id; label it consistently (caption only,
+            -- column name left as INTEGRATION_ID so the underlying view/binding is unchanged).
+            htp.p('<th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#475569;font-weight:600;white-space:nowrap;">Run ID</th>');
           ELSE
             htp.p('<th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#475569;font-weight:600;white-space:nowrap;">'
                   || REPLACE(l_desc(i).col_name, '_', ' ') || '</th>');
