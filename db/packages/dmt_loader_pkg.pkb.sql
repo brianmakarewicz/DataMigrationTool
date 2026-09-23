@@ -857,15 +857,26 @@
     -- job by querying ess_request_history for a job whose definition
     -- matches the Import job name (e.g. RequisitionImportJob).
     --
-    -- The Import job may be a child (absparentid = load ESS ID) or
-    -- an independent top-level job (absparentid = itself) depending
-    -- on the Fusion ESS scheduler behavior. The BIP query handles
-    -- both: prefers absparentid match, falls back to proximity
-    -- (requestid > load ESS ID).
+    -- The Import job is NOT a hierarchical child of the load: in this
+    -- pipeline it runs as an independent top-level sibling
+    -- (absparentid = itself, parentrequestid = 0). So there is no
+    -- parent/child request link to key on. Two matching modes:
+    --
+    --   * p_batch_id supplied (Items): the import carries the batch id
+    --     as its first submitted argument (ESS request property
+    --     'submit.argument1'). Match on that exact batch id, bounded to
+    --     requestid > load ESS id so we pick THIS load's own import and
+    --     not a prior run's same-batch import. This uniquely and reliably
+    --     ties one load to its own import even when two batch loads finish
+    --     near-simultaneously (backlog #75 -- previously both batches
+    --     collapsed onto the single nearest requestid).
+    --   * p_batch_id NULL (all other objects): legacy match -- prefer
+    --     absparentid = load, else nearest requestid > load.
     --
     -- Uses the pre-deployed static BIP report (AD#16 — no ephemeral BIP):
     --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo
-    -- Called via runReport with P_LOAD_ESS_ID and P_JOB_DEF bound parameters.
+    -- Called via runReport with P_LOAD_ESS_ID, P_JOB_DEF and P_BATCH_ID
+    -- bound parameters.
     --
     -- Retries every 15 seconds for up to 15 minutes.
     -- Raises -20050 if no job found after timeout.
@@ -873,7 +884,8 @@
     FUNCTION get_import_ess_id (
         p_run_id IN NUMBER,
         p_cemli_code     IN VARCHAR2,
-        p_load_ess_id    IN VARCHAR2
+        p_load_ess_id    IN VARCHAR2,
+        p_batch_id       IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2 IS
         C_PROC        CONSTANT VARCHAR2(50)  := 'GET_IMPORT_ESS_ID';
         C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo';
@@ -926,6 +938,9 @@
         DMT_UTIL_PKG.LOG(p_run_id,
             'GET_IMPORT_ESS_ID start. Load ESS ID: ' || p_load_ess_id ||
             '. Job def filter: ' || l_job_def ||
+            CASE WHEN p_batch_id IS NOT NULL
+                 THEN '. Batch id match: ' || p_batch_id
+                 ELSE '. No batch id (proximity/absparent match)' END ||
             '. Will poll up to ' || C_MAX_TRIES ||
             ' times (every ' || C_SLEEP_SEC || 's). CEMLI: ' || p_cemli_code,
             'INFO', C_PKG, l_log_proc);
@@ -954,6 +969,10 @@
                 '            <v2:item>' ||
                 '              <v2:name>P_JOB_DEF</v2:name>' ||
                 '              <v2:values><v2:item>' || l_job_def || '</v2:item></v2:values>' ||
+                '            </v2:item>' ||
+                '            <v2:item>' ||
+                '              <v2:name>P_BATCH_ID</v2:name>' ||
+                '              <v2:values><v2:item>' || p_batch_id || '</v2:item></v2:values>' ||
                 '            </v2:item>' ||
                 '          </v2:listOfParamNameValues>' ||
                 '        </v2:parameterNameValues>' ||
@@ -991,7 +1010,10 @@
             IF l_attempt >= C_MAX_TRIES THEN
                 RAISE_APPLICATION_ERROR(-20050,
                     'GET_IMPORT_ESS_ID: Import ESS job (requestid > ' || p_load_ess_id ||
-                    ', definition LIKE ''%' || l_job_def || '%'') not found after ' ||
+                    ', definition LIKE ''%' || l_job_def || '%''' ||
+                    CASE WHEN p_batch_id IS NOT NULL
+                         THEN ', batch id ' || p_batch_id ELSE '' END ||
+                    ') not found after ' ||
                     (C_MAX_TRIES * C_SLEEP_SEC / 60) ||
                     ' minutes. Integration: ' || p_run_id ||
                     ' | CEMLI: ' || p_cemli_code);
@@ -1391,7 +1413,8 @@
         p_password        IN VARCHAR2,
         x_load_ess_id     OUT VARCHAR2,
         x_import_ess_id   OUT VARCHAR2,
-        x_success         OUT BOOLEAN
+        x_success         OUT BOOLEAN,
+        p_import_batch_id IN VARCHAR2 DEFAULT NULL
     ) IS
         C_PROC            CONSTANT VARCHAR2(40) := 'PO_SUBMIT_AND_RECONCILE_ONE';
         l_load_status     VARCHAR2(50);
@@ -1437,9 +1460,12 @@
             RETURN;  -- x_success stays FALSE
         END IF;
 
-        -- Find the Import ESS job ID.
+        -- Find the Import ESS job ID. For Items the caller passes this batch's
+        -- id (p_import_batch_id) so the match keys on the import's own batch id
+        -- (submit.argument1) rather than requestid-proximity -- see backlog #75.
         BEGIN
-            x_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id);
+            x_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id,
+                                                 p_batch_id => p_import_batch_id);
         EXCEPTION
             WHEN OTHERS THEN
                 DMT_UTIL_PKG.LOG(p_run_id,
@@ -3964,7 +3990,11 @@
                 p_password          => l_it_pass,
                 x_load_ess_id       => l_it_load_id,
                 x_import_ess_id     => l_it_import_id,
-                x_success           => l_it_ok);
+                x_success           => l_it_ok,
+                -- Items: key the chained Item Import lookup on THIS batch's id
+                -- (the import's submit.argument1), so two batch loads finishing
+                -- near-simultaneously each resolve their OWN import (#75).
+                p_import_batch_id   => grp_rec.BATCH_ID);
 
             -- Items special case (kept from the monolith, deliberately NOT
             -- registry-expressible): the Items FBDI ZIP bundles the ItemCategories

@@ -63,10 +63,17 @@ AS
     -- Find the chained import ESS job ID after the Load job completes.
     -- ESS request IDs are sequential; chained job has requestid > p_load_ess_id.
     -- Polls every 15s for up to 15 minutes. Raises -20050 if not found.
+    --
+    -- p_batch_id: when the import job carries a Batch ID as its first submitted
+    -- argument (Items -- submit.argument1 = the batch id), pass it so the match
+    -- keys on that batch id, uniquely tying one load to its OWN import even when
+    -- two batch loads finish near-simultaneously. NULL (all other objects) keeps
+    -- the legacy proximity/absparent match. See backlog #75.
     FUNCTION GET_IMPORT_ESS_ID (
         p_run_id IN NUMBER,
         p_cemli_code     IN VARCHAR2,
-        p_load_ess_id    IN VARCHAR2
+        p_load_ess_id    IN VARCHAR2,
+        p_batch_id       IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2;
 
     -- Poll an ESS job until terminal state or timeout.
