@@ -860,10 +860,6 @@ page 2 (
                 sequence: 46
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 128
-            )
-
             displayColumn INTERFACE_DISTRIBUTION_KEY (
                 sequence: 3
             )
@@ -1623,10 +1619,6 @@ page 2 (
 
             displayColumn HAZARD_CLASS (
                 sequence: 20
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 103
             )
 
             displayColumn INTERFACE_HEADER_KEY (
@@ -2524,10 +2516,6 @@ page 2 (
                 sequence: 21
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 98
-            )
-
             displayColumn INTERFACE_LINE_KEY (
                 sequence: 5
             )
@@ -3306,10 +3294,6 @@ page 2 (
                 sequence: 17
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 20
-            )
-
             displayColumn LAST_UPDATED_DATE (
                 sequence: 24
             )
@@ -4079,10 +4063,6 @@ page 2 (
 
             displayColumn INACTIVE_DATE (
                 sequence: 29
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 114
             )
 
             displayColumn LAST_UPDATED_DATE (
@@ -4922,10 +4902,6 @@ page 2 (
 
             displayColumn INACTIVE_DATE (
                 sequence: 25
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 94
             )
 
             displayColumn LAST_NAME (

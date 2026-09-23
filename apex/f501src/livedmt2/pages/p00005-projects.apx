@@ -1752,10 +1752,6 @@ page 5 (
                 sequence: 9
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 83
-            )
-
             displayColumn ITEM_EVENT_FLAG (
                 sequence: 75
             )
@@ -5389,10 +5385,6 @@ page 5 (
                 sequence: 19
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 66
-            )
-
             displayColumn LAST_UPDATED_DATE (
                 sequence: 70
             )
@@ -8226,10 +8218,6 @@ page 5 (
 
             displayColumn ERROR_TEXT (
                 sequence: 2
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 20
             )
 
             displayColumn LAST_UPDATED_DATE (
@@ -11579,10 +11567,6 @@ page 5 (
 
             displayColumn EXPENDITURE_TYPE (
                 sequence: 9
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 24
             )
 
             displayColumn JOB_NAME (

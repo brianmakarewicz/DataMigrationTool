@@ -546,10 +546,6 @@ page 7 (
                 sequence: 2
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 22
-            )
-
             displayColumn LAST_UPDATED_DATE (
                 sequence: 26
             )

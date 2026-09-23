@@ -900,10 +900,6 @@ page 4 (
                 sequence: 10
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 40
-            )
-
             displayColumn LAST_UPDATED_DATE (
                 sequence: 44
             )
@@ -1902,10 +1898,6 @@ page 4 (
 
             displayColumn INSERT_UPDATE_FLAG (
                 sequence: 11
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 43
             )
 
             displayColumn KEY_ACCOUNT_FLAG (
@@ -3374,10 +3366,6 @@ page 4 (
 
             displayColumn ERROR_TEXT (
                 sequence: 2
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 74
             )
 
             displayColumn INTERFACE_LINE_ATTRIBUTE1 (
@@ -7451,10 +7439,6 @@ page 4 (
                 sequence: 9
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 38
-            )
-
             displayColumn LAST_UPDATED_DATE (
                 sequence: 42
             )
@@ -8657,10 +8641,6 @@ page 4 (
 
             displayColumn INSERT_UPDATE_FLAG (
                 sequence: 6
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 55
             )
 
             displayColumn LAST_UPDATED_DATE (
@@ -10498,10 +10478,6 @@ page 4 (
                 sequence: 10
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 43
-            )
-
             displayColumn LAST_UPDATED_DATE (
                 sequence: 47
             )
@@ -11420,10 +11396,6 @@ page 4 (
 
             displayColumn INSERT_UPDATE_FLAG (
                 sequence: 10
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 38
             )
 
             displayColumn LAST_UPDATED_DATE (
@@ -16731,10 +16703,6 @@ page 4 (
                 sequence: 55
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 166
-            )
-
             displayColumn INTENDED_USE (
                 sequence: 142
             )
@@ -19493,10 +19461,6 @@ page 4 (
                 sequence: 2
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 121
-            )
-
             displayColumn INTERFACE_DISTRIBUTION_KEY (
                 sequence: 5
             )
@@ -21229,10 +21193,6 @@ page 4 (
 
             displayColumn ERROR_TEXT (
                 sequence: 2
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 74
             )
 
             displayColumn INTERFACE_HEADER_KEY (
@@ -23665,10 +23625,6 @@ page 4 (
 
             displayColumn HAZARD_CLASS (
                 sequence: 28
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 121
             )
 
             displayColumn INTERFACE_HEADER_KEY (
