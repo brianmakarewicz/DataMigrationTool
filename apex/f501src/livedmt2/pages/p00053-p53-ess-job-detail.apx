@@ -18,7 +18,7 @@ page 53 (
         name: Breadcrumb
         type: plSqlDynamicContent
         source {
-            plsqlCode: BEGIN DMT_OBJECT_DETAIL_BREADCRUMB(:P53_RUN_ID, :P53_CEMLI_CODE); END;
+            plsqlCode: BEGIN DMT_APEX_PAGE_PKG.RENDER_DETAIL_BREADCRUMB(:P53_RUN_ID, :P53_CEMLI_CODE); END;
         }
         layout {
             sequence: 1

@@ -6,7 +6,7 @@ Reproduces exactly what the LIVE run-detail UI does and asserts the invariants
 it relies on, for a given RUN_ID. Fast, repeatable gate — no browser.
 
 LIVE wiring (verified against app 155 export + deployed DB, 2026-07-01):
-  * Page 82 tiles  -> DMT_RUN_DETAIL_TILES reads DMT_WORK_QUEUE_TBL.CEMLI_CODE and
+  * Page 82 tiles  -> DMT_APEX_PAGE_PKG.RENDER_RUN_TILES reads DMT_WORK_QUEUE_TBL.CEMLI_CODE and
                       drills Page 52 (f?p=:52:) passing P52_INTEGRATION_ID,P52_CEMLI_CODE.
   * Page 52 break  -> inline region cursors DMT_V_CEMLI_TFM_TABLES WHERE CEMLI_CODE=code,
                       builds a per-TFM-table dynamic COUNT (WHEN OTHERS => 0), and drills
