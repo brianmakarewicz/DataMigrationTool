@@ -8,6 +8,7 @@
     l_has_queue NUMBER;
     l_phase   VARCHAR2(10);
     l_failerr NUMBER;
+    l_part_keys VARCHAR2(4000);   -- partition column name(s) for a parent coordinator tile
     l_run_status VARCHAR2(30);
     l_run_active BOOLEAN := FALSE;   -- TRUE while the parent run has not reached a terminal status
 
@@ -112,6 +113,39 @@
                ELSE 'DONE'   -- COMPLETED / COMPLETED_ERRORS / UNRECONCILED -> counts decide
              END;
     END phase_from_object;
+
+    -- For a partition PARENT: the distinct partition-key COLUMN name(s) its
+    -- children were split on, e.g. 'BATCH_ID' or 'DOCUMENT_NAME, USER_TRANSACTION_SOURCE'.
+    -- Each child's PARTITION_KEY is a flat JSON object ({"COL":"val"} per the
+    -- DMT_WORK_QUEUE_TBL.PARTITION_KEY column comment). We enumerate the key NAMES
+    -- with the structured JSON parser JSON_OBJECT_T.get_keys() -- never regex offset
+    -- arithmetic over the payload (DMT_DESIGN.html section 7: structured parsing over
+    -- string arithmetic, JSON with JSON_VALUE / JSON_OBJECT_T). Returns the distinct
+    -- names comma-joined, or NULL when the parent has no JSON-keyed children.
+    FUNCTION part_key_names(p_parent_queue_id NUMBER) RETURN VARCHAR2 IS
+      l_seen  VARCHAR2(4000) := '';   -- '|COL|' membership set, keeps first-seen order
+      l_out   VARCHAR2(4000) := '';
+      l_obj   JSON_OBJECT_T;
+      l_keys  JSON_KEY_LIST;
+    BEGIN
+      FOR c IN (SELECT PARTITION_KEY FROM DMT_WORK_QUEUE_TBL
+                 WHERE PARENT_QUEUE_ID = p_parent_queue_id
+                   AND PARTITION_KEY IS NOT NULL
+                   AND PARTITION_KEY <> 'ALL') LOOP
+        BEGIN
+          l_obj  := JSON_OBJECT_T.parse(c.PARTITION_KEY);
+          l_keys := l_obj.get_keys();
+          FOR i IN 1 .. l_keys.COUNT LOOP
+            IF INSTR(l_seen, '|' || l_keys(i) || '|') = 0 THEN
+              l_seen := l_seen || '|' || l_keys(i) || '|';
+              l_out  := l_out || CASE WHEN l_out IS NOT NULL AND LENGTH(l_out) > 0 THEN ', ' END || l_keys(i);
+            END IF;
+          END LOOP;
+        EXCEPTION WHEN OTHERS THEN NULL;  -- a non-JSON key (defensive) contributes no column name
+        END;
+      END LOOP;
+      RETURN CASE WHEN LENGTH(l_out) > 0 THEN l_out END;
+    END part_key_names;
 BEGIN
     -- Parent run status: the tiles branch on whether the run is still active,
     -- so an object with unaccounted-but-not-failed records shows in progress
@@ -128,24 +162,49 @@ BEGIN
     FROM DMT_WORK_QUEUE_TBL WHERE RUN_ID = p_run_id AND ROWNUM = 1;
 
     IF l_has_queue > 0 THEN
-        -- Async path: render from work queue.
-        -- NOTE (partition limitation): the queue renders one tile per work
-        -- item (per partition), but DMT_V_CEMLI_STATUS aggregates counts per
-        -- object, so a partitioned object shows object-level counts on each
-        -- partition tile. Per-partition counts are a separate backlog item
-        -- (DMT_DESIGN section 9 partition tiles) needing a partition-aware view.
+        -- Async path: render one tile per work item.
+        --
+        -- Partitioned objects (backlog #70): an object that partitions spawns a
+        -- PARENT placeholder work item (the partition coordinator) plus one CHILD
+        -- work item per partition key (e.g. Items/Customers by BATCH_ID, GL by
+        -- Ledger). The parent does NOT submit an ESS load/import -- those belong to
+        -- the children -- so the parent tile must show NO load/import request id and
+        -- must be visibly marked as a coordinator, showing WHAT it partitioned on.
+        -- Each child ran its OWN ESS load + import job, so each child tile must show
+        -- its own DISTINCT request ids and WHICH partition it ran.
+        --
+        -- Load/import ids come ONLY from the work item's own LOAD_ESS_JOB_ID /
+        -- IMPORT_ESS_JOB_ID columns (stamped per work item by the loader). The old
+        -- COALESCE fallback to MAX(REQUEST_ID) keyed on RUN_ID+CEMLI_CODE was the
+        -- root of the defect: DMT_ESS_JOB_TBL carries no partition discriminator, so
+        -- that fallback fabricated the SAME id onto the parent and every child. It is
+        -- removed. A parent (IS_PARENT) is forced to null ids; a child with no stamped
+        -- id honestly shows no id rather than a shared fabricated one.
+        --
+        -- NOTE (still open, separate item): DMT_V_CEMLI_STATUS aggregates counts per
+        -- object, so a partition child shows object-level counts. Per-partition counts
+        -- need a partition-aware status view (tracked separately).
         FOR rec IN (
             SELECT QUEUE_ID, PIPELINE, CEMLI_CODE, WORK_STATUS, PARTITION_LABEL, PARTITION_KEY,
-                   COALESCE(q.LOAD_ESS_JOB_ID,
-                       TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_ESS_JOB_TBL ej
-                                WHERE ej.RUN_ID = q.RUN_ID AND ej.CEMLI_CODE = q.CEMLI_CODE
-                                  AND ej.DEPTH_LEVEL = 0
-                                  AND ej.JOB_SHORT_NAME = 'InterfaceLoaderController'))) AS LOAD_ESS_JOB_ID,
-                   COALESCE(q.IMPORT_ESS_JOB_ID,
-                       TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_ESS_JOB_TBL ej
-                                WHERE ej.RUN_ID = q.RUN_ID AND ej.CEMLI_CODE = q.CEMLI_CODE
-                                  AND ej.DEPTH_LEVEL = 0
-                                  AND ej.JOB_SHORT_NAME <> 'InterfaceLoaderController'))) AS IMPORT_ESS_JOB_ID,
+                   q.QUEUE_ID AS OWN_QUEUE_ID,
+                   q.PARENT_QUEUE_ID,
+                   -- A work item is a partition PARENT (coordinator) if it has children.
+                   CASE WHEN EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL c
+                                     WHERE c.PARENT_QUEUE_ID = q.QUEUE_ID) THEN 1 ELSE 0 END AS IS_PARENT,
+                   -- A work item is a partition CHILD if it was spawned from a parent.
+                   CASE WHEN q.PARENT_QUEUE_ID IS NOT NULL THEN 1 ELSE 0 END AS IS_CHILD,
+                   -- Own load/import ids only; a parent coordinator never exposes an id.
+                   -- The old COALESCE fallback to MAX(REQUEST_ID) keyed on RUN_ID+CEMLI_CODE
+                   -- is removed: DMT_ESS_JOB_TBL has no partition discriminator, so it
+                   -- fabricated the SAME id onto the parent and every child. Per-child ids
+                   -- are now stamped on the work item by the loader (#413), so the honest
+                   -- source is the row's own column.
+                   CASE WHEN EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL c
+                                     WHERE c.PARENT_QUEUE_ID = q.QUEUE_ID)
+                        THEN NULL ELSE q.LOAD_ESS_JOB_ID END AS LOAD_ESS_JOB_ID,
+                   CASE WHEN EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL c
+                                     WHERE c.PARENT_QUEUE_ID = q.QUEUE_ID)
+                        THEN NULL ELSE q.IMPORT_ESS_JOB_ID END AS IMPORT_ESS_JOB_ID,
                    ERROR_MESSAGE, RUN_ID,
                    -- Rolled-up outcome counts for the palette (loaded / failed / unaccounted).
                    (SELECT NVL(SUM(cs.ROW_COUNT),0) FROM DMT_V_CEMLI_STATUS cs
@@ -161,7 +220,15 @@ BEGIN
                    TO_CHAR(STARTED_AT, 'HH24:MI:SS') STARTED,
                    TO_CHAR(COMPLETED_AT, 'HH24:MI:SS') COMPLETED
             FROM DMT_WORK_QUEUE_TBL q WHERE RUN_ID = p_run_id
-            ORDER BY PIPELINE, SORT_ORDER, QUEUE_ID
+            -- Group each partition parent with its children: order by the
+            -- coordinating item's slot (a child borrows its parent's SORT_ORDER
+            -- via the self-join), render the parent first, then its children by id.
+            ORDER BY PIPELINE,
+                     NVL((SELECT p.SORT_ORDER FROM DMT_WORK_QUEUE_TBL p
+                           WHERE p.QUEUE_ID = q.PARENT_QUEUE_ID), q.SORT_ORDER),
+                     NVL(q.PARENT_QUEUE_ID, q.QUEUE_ID),
+                     CASE WHEN q.PARENT_QUEUE_ID IS NULL THEN 0 ELSE 1 END,
+                     q.QUEUE_ID
         ) LOOP
             IF rec.PIPELINE != l_pp THEN
                 IF l_pp != '***' THEN HTP.P('</div>'); END IF;
@@ -172,36 +239,71 @@ BEGIN
 
             l_phase   := phase_from_work(rec.WORK_STATUS);
             l_failerr := GREATEST(NVL(rec.FAILED_ROWS,0) - NVL(rec.UNACC_ROWS,0), 0);
-            l_bg := tile_bg(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS);
-              HTP.P('<div style="background:' || l_bg || ';border:1px solid #ddd;border-radius:8px;padding:14px;min-width:200px;max-width:280px;flex:1">');
+            -- A parent coordinator processed no records of its own; do not colour it by
+            -- the object's rolled-up counts (that would double-report the children).
+            -- It is a neutral placeholder. Children and normal items keep the palette.
+            IF rec.IS_PARENT = 1 THEN
+                l_bg := '#eef2f7';   -- neutral slate: a coordinator, not a load
+            ELSE
+                l_bg := tile_bg(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS);
+            END IF;
+              HTP.P('<div style="background:' || l_bg
+                  || CASE WHEN rec.IS_PARENT = 1 THEN ';border:1px dashed #9aa7b8' ELSE ';border:1px solid #ddd' END
+                  || CASE WHEN rec.IS_CHILD = 1 THEN ';border-left:4px solid #9aa7b8' END
+                  || ';border-radius:8px;padding:14px;min-width:200px;max-width:280px;flex:1">');
               HTP.P('<div style="font-weight:bold;font-size:14px;margin-bottom:4px">');
-              IF NVL(rec.TOT_ROWS,0) = 0 THEN
+              -- Title. A child tile is annotated with its partition value so it is not
+              -- confused with the parent or with a sibling partition.
+              IF rec.IS_PARENT = 1 THEN
+                  -- Parent placeholder: name + a coordinator badge; NOT a drill link
+                  -- (it holds no records of its own).
+                  HTP.P('<span style="color:#33475b">' || rec.CEMLI_CODE || '</span>'
+                      || ' <span style="font-weight:normal;font-size:10px;background:#9aa7b8;color:#fff;'
+                      || 'border-radius:3px;padding:1px 5px;vertical-align:middle">PARTITION PARENT</span>');
+              ELSIF NVL(rec.TOT_ROWS,0) = 0 THEN
                   HTP.P('<span style="color:#999">' || rec.CEMLI_CODE || '</span>');
+                  IF rec.IS_CHILD = 1 AND rec.PARTITION_LABEL IS NOT NULL THEN
+                      HTP.P(' <span style="font-weight:normal;font-size:11px;color:#555">&#9656; '
+                          || rec.PARTITION_LABEL || '</span>');
+                  END IF;
               ELSE
                   HTP.P('<a href="f?p=' || l_app || ':52:' || l_ses || '::NO::P52_RUN_ID,P52_CEMLI_CODE:'
                       || rec.RUN_ID || ',' || rec.CEMLI_CODE
                       || '" style="color:inherit;text-decoration:none;border-bottom:1px dashed #999">'
                       || rec.CEMLI_CODE || '</a>');
+                  IF rec.IS_CHILD = 1 AND rec.PARTITION_LABEL IS NOT NULL THEN
+                      HTP.P(' <span style="font-weight:normal;font-size:11px;color:#555">&#9656; '
+                          || rec.PARTITION_LABEL || '</span>');
+                  END IF;
               END IF;
               HTP.P('</div><div style="font-size:12px;color:#555">');
-            HTP.P(tile_status(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS));
-            -- Item #74: surface the partition value as a first-class labelled field on each
-            -- partitioned child tile. Only genuine spawn-per-partition children carry a real
-            -- partition value -- their PARTITION_KEY is a JSON object, e.g. {"BATCH_ID":"8102"}
-            -- or {"BOOK_TYPE_CODE":"US CORP"} (per DMT_WORK_QUEUE_TBL.PARTITION_KEY comment).
-            -- The scalar value already lives in PARTITION_LABEL (e.g. 8102, US CORP). Show it as
-            -- "Partition: <value>". Non-partitioned objects (PARTITION_KEY NULL) and the in-zip
-            -- FBDI split sentinel (PARTITION_KEY 'ALL', label 'All Groups') are NOT partitions and
-            -- get no label; the fan-out parent row ('(split into N partition(s))') is a marker, not
-            -- a value, so it is shown only as the lighter informational suffix, never as "Partition:".
-            IF rec.PARTITION_KEY IS NOT NULL AND rec.PARTITION_KEY <> 'ALL'
-               AND rec.PARTITION_LABEL IS NOT NULL THEN
-                HTP.P('<br><span style="color:#555">Partition: </span>'
-                    || '<strong>' || rec.PARTITION_LABEL || '</strong>');
-            ELSIF rec.PARTITION_LABEL IS NOT NULL THEN
-                -- non-partition markers ('All Groups', '(split into N partition(s))') keep the
-                -- existing lighter inline suffix so the fan-out / in-zip context is not lost.
-                HTP.P(' &middot; <span style="color:#888">' || rec.PARTITION_LABEL || '</span>');
+            IF rec.IS_PARENT = 1 THEN
+                -- Parent placeholder line (backlog #70): state what it split on. No
+                -- counts, no load/import ids (those live on the children). The partition
+                -- COLUMN name(s) come from the structured JSON parser (part_key_names);
+                -- the friendly "(split into N partition(s))" text sits in PARTITION_LABEL.
+                l_part_keys := part_key_names(rec.OWN_QUEUE_ID);
+                HTP.P('<span style="color:#33475b">Coordinator &mdash; '
+                    || NVL(rec.PARTITION_LABEL, 'partitioned') || '</span>');
+                IF l_part_keys IS NOT NULL THEN
+                    HTP.P('<br>Partitioned on: <b>' || l_part_keys || '</b>');
+                END IF;
+            ELSE
+                HTP.P(tile_status(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS));
+                -- Item #74: surface the partition value as a first-class labelled field.
+                -- A genuine spawn-per-partition child carries a real partition value --
+                -- its PARTITION_KEY is a JSON object, e.g. {"BATCH_ID":"8102"} or
+                -- {"BOOK_TYPE_CODE":"US CORP"} (per DMT_WORK_QUEUE_TBL.PARTITION_KEY comment);
+                -- the scalar already lives in PARTITION_LABEL. Show it as "Partition: <value>".
+                -- The in-zip FBDI split sentinel (PARTITION_KEY 'ALL', label 'All Groups')
+                -- and any un-partitioned item keep the lighter inline suffix instead.
+                IF rec.PARTITION_KEY IS NOT NULL AND rec.PARTITION_KEY <> 'ALL'
+                   AND rec.PARTITION_LABEL IS NOT NULL THEN
+                    HTP.P('<br><span style="color:#555">Partition: </span>'
+                        || '<strong>' || rec.PARTITION_LABEL || '</strong>');
+                ELSIF rec.PARTITION_LABEL IS NOT NULL THEN
+                    HTP.P(' &middot; <span style="color:#888">' || rec.PARTITION_LABEL || '</span>');
+                END IF;
             END IF;
             IF rec.STARTED IS NOT NULL THEN
                 HTP.P('<br>' || rec.STARTED || CASE WHEN rec.COMPLETED IS NOT NULL THEN ' &rarr; ' || rec.COMPLETED END);
