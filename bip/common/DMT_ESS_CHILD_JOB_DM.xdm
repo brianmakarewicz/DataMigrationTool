@@ -12,12 +12,20 @@
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
 SELECT r.requestid
 FROM   fusion.ess_request_history r
+LEFT JOIN fusion.ess_request_property pb
+       ON pb.requestid = r.requestid
+      AND pb.name = 'submit.argument1'
 WHERE  r.definition LIKE '%' || :P_JOB_DEF || '%'
 AND    r.requestid != TO_NUMBER(:P_LOAD_ESS_ID)
-AND    (   r.absparentid = TO_NUMBER(:P_LOAD_ESS_ID)
-        OR r.requestid   > TO_NUMBER(:P_LOAD_ESS_ID))
+AND    r.requestid  > TO_NUMBER(:P_LOAD_ESS_ID)
+AND    (
+          (:P_BATCH_ID IS NOT NULL AND pb.value = :P_BATCH_ID)
+       OR (:P_BATCH_ID IS NULL AND r.absparentid = TO_NUMBER(:P_LOAD_ESS_ID))
+       OR (:P_BATCH_ID IS NULL)
+       )
 ORDER BY
-    CASE WHEN r.absparentid = TO_NUMBER(:P_LOAD_ESS_ID) THEN 0 ELSE 1 END,
+    CASE WHEN :P_BATCH_ID IS NULL AND r.absparentid = TO_NUMBER(:P_LOAD_ESS_ID)
+         THEN 0 ELSE 1 END,
     r.requestid ASC
 FETCH FIRST 1 ROW ONLY
       ]]></sql>
@@ -40,6 +48,9 @@ FETCH FIRST 1 ROW ONLY
                refreshParamOnChange="false" useNullForAll="false"/>
     <parameter name="P_JOB_DEF" dataType="character" rowPlacement="2"
                labelID="P_JOB_DEF" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="3"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>
