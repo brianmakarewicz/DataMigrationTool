@@ -204,6 +204,61 @@ FROM (
                AND    r.parent_table = 'AP_INVOICE_LINES_INTERFACE' )
     AND    (  l.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
            OR h.invoice_num LIKE :P_PREFIX || '%' )
+
+    UNION ALL
+
+    -- INTERFACE / lines -- PARENT-HEADER-INHERITED rejections. When an
+    -- invoice header is rejected (e.g. INVALID SUPPLIER), Payables writes
+    -- the rejection at the HEADER level (parent_table = AP_INVOICES_INTERFACE,
+    -- parent_id = INVOICE_ID) and never imports the header, so NO base line
+    -- and often NO per-line rejection row is ever written. Its lines would
+    -- otherwise match no tier and come back UNACCOUNTED. This tier emits an
+    -- ERROR row for each such line, carrying the REAL header rejection reason
+    -- (clearly marked as inherited), so every line is honestly accounted.
+    -- Guards against double-counting:
+    --   (a) the line's parent interface header must itself be a rejection
+    --       (STATUS <> PROCESSED, or a header-level rejection row exists);
+    --   (b) NO per-line rejection row exists for this line (tier above owns
+    --       those -- avoids emitting the same line twice);
+    --   (c) NO base line exists for this invoice_num + line_number (a line
+    --       that did land is LOADED from the BASE tier only, never ERROR here).
+    SELECT
+        'APInvoices.Line'                    AS object_type,
+        h.invoice_num || ':LINE:' || l.line_number  AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '[LINE] Parent invoice rejected: ' || NVL(
+            (SELECT LISTAGG(NVL(r.rejection_message, r.reject_lookup_code), ' | ')
+                    WITHIN GROUP (ORDER BY r.reject_lookup_code)
+             FROM   ap_interface_rejections r
+             WHERE  r.parent_id    = h.invoice_id
+             AND    r.parent_table = 'AP_INVOICES_INTERFACE'),
+            'Rejected by Payables Import (status=' || NVL(h.status,'NULL')
+            || '; no rejection row written -- e.g. header rejected pre-validation).')
+                                             AS error_message,
+        l.load_request_id                    AS load_request_id,
+        h.invoice_num                        AS source_ref,
+        l.attribute1                         AS dmt_reference
+    FROM   ap_invoice_lines_interface l
+    JOIN   ap_invoices_interface h
+           ON h.invoice_id = l.invoice_id
+    WHERE  ( NVL(h.status,'X') <> 'PROCESSED'
+             OR EXISTS ( SELECT 1 FROM ap_interface_rejections rh
+                         WHERE  rh.parent_id    = h.invoice_id
+                         AND    rh.parent_table = 'AP_INVOICES_INTERFACE' ) )
+    AND    NOT EXISTS (
+               SELECT 1 FROM ap_interface_rejections r
+               WHERE  r.parent_id    = l.invoice_line_id
+               AND    r.parent_table = 'AP_INVOICE_LINES_INTERFACE' )
+    AND    NOT EXISTS (
+               SELECT 1
+               FROM   ap_invoice_lines_all bl
+               JOIN   ap_invoices_all      bh ON bh.invoice_id = bl.invoice_id
+               WHERE  bh.invoice_num = h.invoice_num
+               AND    bl.line_number = l.line_number )
+    AND    (  l.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+           OR h.invoice_num LIKE :P_PREFIX || '%' )
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
 -- BIP, so treat NULL as "from the start": return every row. On later
