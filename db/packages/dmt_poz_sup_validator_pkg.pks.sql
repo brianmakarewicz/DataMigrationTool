@@ -27,9 +27,9 @@ AS
     -- Pre-transform upstream dependency check for all 5 supplier object types.
     -- Marks failing rows STATUS = 'FAILED', ERROR_TEXT = '[PRE_VALIDATION] ...'.
     -- Rows that pass are left untouched (STATUS stays NEW or RETRY).
-    PROCEDURE VALIDATE_UPSTREAM (p_run_id IN NUMBER);
+    PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER);
 
-    -- Individual object-type checks (called by VALIDATE_UPSTREAM).
+    -- Individual object-type checks (called by VALIDATE_PRE_TRANSFORM).
     PROCEDURE VALIDATE_SUPPLIERS        (p_run_id IN NUMBER);
     PROCEDURE VALIDATE_ADDRESSES        (p_run_id IN NUMBER);
     PROCEDURE VALIDATE_SITES            (p_run_id IN NUMBER);

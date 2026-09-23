@@ -277,10 +277,10 @@
     END FLAG_STG_FAILED;
 
     -- --------------------------------------------------------
-    -- VALIDATE_UPSTREAM
+    -- VALIDATE_PRE_TRANSFORM
     -- Orchestrates all 5 object upstream checks in dependency order.
     -- --------------------------------------------------------
-    PROCEDURE VALIDATE_UPSTREAM (p_run_id IN NUMBER) IS
+    PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER) IS
         l_sup_failed   NUMBER;
         l_addr_failed  NUMBER;
         l_site_failed  NUMBER;
@@ -289,9 +289,9 @@
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => 'VALIDATE_UPSTREAM start — pre-transform upstream dependency check.',
+            p_message        => 'VALIDATE_PRE_TRANSFORM start — pre-transform upstream dependency check.',
             p_package        => C_PKG,
-            p_procedure      => 'VALIDATE_UPSTREAM');
+            p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 
         VALIDATE_SUPPLIERS(p_run_id);
         VALIDATE_ADDRESSES(p_run_id);
@@ -312,14 +312,14 @@
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => 'VALIDATE_UPSTREAM complete. Pre-validation failures — ' ||
+            p_message        => 'VALIDATE_PRE_TRANSFORM complete. Pre-validation failures — ' ||
                                 'Suppliers: ' || l_sup_failed ||
                                 ' | Addresses: ' || l_addr_failed ||
                                 ' | Sites: ' || l_site_failed ||
                                 ' | Assignments: ' || l_assn_failed ||
                                 ' | Contacts: ' || l_cont_failed,
             p_package        => C_PKG,
-            p_procedure      => 'VALIDATE_UPSTREAM');
+            p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 
@@ -327,12 +327,12 @@
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
-                p_message        => 'VALIDATE_UPSTREAM failed.',
+                p_message        => 'VALIDATE_PRE_TRANSFORM failed.',
                 p_sqlerrm        => SQLERRM,
                 p_package        => C_PKG,
-                p_procedure      => 'VALIDATE_UPSTREAM');
+                p_procedure      => 'VALIDATE_PRE_TRANSFORM');
             RAISE;
-    END VALIDATE_UPSTREAM;
+    END VALIDATE_PRE_TRANSFORM;
 
 END DMT_POZ_SUP_VALIDATOR_PKG;
 /

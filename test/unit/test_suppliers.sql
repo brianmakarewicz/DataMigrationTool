@@ -287,11 +287,11 @@ begin
     -- 12-21. Run the full pre-validation orchestrator. New contract (section 7,
     -- 2026-07-15): each check RECORDS the rejection in the run-stamped
     -- DMT_STG_TFM_ERROR_TBL with the [PRE_VALIDATION] tag and never writes to the
-    -- STG row; FLAG_STG_FAILED (called by VALIDATE_UPSTREAM) then flags the STG
+    -- STG row; FLAG_STG_FAILED (called by VALIDATE_PRE_TRANSFORM) then flags the STG
     -- row FAILED — STATUS ONLY, no message. So GOOD rows stay NEW, and a BAD row
     -- must (a) have an error-table row with the [PRE_VALIDATION] tag, (b) end
     -- FAILED on STG, and (c) carry NO ERROR_TEXT on the STG row.
-    dmt_poz_sup_validator_pkg.validate_upstream(:run_id);
+    dmt_poz_sup_validator_pkg.validate_pre_transform(:run_id);
 
     -- Addresses
     select stg_status into l_status from dmt_poz_sup_addr_stg_tbl

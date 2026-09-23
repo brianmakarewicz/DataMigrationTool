@@ -28,13 +28,13 @@
                                   );
     END FLAG_STG_FAILED;
 
-    PROCEDURE VALIDATE_BATCH (p_run_id IN NUMBER) IS
+    PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER) IS
         l_valid NUMBER := 0;
         l_invalid NUMBER := 0;
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
-            'VALIDATE_BATCH start (stub -- all records passed through).',
-            'INFO', 'DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG', 'VALIDATE_BATCH');
+            'VALIDATE_PRE_TRANSFORM start (stub -- all records passed through).',
+            'INFO', 'DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG', 'VALIDATE_PRE_TRANSFORM');
 
         UPDATE DMT_POZ_SUP_SITE_ASSN_STG_TBL
         SET    STG_STATUS = 'VALIDATED', LAST_UPDATED_DATE = SYSDATE
@@ -46,8 +46,8 @@
         WHERE  STG_STATUS = 'INVALID';
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            'VALIDATE_BATCH complete. Valid: ' || l_valid || ' | Invalid: ' || l_invalid,
-            'INFO', 'DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG', 'VALIDATE_BATCH');
+            'VALIDATE_PRE_TRANSFORM complete. Valid: ' || l_valid || ' | Invalid: ' || l_invalid,
+            'INFO', 'DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG', 'VALIDATE_PRE_TRANSFORM');
 
         -- Standard final step: flag the STG rows FAILED from the recorded error
         -- rows (status only, no message) so FAILED-mode reruns select on them (§7).
@@ -55,10 +55,10 @@
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                'VALIDATE_BATCH failed.', SQLERRM,
-                'DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG', 'VALIDATE_BATCH');
+                'VALIDATE_PRE_TRANSFORM failed.', SQLERRM,
+                'DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG', 'VALIDATE_PRE_TRANSFORM');
             RAISE;
-    END VALIDATE_BATCH;
+    END VALIDATE_PRE_TRANSFORM;
 
 END DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG;
 /
