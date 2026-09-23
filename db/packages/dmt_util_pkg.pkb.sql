@@ -1153,10 +1153,28 @@
             WHERE UPPER(SCENARIO_NAME) = UPPER(TRIM(p_scenario_name));
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
+                -- Not found: create it. Guard the INSERT against a
+                -- concurrent (or prior) creator of the same name --
+                -- DMT_SCENARIO_UK makes the name unique, so a race
+                -- between this SELECT-miss and the INSERT, or a reused
+                -- scenario name across runs, would otherwise raise
+                -- ORA-00001 and fail the whole run. On the dup, the row
+                -- now exists, so re-select and return its id. Idempotent:
+                -- return the existing id if present, create only when
+                -- truly absent, never propagate ORA-00001.
                 l_step := 'creating scenario "' || p_scenario_name || '"';
-                INSERT INTO DMT_SCENARIO_TBL (SCENARIO_NAME)
-                VALUES (TRIM(p_scenario_name))
-                RETURNING SCENARIO_ID INTO x_scenario_id;
+                BEGIN
+                    INSERT INTO DMT_SCENARIO_TBL (SCENARIO_NAME)
+                    VALUES (TRIM(p_scenario_name))
+                    RETURNING SCENARIO_ID INTO x_scenario_id;
+                EXCEPTION
+                    WHEN DUP_VAL_ON_INDEX THEN
+                        l_step := 're-selecting scenario "' ||
+                                  p_scenario_name || '" after concurrent create';
+                        SELECT SCENARIO_ID INTO x_scenario_id
+                        FROM DMT_SCENARIO_TBL
+                        WHERE UPPER(SCENARIO_NAME) = UPPER(TRIM(p_scenario_name));
+                END;
         END;
     EXCEPTION
         WHEN OTHERS THEN
