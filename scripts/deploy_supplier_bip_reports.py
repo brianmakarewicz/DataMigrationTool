@@ -42,7 +42,7 @@ REPORTS = [
     ("ARInvoices",              "AR_DM",             "AR_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
-    ("Items",                   "ITEM_DM",           "ITEM_RPT"),
+    ("Items",                   "DMT_ITEM_RECON_DM", "DMT_ITEM_RECON_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
     ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),

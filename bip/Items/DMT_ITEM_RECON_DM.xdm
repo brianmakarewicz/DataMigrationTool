@@ -23,12 +23,12 @@
     ITEM_NUMBER in the Fusion interface/base rows carries the run-prefixed value
     (the FBDI generator wrote the prefixed number), which is exactly what the TFM
     tables store. So the INTERFACE and BASE tiers below build RECORD_KEY from the
-    same columns the transform used to stamp RECON_KEY -- byte-for-byte identical.
+    same columns the transform used to stamp RECON_KEY (byte-for-byte identical).
     The '~' delimiter never appears in item numbers, org codes, category set names,
     or category codes (verified against the local corpus).
 
     TIER RULES (Contract v1)
-      INTERFACE tier : one row per interface record whose base row is ABSENT --
+      INTERFACE tier : one row per interface record whose base row is ABSENT,
                        i.e. a rejection. Per the binding Contract v1 rule
                        (docs/DMT_DESIGN.html section 5), FUSION_STATUS is
                        normalized in this DM to exactly 'ERROR' and ERROR_MESSAGE
