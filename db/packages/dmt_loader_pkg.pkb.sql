@@ -5920,7 +5920,29 @@
             RETURN;
         END IF;
 
-        -- Step 2: submit Validate and Load Budgets standalone per Run Name.
+        -- Scope reconciliation to a single ledger when the run uses one.
+        SELECT COUNT(DISTINCT LEDGER_ID), MAX(LEDGER_ID)
+        INTO   l_gb_ledgers, l_gb_ledger
+        FROM   DMT_GL_BUDGET_INT_TFM_TBL
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED' AND LEDGER_ID IS NOT NULL;
+        IF l_gb_ledgers <> 1 THEN l_gb_ledger := NULL; END IF;
+
+        -- Step 2+3: submit Validate and Load Budgets standalone per Run Name, THEN
+        -- reconcile per Run Name with THAT run's own import ESS id.
+        --
+        -- The recon BASE tier scopes loaded cells to a run by a LAST_UPDATE_DATE
+        -- window that opens at the ValidateAndLoadBudgets job's PROCESSSTART
+        -- (:P_IMPORT_ESS_ID in bip/GLBudgets/query.sql). Each distinct Run Name is
+        -- loaded by its OWN ValidateAndLoadBudgets job, and those jobs run at
+        -- different times. A single reconcile after the loop could only pass ONE
+        -- import id, so cells loaded by an EARLIER Run Name's job would fall before
+        -- the window of the LAST job and never surface as BASE (they would sweep to
+        -- UNACCOUNTED). Reconciling INSIDE the loop, once per Run Name with that
+        -- iteration's l_gb_import_id, gives every Run Name a window aligned to its
+        -- own load job. APPLY_CONTRACT_V1_GLBUDGETS keys on RECON_KEY and guards
+        -- TFM_STATUS NOT IN ('LOADED','FAILED'), so calling it once per group never
+        -- double-counts or re-touches an already-terminal cell -- whichever pass
+        -- proves a cell first wins and later passes skip it.
         FOR rn IN (
             SELECT DISTINCT RUN_NAME
             FROM   DMT_GL_BUDGET_INT_TFM_TBL
@@ -5940,22 +5962,16 @@
             DMT_UTIL_PKG.LOG(p_run_id,
                 'ValidateAndLoadBudgets ' || l_gb_import_id || ' for ' || rn.RUN_NAME ||
                 ' -> ' || l_gb_status, 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
+
+            -- Reconcile THIS Run Name's cells with THIS job's import id so the BASE
+            -- LAST_UPDATE_DATE window matches the cells this job just wrote.
+            DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
+                p_run_id        => p_run_id,
+                p_load_ess_id   => TO_NUMBER(l_gb_load_id),
+                p_import_ess_id => TO_NUMBER(l_gb_import_id),
+                p_run_start     => l_gb_run_start,
+                p_ledger_id     => l_gb_ledger);
         END LOOP;
-
-        -- Scope reconciliation to a single ledger when the run uses one.
-        SELECT COUNT(DISTINCT LEDGER_ID), MAX(LEDGER_ID)
-        INTO   l_gb_ledgers, l_gb_ledger
-        FROM   DMT_GL_BUDGET_INT_TFM_TBL
-        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED' AND LEDGER_ID IS NOT NULL;
-        IF l_gb_ledgers <> 1 THEN l_gb_ledger := NULL; END IF;
-
-        -- Step 3: reconcile cell-grain against GL_BUDGET_BALANCES + interface errors.
-        DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH(
-            p_run_id        => p_run_id,
-            p_load_ess_id   => TO_NUMBER(l_gb_load_id),
-            p_import_ess_id => TO_NUMBER(l_gb_import_id),
-            p_run_start     => l_gb_run_start,
-            p_ledger_id     => l_gb_ledger);
 
         -- Reconcile already ran inline here; tell EXECUTE_ONE not to re-route this work
         -- item to RECONCILING (which would double-reconcile). See backlog #7.
