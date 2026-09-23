@@ -47,7 +47,7 @@ page 84 (
         }
         lov {
             type: staticValues
-            staticValues: STATIC:New + Retry;NEW,Failed Only;FAILED,All (Reset);ALL
+            staticValues: STATIC:New;NEW,Failed Only;FAILED,All (Reset);ALL
             displayExtraValues: false
             displayNullValue: false
         }

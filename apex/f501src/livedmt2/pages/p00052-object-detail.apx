@@ -148,13 +148,13 @@ page 52 (
                   l_url  VARCHAR2(4000);
                 BEGIN
                   BEGIN
-                    EXECUTE IMMEDIATE 'SELECT FILENAME FROM DMT_FBDI_CSV_TBL WHERE INTEGRATION_ID=:1 AND OBJECT_TYPE=:2 AND ROWNUM=1' INTO l_csv USING l_run, l_cem;
+                    EXECUTE IMMEDIATE 'SELECT FILENAME FROM DMT_FBDI_CSV_TBL WHERE RUN_ID=:1 AND OBJECT_TYPE=:2 AND ROWNUM=1' INTO l_csv USING l_run, l_cem;
                   EXCEPTION WHEN OTHERS THEN l_csv := NULL; END;
                   BEGIN
-                    EXECUTE IMMEDIATE 'SELECT FILENAME FROM DMT_FBDI_ZIP_TBL WHERE INTEGRATION_ID=:1 AND OBJECT_TYPE=:2 AND ROWNUM=1' INTO l_zip USING l_run, l_cem;
+                    EXECUTE IMMEDIATE 'SELECT FILENAME FROM DMT_FBDI_ZIP_TBL WHERE RUN_ID=:1 AND OBJECT_TYPE=:2 AND ROWNUM=1' INTO l_zip USING l_run, l_cem;
                   EXCEPTION WHEN OTHERS THEN l_zip := NULL; END;
                   BEGIN
-                    EXECUTE IMMEDIATE 'SELECT LOAD_ESS_JOB_ID, IMPORT_ESS_JOB_ID FROM DMT_OBJECT_DETAIL_V WHERE INTEGRATION_ID=:1 AND CEMLI_CODE=:2 AND ROWNUM=1' INTO l_load, l_imp USING l_run, l_cem;
+                    EXECUTE IMMEDIATE 'SELECT LOAD_ESS_JOB_ID, IMPORT_ESS_JOB_ID FROM DMT_OBJECT_DETAIL_V WHERE RUN_ID=:1 AND CEMLI_CODE=:2 AND ROWNUM=1' INTO l_load, l_imp USING l_run, l_cem;
                   EXCEPTION WHEN OTHERS THEN l_load := NULL; l_imp := NULL; END;
                 
                   HTP.P('<div style="background:#fff;border:1px solid #e3e6ea;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px 24px;margin:0 0 24px;">');

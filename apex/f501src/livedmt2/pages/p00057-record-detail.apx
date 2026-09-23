@@ -91,7 +91,7 @@ page 57 (
                            FUSION_ID, SOURCE_REF, DMT_REFERENCE,
                            TO_CHAR(RESULTS_UPDATED_DATE,'YYYY-MM-DD HH24:MI') UPD
                     FROM DMT_RECORD_DETAIL_V
-                    WHERE INTEGRATION_ID = l_int AND SUB_OBJECT = l_sub
+                    WHERE RUN_ID = l_int AND SUB_OBJECT = l_sub
                     AND (l_stat IS NULL OR TFM_STATUS = l_stat)
                     ORDER BY TFM_SEQUENCE_ID
                   ) LOOP
