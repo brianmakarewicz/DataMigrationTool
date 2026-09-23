@@ -135,7 +135,7 @@ BEGIN
         -- partition tile. Per-partition counts are a separate backlog item
         -- (DMT_DESIGN section 9 partition tiles) needing a partition-aware view.
         FOR rec IN (
-            SELECT QUEUE_ID, PIPELINE, CEMLI_CODE, WORK_STATUS, PARTITION_LABEL,
+            SELECT QUEUE_ID, PIPELINE, CEMLI_CODE, WORK_STATUS, PARTITION_LABEL, PARTITION_KEY,
                    COALESCE(q.LOAD_ESS_JOB_ID,
                        TO_CHAR((SELECT MAX(ej.REQUEST_ID) FROM DMT_ESS_JOB_TBL ej
                                 WHERE ej.RUN_ID = q.RUN_ID AND ej.CEMLI_CODE = q.CEMLI_CODE
@@ -185,7 +185,24 @@ BEGIN
               END IF;
               HTP.P('</div><div style="font-size:12px;color:#555">');
             HTP.P(tile_status(l_phase, rec.TOT_ROWS, rec.LOADED_ROWS, l_failerr, rec.UNACC_ROWS));
-            IF rec.PARTITION_LABEL IS NOT NULL THEN HTP.P(' &middot; ' || rec.PARTITION_LABEL); END IF;
+            -- Item #74: surface the partition value as a first-class labelled field on each
+            -- partitioned child tile. Only genuine spawn-per-partition children carry a real
+            -- partition value -- their PARTITION_KEY is a JSON object, e.g. {"BATCH_ID":"8102"}
+            -- or {"BOOK_TYPE_CODE":"US CORP"} (per DMT_WORK_QUEUE_TBL.PARTITION_KEY comment).
+            -- The scalar value already lives in PARTITION_LABEL (e.g. 8102, US CORP). Show it as
+            -- "Partition: <value>". Non-partitioned objects (PARTITION_KEY NULL) and the in-zip
+            -- FBDI split sentinel (PARTITION_KEY 'ALL', label 'All Groups') are NOT partitions and
+            -- get no label; the fan-out parent row ('(split into N partition(s))') is a marker, not
+            -- a value, so it is shown only as the lighter informational suffix, never as "Partition:".
+            IF rec.PARTITION_KEY IS NOT NULL AND rec.PARTITION_KEY <> 'ALL'
+               AND rec.PARTITION_LABEL IS NOT NULL THEN
+                HTP.P('<br><span style="color:#555">Partition: </span>'
+                    || '<strong>' || rec.PARTITION_LABEL || '</strong>');
+            ELSIF rec.PARTITION_LABEL IS NOT NULL THEN
+                -- non-partition markers ('All Groups', '(split into N partition(s))') keep the
+                -- existing lighter inline suffix so the fan-out / in-zip context is not lost.
+                HTP.P(' &middot; <span style="color:#888">' || rec.PARTITION_LABEL || '</span>');
+            END IF;
             IF rec.STARTED IS NOT NULL THEN
                 HTP.P('<br>' || rec.STARTED || CASE WHEN rec.COMPLETED IS NOT NULL THEN ' &rarr; ' || rec.COMPLETED END);
             END IF;
