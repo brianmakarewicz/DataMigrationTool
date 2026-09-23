@@ -175,7 +175,14 @@ Rules of the protocol:
       (#28), Customers (#29), Workers (#31), Projects (#30). Customers furthest along —
       Contract-v1 reconciler + base-table BIP report + live batch-id fix (#34-36).
       GLBalances per-line reconciliation (#41). GET_LOOKUP consolidation landed (#39).
-- [ ] Stage F — Full regression gate → then APEX port
+- [x] Stage F — Full regression gate PASSED (run 351, prefix 10291, 2026-09-21) → APEX port now proceeds.
+      The full end-to-end regression ran against the real Fusion demo with all 34 objects driven to a
+      terminal state, gating deletion of the run_one_object_type monolith in favor of self-contained
+      RUN_<object>() recipes (PR #418). The refactor introduced ZERO new regressions — every object's
+      LOADED/FAILED/UNACCOUNTED count matched its pre-refactor baseline (runs 325–347). The harness still
+      prints overall FAIL, but only from PRE-EXISTING items tracked separately: 3 true UNACCOUNTED objects
+      (Items/Item Master 4, GL Budget Lines 2, AP Invoice Lines 1), the O2C AutoInvoice/interface objects
+      at 0 LOADED (waiting on the functional owner), and environment/functional-blocked HCM/Grants objects.
 
 **ACTIVE PLAN (2026-07-12): upstream-first.** Clear the shared engine debt before driving
 more Wave-1 objects live, so each object ports once. Full ordering: docs/DMT_REBUILD_PLAN.html

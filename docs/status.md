@@ -1,5 +1,41 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-21 -- Full regression gate PASSED (run 351); monolith deletion cleared
+
+**Headline:** The full end-to-end regression passed as the gate for deleting the old
+`run_one_object_type` monolith. Run 351, prefix 10291, ran against the real Fusion demo and drove
+all 34 objects to a terminal state. The refactor that deleted `run_one_object_type` and moved every
+object into a self-contained `RUN_<object>()` recipe (PR #418) introduced **zero new regressions**:
+every object's LOADED / FAILED / UNACCOUNTED count matched its pre-refactor baseline (runs 325-347).
+
+**What it proves:** Splitting the one giant object-runner into one recipe per object changed no
+object's outcome. Good rows still load, bad rows still fail with real Fusion errors, and the count of
+unaccounted rows is unchanged. The refactor is safe; the APEX port (Stage F step 2) can now proceed.
+
+**Why the harness still prints FAIL (all PRE-EXISTING, none refactor-caused):**
+- **3 true UNACCOUNTED objects** (open since run 325, each its own break-fix ticket): Items / Item
+  Master (4 records), GL Budget Lines (2), AP Invoice Lines (1).
+- **O2C AutoInvoice / interface objects at 0 LOADED** (waiting on the functional owner): Customers
+  Account Sites, Account Site Uses, and ARInvoices AR Lines. These ride the AutoInvoice/interface
+  path blocked on demo-instance functional setup.
+- **Environment / functional-blocked (non-gating):** Grants (not set up on the demo), TalentProfiles
+  / Profile Items (HCM V2 metadata the demo rejects), and 9 HCM/HDL objects with no seed data.
+
+**Review items (not gating):** 38 cosmetic malformed LOG_TYPE entries (the package name landed in the
+log-level column; NOT from PR #418). The APEX authenticated smoke test could not run because there is
+no DMT_SMOKE end-user account on app 500 (only the login page was verified).
+
+**Next up:**
+1. Three UNACCOUNTED break-fixes: Items / Item Master, GL Budget Lines, AP Invoice Lines.
+2. APEX #74 (partition-value drill-down) and #75 (partition-aware tile load-id fallback).
+3. Create a DMT_SMOKE end-user account on app 500 so the authenticated APEX smoke test can run.
+4. Cosmetic LOG_TYPE cleanup (package name mistakenly written into the log-level column).
+
+**Docs updated this close-out:** the Object Status Matrix in `docs/DMT_REBUILD_PLAN.html` section 0
+(intro note, Items/APInvoices/GLBudgets/Customers/ARInvoices/Grants/TalentProfiles rows, and the
+"Proven live" footer); the Stage F execution-status line in the same file; and the Stage F build-order
+line in `CLAUDE.md`.
+
 ## Session -- 2026-09-14 -- Deploy DMT2 to the queryapp ATP (DMT2_OWNER) + drive the regression
 
 **Headline:** DMT2 is now deployed and running on the **queryapp ATP** as a NEW schema **DMT2_OWNER**
