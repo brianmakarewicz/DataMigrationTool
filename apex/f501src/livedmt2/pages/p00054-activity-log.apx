@@ -26,9 +26,9 @@ page 54 (
                   v_cemli  VARCHAR2(200);
                 BEGIN
                   BEGIN
-                    SELECT ORCHESTRATION_CODE INTO v_cemli
-                      FROM DMT_CONVERSION_MASTER_TBL
-                     WHERE INTEGRATION_ID = v_int_id
+                    SELECT PIPELINE_CODES INTO v_cemli
+                      FROM DMT_PIPELINE_RUN_TBL
+                     WHERE RUN_ID = v_int_id
                        AND ROWNUM = 1;
                   EXCEPTION WHEN OTHERS THEN v_cemli := 'Unknown';
                   END;
@@ -114,7 +114,7 @@ page 54 (
                   BEGIN
                     SELECT MAX(LOG_ID) INTO v_prev_id
                       FROM DMT_LOG_TBL
-                     WHERE INTEGRATION_ID = v_int_id
+                     WHERE RUN_ID = v_int_id
                        AND LOG_ID < v_log_id;
                   EXCEPTION WHEN OTHERS THEN v_prev_id := NULL;
                   END;
@@ -122,7 +122,7 @@ page 54 (
                   BEGIN
                     SELECT MIN(LOG_ID) INTO v_next_id
                       FROM DMT_LOG_TBL
-                     WHERE INTEGRATION_ID = v_int_id
+                     WHERE RUN_ID = v_int_id
                        AND LOG_ID > v_log_id;
                   EXCEPTION WHEN OTHERS THEN v_next_id := NULL;
                   END;
@@ -168,7 +168,7 @@ page 54 (
         name: Log Entry Detail
         type: plSqlDynamicContent
         source {
-            plsqlCode: DECLARE v_log_id NUMBER; v_log_date DATE; v_log_type VARCHAR2(50); v_pkg VARCHAR2(200); v_proc VARCHAR2(200); v_msg CLOB; v_err VARCHAR2(4000); v_int_id NUMBER; v_qid NUMBER; BEGIN v_log_id := :P54_LOG_ID; IF v_log_id IS NULL THEN htp.p('<p>No log entry selected.</p>'); RETURN; END IF; SELECT LOG_DATE, LOG_TYPE, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, SQLERRM_TEXT, INTEGRATION_ID, QUEUE_ID INTO v_log_date, v_log_type, v_pkg, v_proc, v_msg, v_err, v_int_id, v_qid FROM DMT_LOG_TBL WHERE LOG_ID = v_log_id; htp.p('<div style="margin:10px 0">'); htp.p('<table class="t-Report-report" style="width:auto"><tbody>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Log ID</td><td style="padding:4px 12px">' || v_log_id || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Run ID</td><td style="padding:4px 12px">' || v_int_id || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Work Item (Queue ID)</td><td style="padding:4px 12px">' || NVL(TO_CHAR(v_qid),'(none)') || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Date</td><td style="padding:4px 12px">' || TO_CHAR(v_log_date,'YYYY-MM-DD HH24:MI:SS') || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Level</td><td style="padding:4px 12px">' || v_log_type || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Source Package</td><td style="padding:4px 12px">' || v_pkg || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Procedure</td><td style="padding:4px 12px">' || v_proc || '</td></tr>'); IF v_err IS NOT NULL THEN htp.p('<tr><td style="font-weight:bold;padding:4px 12px;color:red">SQLERRM</td><td style="padding:4px 12px;color:red">' || HTF.ESCAPE_SC(v_err) || '</td></tr>'); END IF; htp.p('</tbody></table></div>'); htp.p('<h3 style="margin:16px 0 8px">Full Message</h3>'); htp.p('<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word;max-height:600px;overflow-y:auto">' || HTF.ESCAPE_SC(v_msg) || '</pre>'); EXCEPTION WHEN NO_DATA_FOUND THEN htp.p('<p>Log entry ' || v_log_id || ' not found.</p>'); END;
+            plsqlCode: DECLARE v_log_id NUMBER; v_log_date DATE; v_log_type VARCHAR2(50); v_pkg VARCHAR2(200); v_proc VARCHAR2(200); v_msg CLOB; v_err VARCHAR2(4000); v_int_id NUMBER; v_qid NUMBER; BEGIN v_log_id := :P54_LOG_ID; IF v_log_id IS NULL THEN htp.p('<p>No log entry selected.</p>'); RETURN; END IF; SELECT LOG_DATE, LOG_TYPE, PACKAGE_NAME, PROCEDURE_NAME, MESSAGE, SQLERRM_TEXT, RUN_ID, QUEUE_ID INTO v_log_date, v_log_type, v_pkg, v_proc, v_msg, v_err, v_int_id, v_qid FROM DMT_LOG_TBL WHERE LOG_ID = v_log_id; htp.p('<div style="margin:10px 0">'); htp.p('<table class="t-Report-report" style="width:auto"><tbody>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Log ID</td><td style="padding:4px 12px">' || v_log_id || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Run ID</td><td style="padding:4px 12px">' || v_int_id || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Work Item (Queue ID)</td><td style="padding:4px 12px">' || NVL(TO_CHAR(v_qid),'(none)') || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Date</td><td style="padding:4px 12px">' || TO_CHAR(v_log_date,'YYYY-MM-DD HH24:MI:SS') || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Level</td><td style="padding:4px 12px">' || v_log_type || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Source Package</td><td style="padding:4px 12px">' || v_pkg || '</td></tr>'); htp.p('<tr><td style="font-weight:bold;padding:4px 12px">Procedure</td><td style="padding:4px 12px">' || v_proc || '</td></tr>'); IF v_err IS NOT NULL THEN htp.p('<tr><td style="font-weight:bold;padding:4px 12px;color:red">SQLERRM</td><td style="padding:4px 12px;color:red">' || HTF.ESCAPE_SC(v_err) || '</td></tr>'); END IF; htp.p('</tbody></table></div>'); htp.p('<h3 style="margin:16px 0 8px">Full Message</h3>'); htp.p('<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word;max-height:600px;overflow-y:auto">' || HTF.ESCAPE_SC(v_msg) || '</pre>'); EXCEPTION WHEN NO_DATA_FOUND THEN htp.p('<p>Log entry ' || v_log_id || ' not found.</p>'); END;
         }
         layout {
             sequence: 25
@@ -189,7 +189,7 @@ page 54 (
             sqlQuery:
                 ```sql
                 SELECT l.LOG_ID,
-                       l.INTEGRATION_ID AS RUN_ID,
+                       l.RUN_ID,
                        (SELECT MAX(q.CEMLI_CODE)
                           FROM DMT_WORK_QUEUE_TBL q
                          WHERE q.QUEUE_ID = l.QUEUE_ID) AS CEMLI_CODE,
@@ -201,7 +201,7 @@ page 54 (
                        SUBSTR(l.MESSAGE, 1, 300) AS MESSAGE,
                        l.SQLERRM_TEXT AS ERROR
                 FROM DMT_LOG_TBL l
-                WHERE (:P54_RUN_ID    IS NULL OR l.INTEGRATION_ID = :P54_RUN_ID)
+                WHERE (:P54_RUN_ID    IS NULL OR l.RUN_ID = :P54_RUN_ID)
                   AND (:P54_LOG_LEVEL IS NULL OR l.LOG_TYPE       = :P54_LOG_LEVEL)
                   AND (:P54_SOURCE    IS NULL OR l.PACKAGE_NAME   = :P54_SOURCE)
                   AND (:P54_CEMLI_CODE IS NULL OR l.QUEUE_ID IN (

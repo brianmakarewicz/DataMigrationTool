@@ -292,7 +292,7 @@
       BEGIN
         SELECT CEMLI_CODE INTO v_cemli
           FROM DMT_RECORD_DETAIL_V
-         WHERE INTEGRATION_ID = p_run_id
+         WHERE RUN_ID = p_run_id
            AND SUB_OBJECT     = p_sub_object
            AND ROWNUM = 1;
       EXCEPTION WHEN OTHERS THEN
@@ -379,7 +379,7 @@
              RECONCILIATION_STATUS, ERROR_CATEGORY, ERROR_TEXT,
              TO_CHAR(RESULTS_UPDATED_DATE, 'YYYY-MM-DD HH24:MI') UPD
       FROM DMT_RECORD_DETAIL_V
-      WHERE INTEGRATION_ID = p_run_id
+      WHERE RUN_ID = p_run_id
         AND SUB_OBJECT     = p_sub_object
         AND (p_status IS NULL OR TFM_STATUS = p_status)
       ORDER BY TFM_SEQUENCE_ID
