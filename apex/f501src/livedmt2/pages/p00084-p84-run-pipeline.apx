@@ -187,7 +187,7 @@ page 84 (
         name: PLAN_AJAX
         type: executeCode
         source {
-            plsqlCode: BEGIN DMT_PLAN_PREVIEW_HTML(APEX_APPLICATION.G_X01); END;
+            plsqlCode: BEGIN DMT_APEX_PAGE_PKG.RENDER_PLAN_PREVIEW(APEX_APPLICATION.G_X01); END;
         }
         execution {
             sequence: 10

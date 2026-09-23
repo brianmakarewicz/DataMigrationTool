@@ -53,7 +53,10 @@ MANIFEST = {
     'DMT_RECORD_DETAIL_V':    ('VIEW',      'db/views/dmt_record_detail_v.sql'),
     'DMT_OBJECT_DETAIL_V':    ('VIEW',      'db/views/dmt_object_detail_v.sql'),
     'DMT_V_CATALOG_HEALTH':   ('VIEW',      'db/views/dmt_v_catalog_health.sql'),
-    'DMT_RUN_DETAIL_TILES':   ('PROCEDURE', 'db/procedures/dmt_run_detail_tiles.sql'),
+    # The run-detail tiles renderer (and the other five render/APEX-support
+    # procedures) were folded into DMT_APEX_PAGE_PKG (backlog #41); track the
+    # package here instead of the retired standalone procedure.
+    'DMT_APEX_PAGE_PKG':      ('PACKAGE',   'db/packages/dmt_apex_page_pkg.pks.sql'),
 }
 
 

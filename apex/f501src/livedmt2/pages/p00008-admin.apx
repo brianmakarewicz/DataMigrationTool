@@ -16,7 +16,7 @@ page 8 (
         name: BIP Report Registry
         type: plSqlDynamicContent
         source {
-            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='BIP' THEN dmt_render_view('DMT_BIP_REPORTS_ADMIN_V','BIP Report'); END IF; END;
+            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='BIP' THEN DMT_APEX_PAGE_PKG.RENDER_VIEW('DMT_BIP_REPORTS_ADMIN_V','BIP Report'); END IF; END;
         }
         layout {
             sequence: 30
@@ -28,7 +28,7 @@ page 8 (
         name: Daily Run Metrics
         type: plSqlDynamicContent
         source {
-            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='METRICS' THEN dmt_render_view('DMT_RUN_METRICS_V','Run Metric'); END IF; END;
+            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='METRICS' THEN DMT_APEX_PAGE_PKG.RENDER_VIEW('DMT_RUN_METRICS_V','Run Metric'); END IF; END;
         }
         layout {
             sequence: 50
@@ -40,7 +40,7 @@ page 8 (
         name: ESS Job Files
         type: plSqlDynamicContent
         source {
-            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='ESS' THEN dmt_render_view('DMT_ESS_JOB_FILES_V','ESS Job File'); END IF; END;
+            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='ESS' THEN DMT_APEX_PAGE_PKG.RENDER_VIEW('DMT_ESS_JOB_FILES_V','ESS Job File'); END IF; END;
         }
         layout {
             sequence: 20
@@ -52,7 +52,7 @@ page 8 (
         name: ESS Job Monitor
         type: plSqlDynamicContent
         source {
-            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='ESS' THEN dmt_render_view('DMT_ESS_JOBS_MONITOR_V','ESS Job'); END IF; END;
+            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='ESS' THEN DMT_APEX_PAGE_PKG.RENDER_VIEW('DMT_ESS_JOBS_MONITOR_V','ESS Job'); END IF; END;
         }
         layout {
             sequence: 10
@@ -64,7 +64,7 @@ page 8 (
         name: System Configuration
         type: plSqlDynamicContent
         source {
-            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='CONFIG' THEN dmt_render_view('DMT_CONFIG_ADMIN_V','Configuration'); END IF; END;
+            plsqlCode: BEGIN IF :G_SECTION IS NULL OR :G_SECTION='CONFIG' THEN DMT_APEX_PAGE_PKG.RENDER_VIEW('DMT_CONFIG_ADMIN_V','Configuration'); END IF; END;
         }
         layout {
             sequence: 40

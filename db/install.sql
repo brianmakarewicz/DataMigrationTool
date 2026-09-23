@@ -788,12 +788,12 @@ prompt == Package specs (dependency order) ==
 @@packages/utl_zip.pks.sql
 
 prompt == Procedures ==
-@@procedures/dmt_ess_job_detail.sql
-@@procedures/dmt_object_detail_breadcrumb.sql
-@@procedures/dmt_plan_preview_html.sql
-@@procedures/dmt_render_view.sql
-@@procedures/dmt_run_detail_header.sql
-@@procedures/dmt_run_detail_tiles.sql
+-- The six render/APEX-support procedures (DMT_RUN_DETAIL_TILES/_HEADER,
+-- DMT_OBJECT_DETAIL_BREADCRUMB, DMT_ESS_JOB_DETAIL, DMT_RENDER_VIEW,
+-- DMT_PLAN_PREVIEW_HTML) were folded into DMT_APEX_PAGE_PKG (backlog #41).
+-- DMT_SUBMIT_RUN_V2 stays standalone: it is the pipeline SUBMISSION entry
+-- point (a thin guard-enforcing wrapper over DMT_SCHEDULER_PKG.SUBMIT_PIPELINE),
+-- not a page renderer, so it does not belong in the APEX page package.
 @@procedures/dmt_submit_run_v2.sql
 
 prompt == Package bodies ==

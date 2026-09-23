@@ -18,7 +18,7 @@ page 82 (
         name: Queue
         type: plSqlDynamicContent
         source {
-            plsqlCode: BEGIN DMT_RUN_DETAIL_TILES(:P82_RUN_ID); END;
+            plsqlCode: BEGIN DMT_APEX_PAGE_PKG.RENDER_RUN_TILES(:P82_RUN_ID); END;
         }
         layout {
             sequence: 20
@@ -30,7 +30,7 @@ page 82 (
         name: Run Info
         type: plSqlDynamicContent
         source {
-            plsqlCode: BEGIN DMT_RUN_DETAIL_HEADER(:P82_RUN_ID); END;
+            plsqlCode: BEGIN DMT_APEX_PAGE_PKG.RENDER_RUN_HEADER(:P82_RUN_ID); END;
         }
         layout {
             sequence: 10
