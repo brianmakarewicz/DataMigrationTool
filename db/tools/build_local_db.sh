@@ -16,6 +16,8 @@ ORA_PWD="${ORA_PWD:-OraLocal#2026}"
 DMT_LOCAL_PWD="${DMT_LOCAL_PWD:-DmtLocal#2026}"
 LKP_LOCAL_PWD="${LKP_LOCAL_PWD:-LkpLocal#2026}"
 DMT_LOCAL_PORT="${DMT_LOCAL_PORT:-1523}"
+CONTAINER="${CONTAINER:-dmt2-local}"
+DATA_DIR="${DATA_DIR:-}"          # when set, bind-mount container oradata here
 IMG="${IMG:-container-registry.oracle.com/database/free:latest}"
 SQLCL=/c/Users/Monroe/tools/sqlcl/bin/sql
 export JAVA_HOME=/c/Users/Monroe/tools/jdk-21.0.11+10
@@ -23,22 +25,23 @@ export PATH="$JAVA_HOME/bin:$PATH"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [ "$1" = "--fresh" ]; then
-  docker rm -f dmt2-local 2>/dev/null || true
+  docker rm -f "$CONTAINER" 2>/dev/null || true
 fi
 
-if ! docker ps --format '{{.Names}}' | grep -q '^dmt2-local$'; then
-  if docker ps -a --format '{{.Names}}' | grep -q '^dmt2-local$'; then
-    docker start dmt2-local
+if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}\$"; then
+  if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER}\$"; then
+    docker start "$CONTAINER"
   else
     # ORACLE_PWD = official Oracle image; ORACLE_PASSWORD = gvenzl image
-    docker run -d --name dmt2-local -p "$DMT_LOCAL_PORT":1521 \
-      -e ORACLE_PWD="$ORA_PWD" -e ORACLE_PASSWORD="$ORA_PWD" "$IMG"
+    docker run -d --name "$CONTAINER" -p "$DMT_LOCAL_PORT":1521 \
+      -e ORACLE_PWD="$ORA_PWD" -e ORACLE_PASSWORD="$ORA_PWD" \
+      ${DATA_DIR:+-v "$DATA_DIR":/opt/oracle/oradata} "$IMG"
   fi
 fi
 
 echo "Waiting for database to be ready ..."
 i=0
-until docker logs dmt2-local 2>&1 | grep -q "DATABASE IS READY TO USE"; do
+until docker logs "$CONTAINER" 2>&1 | grep -q "DATABASE IS READY TO USE"; do
   i=$((i+1)); [ $i -gt 120 ] && { echo "DB not ready after 10 min"; exit 1; }
   sleep 5
 done
@@ -53,7 +56,7 @@ echo exit | "$SQLCL" -S system/"$ORA_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1
   @"$DIR/tools/local_lookup_setup.sql" "$LKP_LOCAL_PWD"
 
 # SYS-owned package grants SYSTEM cannot make (see local_*_setup.sql notes)
-docker exec dmt2-local bash -c "echo 'alter session set container=FREEPDB1;
+docker exec "$CONTAINER" bash -c "echo 'alter session set container=FREEPDB1;
 grant execute on dbms_network_acl_admin to DMT_OWNER;
 grant execute on utl_http to DMT_LOOKUP;
 grant execute on utl_raw to DMT_LOOKUP;
