@@ -103,11 +103,22 @@ AS
     END pv;
 
     FUNCTION has_rows(p_tbl VARCHAR2, p_iid NUMBER) RETURN BOOLEAN IS
-        l_cnt NUMBER;
+        l_cnt NUMBER := 0;
     BEGIN
-        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || p_tbl ||
-            ' WHERE RUN_ID = :1 AND TFM_STATUS = ''STAGED'' AND ROWNUM = 1'
-            INTO l_cnt USING p_iid;
+        -- Static SQL (code-standard #46: no runtime EXECUTE IMMEDIATE outside the
+        -- 3 sanctioned catalog-driven dispatch sites). The table is a compile-time
+        -- constant at each call site, so a static CASE dispatch is equivalent.
+        CASE p_tbl
+            WHEN 'DMT_WORK_SCHED_TFM_TBL' THEN
+                SELECT COUNT(*) INTO l_cnt FROM DMT_WORK_SCHED_TFM_TBL
+                 WHERE RUN_ID = p_iid AND TFM_STATUS = 'STAGED' AND ROWNUM = 1;
+            WHEN 'DMT_WORK_SCHED_DTL_TFM_TBL' THEN
+                SELECT COUNT(*) INTO l_cnt FROM DMT_WORK_SCHED_DTL_TFM_TBL
+                 WHERE RUN_ID = p_iid AND TFM_STATUS = 'STAGED' AND ROWNUM = 1;
+            ELSE
+                RAISE_APPLICATION_ERROR(-20001,
+                    'has_rows: unexpected table ' || p_tbl);
+        END CASE;
         RETURN l_cnt > 0;
     END has_rows;
 

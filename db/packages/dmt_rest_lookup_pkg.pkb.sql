@@ -32,6 +32,9 @@ AS
 
         l_items_json       CLOB;
         l_first_item       CLOB;
+        l_resp_obj         JSON_OBJECT_T;
+        l_items_arr        JSON_ARRAY_T;
+        l_item0_obj        JSON_OBJECT_T;
         l_field_name       VARCHAR2(200);
         l_field_label      VARCHAR2(200);
         l_field_value      VARCHAR2(4000);
@@ -176,6 +179,23 @@ AS
                 NULL;
         END;
 
+        -- Parse the response ONCE into a JSON object and grab items[0]. The field
+        -- values are then read with the JSON_OBJECT_T.get_String PL/SQL API, which
+        -- takes the field name as a runtime string argument — no dynamic SQL needed
+        -- (code-standard #46: no runtime EXECUTE IMMEDIATE). Behaviour matches the
+        -- former JSON_VALUE(:1, '$.items[0].<field>') extraction: a missing field or
+        -- unparseable response yields a NULL value, handled the same as before.
+        BEGIN
+            l_resp_obj  := JSON_OBJECT_T.parse(l_response);
+            l_items_arr := l_resp_obj.get_Array('items');
+            IF l_items_arr IS NOT NULL AND l_items_arr.get_size > 0 THEN
+                l_item0_obj := JSON_OBJECT_T(l_items_arr.get(0));
+            END IF;
+        EXCEPTION
+            WHEN OTHERS THEN
+                l_item0_obj := NULL;
+        END;
+
         -- Build result JSON by extracting each configured field from items[0]
         DBMS_LOB.CREATETEMPORARY(l_result, TRUE);
         DBMS_LOB.WRITEAPPEND(l_result, 11, '{"fields":[');
@@ -207,14 +227,30 @@ AS
 
             EXIT WHEN l_field_name IS NULL;
 
-            -- Extract value from JSON items[0] using dynamic SQL
-            -- (JSON_VALUE path must be a literal, so we build it dynamically)
+            -- Extract value from items[0] via the JSON_OBJECT_T PL/SQL API. The
+            -- field name is a runtime argument, so no dynamic SQL is needed
+            -- (previously an EXECUTE IMMEDIATE built the JSON_VALUE path). To match
+            -- the former JSON_VALUE(... RETURNING VARCHAR2) behaviour exactly, a
+            -- JSON string yields its text and a JSON number/boolean yields its
+            -- canonical scalar text (get_String returns NULL for non-strings, so
+            -- non-string scalars are read from the element's stringified form with
+            -- the surrounding JSON quotes removed). A missing field yields NULL.
+            DECLARE
+                l_elem JSON_ELEMENT_T;
             BEGIN
-                EXECUTE IMMEDIATE
-                    'SELECT JSON_VALUE(:1, ''$.items[0].' || l_field_name ||
-                    ''' RETURNING VARCHAR2(4000)) FROM DUAL'
-                INTO l_field_value
-                USING l_response;
+                IF l_item0_obj IS NULL OR NOT l_item0_obj.has(l_field_name) THEN
+                    l_field_value := NULL;
+                ELSE
+                    l_field_value := l_item0_obj.get_String(l_field_name);
+                    IF l_field_value IS NULL THEN
+                        l_elem := l_item0_obj.get(l_field_name);
+                        IF l_elem IS NOT NULL AND l_elem.is_Scalar THEN
+                            -- number/boolean scalar: to_String() renders it without
+                            -- quotes (quotes only wrap JSON strings), so use as-is.
+                            l_field_value := l_elem.to_String();
+                        END IF;
+                    END IF;
+                END IF;
             EXCEPTION
                 WHEN OTHERS THEN
                     l_field_value := NULL;
