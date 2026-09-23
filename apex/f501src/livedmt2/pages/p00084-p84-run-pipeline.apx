@@ -87,28 +87,6 @@ page 84 (
         }
     )
 
-    button run-pipeline (
-        buttonName: RUN_PIPELINE
-        label: Run Pipeline
-        layout {
-            sequence: 50
-            region: @pipeline-controls
-            slot: belowBox
-        }
-        appearance {
-            buttonTemplate: @/text
-            hot: true
-            templateOptions: [
-                #DEFAULT#
-                t-Button--large
-                t-Button--stretch
-            ]
-        }
-        behavior {
-            action: definedByDynamicAction
-        }
-    )
-
     dynamicAction cancel (
         name: Cancel
         execution {
