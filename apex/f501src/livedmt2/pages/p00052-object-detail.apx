@@ -240,6 +240,20 @@ page 52 (
             plsqlCode:
                 ```plsql
                 DECLARE
+                  -- Object Detail funnel (backlog #10 UI half; design doc section 10).
+                  -- Per record type ("sub-object") of this object in this run, this
+                  -- region draws the pipeline funnel: how many source records reached
+                  -- each stage (Staged -> Transformed -> Generated -> Loaded) and the
+                  -- drop-out at each stage (pre-validation / transform / load failures),
+                  -- with Unaccounted surfaced as its OWN number, never folded into a
+                  -- failure column (design section 10: "Unaccounted is surfaced as its
+                  -- own number"). Every count is a clickable pill to the Record List
+                  -- (page 57) filtered to run + record type + status. Below the number
+                  -- row, a proportional stage bar renders that record type's funnel
+                  -- visually (the "row expansion showing one record type's funnel
+                  -- visually" the design calls for). All numbers come straight from
+                  -- DMT_OBJECT_FUNNEL_V so this table, the visual bar and the tiles
+                  -- above cannot disagree.
                   v_run    NUMBER := NVL(:P52_RUN_ID, 0);
                   v_cemli  VARCHAR2(100) := :P52_CEMLI_CODE;
                   v_rows   PLS_INTEGER := 0;
@@ -258,20 +272,34 @@ page 52 (
                     IF NVL(p_n,0) = 0 THEN RETURN '<span style="color:#c8ced6">&ndash;</span>'; END IF;
                     RETURN '<span style="color:#a8271a;font-weight:600">&minus;'||p_n||' &#10007;</span>';
                   END;
+                  -- One proportional segment of the visual funnel bar. Width is the
+                  -- stage count as a percent of Staged (the widest stage). A zero-width
+                  -- stage is skipped so the bar reads as a true tapering funnel.
+                  FUNCTION seg(p_n NUMBER, p_staged NUMBER, p_bg VARCHAR2, p_label VARCHAR2) RETURN VARCHAR2 IS
+                    l_pct NUMBER;
+                  BEGIN
+                    IF NVL(p_n,0) = 0 OR NVL(p_staged,0) = 0 THEN RETURN ''; END IF;
+                    l_pct := ROUND(p_n / p_staged * 100);
+                    IF l_pct < 6 THEN l_pct := 6; END IF;  -- keep a sliver readable
+                    RETURN '<div title="'||APEX_ESCAPE.HTML(p_label)||': '||p_n||'" '
+                        || 'style="flex:0 0 '||l_pct||'%;max-width:'||l_pct||'%;background:'||p_bg
+                        || ';color:#fff;font-size:10.5px;line-height:18px;height:18px;text-align:center;'
+                        || 'overflow:hidden;white-space:nowrap;border-right:1px solid #fff">'||p_n||'</div>';
+                  END;
                 BEGIN
                   IF v_cemli IS NULL THEN htp.p('<p style="color:#888">No object selected.</p>'); RETURN; END IF;
-                
+
                   FOR m IN (SELECT scenario_name, prefix, run_status FROM DMT_OBJECT_FUNNEL_V
                              WHERE run_id=v_run AND cemli_code=v_cemli AND ROWNUM=1) LOOP
                     htp.p('<div style="color:#5f6b7a;font-size:12px;margin-bottom:8px">Run '||v_run||' &middot; '
                       ||APEX_ESCAPE.HTML(NVL(m.scenario_name,'(no scenario)'))||' &middot; prefix '
                       ||APEX_ESCAPE.HTML(m.prefix)||' &middot; '||APEX_ESCAPE.HTML(m.run_status)||'</div>');
                   END LOOP;
-                
+
                   htp.p('<div style="margin-bottom:10px"><a href="'
                     ||APEX_PAGE.GET_URL(p_page=>54,p_items=>'P54_RUN_ID,P54_CEMLI_CODE',p_values=>v_run||','||v_cemli)
                     ||'" style="color:#0070d2;text-decoration:none;font-weight:600">View activity log for this object &rarr;</a></div>');
-                
+
                   htp.p('<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px">');
                   htp.p('<thead><tr style="background:#f3f6fa;color:#39485c">'
                      ||'<th style="text-align:left;padding:6px 10px">Record type</th>'
@@ -280,15 +308,16 @@ page 52 (
                      ||'<th style="padding:6px 8px">Generated</th>'
                      ||'<th style="padding:6px 8px">Loaded</th><th style="padding:6px 8px;color:#a8271a">Load&nbsp;&#10007;</th>'
                      ||'<th style="padding:6px 8px" title="still in flight">In&nbsp;flight</th>'
-                     ||'<th style="padding:6px 8px;color:#a8271a" title="failed with no error text - accounting defect, should be 0">Unacct.</th>'
+                     ||'<th style="padding:6px 8px;color:#8B0000" title="neither confirmed loaded nor failed with a real Fusion error - the accounting rule drives this to zero">Unacct.</th>'
                      ||'</tr></thead><tbody>');
-                
+
                   FOR rec IN (SELECT sub_object, staged, prevalidation_failed, transformed, transform_failed,
-                                     generated, loaded, load_failed, in_progress, unreconciled
+                                     generated, loaded, load_failed, in_progress, unaccounted
                                 FROM DMT_OBJECT_FUNNEL_V
                                WHERE run_id=v_run AND cemli_code=v_cemli
                                ORDER BY sub_order, sub_object) LOOP
                     v_rows := v_rows + 1;
+                    -- Number row: the funnel stages with clickable pills and drop-out counts.
                     htp.p('<tr style="border-top:1px solid #e4e9f0;text-align:center">');
                     htp.p('<td style="text-align:left;padding:6px 10px;font-weight:600">'||APEX_ESCAPE.HTML(rec.sub_object)||'</td>');
                     htp.p('<td style="padding:6px 8px">'||pill(rec.staged, '', rec.sub_object, '#0b5cc0')||'</td>');
@@ -301,10 +330,32 @@ page 52 (
                     htp.p('<td style="padding:6px 8px">'||CASE WHEN NVL(rec.in_progress,0)>0
                           THEN '<span style="background:#e8f0fe;color:#0b5cc0;border-radius:10px;padding:1px 9px;font-weight:600">'||rec.in_progress||'</span>'
                           ELSE '<span style="color:#9aa5b1">0</span>' END||'</td>');
-                    htp.p('<td style="padding:6px 8px">'||pill(rec.unreconciled, 'FAILED', rec.sub_object, '#a8271a', '700')||'</td>');
+                    -- Unaccounted: its OWN dark-red number (never folded into a failure
+                    -- column), drilling to the UNACCOUNTED records on the Record List.
+                    htp.p('<td style="padding:6px 8px">'||pill(rec.unaccounted, 'UNACCOUNTED', rec.sub_object, '#8B0000', '700')||'</td>');
                     htp.p('</tr>');
+                    -- Visual row: the same record type's funnel drawn as a proportional
+                    -- tapering bar (Staged -> Transformed -> Generated -> Loaded), with
+                    -- the failed/unaccounted terminal lanes appended so the bar always
+                    -- sums to Staged. This is the "funnel visually" the design asks for.
+                    htp.p('<tr style="border-top:0"><td colspan="10" style="padding:0 10px 10px">');
+                    htp.p('<div style="display:flex;width:100%;border-radius:4px;overflow:hidden;background:#eef1f5;height:18px">');
+                    htp.p(seg(rec.loaded,       rec.staged, '#1a7a33', 'Loaded'));
+                    htp.p(seg(rec.load_failed,  rec.staged, '#a8271a', 'Load failed'));
+                    htp.p(seg(rec.unaccounted,  rec.staged, '#8B0000', 'Unaccounted'));
+                    htp.p(seg(rec.in_progress,  rec.staged, '#0b5cc0', 'In flight'));
+                    htp.p(seg(NVL(rec.transform_failed,0)+NVL(rec.prevalidation_failed,0),
+                              rec.staged, '#c8752b', 'Failed before load'));
+                    htp.p('</div></td></tr>');
                   END LOOP;
                   htp.p('</tbody></table></div>');
+                  htp.p('<div style="margin-top:8px;font-size:11px;color:#7a8798;display:flex;flex-wrap:wrap;gap:14px">'
+                     ||'<span><span style="display:inline-block;width:10px;height:10px;background:#1a7a33;border-radius:2px;margin-right:4px"></span>Loaded</span>'
+                     ||'<span><span style="display:inline-block;width:10px;height:10px;background:#a8271a;border-radius:2px;margin-right:4px"></span>Load failed</span>'
+                     ||'<span><span style="display:inline-block;width:10px;height:10px;background:#8B0000;border-radius:2px;margin-right:4px"></span>Unaccounted</span>'
+                     ||'<span><span style="display:inline-block;width:10px;height:10px;background:#0b5cc0;border-radius:2px;margin-right:4px"></span>In flight</span>'
+                     ||'<span><span style="display:inline-block;width:10px;height:10px;background:#c8752b;border-radius:2px;margin-right:4px"></span>Failed before load</span>'
+                     ||'</div>');
                   IF v_rows = 0 THEN htp.p('<div style="padding:16px;color:#888">No funnel data for this object in this run.</div>'); END IF;
                 END;
                 ```
