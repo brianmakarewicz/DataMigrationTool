@@ -46,7 +46,10 @@ FBDI
   5. `argument5` — Delete Processed Rows — `ORA_ER` (Error Rows) | `ORA_ALL` | `ORA_COMP`
   6. `argument6` — Reprocess Error — `N` | `Y`
   7. `argument7` — Process Sequentially — `Y` | `N`
-- Default ParameterList: `BATCH_ID,null,CREATE,Y,ORA_ER,N,Y`
+- Default ParameterList: `BATCH_ID,null,CREATE,null,null,N,Y`
+  (arg4 Process All Organizations and arg5 Delete Processed Rows are sent as
+  `null`, not `Y`/`ORA_ER` — matches the live loader submission in
+  `dmt_loader_pkg.RUN_ITEMS`)
 - Discovery: Request ID 9542220, fin_impl, 2026-05-21
 - Note: Item Categories (EgpItemCategoriesImportTemplate.csv) loads in the same ZIP — not a separate ESS job
 
