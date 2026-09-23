@@ -2619,10 +2619,6 @@ page 12 (
                 sequence: 17
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 129
-            )
-
             displayColumn INTELL_PROP_DESC (
                 sequence: 39
             )
@@ -3567,10 +3563,6 @@ page 12 (
 
             displayColumn FULL_REVIEW (
                 sequence: 12
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 18
             )
 
             displayColumn LAST_UPDATED_DATE (
@@ -4588,10 +4580,6 @@ page 12 (
 
             displayColumn FUNDING_SOURCE_NUMBER (
                 sequence: 5
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 13
             )
 
             displayColumn LAST_UPDATED_DATE (
@@ -7130,10 +7118,6 @@ page 12 (
                 sequence: 2
             )
 
-            displayColumn INTEGRATION_ID (
-                sequence: 66
-            )
-
             displayColumn INTERNAL (
                 sequence: 5
             )
@@ -9227,10 +9211,6 @@ page 12 (
 
             displayColumn FUNDING_SOURCE_NAME (
                 sequence: 4
-            )
-
-            displayColumn INTEGRATION_ID (
-                sequence: 61
             )
 
             displayColumn LAST_UPDATED_DATE (
