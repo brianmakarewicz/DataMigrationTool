@@ -70,9 +70,8 @@
                     SYSDATE
         FROM DMT_INV_UOM_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
@@ -90,9 +89,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND    EXISTS (

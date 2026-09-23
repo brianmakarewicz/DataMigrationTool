@@ -136,9 +136,8 @@
                     SYSDATE
         FROM DMT_POR_REQ_HEADERS_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
@@ -173,9 +172,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
@@ -209,9 +207,8 @@
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_POR_REQ_HEADERS_STG_TBL s
                 WHERE  (
-                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
-                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-                        OR (p_run_mode = 'ALL')
+                        DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                        /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
                       )
                 AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
@@ -225,7 +222,7 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Req Headers')
-                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -439,9 +436,8 @@
                     SYSDATE
         FROM DMT_POR_REQ_LINES_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
@@ -474,9 +470,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
@@ -510,9 +505,8 @@
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_POR_REQ_LINES_STG_TBL s
                 WHERE  (
-                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
-                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-                        OR (p_run_mode = 'ALL')
+                        DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                        /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
                       )
                 AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
@@ -526,7 +520,7 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Req Lines')
-                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -676,9 +670,8 @@
                     SYSDATE
         FROM DMT_POR_REQ_DISTS_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
@@ -712,9 +705,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
@@ -748,9 +740,8 @@
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_POR_REQ_DISTS_STG_TBL s
                 WHERE  (
-                        (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW','RETRY'))
-                        OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-                        OR (p_run_mode = 'ALL')
+                        DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                        /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
                       )
                 AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
@@ -764,7 +755,7 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Req Distributions')
-                AND    STG_STATUS IN ('NEW','RETRY','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(

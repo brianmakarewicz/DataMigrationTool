@@ -31,7 +31,7 @@ AS
         UPDATE DMT_GMS_AWD_PROJECTS_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW','RETRY')
+        WHERE  STG_STATUS IN ('NEW')
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
@@ -70,7 +70,7 @@ AS
                '[PRE_VALIDATION] Upstream error: Project ''' || s.PROJECT_NUMBER ||
                ''' did not load successfully — record skipped.'
         FROM   DMT_GMS_AWD_PROJECTS_STG_TBL s
-        WHERE  s.STG_STATUS IN ('NEW', 'RETRY')
+        WHERE  s.STG_STATUS IN ('NEW')
         AND    s.PROJECT_NUMBER IS NOT NULL
         AND    NOT EXISTS (
                    SELECT 1

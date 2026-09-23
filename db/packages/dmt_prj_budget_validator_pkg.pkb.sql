@@ -31,7 +31,7 @@ AS
         UPDATE DMT_PRJ_BUDGET_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW','RETRY')
+        WHERE  STG_STATUS IN ('NEW')
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
@@ -92,7 +92,7 @@ AS
                        '[PRE_VALIDATION] Project ''' || e.PROJECT_NAME ||
                        ''' is not loaded — budget record skipped.'
                 FROM   DMT_PRJ_BUDGET_STG_TBL e
-                WHERE  e.STG_STATUS IN ('NEW', 'RETRY')
+                WHERE  e.STG_STATUS IN ('NEW')
                 AND    e.PROJECT_NAME IS NOT NULL
                 AND    NOT EXISTS (
                            SELECT 1

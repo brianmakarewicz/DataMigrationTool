@@ -81,9 +81,8 @@ AS
             SYSDATE
         FROM DMT_W2_BAL_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
@@ -106,9 +105,8 @@ AS
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 
@@ -150,9 +148,8 @@ AS
             SYSDATE
         FROM DMT_W2_BAL_DTL_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND (p_scenario_id IS NULL
@@ -175,9 +172,8 @@ AS
             WHERE  RUN_ID = p_run_id
         )
         AND (
-            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           );
 

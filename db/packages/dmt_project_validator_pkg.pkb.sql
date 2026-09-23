@@ -32,7 +32,7 @@ AS
         UPDATE DMT_PJF_PROJECTS_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW','RETRY')
+        WHERE  STG_STATUS IN ('NEW')
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
@@ -44,7 +44,7 @@ AS
         UPDATE DMT_PJF_TASKS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW','RETRY')
+        WHERE  STG_STATUS IN ('NEW')
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -56,7 +56,7 @@ AS
         UPDATE DMT_PJF_TEAM_MEMBERS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW','RETRY')
+        WHERE  STG_STATUS IN ('NEW')
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -68,7 +68,7 @@ AS
         UPDATE DMT_PJC_TXN_CONTROLS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW','RETRY')
+        WHERE  STG_STATUS IN ('NEW')
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -103,7 +103,7 @@ AS
         --
         -- The check is scoped by SCENARIO_ID and does NOT depend on STG_STATUS:
         -- ALL/FAILED-mode runs reuse the same write-once STG rows (already
-        -- TRANSFORMED from a prior run), so a NEW/RETRY filter would never fire in
+        -- TRANSFORMED from a prior run), so a NEW filter would never fire in
         -- regression. The parent-existence subquery correlates on SCENARIO_ID so a
         -- task is judged against projects in its own batch only (mirrors the
         -- Customers batch-parent check).

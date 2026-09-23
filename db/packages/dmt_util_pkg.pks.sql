@@ -154,6 +154,26 @@ AS
     ) RETURN VARCHAR2 DETERMINISTIC;
 
     -- --------------------------------------------------------
+    -- STG_ROW_SELECTED  (backlog item #44)
+    -- The single, shared mode-driven row-selection predicate. Every
+    -- validator/transform selection cursor calls this instead of hand-rolling
+    -- its own STG_STATUS filter, so all phases select uniformly from the run
+    -- mode. Returns 'Y' when a staging row's status is in the run mode's status
+    -- set, 'N' otherwise. Mode semantics (design section: run modes + prefixes):
+    --   NEW    -> rows never yet attempted        (STG_STATUS = 'NEW')
+    --   FAILED -> rows whose last attempt failed   (STG_STATUS = 'FAILED')
+    --   ALL    -> the whole scenario               (any STG_STATUS)
+    -- The legacy RETRY status is retired: staging is forward-only
+    -- (NEW -> TRANSFORMED or FAILED) and is never reset, so no row can ever
+    -- carry 'RETRY' (grep-proven: nothing writes it). Callers keep their own
+    -- scenario / NOT-EXISTS / p_reprocess_errors clauses alongside this call.
+    -- Usage:  WHERE DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+    FUNCTION STG_ROW_SELECTED (
+        p_run_mode   IN VARCHAR2,
+        p_stg_status IN VARCHAR2
+    ) RETURN VARCHAR2 DETERMINISTIC;
+
+    -- --------------------------------------------------------
     -- Credential resolution â€” per-CEMLI overrides
     -- --------------------------------------------------------
 
