@@ -50,6 +50,74 @@
     END erp_soap_url;
 
     -- --------------------------------------------------------
+    -- Private: resolve an instance-specific Fusion id from configuration
+    -- by NAME, falling back to a raw-id config key (backlog #36).
+    --
+    -- The coding standard (DMT_DESIGN section 7, "No hardcoded instance
+    -- IDs") requires instance-specific references — default buyer, default
+    -- business unit and the like — to be stored in configuration by NAME
+    -- and resolved to their id at run time through the one canonical lookup
+    -- accessor DMT_UTIL_PKG.GET_LOOKUP, exactly as PRC_BU is resolved a few
+    -- lines below every caller via BU_NAME_TO_BU_ID. Storing the raw id in
+    -- config makes a new Fusion pod a code/config edit by number.
+    --
+    -- Resolution order, chosen so it never breaks a currently-seeded run:
+    --   1. NAME config key present and non-numeric  -> resolve via GET_LOOKUP.
+    --      If the lookup TYPE is refreshed at preflight (BU_NAME_TO_BU_ID)
+    --      a genuinely missing value halts the run with the standard -20040,
+    --      the intended fail-closed behavior. If the lookup type is not yet
+    --      wired into REFRESH_LOOKUPS (e.g. a buyer-name lookup, whose Fusion
+    --      source is still to be confirmed), the missing-row -20040 is caught
+    --      and the numeric id key is used instead -- so today's runs are
+    --      preserved and the name automatically takes over the day the lookup
+    --      type is populated, with no further code change.
+    --   2. NAME config key holds a plain integer -> pass it through unchanged
+    --      (name-or-numeric: a raw id left in the NAME key still resolves).
+    --   3. NAME config key absent -> fall back to the raw-id config key
+    --      (exactly the pre-#36 behavior).
+    -- p_lookup_required = TRUE forces order-1's -20040 to propagate (used for
+    -- lookups known to be refreshed at preflight, so a typo in the configured
+    -- name is a clean halt rather than a silent numeric fallback).
+    -- --------------------------------------------------------
+    FUNCTION resolve_instance_id (
+        p_name_key        IN VARCHAR2,
+        p_id_key          IN VARCHAR2,
+        p_lookup_type     IN VARCHAR2,
+        p_lookup_required IN BOOLEAN DEFAULT FALSE
+    ) RETURN VARCHAR2 IS
+        l_name    VARCHAR2(4000) := DMT_UTIL_PKG.GET_CONFIG(p_name_key);
+        l_as_num  NUMBER;
+    BEGIN
+        -- No NAME configured: preserve pre-#36 behavior exactly.
+        IF l_name IS NULL THEN
+            RETURN DMT_UTIL_PKG.GET_CONFIG(p_id_key);
+        END IF;
+
+        -- A raw integer left in the NAME key is a valid id already: pass through.
+        BEGIN
+            l_as_num := TO_NUMBER(l_name);
+            RETURN TO_CHAR(l_as_num);
+        EXCEPTION
+            WHEN VALUE_ERROR THEN
+                NULL;  -- not numeric -> it is a name; resolve it below.
+        END;
+
+        -- A real name: resolve through the one canonical lookup accessor.
+        BEGIN
+            RETURN DMT_UTIL_PKG.GET_LOOKUP(p_lookup_type, l_name);
+        EXCEPTION
+            WHEN OTHERS THEN
+                -- -20040 = lookup type not populated (source not yet wired).
+                -- Unless the caller demands the lookup, fall back to the raw id
+                -- so a currently-seeded run is preserved.
+                IF p_lookup_required OR SQLCODE != -20040 THEN
+                    RAISE;
+                END IF;
+                RETURN DMT_UTIL_PKG.GET_CONFIG(p_id_key);
+        END;
+    END resolve_instance_id;
+
+    -- --------------------------------------------------------
     -- Private: resolve a scenario name to its SCENARIO_ID via the
     -- shared DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO procedure (section 7
     -- procedures-only contract) and check its x_error_code. This
@@ -2569,8 +2637,20 @@
             -- BU id via the one common lookup accessor (raises -20040 with a clear
             -- halt message if the BU is not resolvable).
             l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
-            l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
-            l_req_bu_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_REQ_BU_ID');
+            -- Instance-specific ids resolved by NAME at run time (backlog #36),
+            -- matching the BU_NAME_TO_BU_ID resolution one line above. Buyer:
+            -- name preferred, numeric id fallback until a buyer lookup is wired.
+            -- Requisitioning BU: resolved through the preflight-refreshed
+            -- BU_NAME_TO_BU_ID lookup (required), same as PRC_BU.
+            l_buyer_id := resolve_instance_id(
+                p_name_key    => 'PO_DEFAULT_BUYER_NAME',
+                p_id_key      => 'PO_DEFAULT_BUYER_ID',
+                p_lookup_type => 'BUYER_NAME_TO_BUYER_ID');
+            l_req_bu_id := resolve_instance_id(
+                p_name_key        => 'PO_DEFAULT_REQ_BU_NAME',
+                p_id_key          => 'PO_DEFAULT_REQ_BU_ID',
+                p_lookup_type     => 'BU_NAME_TO_BU_ID',
+                p_lookup_required => TRUE);
 
             -- Arg 5 (Batch ID) is left blank on purpose: Import Orders then processes
             -- all pending interface rows for this BU, so PO partitions by Procurement
@@ -4469,7 +4549,12 @@
             END IF;
 
             l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
-            l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
+            -- Default buyer resolved by NAME at run time (backlog #36); numeric
+            -- id fallback preserves current runs until a buyer lookup is wired.
+            l_buyer_id := resolve_instance_id(
+                p_name_key    => 'PO_DEFAULT_BUYER_NAME',
+                p_id_key      => 'PO_DEFAULT_BUYER_ID',
+                p_lookup_type => 'BUYER_NAME_TO_BUYER_ID');
 
             -- ImportBPAJob: 8 args.
             l_bu_param := l_bu_id || ',' || l_buyer_id || ',N,SUBMIT,,,N,' || l_bu_id || '_' || TO_CHAR(p_run_id);
@@ -4582,7 +4667,12 @@
             END IF;
 
             l_bu_id := DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', bu_rec.PRC_BU_NAME);
-            l_buyer_id := DMT_UTIL_PKG.GET_CONFIG('PO_DEFAULT_BUYER_ID');
+            -- Default buyer resolved by NAME at run time (backlog #36); numeric
+            -- id fallback preserves current runs until a buyer lookup is wired.
+            l_buyer_id := resolve_instance_id(
+                p_name_key    => 'PO_DEFAULT_BUYER_NAME',
+                p_id_key      => 'PO_DEFAULT_BUYER_ID',
+                p_lookup_type => 'BUYER_NAME_TO_BUYER_ID');
 
             -- ImportCPAJob: 7 args.
             l_bu_param := l_bu_id || ',' || l_buyer_id || ',SUBMIT,,,N,' || l_bu_id || '_' || TO_CHAR(p_run_id);
