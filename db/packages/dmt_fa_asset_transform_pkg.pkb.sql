@@ -26,7 +26,7 @@
         l_prefix VARCHAR2(30);
         l_ok     NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_HEADERS start.', C_PKG, 'TRANSFORM_HEADERS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_HEADERS start.', 'INFO', C_PKG, 'TRANSFORM_HEADERS');
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_FA_ASSET_HDR_TFM_TBL (
@@ -101,7 +101,7 @@
              OR SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_HEADERS complete. Rows: ' || l_ok, C_PKG, 'TRANSFORM_HEADERS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_HEADERS complete. Rows: ' || l_ok, 'INFO', C_PKG, 'TRANSFORM_HEADERS');
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'TRANSFORM_HEADERS failed.', SQLERRM, C_PKG, 'TRANSFORM_HEADERS');
@@ -117,7 +117,7 @@
         l_prefix VARCHAR2(30);
         l_ok     NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_ASSIGNMENTS start.', C_PKG, 'TRANSFORM_ASSIGNMENTS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_ASSIGNMENTS start.', 'INFO', C_PKG, 'TRANSFORM_ASSIGNMENTS');
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_FA_ASSET_ASSIGN_TFM_TBL (
@@ -164,7 +164,7 @@
              OR SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_ASSIGNMENTS complete. Rows: ' || l_ok, C_PKG, 'TRANSFORM_ASSIGNMENTS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_ASSIGNMENTS complete. Rows: ' || l_ok, 'INFO', C_PKG, 'TRANSFORM_ASSIGNMENTS');
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'TRANSFORM_ASSIGNMENTS failed.', SQLERRM, C_PKG, 'TRANSFORM_ASSIGNMENTS');
@@ -180,7 +180,7 @@
         l_prefix VARCHAR2(30);
         l_ok     NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BOOKS start.', C_PKG, 'TRANSFORM_BOOKS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BOOKS start.', 'INFO', C_PKG, 'TRANSFORM_BOOKS');
         l_prefix := get_prefix(p_run_id);
 
         INSERT INTO DMT_FA_ASSET_BOOK_TFM_TBL (
@@ -221,7 +221,7 @@
              OR SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BOOKS complete. Rows: ' || l_ok, C_PKG, 'TRANSFORM_BOOKS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BOOKS complete. Rows: ' || l_ok, 'INFO', C_PKG, 'TRANSFORM_BOOKS');
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'TRANSFORM_BOOKS failed.', SQLERRM, C_PKG, 'TRANSFORM_BOOKS');

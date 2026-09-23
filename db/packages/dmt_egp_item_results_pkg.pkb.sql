@@ -484,6 +484,7 @@
         DMT_UTIL_PKG.LOG(p_run_id,
             'LOAD_AND_RECONCILE start. filename=' || p_filename
             || ', zip_size=' || DBMS_LOB.GETLENGTH(p_fbdi_zip) || ' bytes.',
+            'INFO',
             C_PKG, C_PROC);
 
         BEGIN
@@ -508,6 +509,7 @@
         DMT_UTIL_PKG.LOG(p_run_id,
             'ERP options: UCM=' || l_ucm_account || ', job=' || l_job_name
             || ', interfaceDetails=' || l_interface_details,
+            'INFO',
             C_PKG, C_PROC);
 
         BEGIN
@@ -545,7 +547,7 @@
         END;
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            'Load ESS submitted: ' || l_load_ess_id, C_PKG, C_PROC);
+            'Load ESS submitted: ' || l_load_ess_id, 'INFO', C_PKG, C_PROC);
 
         DMT_LOADER_PKG.POLL_ESS_JOB(
             p_run_id => p_run_id,
@@ -558,7 +560,7 @@
         );
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            'Load ESS ' || l_load_ess_id || ' status: ' || l_fusion_status, C_PKG, C_PROC);
+            'Load ESS ' || l_load_ess_id || ' status: ' || l_fusion_status, 'INFO', C_PKG, C_PROC);
 
         IF l_fusion_status IN ('SUCCEEDED', 'WARNING') THEN
             BEGIN
@@ -567,7 +569,7 @@
                 );
 
                 DMT_UTIL_PKG.LOG(p_run_id,
-                    'Import ESS found: ' || l_import_ess_id || '. Polling...', C_PKG, C_PROC);
+                    'Import ESS found: ' || l_import_ess_id || '. Polling...', 'INFO', C_PKG, C_PROC);
 
                 DMT_LOADER_PKG.POLL_ESS_JOB(
                     p_run_id => p_run_id,
@@ -580,14 +582,15 @@
                 );
 
                 DMT_UTIL_PKG.LOG(p_run_id,
-                    'Import ESS ' || l_import_ess_id || ' status: ' || l_import_status, C_PKG, C_PROC);
+                    'Import ESS ' || l_import_ess_id || ' status: ' || l_import_status, 'INFO', C_PKG, C_PROC);
             EXCEPTION
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Could not locate Import ESS job: '
                         || l_errmsg || '. Using Load ESS status instead.',
-                        C_PKG, C_PROC, 'WARN');
+                        'WARN',
+                        C_PKG, C_PROC);
                     l_import_status := l_fusion_status;
             END;
 
@@ -596,13 +599,15 @@
 
             DMT_UTIL_PKG.LOG(p_run_id,
                 'Items load complete. ESS=' || NVL(l_import_status, l_fusion_status),
+                'INFO',
                 C_PKG, C_PROC);
         ELSE
             -- No real Fusion error available; leave GENERATED for the honest sweep to mark UNACCOUNTED.
             DMT_UTIL_PKG.LOG(p_run_id,
                 'Items load did not succeed. ESS=' || l_fusion_status
                 || '. Rows left GENERATED for the honest sweep.',
-                C_PKG, C_PROC, 'WARN');
+                'WARN',
+                C_PKG, C_PROC);
         END IF;
 
         COMMIT;

@@ -37,7 +37,7 @@
         l_fail_count NUMBER := 0;
 
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_HEADERS start.', C_PKG, 'TRANSFORM_HEADERS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_HEADERS start.', 'INFO', C_PKG, 'TRANSFORM_HEADERS');
         l_prefix := get_prefix(p_run_id);
 
 
@@ -255,7 +255,7 @@
         l_prefix VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_FUNDING start.', C_PKG, 'TRANSFORM_FUNDING');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_FUNDING start.', 'INFO', C_PKG, 'TRANSFORM_FUNDING');
         l_prefix := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -377,7 +377,7 @@
         l_prefix     VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PROJECTS start.', C_PKG, 'TRANSFORM_PROJECTS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PROJECTS start.', 'INFO', C_PKG, 'TRANSFORM_PROJECTS');
         l_prefix     := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -531,7 +531,7 @@
         l_prefix     VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PERSONNEL start.', C_PKG, 'TRANSFORM_PERSONNEL');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PERSONNEL start.', 'INFO', C_PKG, 'TRANSFORM_PERSONNEL');
         l_prefix     := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -671,7 +671,7 @@
         l_prefix VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_FUND_SOURCES start.', C_PKG, 'TRANSFORM_FUND_SOURCES');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_FUND_SOURCES start.', 'INFO', C_PKG, 'TRANSFORM_FUND_SOURCES');
         l_prefix := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -793,7 +793,7 @@
         l_prefix     VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PRJ_FUND_SRCS start.', C_PKG, 'TRANSFORM_PRJ_FUND_SRCS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PRJ_FUND_SRCS start.', 'INFO', C_PKG, 'TRANSFORM_PRJ_FUND_SRCS');
         l_prefix     := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -911,7 +911,7 @@
         l_prefix     VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_KEYWORDS start.', C_PKG, 'TRANSFORM_KEYWORDS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_KEYWORDS start.', 'INFO', C_PKG, 'TRANSFORM_KEYWORDS');
         l_prefix     := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -1027,7 +1027,7 @@
         l_prefix VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BUDGET_PERIODS start.', C_PKG, 'TRANSFORM_BUDGET_PERIODS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BUDGET_PERIODS start.', 'INFO', C_PKG, 'TRANSFORM_BUDGET_PERIODS');
         l_prefix := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -1143,7 +1143,7 @@
         l_prefix     VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_CERTS start.', C_PKG, 'TRANSFORM_CERTS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_CERTS start.', 'INFO', C_PKG, 'TRANSFORM_CERTS');
         l_prefix     := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -1265,7 +1265,7 @@
         l_prefix VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_CFDAS start.', C_PKG, 'TRANSFORM_CFDAS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_CFDAS start.', 'INFO', C_PKG, 'TRANSFORM_CFDAS');
         l_prefix := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -1381,7 +1381,7 @@
         l_prefix     VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_FUND_ALLOCS start.', C_PKG, 'TRANSFORM_FUND_ALLOCS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_FUND_ALLOCS start.', 'INFO', C_PKG, 'TRANSFORM_FUND_ALLOCS');
         l_prefix     := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -1497,7 +1497,7 @@
         l_prefix     VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_ORG_CREDITS start.', C_PKG, 'TRANSFORM_ORG_CREDITS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_ORG_CREDITS start.', 'INFO', C_PKG, 'TRANSFORM_ORG_CREDITS');
         l_prefix     := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -1613,7 +1613,7 @@
         l_prefix     VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PRJ_TASK_BURDEN start.', C_PKG, 'TRANSFORM_PRJ_TASK_BURDEN');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PRJ_TASK_BURDEN start.', 'INFO', C_PKG, 'TRANSFORM_PRJ_TASK_BURDEN');
         l_prefix     := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -1729,7 +1729,7 @@
         l_prefix     VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_REFERENCES start.', C_PKG, 'TRANSFORM_REFERENCES');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_REFERENCES start.', 'INFO', C_PKG, 'TRANSFORM_REFERENCES');
         l_prefix     := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
@@ -1845,7 +1845,7 @@
         l_prefix VARCHAR2(30);
         l_ok_count NUMBER := 0; l_fail_count NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_TERMS start.', C_PKG, 'TRANSFORM_TERMS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_TERMS start.', 'INFO', C_PKG, 'TRANSFORM_TERMS');
         l_prefix := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried

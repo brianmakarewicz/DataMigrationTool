@@ -383,7 +383,7 @@ AS
         l_row_count NUMBER;
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' start.', C_PKG, C_PROC);
+            C_PROC || ' start.', 'INFO', C_PKG, C_PROC);
 
         SELECT COUNT(*) INTO l_row_count
         FROM   DMT_INV_TRX_TFM_TBL
@@ -392,7 +392,7 @@ AS
 
         IF l_row_count = 0 THEN
             DMT_UTIL_PKG.LOG(p_run_id,
-                C_PROC || ': No STAGED rows to generate.', C_PKG, C_PROC);
+                C_PROC || ': No STAGED rows to generate.', 'INFO', C_PKG, C_PROC);
             x_fbdi_zip    := NULL;
             x_filename    := NULL;
             x_fbdi_csv_id := NULL;
@@ -508,6 +508,7 @@ AS
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' complete. Rows: ' || l_row_count
             || ', ZIP size: ' || DBMS_LOB.GETLENGTH(x_fbdi_zip) || ' bytes.',
+            'INFO',
             C_PKG, C_PROC);
 
     EXCEPTION

@@ -80,7 +80,7 @@ AS
         l_row_count   NUMBER := 0;
         l_vals        VARCHAR2(32767);
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'GENERATE_HDL start.', C_PKG, 'GENERATE_HDL');
+        DMT_UTIL_PKG.LOG(p_run_id, 'GENERATE_HDL start.', 'INFO', C_PKG, 'GENERATE_HDL');
 
         x_filename := 'TaxCards_' || TO_CHAR(p_run_id) || '.zip';
         DBMS_LOB.CREATETEMPORARY(l_dat, TRUE);
@@ -158,6 +158,7 @@ AS
         DMT_UTIL_PKG.LOG(p_run_id,
             'GENERATE_HDL complete. Total data lines: ' || l_row_count ||
             ' | Zip size: ' || DBMS_LOB.GETLENGTH(l_zip) || ' bytes.',
+            'INFO',
             C_PKG, 'GENERATE_HDL');
 
     EXCEPTION
