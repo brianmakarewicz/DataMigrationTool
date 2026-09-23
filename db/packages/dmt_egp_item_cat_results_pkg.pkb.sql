@@ -221,6 +221,7 @@
         DMT_UTIL_PKG.LOG(p_run_id,
             'LOAD_AND_RECONCILE start. filename=' || p_filename
             || ', zip_size=' || DBMS_LOB.GETLENGTH(p_fbdi_zip) || ' bytes.',
+            'INFO',
             C_PKG, C_PROC);
 
         BEGIN
@@ -310,7 +311,8 @@
             DMT_UTIL_PKG.LOG(p_run_id,
                 'ItemCategories load did not succeed. ESS=' || l_fusion_status
                 || '. Rows left GENERATED for the honest sweep.',
-                C_PKG, C_PROC, 'WARN');
+                'WARN',
+                C_PKG, C_PROC);
         END IF;
 
         COMMIT;

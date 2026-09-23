@@ -454,6 +454,11 @@ AS
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
         SELECT * INTO l_run_rec FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = l_rec.RUN_ID;
 
+        -- Attribution (backlog #30): stamp this child job's run and work-item id
+        -- once, so every LOG / LOG_ERROR in this session records QUEUE_ID
+        -- automatically (session-scoped globals; isolated to this job's session).
+        DMT_UTIL_PKG.SET_LOG_CONTEXT(l_rec.RUN_ID, p_queue_id);
+
         get_dispatch(l_rec.CEMLI_CODE, l_exec_proc, l_exec_mode, l_recon_proc, l_recon_cemli);
         IF l_exec_proc IS NULL THEN
             RAISE_APPLICATION_ERROR(-20100,
@@ -780,6 +785,9 @@ AS
         l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
+
+        -- Attribution (backlog #30): stamp run + work-item id for this child job.
+        DMT_UTIL_PKG.SET_LOG_CONTEXT(l_rec.RUN_ID, p_queue_id);
 
         DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
             'Reconciling ' || l_rec.CEMLI_CODE ||
@@ -1329,6 +1337,9 @@ AS
     BEGIN
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
 
+        -- Attribution (backlog #30): stamp run + work-item id for this child job.
+        DMT_UTIL_PKG.SET_LOG_CONTEXT(l_rec.RUN_ID, p_queue_id);
+
         l_ess_id := CASE l_rec.WORK_STATUS
             WHEN 'AWAITING_LOAD'    THEN l_rec.LOAD_ESS_JOB_ID
             WHEN 'AWAITING_IMPORT'  THEN l_rec.IMPORT_ESS_JOB_ID
@@ -1628,6 +1639,9 @@ AS
         l_step VARCHAR2(200);
         l_code NUMBER;
     BEGIN
+        -- Attribution (backlog #30): run-level preflight has no work item yet,
+        -- so stamp RUN_ID only (QUEUE_ID legitimately NULL).
+        DMT_UTIL_PKG.SET_LOG_CONTEXT(p_run_id);
         l_step := 'running preflight for run ' || p_run_id;
         DMT_UTIL_PKG.RUN_PREFLIGHT(p_run_id => p_run_id, x_error_code => l_code);
 

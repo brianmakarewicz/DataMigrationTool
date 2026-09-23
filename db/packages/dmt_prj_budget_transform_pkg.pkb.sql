@@ -12,7 +12,7 @@
     ) IS
         l_ok         NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM start.', C_PKG, 'TRANSFORM');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM start.', 'INFO', C_PKG, 'TRANSFORM');
 
         INSERT INTO DMT_PRJ_BUDGET_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,
@@ -135,7 +135,7 @@
             AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         );
 
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM complete. Rows: ' || l_ok, C_PKG, 'TRANSFORM');
+        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM complete. Rows: ' || l_ok, 'INFO', C_PKG, 'TRANSFORM');
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'TRANSFORM failed.', SQLERRM, C_PKG, 'TRANSFORM');

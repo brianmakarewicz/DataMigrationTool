@@ -599,7 +599,8 @@
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ': report returned zero base-table rows. '
                 || 'No fabricated LOADED; banks left as the load step set them.',
-                C_PKG, C_PROC, 'WARN');
+                'WARN',
+                C_PKG, C_PROC);
             RETURN;
         END IF;
 
@@ -659,7 +660,8 @@
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ': report returned zero base-table rows. '
                 || 'No fabricated LOADED; branches left as the load step set them.',
-                C_PKG, C_PROC, 'WARN');
+                'WARN',
+                C_PKG, C_PROC);
             RETURN;
         END IF;
 
@@ -721,7 +723,8 @@
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ': report returned zero base-table rows. '
                 || 'No fabricated LOADED; accounts left as the load step set them.',
-                C_PKG, C_PROC, 'WARN');
+                'WARN',
+                C_PKG, C_PROC);
             RETURN;
         END IF;
 

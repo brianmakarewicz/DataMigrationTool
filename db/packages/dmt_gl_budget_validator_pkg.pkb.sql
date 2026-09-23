@@ -28,7 +28,7 @@
 
     PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER, p_dependent_prefix IN VARCHAR2 DEFAULT NULL) IS
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'VALIDATE_PRE_TRANSFORM start (no rules yet).', C_PKG, 'VALIDATE_PRE_TRANSFORM');
+        DMT_UTIL_PKG.LOG(p_run_id, 'VALIDATE_PRE_TRANSFORM start (no rules yet).', 'INFO', C_PKG, 'VALIDATE_PRE_TRANSFORM');
 
         -- Standard final step: flag the STG rows FAILED from the recorded error
         -- rows (status only, no message) so FAILED-mode reruns select on them (§7).
@@ -45,7 +45,7 @@
     END VALIDATE_PRE_TRANSFORM;
     PROCEDURE VALIDATE_POST_TRANSFORM (p_run_id IN NUMBER) IS
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'VALIDATE_POST_TRANSFORM start (no rules yet).', C_PKG, 'VALIDATE_POST_TRANSFORM');
+        DMT_UTIL_PKG.LOG(p_run_id, 'VALIDATE_POST_TRANSFORM start (no rules yet).', 'INFO', C_PKG, 'VALIDATE_POST_TRANSFORM');
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(

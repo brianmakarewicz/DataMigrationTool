@@ -48,7 +48,7 @@
         l_rpt_path VARCHAR2(500); l_env CLOB; l_resp CLOB;
         l_action CONSTANT VARCHAR2(200) := 'http://xmlns.oracle.com/oxp/service/v2/ReportService/runReportRequest';
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'FETCH_BIP_RESULTS start. load_ess_id: ' || p_load_ess_id, C_PKG, 'FETCH_BIP_RESULTS');
+        DMT_UTIL_PKG.LOG(p_run_id, 'FETCH_BIP_RESULTS start. load_ess_id: ' || p_load_ess_id, 'INFO', C_PKG, 'FETCH_BIP_RESULTS');
         l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
         l_username := DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
         l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
@@ -76,7 +76,7 @@
         l_report_b64 VARCHAR2(32767); l_b64_start INTEGER; l_b64_end INTEGER;
         l_report_xml CLOB; l_xml XMLTYPE; l_loaded NUMBER := 0; l_failed NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'PARSE_AND_UPDATE start.', C_PKG, 'PARSE_AND_UPDATE');
+        DMT_UTIL_PKG.LOG(p_run_id, 'PARSE_AND_UPDATE start.', 'INFO', C_PKG, 'PARSE_AND_UPDATE');
         l_b64_start := DBMS_LOB.INSTR(p_xml_data, '<reportBytes>');
         IF l_b64_start = 0 THEN RETURN; END IF;
         l_b64_start := l_b64_start + LENGTH('<reportBytes>');
@@ -126,7 +126,7 @@
         UPDATE DMT_PLAN_BUDGET_STG_TBL SET STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE
         WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_PLAN_BUDGET_TFM_TBL WHERE RUN_ID=p_run_id AND TFM_STATUS='FAILED');
         -- NO COMMIT — orchestrator controls transaction boundaries
-        DMT_UTIL_PKG.LOG(p_run_id, 'PARSE_AND_UPDATE complete. LOADED: '||l_loaded||', FAILED: '||l_failed, C_PKG, 'PARSE_AND_UPDATE');
+        DMT_UTIL_PKG.LOG(p_run_id, 'PARSE_AND_UPDATE complete. LOADED: '||l_loaded||', FAILED: '||l_failed, 'INFO', C_PKG, 'PARSE_AND_UPDATE');
     EXCEPTION WHEN OTHERS THEN DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'PARSE_AND_UPDATE failed.', SQLERRM, C_PKG, 'PARSE_AND_UPDATE'); RAISE;
     END PARSE_AND_UPDATE;
 

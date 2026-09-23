@@ -93,6 +93,7 @@ AS
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ': Found report ESS ' || l_result ||
                 ' in hierarchy (child of import ' || p_import_ess_id || ').',
+                'INFO',
                 C_PKG, C_PROC);
             RETURN l_result;
         END IF;
@@ -106,6 +107,7 @@ AS
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ': Report ESS id = ' || NVL(TO_CHAR(l_result), 'NULL') ||
             ' (captured from import ESS ' || p_import_ess_id || ').',
+            'INFO',
             C_PKG, C_PROC);
 
         RETURN l_result;
@@ -113,6 +115,7 @@ AS
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ': Failed to find Report child ESS: ' || SQLERRM,
+                'INFO',
                 C_PKG, C_PROC);
             RETURN NULL;
     END find_report_ess_id;
@@ -153,6 +156,7 @@ AS
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ': No Award Batch Import Report child found for import ESS ' ||
                 p_import_ess_id || '. Nothing to attribute from the report.',
+                'INFO',
                 C_PKG, C_PROC);
             RETURN 0;
         END IF;
@@ -164,6 +168,7 @@ AS
                 DMT_UTIL_PKG.LOG(p_run_id,
                     C_PROC || ': Failed to download report XML from ESS ' ||
                     l_report_ess_id || ': ' || SQLERRM,
+                    'INFO',
                     C_PKG, C_PROC);
                 RETURN 0;
         END;
@@ -171,6 +176,7 @@ AS
         IF l_xml_clob IS NULL OR DBMS_LOB.GETLENGTH(l_xml_clob) = 0 THEN
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ': Report ESS ' || l_report_ess_id || ' returned empty output.',
+                'INFO',
                 C_PKG, C_PROC);
             RETURN 0;
         END IF;
@@ -182,6 +188,7 @@ AS
                 DMT_UTIL_PKG.LOG(p_run_id,
                     C_PROC || ': Report output for ESS ' || l_report_ess_id ||
                     ' is not valid XML: ' || SQLERRM,
+                    'INFO',
                     C_PKG, C_PROC);
                 IF DBMS_LOB.ISTEMPORARY(l_xml_clob) = 1 THEN
                     DBMS_LOB.FREETEMPORARY(l_xml_clob);
@@ -218,6 +225,7 @@ AS
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ': Award Batch Import Report (ESS ' || l_report_ess_id ||
             ') parsed; ' || l_matched || ' award(s) marked FAILED with a real Fusion message.',
+            'INFO',
             C_PKG, C_PROC);
 
         RETURN l_matched;
@@ -234,6 +242,7 @@ AS
             DMT_UTIL_PKG.LOG(p_run_id,
                 C_PROC || ': report parse/apply failed (' || SQLERRM ||
                 '); ' || l_matched || ' rows matched before the error.',
+                'INFO',
                 C_PKG, C_PROC);
             RETURN l_matched;
     END apply_award_import_report;
@@ -406,6 +415,7 @@ AS
         -- NO COMMIT — orchestrator controls transaction boundaries
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' complete. 14 children accounted by parent-award verdict; 15 STG tables echoed.',
+            'INFO',
             C_PKG, C_PROC);
     END cascade_children_and_echo;
 
@@ -568,6 +578,7 @@ AS
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' start. load_ess_id: ' || p_load_ess_id ||
             ' | import_ess_id: ' || NVL(TO_CHAR(p_import_ess_id), 'NULL'),
+            'INFO',
             C_PKG, C_PROC);
 
         APPLY_CONTRACT_V1_GRANTS(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id);
@@ -577,7 +588,7 @@ AS
         -- not-DONE and the funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete.', C_PKG, C_PROC);
+            C_PROC || ' complete.', 'INFO', C_PKG, C_PROC);
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id, C_PROC || ' failed.', SQLERRM, C_PKG, C_PROC);

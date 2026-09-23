@@ -261,6 +261,7 @@ AS
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' start. run_id: ' || p_run_id,
+            'INFO',
             C_PKG, C_PROC);
 
         APPLY_CONTRACT_V1_MISC_RECEIPTS(p_run_id, TO_CHAR(p_load_ess_id));
@@ -270,7 +271,7 @@ AS
         -- and the funnel surfaces these as UNRECONCILED.
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete.', C_PKG, C_PROC);
+            C_PROC || ' complete.', 'INFO', C_PKG, C_PROC);
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,
