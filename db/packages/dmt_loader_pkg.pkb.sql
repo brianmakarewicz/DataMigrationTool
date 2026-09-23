@@ -3419,7 +3419,7 @@
                 INTO   l_exp_src_name, l_exp_doc_name
                 FROM   DMT_PJC_EXPENDITURES_STG_TBL
                 WHERE  (v_scenario_id IS NULL OR SCENARIO_ID = v_scenario_id)
-                AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW','RETRY'))
+                AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW'))
                         OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
                         OR (p_run_mode = 'ALL') );
             END IF;
