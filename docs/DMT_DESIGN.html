@@ -1149,6 +1149,16 @@ l_obj               VARCHAR2(60);             -- short object stem, SUBSTR after
     <tr><td>9</td><td>Upload Reference Guide</td><td>Per-object upload file formats (driven by the upload dictionary, &#167;4)</td><td><span class="b b-impl">IMPL</span></td></tr>
   </table>
 
+  <div style="border:1px solid #b42318;border-radius:8px;padding:10px 14px;margin:10px 0;background:#fdeceb">
+    <strong style="color:#b42318">PROPOSED 2026-09-22 (owner-directed) — Pages 16&#8211;20 and 30&#8211;36 are RESERVED for the EBS&#8594;Fusion lookup / value-mapping / chart-of-accounts mapping editor surface, co-owned with the EBS Adaptor project. Do NOT repurpose these page numbers for other DMT2 features.</strong>
+    <span style="color:#b42318">Two page ranges in the Data Migration Console app (500 GOLD / 501 dev) are set aside for the EBS&#8594;Fusion value-mapping editor and must not be claimed by unrelated DMT2 feature work:
+    <ul style="color:#b42318;margin:6px 0">
+      <li style="color:#b42318"><strong style="color:#b42318">Pages 16&#8211;20 &mdash; lookup &amp; value mapping:</strong> <code style="color:#b42318">p16</code> lookup-dashboard, <code style="color:#b42318">p17</code> value-mapping, <code style="color:#b42318">p18</code> ebs-values, <code style="color:#b42318">p19</code> fusion-values, <code style="color:#b42318">p20</code> lookup-admin (the <em style="color:#b42318">Lookups &amp; Mapping</em> nav group above).</li>
+      <li style="color:#b42318"><strong style="color:#b42318">Pages 30&#8211;36 &mdash; chart-of-accounts mapping:</strong> <code style="color:#b42318">p30</code> coa-dashboard, <code style="color:#b42318">p31</code> coa-sets, <code style="color:#b42318">p32</code> segment-rules, <code style="color:#b42318">p33</code> segment-values, <code style="color:#b42318">p34</code> coa-crosswalk, <code style="color:#b42318">p35</code> source-combinations, <code style="color:#b42318">p36</code> target-combinations (expands the single <em style="color:#b42318">COA Mapping</em> row above, which today lists pages 30&#8211;36 collapsed).</li>
+    </ul>
+    <strong style="color:#b42318">Why reserved (cross-project coordination):</strong> the EBS Adaptor effort will build these pages out in place &mdash; in a copy of the app, folded back per the copy-before-modify rule &mdash; as the shared mapping-editor UI that both the Adaptor and DMT2 depend on. Because that build claims these exact page numbers, DMT2 feature work must not assign new pages inside 16&#8211;20 or 30&#8211;36; pick numbers outside both ranges. Owner-directed 2026-09-22; promote to accepted when the mapping-editor pages land.</span>
+  </div>
+
   <h3>Deprecated pages &#8212; review for unique content, then delete</h3>
   <table>
     <tr><th>Page</th><th>Name</th><th>Superseded by</th></tr>
