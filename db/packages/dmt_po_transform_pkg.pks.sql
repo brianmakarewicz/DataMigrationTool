@@ -16,7 +16,7 @@
 -- Contracts to share the same staging tables while being processed independently.
 --
 -- Staging STATUS lifecycle managed here:
---   NEW / RETRY  -> TRANSFORMED (success) or FAILED (exception)
+--   NEW          -> TRANSFORMED (success) or FAILED (exception)
 --
 -- TFM STATUS set on insert:
 --   STAGED (ready for FBDI generation)

@@ -566,6 +566,26 @@
     END PREFIXED;
 
     -- --------------------------------------------------------
+    -- STG_ROW_SELECTED  (backlog item #44)
+    -- One shared mode-driven selection predicate for all phases. See spec in
+    -- the package header. Deterministic so it is safe and cheap to call inside
+    -- a WHERE clause. RETRY is retired; a row can only be NEW, TRANSFORMED or
+    -- FAILED, so NEW mode maps to STG_STATUS = 'NEW' only.
+    -- --------------------------------------------------------
+    FUNCTION STG_ROW_SELECTED (
+        p_run_mode   IN VARCHAR2,
+        p_stg_status IN VARCHAR2
+    ) RETURN VARCHAR2 DETERMINISTIC IS
+    BEGIN
+        RETURN CASE
+                   WHEN p_run_mode = 'NEW'    AND p_stg_status = 'NEW'    THEN 'Y'
+                   WHEN p_run_mode = 'FAILED' AND p_stg_status = 'FAILED' THEN 'Y'
+                   WHEN p_run_mode = 'ALL'                                THEN 'Y'
+                   ELSE 'N'
+               END;
+    END STG_ROW_SELECTED;
+
+    -- --------------------------------------------------------
     -- GET_CEMLI_CREDENTIALS
     -- Resolve Fusion credentials for a CEMLI.
     -- Priority: options table override > config table default.

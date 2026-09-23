@@ -61,9 +61,8 @@
             'STAGED'
         FROM   DMT_FA_ASSET_HDR_STG_TBL s
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -93,9 +92,8 @@
         UPDATE DMT_FA_ASSET_HDR_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id
@@ -143,9 +141,8 @@
             'STAGED'
         FROM   DMT_FA_ASSET_ASSIGN_STG_TBL s
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -156,9 +153,8 @@
         UPDATE DMT_FA_ASSET_ASSIGN_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id
@@ -200,9 +196,8 @@
             s.BONUS_YTD_DEPRN, s.BONUS_DEPRN_RESERVE, 'STAGED'
         FROM   DMT_FA_ASSET_BOOK_STG_TBL s
         WHERE  (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -213,9 +208,8 @@
         UPDATE DMT_FA_ASSET_BOOK_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            (p_run_mode = 'NEW' AND STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL' AND STG_STATUS IN ('NEW', 'RETRY'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id

@@ -204,9 +204,8 @@
             SYSDATE
         FROM DMT_INV_TRX_STG_TBL s
         WHERE (
-            (p_run_mode = 'NEW' AND s.STG_STATUS IN ('NEW', 'RETRY'))
-            OR (p_run_mode = 'FAILED' AND s.STG_STATUS = 'FAILED')
-            OR (p_run_mode = 'ALL')
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
         AND NOT EXISTS (
@@ -268,7 +267,7 @@
             s.PARENT_LOT_NUMBER, s.SUBLOT_NUM,
             'STAGED', SYSDATE
         FROM DMT_INV_TRX_LOTS_STG_TBL s
-        WHERE s.STG_STATUS IN ('NEW', 'RETRY')
+        WHERE s.STG_STATUS IN ('NEW')
         AND NOT EXISTS (
             SELECT 1 FROM DMT_INV_TRX_LOTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -279,7 +278,7 @@
 
         UPDATE DMT_INV_TRX_LOTS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW', 'RETRY')
+        WHERE  STG_STATUS IN ('NEW')
         AND    EXISTS (
             SELECT 1 FROM DMT_INV_TRX_LOTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = DMT_INV_TRX_LOTS_STG_TBL.STG_SEQUENCE_ID
@@ -306,7 +305,7 @@
             s.STATUS_NAME, s.STATUS_CODE, s.ORIGINATION_DATE,
             'STAGED', SYSDATE
         FROM DMT_INV_TRX_SERIALS_STG_TBL s
-        WHERE s.STG_STATUS IN ('NEW', 'RETRY')
+        WHERE s.STG_STATUS IN ('NEW')
         AND NOT EXISTS (
             SELECT 1 FROM DMT_INV_TRX_SERIALS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -317,7 +316,7 @@
 
         UPDATE DMT_INV_TRX_SERIALS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW', 'RETRY')
+        WHERE  STG_STATUS IN ('NEW')
         AND    EXISTS (
             SELECT 1 FROM DMT_INV_TRX_SERIALS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = DMT_INV_TRX_SERIALS_STG_TBL.STG_SEQUENCE_ID
