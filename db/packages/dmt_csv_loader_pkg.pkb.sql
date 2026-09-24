@@ -15,7 +15,7 @@
     TYPE col_arr_t IS TABLE OF VARCHAR2(128) INDEX BY PLS_INTEGER;
 
     -- Field value array (32767 to handle any EBS column width)
-    TYPE val_arr_t IS TABLE OF VARCHAR2(32767) INDEX BY PLS_INTEGER;
+    TYPE val_arr_t IS TABLE OF VARCHAR2(32767 CHAR) INDEX BY PLS_INTEGER;
 
     -- Column position map: csv_position(i) → index into header array
     TYPE pos_arr_t IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
@@ -46,7 +46,7 @@
         p_offset  OUT NUMBER
     ) IS
         v_lf_pos  NUMBER;
-        v_line    VARCHAR2(32767);
+        v_line    VARCHAR2(32767 CHAR);
         v_start   NUMBER := 1;
         v_comma   NUMBER;
         v_idx     PLS_INTEGER := 0;
@@ -144,8 +144,8 @@
     ) RETURN BOOLEAN
     IS
         v_len       NUMBER;
-        v_ch        VARCHAR2(1);
-        v_field     VARCHAR2(4000);
+        v_ch        VARCHAR2(1 CHAR);
+        v_field     VARCHAR2(4000 CHAR);
         v_col_idx   PLS_INTEGER := 0;
         v_in_quotes BOOLEAN := FALSE;
         v_pos       NUMBER;
@@ -263,14 +263,14 @@
         v_fields        val_arr_t;
         v_offset        NUMBER;
 
-        v_insert_sql    VARCHAR2(32000);
+        v_insert_sql    VARCHAR2(32000 CHAR);
         v_cur_id        INTEGER;
         v_dummy         INTEGER;
         v_rows_loaded   NUMBER := 0;
         v_row_num       NUMBER := 0;
-        v_err_msg       VARCHAR2(4000);
-        v_fail_detail   VARCHAR2(4000);
-        v_fail_line     VARCHAR2(4000);
+        v_err_msg       VARCHAR2(4000 CHAR);
+        v_fail_detail   VARCHAR2(4000 CHAR);
+        v_fail_line     VARCHAR2(4000 CHAR);
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_message   => 'Starting CSV load for landing_id=' || p_csv_landing_id,
@@ -419,8 +419,7 @@
                     CASE WHEN v_fields(v_csv_positions(i)) IS NOT NULL
                               AND LENGTH(v_fields(v_csv_positions(i))) > 0
                          THEN v_fields(v_csv_positions(i))
-                         ELSE TO_CHAR(NULL) END,
-                    4000);
+                         ELSE TO_CHAR(NULL) END);
             END LOOP;
 
             -- Bind scenario ID if applicable
