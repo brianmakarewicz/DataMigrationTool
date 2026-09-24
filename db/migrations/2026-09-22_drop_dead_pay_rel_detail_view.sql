@@ -1,4 +1,5 @@
-BEGIN EXECUTE IMMEDIATE 'DROP VIEW DMT_V_PAY_REL_DETAIL'; EXCEPTION WHEN OTHERS THEN IF SQLCODE IN (-942, -4043) THEN NULL; ELSE RAISE; END IF; END; /
+BEGIN EXECUTE IMMEDIATE 'DROP VIEW DMT_V_PAY_REL_DETAIL'; EXCEPTION WHEN OTHERS THEN IF SQLCODE IN (-942, -4043) THEN NULL; ELSE RAISE; END IF; END;
+/
 -- ----------------------------------------------------------------------
 -- Migration 2026-09-22: drop the dead PayrollRelationships drill view
 -- (backlog #58). DMT_V_PAY_REL_DETAIL always returned zero rows after the
@@ -29,6 +30,8 @@ BEGIN EXECUTE IMMEDIATE 'DROP VIEW DMT_V_PAY_REL_DETAIL'; EXCEPTION WHEN OTHERS 
 -- The executable block is the first statement on purpose: the deploy runner
 -- (scripts/dmt_deploy.py) splits a migration on ";\n" / "/\n" and skips any
 -- chunk that begins with "--", so the executable statement must lead. The
--- block is written on a single line so that split never fragments it: the only
--- statement-terminator followed by a newline is the trailing "/".
+-- PL/SQL block is written on a single physical line and the "/" terminator is
+-- on its OWN line below it (backlog #81): a "/" that is NOT alone on a line is
+-- never recognized by the split, so the whole statement would be silently
+-- skipped. Keep "END;" and its "/" on separate lines.
 -- ----------------------------------------------------------------------

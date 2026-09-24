@@ -3591,10 +3591,14 @@
         -- Backlog #70: stamp THIS child's own load + import ess ids on its own queue row.
         stamp_item_ess_ids(l_ex_load_id, l_ex_import_id);
 
-        -- Step 3: reconcile. Good rows appear in base PJC_EXP_ITEMS_ALL keyed by prefixed
+        -- Step 3: reconcile via a single registry-driven dispatch (backlog #7 —
+        -- same as po_submit_and_reconcile_one and fin_after_generate). The RECON_PROC
+        -- registry names DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH for Expenditures.
+        -- Good rows appear in base PJC_EXP_ITEMS_ALL keyed by prefixed
         -- ORIG_TRANSACTION_REFERENCE -> LOADED. The reconciler decides per-record outcome.
-        DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH(
+        DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY(
             p_run_id        => p_run_id,
+            p_cemli_code    => C_CEMLI,
             p_load_ess_id   => TO_NUMBER(l_ex_load_id),
             p_import_ess_id => TO_NUMBER(l_ex_import_id),
             p_work_queue_id => g_work_queue_id);
