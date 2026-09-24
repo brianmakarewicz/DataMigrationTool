@@ -1,5 +1,74 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-23 -- Backlog batch merged, full regression PASS (run 121), ATP Gold deployed
+
+**Headline:** A large backlog batch was executed and merged, the full regression re-ran clean on
+local Docker (RUN_ID 121, prefix 93201), and DMT2 was deployed to the ATP Gold instance (schema +
+APEX app 500). The three long-standing UNACCOUNTED break-fixes are now closed with real Fusion
+evidence. The only UNACCOUNTED left in the entire run is 3 Project Budget Lines (backlog #79).
+
+**What was accomplished:**
+- **Backlog batch merged.** Engine cleanups (single BIP path #20, status-rename verify #26,
+  instance-ids-by-name #36, validator entry points #42, mode-driven predicates + retire RETRY #44
+  -- which also corrected 22 transform packages whose ALL mode wrongly selected only NEW rows,
+  retire non-sanctioned EXECUTE IMMEDIATE #46, LIKE-on-codes #47). APEX work (funnel/Object-Detail
+  #10, palette #29, Activity Log + log-attribution #30, dead views #31, fold render procs #41,
+  verify #49/#50/#51/#55, page deletes #52/#58, INTEGRATION_ID->RUN_ID rename #53 with label
+  follow-ups #442/#443, partition tiles #70/#74). Plus the Items per-batch import-id concurrency
+  fix #75 and two clean-install bug fixes: #440 (widen DMT_BIP_REPORT_TBL.TFM_TABLE 100->240,
+  fixed an ORA-12899) and #441 (GET_OR_CREATE_SCENARIO made idempotent, fixed a DUP_VAL_ON_INDEX).
+- **Three reconciliation fixes proven with real Fusion evidence, 0 UNACCOUNTED:** GL Budget Lines
+  (#422), AP Invoice Lines (#420), Item Master (#423).
+- **Full regression PASS (RUN_ID 121, prefix 93201, local Docker).** The 3 recon objects at 0
+  UNACCOUNTED with real Fusion base ids/errors; P2P chain green (Suppliers + children, PO all
+  LOADED); #44 ALL-mode caused no regression; LOG_TYPE clean. Only 3 UNACCOUNTED in the whole run,
+  all Project Budget Lines (pre-existing gap = backlog #79). APEX link-check: 0 broken across 40
+  pages. (Prefix was leapfrogged to 93201, above the shared Fusion pod's supplier max ~93107,
+  after a `--fresh` reset put the sequence back low.)
+- **ATP Gold deployed (main HEAD 92468c5).** Schema installed to DMT2_OWNER on the queryapp ATP
+  via ci_promote plus hand-applied migrations (TFM_TABLE->240 + Customers row reseeded, dead
+  procs/views dropped, prefix sequence leapfrogged to 93300); 0 invalid, git-matched. APEX app 500
+  imported from `apex/f501src`, alias LIVEDMT2, login HTTP 200.
+  Gold console: https://g6726c838b72234-queryapp.adb.us-ashburn-1.oraclecloudapps.com/ords/r/dmt2/livedmt2/ (DMTADMIN).
+
+**Open backlog count (after adding the 2 tooling items in this close-out):** 33 open
+(STILL OPEN + PARTIAL) -- P1 2, P2 14, P3 17 -- of 81 total (RESOLVED 46, PARTIAL 5, STILL OPEN 28,
+STALE 2). The two remaining P1s are #7 (reconcile registered in two places -- its durable fix IS
+#16) and #9 (full-fidelity multi-CSV scenario upload).
+
+### NEXT SESSION START
+
+**The P1 batch -- #7 + #9 (with #16):**
+- **#7 folds into #16.** Make the registry column `RECON_PROC` on `DMT_PIPELINE_DEF_TBL` the single
+  reconcile dispatch for every object, and **delete the hardcoded partition ELSIF chain** that
+  currently registers reconcile in a second place. One registry-driven dispatch, no duplicate
+  hand-maintained branch. This is the durable fix that closes #7.
+- **#9 -- full-fidelity multi-CSV-zip scenario upload.** Build an upload that accepts a full zip
+  with **one CSV per STG (staging) table**, so a regression scenario loads once at full fidelity
+  (all child detail: supplier addresses/sites/contacts, PO lines/distributions, etc.). This also
+  makes regression re-runs clean, because a reloaded scenario no longer comes back degraded and
+  re-breaks Suppliers/Customers/PO.
+
+**Smaller follow-ups:**
+- **#79** -- ProjectBudgets recon-verify gap (the 3 UNACCOUNTED Project Budget Lines).
+- **GLBudgets page-52 / page-57 label drift** on the drill (cosmetic, non-gating).
+- **#80** (NEW, P3) -- ci_promote.py deploy_db does not run `db/migrations/` or `db/tools/`, so
+  MODIFY-width and guarded-DROP migrations must be hand-applied on every ATP promotion; extend the
+  glob or add a run-migrations step.
+- **#81** (NEW, P3) -- migration `2026-09-22_drop_dead_pay_rel_detail_view.sql` has its PL/SQL
+  block `/` terminator on the same line as the block, so SQLcl `@@` silently skips it; reformat the
+  terminator onto its own line.
+
+### ENVIRONMENT NOTES (next session)
+
+- **Local Docker (`dmt2-local`, port 1523)** is credentialed, has APEX 26.1 reinstalled, and the
+  prefix sequence is at 93201.
+- **Gotcha:** `build_local_db.sh --fresh` **WIPES the Fusion credentials + APEX + resets the prefix
+  sequence.** After a `--fresh` you must: (1) re-credential from `connections.json`, (2) re-import
+  the APEX app, and (3) leapfrog the prefix sequence above the shared Fusion pod's supplier max
+  (~93107) so new supplier ids do not collide on the demo. Skip these and the next run will fail on
+  bad creds, a missing app, or a prefix collision.
+
 ## Session -- 2026-09-21 -- Full regression gate PASSED (run 351); monolith deletion cleared
 
 **Headline:** The full end-to-end regression passed as the gate for deleting the old
