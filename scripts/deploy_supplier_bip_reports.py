@@ -37,7 +37,7 @@ REPORTS = [
     ("PurchaseOrders",          "PO_DM",             "PO_RPT"),
     ("BlanketPOs",              "BLANKET_PO_DM",     "BLANKET_PO_RPT"),
     ("Contracts",               "CONTRACT_DM",       "CONTRACT_RPT"),
-    ("APInvoices",              "AP_DM",             "AP_RPT"),
+    ("APInvoices",              "DMT_AP_RECON_DM",   "DMT_AP_RECON_RPT"),
     ("Customers",               "DMT_CUST_RECON_V2_DM", "DMT_CUST_RECON_V2_RPT"),
     ("ARInvoices",              "AR_DM",             "AR_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
