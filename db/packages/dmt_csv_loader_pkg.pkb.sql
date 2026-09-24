@@ -15,7 +15,7 @@
     TYPE col_arr_t IS TABLE OF VARCHAR2(128) INDEX BY PLS_INTEGER;
 
     -- Field value array (32767 to handle any EBS column width)
-    TYPE val_arr_t IS TABLE OF VARCHAR2(32767 CHAR) INDEX BY PLS_INTEGER;
+    TYPE val_arr_t IS TABLE OF VARCHAR2(32767) INDEX BY PLS_INTEGER;
 
     -- Column position map: csv_position(i) → index into header array
     TYPE pos_arr_t IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
@@ -46,7 +46,7 @@
         p_offset  OUT NUMBER
     ) IS
         v_lf_pos  NUMBER;
-        v_line    VARCHAR2(32767 CHAR);
+        v_line    VARCHAR2(32767);
         v_start   NUMBER := 1;
         v_comma   NUMBER;
         v_idx     PLS_INTEGER := 0;
@@ -263,7 +263,7 @@
         v_fields        val_arr_t;
         v_offset        NUMBER;
 
-        v_insert_sql    VARCHAR2(32000 CHAR);
+        v_insert_sql    VARCHAR2(32000);
         v_cur_id        INTEGER;
         v_dummy         INTEGER;
         v_rows_loaded   NUMBER := 0;
