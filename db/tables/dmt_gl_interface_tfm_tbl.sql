@@ -195,9 +195,9 @@ begin
 	"FUNDS_CHECK_INDICATOR" VARCHAR2(1), 
 	"BUDGET_VERSION_ID" VARCHAR2(100), 
 	"RUN_ID" NUMBER, 
-	"RECON_KEY" VARCHAR2(1000), 
-	"FUSION_JE_HEADER_ID" NUMBER, 
-	"WORK_QUEUE_ID" NUMBER, 
+	"RECON_KEY" VARCHAR2(1000),
+	"FUSION_JE_HEADER_ID" VARCHAR2(100),
+	"WORK_QUEUE_ID" NUMBER,
 	 CONSTRAINT "DMT_GL_INTERFACE_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -227,7 +227,7 @@ begin
   select count(*) into l_n from user_tab_columns
   where  table_name = 'DMT_GL_INTERFACE_TFM_TBL' and column_name = 'FUSION_JE_HEADER_ID';
   if l_n = 0 then
-    execute immediate 'ALTER TABLE "DMT_GL_INTERFACE_TFM_TBL" ADD ("FUSION_JE_HEADER_ID" NUMBER)';
+    execute immediate 'ALTER TABLE "DMT_GL_INTERFACE_TFM_TBL" ADD ("FUSION_JE_HEADER_ID" VARCHAR2(100))';
   end if;
 end;
 /
@@ -265,7 +265,7 @@ end;
 COMMENT ON COLUMN "DMT_GL_INTERFACE_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user.';
 COMMENT ON COLUMN "DMT_GL_INTERFACE_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
 COMMENT ON COLUMN "DMT_GL_INTERFACE_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
-COMMENT ON COLUMN "DMT_GL_INTERFACE_TFM_TBL"."FUSION_JE_HEADER_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';
+COMMENT ON COLUMN "DMT_GL_INTERFACE_TFM_TBL"."FUSION_JE_HEADER_ID" IS 'Positive proof of load at journal-LINE grain: JE_HEADER_ID~JE_LINE_NUM from GL_JE_LINES (base table). Written only by BIP reconciliation.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-09 conformance review F2 (STG/TFM infra-column dictionary, design
