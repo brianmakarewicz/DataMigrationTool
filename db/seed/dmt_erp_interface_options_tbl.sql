@@ -581,7 +581,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_ERP_INTERFACE_OPTIONS_TBL" ("ERP_INTERFACE_OPTIONS_ID","ERP_FAMILY","BUSINESS_OBJECT","UCM_ACCOUNT","LOAD_JOB_NAME","IMPORT_JOB_NAME","POST_LOAD_JOB_NAME","LOAD_INTERFACE_FLAG","LOADER_TYPE","SERVICE_NAME","CEMLI_CODE","SOURCE_ERP_OPTIONS_ID","REPORT_JOB_DEF","FUSION_USERNAME","FUSION_PASSWORD") values ('39','PRJ','Project Budget','prj/projectControl/import',NULL,'/oracle/apps/ess/projects/control/budgetsAndForecasts;ImportBudgetsInterfaceData',NULL,'Y','SQLLOADER',NULL,'ProjectBudgets','39',NULL,NULL,NULL);
+  insert into "DMT_ERP_INTERFACE_OPTIONS_TBL" ("ERP_INTERFACE_OPTIONS_ID","ERP_FAMILY","BUSINESS_OBJECT","UCM_ACCOUNT","LOAD_JOB_NAME","IMPORT_JOB_NAME","POST_LOAD_JOB_NAME","LOAD_INTERFACE_FLAG","LOADER_TYPE","SERVICE_NAME","CEMLI_CODE","SOURCE_ERP_OPTIONS_ID","REPORT_JOB_DEF","FUSION_USERNAME","FUSION_PASSWORD") values ('39','PRJ','Project Budget','prj/projectControl/import',NULL,'/oracle/apps/ess/projects/control/budgetsAndForecasts;ImportBudgetsInterfaceData',NULL,'Y','SQLLOADER',NULL,'ProjectBudgets','39','BudgetsXfaceBIP',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /

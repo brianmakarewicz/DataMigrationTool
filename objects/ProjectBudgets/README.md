@@ -1,7 +1,36 @@
 # Project Budgets
 
 ## Status
-**E2E LOADED** -- 3/3 rows loaded to Fusion on 2026-04-01 (integration_id=100000027, prefix=9123)
+**GOOD load FUNCTIONALLY BLOCKED. BAD row valid. All rows honestly accounted (FAILED with real Fusion errors).**
+
+The earlier "E2E LOADED 3/3 on 2026-04-01 (integration_id=100000027, prefix=9123)" claim was a
+**reconciliation FALSE POSITIVE** — the rows never reached the Fusion base table. Verified live
+this session: nothing was created in `PJO_PLAN_VERSIONS_B` on 2026-04-01. The old reconciler used
+an "absence = LOADED" fallback (if the interface table showed no error, it assumed success), which
+reported LOADED without ever confirming a base-table row. The two-tier positive-verification recon
+was added 2026-04-02 specifically to kill that fallback, and the import-report harvest was added
+this session (#79) so per-row rejections carry their real Fusion message.
+
+### Why a GOOD load is functionally blocked on this pod
+Budgetary control is **not** the blocker — the plan type `Approved Cost Budget` has
+`BUDGETARY_CONTROLS_FLAG = N`. The real blockers to getting a row into the base table on this
+demo instance are functional (owned by the functional/setup owner, not this tool):
+
+1. **Sponsored (grants) projects require an award.** The migrated RT projects use a sponsored
+   grants project type, so Fusion demands an `AWARD_NUMBER` and rejects the budget with
+   `PJO_BOI_AWARD_NUM_NOT_PROVD`. Awards are not provisioned on this pod (grants are blocked).
+2. **Non-sponsored projects need resource-level budget data.** For non-sponsored projects,
+   `Approved Cost Budget` is configured at the resource-assignment level, so a summary-level
+   budget row is rejected — it needs a `TASK_NUMBER` and `RESOURCE_NAME`.
+
+Getting a GOOD row to land therefore needs either award provisioning or resource-level budget
+data from the functional owner. Until then GOOD rows are correctly reported FAILED with the real
+Fusion rejection message — honest accounting, which is what this tool is for.
+
+### The BAD row is valid
+`NOPROJ999` is a genuinely invalid project number and Fusion rejects it with the real error
+`PJO_XFACE_INVALID_PROJ_NUM` ("The project number NOPROJ999 doesn't exist..."). That is a correct,
+reportable failure.
 
 ## Pipeline
 - Module: Projects
@@ -159,15 +188,26 @@ does not already exist for the given project + plan type combination.
 
 ### ATP Pipeline Data (DMT_PRJ_BUDGET_STG_TBL / TFM_TBL)
 
-**Current test data (LOADED 2026-04-01, integration_id=100000027, prefix=9123):**
+**The 2026-04-01 rows below were NOT loaded** — they were reported LOADED by the old
+"absence = LOADED" recon but never reached `PJO_PLAN_VERSIONS_B` (a reconciliation false positive):
 
-| STG_SEQUENCE_ID | PROJECT_NUMBER | PROJECT_NAME | FINANCIAL_PLAN_TYPE | PERIOD_NAME | PLAN_VERSION_NAME | TOTAL_TC_RAW_COST | STATUS |
+| STG_SEQUENCE_ID | PROJECT_NUMBER | PROJECT_NAME | FINANCIAL_PLAN_TYPE | PERIOD_NAME | PLAN_VERSION_NAME | TOTAL_TC_RAW_COST | REAL OUTCOME |
 |---|---|---|---|---|---|---|---|
-| 100000007 | HC2001 | Asthma and Allergy Research | Approved Cost Budget | 01-25 | Version 1 | 50000 | LOADED |
-| 100000008 | PRG10001 | Job Opportunities for Low Income Individuals (JOLI) | Approved Cost Budget | 02-25 | Version 1 | 75000 | LOADED |
-| 100000009 | EDU50001 | Hidden Valley Elementary School | Approved Cost Budget | 03-25 | Version 1 | 100000 | LOADED |
+| 100000007 | HC2001 | Asthma and Allergy Research | Approved Cost Budget | 01-25 | Version 1 | 50000 | never loaded (false positive) |
+| 100000008 | PRG10001 | Job Opportunities for Low Income Individuals (JOLI) | Approved Cost Budget | 02-25 | Version 1 | 75000 | never loaded (false positive) |
+| 100000009 | EDU50001 | Hidden Valley Elementary School | Approved Cost Budget | 03-25 | Version 1 | 100000 | never loaded (false positive) |
 
-ESS Load job: 9391781 (SUCCEEDED). Import job: 9391787 (SUCCEEDED). BIP reconciliation: 3 LOADED, 0 FAILED.
+The recon then reported "3 LOADED, 0 FAILED", but that verdict came from the interface table
+showing no error, not from a confirmed base-table row.
+
+**Live proof of the current honest accounting (run 121):** the import job
+`ImportBudgetsInterfaceData` (request 10015078) spawned the report job `BudgetsXfaceBIP`
+(request 10015083), which reported `SUCCESS_COUNT=0, FAILURE_COUNT=3`. After the #79 fix all three
+TFM rows end FAILED carrying the real Fusion message:
+- `RT-PJB-BAD1` → "The project number NOPROJ999 doesn't exist in Oracle Fusion Project Portfolio Management. Enter a valid project number." (`PJO_XFACE_INVALID_PROJ_NUM`)
+- `RT-PJB-RTPRJ001` / `RT-PJB-RTPRJ002` → "You can't create a project budget for the project ... using the financial plan type Approved Cost Budget because it's either approved or enabled for budgetary control."
+
+0 rows remain UNACCOUNTED.
 
 ### Test Data Fix Summary (resolved)
 
@@ -194,6 +234,14 @@ Previous test data failed because:
   - Tier 2: PJO_PLAN_VERSIONS_B (base table, positive confirmation)
   - Added P_IMPORT_ESS_ID parameter to BIP data model
   - Eliminated absence=LOADED fallback. Unmatched GENERATED rows now FAILED with RECONCILE_ERROR.
+- 2026-09-24 (#79): confirmed the 2026-04-01 "3/3 LOADED" was a false positive (nothing in
+  PJO_PLAN_VERSIONS_B). Added the import-report harvest: RECONCILE_BATCH now reads the
+  BudgetsXfaceBIP report (child of ImportBudgetsInterfaceData) and marks each row Fusion
+  rejects FAILED with its real message. Seeded REPORT_JOB_DEF='BudgetsXfaceBIP' so the shared
+  CAPTURE_REPORT_ESS_JOB can resolve the report. This was the ONLY results package that did not
+  read its import report; all siblings already did. Replayed against run 121: three UNACCOUNTED
+  rows flipped to FAILED with real errors, 0 UNACCOUNTED. GOOD load is functionally blocked
+  (award provisioning or resource-level budget data — functional owner).
 
 ## Lessons Learned
 - **Never assume absence=LOADED without positive verification.** Two-tier BIP pattern queries both interface AND base tables. If neither has the row, it's FAILED, not silently LOADED.

@@ -22,6 +22,243 @@ AS
     --  b64_to_clob was already centralised in DMT_UTIL_PKG.BASE64_DECODE_CLOB.)
 
     -- --------------------------------------------------------
+    -- Private: resolve the CHILD Import Budget report job id.
+    --
+    -- Fusion's ImportBudgetsInterfaceData (the "import" ESS job the loader passes
+    -- as p_import_ess_id) is only the interface-load wrapper. The real per-row
+    -- accept/reject report lives in a SEPARATE job, BudgetsXfaceBIP, whose XML
+    -- carries the SUCCESS_COUNT/FAILURE_COUNT and the per-line rejection messages.
+    -- Reading the wrapper's own ESS output yields no per-row verdict and leaves
+    -- every rejected budget line unaccounted (proven live, run 121: three
+    -- ProjectBudgets rows left UNACCOUNTED although BudgetsXfaceBIP request
+    -- 10015083 reported FAILURE_COUNT=3 with real Fusion messages).
+    --
+    -- DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB reads REPORT_JOB_DEF for this CEMLI
+    -- (seeded 'BudgetsXfaceBIP' in DMT_ERP_INTERFACE_OPTIONS_TBL), finds that
+    -- request in Fusion, and stores it in DMT_ESS_JOB_TBL as a logical child of the
+    -- import job. This helper first reads any already-captured linkage, then
+    -- captures lazily (idempotent). Returns the report request id, or NULL if this
+    -- run genuinely produced no report — in which case the caller downloads nothing
+    -- and the affected rows stay unaccounted (never a fabricated FAILED). This
+    -- mirrors DMT_PROJECT_RESULTS_PKG.resolve_report_ess_id exactly.
+    -- --------------------------------------------------------
+    FUNCTION resolve_report_ess_id (
+        p_run_id        IN NUMBER,
+        p_import_ess_id IN NUMBER
+    ) RETURN NUMBER IS
+        l_report_id NUMBER;
+    BEGIN
+        IF p_import_ess_id IS NULL THEN
+            RETURN NULL;
+        END IF;
+
+        BEGIN
+            SELECT REQUEST_ID
+            INTO   l_report_id
+            FROM   DMT_ESS_JOB_TBL
+            WHERE  PARENT_REQUEST_ID = p_import_ess_id
+            AND    (RUN_ID = p_run_id OR RUN_ID IS NULL)
+            AND    UPPER(NVL(JOB_SHORT_NAME, JOB_DEFINITION)) LIKE '%BUDGETSXFACEBIP%'
+            AND    REQUEST_ID <> p_import_ess_id
+            ORDER  BY REQUEST_ID DESC
+            FETCH FIRST 1 ROW ONLY;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                l_report_id := NULL;
+        END;
+
+        IF l_report_id IS NULL THEN
+            l_report_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
+                p_run_id        => p_run_id,
+                p_import_ess_id => p_import_ess_id,
+                p_cemli_code    => C_CEMLI);
+        END IF;
+
+        RETURN l_report_id;
+    END resolve_report_ess_id;
+
+    -- --------------------------------------------------------
+    -- Private: read the BudgetsXfaceBIP import report and mark the exact rows it
+    -- rejects FAILED with the REAL Fusion message. This is the ONLY source of real
+    -- per-row Fusion error text for ProjectBudgets — the interface/base BIP recon
+    -- above proves LOADED (base row found) but the interface table carries no error
+    -- text, so a rejected line otherwise stays UNACCOUNTED.
+    --
+    -- The report's per-row group is LIST_G_12/G_12: column P = the source budget
+    -- line reference (= our RECON_KEY = SRC_BUDGET_LINE_REFERENCE, an EXACT match),
+    -- column Y = the rejection MESSAGE_TEXT. We therefore target G_12/P/Y directly
+    -- with XMLTABLE. (The generic DMT_IMPORT_REPORT_PKG.PARSE_ERRORS only walks
+    -- groups whose tag contains 'ERROR'; the budget groups are G_2/G_12, so it
+    -- matches nothing here — this targeted parse is required.)
+    --
+    -- If G_12 is absent we fall back to LIST_G_2/G_2, keyed on DATA_REF_COL2 =
+    -- project number, message = MESSAGE_TEXT.
+    --
+    -- HONEST ACCOUNTING: we only ever stamp FAILED for a row the report explicitly
+    -- names WITH a real message, and only on rows not already terminal (LOADED or
+    -- FAILED). A row with no base-table hit AND no report rejection stays
+    -- UNACCOUNTED — never swept, never fabricated.
+    -- --------------------------------------------------------
+    PROCEDURE apply_import_report (
+        p_run_id        IN  NUMBER,
+        p_import_ess_id IN  NUMBER,
+        x_matched       OUT NUMBER
+    ) IS
+        C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_IMPORT_REPORT';
+        l_report_id NUMBER;
+        l_ir_clob   CLOB;
+        l_xml       XMLTYPE;
+        l_g12_cnt   NUMBER := 0;
+    BEGIN
+        x_matched := 0;
+        IF p_import_ess_id IS NULL THEN
+            RETURN;
+        END IF;
+
+        l_report_id := resolve_report_ess_id(p_run_id, p_import_ess_id);
+        IF l_report_id IS NULL THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id  => p_run_id,
+                p_message => C_PROC || ': No BudgetsXfaceBIP report captured for import ESS ' ||
+                             p_import_ess_id || '. No per-row report to read; rows left '
+                             || 'unaccounted (never a fabricated FAILED).',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id  => p_run_id,
+            p_message => C_PROC || ': Reading Import Budget report from job ' || l_report_id ||
+                         ' (wrapper import ESS ' || p_import_ess_id || ').',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+        BEGIN
+            l_ir_clob := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(l_report_id);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DMT_UTIL_PKG.LOG(
+                    p_run_id  => p_run_id,
+                    p_message => C_PROC || ': Failed to download ESS output XML for report request ' ||
+                                 l_report_id || ': ' || SQLERRM,
+                    p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                    p_package   => C_PKG,
+                    p_procedure => C_PROC);
+                l_ir_clob := NULL;
+        END;
+
+        IF l_ir_clob IS NULL OR DBMS_LOB.GETLENGTH(l_ir_clob) = 0 THEN
+            RETURN;
+        END IF;
+
+        BEGIN
+            l_xml := XMLTYPE(l_ir_clob);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DMT_UTIL_PKG.LOG(
+                    p_run_id  => p_run_id,
+                    p_message => C_PROC || ': Report XML for request ' || l_report_id ||
+                                 ' is not valid XML; skipping (rows left unaccounted).',
+                    p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                    p_package   => C_PKG,
+                    p_procedure => C_PROC);
+                IF l_ir_clob IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_ir_clob) = 1 THEN
+                    DBMS_LOB.FREETEMPORARY(l_ir_clob);
+                END IF;
+                RETURN;
+        END;
+
+        -- Primary path: LIST_G_12/G_12, column P = SRC_BUDGET_LINE_REFERENCE
+        -- (= RECON_KEY, exact), column Y = the rejection message. Only rows with a
+        -- non-null message are stamped FAILED, and only if not already terminal.
+        FOR r IN (
+            SELECT x.recon_key, x.message_text
+            FROM   XMLTABLE('/DATA_DS/LIST_G_12/G_12' PASSING l_xml
+                COLUMNS
+                    -- RECON_KEY is VARCHAR2(1000) on the TFM table; match that width
+                    -- so a long source ref never blows up XMLTABLE (ORA-19279) and
+                    -- silently downgrades the whole report to the WARN path.
+                    recon_key    VARCHAR2(1000) PATH 'P',
+                    message_text VARCHAR2(4000) PATH 'Y'
+            ) x
+            WHERE  x.recon_key IS NOT NULL
+            AND    x.message_text IS NOT NULL
+        ) LOOP
+            l_g12_cnt := l_g12_cnt + 1;
+            UPDATE DMT_PRJ_BUDGET_TFM_TBL
+            SET    TFM_STATUS           = 'FAILED',
+                   ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                            '[FUSION_ERROR] ' || r.message_text),
+                   RESULTS_UPDATED_DATE = SYSDATE,
+                   LAST_UPDATED_DATE    = SYSDATE
+            WHERE  RUN_ID    = p_run_id
+            AND    RECON_KEY = r.recon_key
+            AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+            x_matched := x_matched + SQL%ROWCOUNT;
+        END LOOP;
+
+        -- Fallback: only when G_12 held NO rows at all. In the observed report
+        -- (run 121) BudgetsXfaceBIP populates BOTH LIST_G_12 and LIST_G_2 with the
+        -- same rejections, so G_12 (keyed EXACTLY on RECON_KEY) already covers every
+        -- rejected line and the fallback stays dormant — no rejection is missed.
+        -- The fallback exists only for a report variant that emits G_2 without G_12.
+        -- It keys on DATA_REF_COL2 = project number, so it can stamp every budget
+        -- line for a rejected project; that is acceptable — all lines of a rejected
+        -- project share the rejection.
+        IF l_g12_cnt = 0 THEN
+            FOR r IN (
+                SELECT x.project_number, x.message_text
+                FROM   XMLTABLE('/DATA_DS/LIST_G_2/G_2' PASSING l_xml
+                    COLUMNS
+                        project_number VARCHAR2(50)   PATH 'DATA_REF_COL2',
+                        message_text   VARCHAR2(4000) PATH 'MESSAGE_TEXT'
+                ) x
+                WHERE  x.project_number IS NOT NULL
+                AND    x.message_text IS NOT NULL
+            ) LOOP
+                UPDATE DMT_PRJ_BUDGET_TFM_TBL
+                SET    TFM_STATUS           = 'FAILED',
+                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                '[FUSION_ERROR] ' || r.message_text),
+                       RESULTS_UPDATED_DATE = SYSDATE,
+                       LAST_UPDATED_DATE    = SYSDATE
+                WHERE  RUN_ID    = p_run_id
+                AND    PROJECT_NUMBER = r.project_number
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                x_matched := x_matched + SQL%ROWCOUNT;
+            END LOOP;
+        END IF;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id  => p_run_id,
+            p_message => C_PROC || ': Import Budget report parsed (job ' || l_report_id ||
+                         '); ' || x_matched || ' TFM rows marked FAILED with the real message.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+        IF l_ir_clob IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_ir_clob) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(l_ir_clob);
+        END IF;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            -- A malformed report must NOT abort reconciliation: log a WARN and
+            -- return what we matched. Unmatched rows stay for the unaccounted sweep.
+            IF l_ir_clob IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_ir_clob) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(l_ir_clob);
+            END IF;
+            DMT_UTIL_PKG.LOG(
+                p_run_id  => p_run_id,
+                p_message => C_PROC || ': Import Budget report parse/apply failed (' || SQLERRM ||
+                             '); ' || x_matched || ' rows matched before the error.',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+    END apply_import_report;
+
+    -- --------------------------------------------------------
     -- PARSE_AND_UPDATE — Two-tier reconciliation, no absence=LOADED
     -- Receives the already-decoded BIP report XMLTYPE (NULL on zero rows) from
     -- the shared transport DMT_UTIL_PKG.RUN_BIP_REPORT.
@@ -325,6 +562,7 @@ AS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml      XMLTYPE;
         l_err_code NUMBER;
+        l_ir_matched NUMBER := 0;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -363,6 +601,18 @@ AS
         END IF;
 
         PARSE_AND_UPDATE(p_run_id, l_xml);
+
+        -- Import-report harvest: the base/interface BIP recon above proves LOADED
+        -- (real base row) but carries no per-row Fusion error text. Fusion's
+        -- per-line rejections live only in the BudgetsXfaceBIP report, which this
+        -- reads and applies — marking each explicitly-named row FAILED with its
+        -- REAL message. Runs AFTER the base-tier proof so a genuinely-loaded row is
+        -- never overwritten (the UPDATE skips LOADED/FAILED rows anyway). Only rows
+        -- the report names are touched; anything else stays unaccounted.
+        apply_import_report(
+            p_run_id        => p_run_id,
+            p_import_ess_id => p_import_ess_id,
+            x_matched       => l_ir_matched);
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object
