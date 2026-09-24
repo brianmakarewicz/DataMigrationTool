@@ -342,6 +342,53 @@ begin
     assert(l_cnt = 1,
        14, 'LOAD_BATCH: only the good member''s row landed (bad rolled back, terminal skipped)');
 
+    -- ----------------------------------------------------------
+    -- 15/16/17. Multibyte UTF-8 regression pin (issue #449). CSV
+    --     values with 2-byte characters (MUENSTER / GOETEBORG with
+    --     umlauts) must land LOADED and read back byte-for-byte
+    --     intact. On the old byte-buffer loader the field-split
+    --     scratch buffer (v_ch VARCHAR2(1), one BYTE under
+    --     NLS_LENGTH_SEMANTICS=BYTE) could not hold a 2-byte
+    --     character, so LOAD_CSV raised ORA-06502 "character string
+    --     buffer too small" -> landing FAILED, zero STG rows. The
+    --     fix gives the data-bearing scratch buffers CHAR semantics.
+    --     If this test FAILS (status FAILED, wrong row count, or
+    --     mojibake) the byte-buffer bug has been reintroduced.
+    --     unistr('\00DC') = U+00DC LATIN CAPITAL LETTER U WITH
+    --     DIAERESIS (Ü, 2 bytes in UTF-8); '\00D6' = Ö.
+    -- ----------------------------------------------------------
+    l_id := land(c_marker||'_B7', to_clob(
+        'VENDOR_NAME,SEGMENT1'||chr(10)||
+        c_marker||' M'||unistr('\00DC')||'NSTER SUPPLY GMBH,SUPMB1'||chr(10)||  -- MÜNSTER
+        c_marker||' G'||unistr('\00D6')||'TEBORG AB,SUPMB2'||chr(10)),          -- GÖTEBORG
+        c_marker||'_S6');
+
+    dmt_csv_loader_pkg.load_csv(p_csv_landing_id => l_id);
+
+    select status, rows_loaded, error_text
+    into   l_status, l_loaded, l_err
+    from   dmt_csv_landing_tbl
+    where  csv_landing_id = l_id;
+
+    -- Landing outcome: LOADED, both rows in, no error (old loader: FAILED / ORA-06502)
+    assert(l_status = 'LOADED' and l_loaded = 2 and l_err is null,
+       15, 'Multibyte UTF-8 CSV lands LOADED with 2 rows and no error (issue #449)');
+
+    -- Staged text reads back byte-for-byte — no truncation, no mojibake
+    select count(*) into l_cnt
+    from   dmt_poz_suppliers_stg_tbl
+    where  vendor_name = c_marker||' M'||unistr('\00DC')||'NSTER SUPPLY GMBH'
+    and    segment1    = 'SUPMB1';
+    assert(l_cnt = 1,
+       16, 'Multibyte value M'||unistr('\00DC')||'NSTER SUPPLY GMBH staged intact (byte-for-byte, no mojibake)');
+
+    select count(*) into l_cnt
+    from   dmt_poz_suppliers_stg_tbl
+    where  vendor_name = c_marker||' G'||unistr('\00D6')||'TEBORG AB'
+    and    segment1    = 'SUPMB2';
+    assert(l_cnt = 1,
+       17, 'Multibyte value G'||unistr('\00D6')||'TEBORG AB staged intact (byte-for-byte, no mojibake)');
+
     :passed := :passed + l_passed;
 end;
 /
@@ -376,7 +423,7 @@ declare
     end assert;
 begin
     -- ----------------------------------------------------------
-    -- 15/16. Load under a hostile NLS_DATE_FORMAT: the parse must
+    -- 18/19. Load under a hostile NLS_DATE_FORMAT: the parse must
     --     yield the identical DATE and NUMBER values as Block A.
     -- ----------------------------------------------------------
     insert into dmt_csv_landing_tbl
@@ -393,7 +440,7 @@ begin
 
     select status into l_status from dmt_csv_landing_tbl where csv_landing_id = l_id;
     assert(l_status = 'LOADED',
-       15, 'Load succeeds under poisoned session NLS_DATE_FORMAT=''YYYY"x"MM''');
+       18, 'Load succeeds under poisoned session NLS_DATE_FORMAT=''YYYY"x"MM''');
 
     select end_date_active, settlement_priority
     into   l_date, l_num
@@ -402,7 +449,7 @@ begin
 
     assert(to_char(l_date, 'YYYY-MM-DD HH24:MI:SS') = '2025-12-31 00:00:00'
        and l_num = 42.5,
-       16, 'DATE and NUMBER cells parse to identical values under poisoned NLS');
+       19, 'DATE and NUMBER cells parse to identical values under poisoned NLS');
 
     :passed := :passed + l_passed;
 end;
