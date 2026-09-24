@@ -92,7 +92,10 @@ FROM (
            i.item_number || '~' || i.organization_code     AS record_key,
            'INTERFACE'                                     AS source_type,
            'ERROR'                                         AS fusion_status,
-           CAST(NULL AS NUMBER)                            AS fusion_id,
+           -- VARCHAR2 to match the BASE tier's composite fusion_id: BIP derives
+           -- one datatype per UNION column, so every branch's fusion_id must be
+           -- the same type or the report data model 500s at runtime.
+           CAST(NULL AS VARCHAR2(100))                     AS fusion_id,
            '[ITEM] ' || NVL(ie.error_message,
                'Rejected by Item Import (process_status='
                || NVL(TO_CHAR(i.process_status), 'NULL')
@@ -128,11 +131,19 @@ FROM (
     UNION ALL
 
     -- ---- Item master, BASE tier (positive proof -> LOADED) ------------------
+    -- FUSION_ID is the per-org composite INVENTORY_ITEM_ID~ORGANIZATION_ID from
+    -- EGP_SYSTEM_ITEMS_B: an inventory item is loaded PER ORGANIZATION, so its
+    -- real identity in the base table is the pair (INVENTORY_ITEM_ID,
+    -- ORGANIZATION_ID). The item id alone dropped the org, so two rows for the
+    -- same item in different orgs collided. Per-item-per-org grain is preserved
+    -- (RECORD_KEY = ITEM_NUMBER~ORGANIZATION_CODE, one row per org). The '~'
+    -- composite rides the shared Contract v1 string FUSION_ID (widened in #456).
     SELECT 'Item'                                          AS object_type,
            i.item_number || '~' || i.organization_code     AS record_key,
            'BASE'                                          AS source_type,
            'SUCCESS'                                       AS fusion_status,
-           b.inventory_item_id                             AS fusion_id,
+           TO_CHAR(b.inventory_item_id) || '~'
+             || TO_CHAR(b.organization_id)                 AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))                    AS error_message,
            TO_CHAR(i.load_request_id)                      AS load_request_id,
            i.item_number                                   AS source_ref,
@@ -157,7 +168,9 @@ FROM (
              || ic.category_set_name || '~' || ic.category_code                  AS record_key,
            'INTERFACE'                                                          AS source_type,
            'ERROR'                                                             AS fusion_status,
-           CAST(NULL AS NUMBER)                                                 AS fusion_id,
+           -- VARCHAR2 to match the other branches' fusion_id (BIP derives one
+           -- datatype per UNION column; a NUMBER here 500s the report).
+           CAST(NULL AS VARCHAR2(100))                                         AS fusion_id,
            '[CATEGORY] ' || NVL(ce.error_message,
                'Rejected by Item Import (process_status='
                || NVL(TO_CHAR(ic.process_status), 'NULL')
@@ -196,7 +209,9 @@ FROM (
              || ic.category_set_name || '~' || ic.category_code                  AS record_key,
            'BASE'                                                              AS source_type,
            'SUCCESS'                                                           AS fusion_status,
-           b.item_category_assignment_id                                       AS fusion_id,
+           -- Category tier stays OWN-grain (ITEM_CATEGORY_ASSIGNMENT_ID); wrapped
+           -- in TO_CHAR only so both tiers share the one string FUSION_ID column.
+           TO_CHAR(b.item_category_assignment_id)                              AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))                                         AS error_message,
            TO_CHAR(ic.load_request_id)                                          AS load_request_id,
            ic.item_number                                                       AS source_ref,
@@ -224,7 +239,7 @@ FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
           <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
           <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
           <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
-          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:string"  tagName="FUSION_ID"/>
           <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
           <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
           <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>

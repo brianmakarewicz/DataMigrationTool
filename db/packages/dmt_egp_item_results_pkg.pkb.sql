@@ -115,6 +115,12 @@
         ) LOOP
             IF r.status = 'PROCESSED' THEN
                 -- Success: item positively present in EGP_SYSTEM_ITEMS_B.
+                -- LEGACY PATH: the registered Items report is now the nine-column
+                -- Contract v1 DM (DMT_ITEM_RECON_DM), which emits OBJECT_TYPE /
+                -- FUSION_ID (the per-org composite), not the STATUS / INVENTORY_ITEM_ID
+                -- elements this loop reads, so this branch no longer matches rows --
+                -- LOADED-with-composite is stamped by APPLY_CONTRACT_V1_ITEMS above.
+                -- Retained only for the standalone dev/test transport shape.
                 UPDATE DMT_EGP_ITEM_TFM_TBL
                 SET    TFM_STATUS              = 'LOADED',
                        FUSION_INVENTORY_ITEM_ID = r.inventory_item_id,
@@ -272,6 +278,11 @@
                        AND l_rows(i).FUSION_ID IS NOT NULL THEN
                         -- Positive proof: item present in EGP_SYSTEM_ITEMS_B with a
                         -- real id. The ONLY path to LOADED. Keyed on RECON_KEY.
+                        -- FUSION_ID is the per-org composite
+                        -- INVENTORY_ITEM_ID~ORGANIZATION_ID (an inventory item is
+                        -- loaded PER ORGANIZATION; the item id alone dropped the org
+                        -- and let two orgs' rows collide). Stamped verbatim into the
+                        -- widened VARCHAR2 FUSION_INVENTORY_ITEM_ID -- line-grain proof.
                         UPDATE DMT_EGP_ITEM_TFM_TBL
                         SET    TFM_STATUS               = 'LOADED',
                                FUSION_INVENTORY_ITEM_ID = l_rows(i).FUSION_ID,
