@@ -1972,3 +1972,74 @@ when matched then update set
     t."RECON_KEY_SQL"       = s.recon_key_sql;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- APInvoices.Line (100000047) — LINE-tier registry row for the Fusion-id
+-- AUDITOR (first slice of backlog #91, Option A).
+--
+-- Why a SEPARATE row: the post-run Fusion-id auditor (scripts/dmt_fusion_id_audit.sql)
+-- reads DMT_BIP_REPORT_TBL one row at a time and audits each (TFM_TABLE,
+-- FUSION_ID_COLUMN) pair. The APInvoices header row above documents only the
+-- HEADER tier (DMT_AP_INVOICES_INT_TFM_TBL / FUSION_INVOICE_ID), so the auditor
+-- never checked the AP invoice LINE rows. This tier-suffixed row registers the
+-- line grain so the auditor also proves every LOADED line carries a populated,
+-- unique line-grain Fusion id.
+--
+-- This row is AUDIT/DOCUMENTATION metadata ONLY. It does NOT drive the pipeline
+-- or reconciliation: dispatch is keyed off DMT_PIPELINE_DEF_TBL, and the AP
+-- reconciler (DMT_AP_RESULTS_PKG.RECONCILE_BATCH) resolves its report path and
+-- CONTRACT_VERSION from the single 'APInvoices' header row (it names both tier
+-- TFM tables statically). CONTRACT_VERSION is deliberately left NULL here so the
+-- shared fetch DMT_RECON_CONTRACT_PKG.FETCH_ROWS never treats this as a second
+-- reconcilable object — only the auditor (which keys off FUSION_ID_COLUMN) reads it.
+-- The tier-suffix convention ('APInvoices.Line') already exists in code
+-- (DMT_AP_RESULTS_PKG uses the OBJECT_TYPE literal 'APInvoices.Line' for the line tier).
+--
+-- FUSION_ID_COLUMN = FUSION_INVOICE_LINE_NUMBER: post-#456 this column holds the
+-- per-line composite INVOICE_ID~LINE_NUMBER (from AP_INVOICE_LINES_ALL), so each
+-- LOADED line has its OWN unique line-grain id (not the shared header id). Both
+-- TFM_TABLE and FUSION_ID_COLUMN are single plain identifiers, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the line tier is actually
+-- audited (not skipped as a multi-table family).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000047                                            bip_report_id,
+           'APInvoices.Line'                                    cemli_code,
+           'AP Invoice Line'                                    object_type,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_RPT.xdo'       report_catalog_path,
+           'AP_INVOICE_LINES_INTERFACE'                         interface_table,
+           'AP invoice LINE tier -- AUDITOR registration only (backlog #91, '
+             || 'Option A first slice). Not a pipeline/reconcile object; the '
+             || 'APInvoices reconciler applies both tiers statically. Registers '
+             || 'the line grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED line carries a populated, unique line-grain Fusion id.'   notes,
+           null                                                 contract_version,
+           'DMT_AP_INVOICE_LINES_INT_TFM_TBL'                   tfm_table,
+           'FUSION_INVOICE_LINE_NUMBER'                         fusion_id_column,
+           'lines = INVOICE_NUM (prefixed parent) || '':LINE:'' || LINE_NUMBER -- FUSION_INVOICE_LINE_NUMBER holds the composite INVOICE_ID~LINE_NUMBER (post-#456)' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
