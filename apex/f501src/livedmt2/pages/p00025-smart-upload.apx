@@ -691,29 +691,6 @@ page 25 (
         }
     )
 
-    button download-scenario-zip (
-        buttonName: DOWNLOAD_ZIP
-        label: Download Scenario Zip
-        layout {
-            sequence: 50
-            region: @upload-data-files
-            slot: belowBox
-        }
-        appearance {
-            buttonTemplate: @/text
-            templateOptions: [
-                #DEFAULT#
-                t-Button--large
-            ]
-        }
-        behavior {
-            warnOnUnsavedChanges: doNotCheck
-        }
-        server {
-            executeValidations: false
-        }
-    )
-
     dynamicAction toggle-object-type (
         name: Toggle Object Type
         execution {
@@ -894,73 +871,6 @@ page 25 (
         }
         serverSideCondition {
             whenButtonPressed: @upload-smart
-        }
-    )
-
-    process download-scenario-zip (
-        name: Download Scenario Zip
-        type: executeCode
-        source {
-            plsqlCode:
-                ```plsql
-
-                DECLARE
-                    l_scenario  VARCHAR2(200) := :P25_SCENARIO;
-                    l_zip       BLOB;
-                    l_error     VARCHAR2(4000);
-                BEGIN
-                    IF l_scenario IS NULL THEN
-                        APEX_ERROR.ADD_ERROR(
-                            p_message          => 'Pick a Scenario before downloading its zip.',
-                            p_display_location => 'INLINE_IN_NOTIFICATION');
-                        RETURN;
-                    END IF;
-
-                    DMT_CSV_UPLOAD_PKG.EXPORT_SCENARIO_ZIP(
-                        p_scenario_name => l_scenario,
-                        p_zip           => l_zip,
-                        p_error_msg     => l_error);
-
-                    IF l_error IS NOT NULL THEN
-                        APEX_ERROR.ADD_ERROR(
-                            p_message          => l_error,
-                            p_display_location => 'INLINE_IN_NOTIFICATION');
-                        RETURN;
-                    END IF;
-
-                    -- Stream the zip as a file download. sys.htp/wpg_docload write
-                    -- the bytes; stop_apex_engine ends the request so APEX does not
-                    -- also try to render the page (it re-raises ORA-20876, which is
-                    -- the documented "engine stopped" signal, so no error is shown).
-                    sys.owa_util.mime_header('application/zip', FALSE);
-                    sys.htp.p('Content-Length: ' || DBMS_LOB.GETLENGTH(l_zip));
-                    sys.htp.p('Content-Disposition: attachment; filename="'
-                              || l_scenario || '_scenario.zip"');
-                    sys.owa_util.http_header_close;
-                    sys.wpg_docload.download_file(l_zip);
-
-                    APEX_APPLICATION.STOP_APEX_ENGINE;
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        -- ORA-20876 is raised by STOP_APEX_ENGINE on success; let it
-                        -- propagate so the download completes cleanly.
-                        IF SQLCODE = -20876 THEN
-                            RAISE;
-                        END IF;
-                        APEX_ERROR.ADD_ERROR(
-                            p_message          => 'Scenario export failed: ' || SQLERRM,
-                            p_display_location => 'INLINE_IN_NOTIFICATION');
-                END;
-                ```
-        }
-        execution {
-            sequence: 20
-        }
-        advanced {
-            executionMappingIdentifier: 99250050
-        }
-        serverSideCondition {
-            whenButtonPressed: @download-scenario-zip
         }
     )
 
