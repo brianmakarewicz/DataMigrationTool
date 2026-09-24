@@ -100,6 +100,14 @@ def deploy_db(target):
                 "db/views/*.sql", "db/procedures/*.sql", "db/seed/*.sql"):
         order += sorted((REPO / p).as_posix() for p in
                         [q.relative_to(REPO).as_posix() for q in REPO.glob(pat)])
+    # Backlog #80: run every db/migrations file (sorted chronological filename)
+    # AFTER seed. These are the MODIFY-width / guarded-DROP convergence steps that
+    # bring an existing instance's schema in line with the git create scripts (fresh
+    # installs are already correct). They are written idempotent / guarded, so a
+    # re-run on an already-migrated instance is a no-op — safe on every promotion.
+    migrations = sorted((REPO / q.relative_to(REPO)).as_posix()
+                        for q in REPO.glob("db/migrations/*.sql"))
+    order += migrations
     lines = ["whenever sqlerror continue", "set define off", "set serveroutput off"]
     lines += [f"@@{f}" for f in order]
     lines += [
