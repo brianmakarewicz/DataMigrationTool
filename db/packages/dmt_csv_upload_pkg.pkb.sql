@@ -931,6 +931,7 @@ AS
         l_total_loaded  NUMBER := 0;
         l_total_errored NUMBER := 0;
         l_total_files   NUMBER := 0;
+        l_skipped       NUMBER := 0;
         l_batch_tag     VARCHAR2(200);
 
         -- Parent-before-child routing plan. Each matched CSV in the zip is
@@ -950,6 +951,14 @@ AS
         l_disp_order NUMBER;
         -- simple insertion sort keys (small N: one zip of at most ~96 CSVs)
         l_tmp        t_plan_rec;
+
+        -- Mirror the append-summary helper used by UPLOAD_ZIP_AUTO_FROM_BLOB so
+        -- SKIPPED members and the final tally accumulate into the same CLOB the
+        -- APEX page already SUBSTRs and shows to the user.
+        PROCEDURE append_summary (p_text IN VARCHAR2) IS
+        BEGIN
+            DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(p_text), p_text);
+        END append_summary;
     BEGIN
         p_error_msg := NULL;
 
@@ -1005,6 +1014,13 @@ AS
                 l_plan(l_plan_count).zip_index     := i;
                 l_plan(l_plan_count).file_label     := l_file_name;
                 l_plan(l_plan_count).object_code    := l_object_code;
+            ELSE
+                -- Honesty fix: a member that matches no CSV_FILENAME is no longer
+                -- dropped silently. Record it so a "full" zip that quietly omits a
+                -- child table (or carries an unexpected file) SAYS so in the summary.
+                l_skipped := l_skipped + 1;
+                append_summary('SKIPPED: ' || l_file_name
+                    || ' (no CSV_FILENAME match)' || CHR(10));
             END IF;
         END LOOP;
 
@@ -1048,16 +1064,18 @@ AS
             l_total_files   := l_total_files + 1;
         END LOOP;
 
-        -- Build compact summary for APEX notification
+        -- Build compact summary for APEX notification. The skipped count is
+        -- always reported (0 skipped is the round-trip success signal).
         DECLARE
             l_msg VARCHAR2(1000) := l_total_files || ' objects, '
                 || l_total_loaded || ' rows loaded, '
-                || l_total_errored || ' errors.';
+                || l_total_errored || ' errors, '
+                || l_skipped || ' skipped.';
         BEGIN
             IF l_total_errored > 0 THEN
                 l_msg := l_msg || ' Load ID: ' || l_batch_tag;
             END IF;
-            DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(l_msg), l_msg);
+            append_summary(l_msg);
         END;
 
         p_summary := l_summary;

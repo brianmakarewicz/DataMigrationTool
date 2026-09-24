@@ -6,11 +6,23 @@
 --   One row per staging table, for every in-scope object and each of its
 --   child staging tables. This lets the EXISTING upload route a single
 --   multi-CSV "scenario" zip to every DMT_*_STG_TBL at full fidelity -- the
---   whole supplier family, the seven-level HZ customer hierarchy, the PO
---   header/line/location/distribution set, the fifteen-table Grants award
---   hierarchy, and so on. All business columns of each table are picked up
---   automatically by SEED_DICTIONARY from USER_TAB_COLUMNS, so no column is
---   dropped (BUSINESS_RELATIONSHIP, PARTY_ORIG_SYSTEM, SHIP_TO_LOCATION, ...).
+--   seven-level HZ customer hierarchy, the PO header/line/location/distribution
+--   set, the fifteen-table Grants award hierarchy, and so on. All business
+--   columns of each table are picked up automatically by SEED_DICTIONARY from
+--   USER_TAB_COLUMNS, so no column is dropped (BUSINESS_RELATIONSHIP,
+--   PARTY_ORIG_SYSTEM, SHIP_TO_LOCATION, ...).
+--
+--   NOTE ON THE SUPPLIER FAMILY: Suppliers, SupplierAddresses, SupplierSites,
+--   SupplierSiteAssignments and SupplierContacts are FIVE PEER OBJECTS, not a
+--   parent/child hierarchy. Each is its own object (its own FBDI zip and load
+--   job), so all five carry PARENT_OBJECT_CODE = null below. They are analogous
+--   to PurchaseOrders vs AP Invoices -- independent objects that reference each
+--   other by natural key, not header/line record types of one object.
+--
+--   PARENT_OBJECT_CODE IS DOCUMENTATION-ONLY. The zip loader does NOT use it to
+--   decide load order; it orders every member purely by DISPLAY_ORDER. The
+--   column records the intended header table for genuine child staging tables
+--   (e.g. PO_LINES_INT under PO_HEADERS_INT) as a reading aid only.
 --
 -- ROUTING / ZIP CONVENTION
 --   * OBJECT_CODE       = staging table name without the DMT_ prefix and the
