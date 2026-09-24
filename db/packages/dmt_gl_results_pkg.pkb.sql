@@ -154,7 +154,7 @@
                             record_key      VARCHAR2(1000) PATH 'RECORD_KEY',
                             source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
                             fusion_status   VARCHAR2(20)   PATH 'FUSION_STATUS',
-                            fusion_id       NUMBER         PATH 'FUSION_ID',
+                            fusion_id       VARCHAR2(200)  PATH 'FUSION_ID',
                             error_message   VARCHAR2(4000) PATH 'ERROR_MESSAGE',
                             load_request_id NUMBER         PATH 'LOAD_REQUEST_ID',
                             source_ref      VARCHAR2(240)  PATH 'SOURCE_REF',
@@ -311,8 +311,11 @@
         -- (1) SET-BASED LOADED: a TFM row is LOADED only from a
         -- BASE/SUCCESS row with a real FUSION_ID. Capture FUSION_ID in
         -- the same statement (contract: no LOADED without its Fusion id).
-        -- If two base lines map to the same TFM recon key, MAX(fusion_id)
-        -- is a stable pick (all lines of one journal share JE_HEADER_ID).
+        -- FUSION_ID is now the per-line composite JE_HEADER_ID~JE_LINE_NUM,
+        -- so two lines of one journal carry DIFFERENT ids (positive proof at
+        -- line grain). RECON_KEY is unique per TFM line, so GROUP BY collapses
+        -- to one row per key and MAX(fusion_id) simply returns that line's
+        -- composite value.
         MERGE INTO DMT_GL_INTERFACE_TFM_TBL t
         USING (
             SELECT r.record_key,
@@ -398,7 +401,7 @@
                     record_key      VARCHAR2(1000) PATH 'RECORD_KEY',
                     source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
                     fusion_status   VARCHAR2(20)   PATH 'FUSION_STATUS',
-                    fusion_id       NUMBER         PATH 'FUSION_ID',
+                    fusion_id       VARCHAR2(200)  PATH 'FUSION_ID',
                     error_message   VARCHAR2(4000) PATH 'ERROR_MESSAGE',
                     load_request_id NUMBER         PATH 'LOAD_REQUEST_ID',
                     source_ref      VARCHAR2(240)  PATH 'SOURCE_REF',
@@ -497,9 +500,11 @@
         -- (1) SET-BASED LOADED: a TFM row is LOADED only from a BASE/SUCCESS
         -- staged row with a real FUSION_ID; FUSION_JE_HEADER_ID captured in the
         -- same statement (contract: no LOADED without its Fusion id).
-        -- MAX(fusion_id) is a stable pick when several base lines share a key
-        -- (all lines of one journal share JE_HEADER_ID). Scoped to RUN_ID, plus
-        -- WORK_QUEUE_ID when a spawn-per-partition child owns the item.
+        -- FUSION_ID is the per-line composite JE_HEADER_ID~JE_LINE_NUM, so two
+        -- lines of one journal carry DIFFERENT ids (line-grain proof of load).
+        -- RECON_KEY is unique per TFM line, so GROUP BY yields one row per key
+        -- and MAX(fusion_id) just returns that line's composite. Scoped to
+        -- RUN_ID, plus WORK_QUEUE_ID when a spawn-per-partition child owns it.
         MERGE INTO DMT_GL_INTERFACE_TFM_TBL t
         USING (
             SELECT g.record_key,

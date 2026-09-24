@@ -16,7 +16,12 @@
 --   RECORD_KEY      — the business key, matched to the TFM row's RECON_KEY
 --   SOURCE_TYPE     — 'BASE' or 'INTERFACE' — which tier the row came from
 --   FUSION_STATUS   — normalized in the DM to exactly 'SUCCESS' or 'ERROR'
---   FUSION_ID       — the Fusion base-table id (non-null on BASE/SUCCESS)
+--   FUSION_ID       — the Fusion base-table id (non-null on BASE/SUCCESS);
+--                     VARCHAR2 so an object whose proof-of-load is at a finer
+--                     grain than the header can carry a '~'-joined composite
+--                     (e.g. GLBalances stores JE_HEADER_ID~JE_LINE_NUM);
+--                     objects with a plain numeric id store it as digits and
+--                     it converts implicitly when assigned to a NUMBER column
 --   ERROR_MESSAGE   — real Fusion error text (non-null on ERROR rows)
 --   LOAD_REQUEST_ID — the request id the row matched on (audit)
 --   SOURCE_REF      — Slot A native source-ref read back from Fusion (audit)
@@ -48,7 +53,7 @@ CREATE OR REPLACE TYPE "DMT_RECON_ROW_OBJ" AS OBJECT (
     RECORD_KEY      VARCHAR2(1000),
     SOURCE_TYPE     VARCHAR2(20),
     FUSION_STATUS   VARCHAR2(20),
-    FUSION_ID       NUMBER,
+    FUSION_ID       VARCHAR2(200),
     ERROR_MESSAGE   VARCHAR2(4000),
     LOAD_REQUEST_ID NUMBER,
     SOURCE_REF      VARCHAR2(240),

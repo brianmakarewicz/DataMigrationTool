@@ -49,7 +49,10 @@
 --   BASE  + balanced (running_total_dr = running_total_cr) => SUCCESS
 --   BASE  + unbalanced (will not post)                     => ERROR
 --   INTERFACE (rejection left in GL_INTERFACE)             => ERROR
--- FUSION_ID is non-null on every BASE row (JE_HEADER_ID).
+-- FUSION_ID is non-null on every BASE row and is the journal-LINE
+-- composite JE_HEADER_ID~JE_LINE_NUM (positive proof of load at line
+-- grain -- two lines of one journal get DIFFERENT ids, so a per-line
+-- uniqueness check passes; header-only JE_HEADER_ID would collide).
 -- ERROR_MESSAGE is non-null on every ERROR row.
 --
 -- Keys (need source "Import Journal References" = ON):
@@ -57,7 +60,9 @@
 --       (per-line recon key, = TFM RECON_KEY; Slot A read-back),
 --   DMT_REFERENCE           = GL_JE_LINES.REFERENCE_2
 --       (Slot C run-scoped DMT:run:queue:tfm reference),
---   FUSION_ID               = GL_JE_HEADERS.JE_HEADER_ID.
+--   FUSION_ID               = GL_JE_LINES.JE_HEADER_ID~JE_LINE_NUM
+--       (line-grain composite; the '~' join is the contract's composite
+--        convention, matching RECORD_KEY's own '~'-joined idiom).
 -- Matching is per LINE, so journals sharing a name never collide.
 -- ============================================================
 SELECT
@@ -73,7 +78,7 @@ FROM (
         'BASE'                               AS source_type,
         CASE WHEN jh.running_total_dr = jh.running_total_cr
              THEN 'SUCCESS' ELSE 'ERROR' END AS fusion_status,
-        jh.je_header_id                      AS fusion_id,
+        jh.je_header_id || '~' || jl.je_line_num AS fusion_id,
         CASE WHEN jh.running_total_dr <> jh.running_total_cr
              THEN '[LINE] Journal imported (JE_HEADER_ID=' || jh.je_header_id
                   || ') but UNBALANCED: DR=' || jh.running_total_dr
@@ -97,7 +102,7 @@ FROM (
         gi.reference21                       AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
-        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(100))          AS fusion_id,
         '[LINE] ' || NVL(gi.reference10,
              'Rejected by Journal Import (row not created in base tables).')
                                              AS error_message,
@@ -126,7 +131,7 @@ FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
           <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
           <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
           <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
-          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:string"  tagName="FUSION_ID"/>
           <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
           <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
           <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>

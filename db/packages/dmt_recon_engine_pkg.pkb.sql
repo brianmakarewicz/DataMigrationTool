@@ -161,7 +161,7 @@
                             record_key      VARCHAR2(1000) PATH 'RECORD_KEY',
                             source_type     VARCHAR2(20)   PATH 'SOURCE_TYPE',
                             fusion_status   VARCHAR2(20)   PATH 'FUSION_STATUS',
-                            fusion_id       NUMBER         PATH 'FUSION_ID',
+                            fusion_id       VARCHAR2(200)  PATH 'FUSION_ID',
                             error_message   VARCHAR2(4000) PATH 'ERROR_MESSAGE',
                             load_request_id NUMBER         PATH 'LOAD_REQUEST_ID',
                             source_ref      VARCHAR2(240)  PATH 'SOURCE_REF',

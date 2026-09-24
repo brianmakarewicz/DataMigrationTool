@@ -49,15 +49,14 @@
 --   table is correct (a real id collision is a real double-match regardless of
 --   which sharing object produced it).
 --
--- Uniqueness-grain exception (documented, narrow, UNIQUE check only)
---   Verified on live run 121: GLBalances legitimately has MANY LOADED rows
---   (GL journal lines) that share ONE Fusion journal-header id
---   (FUSION_JE_HEADER_ID) -- the id is header-grained but the TFM table is
---   line-grained. For that one id column a duplicate is NOT a double-match, so
---   the UNIQUE check is skipped for it (with a printed reason). Its POPULATED
---   check still runs in full. This is the only such case in the current
---   registry; the exception is scoped to exactly that id-column name and does
---   not weaken the check for any other object.
+-- Grain: every audited id is at its TFM table's own grain
+--   Every FUSION_*_ID column stores proof of load at the grain of the TFM
+--   table that carries it. GLBalances used to be the one exception -- its
+--   TFM table is line-grained but it stored the header id FUSION_JE_HEADER_ID,
+--   so many LOADED lines shared one id. That is fixed: GLBalances now stores
+--   the per-line composite JE_HEADER_ID~JE_LINE_NUM, so each line's id is
+--   unique. With no header-grained id left, the UNIQUE check runs for every
+--   object with no exception -- a duplicate is always a real double-match.
 --
 -- Note on RECON_PROC
 --   Several HDL objects (Workers, Salaries, Assignments, ...) carry RECON_PROC
@@ -96,16 +95,6 @@ declare
   -- ------------------------------------------------------------------------
   c_loaded_status constant varchar2(30) := 'LOADED';
 
-  -- ------------------------------------------------------------------------
-  -- Id columns that are legitimately header-grained on a line-grained TFM
-  -- table -- excluded from the UNIQUE check ONLY (see header). Add to this
-  -- list only with a written justification.
-  --   FUSION_JE_HEADER_ID -- GLBalances: many journal lines share one Fusion
-  --                          journal-header id (verified live, run 121).
-  -- ------------------------------------------------------------------------
-  type t_str_list is table of varchar2(128);
-  c_shared_id_cols constant t_str_list := t_str_list('FUSION_JE_HEADER_ID');
-
   -- running verdict
   l_overall_fail boolean := false;
   l_audited      pls_integer := 0;
@@ -114,16 +103,6 @@ declare
   -- de-dup of shared physical (table,id) pairs
   type t_seen is table of boolean index by varchar2(400);
   l_seen t_seen;
-
-  function is_shared_id(p_col in varchar2) return boolean is
-  begin
-    for i in 1 .. c_shared_id_cols.count loop
-      if upper(p_col) = c_shared_id_cols(i) then
-        return true;
-      end if;
-    end loop;
-    return false;
-  end;
 
   function safe_name(p_id in varchar2) return varchar2 is
   begin
@@ -192,21 +171,19 @@ begin
         into l_loaded, l_nullid
         using c_run_id, c_loaded_status;
 
-      -- ------ UNIQUE check (read): number of LOADED rows sharing an id value,
-      -- unless this id column is a documented header-grained exception.
-      if is_shared_id(l_col) then
-        l_dupid := 0;  -- exception: duplicates are legitimate for this id column
-      else
-        execute immediate
-          'select nvl(sum(cnt),0) from (' ||
-          '  select count(*) cnt from "' || l_tab || '" ' ||
-          '  where run_id = :b_run and tfm_status = :b_stat ' ||
-          '    and "' || l_col || '" is not null ' ||
-          '  group by "' || l_col || '" having count(*) > 1' ||
-          ')'
-          into l_dupid
-          using c_run_id, c_loaded_status;
-      end if;
+      -- ------ UNIQUE check (read): number of LOADED rows sharing an id value.
+      -- Every audited id is now at the TFM table's own grain (GLBalances stores
+      -- the per-line composite JE_HEADER_ID~JE_LINE_NUM, not the header id), so
+      -- a duplicate is always a real double-match -- no exceptions.
+      execute immediate
+        'select nvl(sum(cnt),0) from (' ||
+        '  select count(*) cnt from "' || l_tab || '" ' ||
+        '  where run_id = :b_run and tfm_status = :b_stat ' ||
+        '    and "' || l_col || '" is not null ' ||
+        '  group by "' || l_col || '" having count(*) > 1' ||
+        ')'
+        into l_dupid
+        using c_run_id, c_loaded_status;
 
       l_obj_fail := (l_nullid > 0) or (l_dupid > 0);
       if l_obj_fail then
@@ -214,9 +191,6 @@ begin
         l_verdict := 'FAIL';
       else
         l_verdict := 'PASS';
-      end if;
-      if is_shared_id(l_col) then
-        l_verdict := l_verdict || ' (uniq skipped: header-grained id)';
       end if;
       l_audited := l_audited + 1;
 
