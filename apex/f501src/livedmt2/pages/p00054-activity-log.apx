@@ -202,6 +202,7 @@ page 54 (
                        l.SQLERRM_TEXT AS ERROR
                 FROM DMT_LOG_TBL l
                 WHERE (:P54_RUN_ID    IS NULL OR l.RUN_ID = :P54_RUN_ID)
+                  AND (:P54_QUEUE_ID  IS NULL OR l.QUEUE_ID      = :P54_QUEUE_ID)
                   AND (:P54_LOG_LEVEL IS NULL OR l.LOG_TYPE       = :P54_LOG_LEVEL)
                   AND (:P54_SOURCE    IS NULL OR l.PACKAGE_NAME   = :P54_SOURCE)
                   AND (:P54_CEMLI_CODE IS NULL OR l.QUEUE_ID IN (
@@ -212,6 +213,7 @@ page 54 (
                 ```
             pageItemsToSubmit: [
                 P54_RUN_ID
+                P54_QUEUE_ID
                 P54_CEMLI_CODE
                 P54_LOG_LEVEL
                 P54_SOURCE
@@ -482,6 +484,29 @@ page 54 (
             slot: regionBody
             alignment: left
             startNewRow: true
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 10
+        }
+        security {
+            sessionStateProtection: unrestricted
+        }
+    )
+
+    pageItem P54_QUEUE_ID (
+        type: textField
+        label {
+            label: Work Item #
+            alignment: left
+        }
+        layout {
+            sequence: 15
+            region: @filters
+            slot: regionBody
+            alignment: left
+            startNewRow: false
         }
         appearance {
             template: @/optional-floating
