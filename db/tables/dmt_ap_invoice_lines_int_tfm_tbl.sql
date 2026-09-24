@@ -169,7 +169,7 @@ begin
 	"PJC_FUNDING_SOURCE_NUMBER" VARCHAR2(50), 
 	"REQUESTER_EMAIL_ADDRESS" VARCHAR2(240), 
 	"RCV_TRANSACTION_ID" NUMBER, 
-	"FUSION_INVOICE_LINE_NUMBER" NUMBER, 
+	"FUSION_INVOICE_LINE_NUMBER" VARCHAR2(100),
 	"RESULTS_UPDATED_DATE" DATE, 
 	"TFM_STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
@@ -213,7 +213,7 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_AP_INVOICE_LINES_INT_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_AP_INVOICE_LINES_INT_TFM_SEQ';
-COMMENT ON COLUMN "DMT_AP_INVOICE_LINES_INT_TFM_TBL"."FUSION_INVOICE_LINE_NUMBER" IS 'Fusion invoice line number â€” populated by BIP reconciliation';
+COMMENT ON COLUMN "DMT_AP_INVOICE_LINES_INT_TFM_TBL"."FUSION_INVOICE_LINE_NUMBER" IS 'line-grain proof: INVOICE_ID~LINE_NUMBER from AP_INVOICE_LINES_ALL. Written only by BIP reconciliation.';
 COMMENT ON TABLE "DMT_AP_INVOICE_LINES_INT_TFM_TBL"  IS 'AP Invoice lines transformed. Run-specific â€” one row per staging row per run attempt. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------

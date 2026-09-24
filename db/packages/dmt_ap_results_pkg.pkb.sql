@@ -19,7 +19,8 @@ AS
 --   Tier      OBJECT_TYPE literal      TFM table                          FUSION_ID column
 --   -------   ----------------------   --------------------------------   ---------------------
 --   headers   'APInvoices'             DMT_AP_INVOICES_INT_TFM_TBL        FUSION_INVOICE_ID
---   lines     'APInvoices.Line'        DMT_AP_INVOICE_LINES_INT_TFM_TBL   (no line surrogate id)
+--   lines     'APInvoices.Line'        DMT_AP_INVOICE_LINES_INT_TFM_TBL   FUSION_INVOICE_LINE_NUMBER
+--                                       (line-grain composite INVOICE_ID~LINE_NUMBER)
 --
 -- Per tier the rule is the shared Contract v1 apply rule:
 --   * BASE / SUCCESS / FUSION_ID NOT NULL -> LOADED (headers stamp FUSION_ID).
@@ -29,10 +30,11 @@ AS
 --     INTERFACE/SUCCESS corroborates but is never sufficient for LOADED.
 --
 -- The base invoice line carries no independent surrogate id (a base line is
--- identified by INVOICE_ID + LINE_NUMBER), so the report reports the parent
--- invoice id as the line tier's FUSION_ID for traceability and there is no
--- line-id TFM column to stamp — the line reaches LOADED on its own BASE/SUCCESS
--- report row (same pattern as the Requisitions base distribution tier).
+-- identified by INVOICE_ID + LINE_NUMBER), so the report reports the line-grain
+-- composite INVOICE_ID~LINE_NUMBER as the line tier's FUSION_ID. On LOADED the
+-- reconciler stamps that composite into FUSION_INVOICE_LINE_NUMBER (VARCHAR2) as
+-- positive proof of load at line grain — two lines of one invoice get DIFFERENT
+-- proof values (grain-fix, backlog #84; same tilde convention as GLBalances).
 --
 -- The RECON_KEY on each tier's TFM row is stamped by DMT_AP_TRANSFORM_PKG to
 -- equal that tier's report RECORD_KEY (headers = prefixed INVOICE_NUM; lines =
@@ -136,13 +138,18 @@ AS
                     IF l_rows(i).SOURCE_TYPE = 'BASE'
                        AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                        AND l_rows(i).FUSION_ID IS NOT NULL THEN
-                        -- No line surrogate-id TFM column: the base line has no id
-                        -- of its own, so LOADED is the outcome; FUSION_ID (the
-                        -- parent invoice id) is carried only in the report.
+                        -- The base line has no surrogate id of its own (identified
+                        -- by INVOICE_ID + LINE_NUMBER), so the report reports the
+                        -- line-grain composite INVOICE_ID~LINE_NUMBER and we stamp
+                        -- it into FUSION_INVOICE_LINE_NUMBER as positive proof of
+                        -- load AT LINE GRAIN. Two lines of one invoice get DIFFERENT
+                        -- composites; a bare parent invoice id would repeat and fail
+                        -- a per-line uniqueness check (grain-fix, backlog #84).
                         UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL
-                        SET    TFM_STATUS           = 'LOADED',
-                               RESULTS_UPDATED_DATE = SYSDATE,
-                               LAST_UPDATED_DATE    = SYSDATE
+                        SET    TFM_STATUS                 = 'LOADED',
+                               FUSION_INVOICE_LINE_NUMBER = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE       = SYSDATE,
+                               LAST_UPDATED_DATE          = SYSDATE
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');

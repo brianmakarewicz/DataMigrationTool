@@ -46,7 +46,10 @@
         RECORD_KEY      VARCHAR2(1000),
         SOURCE_TYPE     VARCHAR2(20),    -- 'BASE' | 'INTERFACE'
         FUSION_STATUS   VARCHAR2(20),    -- 'SUCCESS' | 'ERROR'
-        FUSION_ID       NUMBER,
+        FUSION_ID       VARCHAR2(200),   -- base Fusion id OR a line-grain composite
+                                         -- (e.g. INVOICE_ID~LINE_NUMBER); VARCHAR2 so a
+                                         -- '~'-joined composite id can ride the contract
+                                         -- (a plain numeric id still converts implicitly).
         ERROR_MESSAGE   VARCHAR2(4000),
         LOAD_REQUEST_ID VARCHAR2(100)
     );

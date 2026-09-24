@@ -83,9 +83,13 @@
 -- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
 --   BASE  (row present in a Fusion base table)  => SUCCESS
 --   INTERFACE (rejection left in the interface) => ERROR
--- FUSION_ID is non-null on every BASE row (the Fusion surrogate id:
---   base INVOICE_ID for both header and line tiers -- the line has
---   no id of its own, so its parent invoice id is reported).
+-- FUSION_ID is non-null on every BASE row. The HEADER tier reports the
+--   base INVOICE_ID. The LINE tier reports the line-grain composite
+--   INVOICE_ID~LINE_NUMBER from AP_INVOICE_LINES_ALL (positive proof of
+--   load AT LINE GRAIN -- two lines of one invoice get DIFFERENT ids, so a
+--   per-line uniqueness check passes; the bare parent invoice id would
+--   collide across every line of the same invoice). The '~' join is the
+--   contract's composite-key convention, matching RECORD_KEY's own idiom.
 -- ERROR_MESSAGE is non-null on every ERROR row. On this instance the
 --   Fusion rejection text lives in AP_INTERFACE_REJECTIONS.
 --   REJECT_LOOKUP_CODE (e.g. 'DUPLICATE INVOICE NUMBER',
@@ -118,7 +122,7 @@ FROM (
         h.invoice_num                        AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
-        h.invoice_id                         AS fusion_id,
+        TO_CHAR(h.invoice_id)                AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
         TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
         h.reference_key1                     AS source_ref,
@@ -129,15 +133,17 @@ FROM (
     UNION ALL
 
     -- BASE / lines. RECORD_KEY = prefixed invoice number + base line
-    -- number. The base line carries no id of its own, so it is
-    -- confirmed transitively through its loaded parent header and
-    -- FUSION_ID reports the parent base invoice id.
+    -- number. The base line carries no id of its own (identified by
+    -- INVOICE_ID + LINE_NUMBER), so it is confirmed transitively through
+    -- its loaded parent header and FUSION_ID reports the line-grain
+    -- composite INVOICE_ID~LINE_NUMBER -- distinct per line, unlike the
+    -- bare parent invoice id which repeats across every line.
     SELECT
         'APInvoices.Line'                    AS object_type,
         h.invoice_num || ':LINE:' || l.line_number  AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
-        l.invoice_id                         AS fusion_id,
+        l.invoice_id || '~' || l.line_number AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
         TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
         h.reference_key1                     AS source_ref,
@@ -161,7 +167,7 @@ FROM (
         h.invoice_num                        AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
-        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(100))          AS fusion_id,
         '[HDR] ' || NVL(
             (SELECT LISTAGG(NVL(r.rejection_message, r.reject_lookup_code), ' | ')
                     WITHIN GROUP (ORDER BY r.reject_lookup_code)
@@ -196,7 +202,7 @@ FROM (
         h.invoice_num || ':LINE:' || l.line_number  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
-        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(100))          AS fusion_id,
         '[LINE] ' ||
             (SELECT LISTAGG(NVL(r.rejection_message, r.reject_lookup_code), ' | ')
                     WITHIN GROUP (ORDER BY r.reject_lookup_code)
@@ -239,7 +245,7 @@ FROM (
         h.invoice_num || ':LINE:' || l.line_number  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
-        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(100))          AS fusion_id,
         '[LINE] Parent invoice rejected: ' || NVL(
             (SELECT LISTAGG(NVL(r.rejection_message, r.reject_lookup_code), ' | ')
                     WITHIN GROUP (ORDER BY r.reject_lookup_code)
@@ -291,7 +297,7 @@ FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
           <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
           <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
           <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
-          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:string"  tagName="FUSION_ID"/>
           <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
           <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
           <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
