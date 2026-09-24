@@ -931,6 +931,7 @@ AS
         l_total_loaded  NUMBER := 0;
         l_total_errored NUMBER := 0;
         l_total_files   NUMBER := 0;
+        l_skipped       NUMBER := 0;
         l_batch_tag     VARCHAR2(200);
 
         -- Parent-before-child routing plan. Each matched CSV in the zip is
@@ -950,6 +951,14 @@ AS
         l_disp_order NUMBER;
         -- simple insertion sort keys (small N: one zip of at most ~96 CSVs)
         l_tmp        t_plan_rec;
+
+        -- Mirror the append-summary helper used by UPLOAD_ZIP_AUTO_FROM_BLOB so
+        -- SKIPPED members and the final tally accumulate into the same CLOB the
+        -- APEX page already SUBSTRs and shows to the user.
+        PROCEDURE append_summary (p_text IN VARCHAR2) IS
+        BEGIN
+            DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(p_text), p_text);
+        END append_summary;
     BEGIN
         p_error_msg := NULL;
 
@@ -1005,6 +1014,13 @@ AS
                 l_plan(l_plan_count).zip_index     := i;
                 l_plan(l_plan_count).file_label     := l_file_name;
                 l_plan(l_plan_count).object_code    := l_object_code;
+            ELSE
+                -- Honesty fix: a member that matches no CSV_FILENAME is no longer
+                -- dropped silently. Record it so a "full" zip that quietly omits a
+                -- child table (or carries an unexpected file) SAYS so in the summary.
+                l_skipped := l_skipped + 1;
+                append_summary('SKIPPED: ' || l_file_name
+                    || ' (no CSV_FILENAME match)' || CHR(10));
             END IF;
         END LOOP;
 
@@ -1048,16 +1064,18 @@ AS
             l_total_files   := l_total_files + 1;
         END LOOP;
 
-        -- Build compact summary for APEX notification
+        -- Build compact summary for APEX notification. The skipped count is
+        -- always reported (0 skipped is the round-trip success signal).
         DECLARE
             l_msg VARCHAR2(1000) := l_total_files || ' objects, '
                 || l_total_loaded || ' rows loaded, '
-                || l_total_errored || ' errors.';
+                || l_total_errored || ' errors, '
+                || l_skipped || ' skipped.';
         BEGIN
             IF l_total_errored > 0 THEN
                 l_msg := l_msg || ' Load ID: ' || l_batch_tag;
             END IF;
-            DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(l_msg), l_msg);
+            append_summary(l_msg);
         END;
 
         p_summary := l_summary;
@@ -1822,6 +1840,207 @@ AS
                 p_message => 'Auto-detect ZIP upload failed', p_sqlerrm => SQLERRM,
                 p_package => C_PKG, p_procedure => 'UPLOAD_ZIP_AUTO');
     END UPLOAD_ZIP_AUTO;
+
+    -- ============================================================
+    -- EXPORT_SCENARIO_ZIP — the export half of the round-trip
+    -- ============================================================
+    PROCEDURE EXPORT_SCENARIO_ZIP (
+        p_scenario_name IN  VARCHAR2,
+        p_zip           OUT BLOB,
+        p_error_msg     OUT VARCHAR2
+    )
+    IS
+        l_scenario_id   NUMBER;
+        l_row_count     NUMBER;
+        l_members       PLS_INTEGER := 0;
+
+        l_col_names     VARCHAR2(32767);   -- validated, quoted column list for the SELECT
+        l_header_line   VARCHAR2(32767);   -- CSV header row (plain column names)
+        l_csv_expr      VARCHAR2(32767);   -- SELECT expression building one CSV data line per row
+        l_count_sql     VARCHAR2(4000);
+        l_data_sql      VARCHAR2(32767);
+
+        l_csv_clob      CLOB;
+        l_csv_blob      BLOB;
+        l_line          VARCHAR2(32767);
+        l_dest_off      INTEGER;
+        l_src_off       INTEGER;
+        l_lang          INTEGER;
+        l_warn          INTEGER;
+
+        TYPE t_cur IS REF CURSOR;
+        l_cur           t_cur;
+
+        -- CSV-quote a single field expression for a SELECT: double embedded
+        -- quotes and wrap in quotes. NULLs render as an empty (unquoted) field.
+        FUNCTION csv_field (p_expr IN VARCHAR2) RETURN VARCHAR2 IS
+        BEGIN
+            RETURN 'CASE WHEN ' || p_expr || ' IS NULL THEN '''''
+                || ' ELSE ''"'' || REPLACE(' || p_expr || ', ''"'', ''""'') || ''"'' END';
+        END csv_field;
+
+        -- Convert one text line to raw and append to the CSV BLOB, adding CRLF.
+        PROCEDURE append_line (p_text IN VARCHAR2) IS
+        BEGIN
+            DBMS_LOB.WRITEAPPEND(l_csv_clob, LENGTH(p_text) + 2, p_text || CHR(13) || CHR(10));
+        END append_line;
+    BEGIN
+        p_error_msg := NULL;
+
+        -- Resolve the scenario id from its name (never trust a caller id).
+        BEGIN
+            SELECT SCENARIO_ID INTO l_scenario_id
+            FROM   DMT_SCENARIO_TBL
+            WHERE  SCENARIO_NAME = p_scenario_name;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                p_error_msg := 'Scenario not found: ' || p_scenario_name;
+                RETURN;
+            WHEN TOO_MANY_ROWS THEN
+                p_error_msg := 'Scenario name is not unique: ' || p_scenario_name;
+                RETURN;
+        END;
+
+        -- Walk every active object parent-before-child (same order the loader
+        -- consumes) so the exported zip lists tables in load order.
+        FOR obj IN (
+            SELECT OBJECT_CODE, STAGING_TABLE
+            FROM   DMT_UPLOAD_OBJECT_TBL
+            WHERE  IS_ACTIVE = 'Y'
+            ORDER  BY NVL(DISPLAY_ORDER, 0), OBJECT_CODE
+        ) LOOP
+            -- Validate the staging-table identifier from the registry before it
+            -- is ever concatenated into dynamic SQL.
+            DECLARE
+                l_stg_table VARCHAR2(128) := DBMS_ASSERT.SIMPLE_SQL_NAME(obj.STAGING_TABLE);
+            BEGIN
+                -- Build the export column set: the SAME columns the proprietary
+                -- loader consumes — non-admin dictionary columns PLUS SOURCE_ID —
+                -- excluding LOBs (APEX_DATA_PARSER + the loader do not carry them).
+                -- Column names come only from the dictionary joined to the data
+                -- dictionary, and each is validated + quoted.
+                l_col_names   := NULL;
+                l_header_line := NULL;
+                l_csv_expr    := NULL;
+
+                FOR c IN (
+                    SELECT UPPER(d.COLUMN_NAME) AS COLUMN_NAME, tc.data_type
+                    FROM   DMT_UPLOAD_DICT_TBL d
+                    JOIN   user_tab_columns tc
+                           ON tc.table_name  = l_stg_table
+                           AND tc.column_name = UPPER(d.COLUMN_NAME)
+                    WHERE  d.OBJECT_CODE    = obj.OBJECT_CODE
+                    AND    (d.IS_ADMIN_COLUMN = 'N' OR UPPER(d.COLUMN_NAME) = 'SOURCE_ID')
+                    AND    tc.data_type NOT IN ('CLOB', 'BLOB', 'NCLOB', 'LONG', 'LONG RAW')
+                    ORDER  BY tc.column_id
+                ) LOOP
+                    DECLARE
+                        l_cn   VARCHAR2(128) := DBMS_ASSERT.SIMPLE_SQL_NAME(c.COLUMN_NAME);
+                        l_expr VARCHAR2(300);
+                    BEGIN
+                        -- DATE/TIMESTAMP are emitted as YYYY/MM/DD HH24:MI:SS —
+                        -- exactly the format the loader parses first — so the
+                        -- round-trip does not depend on session NLS.
+                        IF c.DATA_TYPE = 'DATE' THEN
+                            l_expr := 'TO_CHAR(' || l_cn || ', ''YYYY/MM/DD HH24:MI:SS'')';
+                        ELSIF c.DATA_TYPE LIKE 'TIMESTAMP%' THEN
+                            l_expr := 'TO_CHAR(' || l_cn || ', ''YYYY/MM/DD HH24:MI:SS.FF'')';
+                        ELSIF c.DATA_TYPE = 'NUMBER' THEN
+                            l_expr := 'TO_CHAR(' || l_cn || ')';
+                        ELSE
+                            l_expr := l_cn;
+                        END IF;
+
+                        IF l_header_line IS NOT NULL THEN
+                            l_header_line := l_header_line || ',';
+                            l_csv_expr    := l_csv_expr    || ' || '','' || ';
+                            l_col_names   := l_col_names   || ',';
+                        END IF;
+                        l_header_line := l_header_line || c.COLUMN_NAME;
+                        l_col_names   := l_col_names   || l_cn;
+                        l_csv_expr    := l_csv_expr    || csv_field(l_expr);
+                    END;
+                END LOOP;
+
+                -- No uploadable columns resolved for this object -> nothing to export.
+                IF l_col_names IS NULL THEN
+                    CONTINUE;
+                END IF;
+
+                -- Emit a member ONLY when the table has rows for this scenario,
+                -- so the zip mirrors exactly what was loaded.
+                l_count_sql := 'SELECT COUNT(*) FROM ' || l_stg_table
+                            || ' WHERE SCENARIO_ID = :sid';
+                EXECUTE IMMEDIATE l_count_sql INTO l_row_count USING l_scenario_id;
+
+                IF l_row_count = 0 THEN
+                    CONTINUE;
+                END IF;
+
+                -- Build the CSV for this table: header row + one data line per row.
+                DBMS_LOB.CREATETEMPORARY(l_csv_clob, TRUE);
+                append_line(l_header_line);
+
+                l_data_sql := 'SELECT ' || l_csv_expr
+                           || ' FROM ' || l_stg_table
+                           || ' WHERE SCENARIO_ID = :sid'
+                           || ' ORDER BY STG_SEQUENCE_ID';
+                OPEN l_cur FOR l_data_sql USING l_scenario_id;
+                LOOP
+                    FETCH l_cur INTO l_line;
+                    EXIT WHEN l_cur%NOTFOUND;
+                    append_line(l_line);
+                END LOOP;
+                CLOSE l_cur;
+
+                -- CLOB -> BLOB (UTF-8) for APEX_ZIP.ADD_FILE.
+                DBMS_LOB.CREATETEMPORARY(l_csv_blob, TRUE);
+                l_dest_off := 1; l_src_off := 1; l_lang := 0; l_warn := 0;
+                DBMS_LOB.CONVERTTOBLOB(
+                    dest_lob     => l_csv_blob,
+                    src_clob     => l_csv_clob,
+                    amount       => DBMS_LOB.GETLENGTH(l_csv_clob),
+                    dest_offset  => l_dest_off,
+                    src_offset   => l_src_off,
+                    blob_csid    => NLS_CHARSET_ID('AL32UTF8'),
+                    lang_context => l_lang,
+                    warning      => l_warn);
+
+                APEX_ZIP.ADD_FILE(
+                    p_zipped_blob => p_zip,
+                    p_file_name   => l_stg_table || '.csv',
+                    p_content     => l_csv_blob);
+                l_members := l_members + 1;
+
+                DBMS_LOB.FREETEMPORARY(l_csv_clob);
+                DBMS_LOB.FREETEMPORARY(l_csv_blob);
+            END;
+        END LOOP;
+
+        IF l_members = 0 THEN
+            p_error_msg := 'Scenario "' || p_scenario_name
+                        || '" has no staged rows in any registered object — nothing to export.';
+            RETURN;
+        END IF;
+
+        APEX_ZIP.FINISH(p_zipped_blob => p_zip);
+
+        DMT_UTIL_PKG.LOG(
+            p_message   => 'Scenario export complete — scenario: ' || p_scenario_name
+                        || ' (' || l_scenario_id || '), members: ' || l_members,
+            p_package   => C_PKG,
+            p_procedure => 'EXPORT_SCENARIO_ZIP');
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF l_cur%ISOPEN THEN CLOSE l_cur; END IF;
+            BEGIN IF l_csv_clob IS NOT NULL THEN DBMS_LOB.FREETEMPORARY(l_csv_clob); END IF; EXCEPTION WHEN OTHERS THEN NULL; END;
+            BEGIN IF l_csv_blob IS NOT NULL THEN DBMS_LOB.FREETEMPORARY(l_csv_blob); END IF; EXCEPTION WHEN OTHERS THEN NULL; END;
+            p_error_msg := 'Scenario export failed: ' || SQLERRM;
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_message => 'Scenario export failed', p_sqlerrm => SQLERRM,
+                p_package => C_PKG, p_procedure => 'EXPORT_SCENARIO_ZIP');
+    END EXPORT_SCENARIO_ZIP;
 
 END DMT_CSV_UPLOAD_PKG;
 /

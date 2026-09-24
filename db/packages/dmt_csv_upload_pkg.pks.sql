@@ -139,5 +139,32 @@ AS
         p_scenario_name   IN  VARCHAR2 DEFAULT NULL
     );
 
+    -- ------------------------------------------------------------
+    -- EXPORT_SCENARIO_ZIP — the export half of the round-trip.
+    -- Builds a proprietary-CSV zip that mirrors exactly what a
+    -- scenario loaded: for each active object in DMT_UPLOAD_OBJECT_TBL
+    -- (ordered by DISPLAY_ORDER), it dumps that object's staging-table
+    -- rows for the named scenario to a header-bearing CSV named
+    -- <STAGING_TABLE>.csv and adds it to the zip via APEX_ZIP.ADD_FILE.
+    --
+    -- The CSV column set is the SAME set the proprietary loader
+    -- consumes: the non-admin dictionary columns PLUS SOURCE_ID (which
+    -- the loader honours). So the zip this produces can be re-loaded by
+    -- UPLOAD_ZIP_BUNDLE and reproduce the scenario row-for-row.
+    --
+    -- A member is emitted ONLY for tables that actually have rows for
+    -- the scenario, so the zip carries no empty files and reflects
+    -- exactly which tables were populated.
+    --
+    -- Identifiers (table + column names) come only from the registry
+    -- and the data dictionary and are validated with
+    -- DBMS_ASSERT.SIMPLE_SQL_NAME before use, so the dynamic SELECT is
+    -- not exposed to injection.
+    PROCEDURE EXPORT_SCENARIO_ZIP (
+        p_scenario_name IN  VARCHAR2,
+        p_zip           OUT BLOB,
+        p_error_msg     OUT VARCHAR2
+    );
+
 END DMT_CSV_UPLOAD_PKG;
 /

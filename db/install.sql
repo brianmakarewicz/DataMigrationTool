@@ -1024,6 +1024,13 @@ prompt == Seed data ==
 -- AFTER dmt_upload_object_tbl.sql (which calls SEED_DICTIONARY and does not set
 -- FBDI_POSITION). Idempotent MERGE.
 @@seed/dmt_upload_fbdi_metadata.sql
+-- Honest required-field metadata: SEED_DICTIONARY leaves SAMPLE_VALUE and
+-- DESCRIPTION null and derives REQUIRED from staging nullability (misleading,
+-- since staging is deliberately permissive). This additive MERGE fills in
+-- SAMPLE_VALUE + DESCRIPTION for the columns whose real, Fusion-accepted values
+-- are known (sourced from the proven regression seed + object READMEs, never
+-- invented). Runs AFTER the dict seed so the target rows exist. Idempotent.
+@@seed/dmt_upload_dict_required.sql
 -- E1 (2026-07-08): the Mock engine-test registrations are TEST-SETUP only —
 -- test/unit/setup_mock_objects.sql, run by test/unit/test_queue_engine.sql.
 -- A production install carries no dispatchable mock objects and no MOCK_*
