@@ -182,7 +182,7 @@ begin
 	"LAST_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
 	"RECON_KEY" VARCHAR2(1000), 
-	"FUSION_INVENTORY_ITEM_ID" NUMBER, 
+	"FUSION_INVENTORY_ITEM_ID" VARCHAR2(100),
 	"WORK_QUEUE_ID" NUMBER, 
 	 CONSTRAINT "DMT_EGP_ITEM_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
@@ -213,7 +213,7 @@ begin
   select count(*) into l_n from user_tab_columns
   where  table_name = 'DMT_EGP_ITEM_TFM_TBL' and column_name = 'FUSION_INVENTORY_ITEM_ID';
   if l_n = 0 then
-    execute immediate 'ALTER TABLE "DMT_EGP_ITEM_TFM_TBL" ADD ("FUSION_INVENTORY_ITEM_ID" NUMBER)';
+    execute immediate 'ALTER TABLE "DMT_EGP_ITEM_TFM_TBL" ADD ("FUSION_INVENTORY_ITEM_ID" VARCHAR2(100))';
   end if;
 end;
 /
@@ -250,7 +250,7 @@ end;
 
 COMMENT ON COLUMN "DMT_EGP_ITEM_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
 COMMENT ON COLUMN "DMT_EGP_ITEM_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
-COMMENT ON COLUMN "DMT_EGP_ITEM_TFM_TBL"."FUSION_INVENTORY_ITEM_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';
+COMMENT ON COLUMN "DMT_EGP_ITEM_TFM_TBL"."FUSION_INVENTORY_ITEM_ID" IS 'line-grain proof: INVENTORY_ITEM_ID~ORGANIZATION_ID from EGP_SYSTEM_ITEMS_B. Written only by BIP reconciliation (positive proof of load at the per-org grain).';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-09 conformance review F2 (STG/TFM infra-column dictionary, design
