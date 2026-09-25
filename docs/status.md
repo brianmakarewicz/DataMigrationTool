@@ -1,5 +1,70 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-25 -- EBS-adaptor backlog fixes merged to DMT2; full regression STILL RUNNING (verdict pending)
+
+**What was done:** Reviewed and corrected the 7 backlog items the EBS adaptor logged, then
+kicked off one full DMT2 regression against the real Fusion demo. All DMT2-side fixes are
+merged to `main` and deployed to the local Docker instance (`dmt2-local`), which installed
+clean with zero invalid objects.
+
+DMT2 repo (brianmakarewicz/DataMigrationTool) -- all in PR #470 unless noted:
+- **#469 chunked-ingest API (issue CLOSED):** new package `DMT_CSV_INGEST_PKG`
+  (`start_file` / `append_chunk`) does the large-text append on the ATP side, so CSV cells
+  longer than 8000 characters can cross the database link. EXECUTE granted to EBS_ADAPTOR.
+- **#468 PO distributions FBDI:** restored the wrongly-dropped ATTRIBUTE5 (Fusion's
+  PoDistributionsInterface needs ATTRIBUTE1..20 with no gaps). Widened 123 to 124 columns
+  across the generator, staging table, transform table, transform, metadata seed, view, and
+  gold fixtures. The reconciliation id now lands in ATTRIBUTE_NUMBER1, not ATTRIBUTE_DATE10.
+- **#449 CSV loader multibyte:** loader buffers now declared CHAR (fixes the ORA-06502 class).
+  Defensive hardening -- normal multibyte already loaded on current code.
+- **#466 staging-table primary-key collision:** fresh-install DDL now uses GENERATED ALWAYS
+  AS IDENTITY (PR #470). The migration was CORRECTED in **PR #471** because an in-place
+  identity conversion is impossible (ORA-30673) and the first migration had already cleared
+  the sequence default before failing, breaking all 73 tables. Replaced with a recovery that
+  restores the sequence default and advances the sequence past the current max. Verified on
+  dmt2-local: fixed 73 of 73 tables, zero left without a default.
+- **#453 supplier lookups (SUPPLIER_TYPE / TAX_ORGANIZATION_TYPE):** the DMT2 artifacts were
+  already on main and verified correct against live Fusion (POZ_VENDOR_TYPE 22 values,
+  POZ_ORGANIZATION_TYPE 11 values). Remaining work is on the Fusion side (see What's next).
+
+EBSAdaptors repo (brianmakarewicz/EBSAdaptors) -- PR #29 OPEN, not yet merged; live proof on
+the EBS VM deferred:
+- **#25 coherent parent/child sampling:** generate_all_csvs samples N driver keys once per
+  object into a session temp table; driver views no-op when the table is empty, so full
+  extracts are unchanged and the signature is unchanged.
+- **#21 missing view-source grants:** recorded 21 missing SELECT grants in
+  00_CREATE_SCHEMA.sql (Projects/Grants, Requisitions, Inventory, dynamic-SQL base tables).
+
+**Regression:** One full DMT2 regression (RegressionTest scenario, all objects vs the real
+Fusion demo) was STILL RUNNING at session close -- verdict PENDING, do not assume it passed.
+Its purpose: confirm PurchaseOrders distributions now LOAD (no ORA-01840), no ORA-00001 /
+ORA-06502 anywhere, and zero new regressions versus the last green baseline (run 351,
+2026-09-21).
+
+The EBS Vision VM was saved (resumable, not shut down) to free RAM for the regression.
+
+**What's next:**
+1. Read the regression verdict. If green, close DMT2 issues #449 / #466 / #468. If any
+   ORA-00001 / ORA-06502 / ORA-01840 appears, reopen investigation.
+2. Merge EBSAdaptors PR #29; verify #21 and #25 on the EBS VM (fresh dmt_ebs_adaptors install
+   = zero ORA-00942; PurchaseOrders limit-5 extract header keys == line parent keys).
+3. Deploy the #453 lookup data models (.xdm) to /Custom/DMT2/Lookups/ on Fusion, then run
+   DMT_LKP_REFRESH_PKG.REFRESH_FUSION_VALUES for both SUPPLIER_TYPE and TAX_ORGANIZATION_TYPE.
+4. Resume EBS adaptor Task 5 (Suppliers pipeline end-to-end) once the above hold.
+
+**Blockers:** Regression verdict not yet read. EBSAdaptors PR #29 not yet merged and its
+#21/#25 changes are not yet proven on the EBS VM.
+
+**Git state:** DMT2 on `main`, tree clean (only untracked scratch files), local level with
+origin/main (0 ahead / 0 behind). #470 and #471 merged. EBSAdaptors on branch
+`monroe/ebs-to-fusion-e2e-spec` (PR #29); the uncommitted #21 grant + backlog + plan edits
+were committed and pushed this close-out (commit 0aabc1d) -- EBS tree now clean.
+
+**Next session:** first action is to sync -- `git checkout main && git fetch && git merge
+--ff-only origin/main`, then confirm a clean tree BEFORE any new work. For EBSAdaptors, decide
+whether to merge PR #29 or keep iterating on that branch.
+
+
 ## Session -- 2026-09-23 -- Backlog batch merged, full regression PASS (run 121), ATP Gold deployed
 
 **Headline:** A large backlog batch was executed and merged, the full regression re-ran clean on
