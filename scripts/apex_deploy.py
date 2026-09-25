@@ -74,7 +74,7 @@ TARGETS = {
 
 
 def _cfg():
-    return json.loads(CONN.read_text())
+    return json.loads(CONN.read_text(encoding="utf-8"))
 
 
 def _resolve(target):
