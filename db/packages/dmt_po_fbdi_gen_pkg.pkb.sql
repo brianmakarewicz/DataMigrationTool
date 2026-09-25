@@ -537,6 +537,7 @@ AS
                 || '"' || REPLACE(NVL(ATTRIBUTE2,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE3,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE4,''), '"', '""') || '"' || ','
+                || '"' || REPLACE(NVL(ATTRIBUTE5,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE6,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE7,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(ATTRIBUTE8,''), '"', '""') || '"' || ','

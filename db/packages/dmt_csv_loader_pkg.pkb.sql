@@ -14,8 +14,12 @@
     -- Column name array
     TYPE col_arr_t IS TABLE OF VARCHAR2(128) INDEX BY PLS_INTEGER;
 
-    -- Field value array (32767 to handle any EBS column width)
-    TYPE val_arr_t IS TABLE OF VARCHAR2(32767) INDEX BY PLS_INTEGER;
+    -- Field value array (32767 to handle any EBS column width).
+    -- Issue #449: declared CHAR so a field whose UTF-8 BYTE length exceeds its
+    -- CHARACTER length (e.g. MÜNSTER, GÖTEBORG) never overflows the element
+    -- under NLS_LENGTH_SEMANTICS=BYTE (the ATP/Docker default). A bare
+    -- VARCHAR2(n) is n BYTES; VARCHAR2(n CHAR) is n characters.
+    TYPE val_arr_t IS TABLE OF VARCHAR2(32767 CHAR) INDEX BY PLS_INTEGER;
 
     -- Column position map: csv_position(i) → index into header array
     TYPE pos_arr_t IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
@@ -46,7 +50,10 @@
         p_offset  OUT NUMBER
     ) IS
         v_lf_pos  NUMBER;
-        v_line    VARCHAR2(32767);
+        -- Issue #449: CHAR semantics so a multibyte header/first line whose BYTE
+        -- length exceeds its CHARACTER length cannot overflow under BYTE session
+        -- defaults. DBMS_LOB.SUBSTR below returns characters, not bytes.
+        v_line    VARCHAR2(32767 CHAR);
         v_start   NUMBER := 1;
         v_comma   NUMBER;
         v_idx     PLS_INTEGER := 0;

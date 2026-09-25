@@ -633,6 +633,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_contract_fbdi_gen_pkg.pks.sql
 @@packages/dmt_contract_results_pkg.pks.sql
 @@packages/dmt_csv_loader_pkg.pks.sql
+@@packages/dmt_csv_ingest_pkg.pks.sql
 @@packages/dmt_csv_upload_pkg.pks.sql
 @@packages/dmt_cust_fbdi_gen_pkg.pks.sql
 @@packages/dmt_cust_results_pkg.pks.sql
@@ -847,6 +848,7 @@ prompt == Package bodies ==
 @@packages/dmt_contract_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_contract_results_pkg.pkb.sql
 @@packages/dmt_csv_loader_pkg.pkb.sql
+@@packages/dmt_csv_ingest_pkg.pkb.sql
 @@packages/dmt_csv_upload_pkg.pkb.sql
 @@packages/dmt_cust_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_cust_results_pkg.pkb.sql
@@ -1001,6 +1003,7 @@ prompt == Package bodies ==
 
 prompt == Grants made ==
 @@grants/grants_made.sql
+@@grants/grant_dmt_csv_ingest_pkg.sql
 
 prompt == Seed data ==
 @@seed/dmt_cemli_split_cfg.sql

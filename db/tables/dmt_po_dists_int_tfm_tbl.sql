@@ -77,10 +77,11 @@ begin
 	"ATTRIBUTE_CATEGORY" VARCHAR2(30), 
 	"ATTRIBUTE1" VARCHAR2(150), 
 	"ATTRIBUTE2" VARCHAR2(150), 
-	"ATTRIBUTE3" VARCHAR2(150), 
-	"ATTRIBUTE4" VARCHAR2(150), 
-	"ATTRIBUTE6" VARCHAR2(150), 
-	"ATTRIBUTE7" VARCHAR2(150), 
+	"ATTRIBUTE3" VARCHAR2(150),
+	"ATTRIBUTE4" VARCHAR2(150),
+	"ATTRIBUTE5" VARCHAR2(150),
+	"ATTRIBUTE6" VARCHAR2(150),
+	"ATTRIBUTE7" VARCHAR2(150),
 	"ATTRIBUTE8" VARCHAR2(150), 
 	"ATTRIBUTE9" VARCHAR2(150), 
 	"ATTRIBUTE10" VARCHAR2(150), 
@@ -157,9 +158,23 @@ begin
 end;
 /
 
+-- 2026-09-25 issue #468: restore ATTRIBUTE5 (see matching note in the STG
+-- table). Fresh installs get it from the CREATE above; this guarded ALTER
+-- converges a pre-existing database, and must run before the index DDL below.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PO_DISTS_INT_TFM_TBL' and column_name = 'ATTRIBUTE5';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_PO_DISTS_INT_TFM_TBL" ADD ("ATTRIBUTE5" VARCHAR2(150))';
+  end if;
+end;
+/
+
 COMMENT ON COLUMN "DMT_PO_DISTS_INT_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_PO_DISTS_INT_TFM_SEQ';
 COMMENT ON COLUMN "DMT_PO_DISTS_INT_TFM_TBL"."FUSION_DISTRIBUTION_ID" IS 'Fusion internal DISTRIBUTION_ID â€” populated by BIP reconciliation';
-COMMENT ON TABLE "DMT_PO_DISTS_INT_TFM_TBL"  IS 'PO distribution transformed. Run-specific â€” one row per staging row per run attempt. Reconciliation populated by BIP. Note: ATTRIBUTE5 absent per Fusion FBDI spec.';
+COMMENT ON TABLE "DMT_PO_DISTS_INT_TFM_TBL"  IS 'PO distribution transformed. Run-specific â€” one row per staging row per run attempt. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

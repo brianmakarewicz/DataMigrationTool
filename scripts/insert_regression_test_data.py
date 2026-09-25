@@ -1951,26 +1951,33 @@ def main():
         label=label)
 
     # Lot-controlled item: RA-100-4935-LOT in Seattle
-    # Parent txn needs INV_LOTSERIAL_INTERFACE_NUM to link to child lot row
-    # Get STG sequence for the parent so we can reference it from the lot child
-    cur.execute("SELECT DMT_INV_TRX_STG_SEQ.NEXTVAL FROM DUAL")
-    lot_parent_seq = cur.fetchone()[0]
-    run_sql(cur, """
+    # Parent txn needs INV_LOTSERIAL_INTERFACE_NUM to link to child lot row.
+    # STG_SEQUENCE_ID is now a GENERATED ALWAYS identity column (issue #466), so
+    # we no longer pull a sequence value ourselves -- we let the DB assign the id
+    # on insert and read it back with RETURNING, then reference it from the lot
+    # child and from INV_LOTSERIAL_INTERFACE_NUM.
+    seq_var = cur.var(oracledb.NUMBER)
+    cur.execute("""
         INSERT INTO DMT_INV_TRX_STG_TBL (
-            STG_SEQUENCE_ID,
             ORGANIZATION_NAME, ITEM_NUMBER, SUBINVENTORY_CODE,
             TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
             TRANSACTION_DATE,
-            INV_LOTSERIAL_INTERFACE_NUM,
             STAGE_DATE, STG_STATUS
         ) VALUES (
-            :seq,
             'Seattle', 'RA-100-4935-LOT', 'Stores',
             3, 'Each',
             SYSDATE,
-            TO_CHAR(:seq),
             SYSDATE, 'NEW'
         )
+        RETURNING STG_SEQUENCE_ID INTO :seq
+    """, {"seq": seq_var})
+    lot_parent_seq = seq_var.getvalue()[0]
+    # INV_LOTSERIAL_INTERFACE_NUM links the parent to its lot child; set it to the
+    # DB-assigned STG_SEQUENCE_ID now that the id exists.
+    run_sql(cur, """
+        UPDATE DMT_INV_TRX_STG_TBL
+           SET INV_LOTSERIAL_INTERFACE_NUM = TO_CHAR(:seq)
+         WHERE STG_SEQUENCE_ID = :seq
     """, {"seq": lot_parent_seq},
     label="GOOD: 3 Each of RA-100-4935-LOT (lot-controlled)")
 
@@ -1990,24 +1997,28 @@ def main():
     label="  -> Lot child: DMT-REG-LOT-001, qty 3")
 
     # Serial-controlled item: AS88000 in Seattle (serial_number_control_code=5, at receipt)
-    cur.execute("SELECT DMT_INV_TRX_STG_SEQ.NEXTVAL FROM DUAL")
-    ser_parent_seq = cur.fetchone()[0]
-    run_sql(cur, """
+    # Same identity-column pattern as the lot parent above: let the DB assign
+    # STG_SEQUENCE_ID and read it back to link the serial child.
+    ser_seq_var = cur.var(oracledb.NUMBER)
+    cur.execute("""
         INSERT INTO DMT_INV_TRX_STG_TBL (
-            STG_SEQUENCE_ID,
             ORGANIZATION_NAME, ITEM_NUMBER, SUBINVENTORY_CODE,
             TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
             TRANSACTION_DATE,
-            INV_LOTSERIAL_INTERFACE_NUM,
             STAGE_DATE, STG_STATUS
         ) VALUES (
-            :seq,
             'Seattle', 'AS88000', 'Stores',
             2, 'Each',
             SYSDATE,
-            TO_CHAR(:seq),
             SYSDATE, 'NEW'
         )
+        RETURNING STG_SEQUENCE_ID INTO :seq
+    """, {"seq": ser_seq_var})
+    ser_parent_seq = ser_seq_var.getvalue()[0]
+    run_sql(cur, """
+        UPDATE DMT_INV_TRX_STG_TBL
+           SET INV_LOTSERIAL_INTERFACE_NUM = TO_CHAR(:seq)
+         WHERE STG_SEQUENCE_ID = :seq
     """, {"seq": ser_parent_seq},
     label="GOOD: 2 Each of AS88000 (serial-controlled)")
 
@@ -2516,10 +2527,10 @@ def main():
     ]:
         run_sql(cur, """
             INSERT INTO DMT_INV_UOM_STG_TBL (
-                STG_SEQUENCE_ID, UOM_CODE, UOM_CLASS, UNIT_OF_MEASURE,
+                UOM_CODE, UOM_CLASS, UNIT_OF_MEASURE,
                 DESCRIPTION, BASE_UOM_FLAG, SOURCE_ID, STG_STATUS
             ) VALUES (
-                DMT_INV_UOM_STG_SEQ.NEXTVAL, :code, :cls, :uom,
+                :code, :cls, :uom,
                 :descr, 'N', :src, 'NEW'
             )
         """, {"code": code, "cls": uom_class, "uom": uom, "descr": descr,
@@ -2564,11 +2575,11 @@ def main():
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FND_VS_SET_STG_TBL (
-                STG_SEQUENCE_ID, VALUE_SET_CODE, DESCRIPTION, MODULE_ID,
+                VALUE_SET_CODE, DESCRIPTION, MODULE_ID,
                 VALIDATION_TYPE, VALUE_DATA_TYPE, MAXIMUM_SIZE,
                 SOURCE_ID, STG_STATUS
             ) VALUES (
-                DMT_FND_VS_SET_STG_SEQ.NEXTVAL, :code, :descr, :mod,
+                :code, :descr, :mod,
                 'I', 'C', 30, :src, 'NEW'
             )
         """, {"code": code, "descr": descr, "mod": mod,
@@ -2588,10 +2599,10 @@ def main():
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FND_VS_VALUE_STG_TBL (
-                STG_SEQUENCE_ID, VALUE_SET_CODE, VALUE, DESCRIPTION,
+                VALUE_SET_CODE, VALUE, DESCRIPTION,
                 ENABLED_FLAG, SOURCE_ID, STG_STATUS
             ) VALUES (
-                DMT_FND_VS_VALUE_STG_SEQ.NEXTVAL, :vs, :val, :descr,
+                :vs, :val, :descr,
                 'Y', :src, 'NEW'
             )
         """, {"vs": vs_code, "val": value, "descr": descr,
@@ -2646,10 +2657,10 @@ def main():
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FND_LOOKUP_TYPE_STG_TBL (
-                STG_SEQUENCE_ID, LOOKUP_TYPE, MEANING, DESCRIPTION, MODULE_KEY,
+                LOOKUP_TYPE, MEANING, DESCRIPTION, MODULE_KEY,
                 SOURCE_ID, STG_STATUS
             ) VALUES (
-                DMT_FND_LOOKUP_TYPE_STG_SEQ.NEXTVAL, :lkp, :mng, :descr, :mod,
+                :lkp, :mng, :descr, :mod,
                 :src, 'NEW'
             )
         """, {"lkp": lkp_type, "mng": meaning, "descr": descr, "mod": mod_key,
@@ -2664,10 +2675,10 @@ def main():
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FND_LOOKUP_VALUE_STG_TBL (
-                STG_SEQUENCE_ID, LOOKUP_TYPE, LOOKUP_CODE, DISPLAY_SEQUENCE,
+                LOOKUP_TYPE, LOOKUP_CODE, DISPLAY_SEQUENCE,
                 ENABLED_FLAG, MEANING, DESCRIPTION, SOURCE_ID, STG_STATUS
             ) VALUES (
-                DMT_FND_LOOKUP_VALUE_STG_SEQ.NEXTVAL, :lkp, :code, 1,
+                :lkp, :code, 1,
                 'Y', :mng, :descr, :src, 'NEW'
             )
         """, {"lkp": lkp_type, "code": code, "mng": meaning, "descr": descr,
@@ -2700,10 +2711,10 @@ def main():
     # header GOOD (group 1) — reuse existing demo term so base-table confirms
     run_sql(cur, """
         INSERT INTO DMT_AP_PAY_TERM_HDR_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, NAME, DESCRIPTION,
+            SOURCE_GROUP_ID, NAME, DESCRIPTION,
             ENABLED_FLAG, PAY_TERM_TYPE, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_AP_PAY_TERM_HDR_STG_SEQ.NEXTVAL, 1, 'Net 30',
+            1, 'Net 30',
             'DMT2 recon GOOD (backlog #11) - existing demo term',
             'Y', 'IMMEDIATE', 'RT-PAYTERM-G1', 'NEW'
         )
@@ -2711,10 +2722,10 @@ def main():
     # header BAD (group 2) — 'BAD' marker in NAME; never lands in AP_TERMS
     run_sql(cur, """
         INSERT INTO DMT_AP_PAY_TERM_HDR_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, NAME, DESCRIPTION,
+            SOURCE_GROUP_ID, NAME, DESCRIPTION,
             ENABLED_FLAG, PAY_TERM_TYPE, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_AP_PAY_TERM_HDR_STG_SEQ.NEXTVAL, 2,
+            2,
             'DMT2 recon BAD term nonexistent type',
             'DMT2 recon BAD (backlog #11) [FUSION_ERROR expected]',
             'Y', 'NONEXISTENT_TYPE', 'RT-PAYTERM-B1', 'NEW'
@@ -2723,10 +2734,10 @@ def main():
     # one installment line under the GOOD header (group 1): 100% due in 30 days
     run_sql(cur, """
         INSERT INTO DMT_AP_PAY_TERM_LINE_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, SEQUENCE_NUM,
+            SOURCE_GROUP_ID, SEQUENCE_NUM,
             DUE_PERCENT, DUE_DAYS, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_AP_PAY_TERM_LINE_STG_SEQ.NEXTVAL, 1, 1,
+            1, 1,
             100, 30, 'RT-PAYTERM-G1-L1', 'NEW'
         )
     """, label="GOOD Payment Term line: 100% due in 30 days (under Net 30)")
@@ -2764,10 +2775,10 @@ def main():
     # regime GOOD (group 1) — reuse existing demo regime so base-table confirms
     run_sql(cur, """
         INSERT INTO DMT_ZX_REGIME_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, TAX_REGIME_CODE, TAX_REGIME_NAME,
+            SOURCE_GROUP_ID, TAX_REGIME_CODE, TAX_REGIME_NAME,
             DESCRIPTION, COUNTRY_CODE, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_ZX_REGIME_STG_SEQ.NEXTVAL, 1, 'AU GST TAX', 'AU GST TAX',
+            1, 'AU GST TAX', 'AU GST TAX',
             'DMT2 recon GOOD (backlog #11) - existing demo regime',
             'AU', 'RT-TAXREG-G1', 'NEW'
         )
@@ -2775,10 +2786,10 @@ def main():
     # regime BAD (group 2) — 'BAD' marker in code; never lands in ZX_REGIMES_B
     run_sql(cur, """
         INSERT INTO DMT_ZX_REGIME_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, TAX_REGIME_CODE, TAX_REGIME_NAME,
+            SOURCE_GROUP_ID, TAX_REGIME_CODE, TAX_REGIME_NAME,
             DESCRIPTION, COUNTRY_CODE, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_ZX_REGIME_STG_SEQ.NEXTVAL, 2, 'DMT2 BAD REGIME',
+            2, 'DMT2 BAD REGIME',
             'DMT2 recon BAD regime',
             'DMT2 recon BAD (backlog #11) [FUSION_ERROR expected]',
             'ZZ', 'RT-TAXREG-B1', 'NEW'
@@ -2787,11 +2798,11 @@ def main():
     # rate GOOD (group 1) — reuse existing demo rate under the GOOD regime
     run_sql(cur, """
         INSERT INTO DMT_ZX_RATE_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, TAX_REGIME_CODE, TAX,
+            SOURCE_GROUP_ID, TAX_REGIME_CODE, TAX,
             TAX_STATUS_CODE, TAX_RATE_CODE, TAX_RATE_NAME, RATE_TYPE_CODE,
             PERCENTAGE_RATE, ACTIVE_FLAG, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_ZX_RATE_STG_SEQ.NEXTVAL, 1, 'AU GST TAX', 'AU GST TAX',
+            1, 'AU GST TAX', 'AU GST TAX',
             'STANDARD', 'AU GST TAX STANDARD RATE', 'AU GST TAX STANDARD RATE',
             'PERCENTAGE', 10, 'Y', 'RT-TAXRATE-G1', 'NEW'
         )
@@ -2830,10 +2841,10 @@ def main():
     # GOOD bank (group 1) — reuse existing demo bank so base-table confirms
     run_sql(cur, """
         INSERT INTO DMT_CE_BANK_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, COUNTRY_CODE, BANK_NAME,
+            SOURCE_GROUP_ID, COUNTRY_CODE, BANK_NAME,
             DESCRIPTION, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_CE_BANK_STG_SEQ.NEXTVAL, 1, 'US', 'Bank of America',
+            1, 'US', 'Bank of America',
             'DMT2 recon GOOD (backlog #11) - existing demo bank',
             'RT-CEBANK-G1', 'NEW'
         )
@@ -2841,10 +2852,10 @@ def main():
     # BAD bank (group 2) — 'BAD' marker in NAME, bogus country; never in CE_BANKS_V
     run_sql(cur, """
         INSERT INTO DMT_CE_BANK_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, COUNTRY_CODE, BANK_NAME,
+            SOURCE_GROUP_ID, COUNTRY_CODE, BANK_NAME,
             DESCRIPTION, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_CE_BANK_STG_SEQ.NEXTVAL, 2, 'ZZ',
+            2, 'ZZ',
             'DMT2 recon BAD bank nonexistent country',
             'DMT2 recon BAD (backlog #11) [FUSION_ERROR expected]',
             'RT-CEBANK-B1', 'NEW'
@@ -2853,10 +2864,10 @@ def main():
     # GOOD branch (group 1, line 1) — 'New York' under Bank of America
     run_sql(cur, """
         INSERT INTO DMT_CE_BRANCH_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, SOURCE_LINE_ID, COUNTRY_CODE,
+            SOURCE_GROUP_ID, SOURCE_LINE_ID, COUNTRY_CODE,
             BANK_NAME, BRANCH_NAME, DESCRIPTION, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_CE_BRANCH_STG_SEQ.NEXTVAL, 1, 1, 'US',
+            1, 1, 'US',
             'Bank of America', 'New York',
             'DMT2 recon GOOD (backlog #11) - existing demo branch',
             'RT-CEBRANCH-G1', 'NEW'
@@ -2865,11 +2876,11 @@ def main():
     # GOOD account (group 1, line 1) — 'CA Chequing' under the New York branch
     run_sql(cur, """
         INSERT INTO DMT_CE_BANK_ACCT_STG_TBL (
-            STG_SEQUENCE_ID, SOURCE_GROUP_ID, SOURCE_LINE_ID,
+            SOURCE_GROUP_ID, SOURCE_LINE_ID,
             BANK_NAME, BRANCH_NAME, ACCOUNT_NAME, CURRENCY_CODE,
             DESCRIPTION, SOURCE_ID, STG_STATUS
         ) VALUES (
-            DMT_CE_BANK_ACCT_STG_SEQ.NEXTVAL, 1, 1,
+            1, 1,
             'Bank of America', 'New York', 'CA Chequing', 'CAD',
             'DMT2 recon GOOD (backlog #11) - existing demo account',
             'RT-CEACCT-G1', 'NEW'
