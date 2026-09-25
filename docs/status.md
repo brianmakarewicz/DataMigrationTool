@@ -1,6 +1,6 @@
 # DMT2 -- Session Status Log
 
-## Session -- 2026-09-25 -- EBS-adaptor backlog fixes merged to DMT2; full regression STILL RUNNING (verdict pending)
+## Session -- 2026-09-25 -- EBS-adaptor backlog fixes merged to DMT2; full regression PASSED (run 132, zero new regressions)
 
 **What was done:** Reviewed and corrected the 7 backlog items the EBS adaptor logged, then
 kicked off one full DMT2 regression against the real Fusion demo. All DMT2-side fixes are
@@ -27,33 +27,42 @@ DMT2 repo (brianmakarewicz/DataMigrationTool) -- all in PR #470 unless noted:
   already on main and verified correct against live Fusion (POZ_VENDOR_TYPE 22 values,
   POZ_ORGANIZATION_TYPE 11 values). Remaining work is on the Fusion side (see What's next).
 
-EBSAdaptors repo (brianmakarewicz/EBSAdaptors) -- PR #29 OPEN, not yet merged; live proof on
-the EBS VM deferred:
+EBSAdaptors repo (brianmakarewicz/EBSAdaptors) -- PR #29 MERGED; live proof on the EBS VM
+deferred (VM saved for RAM):
 - **#25 coherent parent/child sampling:** generate_all_csvs samples N driver keys once per
   object into a session temp table; driver views no-op when the table is empty, so full
   extracts are unchanged and the signature is unchanged.
 - **#21 missing view-source grants:** recorded 21 missing SELECT grants in
   00_CREATE_SCHEMA.sql (Projects/Grants, Requisitions, Inventory, dynamic-SQL base tables).
 
-**Regression:** One full DMT2 regression (RegressionTest scenario, all objects vs the real
-Fusion demo) was STILL RUNNING at session close -- verdict PENDING, do not assume it passed.
-Its purpose: confirm PurchaseOrders distributions now LOAD (no ORA-01840), no ORA-00001 /
-ORA-06502 anywhere, and zero new regressions versus the last green baseline (run 351,
-2026-09-21).
+**Regression -- PASSED (run 132, prefix 93212, all objects terminal):** across the whole run,
+**zero ORA-00001, zero ORA-06502, zero ORA-01840**, and every object's LOADED count matches the
+prior baseline (run 131) exactly -- **zero new regressions**. PurchaseOrders loaded 2 rows with
+real FUSION_IDs plus 1 correctly FAILED. Overall harness status COMPLETED_ERRORS comes only from
+the same pre-existing items as baseline (ARInvoices/Grants/ProjectBudgets/TalentProfiles at 0
+LOADED were 0 in run 131 too). NOTE on #468: the gold-regression PO data never populates
+ATTRIBUTE_NUMBER1 in the shifting slot, so it cannot positively reproduce the original ORA-01840
+-- the fix is verified by column analysis + no-regression here; positive reproduction is owed
+from the EBS-adaptor PO extract on the VM.
 
 The EBS Vision VM was saved (resumable, not shut down) to free RAM for the regression.
 
-**What's next:**
-1. Read the regression verdict. If green, close DMT2 issues #449 / #466 / #468. If any
-   ORA-00001 / ORA-06502 / ORA-01840 appears, reopen investigation.
-2. Merge EBSAdaptors PR #29; verify #21 and #25 on the EBS VM (fresh dmt_ebs_adaptors install
-   = zero ORA-00942; PurchaseOrders limit-5 extract header keys == line parent keys).
-3. Deploy the #453 lookup data models (.xdm) to /Custom/DMT2/Lookups/ on Fusion, then run
+**What's next (remaining follow-ups, none blocking this session's goal):**
+1. On the EBS VM (resume it first): verify #21 and #25 -- fresh dmt_ebs_adaptors install = zero
+   ORA-00942; PurchaseOrders limit-5 extract header keys == line parent keys; and positively
+   reproduce #468 (re-run the run-169 PO extract, confirm distributions load). #468 stays OPEN
+   until that confirms.
+2. Deploy the #453 lookup data models (.xdm) to /Custom/DMT2/Lookups/ on Fusion, then run
    DMT_LKP_REFRESH_PKG.REFRESH_FUSION_VALUES for both SUPPLIER_TYPE and TAX_ORGANIZATION_TYPE.
+3. On the EBS side, re-point push_csv_to_atp to call DMT_CSV_INGEST_PKG (#469) and drop the
+   old STG-sequence workaround (#466 auto-generates now). See EBSAdaptors docs/backlog.md.
 4. Resume EBS adaptor Task 5 (Suppliers pipeline end-to-end) once the above hold.
 
-**Blockers:** Regression verdict not yet read. EBSAdaptors PR #29 not yet merged and its
-#21/#25 changes are not yet proven on the EBS VM.
+Done this session: regression verdict read (PASS); DMT2 #449/#466 closed, #469 closed;
+EBSAdaptors PR #29 merged.
+
+**Blockers:** none for the DMT2 work. Remaining items (#468 positive proof, #25/#21 live
+verification) are gated only on resuming the EBS VM.
 
 **Git state:** DMT2 on `main`, tree clean (only untracked scratch files), local level with
 origin/main (0 ahead / 0 behind). #470 and #471 merged. EBSAdaptors on branch
@@ -61,8 +70,8 @@ origin/main (0 ahead / 0 behind). #470 and #471 merged. EBSAdaptors on branch
 were committed and pushed this close-out (commit 0aabc1d) -- EBS tree now clean.
 
 **Next session:** first action is to sync -- `git checkout main && git fetch && git merge
---ff-only origin/main`, then confirm a clean tree BEFORE any new work. For EBSAdaptors, decide
-whether to merge PR #29 or keep iterating on that branch.
+--ff-only origin/main`, then confirm a clean tree BEFORE any new work. EBSAdaptors PR #29 is
+merged; the remaining EBS items are the VM-gated verifications above.
 
 
 ## Session -- 2026-09-23 -- Backlog batch merged, full regression PASS (run 121), ATP Gold deployed
