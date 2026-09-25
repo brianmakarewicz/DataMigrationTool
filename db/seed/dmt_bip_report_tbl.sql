@@ -2043,3 +2043,629 @@ when not matched then insert
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- MULTI-TABLE OBJECT CHILD-TIER registry rows for the Fusion-id AUDITOR
+-- (backlog #91, completing the Option A slice started with APInvoices.Line above).
+--
+-- Same pattern and rationale as the APInvoices.Line block above: the post-run
+-- Fusion-id auditor (scripts/dmt_fusion_id_audit.sql) reads DMT_BIP_REPORT_TBL
+-- one row at a time and audits each single-column (TFM_TABLE, FUSION_ID_COLUMN)
+-- pair. Multi-table objects registered only their HEADER tier, so the auditor
+-- never checked their child tiers. Each block below adds a SEPARATE
+-- tier-suffixed row whose CEMLI_CODE is the tier's OBJECT_TYPE literal (already
+-- used in the object's reconciler) and whose FUSION_ID_COLUMN is that child TFM
+-- table's OWN single plain grain-correct id column, so the auditor proves every
+-- LOADED child row carries a populated, unique own-grain Fusion id.
+--
+-- These rows are AUDIT/DOCUMENTATION metadata ONLY. Dispatch is keyed off
+-- DMT_PIPELINE_DEF_TBL, and each object's reconciler resolves its report path +
+-- CONTRACT_VERSION from the single header row (it names every tier TFM table
+-- statically). CONTRACT_VERSION is deliberately left NULL on every tier row so
+-- the shared fetch DMT_RECON_CONTRACT_PKG.FETCH_ROWS never treats a tier row as
+-- a second reconcilable object. The compound Customers header row (100000012)
+-- keeps its CONTRACT_VERSION = 1 registration for FETCH_ROWS; these seven
+-- per-tier rows give the auditor the own-grain columns the compound row cannot
+-- express (the compound row is still SKIPPED by the auditor as a multi-id
+-- family, which is correct -- these rows are the per-tier replacement).
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- PurchaseOrders.Line (100000048) -- child-tier auditor registration (backlog #91).
+-- DMT_PO_RESULTS_PKG stamps FUSION_PO_LINE_ID on DMT_PO_LINES_INT_TFM_TBL with the base-table PO_LINE_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000048                                            bip_report_id,
+           'PurchaseOrders.Line'                                        cemli_code,
+           'Purchase Order Line'                                        object_type,
+           '/Custom/DMT2/PurchaseOrders/PO_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_RPT.xdo'         report_catalog_path,
+           'PO_LINES_INTERFACE'                                        interface_table,
+           'PurchaseOrders PO line tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_PO_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the PO line grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED PO line row '
+             || 'carries a populated, unique own-grain Fusion id (PO_LINE_ID).'   notes,
+           null                                             contract_version,
+           'DMT_PO_LINES_INT_TFM_TBL'                                          tfm_table,
+           'FUSION_PO_LINE_ID'                                          fusion_id_column,
+           'PO line RECON_KEY (report RECORD_KEY, OBJECT_TYPE=PurchaseOrders.Line) -- FUSION_PO_LINE_ID holds the base-table PO_LINE_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- PurchaseOrders.LineLocation (100000049) -- child-tier auditor registration (backlog #91).
+-- DMT_PO_RESULTS_PKG stamps FUSION_LINE_LOCATION_ID on DMT_PO_LINE_LOCS_INT_TFM_TBL with the base-table LINE_LOCATION_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000049                                            bip_report_id,
+           'PurchaseOrders.LineLocation'                                        cemli_code,
+           'Purchase Order Line Location'                                        object_type,
+           '/Custom/DMT2/PurchaseOrders/PO_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_RPT.xdo'         report_catalog_path,
+           'PO_LINE_LOCATIONS_INTERFACE'                                        interface_table,
+           'PurchaseOrders PO line-location tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_PO_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the PO line-location grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED PO line-location row '
+             || 'carries a populated, unique own-grain Fusion id (LINE_LOCATION_ID).'   notes,
+           null                                             contract_version,
+           'DMT_PO_LINE_LOCS_INT_TFM_TBL'                                          tfm_table,
+           'FUSION_LINE_LOCATION_ID'                                          fusion_id_column,
+           'PO line-location RECON_KEY (report RECORD_KEY, OBJECT_TYPE=PurchaseOrders.LineLocation) -- FUSION_LINE_LOCATION_ID holds the base-table LINE_LOCATION_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- PurchaseOrders.Distribution (100000050) -- child-tier auditor registration (backlog #91).
+-- DMT_PO_RESULTS_PKG stamps FUSION_DISTRIBUTION_ID on DMT_PO_DISTS_INT_TFM_TBL with the base-table PO_DISTRIBUTION_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000050                                            bip_report_id,
+           'PurchaseOrders.Distribution'                                        cemli_code,
+           'Purchase Order Distribution'                                        object_type,
+           '/Custom/DMT2/PurchaseOrders/PO_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_RPT.xdo'         report_catalog_path,
+           'PO_DISTRIBUTIONS_INTERFACE'                                        interface_table,
+           'PurchaseOrders PO distribution tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_PO_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the PO distribution grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED PO distribution row '
+             || 'carries a populated, unique own-grain Fusion id (PO_DISTRIBUTION_ID).'   notes,
+           null                                             contract_version,
+           'DMT_PO_DISTS_INT_TFM_TBL'                                          tfm_table,
+           'FUSION_DISTRIBUTION_ID'                                          fusion_id_column,
+           'PO distribution RECON_KEY (report RECORD_KEY, OBJECT_TYPE=PurchaseOrders.Distribution) -- FUSION_DISTRIBUTION_ID holds the base-table PO_DISTRIBUTION_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Requisitions.Line (100000051) -- child-tier auditor registration (backlog #91).
+-- DMT_REQ_RESULTS_PKG stamps FUSION_REQUISITION_LINE_ID on DMT_POR_REQ_LINES_TFM_TBL with the base-table REQUISITION_LINE_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000051                                            bip_report_id,
+           'Requisitions.Line'                                        cemli_code,
+           'Requisition Line'                                        object_type,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_RPT.xdo'         report_catalog_path,
+           'POR_REQ_LINES_INTERFACE_ALL'                                        interface_table,
+           'Requisitions requisition line tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_REQ_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the requisition line grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED requisition line row '
+             || 'carries a populated, unique own-grain Fusion id (REQUISITION_LINE_ID).'   notes,
+           null                                             contract_version,
+           'DMT_POR_REQ_LINES_TFM_TBL'                                          tfm_table,
+           'FUSION_REQUISITION_LINE_ID'                                          fusion_id_column,
+           'requisition line RECON_KEY (report RECORD_KEY, OBJECT_TYPE=Requisitions.Line) -- FUSION_REQUISITION_LINE_ID holds the base-table REQUISITION_LINE_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Requisitions.Distribution (100000052) -- child-tier auditor registration (backlog #91).
+-- DMT_REQ_RESULTS_PKG stamps FUSION_DISTRIBUTION_ID on DMT_POR_REQ_DISTS_TFM_TBL with the base-table DISTRIBUTION_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000052                                            bip_report_id,
+           'Requisitions.Distribution'                                        cemli_code,
+           'Requisition Distribution'                                        object_type,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_RPT.xdo'         report_catalog_path,
+           'POR_REQ_DISTRIBUTIONS_INT_ALL'                                        interface_table,
+           'Requisitions requisition distribution tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_REQ_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the requisition distribution grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED requisition distribution row '
+             || 'carries a populated, unique own-grain Fusion id (DISTRIBUTION_ID).'   notes,
+           null                                             contract_version,
+           'DMT_POR_REQ_DISTS_TFM_TBL'                                          tfm_table,
+           'FUSION_DISTRIBUTION_ID'                                          fusion_id_column,
+           'requisition distribution RECON_KEY (report RECORD_KEY, OBJECT_TYPE=Requisitions.Distribution) -- FUSION_DISTRIBUTION_ID holds the base-table DISTRIBUTION_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Customers.Parties (100000053) -- record-type-tier auditor registration (backlog #91).
+-- DMT_CUST_RESULTS_PKG stamps FUSION_PARTY_ID on DMT_HZ_PARTIES_TFM_TBL with the base-table PARTY_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000053                                            bip_report_id,
+           'Customers.Parties'                                        cemli_code,
+           'Customer Party'                                        object_type,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           'HZ_IMP_PARTIES_T'                                        interface_table,
+           'Customers customer party tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the customer party grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED customer party row '
+             || 'carries a populated, unique own-grain Fusion id (PARTY_ID).'   notes,
+           null                                             contract_version,
+           'DMT_HZ_PARTIES_TFM_TBL'                                          tfm_table,
+           'FUSION_PARTY_ID'                                          fusion_id_column,
+           'customer party RECON_KEY (report RECORD_KEY, OBJECT_TYPE=Customers.Parties) -- FUSION_PARTY_ID holds the base-table PARTY_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Customers.Locations (100000054) -- record-type-tier auditor registration (backlog #91).
+-- DMT_CUST_RESULTS_PKG stamps FUSION_LOCATION_ID on DMT_HZ_LOCATIONS_TFM_TBL with the base-table LOCATION_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000054                                            bip_report_id,
+           'Customers.Locations'                                        cemli_code,
+           'Customer Location'                                        object_type,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           'HZ_IMP_LOCATIONS_T'                                        interface_table,
+           'Customers customer location tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the customer location grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED customer location row '
+             || 'carries a populated, unique own-grain Fusion id (LOCATION_ID).'   notes,
+           null                                             contract_version,
+           'DMT_HZ_LOCATIONS_TFM_TBL'                                          tfm_table,
+           'FUSION_LOCATION_ID'                                          fusion_id_column,
+           'customer location RECON_KEY (report RECORD_KEY, OBJECT_TYPE=Customers.Locations) -- FUSION_LOCATION_ID holds the base-table LOCATION_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Customers.PartySites (100000055) -- record-type-tier auditor registration (backlog #91).
+-- DMT_CUST_RESULTS_PKG stamps FUSION_PARTY_SITE_ID on DMT_HZ_PARTY_SITES_TFM_TBL with the base-table PARTY_SITE_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000055                                            bip_report_id,
+           'Customers.PartySites'                                        cemli_code,
+           'Customer Party Site'                                        object_type,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           'HZ_IMP_PARTYSITES_T'                                        interface_table,
+           'Customers customer party site tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the customer party site grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED customer party site row '
+             || 'carries a populated, unique own-grain Fusion id (PARTY_SITE_ID).'   notes,
+           null                                             contract_version,
+           'DMT_HZ_PARTY_SITES_TFM_TBL'                                          tfm_table,
+           'FUSION_PARTY_SITE_ID'                                          fusion_id_column,
+           'customer party site RECON_KEY (report RECORD_KEY, OBJECT_TYPE=Customers.PartySites) -- FUSION_PARTY_SITE_ID holds the base-table PARTY_SITE_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Customers.PartySiteUses (100000056) -- record-type-tier auditor registration (backlog #91).
+-- DMT_CUST_RESULTS_PKG stamps FUSION_PARTY_SITE_USE_ID on DMT_HZ_PARTY_SITE_USES_TFM_TBL with the base-table PARTY_SITE_USE_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000056                                            bip_report_id,
+           'Customers.PartySiteUses'                                        cemli_code,
+           'Customer Party Site Use'                                        object_type,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           'HZ_IMP_PARTYSITEUSES_T'                                        interface_table,
+           'Customers customer party site use tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the customer party site use grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED customer party site use row '
+             || 'carries a populated, unique own-grain Fusion id (PARTY_SITE_USE_ID).'   notes,
+           null                                             contract_version,
+           'DMT_HZ_PARTY_SITE_USES_TFM_TBL'                                          tfm_table,
+           'FUSION_PARTY_SITE_USE_ID'                                          fusion_id_column,
+           'customer party site use RECON_KEY (report RECORD_KEY, OBJECT_TYPE=Customers.PartySiteUses) -- FUSION_PARTY_SITE_USE_ID holds the base-table PARTY_SITE_USE_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Customers.Accounts (100000057) -- record-type-tier auditor registration (backlog #91).
+-- DMT_CUST_RESULTS_PKG stamps FUSION_CUST_ACCOUNT_ID on DMT_HZ_ACCOUNTS_TFM_TBL with the base-table CUST_ACCOUNT_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000057                                            bip_report_id,
+           'Customers.Accounts'                                        cemli_code,
+           'Customer Account'                                        object_type,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           'HZ_IMP_ACCOUNTS_T'                                        interface_table,
+           'Customers customer account tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the customer account grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED customer account row '
+             || 'carries a populated, unique own-grain Fusion id (CUST_ACCOUNT_ID).'   notes,
+           null                                             contract_version,
+           'DMT_HZ_ACCOUNTS_TFM_TBL'                                          tfm_table,
+           'FUSION_CUST_ACCOUNT_ID'                                          fusion_id_column,
+           'customer account RECON_KEY (report RECORD_KEY, OBJECT_TYPE=Customers.Accounts) -- FUSION_CUST_ACCOUNT_ID holds the base-table CUST_ACCOUNT_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Customers.AccountSites (100000058) -- record-type-tier auditor registration (backlog #91).
+-- DMT_CUST_RESULTS_PKG stamps FUSION_CUST_ACCT_SITE_ID on DMT_HZ_ACCT_SITES_TFM_TBL with the base-table CUST_ACCT_SITE_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000058                                            bip_report_id,
+           'Customers.AccountSites'                                        cemli_code,
+           'Customer Account Site'                                        object_type,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           'HZ_IMP_ACCT_SITES_T'                                        interface_table,
+           'Customers customer account site tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the customer account site grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED customer account site row '
+             || 'carries a populated, unique own-grain Fusion id (CUST_ACCT_SITE_ID).'   notes,
+           null                                             contract_version,
+           'DMT_HZ_ACCT_SITES_TFM_TBL'                                          tfm_table,
+           'FUSION_CUST_ACCT_SITE_ID'                                          fusion_id_column,
+           'customer account site RECON_KEY (report RECORD_KEY, OBJECT_TYPE=Customers.AccountSites) -- FUSION_CUST_ACCT_SITE_ID holds the base-table CUST_ACCT_SITE_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Customers.AccountSiteUses (100000059) -- record-type-tier auditor registration (backlog #91).
+-- DMT_CUST_RESULTS_PKG stamps FUSION_SITE_USE_ID on DMT_HZ_ACCT_SITE_USES_TFM_TBL with the base-table SITE_USE_ID
+-- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
+-- metadata only; CONTRACT_VERSION left NULL so FETCH_ROWS never treats it as
+-- reconcilable. Both identifiers are single plain SQL names, so the audit's
+-- DBMS_ASSERT.SIMPLE_SQL_NAME guard accepts them and the tier is actually audited.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000059                                            bip_report_id,
+           'Customers.AccountSiteUses'                                        cemli_code,
+           'Customer Account Site Use'                                        object_type,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           'HZ_IMP_ACCTSITE_USES_T'                                        interface_table,
+           'Customers customer account site use tier -- AUDITOR registration only (backlog #91). '
+             || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
+             || 'tiers statically. Registers the customer account site use grain so '
+             || 'scripts/dmt_fusion_id_audit.sql proves every LOADED customer account site use row '
+             || 'carries a populated, unique own-grain Fusion id (SITE_USE_ID).'   notes,
+           null                                             contract_version,
+           'DMT_HZ_ACCT_SITE_USES_TFM_TBL'                                          tfm_table,
+           'FUSION_SITE_USE_ID'                                          fusion_id_column,
+           'customer account site use RECON_KEY (report RECORD_KEY, OBJECT_TYPE=Customers.AccountSiteUses) -- FUSION_SITE_USE_ID holds the base-table SITE_USE_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
