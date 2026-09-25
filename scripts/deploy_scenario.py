@@ -37,7 +37,7 @@ STATE  = REPO / "scripts" / "regression_scenario.json"
 def conn_for(target):
     if target == "local":
         return "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1", {}
-    cfg = json.loads((WS / "connections.json").read_text())["atp_queryapp"]
+    cfg = json.loads((WS / "connections.json").read_text(encoding="utf-8"))["atp_queryapp"]
     pw = cfg["schemas"]["DMT2_OWNER"]["password"]
     kw = {"config_dir": cfg["wallet_dir"], "wallet_location": cfg["wallet_dir"],
           "wallet_password": cfg["wallet_password"]}
@@ -52,7 +52,7 @@ def seed_sha():
     return hashlib.sha256(SEED.read_bytes()).hexdigest()
 
 def load_state():
-    return json.loads(STATE.read_text()) if STATE.exists() else {}
+    return json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
 
 def verify_no_duplicates(con, scenario_id):
     """For every STG table with rows in this scenario, fail if any business-key
@@ -110,7 +110,7 @@ def main():
     cs, _ = conn_for(a.target)
     env = dict(os.environ, DMT2_CONN=cs, DMT_SCENARIO_NAME=new_name)
     if a.target == "atp":
-        w = json.loads((WS / "connections.json").read_text())["atp_queryapp"]
+        w = json.loads((WS / "connections.json").read_text(encoding="utf-8"))["atp_queryapp"]
         env["DMT2_WALLET"] = w["wallet_dir"]; env["DMT2_WALLET_PW"] = w["wallet_password"]
     rc = subprocess.run([sys.executable, str(SEED)], env=env).returncode
     if rc != 0:
@@ -134,7 +134,8 @@ def main():
     # 3) advance the git-tracked pointer (no DB record is updated)
     STATE.write_text(json.dumps(
         {"current_scenario": new_name, "scenario_id": sid, "seed_sha256": sha,
-         "target": a.target, "created": datetime.now().strftime("%Y-%m-%d %H:%M")}, indent=2))
+         "target": a.target, "created": datetime.now().strftime("%Y-%m-%d %H:%M")}, indent=2),
+        encoding="utf-8")
     print(f"Pointer updated: current_scenario = {new_name}. "
           f"Run the regression with --scenario {new_name}.")
     return 0

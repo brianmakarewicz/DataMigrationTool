@@ -45,7 +45,7 @@ SQLCL= "C:/Users/Monroe/tools/sqlcl/bin/sql.exe"
 
 # ---------------------------------------------------------------- connections
 def _conns():
-    return json.loads((WS / "connections.json").read_text())
+    return json.loads((WS / "connections.json").read_text(encoding="utf-8"))
 
 def _local():
     cfg = _conns()
