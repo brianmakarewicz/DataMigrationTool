@@ -24,7 +24,7 @@ position-based CSVs** (no header row), in this order inside the zip:
 | `PoHeadersInterfaceOrder.csv`        |      99 | `PO_HEADERS_INTERFACE`       |
 | `PoLinesInterfaceOrder.csv`          |      98 | `PO_LINES_INTERFACE`         |
 | `PoLineLocationsInterfaceOrder.csv`  |      93 | `PO_LINE_LOCATIONS_INTERFACE`|
-| `PoDistributionsInterfaceOrder.csv`  |     123 | `PO_DISTRIBUTIONS_INTERFACE` |
+| `PoDistributionsInterfaceOrder.csv`  |     124 | `PO_DISTRIBUTIONS_INTERFACE` |
 
 Column order/counts are byte-mirrored from the proven DMT PO FBDI generator
 (`ConversionTool/packages/generators/fbdi/po/dmt_po_fbdi_gen_pkg.pkb`). Every

@@ -2,7 +2,7 @@
 
 begin
   execute immediate 'CREATE TABLE "DMT_PO_DISTS_INT_STG_TBL" 
-   (	"STG_SEQUENCE_ID" NUMBER DEFAULT DMT_PO_DISTS_INT_STG_SEQ.NEXTVAL NOT NULL ENABLE, 
+   (	"STG_SEQUENCE_ID" NUMBER GENERATED ALWAYS AS IDENTITY NOT NULL ENABLE, 
 	"INTERFACE_DISTRIBUTION_KEY" VARCHAR2(50), 
 	"INTERFACE_LINE_LOCATION_KEY" VARCHAR2(50), 
 	"DISTRIBUTION_NUM" NUMBER, 
@@ -75,10 +75,11 @@ begin
 	"ATTRIBUTE_CATEGORY" VARCHAR2(30), 
 	"ATTRIBUTE1" VARCHAR2(150), 
 	"ATTRIBUTE2" VARCHAR2(150), 
-	"ATTRIBUTE3" VARCHAR2(150), 
-	"ATTRIBUTE4" VARCHAR2(150), 
-	"ATTRIBUTE6" VARCHAR2(150), 
-	"ATTRIBUTE7" VARCHAR2(150), 
+	"ATTRIBUTE3" VARCHAR2(150),
+	"ATTRIBUTE4" VARCHAR2(150),
+	"ATTRIBUTE5" VARCHAR2(150),
+	"ATTRIBUTE6" VARCHAR2(150),
+	"ATTRIBUTE7" VARCHAR2(150),
 	"ATTRIBUTE8" VARCHAR2(150), 
 	"ATTRIBUTE9" VARCHAR2(150), 
 	"ATTRIBUTE10" VARCHAR2(150), 
@@ -153,10 +154,28 @@ begin
 end;
 /
 
+-- 2026-09-25 issue #468: restore ATTRIBUTE5. The distributions chain had
+-- dropped ATTRIBUTE5 on a false premise ("absent per Fusion FBDI spec"). The
+-- Fusion PoDistributionsInterface DFF block is ATTRIBUTE1..20 contiguous (same
+-- as headers/lines/line-locations), so omitting it shifted every later column
+-- one physical slot early, landing ATTRIBUTE_NUMBER1 into the ATTRIBUTE_DATE10
+-- slot (ORA-01840). Fresh installs get ATTRIBUTE5 from the CREATE above; this
+-- guarded ALTER converges a pre-existing database.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_PO_DISTS_INT_STG_TBL' and column_name = 'ATTRIBUTE5';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_PO_DISTS_INT_STG_TBL" ADD ("ATTRIBUTE5" VARCHAR2(150))';
+  end if;
+end;
+/
+
 COMMENT ON COLUMN "DMT_PO_DISTS_INT_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_PO_DISTS_INT_STG_SEQ';
 COMMENT ON COLUMN "DMT_PO_DISTS_INT_STG_TBL"."INTERFACE_DISTRIBUTION_KEY" IS 'Unique key for this distribution record';
 COMMENT ON COLUMN "DMT_PO_DISTS_INT_STG_TBL"."INTERFACE_LINE_LOCATION_KEY" IS 'FK to line location â€” must match DMT_PO_LINE_LOCS_INT_STG_TBL.INTERFACE_LINE_LOCATION_KEY';
-COMMENT ON TABLE "DMT_PO_DISTS_INT_STG_TBL"  IS 'Purchase Order distributions staging. Raw user data only. FBDI interface: PO_DISTRIBUTIONS_INTERFACE. CSV: PoDistributionsInterfaceOrder.csv. Note: ATTRIBUTE5 absent per Fusion FBDI spec.';
+COMMENT ON TABLE "DMT_PO_DISTS_INT_STG_TBL"  IS 'Purchase Order distributions staging. Raw user data only. FBDI interface: PO_DISTRIBUTIONS_INTERFACE. CSV: PoDistributionsInterfaceOrder.csv.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column
