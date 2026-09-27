@@ -120,6 +120,68 @@ stamped on the LOADED TFM rows (574152, 574153).
 Fusion successes + TFM errors = STG total, on **both count and money**. **BALANCED**,
 0 unaccounted.
 
+## Production key resolution
+
+**BATCH-KEY-FOUND.** The prefix (`ASSET_NUMBER LIKE '93212%'`) is a test-only anchor and is
+forbidden in production. A real, production-valid batch key round-trips: the DMT **load ESS
+request id** lands on `FA_MASS_ADDITIONS.LOAD_REQUEST_ID`, and the posted asset's base-table id
+lands on `FA_MASS_ADDITIONS.ASSET_ID`.
+
+**Resolved production key: `FA_MASS_ADDITIONS.LOAD_REQUEST_ID = <LOAD_ESS_JOB_ID>`**, filtered to
+`POSTING_STATUS = 'POSTED'` for the successes. For RUN 132 the value is **`10023891`** — this is
+`DMT_WORK_QUEUE_TBL.LOAD_ESS_JOB_ID` for the Assets child (QUEUE_ID 865, RUN_ID 132). Source of the
+value (read-only, on the DMT DB):
+
+```sql
+SELECT load_ess_job_id, import_ess_job_id, postrun_ess_job_id
+FROM   dmt_work_queue_tbl
+WHERE  run_id = 132 AND cemli_code = 'Assets' AND parent_queue_id IS NOT NULL;
+-- LOAD_ESS_JOB_ID = 10023891, IMPORT_ESS_JOB_ID = 10023897, POSTRUN_ESS_JOB_ID = 10024014
+```
+
+**Which Fusion column carries what (verified live, 2026-09-27):**
+
+| DMT value (queue 865)          | Fusion column                         | Value     |
+|--------------------------------|---------------------------------------|-----------|
+| LOAD_ESS_JOB_ID   = 10023891   | `FA_MASS_ADDITIONS.LOAD_REQUEST_ID`   | 10023891  |
+| POSTRUN_ESS_JOB_ID = 10024014  | `FA_MASS_ADDITIONS.REQUEST_ID`        | 10024014  |
+| POSTRUN_ESS_JOB_ID = 10024014  | `FA_MASS_ADDITIONS.POST_BATCH_ID` (posted rows only) | 10024014  |
+| (posted asset id)              | `FA_MASS_ADDITIONS.ASSET_ID`          | 574152 / 574153 |
+
+`POSTING_STATUS` is `POSTED` for the 2 successes and `ERROR` for BAD1. `ASSET_ID` is populated on
+the posted rows (= `FA_ADDITIONS_B.ASSET_ID`) and NULL on the ERROR row.
+
+**Live proof — successes by batch key, no prefix** (`python scripts/fusion_bip_query.py --cred fin_impl`):
+
+```sql
+SELECT a.asset_id, a.asset_number, bk.book_type_code, bk.cost
+FROM   fa_mass_additions ma
+JOIN   fa_additions_b a  ON a.asset_id = ma.asset_id
+JOIN   fa_books bk       ON bk.asset_id = a.asset_id
+                       AND bk.transaction_header_id_out IS NULL
+WHERE  ma.load_request_id = 10023891
+AND    ma.posting_status  = 'POSTED'
+ORDER BY a.asset_number;
+```
+
+Live result (2026-09-27): exactly 2 rows — `574152 / 93212RT-ASSET-G1 / US CORP / 120000` and
+`574153 / 93212RT-ASSET-G2 / US CORP / 35000`. Rollup `COUNT(*) = 2`, `SUM(FA_BOOKS.COST) = 155000`.
+`SELECT COUNT(*) FROM fa_mass_additions WHERE load_request_id = 10023891` returns 3 across a single
+asset-number prefix — the key is isolated to this run and does not bleed into neighbor test loads.
+
+**Notes / corrections:**
+- The old object README claim that "PostMassAdditions purges FA_MASS_ADDITIONS after posting" does
+  NOT hold on this demo instance — the interface rows (including the request/batch columns) survive,
+  which is what makes this batch key usable. Do not rely on absence-from-interface as a signal here.
+- `FA_ADDITIONS_B` and `FA_BOOKS` carry **no** REQUEST_ID / LOAD_REQUEST_ID / BATCH column, and
+  `FA_ADDITIONS_B.ATTRIBUTE1/ATTRIBUTE2` are empty — we stamp nothing onto the base row itself. The
+  request-id round-trip lives only on `FA_MASS_ADDITIONS`, so the base-table success read must join
+  through `FA_MASS_ADDITIONS.ASSET_ID` (join `ma.asset_id = a.asset_id`, NOT `ma.mass_addition_id`).
+- **Fallback (only if the interface is ever purged):** query `FA_ADDITIONS_B` by the exact
+  `FUSION_ASSET_ID` list DMT already captured on the LOADED header TFM rows
+  (`DMT_FA_ASSET_HDR_TFM_TBL.FUSION_ASSET_ID` = 574152, 574153 for RUN 132). Production-valid but
+  it is a captured-id list, not a batch key.
+
 ## Gotchas
 
 - **Money is on the book table, not the header.** `DMT_FA_ASSET_HDR_TFM_TBL` has no cost

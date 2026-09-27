@@ -117,6 +117,56 @@ AND    NVL(process_code,'X') <> 'ACCEPTED';
 Returns 1 row: `132_HDR_100000150`, `process_code=REJECTED`, `document_num=93212RT-BPA-BAD1`
 — confirms the FAILED count against Fusion, matching the TFM FAILED row.
 
+## Fusion money column
+
+Follow-up discovery (READ-ONLY, live `fin_impl`). We ALWAYS query Fusion for money, so this
+re-checks the earlier "money does not round-trip" claim against the RIGHT columns before
+accepting it. It holds up, and the reason is now known: **the blanket line was created in
+Fusion as a quantity-based line, where a line-level AMOUNT is not a valid stored input.**
+
+The DMT pipeline carried, on the single BPA line, `AMOUNT=50000, QUANTITY=NULL, UNIT_PRICE=25`
+(verified in `DMT_PO_LINES_INT_STG_TBL`). In Fusion, only `UNIT_PRICE=25` round-tripped.
+
+Live proof (BPA header `PO_HEADER_ID 679899`, line `PO_LINE_ID 1295202`):
+
+```sql
+-- Header money columns (the only four amount columns on PO_HEADERS_ALL) -- all NULL.
+SELECT po_header_id, segment1, type_lookup_code,
+       amount_limit, amount_released, blanket_total_amount, min_release_amount
+FROM   po_headers_all
+WHERE  po_header_id = 679899;
+-- 679899 | 93212RT-BPA-001 | BLANKET | AMOUNT_LIMIT NULL | AMOUNT_RELEASED NULL
+--        | BLANKET_TOTAL_AMOUNT NULL | MIN_RELEASE_AMOUNT NULL
+
+-- The line was loaded QUANTITY-based, so AMOUNT is not stored; every line money
+-- column is NULL except UNIT_PRICE.
+SELECT line_num, order_type_lookup_code, purchase_basis, matching_basis,
+       amount, quantity, unit_price,
+       committed_amount, quantity_committed, min_release_amount,
+       amount_released, not_to_exceed_price, max_retainage_amount
+FROM   po_lines_all
+WHERE  po_line_id = 1295202;
+-- LINE 1 | ORDER_TYPE_LOOKUP_CODE=QUANTITY | PURCHASE_BASIS=GOODS | MATCHING_BASIS=QUANTITY
+--        | AMOUNT NULL | QUANTITY NULL | UNIT_PRICE 25
+--        | COMMITTED_AMOUNT NULL | QUANTITY_COMMITTED NULL | MIN_RELEASE_AMOUNT NULL
+--        | AMOUNT_RELEASED NULL | NOT_TO_EXCEED_PRICE NULL | MAX_RETAINAGE_AMOUNT NULL
+
+-- No line-locations exist for this BPA (nothing to sum there either).
+SELECT COUNT(*) FROM po_line_locations_all WHERE po_header_id = 679899;   -- 0
+```
+
+**Conclusion: confirmed no queryable Fusion money amount for this blanket line as loaded.**
+Every candidate Fusion money column (header `AMOUNT_LIMIT` / `AMOUNT_RELEASED` /
+`BLANKET_TOTAL_AMOUNT` / `MIN_RELEASE_AMOUNT`; line `AMOUNT` / `QUANTITY` / `COMMITTED_AMOUNT`
+/ `QUANTITY_COMMITTED` / `MIN_RELEASE_AMOUNT` / `AMOUNT_RELEASED` / `NOT_TO_EXCEED_PRICE` /
+`MAX_RETAINAGE_AMOUNT`) is NULL on this pod; only `UNIT_PRICE=25` round-tripped. The 50,000
+the DMT pipeline sent in the line AMOUNT column was silently dropped because Fusion created the
+line as quantity-based (`ORDER_TYPE_LOOKUP_CODE=QUANTITY`), where AMOUNT is not a valid input.
+Money for this object is therefore sourced DMT-side (TFM line AMOUNT = 50,000); Fusion proves
+the row loaded (count + PO_HEADER_ID), not its money. (If the intent is an amount-based blanket
+line, the FBDI would need to load the line as AMOUNT-type so Fusion persists AMOUNT — a
+data/generator question, not a reconciliation-column question.)
+
 ## Amount column + rationale
 
 - **Chosen amount = line-level `AMOUNT` from the STG/TFM line row (50,000).** A blanket line

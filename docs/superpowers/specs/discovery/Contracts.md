@@ -102,6 +102,37 @@ AND    NVL(process_code,'X') <> 'ACCEPTED';
 Returns 1 row: `132_HDR_100000152`, `process_code=REJECTED`, `document_num=93212RT-CPA-BAD1`
 — confirms the FAILED count against Fusion, matching the TFM FAILED row.
 
+## Fusion money column
+
+Follow-up discovery (READ-ONLY, live `fin_impl`). We ALWAYS query Fusion for money, so this
+re-checks whether a Contract Purchase Agreement (CPA) carries an agreed amount in Fusion
+against every money column that exists on the base header table — before accepting "no money."
+
+`PO_HEADERS_ALL` has exactly four amount columns: `AMOUNT_LIMIT`, `AMOUNT_RELEASED`,
+`BLANKET_TOTAL_AMOUNT`, `MIN_RELEASE_AMOUNT`. All four are NULL on the loaded CPA header. A CPA
+is header-only, so there are no line/location/distribution rows to carry money either.
+
+Live proof (CPA header `PO_HEADER_ID 679900`):
+
+```sql
+-- All four money columns on PO_HEADERS_ALL for the loaded CPA header -- all NULL.
+SELECT po_header_id, segment1, type_lookup_code,
+       amount_limit, amount_released, blanket_total_amount, min_release_amount
+FROM   po_headers_all
+WHERE  po_header_id = 679900;
+-- 679900 | 93212RT-CPA-001 | CONTRACT | AMOUNT_LIMIT NULL | AMOUNT_RELEASED NULL
+--        | BLANKET_TOTAL_AMOUNT NULL | MIN_RELEASE_AMOUNT NULL
+
+-- Header-only: no lines exist for a CPA (nothing to sum below the header).
+SELECT COUNT(*) FROM po_lines_all WHERE po_header_id = 679900;   -- 0
+```
+
+**Conclusion: confirmed no money amount in Fusion for this document type.** A Contract Purchase
+Agreement carries no monetary amount on this pod — every base-header amount column is NULL and
+the document is header-only with no line grain. Contracts reconcile on **count only**; money
+is genuinely not applicable, and this is now proven live (not assumed). The DMT pipeline also
+carries no amount column for CPA, so this is consistent on both sides.
+
 ## Amount column + rationale
 
 - **No amount column exists.** Contract Purchase Agreements are header-only with no line grain

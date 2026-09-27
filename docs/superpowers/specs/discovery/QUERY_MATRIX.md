@@ -11,13 +11,13 @@ All **23 objects** in run 132 were reconciled by hand. Every object's accounting
 Nothing was fabricated — every FAILED row was confirmed to carry a real Fusion error, and every
 LOADED count was confirmed against a Fusion base table.
 
-- **15 objects** are fully proven with a **production-valid key** and a balanced result.
+- **19 objects** are fully proven with a **production-valid key** and a balanced result. (This
+  includes the 4 below that were resolved in the follow-up pass — see "Follow-up resolutions".)
 - **4 objects** had **0 loaded rows** this run (env/functional-blocked). Their STG/TFM side ties
   out and their Fusion success query is *designed and documented*, to be confirmed on a run where
   they do load.
-- **4 objects** currently only tie back to Fusion via the **prefix or a weak time-window** — these
-  must be switched to a production-valid key before we build them. (This is exactly what the
-  "never query by prefix" rule is meant to catch.)
+- **0 objects** remain on the prefix or a time-window. The 4 that were (Assets, Projects,
+  Expenditures, GL Budgets) are now on production-valid keys.
 
 ## Universal patterns confirmed (these become framework rules)
 
@@ -84,18 +84,40 @@ needs a prod-valid key before build.
 | 22 | Salaries | CMP_SALARY | key map source-system id | SALARY_AMOUNT | yes | 1+1=2 / 75000+80000=155000 | OK |
 | 23 | TalentProfiles | HRT_PROFILE_ITEMS | *designed* (key map) | — | n/a | 0+2=2, **0 loaded** | 0-LOAD |
 
-## Decisions needed before we build
+## Follow-up resolutions (2026-09-27)
 
-1. **The 4 KEY-FIX objects** (Assets, Projects, Expenditures, GL Budgets) must move off the
-   prefix/time-window. Recommended: use the **captured Fusion id list** for Assets
-   (`FUSION_ASSET_ID`), Projects (`FUSION_PROJECT_ID`), Expenditures (`FUSION_EXPENDITURE_ITEM_ID`),
-   and the captured code-combination ids for GL Budgets — all are prod-valid and already on the
-   TFM rows. Alternative: a short follow-up to find a batch request-id that round-trips for each.
-2. **Money scope.** Reconcile money only where Fusion carries it (8 objects). For Blanket POs,
-   Contracts, Expenditures and the count-only objects, show counts (and STG/TFM money where it
-   exists) but **no Fusion money variance**. Accept this?
-3. **Amount-column choices** (per the OK/money objects): PO & Requisitions = qty×unit_price;
-   AP = invoice amount; GL Balances = entered dr/cr; GL Budgets = budget amount; Billing Events =
-   bill amount; Salaries = salary amount; Assets = book cost. Confirm these are the right figures.
+Decision taken: **find a batch id first**; use the captured Fusion id only where a batch id
+genuinely does not exist. Result:
 
-Everything else (the 15 OK objects and the 4 designed 0-load queries) is ready to code as-is.
+| Object | Was | Now (production key) | Money |
+|---|---|---|---|
+| Assets | prefix on ASSET_NUMBER | **batch id** — `FA_MASS_ADDITIONS.LOAD_REQUEST_ID = LOAD_ESS_JOB_ID`, POSTED, join to FA_BOOKS | COST, Fusion=155,000 ✓ |
+| Expenditures | prefix on ORIG_TRANSACTION_REFERENCE | **batch id** — `PJC_EXP_ITEMS_ALL.REQUEST_ID = IMPORT_ESS_JOB_ID` | `DENOM_RAW_COST` = 3,840 (Fusion recomputes qty×rate; the 4,000→3,840 gap is a real variance to show) |
+| Projects | prefix on SEGMENT1 | **captured id** — `PROJECT_ID IN (captured FUSION_PROJECT_ID)`; proven no batch id round-trips (base REQUEST_ID null, interface purged, no source ref) | none (count-only) |
+| GL Budgets | time window + CCID | **captured id** — code-combination ids + budget name (+ period/ledger/currency for hardening); proven no batch id survives onto a loaded cell | BUDGET_AMOUNT, Fusion=2,000 ✓ |
+
+Money column resolutions:
+
+- **Expenditures** — `DENOM_RAW_COST` (Fusion's recomputed value is the reported success amount).
+- **Blanket POs** — no queryable Fusion amount as loaded: the line is created **quantity-based**,
+  so Fusion drops the AMOUNT we send. Money stays DMT-side (TFM line = 50,000); Fusion proves the
+  load by count. *Follow-up (data/generator, not recon): to reconcile blanket money, generate the
+  BPA line as amount-based so Fusion persists AMOUNT.*
+- **Contracts** — genuinely no money (header-only CPA, all four PO amount columns null). Count-only.
+
+## Final state
+
+- **Money reconciled from Fusion (9):** PO, AP Invoices, GL Balances, GL Budgets, Billing Events,
+  Requisitions, Salaries, Assets, Expenditures.
+- **Count-only (10):** Suppliers ×5, Customers, Projects, Workers, Contracts, plus 0-load
+  Grants/Talent Profiles.
+- **DMT-side money only, by generator design (1):** Blanket POs.
+- **0-loaded, query designed for a future run (4):** AR Invoices, Project Budgets, Grants,
+  Talent Profiles.
+
+Amount columns (confirmed): PO & Requisitions = qty×unit_price; AP = invoice amount; GL Balances =
+entered dr/cr; GL Budgets = budget amount; Billing Events = bill amount; Salaries = salary amount;
+Assets = book cost; Expenditures = denom raw cost.
+
+All 23 objects are ready to code: 19 with a proven production-valid key, 4 with a designed query
+awaiting a run where they load.

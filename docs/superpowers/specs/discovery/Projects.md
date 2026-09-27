@@ -56,6 +56,90 @@ Both LOADED TFM ids are present in the Fusion base table with the exact prefixed
 ## Balance check
 Fusion successes (2) + TFM errors (1) = 3 = STG/run total (3). **BALANCED** (count-only).
 
+## Production key resolution
+
+The earlier balance matched on `SEGMENT1 LIKE '93212%'` — the run **test prefix** — which is
+forbidden in production (a real client's project numbers are not prefixed by our run id). This
+section resolves a production-valid key that selects exactly RUN 132's loaded projects.
+
+**Step 1 — ESS request id on a Fusion column? NO.**
+DMT_WORK_QUEUE_TBL for RUN 132 / Projects gives `LOAD_ESS_JOB_ID = 10023760`,
+`IMPORT_ESS_JOB_ID = 10023769`. Neither lands on a queryable column:
+- `PJF_PROJECTS_ALL_B.REQUEST_ID` is **NULL** for both loaded projects (Import does not stamp it).
+- `PJF_PROJECTS_ALL_XFACE` (interface) returns **zero rows** for the run — accepted rows are
+  purged after import, so `LOAD_REQUEST_ID` / `REQUEST_ID = 10023760/10023769` matches nothing.
+
+Live proof (both empty / null):
+```sql
+-- via scripts/fusion_bip_query.py --cred fin_impl
+-- base table: REQUEST_ID null for both loaded projects
+SELECT TO_CHAR(project_id) AS PROJECT_ID, segment1 AS SEGMENT1,
+       TO_CHAR(request_id) AS REQUEST_ID
+FROM   pjf_projects_all_b
+WHERE  project_id IN (300000333889358, 300000333889383);
+-- -> REQUEST_ID is empty for both rows.
+
+-- interface table: no rows for the run's ESS ids (purged)
+SELECT project_number, TO_CHAR(load_request_id), TO_CHAR(request_id)
+FROM   pjf_projects_all_xface
+WHERE  load_request_id IN (10023760, 10023769)
+   OR  request_id      IN (10023760, 10023769);
+-- -> zero rows.
+```
+
+**Step 2 — A stamped source reference that round-trips? NO.**
+Nothing was stamped to round-trip, and nothing survives on the base table:
+- The DMT side sent no source reference: RUN 132 TFM rows have `SOURCE_APPLICATION_CODE`,
+  `SOURCE_PROJECT_REFERENCE`, `ATTRIBUTE_CATEGORY`, `ATTRIBUTE1` all **NULL** (SOURCE_APPLICATION_CODE
+  is deliberately blank — 'CONVERSION'/'EXTERNAL' are invalid on this demo pod; see README).
+- On the Fusion base table, `PM_PROJECT_REFERENCE`, `INTEGRATED_PROJECT_REFERENCE` are **empty**
+  for both loaded projects. `PM_PRODUCT_CODE = 'OPEN_INTERFACE'` is a constant on every
+  interface-loaded project (not run-scoped). `LAST_UPDATE_LOGIN` / `CREATED_BY = FIN_IMPL` are
+  session/user, not run-scoped. None isolates this run's records.
+
+Live proof (all reference columns empty):
+```sql
+-- via scripts/fusion_bip_query.py --cred fin_impl
+SELECT TO_CHAR(project_id) AS PROJECT_ID, segment1 AS SEGMENT1,
+       pm_project_reference AS PM_PROJECT_REFERENCE,
+       integrated_project_reference AS INTEGRATED_PROJECT_REFERENCE,
+       pm_product_code AS PM_PRODUCT_CODE
+FROM   pjf_projects_all_b
+WHERE  project_id IN (300000333889358, 300000333889383);
+-- -> PM_PROJECT_REFERENCE and INTEGRATED_PROJECT_REFERENCE empty;
+--    PM_PRODUCT_CODE = OPEN_INTERFACE (constant, not run-specific).
+```
+
+**Step 3 — FALLBACK-TO-CAPTURED-IDS (the production key).**
+No batch key round-trips. The production-valid key is the exact list of `FUSION_PROJECT_ID`
+values DMT already captured on the LOADED TFM rows at import time. This is prefix-free and
+identifies the run's records exactly, in production or test.
+
+Captured ids (DMT_PJF_PROJECTS_TFM_TBL, RUN 132, TFM_STATUS='LOADED'):
+`300000333889358`, `300000333889383`.
+
+Live proof (returns exactly the run's 2 loaded projects, no others):
+```sql
+-- via scripts/fusion_bip_query.py --cred fin_impl
+SELECT TO_CHAR(COUNT(*)) AS CNT,
+       TO_CHAR(MIN(project_id)) AS MINID,
+       TO_CHAR(MAX(project_id)) AS MAXID
+FROM   pjf_projects_all_b
+WHERE  project_id IN (300000333889358, 300000333889383);
+-- -> CNT=2, MINID=300000333889358, MAXID=300000333889383 (LIVE, confirmed).
+```
+The id list is produced in production by DMT itself:
+```sql
+-- on the DMT DB, drives the Fusion IN-list above
+SELECT fusion_project_id
+FROM   dmt_pjf_projects_tfm_tbl
+WHERE  run_id = 132 AND tfm_status = 'LOADED';
+```
+
+**Verdict: FALLBACK-TO-CAPTURED-IDS.** Count-only (Projects carries no money): 2 loaded =
+2 base-table rows. Balanced with the 1 FAILED (BAD1) = 3 run total. The prefix-on-SEGMENT1
+match in the "Fusion successes" section above is TEST-ONLY and must not be used in production.
+
 ## Gotchas
 - No money on Projects — do not invent an amount.
 - `SEGMENT1` (prefix) is the only durable base key; `REQUEST_ID`, `PM_PROJECT_REFERENCE`,

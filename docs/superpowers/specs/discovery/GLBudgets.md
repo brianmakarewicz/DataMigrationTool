@@ -202,6 +202,91 @@ correct amounts. No forced balance — every count and dollar is backed by a liv
 
 ---
 
+## Production key resolution
+
+**Verdict: FALLBACK-TO-CAPTURED-IDS — a loaded budget cell carries NO batch key.**
+No load/import ESS request id, no batch id, and no source reference round-trips onto a loaded
+cell. The production-valid key is the exact **CODE_COMBINATION_ID list DMT already captured on the
+LOADED TFM rows** (stored, misleadingly, in `FUSION_BUDGET_VERSION_ID`) plus the **budget name**,
+with **no time window**. Proven live below.
+
+### Why no batch key exists (proven live)
+
+1. **The loaded cell has no batch/request column at all.** Live column scan of the base table:
+   ```sql
+   SELECT column_name FROM all_tab_columns
+   WHERE  table_name = 'GL_BUDGET_BALANCES'
+   AND    (column_name LIKE '%REQUEST%' OR column_name LIKE '%BATCH%'
+        OR column_name LIKE '%LOAD%'    OR column_name LIKE '%SOURCE%'
+        OR column_name LIKE '%GROUP%'   OR column_name LIKE '%VERSION%');
+   ```
+   Live result: the ONLY match is `OBJECT_VERSION_NUMBER` (an optimistic-lock counter, not a load
+   batch). There is no `REQUEST_ID`, `BATCH_ID`, `LOAD_REQUEST_ID`, `SOURCE`, or `GROUP_ID` on a
+   loaded cell. Nothing ties a base-table cell back to the ESS request that created it.
+
+2. **The interface request id does NOT survive to the cell.** The load's ESS request ids live only
+   in `DMT_ESS_JOB_TBL` (RUN_ID=132, CEMLI_CODE='GLBudgets'): `InterfaceLoaderController` 10023731,
+   `ValidateAndLoadBudgets` 10023741 (good) / 10023773 (bad), `LoadBudgets` 10023751. The work-queue
+   row (queue 844) stores NO ESS ids either (`LOAD_ESS_JOB_ID`/`IMPORT_ESS_JOB_ID` are NULL — they
+   are recorded in `DMT_ESS_JOB_TBL`, not on the queue). `GL_BUDGET_INTERFACE` carries
+   `LOAD_REQUEST_ID`, but on a **successful** load the import consumes/deletes those interface rows —
+   so `LOAD_REQUEST_ID` survives only for FAILED cells, never for a loaded one. It cannot be a
+   success key.
+
+3. **No stamped reference round-trips.** Budget name, period, segments, ledger and currency all
+   round-trip (they ARE the cell key), but none is a per-run/per-batch stamp — the same
+   `budget_name='Budget'` cell key is reused every run. There is no DFF or source-reference carrier
+   on a budget cell.
+
+### The production key (captured CODE_COMBINATION_ID list + budget name, no time window)
+
+DMT already stored, on each LOADED TFM row, the exact `CODE_COMBINATION_ID` of the cell it created
+(column `FUSION_BUDGET_VERSION_ID` — a misnomer; see gotcha #1). For RUN 132 those are
+**300000047301444** and **300000047301445**. Selecting `GL_BUDGET_BALANCES` by that captured CCID
+list plus the budget name resolves each cell to a single base-table row without any
+`LAST_UPDATE_DATE` window.
+
+```sql
+-- Captured on LOADED TFM rows (local DMT DB):
+--   SELECT fusion_budget_version_id FROM dmt_gl_budget_int_tfm_tbl
+--   WHERE run_id = 132 AND tfm_status = 'LOADED';   -> 300000047301444, 300000047301445
+SELECT COUNT(*)                                  AS cnt,
+       SUM(bb.period_net_dr - bb.period_net_cr)  AS money
+FROM   gl_budget_balances bb
+JOIN   gl_ledgers led            ON led.ledger_id = bb.ledger_id
+JOIN   gl_code_combinations gcc  ON gcc.chart_of_accounts_id = led.chart_of_accounts_id
+                                AND NVL(gcc.segment1,'#') = NVL(bb.segment1,'#')
+                                AND NVL(gcc.segment2,'#') = NVL(bb.segment2,'#')
+                                AND NVL(gcc.segment3,'#') = NVL(bb.segment3,'#')
+                                AND NVL(gcc.segment4,'#') = NVL(bb.segment4,'#')
+                                AND NVL(gcc.segment5,'#') = NVL(bb.segment5,'#')
+                                AND NVL(gcc.segment6,'#') = NVL(bb.segment6,'#')
+WHERE  bb.budget_name = 'Budget'
+AND    gcc.code_combination_id IN (300000047301444, 300000047301445);
+```
+
+**Live result (no time window): CNT = 2, MONEY = 2000.** Per-cell breakdown confirms both are
+period 06-26, DR 1000 each, and no other period collides under budget name `Budget`:
+
+| ccid | period | seg3 | period_net_dr | period_net_cr |
+|---|---|---|---|---|
+| 300000047301444 | 06-26 | 77600 | 1000 | 0 |
+| 300000047301445 | 06-26 | 60540 | 1000 | 0 |
+
+This is the production-valid replacement for the earlier `LAST_UPDATE_DATE >= validate-start`
+window. It returns exactly the run's two loaded cells and sums `BUDGET_AMOUNT` to 2000 using only
+keys DMT itself captured, with no reliance on wall-clock timing or ATP↔Fusion clock skew.
+
+**Production hardening note.** A CCID uniquely identifies a GL account, so `CCID + budget_name`
+already resolved to one period cell here. For a run that loads the same account across multiple
+periods, add the captured `period_name` list (also on the TFM row) to the key so each captured cell
+maps to exactly one base-table row. The full captured cell key on the TFM row is
+`ledger_id + budget_name + period_name + currency_code + segment1..30`; the CCID collapses the 30
+segments to one id, so `CCID + budget_name + period_name (+ ledger_id + currency_code)` is the
+complete, time-window-free production key.
+
+---
+
 ## Evidence / reproduction
 
 - Local DMT DB: `oracledb.connect(user='dmt_owner', password='DmtLocal#2026', dsn='//localhost:1523/FREEPDB1')`
