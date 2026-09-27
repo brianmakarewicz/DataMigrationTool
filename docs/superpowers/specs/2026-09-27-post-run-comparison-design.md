@@ -62,11 +62,23 @@ object to its BIP report path. It does **not** touch the existing recon layer.
 1. **Fusion successes MUST come from Fusion.** Never infer a success from our own TFM
    status. The success count and sum are whatever Fusion's base tables report for this
    batch.
-2. **Never query Fusion by prefix.** The prefix is a test-harness device and is not a
-   valid production approach. Fusion queries key off, in order of preference:
-   1. **our stamped work-queue id** on the record in Fusion (preferred — most objects),
-   2. else the **load id / import request id**,
-   3. else the **Fusion interface tables**.
+2. **Never query Fusion by prefix (or by a timestamp window).** The prefix is a test-harness
+   device and is not a valid production approach. Discovery (2026-09-27, run 132) settled the
+   real key order per object:
+   1. **A batch id** — the load or import ESS request id we already record in
+      `DMT_WORK_QUEUE_TBL`, filtered on the Fusion row (e.g. Assets
+      `FA_MASS_ADDITIONS.LOAD_REQUEST_ID`, Expenditures `PJC_EXP_ITEMS_ALL.REQUEST_ID`, PO/AP/
+      Suppliers/Blanket/Contracts by request id). **One object can carry several request ids in
+      one run** (Requisitions had two), so this key takes a *list* of request ids.
+   2. **A stamped reference that round-trips** onto the Fusion row (GL `GROUP_ID = RUN_ID`,
+      Billing Events `SOURCEREF`, Requisitions interface-line key, HCM key-map source-system id,
+      Customers orig-system reference).
+   3. **The captured Fusion id** — the `FUSION_*_ID` we already stored on each loaded row — used
+      only where the two above genuinely do not exist. Discovery proved this is the *only*
+      production-safe option for Projects and GL Budgets (no batch id survives onto the loaded
+      project row or budget cell).
+   4. The **Fusion interface tables** for the error/rejection side where needed.
+   The prefix and any timestamp-window scoping are forbidden.
 3. **Never fabricate a number.** If a Fusion query cannot be built for an object yet, that
    object is reported as "not yet provable," not as zero successes.
 4. **Standard output shape.** Every per-object Fusion query returns the same columns, and
@@ -148,6 +160,26 @@ up front.
 **Proving set (first three):** Purchase Orders (money, multi-BU, work-queue-id path),
 AP Invoices (money, likely load-id path), and GL Balances (money, different grain). Once
 the pattern is proven on these three, roll it out to the remaining objects.
+
+## Discovery outcome (2026-09-27) — folded into the build
+
+Phase 1 is DONE. All 23 objects in run 132 were proven by hand (read-only), findings in
+`discovery/` with `discovery/QUERY_MATRIX.md` as the index. Confirmed patterns that the build
+must honor:
+
+- **STG has no RUN_ID and holds duplicate seed rows.** The run's record set is always the
+  object's TFM rows for the run; scope STG *through the TFM row's `STG_SEQUENCE_ID` pointer*,
+  never by business key or prefix.
+- **A "success" is object-specific**, not "row present": GL Balances = a postable/balanced
+  journal, Assets = posted, Project Budgets = a real budget version excluding auto-created
+  "Project Plan" workplan versions. Each object's query encodes its own success test.
+- **Money reconciles from Fusion for 9 objects; 10 are count-only; 1 (Blanket POs) is DMT-side
+  only** because Fusion drops the amount on a quantity-based line. Expenditures shows Fusion's
+  *recomputed* amount, so a nonzero money variance there is correct, not a defect. The
+  comparison row therefore needs a per-object "Fusion money available?" flag; when false, show
+  counts (and STG/TFM money) but no Fusion money variance.
+- **4 objects (AR Invoices, Project Budgets, Grants, Talent Profiles) load nothing on the
+  blocked demo**; their Fusion query is designed and will confirm on a run where they load.
 
 ## Phase 2 — Build (only proven objects)
 
