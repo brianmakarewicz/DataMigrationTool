@@ -1,10 +1,12 @@
 CREATE OR REPLACE PACKAGE BODY DMT_SUP_COMPARE_PKG AS
 
-    -- Shared shape for all five count-only supplier objects. Each public
-    -- function passes its own CEMLI code and a dynamic TFM-table count
-    -- (via a REF CURSOR built from static per-object SQL -- see each public
-    -- function) so this stays one place for the batch-id lookup, BIP call,
-    -- and variance/balance math (mirrors DMT_PO_COMPARE_PKG.GET_COMPARISON).
+    -- Shared shape for all five count-only supplier objects. Each of the five
+    -- public functions runs two plain static SELECT ... INTO counts against
+    -- its own hardcoded TFM table (STG total and TFM-error total) and passes
+    -- those plain NUMBERs, plus its CEMLI code, to this one private helper.
+    -- BUILD_ROW is the single place for the batch-id lookup, the BIP call,
+    -- and the variance/balance math (mirrors DMT_PO_COMPARE_PKG.GET_COMPARISON).
+    -- No dynamic SQL and no REF CURSOR anywhere in this package (rule #66).
     FUNCTION BUILD_ROW(
         p_run_id    IN NUMBER,
         p_cemli     IN VARCHAR2,
