@@ -20,3 +20,13 @@ BEGIN
     add_col('CMP_FUNCTION',            'VARCHAR2(200)');
 END;
 /
+
+prompt == Log migration (idempotent) ==
+merge into DMT_MIGRATION_LOG t
+using (select '2026-09-27_bip_report_comparison_cols.sql' migration_name from dual) s
+on (t.migration_name = s.migration_name)
+when not matched then
+  insert (migration_name, checksum, applied_by)
+  values (s.migration_name, 'comparisoncols', USER);
+
+commit;
