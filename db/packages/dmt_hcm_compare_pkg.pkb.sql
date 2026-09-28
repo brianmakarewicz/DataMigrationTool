@@ -130,7 +130,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_HCM_COMPARE_PKG AS
     BEGIN
         -- (a) staged total: STG has no RUN_ID, joined via the run's TFM rows
         --     (STG_SEQUENCE_ID). Money = SALARY_AMOUNT (VARCHAR2 on STG/TFM).
-        SELECT COUNT(*), NVL(SUM(TO_NUMBER(s.SALARY_AMOUNT)), 0)
+        SELECT COUNT(*), NVL(SUM(TO_NUMBER(s.SALARY_AMOUNT DEFAULT NULL ON CONVERSION ERROR)), 0)
           INTO l_stg_cnt, l_stg_amt
           FROM DMT_SALARY_STG_TBL s
          WHERE s.STG_SEQUENCE_ID IN (
@@ -141,7 +141,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_HCM_COMPARE_PKG AS
         -- (b) transform errors: same run set, TFM_STATUS = FAILED. The
         --     FAILED row's amount still counts toward the error total -- a
         --     rejected salary is honestly reported, not dropped.
-        SELECT COUNT(*), NVL(SUM(TO_NUMBER(SALARY_AMOUNT)), 0)
+        SELECT COUNT(*), NVL(SUM(TO_NUMBER(SALARY_AMOUNT DEFAULT NULL ON CONVERSION ERROR)), 0)
           INTO l_err_cnt, l_err_amt
           FROM DMT_SALARY_TFM_TBL
          WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';

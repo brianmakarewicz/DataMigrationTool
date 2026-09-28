@@ -31,14 +31,25 @@ CREATE OR REPLACE PACKAGE BODY DMT_RUN_COMPARE_PKG AS
                 l_out.EXTEND; l_out(l_out.LAST) := l_row;
             EXCEPTION WHEN OTHERS THEN
                 -- Never let one broken/unregistered object's comparison
-                -- function fail the whole grid; log and skip it.
+                -- function fail the whole grid -- but never silently drop
+                -- the object either. A raised comparison function (e.g. a
+                -- BIP SOAP fault, which every family function surfaces via
+                -- RAISE_APPLICATION_ERROR(-20903) rather than reading a
+                -- fault as 0) means Fusion's side could not be confirmed --
+                -- that is different from "not in this run" and must stay
+                -- visible on the grid as an explicit unknown row.
                 DMT_UTIL_PKG.LOG_ERROR(
                     p_run_id    => p_run_id,
                     p_message   => 'Comparison function failed for CEMLI_CODE='||
-                                    obj.CEMLI_CODE||' ('||obj.CMP_FUNCTION||'); skipped from grid',
+                                    obj.CEMLI_CODE||' ('||obj.CMP_FUNCTION||'); marked unknown on grid',
                     p_sqlerrm   => SQLERRM,
                     p_package   => C_PKG,
                     p_procedure => 'BUILD_ROWS');
+                l_out.EXTEND;
+                l_out(l_out.LAST) := DMT_CMP_ROW_OBJ(
+                    obj.CEMLI_CODE, obj.CEMLI_CODE, 'NONE',
+                    NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'N', NULL, NULL,
+                    '?', 'Comparison unavailable: '||SUBSTR(SQLERRM,1,300));
             END;
         END LOOP;
         RETURN l_out;

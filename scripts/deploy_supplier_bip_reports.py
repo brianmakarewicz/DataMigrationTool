@@ -71,6 +71,23 @@ REPORTS = [
     ("Workers",                  "WORKERS_CMP_DM",             "WORKERS_CMP_RPT"),
     ("Salaries",                 "SALARIES_CMP_DM",            "SALARIES_CMP_RPT"),
     ("TalentProfiles",           "TALENTPROFILES_CMP_DM",      "TALENTPROFILES_CMP_RPT"),
+    # Suppliers + Procurement + AR/AP/Customers family (2026-09-28, whole-branch
+    # review fix) -- post-run comparison reports that were missed from this
+    # manifest during the rollout. Names/paths cross-checked against
+    # db/seed/dmt_bip_report_tbl.sql CMP_DM_CATALOG_PATH / CMP_REPORT_CATALOG_PATH.
+    ("Suppliers",                "SUP_CMP_DM",                 "SUP_CMP_RPT"),
+    ("SupplierAddresses",        "SUP_ADDR_CMP_DM",            "SUP_ADDR_CMP_RPT"),
+    ("SupplierSites",            "SUP_SITE_CMP_DM",            "SUP_SITE_CMP_RPT"),
+    ("SupplierSiteAssignments",  "SUP_SITE_ASSN_CMP_DM",       "SUP_SITE_ASSN_CMP_RPT"),
+    ("SupplierContacts",         "SUP_CONT_CMP_DM",            "SUP_CONT_CMP_RPT"),
+    ("BlanketPOs",               "PO_CMP_DM",                  "PO_CMP_RPT"),
+    ("Contracts",                "PO_CMP_DM",                  "PO_CMP_RPT"),
+    ("APInvoices",               "AP_CMP_DM",                  "AP_CMP_RPT"),
+    ("Customers",                "CUST_CMP_DM",                "CUST_CMP_RPT"),
+    ("ARInvoices",               "AR_CMP_DM",                  "AR_CMP_RPT"),
+    ("PurchaseOrders",           "PO_CMP_DM",                  "PO_CMP_RPT"),
+    ("GLBalances",               "GL_BAL_CMP_DM",              "GL_BAL_CMP_RPT"),
+    ("GLBudgets",                "GL_BUDGET_CMP_DM",           "GL_BUDGET_CMP_RPT"),
 ]
 
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"
