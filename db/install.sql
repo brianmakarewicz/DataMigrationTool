@@ -688,6 +688,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_grants_results_pkg.pks.sql
 @@packages/dmt_grants_transform_pkg.pks.sql
 @@packages/dmt_grants_validator_pkg.pks.sql
+@@packages/dmt_hcm_compare_pkg.pks.sql
 @@packages/dmt_hdl_util_pkg.pks.sql
 @@packages/dmt_import_report_pkg.pks.sql
 @@packages/dmt_inv_uom_fbl_gen_pkg.pks.sql
@@ -912,6 +913,7 @@ prompt == Package bodies ==
 @@packages/dmt_grants_results_pkg.pkb.sql
 @@packages/dmt_grants_transform_pkg.pkb.sql
 @@packages/dmt_grants_validator_pkg.pkb.sql
+@@packages/dmt_hcm_compare_pkg.pkb.sql
 @@packages/dmt_hdl_util_pkg.pkb.sql
 @@packages/dmt_import_report_pkg.pkb.sql
 @@packages/dmt_inv_uom_fbl_gen_pkg.pkb.sql

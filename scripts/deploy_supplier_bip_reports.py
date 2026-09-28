@@ -67,6 +67,10 @@ REPORTS = [
     # Assets + Requisitions family (2026-09-28) -- post-run comparison reports, family F.
     ("Assets",                   "FA_CMP_DM",                  "FA_CMP_RPT"),
     ("Requisitions",             "REQ_CMP_DM",                 "REQ_CMP_RPT"),
+    # HCM family (2026-09-28) -- post-run comparison reports, family G (FINAL).
+    ("Workers",                  "WORKERS_CMP_DM",             "WORKERS_CMP_RPT"),
+    ("Salaries",                 "SALARIES_CMP_DM",            "SALARIES_CMP_RPT"),
+    ("TalentProfiles",           "TALENTPROFILES_CMP_DM",      "TALENTPROFILES_CMP_RPT"),
 ]
 
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"

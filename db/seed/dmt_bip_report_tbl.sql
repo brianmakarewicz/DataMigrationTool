@@ -2947,3 +2947,65 @@ when matched then update set
     t."CMP_FUNCTION"            = s.cmp_function;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- HCM rollout (family G, 2026-09-28) -- FINAL FAMILY. Post-run comparison
+-- report registration for Workers, Salaries, TalentProfiles (run 132
+-- discovery: see docs/superpowers/specs/discovery/{Workers,Salaries,
+-- TalentProfiles}.md). Sets ONLY the three CMP_* columns on each
+-- already-registered row (BIP_REPORT_ID 100000027 / 100000028, plus
+-- TalentProfiles' Contract v1 row); the reconciliation path/notes/
+-- interface_table set earlier for these rows is untouched. All three
+-- functions live in ONE package, DMT_HCM_COMPARE_PKG.
+--
+-- This family loads via HDL, not FBDI -- there is no import ESS request id.
+-- Every function keys Fusion on the HDL tie-back: HRC_INTEGRATION_KEY_MAP.
+-- SOURCE_SYSTEM_ID (= the TFM RECON_KEY of a LOADED record) -> SURROGATE_ID
+-- (= the base-table PK). KEY_TYPE = STAMPED_REF; the batch bind is the exact
+-- per-record RECON_KEY list of this run's LOADED TFM rows, matched verbatim,
+-- never a prefix wildcard or a timestamp window.
+--   Workers         -- count-only (no money grain), OBJECT_NAME='Person' on
+--                       the key map, base PER_ALL_PEOPLE_F. Run 132:
+--                       STG 2, err 1, Fusion 1 (LIVE) -- count-balanced.
+--                       DMT_HCM_COMPARE_PKG.GET_WORKERS_CMP.
+--   Salaries        -- money-bearing (SALARY_AMOUNT), OBJECT_NAME='Salary',
+--                       base CMP_SALARY. Run 132: STG 2/155000,
+--                       err 1/80000, Fusion 1/75000 (LIVE) -- balances on
+--                       both count and money. DMT_HCM_COMPARE_PKG.
+--                       GET_SALARIES_CMP.
+--   TalentProfiles  -- count-only (no money grain), OBJECT_NAME='ProfileItem'
+--                       on the key map (the parent Profile has no key-map
+--                       row of its own; reached through the child
+--                       ProfileItem's PROFILE_ID), base HRT_PROFILES_B via
+--                       HRT_PROFILE_ITEMS. 0 LOADED in run 132 (whole-file
+--                       HDL rejection on an invalid ProfileItem METADATA
+--                       attribute), so the Fusion side is designed/built for
+--                       a future run -- mirrors the ProjectBudgets/Grants
+--                       honest-0-loaded pattern. DMT_HCM_COMPARE_PKG.
+--                       GET_TALENT_PROFILES_CMP.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Workers'                                            cemli_code,
+           '/Custom/DMT2/Workers/WORKERS_CMP_DM.xdm'             cmp_dm_catalog_path,
+           '/Custom/DMT2/Workers/WORKERS_CMP_RPT.xdo'            cmp_report_catalog_path,
+           'DMT_HCM_COMPARE_PKG.GET_WORKERS_CMP'                 cmp_function
+    from dual
+    union all select 'Salaries',
+           '/Custom/DMT2/Salaries/SALARIES_CMP_DM.xdm',
+           '/Custom/DMT2/Salaries/SALARIES_CMP_RPT.xdo',
+           'DMT_HCM_COMPARE_PKG.GET_SALARIES_CMP'
+    from dual
+    union all select 'TalentProfiles',
+           '/Custom/DMT2/TalentProfiles/TALENTPROFILES_CMP_DM.xdm',
+           '/Custom/DMT2/TalentProfiles/TALENTPROFILES_CMP_RPT.xdo',
+           'DMT_HCM_COMPARE_PKG.GET_TALENT_PROFILES_CMP'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
