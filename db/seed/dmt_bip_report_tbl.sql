@@ -1812,6 +1812,40 @@ when matched then update set
 commit;
 
 -- ---------------------------------------------------------------------------
+-- PO family (BlanketPOs, Contracts) — post-run comparison report registration
+-- (rollout onto the proven PurchaseOrders walking-skeleton template, run 132
+-- discovery: see docs/superpowers/specs/discovery/{BlanketPOs,Contracts}.md).
+-- Sets ONLY the three CMP_* columns on each already-registered row (the
+-- Contract v1 reconciliation path/notes/tfm_table set earlier for these rows
+-- is untouched) so this MERGE cannot clobber the per-record reconciliation
+-- registration the same rows already carry. Both functions live in
+-- DMT_PO_COMPARE_PKG alongside GET_COMPARISON (shared PO family package --
+-- same Fusion base table and shared TFM table, differing only by
+-- DOCUMENT_TYPE_CODE). BlanketPOs sources money DMT-side (TFM line AMOUNT);
+-- Contracts is count-only (header-only document, no money grain anywhere).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'BlanketPOs'                                          cemli_code,
+           '/Custom/DMT2/BlanketPOs/PO_CMP_DM.xdm'                cmp_dm_catalog_path,
+           '/Custom/DMT2/BlanketPOs/PO_CMP_RPT.xdo'               cmp_report_catalog_path,
+           'DMT_PO_COMPARE_PKG.GET_BLANKET_COMPARISON'            cmp_function
+    from dual
+    union all select 'Contracts',
+           '/Custom/DMT2/Contracts/PO_CMP_DM.xdm',
+           '/Custom/DMT2/Contracts/PO_CMP_RPT.xdo',
+           'DMT_PO_COMPARE_PKG.GET_CONTRACT_COMPARISON'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Assets — Contract v1 registration (design section 5). Points the Assets CEMLI
 -- at the nine-column Contract v1 report (DMT_FA_ASSET_RECON_DM.xdm, fixed #344)
 -- and sets CONTRACT_VERSION = 1 so the shared parser
