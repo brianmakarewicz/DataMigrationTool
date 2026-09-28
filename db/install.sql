@@ -588,6 +588,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_absence_transform_pkg.pks.sql
 @@packages/dmt_absence_validator_pkg.pks.sql
 @@packages/dmt_apex_page_pkg.pks.sql
+@@packages/dmt_ap_compare_pkg.pks.sql
 @@packages/dmt_ap_fbdi_gen_pkg.pks.sql
 @@packages/dmt_ap_pay_term_fbl_gen_pkg.pks.sql
 @@packages/dmt_ap_pay_term_results_pkg.pks.sql
@@ -597,6 +598,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_ap_results_pkg.pks.sql
 @@packages/dmt_ap_transform_pkg.pks.sql
 @@packages/dmt_ap_validator_pkg.pks.sql
+@@packages/dmt_ar_compare_pkg.pks.sql
 @@packages/dmt_ar_fbdi_gen_pkg.pks.sql
 @@packages/dmt_ar_results_pkg.pks.sql
 @@packages/dmt_ar_transform_pkg.pks.sql
@@ -636,6 +638,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_csv_loader_pkg.pks.sql
 @@packages/dmt_csv_ingest_pkg.pks.sql
 @@packages/dmt_csv_upload_pkg.pks.sql
+@@packages/dmt_cust_compare_pkg.pks.sql
 @@packages/dmt_cust_fbdi_gen_pkg.pks.sql
 @@packages/dmt_cust_results_pkg.pks.sql
 @@packages/dmt_cust_transform_pkg.pks.sql
@@ -657,6 +660,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_fa_asset_results_pkg.pks.sql
 @@packages/dmt_fa_asset_transform_pkg.pks.sql
 @@packages/dmt_fa_asset_validator_pkg.pks.sql
+@@packages/dmt_fa_req_compare_pkg.pks.sql
 @@packages/dmt_fnd_lookup_fbl_gen_pkg.pks.sql
 @@packages/dmt_fnd_lookup_results_pkg.pks.sql
 @@packages/dmt_fnd_lookup_runner_pkg.pks.sql
@@ -667,6 +671,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_fnd_vs_runner_pkg.pks.sql
 @@packages/dmt_fnd_vs_transform_pkg.pks.sql
 @@packages/dmt_fnd_vs_validator_pkg.pks.sql
+@@packages/dmt_gl_compare_pkg.pks.sql
 @@packages/dmt_gl_budget_fbdi_gen_pkg.pks.sql
 @@packages/dmt_gl_budget_results_pkg.pks.sql
 @@packages/dmt_gl_budget_transform_pkg.pks.sql
@@ -683,6 +688,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_grants_results_pkg.pks.sql
 @@packages/dmt_grants_transform_pkg.pks.sql
 @@packages/dmt_grants_validator_pkg.pks.sql
+@@packages/dmt_hcm_compare_pkg.pks.sql
 @@packages/dmt_hdl_util_pkg.pks.sql
 @@packages/dmt_import_report_pkg.pks.sql
 @@packages/dmt_inv_uom_fbl_gen_pkg.pks.sql
@@ -728,6 +734,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_po_results_pkg.pks.sql
 @@packages/dmt_po_transform_pkg.pks.sql
 @@packages/dmt_po_validator_pkg.pks.sql
+@@packages/dmt_ppm_compare_pkg.pks.sql
 @@packages/dmt_prj_budget_fbdi_gen_pkg.pks.sql
 @@packages/dmt_prj_budget_results_pkg.pks.sql
 @@packages/dmt_prj_budget_transform_pkg.pks.sql
@@ -760,6 +767,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_sal_basis_transform_pkg.pks.sql
 @@packages/dmt_sal_basis_validator_pkg.pks.sql
 @@packages/dmt_scheduler_pkg.pks.sql
+@@packages/dmt_sup_compare_pkg.pks.sql
 @@packages/dmt_talent_prof_hdl_gen_pkg.pks.sql
 @@packages/dmt_talent_prof_results_pkg.pks.sql
 @@packages/dmt_talent_prof_transform_pkg.pks.sql
@@ -806,6 +814,7 @@ prompt == Package bodies ==
 @@packages/dmt_absence_transform_pkg.pkb.sql
 @@packages/dmt_absence_validator_pkg.pkb.sql
 @@packages/dmt_apex_page_pkg.pkb.sql
+@@packages/dmt_ap_compare_pkg.pkb.sql
 @@packages/dmt_ap_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_ap_pay_term_fbl_gen_pkg.pkb.sql
 @@packages/dmt_ap_pay_term_results_pkg.pkb.sql
@@ -815,6 +824,7 @@ prompt == Package bodies ==
 @@packages/dmt_ap_results_pkg.pkb.sql
 @@packages/dmt_ap_transform_pkg.pkb.sql
 @@packages/dmt_ap_validator_pkg.pkb.sql
+@@packages/dmt_ar_compare_pkg.pkb.sql
 @@packages/dmt_ar_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_ar_results_pkg.pkb.sql
 @@packages/dmt_ar_transform_pkg.pkb.sql
@@ -853,6 +863,7 @@ prompt == Package bodies ==
 @@packages/dmt_csv_loader_pkg.pkb.sql
 @@packages/dmt_csv_ingest_pkg.pkb.sql
 @@packages/dmt_csv_upload_pkg.pkb.sql
+@@packages/dmt_cust_compare_pkg.pkb.sql
 @@packages/dmt_cust_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_cust_results_pkg.pkb.sql
 @@packages/dmt_cust_transform_pkg.pkb.sql
@@ -874,6 +885,7 @@ prompt == Package bodies ==
 @@packages/dmt_fa_asset_results_pkg.pkb.sql
 @@packages/dmt_fa_asset_transform_pkg.pkb.sql
 @@packages/dmt_fa_asset_validator_pkg.pkb.sql
+@@packages/dmt_fa_req_compare_pkg.pkb.sql
 @@packages/dmt_fnd_lookup_fbl_gen_pkg.pkb.sql
 @@packages/dmt_fnd_lookup_results_pkg.pkb.sql
 @@packages/dmt_fnd_lookup_runner_pkg.pkb.sql
@@ -884,6 +896,7 @@ prompt == Package bodies ==
 @@packages/dmt_fnd_vs_runner_pkg.pkb.sql
 @@packages/dmt_fnd_vs_transform_pkg.pkb.sql
 @@packages/dmt_fnd_vs_validator_pkg.pkb.sql
+@@packages/dmt_gl_compare_pkg.pkb.sql
 @@packages/dmt_gl_budget_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_gl_budget_results_pkg.pkb.sql
 @@packages/dmt_gl_budget_transform_pkg.pkb.sql
@@ -900,6 +913,7 @@ prompt == Package bodies ==
 @@packages/dmt_grants_results_pkg.pkb.sql
 @@packages/dmt_grants_transform_pkg.pkb.sql
 @@packages/dmt_grants_validator_pkg.pkb.sql
+@@packages/dmt_hcm_compare_pkg.pkb.sql
 @@packages/dmt_hdl_util_pkg.pkb.sql
 @@packages/dmt_import_report_pkg.pkb.sql
 @@packages/dmt_inv_uom_fbl_gen_pkg.pkb.sql
@@ -944,6 +958,7 @@ prompt == Package bodies ==
 @@packages/dmt_po_results_pkg.pkb.sql
 @@packages/dmt_po_transform_pkg.pkb.sql
 @@packages/dmt_po_validator_pkg.pkb.sql
+@@packages/dmt_ppm_compare_pkg.pkb.sql
 @@packages/dmt_prj_budget_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_prj_budget_results_pkg.pkb.sql
 @@packages/dmt_prj_budget_transform_pkg.pkb.sql
@@ -975,6 +990,7 @@ prompt == Package bodies ==
 @@packages/dmt_sal_basis_transform_pkg.pkb.sql
 @@packages/dmt_sal_basis_validator_pkg.pkb.sql
 @@packages/dmt_scheduler_pkg.pkb.sql
+@@packages/dmt_sup_compare_pkg.pkb.sql
 @@packages/dmt_talent_prof_hdl_gen_pkg.pkb.sql
 @@packages/dmt_talent_prof_results_pkg.pkb.sql
 @@packages/dmt_talent_prof_transform_pkg.pkb.sql

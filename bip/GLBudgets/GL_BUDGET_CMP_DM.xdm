@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="gl_budget_cmp_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT COUNT(*)                                             AS success_count,
+       NVL(SUM(bb.period_net_dr - bb.period_net_cr), 0)     AS success_amount,
+       MAX(bb.currency_code)                                AS amount_currency
+FROM   gl_budget_balances bb
+JOIN   gl_ledgers led            ON led.ledger_id = bb.ledger_id
+JOIN   gl_code_combinations gcc  ON gcc.chart_of_accounts_id = led.chart_of_accounts_id
+                                AND NVL(gcc.segment1,'#') = NVL(bb.segment1,'#')
+                                AND NVL(gcc.segment2,'#') = NVL(bb.segment2,'#')
+                                AND NVL(gcc.segment3,'#') = NVL(bb.segment3,'#')
+                                AND NVL(gcc.segment4,'#') = NVL(bb.segment4,'#')
+                                AND NVL(gcc.segment5,'#') = NVL(bb.segment5,'#')
+                                AND NVL(gcc.segment6,'#') = NVL(bb.segment6,'#')
+WHERE  bb.budget_name = :P_BUDGET_NAME
+AND    gcc.code_combination_id IN (
+         SELECT TO_NUMBER(REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL))
+         FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+       )
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="gl_budget_cmp_results">
+          <element name="SUCCESS_COUNT"    value="SUCCESS_COUNT"    dataType="xsd:string" tagName="SUCCESS_COUNT"/>
+          <element name="SUCCESS_AMOUNT"   value="SUCCESS_AMOUNT"   dataType="xsd:string" tagName="SUCCESS_AMOUNT"/>
+          <element name="AMOUNT_CURRENCY"  value="AMOUNT_CURRENCY"  dataType="xsd:string" tagName="AMOUNT_CURRENCY"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_BUDGET_NAME" dataType="character" rowPlacement="2"
+               labelID="P_BUDGET_NAME" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

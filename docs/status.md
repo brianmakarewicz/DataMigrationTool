@@ -1,5 +1,17 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-28 -- Post-run comparison report: ALL 23 objects rolled out (PR #475); walking skeleton merged (#474)
+
+**What happened.** The walking skeleton (framework + Purchase Orders) merged to main as PR #474 -- which included a governance step the owner approved: amending coding-standard #66 to sanction the comparison framework's one dispatch site (`DMT_RUN_COMPARE_PKG.BUILD_ROWS`) as a fourth dynamic-invocation site, plus an anti-circumvention clause so nobody can smuggle a new dynamic-dispatch need through an existing site. (The automated reviewer first blocked a self-certified amendment; it was redone as a proper owner-approved accepted rule via the design-change sentinel.)
+
+Then the remaining **22 objects** were rolled out in 7 families (Suppliers x5; Blanket POs + Contracts; AP Invoices + Customers + AR Invoices; GL Balances + GL Budgets; PPM x5; Assets + Requisitions; HCM x3) on branch `feature/comparison-rollout-objects`. Each family was independently reviewed, then a whole-branch review (most capable model) and a scoped re-review of its fix wave. Opened as **PR #475** (awaiting the Actions reviewer).
+
+**Proof.** Full grid for run 132 verified live: **23 of 23 objects present, all in balance.** Every key path exercised (load-request id, import-request id, stamped GROUP_ID/SOURCEREF/key-map, captured Fusion id), money reconciled where Fusion carries it, env-blocked objects honestly 0-loaded with a note. No prefix or timestamp-window keys anywhere.
+
+**Whole-branch review hardening applied:** a Fusion fault on any object now shows an explicit "unknown" row instead of the object vanishing; the BIP deploy manifest now lists all 23 comparison reports; Salaries money sum hardened against non-numeric. Bugs caught live during rollout and fixed: Assets multi-book fan-out (scoped to the posted book), Requisitions double-staged double-count (scoped via TFM), an Assets nonexistent-column reference.
+
+**Left:** merge PR #475 (Actions reviewer); confirm the 4 env-blocked objects (AR Invoices, Project Budgets, Grants, Talent Profiles) on a run where they load; Blanket PO money needs an amount-based line to reconcile in Fusion; rename the generic-but-supplier-named BIP deploy script.
+
 ## Session -- 2026-09-27 -- Post-run comparison report: discovery proven for all 23 objects; walking-skeleton built (Purchase Orders end-to-end)
 
 **What this feature is.** A new report that, after a run, shows each object side by side:

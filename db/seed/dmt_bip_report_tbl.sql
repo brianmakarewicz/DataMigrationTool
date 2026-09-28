@@ -1765,6 +1765,87 @@ when matched then update set
 commit;
 
 -- ---------------------------------------------------------------------------
+-- Supplier family — post-run comparison report registration (rollout onto the
+-- proven PurchaseOrders walking-skeleton template, run 132 discovery: see
+-- docs/superpowers/specs/discovery/{Suppliers,SupplierAddresses,SupplierSites,
+-- SupplierSiteAssignments,SupplierContacts}.md). Sets ONLY the three CMP_*
+-- columns on each of the five already-registered supplier rows (path/notes/
+-- interface_table above are untouched) so this MERGE cannot clobber the
+-- per-record reconciliation registration the same rows already carry.
+-- All five functions live in ONE package, DMT_SUP_COMPARE_PKG (count-only
+-- family -- no money column anywhere in these five objects).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Suppliers'                                          cemli_code,
+           '/Custom/DMT2/Suppliers/SUP_CMP_DM.xdm'               cmp_dm_catalog_path,
+           '/Custom/DMT2/Suppliers/SUP_CMP_RPT.xdo'              cmp_report_catalog_path,
+           'DMT_SUP_COMPARE_PKG.GET_SUPPLIERS_CMP'                cmp_function
+    from dual
+    union all select 'SupplierAddresses',
+           '/Custom/DMT2/SupplierAddresses/SUP_ADDR_CMP_DM.xdm',
+           '/Custom/DMT2/SupplierAddresses/SUP_ADDR_CMP_RPT.xdo',
+           'DMT_SUP_COMPARE_PKG.GET_SUP_ADDR_CMP'
+    from dual
+    union all select 'SupplierSites',
+           '/Custom/DMT2/SupplierSites/SUP_SITE_CMP_DM.xdm',
+           '/Custom/DMT2/SupplierSites/SUP_SITE_CMP_RPT.xdo',
+           'DMT_SUP_COMPARE_PKG.GET_SUP_SITES_CMP'
+    from dual
+    union all select 'SupplierSiteAssignments',
+           '/Custom/DMT2/SupplierSiteAssignments/SUP_SITE_ASSN_CMP_DM.xdm',
+           '/Custom/DMT2/SupplierSiteAssignments/SUP_SITE_ASSN_CMP_RPT.xdo',
+           'DMT_SUP_COMPARE_PKG.GET_SUP_SITE_ASSN_CMP'
+    from dual
+    union all select 'SupplierContacts',
+           '/Custom/DMT2/SupplierContacts/SUP_CONT_CMP_DM.xdm',
+           '/Custom/DMT2/SupplierContacts/SUP_CONT_CMP_RPT.xdo',
+           'DMT_SUP_COMPARE_PKG.GET_SUP_CONTACTS_CMP'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- PO family (BlanketPOs, Contracts) — post-run comparison report registration
+-- (rollout onto the proven PurchaseOrders walking-skeleton template, run 132
+-- discovery: see docs/superpowers/specs/discovery/{BlanketPOs,Contracts}.md).
+-- Sets ONLY the three CMP_* columns on each already-registered row (the
+-- Contract v1 reconciliation path/notes/tfm_table set earlier for these rows
+-- is untouched) so this MERGE cannot clobber the per-record reconciliation
+-- registration the same rows already carry. Both functions live in
+-- DMT_PO_COMPARE_PKG alongside GET_COMPARISON (shared PO family package --
+-- same Fusion base table and shared TFM table, differing only by
+-- DOCUMENT_TYPE_CODE). BlanketPOs sources money DMT-side (TFM line AMOUNT);
+-- Contracts is count-only (header-only document, no money grain anywhere).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'BlanketPOs'                                          cemli_code,
+           '/Custom/DMT2/BlanketPOs/PO_CMP_DM.xdm'                cmp_dm_catalog_path,
+           '/Custom/DMT2/BlanketPOs/PO_CMP_RPT.xdo'               cmp_report_catalog_path,
+           'DMT_PO_COMPARE_PKG.GET_BLANKET_COMPARISON'            cmp_function
+    from dual
+    union all select 'Contracts',
+           '/Custom/DMT2/Contracts/PO_CMP_DM.xdm',
+           '/Custom/DMT2/Contracts/PO_CMP_RPT.xdo',
+           'DMT_PO_COMPARE_PKG.GET_CONTRACT_COMPARISON'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Assets — Contract v1 registration (design section 5). Points the Assets CEMLI
 -- at the nine-column Contract v1 report (DMT_FA_ASSET_RECON_DM.xdm, fixed #344)
 -- and sets CONTRACT_VERSION = 1 so the shared parser
@@ -2682,5 +2763,249 @@ when not matched then insert
             s.report_catalog_path, s.interface_table, sysdate, s.notes,
             null, null,
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Finance rollout (family C, 2026-09-27/28) -- post-run comparison report
+-- registration for APInvoices, Customers, ARInvoices (rollout onto the proven
+-- PurchaseOrders/Suppliers walking-skeleton templates, run 132 discovery: see
+-- docs/superpowers/specs/discovery/{APInvoices,Customers,ARInvoices}.md).
+-- Sets ONLY the three CMP_* columns on each already-registered row (the
+-- reconciliation path/notes/interface_table set earlier for these rows is
+-- untouched) so this MERGE cannot clobber the per-record reconciliation
+-- registration the same rows already carry.
+--   APInvoices -- money-bearing (header INVOICE_AMOUNT), DMT_AP_COMPARE_PKG.
+--   Customers  -- count-only, per-record captured id (NOT a prefix wildcard),
+--                 DMT_CUST_COMPARE_PKG.
+--   ARInvoices -- money-bearing conceptually (line AMOUNT), 0-LOADED this run
+--                 (AutoInvoice env-blocked); DMT_AR_COMPARE_PKG.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'APInvoices'                                        cemli_code,
+           '/Custom/DMT2/APInvoices/AP_CMP_DM.xdm'              cmp_dm_catalog_path,
+           '/Custom/DMT2/APInvoices/AP_CMP_RPT.xdo'             cmp_report_catalog_path,
+           'DMT_AP_COMPARE_PKG.GET_COMPARISON'                  cmp_function
+    from dual
+    union all select 'Customers',
+           '/Custom/DMT2/Customers/CUST_CMP_DM.xdm',
+           '/Custom/DMT2/Customers/CUST_CMP_RPT.xdo',
+           'DMT_CUST_COMPARE_PKG.GET_COMPARISON'
+    from dual
+    union all select 'ARInvoices',
+           '/Custom/DMT2/ARInvoices/AR_CMP_DM.xdm',
+           '/Custom/DMT2/ARInvoices/AR_CMP_RPT.xdo',
+           'DMT_AR_COMPARE_PKG.GET_COMPARISON'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- GL rollout (family D, 2026-09-28) -- post-run comparison report
+-- registration for GLBalances, GLBudgets (run 132 discovery: see
+-- docs/superpowers/specs/discovery/{GLBalances,GLBudgets}.md). Sets ONLY the
+-- three CMP_* columns on each already-registered row (BIP_REPORT_ID 100000016
+-- / 100000023); the reconciliation path/notes/interface_table set earlier for
+-- these rows is untouched.
+--   GLBalances -- money-bearing (journal line ENTERED_DR), KEY_TYPE=
+--                 STAMPED_REF (RUN_ID stamped into GL_JE_BATCHES.GROUP_ID),
+--                 DMT_GL_COMPARE_PKG.GET_BALANCES_COMPARISON.
+--   GLBudgets  -- money-bearing (budget cell BUDGET_AMOUNT), KEY_TYPE=
+--                 CAPTURED_ID (captured CODE_COMBINATION_ID list + budget
+--                 name, no time window), DMT_GL_COMPARE_PKG.
+--                 GET_BUDGETS_COMPARISON.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'GLBalances'                                        cemli_code,
+           '/Custom/DMT2/GLBalances/GL_BAL_CMP_DM.xdm'          cmp_dm_catalog_path,
+           '/Custom/DMT2/GLBalances/GL_BAL_CMP_RPT.xdo'         cmp_report_catalog_path,
+           'DMT_GL_COMPARE_PKG.GET_BALANCES_COMPARISON'         cmp_function
+    from dual
+    union all select 'GLBudgets',
+           '/Custom/DMT2/GLBudgets/GL_BUDGET_CMP_DM.xdm',
+           '/Custom/DMT2/GLBudgets/GL_BUDGET_CMP_RPT.xdo',
+           'DMT_GL_COMPARE_PKG.GET_BUDGETS_COMPARISON'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- PPM rollout (family E, 2026-09-28) -- post-run comparison report
+-- registration for the five Projects/PPM objects: Projects, ProjectBudgets,
+-- Expenditures, BillingEvents, Grants (run 132 discovery: see
+-- docs/superpowers/specs/discovery/{Projects,ProjectBudgets,Expenditures,
+-- BillingEvents,Grants}.md). Sets ONLY the three CMP_* columns on each
+-- already-registered row (BIP_REPORT_ID 100000002 / 100000019 / 100000018 /
+-- 100000011 / 100000007); the reconciliation path/notes/interface_table set
+-- earlier for these rows is untouched. All five functions live in ONE
+-- package, DMT_PPM_COMPARE_PKG.
+--   Projects        -- count-only (no money grain), KEY_TYPE=CAPTURED_ID
+--                       (no batch id round-trips on this pod; fallback to
+--                       the captured FUSION_PROJECT_ID list).
+--                       DMT_PPM_COMPARE_PKG.GET_PROJECTS_CMP.
+--   ProjectBudgets   -- money-bearing (TOTAL_TC_RAW_COST), KEY_TYPE=
+--                       CAPTURED_ID; 0 LOADED in run 132 (functionally
+--                       blocked), so the Fusion side is designed/built for
+--                       a future run. DMT_PPM_COMPARE_PKG.
+--                       GET_PROJECT_BUDGETS_CMP.
+--   Expenditures     -- money-bearing (DENOM_RAW_COST), KEY_TYPE=IMPORT_ID
+--                       (import ESS request id round-trips onto
+--                       PJC_EXP_ITEMS_ALL.REQUEST_ID). Fusion RECOMPUTES
+--                       cost at import, so the money variance is honestly
+--                       nonzero by design; IN_BALANCE reflects count only.
+--                       DMT_PPM_COMPARE_PKG.GET_EXPENDITURES_CMP.
+--   BillingEvents    -- money-bearing (BILL_TRNS_AMOUNT), KEY_TYPE=
+--                       IMPORT_ID (import ESS request id round-trips onto
+--                       PJB_BILLING_EVENTS.REQUEST_ID); balances on both
+--                       count and money. DMT_PPM_COMPARE_PKG.
+--                       GET_BILLING_EVENTS_CMP.
+--   Grants           -- count-only (FT_AMOUNT not populated), KEY_TYPE=
+--                       IMPORT_ID (DC_REQUEST_ID, never SUMMARY_REQUEST_ID
+--                       which is NULL for FBDI-sourced awards); 0 LOADED in
+--                       run 132 (env-blocked demo pod), so the Fusion side
+--                       is designed/built for a future run.
+--                       DMT_PPM_COMPARE_PKG.GET_GRANTS_CMP.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Projects'                                            cemli_code,
+           '/Custom/DMT2/Projects/PROJECT_CMP_DM.xdm'             cmp_dm_catalog_path,
+           '/Custom/DMT2/Projects/PROJECT_CMP_RPT.xdo'            cmp_report_catalog_path,
+           'DMT_PPM_COMPARE_PKG.GET_PROJECTS_CMP'                 cmp_function
+    from dual
+    union all select 'ProjectBudgets',
+           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_CMP_DM.xdm',
+           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_CMP_RPT.xdo',
+           'DMT_PPM_COMPARE_PKG.GET_PROJECT_BUDGETS_CMP'
+    from dual
+    union all select 'Expenditures',
+           '/Custom/DMT2/Expenditures/EXP_CMP_DM.xdm',
+           '/Custom/DMT2/Expenditures/EXP_CMP_RPT.xdo',
+           'DMT_PPM_COMPARE_PKG.GET_EXPENDITURES_CMP'
+    from dual
+    union all select 'BillingEvents',
+           '/Custom/DMT2/BillingEvents/BE_CMP_DM.xdm',
+           '/Custom/DMT2/BillingEvents/BE_CMP_RPT.xdo',
+           'DMT_PPM_COMPARE_PKG.GET_BILLING_EVENTS_CMP'
+    from dual
+    union all select 'Grants',
+           '/Custom/DMT2/Grants/GRANTS_CMP_DM.xdm',
+           '/Custom/DMT2/Grants/GRANTS_CMP_RPT.xdo',
+           'DMT_PPM_COMPARE_PKG.GET_GRANTS_CMP'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Assets, Requisitions — post-run comparison report registration (rollout
+-- onto the proven PurchaseOrders walking-skeleton template, run 132
+-- discovery: see docs/superpowers/specs/discovery/{Assets,Requisitions}.md).
+-- Sets ONLY the three CMP_* columns on each already-registered row (the
+-- Contract v1 reconciliation path/notes/tfm_table set earlier for these rows
+-- is untouched) so this MERGE cannot clobber the per-record reconciliation
+-- registration the same rows already carry. Both functions live in ONE
+-- package, DMT_FA_REQ_COMPARE_PKG (both money-bearing objects,
+-- FUSION_MONEY_AVAILABLE='Y').
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Assets'                                        cemli_code,
+           '/Custom/DMT2/Assets/FA_CMP_DM.xdm'              cmp_dm_catalog_path,
+           '/Custom/DMT2/Assets/FA_CMP_RPT.xdo'             cmp_report_catalog_path,
+           'DMT_FA_REQ_COMPARE_PKG.GET_ASSETS_CMP'          cmp_function
+    from dual
+    union all select 'Requisitions',
+           '/Custom/DMT2/Requisitions/REQ_CMP_DM.xdm',
+           '/Custom/DMT2/Requisitions/REQ_CMP_RPT.xdo',
+           'DMT_FA_REQ_COMPARE_PKG.GET_REQUISITIONS_CMP'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- HCM rollout (family G, 2026-09-28) -- FINAL FAMILY. Post-run comparison
+-- report registration for Workers, Salaries, TalentProfiles (run 132
+-- discovery: see docs/superpowers/specs/discovery/{Workers,Salaries,
+-- TalentProfiles}.md). Sets ONLY the three CMP_* columns on each
+-- already-registered row (BIP_REPORT_ID 100000027 / 100000028, plus
+-- TalentProfiles' Contract v1 row); the reconciliation path/notes/
+-- interface_table set earlier for these rows is untouched. All three
+-- functions live in ONE package, DMT_HCM_COMPARE_PKG.
+--
+-- This family loads via HDL, not FBDI -- there is no import ESS request id.
+-- Every function keys Fusion on the HDL tie-back: HRC_INTEGRATION_KEY_MAP.
+-- SOURCE_SYSTEM_ID (= the TFM RECON_KEY of a LOADED record) -> SURROGATE_ID
+-- (= the base-table PK). KEY_TYPE = STAMPED_REF; the batch bind is the exact
+-- per-record RECON_KEY list of this run's LOADED TFM rows, matched verbatim,
+-- never a prefix wildcard or a timestamp window.
+--   Workers         -- count-only (no money grain), OBJECT_NAME='Person' on
+--                       the key map, base PER_ALL_PEOPLE_F. Run 132:
+--                       STG 2, err 1, Fusion 1 (LIVE) -- count-balanced.
+--                       DMT_HCM_COMPARE_PKG.GET_WORKERS_CMP.
+--   Salaries        -- money-bearing (SALARY_AMOUNT), OBJECT_NAME='Salary',
+--                       base CMP_SALARY. Run 132: STG 2/155000,
+--                       err 1/80000, Fusion 1/75000 (LIVE) -- balances on
+--                       both count and money. DMT_HCM_COMPARE_PKG.
+--                       GET_SALARIES_CMP.
+--   TalentProfiles  -- count-only (no money grain), OBJECT_NAME='ProfileItem'
+--                       on the key map (the parent Profile has no key-map
+--                       row of its own; reached through the child
+--                       ProfileItem's PROFILE_ID), base HRT_PROFILES_B via
+--                       HRT_PROFILE_ITEMS. 0 LOADED in run 132 (whole-file
+--                       HDL rejection on an invalid ProfileItem METADATA
+--                       attribute), so the Fusion side is designed/built for
+--                       a future run -- mirrors the ProjectBudgets/Grants
+--                       honest-0-loaded pattern. DMT_HCM_COMPARE_PKG.
+--                       GET_TALENT_PROFILES_CMP.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Workers'                                            cemli_code,
+           '/Custom/DMT2/Workers/WORKERS_CMP_DM.xdm'             cmp_dm_catalog_path,
+           '/Custom/DMT2/Workers/WORKERS_CMP_RPT.xdo'            cmp_report_catalog_path,
+           'DMT_HCM_COMPARE_PKG.GET_WORKERS_CMP'                 cmp_function
+    from dual
+    union all select 'Salaries',
+           '/Custom/DMT2/Salaries/SALARIES_CMP_DM.xdm',
+           '/Custom/DMT2/Salaries/SALARIES_CMP_RPT.xdo',
+           'DMT_HCM_COMPARE_PKG.GET_SALARIES_CMP'
+    from dual
+    union all select 'TalentProfiles',
+           '/Custom/DMT2/TalentProfiles/TALENTPROFILES_CMP_DM.xdm',
+           '/Custom/DMT2/TalentProfiles/TALENTPROFILES_CMP_RPT.xdo',
+           'DMT_HCM_COMPARE_PKG.GET_TALENT_PROFILES_CMP'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
 
 commit;

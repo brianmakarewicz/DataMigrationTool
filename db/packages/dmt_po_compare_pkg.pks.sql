@@ -12,5 +12,21 @@ CREATE OR REPLACE PACKAGE DMT_PO_COMPARE_PKG AS
     -- lines never inflate the PurchaseOrders money. Money is on the lines
     -- (STANDARD lines carry QUANTITY*UNIT_PRICE; AMOUNT is null on STANDARD).
     FUNCTION GET_COMPARISON(p_run_id IN NUMBER) RETURN DMT_CMP_ROW_OBJ;
+
+    -- BlanketPOs (BPA) — same shared tables, DOCUMENT_TYPE_CODE = 'BLANKET'.
+    -- Money is sourced DMT-side only: the TFM line AMOUNT (per discovery,
+    -- docs/superpowers/specs/discovery/BlanketPOs.md) does not round-trip to
+    -- a populated Fusion column for a quantity-based blanket line, so
+    -- FUSION_SUCCESS_AMOUNT is always NULL, FUSION_MONEY_AVAILABLE='N', and
+    -- balance is decided on count only (no money variance computed).
+    FUNCTION GET_BLANKET_COMPARISON(p_run_id IN NUMBER) RETURN DMT_CMP_ROW_OBJ;
+
+    -- Contracts (CPA) — same shared header table, DOCUMENT_TYPE_CODE =
+    -- 'CONTRACT'. Header-only document, no money column anywhere in the DMT
+    -- pipeline and no Fusion base amount column populated for this document
+    -- type (per discovery, docs/superpowers/specs/discovery/Contracts.md).
+    -- Count-only: FUSION_MONEY_AVAILABLE='N', all *_AMOUNT NULL, balance on
+    -- count.
+    FUNCTION GET_CONTRACT_COMPARISON(p_run_id IN NUMBER) RETURN DMT_CMP_ROW_OBJ;
 END DMT_PO_COMPARE_PKG;
 /
