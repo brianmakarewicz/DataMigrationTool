@@ -660,6 +660,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_fa_asset_results_pkg.pks.sql
 @@packages/dmt_fa_asset_transform_pkg.pks.sql
 @@packages/dmt_fa_asset_validator_pkg.pks.sql
+@@packages/dmt_fa_req_compare_pkg.pks.sql
 @@packages/dmt_fnd_lookup_fbl_gen_pkg.pks.sql
 @@packages/dmt_fnd_lookup_results_pkg.pks.sql
 @@packages/dmt_fnd_lookup_runner_pkg.pks.sql
@@ -883,6 +884,7 @@ prompt == Package bodies ==
 @@packages/dmt_fa_asset_results_pkg.pkb.sql
 @@packages/dmt_fa_asset_transform_pkg.pkb.sql
 @@packages/dmt_fa_asset_validator_pkg.pkb.sql
+@@packages/dmt_fa_req_compare_pkg.pkb.sql
 @@packages/dmt_fnd_lookup_fbl_gen_pkg.pkb.sql
 @@packages/dmt_fnd_lookup_results_pkg.pkb.sql
 @@packages/dmt_fnd_lookup_runner_pkg.pkb.sql

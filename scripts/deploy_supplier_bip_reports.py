@@ -64,6 +64,9 @@ REPORTS = [
     ("Expenditures",             "EXP_CMP_DM",                 "EXP_CMP_RPT"),
     ("BillingEvents",            "BE_CMP_DM",                  "BE_CMP_RPT"),
     ("Grants",                   "GRANTS_CMP_DM",              "GRANTS_CMP_RPT"),
+    # Assets + Requisitions family (2026-09-28) -- post-run comparison reports, family F.
+    ("Assets",                   "FA_CMP_DM",                  "FA_CMP_RPT"),
+    ("Requisitions",             "REQ_CMP_DM",                 "REQ_CMP_RPT"),
 ]
 
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"

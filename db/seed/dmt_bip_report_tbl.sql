@@ -2915,3 +2915,35 @@ when matched then update set
     t."CMP_FUNCTION"            = s.cmp_function;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- Assets, Requisitions — post-run comparison report registration (rollout
+-- onto the proven PurchaseOrders walking-skeleton template, run 132
+-- discovery: see docs/superpowers/specs/discovery/{Assets,Requisitions}.md).
+-- Sets ONLY the three CMP_* columns on each already-registered row (the
+-- Contract v1 reconciliation path/notes/tfm_table set earlier for these rows
+-- is untouched) so this MERGE cannot clobber the per-record reconciliation
+-- registration the same rows already carry. Both functions live in ONE
+-- package, DMT_FA_REQ_COMPARE_PKG (both money-bearing objects,
+-- FUSION_MONEY_AVAILABLE='Y').
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Assets'                                        cemli_code,
+           '/Custom/DMT2/Assets/FA_CMP_DM.xdm'              cmp_dm_catalog_path,
+           '/Custom/DMT2/Assets/FA_CMP_RPT.xdo'             cmp_report_catalog_path,
+           'DMT_FA_REQ_COMPARE_PKG.GET_ASSETS_CMP'          cmp_function
+    from dual
+    union all select 'Requisitions',
+           '/Custom/DMT2/Requisitions/REQ_CMP_DM.xdm',
+           '/Custom/DMT2/Requisitions/REQ_CMP_RPT.xdo',
+           'DMT_FA_REQ_COMPARE_PKG.GET_REQUISITIONS_CMP'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
