@@ -58,6 +58,12 @@ REPORTS = [
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
     ("PerfEvaluations",          "DMT_PERFEVALUATIONS_RECON_DM", "DMT_PERFEVALUATIONS_RECON_RPT"),
     ("Projects",                 "DMT_PROJECT_RECON_DM",       "DMT_PROJECT_RECON_RPT"),
+    # PPM family (2026-09-28) -- post-run comparison reports, family E.
+    ("Projects",                 "PROJECT_CMP_DM",             "PROJECT_CMP_RPT"),
+    ("ProjectBudgets",           "PRJ_BUDGET_CMP_DM",          "PRJ_BUDGET_CMP_RPT"),
+    ("Expenditures",             "EXP_CMP_DM",                 "EXP_CMP_RPT"),
+    ("BillingEvents",            "BE_CMP_DM",                  "BE_CMP_RPT"),
+    ("Grants",                   "GRANTS_CMP_DM",              "GRANTS_CMP_RPT"),
 ]
 
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"

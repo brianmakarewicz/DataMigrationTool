@@ -2842,3 +2842,76 @@ when matched then update set
     t."CMP_FUNCTION"            = s.cmp_function;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- PPM rollout (family E, 2026-09-28) -- post-run comparison report
+-- registration for the five Projects/PPM objects: Projects, ProjectBudgets,
+-- Expenditures, BillingEvents, Grants (run 132 discovery: see
+-- docs/superpowers/specs/discovery/{Projects,ProjectBudgets,Expenditures,
+-- BillingEvents,Grants}.md). Sets ONLY the three CMP_* columns on each
+-- already-registered row (BIP_REPORT_ID 100000002 / 100000019 / 100000018 /
+-- 100000011 / 100000007); the reconciliation path/notes/interface_table set
+-- earlier for these rows is untouched. All five functions live in ONE
+-- package, DMT_PPM_COMPARE_PKG.
+--   Projects        -- count-only (no money grain), KEY_TYPE=CAPTURED_ID
+--                       (no batch id round-trips on this pod; fallback to
+--                       the captured FUSION_PROJECT_ID list).
+--                       DMT_PPM_COMPARE_PKG.GET_PROJECTS_CMP.
+--   ProjectBudgets   -- money-bearing (TOTAL_TC_RAW_COST), KEY_TYPE=
+--                       CAPTURED_ID; 0 LOADED in run 132 (functionally
+--                       blocked), so the Fusion side is designed/built for
+--                       a future run. DMT_PPM_COMPARE_PKG.
+--                       GET_PROJECT_BUDGETS_CMP.
+--   Expenditures     -- money-bearing (DENOM_RAW_COST), KEY_TYPE=IMPORT_ID
+--                       (import ESS request id round-trips onto
+--                       PJC_EXP_ITEMS_ALL.REQUEST_ID). Fusion RECOMPUTES
+--                       cost at import, so the money variance is honestly
+--                       nonzero by design; IN_BALANCE reflects count only.
+--                       DMT_PPM_COMPARE_PKG.GET_EXPENDITURES_CMP.
+--   BillingEvents    -- money-bearing (BILL_TRNS_AMOUNT), KEY_TYPE=
+--                       IMPORT_ID (import ESS request id round-trips onto
+--                       PJB_BILLING_EVENTS.REQUEST_ID); balances on both
+--                       count and money. DMT_PPM_COMPARE_PKG.
+--                       GET_BILLING_EVENTS_CMP.
+--   Grants           -- count-only (FT_AMOUNT not populated), KEY_TYPE=
+--                       IMPORT_ID (DC_REQUEST_ID, never SUMMARY_REQUEST_ID
+--                       which is NULL for FBDI-sourced awards); 0 LOADED in
+--                       run 132 (env-blocked demo pod), so the Fusion side
+--                       is designed/built for a future run.
+--                       DMT_PPM_COMPARE_PKG.GET_GRANTS_CMP.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Projects'                                            cemli_code,
+           '/Custom/DMT2/Projects/PROJECT_CMP_DM.xdm'             cmp_dm_catalog_path,
+           '/Custom/DMT2/Projects/PROJECT_CMP_RPT.xdo'            cmp_report_catalog_path,
+           'DMT_PPM_COMPARE_PKG.GET_PROJECTS_CMP'                 cmp_function
+    from dual
+    union all select 'ProjectBudgets',
+           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_CMP_DM.xdm',
+           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_CMP_RPT.xdo',
+           'DMT_PPM_COMPARE_PKG.GET_PROJECT_BUDGETS_CMP'
+    from dual
+    union all select 'Expenditures',
+           '/Custom/DMT2/Expenditures/EXP_CMP_DM.xdm',
+           '/Custom/DMT2/Expenditures/EXP_CMP_RPT.xdo',
+           'DMT_PPM_COMPARE_PKG.GET_EXPENDITURES_CMP'
+    from dual
+    union all select 'BillingEvents',
+           '/Custom/DMT2/BillingEvents/BE_CMP_DM.xdm',
+           '/Custom/DMT2/BillingEvents/BE_CMP_RPT.xdo',
+           'DMT_PPM_COMPARE_PKG.GET_BILLING_EVENTS_CMP'
+    from dual
+    union all select 'Grants',
+           '/Custom/DMT2/Grants/GRANTS_CMP_DM.xdm',
+           '/Custom/DMT2/Grants/GRANTS_CMP_RPT.xdo',
+           'DMT_PPM_COMPARE_PKG.GET_GRANTS_CMP'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;

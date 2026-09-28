@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="project_cmp_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT COUNT(*)                                             AS success_count,
+       CAST(NULL AS NUMBER)                                 AS success_amount,
+       CAST(NULL AS VARCHAR2(15))                            AS amount_currency
+FROM   pjf_projects_all_b
+WHERE  project_id IN (
+         SELECT TO_NUMBER(REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL))
+         FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+       )
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="project_cmp_results">
+          <element name="SUCCESS_COUNT"    value="SUCCESS_COUNT"    dataType="xsd:string" tagName="SUCCESS_COUNT"/>
+          <element name="SUCCESS_AMOUNT"   value="SUCCESS_AMOUNT"   dataType="xsd:string" tagName="SUCCESS_AMOUNT"/>
+          <element name="AMOUNT_CURRENCY"  value="AMOUNT_CURRENCY"  dataType="xsd:string" tagName="AMOUNT_CURRENCY"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="1"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
