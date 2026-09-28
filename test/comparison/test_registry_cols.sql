@@ -1,0 +1,17 @@
+SET SERVEROUTPUT ON
+DECLARE
+    l_fn   DMT_BIP_REPORT_TBL.CMP_FUNCTION%TYPE;
+    l_path DMT_BIP_REPORT_TBL.CMP_REPORT_CATALOG_PATH%TYPE;
+BEGIN
+    SELECT CMP_FUNCTION, CMP_REPORT_CATALOG_PATH
+      INTO l_fn, l_path
+      FROM DMT_BIP_REPORT_TBL
+     WHERE CEMLI_CODE = 'PurchaseOrders';
+    IF l_fn = 'DMT_PO_COMPARE_PKG.GET_COMPARISON'
+       AND l_path = '/Custom/DMT2/PurchaseOrders/PO_CMP_RPT.xdo' THEN
+        DBMS_OUTPUT.PUT_LINE('PASS');
+    ELSE
+        RAISE_APPLICATION_ERROR(-20901, 'registry not seeded: '||l_fn||' / '||l_path);
+    END IF;
+END;
+/

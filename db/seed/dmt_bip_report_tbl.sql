@@ -2621,6 +2621,54 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- PurchaseOrders (100000003) -- post-run comparison report registration
+-- (design: post-run comparison report). The three CMP_* columns
+-- (CMP_DM_CATALOG_PATH, CMP_REPORT_CATALOG_PATH, CMP_FUNCTION) drive the
+-- comparison-report framework (Task 5) and the per-object function's
+-- report-path lookup (Task 4). PurchaseOrders is the first (and, for now,
+-- only) object registered for the comparison report; every other object's
+-- CMP_* columns stay NULL until they get their own comparison report.
+-- Kept in its own MERGE (re-runnable) so this block converges the CMP_*
+-- columns on the PurchaseOrders row seeded earlier in this file without
+-- touching any other object.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000003                                              bip_report_id,
+           'PurchaseOrders'                                       cemli_code,
+           'Purchase Order'                                       object_type,
+           '/Custom/DMT2/PurchaseOrders/PO_DM.xdm'                dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_RPT.xdo'                report_catalog_path,
+           'PO_HEADERS_INTERFACE'                                 interface_table,
+           'Purchase order header import reconciliation'          notes,
+           '/Custom/DMT2/PurchaseOrders/PO_CMP_DM.xdm'            cmp_dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_CMP_RPT.xdo'           cmp_report_catalog_path,
+           'DMT_PO_COMPARE_PKG.GET_COMPARISON'                    cmp_function
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"              = s.object_type,
+    t."DM_CATALOG_PATH"          = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH"      = s.report_catalog_path,
+    t."INTERFACE_TABLE"          = s.interface_table,
+    t."NOTES"                    = s.notes,
+    t."CMP_DM_CATALOG_PATH"      = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH"  = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"             = s.cmp_function
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CMP_DM_CATALOG_PATH","CMP_REPORT_CATALOG_PATH","CMP_FUNCTION")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.cmp_dm_catalog_path, s.cmp_report_catalog_path, s.cmp_function);
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Customers.AccountSiteUses (100000059) -- record-type-tier auditor registration (backlog #91).
 -- DMT_CUST_RESULTS_PKG stamps FUSION_SITE_USE_ID on DMT_HZ_ACCT_SITE_USES_TFM_TBL with the base-table SITE_USE_ID
 -- at this tier's own grain (per-record BASE row, matched on RECON_KEY). AUDIT
