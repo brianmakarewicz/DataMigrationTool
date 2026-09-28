@@ -1765,6 +1765,53 @@ when matched then update set
 commit;
 
 -- ---------------------------------------------------------------------------
+-- Supplier family — post-run comparison report registration (rollout onto the
+-- proven PurchaseOrders walking-skeleton template, run 132 discovery: see
+-- docs/superpowers/specs/discovery/{Suppliers,SupplierAddresses,SupplierSites,
+-- SupplierSiteAssignments,SupplierContacts}.md). Sets ONLY the three CMP_*
+-- columns on each of the five already-registered supplier rows (path/notes/
+-- interface_table above are untouched) so this MERGE cannot clobber the
+-- per-record reconciliation registration the same rows already carry.
+-- All five functions live in ONE package, DMT_SUP_COMPARE_PKG (count-only
+-- family -- no money column anywhere in these five objects).
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Suppliers'                                          cemli_code,
+           '/Custom/DMT2/Suppliers/SUP_CMP_DM.xdm'               cmp_dm_catalog_path,
+           '/Custom/DMT2/Suppliers/SUP_CMP_RPT.xdo'              cmp_report_catalog_path,
+           'DMT_SUP_COMPARE_PKG.GET_SUPPLIERS_CMP'                cmp_function
+    from dual
+    union all select 'SupplierAddresses',
+           '/Custom/DMT2/SupplierAddresses/SUP_ADDR_CMP_DM.xdm',
+           '/Custom/DMT2/SupplierAddresses/SUP_ADDR_CMP_RPT.xdo',
+           'DMT_SUP_COMPARE_PKG.GET_SUP_ADDR_CMP'
+    from dual
+    union all select 'SupplierSites',
+           '/Custom/DMT2/SupplierSites/SUP_SITE_CMP_DM.xdm',
+           '/Custom/DMT2/SupplierSites/SUP_SITE_CMP_RPT.xdo',
+           'DMT_SUP_COMPARE_PKG.GET_SUP_SITES_CMP'
+    from dual
+    union all select 'SupplierSiteAssignments',
+           '/Custom/DMT2/SupplierSiteAssignments/SUP_SITE_ASSN_CMP_DM.xdm',
+           '/Custom/DMT2/SupplierSiteAssignments/SUP_SITE_ASSN_CMP_RPT.xdo',
+           'DMT_SUP_COMPARE_PKG.GET_SUP_SITE_ASSN_CMP'
+    from dual
+    union all select 'SupplierContacts',
+           '/Custom/DMT2/SupplierContacts/SUP_CONT_CMP_DM.xdm',
+           '/Custom/DMT2/SupplierContacts/SUP_CONT_CMP_RPT.xdo',
+           'DMT_SUP_COMPARE_PKG.GET_SUP_CONTACTS_CMP'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Assets — Contract v1 registration (design section 5). Points the Assets CEMLI
 -- at the nine-column Contract v1 report (DMT_FA_ASSET_RECON_DM.xdm, fixed #344)
 -- and sets CONTRACT_VERSION = 1 so the shared parser

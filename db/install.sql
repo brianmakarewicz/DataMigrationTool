@@ -760,6 +760,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_sal_basis_transform_pkg.pks.sql
 @@packages/dmt_sal_basis_validator_pkg.pks.sql
 @@packages/dmt_scheduler_pkg.pks.sql
+@@packages/dmt_sup_compare_pkg.pks.sql
 @@packages/dmt_talent_prof_hdl_gen_pkg.pks.sql
 @@packages/dmt_talent_prof_results_pkg.pks.sql
 @@packages/dmt_talent_prof_transform_pkg.pks.sql
@@ -975,6 +976,7 @@ prompt == Package bodies ==
 @@packages/dmt_sal_basis_transform_pkg.pkb.sql
 @@packages/dmt_sal_basis_validator_pkg.pkb.sql
 @@packages/dmt_scheduler_pkg.pkb.sql
+@@packages/dmt_sup_compare_pkg.pkb.sql
 @@packages/dmt_talent_prof_hdl_gen_pkg.pkb.sql
 @@packages/dmt_talent_prof_results_pkg.pkb.sql
 @@packages/dmt_talent_prof_transform_pkg.pkb.sql
