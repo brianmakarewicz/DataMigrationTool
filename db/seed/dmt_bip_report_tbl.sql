@@ -1725,6 +1725,15 @@ commit;
 --   line-locs    DOCUMENT_NUM || ':LN:' || LINE_NUM || ':LOC:' || SHIPMENT_NUM
 --   dists        (above) || ':DIST:' || DISTRIBUTION_NUM
 -- ---------------------------------------------------------------------------
+--
+-- Post-run comparison report columns (design: post-run comparison report):
+-- PurchaseOrders is the first (and, for now, only) object registered for the
+-- comparison report. Its three CMP_* columns are folded into THIS canonical
+-- PurchaseOrders convergence block (rather than a separate later MERGE) so the
+-- recon paths above and the comparison paths are set in one place and no later
+-- block can revert either. CMP_FUNCTION is the PKG.FUNC returning
+-- DMT_CMP_ROW_OBJ; read by the comparison framework (Task 5) and the per-object
+-- function's report-path lookup (Task 4). Every other object's CMP_* stays NULL.
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'PurchaseOrders'                                        cemli_code,
@@ -1734,18 +1743,24 @@ using (
            1                                                        contract_version,
            'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
            'FUSION_PO_HEADER_ID'                                   fusion_id_column,
-           'multi-tier: headers=DOCUMENT_NUM; lines=DOCUMENT_NUM||'':LN:''||LINE_NUM; locs=+'':LOC:''||SHIPMENT_NUM; dists=+'':DIST:''||DISTRIBUTION_NUM' recon_key_sql
+           'multi-tier: headers=DOCUMENT_NUM; lines=DOCUMENT_NUM||'':LN:''||LINE_NUM; locs=+'':LOC:''||SHIPMENT_NUM; dists=+'':DIST:''||DISTRIBUTION_NUM' recon_key_sql,
+           '/Custom/DMT2/PurchaseOrders/PO_CMP_DM.xdm'             cmp_dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_CMP_RPT.xdo'            cmp_report_catalog_path,
+           'DMT_PO_COMPARE_PKG.GET_COMPARISON'                     cmp_function
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set
-    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
-    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
-    t."NOTES"               = s.notes,
-    t."CONTRACT_VERSION"    = s.contract_version,
-    t."TFM_TABLE"           = s.tfm_table,
-    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
-    t."RECON_KEY_SQL"       = s.recon_key_sql;
+    t."DM_CATALOG_PATH"         = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH"     = s.report_catalog_path,
+    t."NOTES"                   = s.notes,
+    t."CONTRACT_VERSION"        = s.contract_version,
+    t."TFM_TABLE"               = s.tfm_table,
+    t."FUSION_ID_COLUMN"        = s.fusion_id_column,
+    t."RECON_KEY_SQL"           = s.recon_key_sql,
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
 
 commit;
 
@@ -2617,54 +2632,6 @@ when not matched then insert
             s.report_catalog_path, s.interface_table, sysdate, s.notes,
             null, null,
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
-
-commit;
-
--- ---------------------------------------------------------------------------
--- PurchaseOrders (100000003) -- post-run comparison report registration
--- (design: post-run comparison report). The three CMP_* columns
--- (CMP_DM_CATALOG_PATH, CMP_REPORT_CATALOG_PATH, CMP_FUNCTION) drive the
--- comparison-report framework (Task 5) and the per-object function's
--- report-path lookup (Task 4). PurchaseOrders is the first (and, for now,
--- only) object registered for the comparison report; every other object's
--- CMP_* columns stay NULL until they get their own comparison report.
--- Kept in its own MERGE (re-runnable) so this block converges the CMP_*
--- columns on the PurchaseOrders row seeded earlier in this file without
--- touching any other object.
--- ---------------------------------------------------------------------------
-merge into "DMT_BIP_REPORT_TBL" t
-using (
-    select 100000003                                              bip_report_id,
-           'PurchaseOrders'                                       cemli_code,
-           'Purchase Order'                                       object_type,
-           '/Custom/DMT2/PurchaseOrders/PO_DM.xdm'                dm_catalog_path,
-           '/Custom/DMT2/PurchaseOrders/PO_RPT.xdo'                report_catalog_path,
-           'PO_HEADERS_INTERFACE'                                 interface_table,
-           'Purchase order header import reconciliation'          notes,
-           '/Custom/DMT2/PurchaseOrders/PO_CMP_DM.xdm'            cmp_dm_catalog_path,
-           '/Custom/DMT2/PurchaseOrders/PO_CMP_RPT.xdo'           cmp_report_catalog_path,
-           'DMT_PO_COMPARE_PKG.GET_COMPARISON'                    cmp_function
-    from dual
-) s
-on (t."CEMLI_CODE" = s.cemli_code)
-when matched then update set
-    t."OBJECT_TYPE"              = s.object_type,
-    t."DM_CATALOG_PATH"          = s.dm_catalog_path,
-    t."REPORT_CATALOG_PATH"      = s.report_catalog_path,
-    t."INTERFACE_TABLE"          = s.interface_table,
-    t."NOTES"                    = s.notes,
-    t."CMP_DM_CATALOG_PATH"      = s.cmp_dm_catalog_path,
-    t."CMP_REPORT_CATALOG_PATH"  = s.cmp_report_catalog_path,
-    t."CMP_FUNCTION"             = s.cmp_function
-when not matched then insert
-    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
-     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
-     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
-     "CMP_DM_CATALOG_PATH","CMP_REPORT_CATALOG_PATH","CMP_FUNCTION")
-    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
-            s.report_catalog_path, s.interface_table, sysdate, s.notes,
-            null, null,
-            s.cmp_dm_catalog_path, s.cmp_report_catalog_path, s.cmp_function);
 
 commit;
 
