@@ -1,5 +1,70 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-27 -- Post-run comparison report: discovery proven for all 23 objects; walking-skeleton built (Purchase Orders end-to-end)
+
+**What this feature is.** A new report that, after a run, shows each object side by side:
+how many records we staged, how many failed in our tool, and how many actually succeeded
+in Fusion -- with money totals -- and checks they add up (`Fusion successes + TFM errors =
+STG total`, per object). The success number is queried live from Fusion. This is a separate
+process from the existing row-by-row reconciliation (`DMT_RUN_SUMMARY_PKG` /
+`AUDIT_IN_FUSION`): it is aggregate control totals keyed by a batch id, not a per-record match,
+and it carries money, which the recon layer does not.
+
+**Design + plan (committed on branch `spec/post-run-comparison`, not yet merged):**
+- Spec: `docs/superpowers/specs/2026-09-27-post-run-comparison-design.md`
+- Proven query matrix (one file per object + the index): `docs/superpowers/specs/discovery/QUERY_MATRIX.md`
+- Implementation plan: `docs/superpowers/plans/2026-09-27-post-run-comparison.md`
+
+**Discovery -- proved every query by hand before any code (read-only, against run 132 on
+local Docker).** All 23 objects reconcile. 19 are proven with a production-safe key and
+balance exactly; 4 loaded nothing this run (AR Invoices, Project Budgets, Grants, Talent
+Profiles -- blocked by Fusion setup), so their staged/failed sides were proven and their
+Fusion query designed for a future run. Key rules that fell out and now bind the build:
+- The run's record set always comes through the transform rows (STG has no RUN_ID and holds
+  duplicate seed rows); never scope by business key or the test prefix.
+- Fusion key order: a batch id (the import/load ESS request id we already record, which can be
+  a list per object) -> a stamped reference that round-trips -> the captured Fusion id, used
+  only where no batch id exists (proven so for Projects and GL Budgets). Never the prefix or a
+  timestamp window.
+- Money reconciles from Fusion for 9 objects. Contracts genuinely have no money (header-only
+  agreement). Blanket PO money is dropped by Fusion because the line is generated quantity-based
+  (a generator matter, not reconciliation). Expenditures shows Fusion's recomputed cost, so its
+  money variance is real and intended.
+
+**Rotated the Fusion demo password.** It had expired (all users 401), which blocked the live
+Fusion side of discovery. Rotated everywhere and verified all five users return 200. Residual:
+167 per-object override-credential rows on the Docker DB (NULL username) still hold the old
+password -- they are inert (no username to log in as) but should be cleaned up before the next
+real Docker pipeline run.
+
+**Build -- subagent-driven, 6 of 7 tasks complete and reviewed; the APEX page (Task 7) was in
+progress at write time.** Walking skeleton = the shared framework plus Purchase Orders end to
+end; the other 22 objects follow the same template later. Artifacts built and deployed to
+local Docker:
+- `DMT_CMP_ROW_OBJ` / `DMT_CMP_ROW_TAB` -- the uniform comparison-row type.
+- Three columns on `DMT_BIP_REPORT_TBL` (`CMP_DM_CATALOG_PATH`, `CMP_REPORT_CATALOG_PATH`,
+  `CMP_FUNCTION`) -- the per-object comparison-report registry.
+- `bip/PurchaseOrders/PO_CMP_DM.xdm` + `PO_CMP_RPT.xdo` -- the PO Fusion aggregate report
+  (deployed to `/Custom/DMT2/PurchaseOrders/`).
+- `DMT_PO_COMPARE_PKG.GET_COMPARISON(run)` -- the PO comparison function.
+- `DMT_RUN_COMPARE_PKG.GET_RUN_COMPARISON(run, cursor)` -- the framework: enumerates a run's
+  objects, dispatches to each object's function via the registry, skips-and-logs a broken one.
+- `test/comparison/verify_run132.sql` -- the end-to-end gate.
+
+**Proof:** the live end-to-end test on run 132 passes -- Purchase Orders shows staged 3 / 2300,
+errors 1 / 50, Fusion 2 / 2250, in balance. Every failure carried a real Fusion error; every
+success was read back live from a Fusion base table.
+
+**What's next:**
+1. Finish the APEX page (Task 7) on app 501, run the whole-branch review, open the PR, and merge
+   `spec/post-run-comparison`.
+2. Roll out the other 22 objects with the proven template: one Fusion aggregate BIP report, one
+   `GET_COMPARISON` function, and one `CMP_FUNCTION` registry seed per object (all queries are
+   already proven in `QUERY_MATRIX.md`). The 4 zero-loaded objects confirm on a run where they load.
+3. Follow-ups: to reconcile Blanket PO money, generate the BPA line as amount-based so Fusion
+   keeps the amount; clean up the 167 stale Docker override-credential rows from the password
+   rotation.
+
 ## Session -- 2026-09-25 -- EBS-adaptor backlog fixes merged to DMT2; full regression PASSED (run 132, zero new regressions)
 
 **What was done:** Reviewed and corrected the 7 backlog items the EBS adaptor logged, then
