@@ -2806,3 +2806,39 @@ when matched then update set
     t."CMP_FUNCTION"            = s.cmp_function;
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- GL rollout (family D, 2026-09-28) -- post-run comparison report
+-- registration for GLBalances, GLBudgets (run 132 discovery: see
+-- docs/superpowers/specs/discovery/{GLBalances,GLBudgets}.md). Sets ONLY the
+-- three CMP_* columns on each already-registered row (BIP_REPORT_ID 100000016
+-- / 100000023); the reconciliation path/notes/interface_table set earlier for
+-- these rows is untouched.
+--   GLBalances -- money-bearing (journal line ENTERED_DR), KEY_TYPE=
+--                 STAMPED_REF (RUN_ID stamped into GL_JE_BATCHES.GROUP_ID),
+--                 DMT_GL_COMPARE_PKG.GET_BALANCES_COMPARISON.
+--   GLBudgets  -- money-bearing (budget cell BUDGET_AMOUNT), KEY_TYPE=
+--                 CAPTURED_ID (captured CODE_COMBINATION_ID list + budget
+--                 name, no time window), DMT_GL_COMPARE_PKG.
+--                 GET_BUDGETS_COMPARISON.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'GLBalances'                                        cemli_code,
+           '/Custom/DMT2/GLBalances/GL_BAL_CMP_DM.xdm'          cmp_dm_catalog_path,
+           '/Custom/DMT2/GLBalances/GL_BAL_CMP_RPT.xdo'         cmp_report_catalog_path,
+           'DMT_GL_COMPARE_PKG.GET_BALANCES_COMPARISON'         cmp_function
+    from dual
+    union all select 'GLBudgets',
+           '/Custom/DMT2/GLBudgets/GL_BUDGET_CMP_DM.xdm',
+           '/Custom/DMT2/GLBudgets/GL_BUDGET_CMP_RPT.xdo',
+           'DMT_GL_COMPARE_PKG.GET_BUDGETS_COMPARISON'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
