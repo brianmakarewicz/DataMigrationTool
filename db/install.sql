@@ -588,6 +588,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_absence_transform_pkg.pks.sql
 @@packages/dmt_absence_validator_pkg.pks.sql
 @@packages/dmt_apex_page_pkg.pks.sql
+@@packages/dmt_ap_compare_pkg.pks.sql
 @@packages/dmt_ap_fbdi_gen_pkg.pks.sql
 @@packages/dmt_ap_pay_term_fbl_gen_pkg.pks.sql
 @@packages/dmt_ap_pay_term_results_pkg.pks.sql
@@ -597,6 +598,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_ap_results_pkg.pks.sql
 @@packages/dmt_ap_transform_pkg.pks.sql
 @@packages/dmt_ap_validator_pkg.pks.sql
+@@packages/dmt_ar_compare_pkg.pks.sql
 @@packages/dmt_ar_fbdi_gen_pkg.pks.sql
 @@packages/dmt_ar_results_pkg.pks.sql
 @@packages/dmt_ar_transform_pkg.pks.sql
@@ -636,6 +638,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_csv_loader_pkg.pks.sql
 @@packages/dmt_csv_ingest_pkg.pks.sql
 @@packages/dmt_csv_upload_pkg.pks.sql
+@@packages/dmt_cust_compare_pkg.pks.sql
 @@packages/dmt_cust_fbdi_gen_pkg.pks.sql
 @@packages/dmt_cust_results_pkg.pks.sql
 @@packages/dmt_cust_transform_pkg.pks.sql
@@ -807,6 +810,7 @@ prompt == Package bodies ==
 @@packages/dmt_absence_transform_pkg.pkb.sql
 @@packages/dmt_absence_validator_pkg.pkb.sql
 @@packages/dmt_apex_page_pkg.pkb.sql
+@@packages/dmt_ap_compare_pkg.pkb.sql
 @@packages/dmt_ap_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_ap_pay_term_fbl_gen_pkg.pkb.sql
 @@packages/dmt_ap_pay_term_results_pkg.pkb.sql
@@ -816,6 +820,7 @@ prompt == Package bodies ==
 @@packages/dmt_ap_results_pkg.pkb.sql
 @@packages/dmt_ap_transform_pkg.pkb.sql
 @@packages/dmt_ap_validator_pkg.pkb.sql
+@@packages/dmt_ar_compare_pkg.pkb.sql
 @@packages/dmt_ar_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_ar_results_pkg.pkb.sql
 @@packages/dmt_ar_transform_pkg.pkb.sql
@@ -854,6 +859,7 @@ prompt == Package bodies ==
 @@packages/dmt_csv_loader_pkg.pkb.sql
 @@packages/dmt_csv_ingest_pkg.pkb.sql
 @@packages/dmt_csv_upload_pkg.pkb.sql
+@@packages/dmt_cust_compare_pkg.pkb.sql
 @@packages/dmt_cust_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_cust_results_pkg.pkb.sql
 @@packages/dmt_cust_transform_pkg.pkb.sql

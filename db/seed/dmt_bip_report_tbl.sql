@@ -2765,3 +2765,44 @@ when not matched then insert
             s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- Finance rollout (family C, 2026-09-27/28) -- post-run comparison report
+-- registration for APInvoices, Customers, ARInvoices (rollout onto the proven
+-- PurchaseOrders/Suppliers walking-skeleton templates, run 132 discovery: see
+-- docs/superpowers/specs/discovery/{APInvoices,Customers,ARInvoices}.md).
+-- Sets ONLY the three CMP_* columns on each already-registered row (the
+-- reconciliation path/notes/interface_table set earlier for these rows is
+-- untouched) so this MERGE cannot clobber the per-record reconciliation
+-- registration the same rows already carry.
+--   APInvoices -- money-bearing (header INVOICE_AMOUNT), DMT_AP_COMPARE_PKG.
+--   Customers  -- count-only, per-record captured id (NOT a prefix wildcard),
+--                 DMT_CUST_COMPARE_PKG.
+--   ARInvoices -- money-bearing conceptually (line AMOUNT), 0-LOADED this run
+--                 (AutoInvoice env-blocked); DMT_AR_COMPARE_PKG.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'APInvoices'                                        cemli_code,
+           '/Custom/DMT2/APInvoices/AP_CMP_DM.xdm'              cmp_dm_catalog_path,
+           '/Custom/DMT2/APInvoices/AP_CMP_RPT.xdo'             cmp_report_catalog_path,
+           'DMT_AP_COMPARE_PKG.GET_COMPARISON'                  cmp_function
+    from dual
+    union all select 'Customers',
+           '/Custom/DMT2/Customers/CUST_CMP_DM.xdm',
+           '/Custom/DMT2/Customers/CUST_CMP_RPT.xdo',
+           'DMT_CUST_COMPARE_PKG.GET_COMPARISON'
+    from dual
+    union all select 'ARInvoices',
+           '/Custom/DMT2/ARInvoices/AR_CMP_DM.xdm',
+           '/Custom/DMT2/ARInvoices/AR_CMP_RPT.xdo',
+           'DMT_AR_COMPARE_PKG.GET_COMPARISON'
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
+
+commit;
