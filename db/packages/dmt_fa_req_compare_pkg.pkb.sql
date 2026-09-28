@@ -38,7 +38,13 @@ CREATE OR REPLACE PACKAGE BODY DMT_FA_REQ_COMPARE_PKG AS
         -- (a) staged total (count + cost) for this run's assets. Money is on
         --     the BOOK table; scope STG to the run via the BOOK TFM rows'
         --     STG_SEQUENCE_ID pointers (STG has no RUN_ID).
-        SELECT COUNT(*), NVL(SUM(s.COST), 0)
+        --     GRAIN: the book STG/TFM tables are book-grain, and DMT stages the
+        --     FBDI addition book (one per asset). COUNT(DISTINCT ASSET_NUMBER)
+        --     keeps STG_COUNT at the per-ASSET grain so it matches the Fusion
+        --     success side (which is scoped to the mass addition's target book,
+        --     one row per asset) -- do NOT COUNT(*) book rows, which would
+        --     inflate if an asset ever staged more than one book row.
+        SELECT COUNT(DISTINCT s.ASSET_NUMBER), NVL(SUM(s.COST), 0)
           INTO l_stg_cnt, l_stg_amt
           FROM DMT_FA_ASSET_BOOK_STG_TBL s
          WHERE s.STG_SEQUENCE_ID IN (
@@ -46,8 +52,11 @@ CREATE OR REPLACE PACKAGE BODY DMT_FA_REQ_COMPARE_PKG AS
                    FROM DMT_FA_ASSET_BOOK_TFM_TBL
                   WHERE RUN_ID = p_run_id);
 
-        -- (b) transform errors (count + cost): book TFM rows FAILED for the run.
-        SELECT COUNT(*), NVL(SUM(COST), 0)
+        -- (b) transform errors (count + cost): assets whose book TFM row FAILED
+        --     for the run. COUNT(DISTINCT ASSET_NUMBER) at the same per-asset
+        --     grain as (a) and as the Fusion success side, so the three-source
+        --     balance holds even for a hypothetical multi-book asset.
+        SELECT COUNT(DISTINCT ASSET_NUMBER), NVL(SUM(COST), 0)
           INTO l_err_cnt, l_err_amt
           FROM DMT_FA_ASSET_BOOK_TFM_TBL
          WHERE RUN_ID = p_run_id

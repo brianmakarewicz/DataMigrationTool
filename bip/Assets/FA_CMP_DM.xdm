@@ -10,12 +10,18 @@
   <dataSets>
     <dataSet name="fa_cmp_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- Book scope (bk.book_type_code = ma.book_type_code): an asset routinely
+-- belongs to MULTIPLE books (corporate + tax/state), so joining fa_books by
+-- asset alone fans out to one row per book and would double SUCCESS_COUNT /
+-- SUCCESS_AMOUNT and let MAX(currency) pick an arbitrary book. Scope to the
+-- exact book the mass addition targeted so each asset contributes one book row.
 SELECT COUNT(*)                    AS success_count,
        NVL(SUM(bk.cost), 0)        AS success_amount,
        MAX(gl.currency_code)       AS amount_currency
 FROM   fa_mass_additions ma
 JOIN   fa_additions_b a  ON a.asset_id = ma.asset_id
 JOIN   fa_books bk       ON bk.asset_id = a.asset_id
+                       AND bk.book_type_code = ma.book_type_code
                        AND bk.transaction_header_id_out IS NULL
 JOIN   fa_book_controls bc ON bc.book_type_code = bk.book_type_code
 JOIN   gl_ledgers gl       ON gl.ledger_id = bc.set_of_books_id
