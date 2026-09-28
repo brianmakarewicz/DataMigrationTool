@@ -14,6 +14,17 @@ CREATE OR REPLACE PACKAGE BODY DMT_RUN_COMPARE_PKG AS
              ORDER BY r.CEMLI_CODE
         ) LOOP
             BEGIN
+                -- Sanctioned dynamic-invocation site #4 per DMT_DESIGN.html rule #66
+                -- (amended 2026-09-28, owner-directed). CMP_FUNCTION is a PKG.FUNC
+                -- name sourced only from the PR-reviewed registry DMT_BIP_REPORT_TBL.
+                -- Enforce the rule's allow-pattern before invoking; the value that
+                -- varies (p_run_id) travels as a bind, never concatenated.
+                IF NOT REGEXP_LIKE(obj.CMP_FUNCTION,
+                        '^[A-Z][A-Z0-9_$#]*\.[A-Z][A-Z0-9_$#]*$') THEN
+                    RAISE_APPLICATION_ERROR(-20910,
+                        'CMP_FUNCTION is not a valid PKG.FUNC identifier: '||
+                        obj.CMP_FUNCTION);
+                END IF;
                 EXECUTE IMMEDIATE
                     'BEGIN :r := '||obj.CMP_FUNCTION||'(:p); END;'
                     USING OUT l_row, IN p_run_id;
