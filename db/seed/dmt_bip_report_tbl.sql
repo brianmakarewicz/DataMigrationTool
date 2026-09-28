@@ -1725,6 +1725,15 @@ commit;
 --   line-locs    DOCUMENT_NUM || ':LN:' || LINE_NUM || ':LOC:' || SHIPMENT_NUM
 --   dists        (above) || ':DIST:' || DISTRIBUTION_NUM
 -- ---------------------------------------------------------------------------
+--
+-- Post-run comparison report columns (design: post-run comparison report):
+-- PurchaseOrders is the first (and, for now, only) object registered for the
+-- comparison report. Its three CMP_* columns are folded into THIS canonical
+-- PurchaseOrders convergence block (rather than a separate later MERGE) so the
+-- recon paths above and the comparison paths are set in one place and no later
+-- block can revert either. CMP_FUNCTION is the PKG.FUNC returning
+-- DMT_CMP_ROW_OBJ; read by the comparison framework (Task 5) and the per-object
+-- function's report-path lookup (Task 4). Every other object's CMP_* stays NULL.
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'PurchaseOrders'                                        cemli_code,
@@ -1734,18 +1743,24 @@ using (
            1                                                        contract_version,
            'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
            'FUSION_PO_HEADER_ID'                                   fusion_id_column,
-           'multi-tier: headers=DOCUMENT_NUM; lines=DOCUMENT_NUM||'':LN:''||LINE_NUM; locs=+'':LOC:''||SHIPMENT_NUM; dists=+'':DIST:''||DISTRIBUTION_NUM' recon_key_sql
+           'multi-tier: headers=DOCUMENT_NUM; lines=DOCUMENT_NUM||'':LN:''||LINE_NUM; locs=+'':LOC:''||SHIPMENT_NUM; dists=+'':DIST:''||DISTRIBUTION_NUM' recon_key_sql,
+           '/Custom/DMT2/PurchaseOrders/PO_CMP_DM.xdm'             cmp_dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_CMP_RPT.xdo'            cmp_report_catalog_path,
+           'DMT_PO_COMPARE_PKG.GET_COMPARISON'                     cmp_function
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set
-    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
-    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
-    t."NOTES"               = s.notes,
-    t."CONTRACT_VERSION"    = s.contract_version,
-    t."TFM_TABLE"           = s.tfm_table,
-    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
-    t."RECON_KEY_SQL"       = s.recon_key_sql;
+    t."DM_CATALOG_PATH"         = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH"     = s.report_catalog_path,
+    t."NOTES"                   = s.notes,
+    t."CONTRACT_VERSION"        = s.contract_version,
+    t."TFM_TABLE"               = s.tfm_table,
+    t."FUSION_ID_COLUMN"        = s.fusion_id_column,
+    t."RECON_KEY_SQL"           = s.recon_key_sql,
+    t."CMP_DM_CATALOG_PATH"     = s.cmp_dm_catalog_path,
+    t."CMP_REPORT_CATALOG_PATH" = s.cmp_report_catalog_path,
+    t."CMP_FUNCTION"            = s.cmp_function;
 
 commit;
 

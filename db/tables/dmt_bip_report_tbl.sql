@@ -85,3 +85,39 @@ COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."TFM_TABLE" IS 'TFM table the shared Cont
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."FUSION_ID_COLUMN" IS 'TFM column the shared parser stamps the Fusion base-table id into on a BASE/SUCCESS row.';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."RECON_KEY_SQL" IS 'Documents how RECON_KEY is built for this object (report RECORD_KEY is matched to TFM.RECON_KEY).';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."APPLY_PROC" IS 'PKG.PROC of the object thin static apply (APPLY_<OBJ>), dispatched by DMT_RECON_ENGINE_PKG through invoke_registered after staging the report to DMT_RECON_STAGE_GTT.';
+
+-- ---------------------------------------------------------------------------
+-- Post-run comparison report columns (design: post-run comparison report).
+-- ADDITIVE + NULLABLE. Fresh installs get the final shape from these guarded
+-- in-file ALTERs; an existing database converges via
+-- db/migrations/2026-09-27_bip_report_comparison_cols.sql (same statements,
+-- idempotent). These three columns describe an object's optional post-run
+-- comparison report -- a source-vs-Fusion field diff, separate from the
+-- Contract v1 load-reconciliation report above.
+--   CMP_DM_CATALOG_PATH     Fusion catalog path to the comparison report's
+--                           BIP data model .xdm.
+--   CMP_REPORT_CATALOG_PATH Fusion catalog path to the comparison report's
+--                           BIP report .xdo (read by the per-object function's
+--                           report-path lookup).
+--   CMP_FUNCTION            PKG.FUNC returning DMT_CMP_ROW_OBJ for this
+--                           object; dispatched by the comparison framework.
+-- ---------------------------------------------------------------------------
+declare
+  procedure add_col(p_col varchar2, p_ddl varchar2) is
+    l_n pls_integer;
+  begin
+    select count(*) into l_n from user_tab_columns
+    where  table_name = 'DMT_BIP_REPORT_TBL' and column_name = p_col;
+    if l_n = 0 then
+      execute immediate 'ALTER TABLE "DMT_BIP_REPORT_TBL" ADD (' || p_ddl || ')';
+    end if;
+  end;
+begin
+  add_col('CMP_DM_CATALOG_PATH',     '"CMP_DM_CATALOG_PATH" VARCHAR2(500)');
+  add_col('CMP_REPORT_CATALOG_PATH', '"CMP_REPORT_CATALOG_PATH" VARCHAR2(500)');
+  add_col('CMP_FUNCTION',            '"CMP_FUNCTION" VARCHAR2(200)');
+end;
+/
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."CMP_DM_CATALOG_PATH" IS 'Full Fusion catalog path to the post-run comparison report''s BIP data model .xdm.';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."CMP_REPORT_CATALOG_PATH" IS 'Full Fusion catalog path to the post-run comparison report''s BIP report .xdo.';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."CMP_FUNCTION" IS 'PKG.FUNC returning DMT_CMP_ROW_OBJ for this object; dispatched by the comparison framework.';

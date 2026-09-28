@@ -192,6 +192,7 @@ prompt == Sequences ==
 prompt == Types ==
 @@types/dmt_partition_key_tbl.sql
 @@types/dmt_recon_row_tbl.sql
+@@types/dmt_cmp_row_typ.sql
 
 prompt == Tables ==
 @@tables/apex_export_tmp.sql
@@ -721,6 +722,8 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_poz_sup_site_validator_pkg.pks.sql
 @@packages/dmt_poz_sup_transform_pkg.pks.sql
 @@packages/dmt_poz_sup_validator_pkg.pks.sql
+@@packages/dmt_po_compare_pkg.pks.sql
+@@packages/dmt_run_compare_pkg.pks.sql
 @@packages/dmt_po_fbdi_gen_pkg.pks.sql
 @@packages/dmt_po_results_pkg.pks.sql
 @@packages/dmt_po_transform_pkg.pks.sql
@@ -935,6 +938,8 @@ prompt == Package bodies ==
 @@packages/dmt_poz_sup_site_validator_pkg.pkb.sql
 @@packages/dmt_poz_sup_transform_pkg.pkb.sql
 @@packages/dmt_poz_sup_validator_pkg.pkb.sql
+@@packages/dmt_po_compare_pkg.pkb.sql
+@@packages/dmt_run_compare_pkg.pkb.sql
 @@packages/dmt_po_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_po_results_pkg.pkb.sql
 @@packages/dmt_po_transform_pkg.pkb.sql

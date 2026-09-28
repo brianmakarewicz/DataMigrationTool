@@ -1,0 +1,433 @@
+page 85 (
+    name: Run Comparison
+    alias: P85-RUN-COMPARISON
+    title: Run Comparison
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        formAutoComplete: false
+    }
+
+    region filters (
+        name: Filters
+        type: staticContent
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region comparison (
+        name: Comparison
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT c001 AS object_type,
+                       c002 AS key_type,
+                       n001 AS staged_count,
+                       n002 AS staged_amount,
+                       n003 AS error_count,
+                       n004 AS error_amount,
+                       n005 AS fusion_count,
+                       TO_NUMBER(c007) AS fusion_amount,
+                       TO_NUMBER(c008) AS variance_count,
+                       TO_NUMBER(c009) AS variance_amount,
+                       c003 AS in_balance,
+                       DECODE(c003, 'N', 't-Badge t-Badge--danger', 'Y', 't-Badge t-Badge--success', 't-Badge') AS in_balance_badge_class,
+                       c004 AS fusion_money_available,
+                       c005 AS amount_currency,
+                       c006 AS note
+                  FROM APEX_COLLECTIONS
+                 WHERE COLLECTION_NAME = 'RUN_COMPARISON'
+                 ORDER BY c001
+                ```
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+
+        column OBJECT_TYPE (
+            type: plainText
+            heading {
+                heading: Object
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column KEY_TYPE (
+            type: plainText
+            heading {
+                heading: Key Type
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column STAGED_COUNT (
+            type: plainText
+            heading {
+                heading: Staged Count
+                alignment: end
+            }
+            layout {
+                sequence: 30
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column STAGED_AMOUNT (
+            type: plainText
+            heading {
+                heading: Staged Amount
+                alignment: end
+            }
+            layout {
+                sequence: 40
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column ERROR_COUNT (
+            type: plainText
+            heading {
+                heading: Error Count
+                alignment: end
+            }
+            layout {
+                sequence: 50
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column ERROR_AMOUNT (
+            type: plainText
+            heading {
+                heading: Error Amount
+                alignment: end
+            }
+            layout {
+                sequence: 60
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column FUSION_COUNT (
+            type: plainText
+            heading {
+                heading: Fusion Success Count
+                alignment: end
+            }
+            layout {
+                sequence: 70
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column FUSION_AMOUNT (
+            type: plainText
+            heading {
+                heading: Fusion Success Amount
+                alignment: end
+            }
+            layout {
+                sequence: 80
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column VARIANCE_COUNT (
+            type: plainText
+            heading {
+                heading: Variance Count
+                alignment: end
+            }
+            layout {
+                sequence: 90
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column VARIANCE_AMOUNT (
+            type: plainText
+            heading {
+                heading: Variance Amount
+                alignment: end
+            }
+            layout {
+                sequence: 100
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column IN_BALANCE (
+            type: plainText
+            heading {
+                heading: In Balance
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+            columnFormatting {
+                htmlExpression: <span class="#IN_BALANCE_BADGE_CLASS#">#IN_BALANCE#</span>
+            }
+        )
+
+        column IN_BALANCE_BADGE_CLASS (
+            type: hidden
+            heading {
+                heading: In Balance Badge Class
+            }
+            layout {
+                sequence: 115
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column FUSION_MONEY_AVAILABLE (
+            type: plainText
+            heading {
+                heading: Fusion Money Available
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column AMOUNT_CURRENCY (
+            type: plainText
+            heading {
+                heading: Currency
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column NOTE (
+            type: plainText
+            heading {
+                heading: Note
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+    )
+
+    region totals (
+        name: Totals
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                    l_stg_count   NUMBER;
+                    l_stg_amount  NUMBER;
+                    l_err_count   NUMBER;
+                    l_err_amount  NUMBER;
+                    l_fus_count   NUMBER;
+                    l_fus_amount  NUMBER;
+                    l_var_count   NUMBER;
+                    l_var_amount  NUMBER;
+                BEGIN
+                    SELECT SUM(n001), SUM(n002), SUM(n003), SUM(n004),
+                           SUM(n005), SUM(TO_NUMBER(c007)), SUM(TO_NUMBER(c008)), SUM(TO_NUMBER(c009))
+                      INTO l_stg_count, l_stg_amount, l_err_count, l_err_amount,
+                           l_fus_count, l_fus_amount, l_var_count, l_var_amount
+                      FROM APEX_COLLECTIONS
+                     WHERE COLLECTION_NAME = 'RUN_COMPARISON';
+
+                    htp.p('<div style="margin:8px 0;font-weight:600">Totals — '
+                        || 'Staged: ' || NVL(TO_CHAR(l_stg_count), '0') || ' rows / ' || NVL(TO_CHAR(l_stg_amount), '0')
+                        || ' &nbsp;|&nbsp; Errors: ' || NVL(TO_CHAR(l_err_count), '0') || ' rows / ' || NVL(TO_CHAR(l_err_amount), '0')
+                        || ' &nbsp;|&nbsp; Fusion Success: ' || NVL(TO_CHAR(l_fus_count), '0') || ' rows / ' || NVL(TO_CHAR(l_fus_amount), '0')
+                        || ' &nbsp;|&nbsp; Variance: ' || NVL(TO_CHAR(l_var_count), '0') || ' rows / ' || NVL(TO_CHAR(l_var_amount), '0')
+                        || '</div>');
+                END;
+                ```
+        }
+        layout {
+            sequence: 25
+            slot: body
+        }
+    )
+
+    pageItem P85_RUN_ID (
+        type: selectList
+        label {
+            label: Run
+            alignment: left
+        }
+        layout {
+            sequence: 10
+            region: @filters
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT RUN_ID || ' - ' || RUN_STATUS || ' (' || TO_CHAR(SUBMITTED_DATE, 'YYYY-MM-DD HH24:MI') || ')' d,
+                       RUN_ID r
+                  FROM DMT_PIPELINE_RUN_TBL
+                 ORDER BY RUN_ID DESC
+                FETCH FIRST 50 ROWS ONLY
+                ```
+            displayExtraValues: true
+            nullDisplayValue: - Select a run -
+        }
+        security {
+            sessionStateProtection: unrestricted
+        }
+    )
+
+    button go (
+        buttonName: GO
+        label: Go
+        layout {
+            sequence: 20
+            region: @filters
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            action: submitPage
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    process load-comparison (
+        name: Load comparison
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                    c SYS_REFCURSOR;
+                    v DMT_CMP_ROW_OBJ;
+                BEGIN
+                    APEX_COLLECTION.CREATE_OR_TRUNCATE_COLLECTION('RUN_COMPARISON');
+                    IF :P85_RUN_ID IS NOT NULL THEN
+                        DMT_RUN_COMPARE_PKG.GET_RUN_COMPARISON(:P85_RUN_ID, c);
+                        LOOP
+                            FETCH c INTO v;
+                            EXIT WHEN c%NOTFOUND;
+                            -- APEX_COLLECTION.ADD_MEMBER on this APEX release only
+                            -- exposes P_N001..P_N005 (5 numeric slots), not 8. The
+                            -- three numeric attributes that don't fit (fusion success
+                            -- amount, variance count, variance amount) are carried in
+                            -- spare varchar slots C007..C009 as TO_CHAR and converted
+                            -- back with TO_NUMBER in the report region SQL.
+                            APEX_COLLECTION.ADD_MEMBER(
+                                p_collection_name => 'RUN_COMPARISON',
+                                p_c001 => v.OBJECT_TYPE,
+                                p_c002 => v.KEY_TYPE,
+                                p_c003 => v.IN_BALANCE,
+                                p_c004 => v.FUSION_MONEY_AVAILABLE,
+                                p_c005 => v.AMOUNT_CURRENCY,
+                                p_c006 => v.NOTE,
+                                p_c007 => TO_CHAR(v.FUSION_SUCCESS_AMOUNT),
+                                p_c008 => TO_CHAR(v.VARIANCE_COUNT),
+                                p_c009 => TO_CHAR(v.VARIANCE_AMOUNT),
+                                p_n001 => v.STG_COUNT,
+                                p_n002 => v.STG_AMOUNT,
+                                p_n003 => v.TFM_ERROR_COUNT,
+                                p_n004 => v.TFM_ERROR_AMOUNT,
+                                p_n005 => v.FUSION_SUCCESS_COUNT
+                            );
+                        END LOOP;
+                        CLOSE c;
+                    END IF;
+                END;
+                ```
+        }
+        execution {
+            sequence: 10
+            point: beforeHeader
+        }
+    )
+
+)
