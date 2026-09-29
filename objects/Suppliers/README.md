@@ -59,7 +59,7 @@ That multi-CSV-in-one-zip pattern does NOT apply to the supplier family.
 - FBDI Generators: `db/packages/dmt_poz_sup_fbdi_gen_pkg.*`, `dmt_poz_sup_addr_fbdi_gen_pkg.*`, `dmt_poz_sup_site_fbdi_gen_pkg.*`, `dmt_poz_sup_site_assn_fbdi_gen_pkg.*`, `dmt_poz_sup_cont_fbdi_gen_pkg.*`
 - Results/Reconciliation: `db/packages/dmt_poz_sup_results_pkg.*` (one shared package; RECONCILE_BATCH takes p_cemli_code — the registry rows set RECON_HAS_CEMLI_ARG=Y)
 - BIP Data Models/Reports: `bip/Suppliers/`, `bip/SupplierAddresses/`, `bip/SupplierSites/`, `bip/SupplierSiteAssignments/`, `bip/SupplierContacts/` — deployed to `/Custom/DMT2/{CEMLI}/` (this stack's catalog; never `/Custom/DMT/`)
-- Report deploy tool: `scripts/deploy_supplier_bip_reports.py` + `DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT`
+- Report deploy tool: `scripts/deploy_recon_bip_reports.py` + `DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT`
 
 ## Reference Files
 None in this folder (CTL files embedded in FBDI template).
