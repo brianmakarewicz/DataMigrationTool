@@ -179,10 +179,14 @@ page 85 (
                        c002 AS key_type,
                        c004 AS fusion_money_available,
                        c005 AS amount_currency,
-                       n001 || CASE WHEN c004 = 'Y' THEN ' ($' || TO_CHAR(n002, 'FM999G999G990D00') || ')' END AS staged_disp,
-                       n003 || CASE WHEN c004 = 'Y' THEN ' ($' || TO_CHAR(n004, 'FM999G999G990D00') || ')' END AS error_disp,
-                       n005 || CASE WHEN c004 = 'Y' THEN ' ($' || TO_CHAR(TO_NUMBER(c007), 'FM999G999G990D00') || ')' END AS loaded_disp,
-                       TO_NUMBER(c008) || CASE WHEN c004 = 'Y' THEN ' ($' || TO_CHAR(TO_NUMBER(c009), 'FM999G999G990D00') || ')' END AS variance_disp,
+                       n001 AS staged_count,
+                       CASE WHEN c004 = 'Y' THEN TO_CHAR(n002, 'FM$999G999G990D00') END AS staged_amt,
+                       n003 AS error_count,
+                       CASE WHEN c004 = 'Y' THEN TO_CHAR(n004, 'FM$999G999G990D00') END AS error_amt,
+                       n005 AS loaded_count,
+                       CASE WHEN c004 = 'Y' THEN TO_CHAR(TO_NUMBER(c007), 'FM$999G999G990D00') END AS loaded_amt,
+                       TO_NUMBER(c008) AS variance_count,
+                       CASE WHEN c004 = 'Y' THEN TO_CHAR(TO_NUMBER(c009), 'FM$999G999G990D00') END AS variance_amt,
                        APEX_PAGE.GET_URL(p_page => 52,
                            p_items => 'P52_RUN_ID,P52_CEMLI_CODE',
                            p_values => :P85_RUN_ID || ',' || c001) AS errors_link
@@ -241,7 +245,7 @@ page 85 (
             }
         )
 
-        column STAGED_DISP (
+        column STAGED_COUNT (
             type: plainText
             heading {
                 heading: Staged
@@ -252,14 +256,14 @@ page 85 (
                 columnAlignment: end
             }
             source {
-                dataType: STRING
+                dataType: NUMBER
             }
         )
 
-        column ERROR_DISP (
+        column STAGED_AMT (
             type: plainText
             heading {
-                heading: Errors
+                heading: Staged $
                 alignment: end
             }
             layout {
@@ -269,15 +273,12 @@ page 85 (
             source {
                 dataType: STRING
             }
-            columnFormatting {
-                htmlExpression: <a href="#ERRORS_LINK#" style="color:#0072c6;text-decoration:none" title="View failed records">#ERROR_DISP#</a>
-            }
         )
 
-        column LOADED_DISP (
+        column ERROR_COUNT (
             type: plainText
             heading {
-                heading: Loaded to Fusion
+                heading: Errors
                 alignment: end
             }
             layout {
@@ -285,18 +286,81 @@ page 85 (
                 columnAlignment: end
             }
             source {
+                dataType: NUMBER
+            }
+            columnFormatting {
+                htmlExpression: <a href="#ERRORS_LINK#" style="color:#0072c6;text-decoration:none" title="View failed records">#ERROR_COUNT#</a>
+            }
+        )
+
+        column ERROR_AMT (
+            type: plainText
+            heading {
+                heading: Errors $
+                alignment: end
+            }
+            layout {
+                sequence: 60
+                columnAlignment: end
+            }
+            source {
                 dataType: STRING
             }
         )
 
-        column VARIANCE_DISP (
+        column LOADED_COUNT (
+            type: plainText
+            heading {
+                heading: Loaded to Fusion
+                alignment: end
+            }
+            layout {
+                sequence: 70
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column LOADED_AMT (
+            type: plainText
+            heading {
+                heading: Loaded $
+                alignment: end
+            }
+            layout {
+                sequence: 80
+                columnAlignment: end
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column VARIANCE_COUNT (
             type: plainText
             heading {
                 heading: Variance
                 alignment: end
             }
             layout {
-                sequence: 60
+                sequence: 90
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column VARIANCE_AMT (
+            type: plainText
+            heading {
+                heading: Variance $
+                alignment: end
+            }
+            layout {
+                sequence: 100
                 columnAlignment: end
             }
             source {
