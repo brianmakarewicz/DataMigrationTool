@@ -92,33 +92,38 @@ AS
     );
 
     -- ------------------------------------------------------------
-    -- RESET_UNACCOUNTED_TO_GENERATED — the exact inverse of
-    -- SWEEP_UNACCOUNTED, used by the "re-run reconcile for a run"
+    -- INVOKE_RESET — dispatch an object's thin static RESET_UNACCOUNTED
+    -- proc through the SAME sanctioned invoke_registered site the queue
+    -- already uses (style RECON). Used by the "re-run reconcile for a run"
     -- recovery path (DMT_QUEUE_PKG.RERUN_RUN, backlog #95). A run that
-    -- faulted mid-reconcile leaves rows at the terminal status
-    -- UNACCOUNTED; because SWEEP_UNACCOUNTED and the per-object APPLY
-    -- procs only ever act on GENERATED rows, simply re-dispatching the
-    -- reconcile would skip those rows. This procedure resets every TFM
-    -- row of the object still UNACCOUNTED for this run back to GENERATED
-    -- and strips the bare [UNACCOUNTED] tag this run appended to
-    -- ERROR_TEXT (prior real errors are preserved), so the next
-    -- reconcile pass re-examines them and reaches a real verdict.
+    -- faulted mid-reconcile leaves rows at the terminal status UNACCOUNTED;
+    -- because SWEEP_UNACCOUNTED and every per-object reconcile act only on
+    -- GENERATED rows, simply re-dispatching the reconcile would skip those
+    -- rows. Each object's own results package carries a STATIC
+    -- RESET_UNACCOUNTED proc — a static UPDATE against its literally-named
+    -- TFM table(s) that flips this run's UNACCOUNTED rows back to GENERATED
+    -- and strips the bare [UNACCOUNTED] tag (prior real errors preserved).
+    -- This wrapper drives that proc through the ONE existing dynamic-
+    -- invocation site, exactly as INVOKE_APPLY drives the object's static
+    -- APPLY proc.
     --
-    -- Registry-driven and uniform: reads the SAME record-type registry
-    -- (DMT_CEMLI_CATALOG_TBL: TFM_TABLE + STATUS_COLUMN + ROW_FILTER per
-    -- record type) SWEEP_UNACCOUNTED reads — no hardcoded table list, so
-    -- it works for every object automatically. Does NOT commit — the
-    -- caller (RERUN_RUN) owns the transaction. Stays inside the sanctioned
-    -- dynamic-SQL site (identifier-checked by assert_catalog_identifier,
-    -- every value bound). Returns the number of rows reset (across all of
-    -- the object's TFM tables) so the caller can decide whether the
-    -- object's work item still has anything to re-reconcile.
+    -- p_reset_proc is a PKG.PROC name (validated by invoke_registered's
+    -- allow-pattern), NEVER a table or column name — so NO new dynamic-SQL
+    -- site is added (the four-site rule is unchanged; the only
+    -- EXECUTE IMMEDIATE remains inside invoke_registered). The reset proc
+    -- name is registry data (DMT_PIPELINE_DEF_TBL.RESET_PROC). It is invoked
+    -- with the RECON style (p_run_id, p_load_ess_id, p_import_ess_id,
+    -- p_work_queue_id); the ESS ids are passed NULL and ignored, the proc
+    -- reads only p_run_id and p_work_queue_id. Does NOT commit — the caller
+    -- (RERUN_RUN) owns the transaction.
     -- ------------------------------------------------------------
-    FUNCTION RESET_UNACCOUNTED_TO_GENERATED (
-        p_run_id        IN NUMBER,
-        p_cemli_code    IN VARCHAR2,
-        p_work_queue_id IN NUMBER DEFAULT NULL
-    ) RETURN NUMBER;
+    PROCEDURE INVOKE_RESET (
+        p_reset_proc     IN VARCHAR2,
+        p_run_id         IN NUMBER,
+        p_cemli_code     IN VARCHAR2,
+        p_has_cemli_arg  IN VARCHAR2 DEFAULT 'N',
+        p_work_queue_id  IN NUMBER DEFAULT NULL
+    );
 
     -- ------------------------------------------------------------
     -- RECONCILE_VIA_REGISTRY — the ONE reconcile dispatch (backlog

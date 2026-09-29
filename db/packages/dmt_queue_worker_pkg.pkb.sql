@@ -357,74 +357,6 @@ AS
     END SWEEP_UNACCOUNTED;
 
     -- ============================================================
-    -- RESET_UNACCOUNTED_TO_GENERATED — inverse of SWEEP_UNACCOUNTED.
-    -- Re-run-reconcile recovery path (DMT_QUEUE_PKG.RERUN_RUN, backlog
-    -- #95). Reads the SAME record-type registry SWEEP_UNACCOUNTED reads
-    -- (DMT_CEMLI_CATALOG_TBL) so it is uniform across every object with
-    -- no hardcoded table list, and flips this run's UNACCOUNTED TFM rows
-    -- back to GENERATED. Also strips the bare [UNACCOUNTED] tag this run
-    -- appended to ERROR_TEXT (the two shapes APPEND_ERROR produces:
-    -- ' | [UNACCOUNTED]' after a prior error, or a standalone
-    -- '[UNACCOUNTED]'); any prior real error text is preserved so the
-    -- next reconcile accumulates onto it exactly as a first pass would.
-    -- Does NOT commit — the caller owns the transaction. Same sanctioned
-    -- dynamic-SQL site rules as SWEEP_UNACCOUNTED (assert_catalog_identifier
-    -- on every identifier, all values bound). Returns the count of rows
-    -- reset across the object's TFM tables.
-    -- ============================================================
-    FUNCTION RESET_UNACCOUNTED_TO_GENERATED (
-        p_run_id        IN NUMBER,
-        p_cemli_code    IN VARCHAR2,
-        p_work_queue_id IN NUMBER DEFAULT NULL
-    ) RETURN NUMBER IS
-        l_sql   VARCHAR2(4000);
-        l_reset NUMBER := 0;
-    BEGIN
-        FOR r IN (
-            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'TFM_STATUS') AS STATUS_COLUMN, ROW_FILTER
-            FROM   DMT_CEMLI_CATALOG_TBL
-            WHERE  CEMLI_CODE = p_cemli_code
-            AND    TFM_TABLE IS NOT NULL
-            ORDER BY SORT_ORDER
-        ) LOOP
-            assert_catalog_identifier(r.TFM_TABLE, 'TFM_TABLE');
-            assert_catalog_identifier(r.STATUS_COLUMN, 'STATUS_COLUMN');
-
-            l_sql :=
-                'UPDATE ' || r.TFM_TABLE
-                || ' SET ' || r.STATUS_COLUMN || ' = ''GENERATED'','
-                -- Strip this run''s [UNACCOUNTED] tag, keeping any prior real
-                -- error. ERROR_TEXT is a CLOB, so plain REPLACE raises
-                -- ORA-22849; REGEXP_REPLACE is CLOB-safe. The tag is always the
-                -- LAST thing APPEND_ERROR wrote, in one of two shapes: a
-                -- standalone ''[UNACCOUNTED]'' (it was the first error) or
-                -- '' | [UNACCOUNTED]'' appended after a prior error. Strip the
-                -- optional '' | '' separator and the tag at end-of-string; if
-                -- that empties the CLOB (the standalone case), store NULL.
-                -- Brackets escaped for the regex.
-                || ' ERROR_TEXT = CASE WHEN DBMS_LOB.GETLENGTH('
-                || '   REGEXP_REPLACE(ERROR_TEXT, ''( \| )?\[UNACCOUNTED\]$'')) > 0'
-                || '   THEN REGEXP_REPLACE(ERROR_TEXT, ''( \| )?\[UNACCOUNTED\]$'')'
-                || '   ELSE NULL END '
-                || ' WHERE RUN_ID = :run_id'
-                || ' AND ' || r.STATUS_COLUMN || ' = ''UNACCOUNTED'''
-                || CASE WHEN p_work_queue_id IS NOT NULL
-                        THEN ' AND WORK_QUEUE_ID = :wq' END
-                || CASE WHEN r.ROW_FILTER IS NOT NULL
-                        THEN ' AND ' || r.ROW_FILTER END;
-
-            IF p_work_queue_id IS NOT NULL THEN
-                EXECUTE IMMEDIATE l_sql USING p_run_id, p_work_queue_id;
-            ELSE
-                EXECUTE IMMEDIATE l_sql USING p_run_id;
-            END IF;
-            l_reset := l_reset + SQL%ROWCOUNT;
-        END LOOP;
-        RETURN l_reset;
-        -- Deliberately NO COMMIT: the caller (RERUN_RUN) owns the transaction.
-    END RESET_UNACCOUNTED_TO_GENERATED;
-
-    -- ============================================================
     -- apply_accounting_gate — THE single accounting gate. The only
     -- code that writes WORK_STATUS = DONE (proposed rule "Terminal
     -- work-item states pass one accounting gate", 2026-07-08).
@@ -1313,6 +1245,50 @@ AS
             p_work_queue_id => p_work_queue_id,
             x_keys          => l_ignore_keys);
     END INVOKE_APPLY;
+
+    -- ============================================================
+    -- INVOKE_RESET — dispatch an object's thin static RESET_UNACCOUNTED proc
+    -- through the SAME sanctioned invoke_registered site (style RECON). Used by
+    -- the "re-run reconcile for a run" recovery path (DMT_QUEUE_PKG.RERUN_RUN,
+    -- backlog #95). A run that faulted mid-reconcile leaves rows at the terminal
+    -- status UNACCOUNTED; because SWEEP_UNACCOUNTED and every per-object reconcile
+    -- act only on GENERATED rows, simply re-dispatching the reconcile would skip
+    -- those rows. Each object's own results package carries a STATIC
+    -- RESET_UNACCOUNTED proc (a static UPDATE against its literally-named TFM
+    -- table(s) — no dynamic SQL, no catalog-name binding), and this wrapper drives
+    -- it through the ONE existing dynamic-invocation site, exactly as INVOKE_APPLY
+    -- drives the object's static APPLY proc. No new dynamic-SQL site is added: the
+    -- ONLY EXECUTE IMMEDIATE remains inside invoke_registered, and the reset proc
+    -- name is registry data (DMT_PIPELINE_DEF_TBL.RESET_PROC), a PKG.PROC validated
+    -- by the same allow-pattern, never a table or column name. The reset proc uses
+    -- the RECON call shape (p_run_id, p_load_ess_id, p_import_ess_id,
+    -- p_work_queue_id); it ignores the ESS-id args and reads only p_run_id and
+    -- p_work_queue_id. Does NOT commit — the caller (RERUN_RUN) owns the
+    -- transaction.
+    -- ============================================================
+    PROCEDURE INVOKE_RESET (
+        p_reset_proc     IN VARCHAR2,
+        p_run_id         IN NUMBER,
+        p_cemli_code     IN VARCHAR2,
+        p_has_cemli_arg  IN VARCHAR2 DEFAULT 'N',
+        p_work_queue_id  IN NUMBER DEFAULT NULL
+    ) IS
+        l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
+    BEGIN
+        -- Same style choice RECONCILE_ONE makes: the shared supplier-family reset
+        -- takes p_cemli_code (RECON_CEMLI) so ONE proc resets the right one of the
+        -- five supplier TFM tables; every other object uses the standard RECON
+        -- shape. Either way the ESS-id binds are NULL and ignored by the reset.
+        invoke_registered(
+            p_proc          => p_reset_proc,
+            p_style         => CASE p_has_cemli_arg WHEN 'Y' THEN 'RECON_CEMLI' ELSE 'RECON' END,
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => NULL,
+            p_import_ess_id => NULL,
+            p_work_queue_id => p_work_queue_id,
+            x_keys          => l_ignore_keys);
+    END INVOKE_RESET;
 
     -- ============================================================
     -- submit_postrun_job — Phase-2 staged load.

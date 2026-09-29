@@ -219,6 +219,52 @@ when matched then update set
 commit;
 
 -- ----------------------------------------------------------------------
+-- RESET_PROC seed (backlog #95, re-run reconcile for a run). Each object's
+-- OWN results package carries a STATIC RESET_UNACCOUNTED proc that flips this
+-- run's UNACCOUNTED TFM rows back to GENERATED with a STATIC UPDATE over its
+-- literally-named TFM table(s) (no dynamic SQL, no catalog-name binding). The
+-- queue worker dispatches it through the EXISTING sanctioned invoke_registered
+-- site (DMT_QUEUE_WORKER_PKG.INVOKE_RESET), so NO new dynamic-SQL site is added
+-- and the four-site rule is unchanged. Registered for every FBDI/base-
+-- confirming object; NULL (unset) for config stubs, mocks, and HDL/REST objects
+-- that reconcile inline. The supplier family shares ONE cemli-aware reset proc
+-- (RECON_HAS_CEMLI_ARG='Y' already routes it RECON_CEMLI, so it resets the right
+-- one of the five supplier TFM tables). GLBalances' reset lives in its results
+-- package (DMT_GL_RESULTS_PKG) — the same package that owns its recon-engine
+-- APPLY_GL. Separate additive MERGE so it converges an existing database.
+merge into "DMT_PIPELINE_DEF_TBL" t
+using (
+    select 'Suppliers' cemli_code, 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' reset_proc from dual
+    union all select 'SupplierAddresses', 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'SupplierSites', 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'SupplierSiteAssignments', 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'SupplierContacts', 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'PurchaseOrders', 'DMT_PO_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'BlanketPOs', 'DMT_BLANKET_PO_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'Contracts', 'DMT_CONTRACT_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'APInvoices', 'DMT_AP_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'ARInvoices', 'DMT_AR_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'Customers', 'DMT_CUST_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'Projects', 'DMT_PROJECT_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'Expenditures', 'DMT_EXPENDITURE_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'Grants', 'DMT_GRANTS_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'ProjectBudgets', 'DMT_PRJ_BUDGET_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'BillingEvents', 'DMT_BILLING_EVENT_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'GLBalances', 'DMT_GL_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'GLBudgets', 'DMT_GL_BUDGET_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'Assets', 'DMT_FA_ASSET_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'Items', 'DMT_EGP_ITEM_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'MiscReceipts', 'DMT_MISC_RECEIPT_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'Requisitions', 'DMT_REQ_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'PlanningBudgets', 'DMT_PLAN_BUDGET_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."RESET_PROC" = s.reset_proc;
+
+commit;
+
+-- ----------------------------------------------------------------------
 -- Retirement converge (2026-09-17 HCM object-model correction). The two
 -- MERGE blocks above are insert/update only, so on a database that already
 -- carries the retired rows they would linger. Delete them explicitly (one

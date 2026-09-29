@@ -595,5 +595,226 @@ AS
             RAISE;
     END RECONCILE_BATCH;
 
+
+    -- --------------------------------------------------------
+    -- RESET_UNACCOUNTED (backlog #95) -- see spec. Static UPDATE(s) over the
+    -- compile-time-known Grants TFM table(s). Flips this run's UNACCOUNTED rows
+    -- back to GENERATED and strips the trailing [UNACCOUNTED] tag from ERROR_TEXT
+    -- (CLOB-safe REGEXP_REPLACE -- plain REPLACE raises ORA-22849), preserving any
+    -- prior real error. Scoped by run, and by work-queue item when given. NO
+    -- dynamic SQL; NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE RESET_UNACCOUNTED (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    ) IS
+        C_PROC  CONSTANT VARCHAR2(30) := 'RESET_UNACCOUNTED';
+        l_reset NUMBER := 0;
+    BEGIN
+        UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_PROJECTS_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_FUNDING_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_KEYWORDS_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_FUND_SRC_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_BDGT_PRDS_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_CERTS_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_CFDAS_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_FUND_ALLOC_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_ORG_CREDITS_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_PERSONNEL_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_REFERENCES_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+        UPDATE DMT_GMS_AWD_TERMS_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := l_reset + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ': reset ' || l_reset || ' UNACCOUNTED Grants row(s) to GENERATED '
+            || 'for re-reconcile.',
+            'INFO', C_PKG, C_PROC);
+        -- NO COMMIT -- the caller (RERUN_RUN) owns the transaction.
+    END RESET_UNACCOUNTED;
+
 END DMT_GRANTS_RESULTS_PKG;
 /

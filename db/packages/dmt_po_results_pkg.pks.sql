@@ -40,5 +40,18 @@ AS
         p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
+    -- RESET_UNACCOUNTED -- re-run-reconcile recovery (backlog #95). Static
+    -- UPDATE over this object's TFM rows, scoped by WORK_QUEUE_ID (via a static
+    -- subquery on DMT_WORK_QUEUE_TBL keyed to CEMLI_CODE='PurchaseOrders') since
+    -- DMT_PO_HEADERS_INT_TFM_TBL / DMT_PO_LINES_INT_TFM_TBL / _LINE_LOCS_ /
+    -- _DISTS_ are SHARED with BlanketPOs and Contracts -- a bare RUN_ID filter
+    -- would reset another object's rows too. Flips this run's UNACCOUNTED rows
+    -- back to GENERATED and strips the bare [UNACCOUNTED] tag so the next
+    -- reconcile pass re-examines them. Dispatched by the queue worker through
+    -- the sanctioned invoke_registered site (INVOKE_RESET, RECON style); the
+    -- ESS-id args are ignored. NO dynamic SQL; NO COMMIT (caller owns the txn).
+    PROCEDURE RESET_UNACCOUNTED (p_run_id IN NUMBER, p_load_ess_id IN NUMBER DEFAULT NULL,
+        p_import_ess_id IN NUMBER DEFAULT NULL, p_work_queue_id IN NUMBER DEFAULT NULL);
+
 END DMT_PO_RESULTS_PKG;
 /
