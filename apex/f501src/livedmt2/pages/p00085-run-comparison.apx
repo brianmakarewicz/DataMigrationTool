@@ -26,6 +26,40 @@ page 85 (
         }
     )
 
+    region status-bar (
+        name: Status
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                    l_n  NUMBER;
+                    l_ts TIMESTAMP;
+                BEGIN
+                    IF :P85_RUN_ID IS NULL THEN
+                        htp.p('<p style="padding:8px 0;color:#666">Select a run above and click Go.</p>');
+                        RETURN;
+                    END IF;
+                    SELECT COUNT(*), MAX(COMPUTED_DATE) INTO l_n, l_ts
+                      FROM DMT_RUN_COMPARISON_TBL WHERE RUN_ID = :P85_RUN_ID;
+                    IF l_n = 0 THEN
+                        htp.p('<div style="padding:10px 12px;background:#fff8e1;border:1px solid #ffe0a3;'
+                            || 'border-radius:6px;color:#7a5c00">This run has not been computed yet. Click '
+                            || '<b>Refresh from Fusion</b> to pull the live comparison (takes ~15s).</div>');
+                    ELSE
+                        htp.p('<div style="padding:6px 0;color:#555;font-size:12px">Showing stored results as of <b>'
+                            || TO_CHAR(l_ts, 'YYYY-MM-DD HH24:MI:SS')
+                            || '</b>. Click <b>Refresh from Fusion</b> to re-pull the live numbers.</div>');
+                    END IF;
+                END;
+                ```
+        }
+        layout {
+            sequence: 12
+            slot: body
+        }
+    )
+
     region totals (
         name: Totals
         type: plSqlDynamicContent
@@ -42,13 +76,14 @@ page 85 (
                     l_var_count   NUMBER;
                     l_var_amount  NUMBER;
                 BEGIN
-                    SELECT SUM(n001), SUM(n002), SUM(n003), SUM(n004),
-                           SUM(n005), SUM(TO_NUMBER(c007)), SUM(TO_NUMBER(c008)), SUM(TO_NUMBER(c009))
+                    IF :P85_RUN_ID IS NULL THEN RETURN; END IF;
+                    SELECT SUM(STG_COUNT), SUM(STG_AMOUNT), SUM(TFM_ERROR_COUNT), SUM(TFM_ERROR_AMOUNT),
+                           SUM(FUSION_SUCCESS_COUNT), SUM(FUSION_SUCCESS_AMOUNT), SUM(VARIANCE_COUNT), SUM(VARIANCE_AMOUNT)
                       INTO l_stg_count, l_stg_amount, l_err_count, l_err_amount,
                            l_fus_count, l_fus_amount, l_var_count, l_var_amount
-                      FROM APEX_COLLECTIONS
-                     WHERE COLLECTION_NAME = 'RUN_COMPARISON';
+                      FROM DMT_RUN_COMPARISON_TBL WHERE RUN_ID = :P85_RUN_ID;
 
+                    IF l_stg_count IS NULL THEN RETURN; END IF;
                     htp.p('<div style="margin:8px 0;font-weight:600">Totals &mdash; '
                         || 'Staged: ' || NVL(TO_CHAR(l_stg_count), '0') || ' rows / ' || NVL(TO_CHAR(l_stg_amount), '0')
                         || ' &nbsp;|&nbsp; Errors: ' || NVL(TO_CHAR(l_err_count), '0') || ' rows / ' || NVL(TO_CHAR(l_err_amount), '0')
@@ -77,17 +112,14 @@ page 85 (
                     l_edge VARCHAR2(20);
                     l_soft VARCHAR2(20);
                 BEGIN
-                    IF :P85_RUN_ID IS NULL THEN
-                        htp.p('<p style="padding:12px;color:#666">Select a run above and click Go.</p>');
-                        RETURN;
-                    END IF;
+                    IF :P85_RUN_ID IS NULL THEN RETURN; END IF;
                     FOR r IN (
-                        SELECT ac.c001 object_type, ac.c003 in_balance, ac.c004 money_avail,
-                               ac.c006 note, ac.n001 stg_cnt, ac.n002 stg_amt,
-                               ac.n003 err_cnt, ac.n004 err_amt,
-                               ac.n005 fus_cnt, TO_NUMBER(ac.c007) fus_amt,
+                        SELECT c.OBJECT_TYPE, c.IN_BALANCE, c.FUSION_MONEY_AVAILABLE money_avail,
+                               c.NOTE, c.STG_COUNT stg_cnt, c.STG_AMOUNT stg_amt,
+                               c.TFM_ERROR_COUNT err_cnt, c.TFM_ERROR_AMOUNT err_amt,
+                               c.FUSION_SUCCESS_COUNT fus_cnt, c.FUSION_SUCCESS_AMOUNT fus_amt,
                                NVL(sv.PIPELINE, 'Other') pipeline
-                          FROM APEX_COLLECTIONS ac
+                          FROM DMT_RUN_COMPARISON_TBL c
                           LEFT JOIN (
                                 SELECT OBJECT_TYPE,
                                        MAX(PIPELINE)   PIPELINE,
@@ -97,14 +129,14 @@ page 85 (
                                    AND OBJECT_TYPE != '__PIPELINE__'
                                  GROUP BY OBJECT_TYPE
                                ) sv
-                            ON sv.OBJECT_TYPE = ac.c001
-                         WHERE ac.COLLECTION_NAME = 'RUN_COMPARISON'
+                            ON sv.OBJECT_TYPE = c.OBJECT_TYPE
+                         WHERE c.RUN_ID = :P85_RUN_ID
                          ORDER BY CASE NVL(sv.PIPELINE, 'zzz')
                                     WHEN 'Configuration' THEN 0 WHEN 'MasterData' THEN 1
                                     WHEN 'P2P' THEN 2 WHEN 'O2C' THEN 3 WHEN 'Financials' THEN 4
                                     WHEN 'Projects' THEN 5 WHEN 'Standalone' THEN 6 WHEN 'HCM' THEN 7
                                     ELSE 9 END,
-                                  NVL(sv.SORT_ORDER, 999), ac.c001
+                                  NVL(sv.SORT_ORDER, 999), c.OBJECT_TYPE
                     ) LOOP
                         IF r.pipeline != l_pp THEN
                             IF l_pp != '***' THEN htp.p('</div>'); END IF;
@@ -170,29 +202,29 @@ page 85 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT c001 AS object_type,
-                       c003 AS in_balance,
-                       DECODE(c003, 'Y', 'In balance', 'N', 'Out of balance', 'Unresolved') AS status_label,
-                       DECODE(c003, 'N', 't-Badge t-Badge--danger', 'Y', 't-Badge t-Badge--success', 't-Badge t-Badge--warning') AS in_balance_badge_class,
-                       c006 AS note,
-                       CASE WHEN c006 IS NOT NULL THEN 'inline-block' ELSE 'none' END AS note_disp,
-                       c002 AS key_type,
-                       c004 AS fusion_money_available,
-                       c005 AS amount_currency,
-                       n001 AS staged_count,
-                       CASE WHEN c004 = 'Y' THEN TO_CHAR(n002, 'FM$999G999G990D00') END AS staged_amt,
-                       n003 AS error_count,
-                       CASE WHEN c004 = 'Y' THEN TO_CHAR(n004, 'FM$999G999G990D00') END AS error_amt,
-                       n005 AS loaded_count,
-                       CASE WHEN c004 = 'Y' THEN TO_CHAR(TO_NUMBER(c007), 'FM$999G999G990D00') END AS loaded_amt,
-                       TO_NUMBER(c008) AS variance_count,
-                       CASE WHEN c004 = 'Y' THEN TO_CHAR(TO_NUMBER(c009), 'FM$999G999G990D00') END AS variance_amt,
+                SELECT OBJECT_TYPE,
+                       IN_BALANCE,
+                       DECODE(IN_BALANCE, 'Y', 'In balance', 'N', 'Out of balance', 'Unresolved') AS status_label,
+                       DECODE(IN_BALANCE, 'N', 't-Badge t-Badge--danger', 'Y', 't-Badge t-Badge--success', 't-Badge t-Badge--warning') AS in_balance_badge_class,
+                       NOTE,
+                       CASE WHEN NOTE IS NOT NULL THEN 'inline-block' ELSE 'none' END AS note_disp,
+                       KEY_TYPE,
+                       FUSION_MONEY_AVAILABLE,
+                       AMOUNT_CURRENCY,
+                       STG_COUNT AS staged_count,
+                       CASE WHEN FUSION_MONEY_AVAILABLE = 'Y' THEN TO_CHAR(STG_AMOUNT, 'FM$999G999G990D00') END AS staged_amt,
+                       TFM_ERROR_COUNT AS error_count,
+                       CASE WHEN FUSION_MONEY_AVAILABLE = 'Y' THEN TO_CHAR(TFM_ERROR_AMOUNT, 'FM$999G999G990D00') END AS error_amt,
+                       FUSION_SUCCESS_COUNT AS loaded_count,
+                       CASE WHEN FUSION_MONEY_AVAILABLE = 'Y' THEN TO_CHAR(FUSION_SUCCESS_AMOUNT, 'FM$999G999G990D00') END AS loaded_amt,
+                       VARIANCE_COUNT AS variance_count,
+                       CASE WHEN FUSION_MONEY_AVAILABLE = 'Y' THEN TO_CHAR(VARIANCE_AMOUNT, 'FM$999G999G990D00') END AS variance_amt,
                        APEX_PAGE.GET_URL(p_page => 52,
                            p_items => 'P52_RUN_ID,P52_CEMLI_CODE',
-                           p_values => :P85_RUN_ID || ',' || c001) AS errors_link
-                  FROM APEX_COLLECTIONS
-                 WHERE COLLECTION_NAME = 'RUN_COMPARISON'
-                 ORDER BY c001
+                           p_values => :P85_RUN_ID || ',' || OBJECT_TYPE) AS errors_link
+                  FROM DMT_RUN_COMPARISON_TBL
+                 WHERE RUN_ID = :P85_RUN_ID
+                 ORDER BY OBJECT_TYPE
                 ```
         }
         layout {
@@ -374,7 +406,7 @@ page 85 (
                 heading: In Balance
             }
             layout {
-                sequence: 70
+                sequence: 110
             }
             source {
                 dataType: STRING
@@ -387,7 +419,7 @@ page 85 (
                 heading: In Balance Badge Class
             }
             layout {
-                sequence: 80
+                sequence: 120
             }
             source {
                 dataType: STRING
@@ -400,7 +432,7 @@ page 85 (
                 heading: Note
             }
             layout {
-                sequence: 90
+                sequence: 130
             }
             source {
                 dataType: STRING
@@ -413,7 +445,7 @@ page 85 (
                 heading: Note Display
             }
             layout {
-                sequence: 100
+                sequence: 140
             }
             source {
                 dataType: STRING
@@ -426,7 +458,7 @@ page 85 (
                 heading: Errors Link
             }
             layout {
-                sequence: 110
+                sequence: 150
             }
             source {
                 dataType: STRING
@@ -439,7 +471,7 @@ page 85 (
                 heading: Key Type
             }
             layout {
-                sequence: 120
+                sequence: 160
             }
             source {
                 dataType: STRING
@@ -452,7 +484,7 @@ page 85 (
                 heading: Fusion Money Available
             }
             layout {
-                sequence: 130
+                sequence: 170
             }
             source {
                 dataType: STRING
@@ -465,7 +497,7 @@ page 85 (
                 heading: Currency
             }
             layout {
-                sequence: 140
+                sequence: 180
             }
             source {
                 dataType: STRING
@@ -527,54 +559,43 @@ page 85 (
         }
     )
 
-    process load-comparison (
-        name: Load comparison
+    button refresh (
+        buttonName: REFRESH
+        label: Refresh from Fusion
+        layout {
+            sequence: 30
+            region: @filters
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+            icon: fa-refresh
+        }
+        behavior {
+            action: submitPage
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    process save-comparison (
+        name: Save comparison from Fusion
         type: executeCode
         source {
             plsqlCode:
                 ```plsql
-                DECLARE
-                    c SYS_REFCURSOR;
-                    v DMT_CMP_ROW_OBJ;
                 BEGIN
-                    APEX_COLLECTION.CREATE_OR_TRUNCATE_COLLECTION('RUN_COMPARISON');
                     IF :P85_RUN_ID IS NOT NULL THEN
-                        DMT_RUN_COMPARE_PKG.GET_RUN_COMPARISON(:P85_RUN_ID, c);
-                        LOOP
-                            FETCH c INTO v;
-                            EXIT WHEN c%NOTFOUND;
-                            -- APEX_COLLECTION.ADD_MEMBER on this APEX release only
-                            -- exposes P_N001..P_N005 (5 numeric slots), not 8. The
-                            -- three numeric attributes that don't fit (fusion success
-                            -- amount, variance count, variance amount) are carried in
-                            -- spare varchar slots C007..C009 as TO_CHAR and converted
-                            -- back with TO_NUMBER in the report region SQL.
-                            APEX_COLLECTION.ADD_MEMBER(
-                                p_collection_name => 'RUN_COMPARISON',
-                                p_c001 => v.OBJECT_TYPE,
-                                p_c002 => v.KEY_TYPE,
-                                p_c003 => v.IN_BALANCE,
-                                p_c004 => v.FUSION_MONEY_AVAILABLE,
-                                p_c005 => v.AMOUNT_CURRENCY,
-                                p_c006 => v.NOTE,
-                                p_c007 => TO_CHAR(v.FUSION_SUCCESS_AMOUNT),
-                                p_c008 => TO_CHAR(v.VARIANCE_COUNT),
-                                p_c009 => TO_CHAR(v.VARIANCE_AMOUNT),
-                                p_n001 => v.STG_COUNT,
-                                p_n002 => v.STG_AMOUNT,
-                                p_n003 => v.TFM_ERROR_COUNT,
-                                p_n004 => v.TFM_ERROR_AMOUNT,
-                                p_n005 => v.FUSION_SUCCESS_COUNT
-                            );
-                        END LOOP;
-                        CLOSE c;
+                        DMT_RUN_COMPARE_PKG.SAVE_RUN_COMPARISON(:P85_RUN_ID);
                     END IF;
                 END;
                 ```
         }
         execution {
             sequence: 10
-            point: beforeHeader
+        }
+        serverSideCondition {
+            whenButtonPressed: @refresh
         }
     )
 

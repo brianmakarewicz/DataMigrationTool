@@ -348,6 +348,7 @@ prompt == Tables ==
 @@tables/dmt_plan_budget_tfm_tbl.sql
 @@tables/dmt_plan_preview_gtt.sql
 @@tables/dmt_recon_stage_gtt.sql
+@@tables/dmt_run_comparison_tbl.sql
 @@tables/dmt_por_req_dists_stg_tbl.sql
 @@tables/dmt_por_req_dists_tfm_tbl.sql
 @@tables/dmt_por_req_headers_stg_tbl.sql
