@@ -117,6 +117,19 @@ using (
            'REFERENCE_KEY1', null,
            'BATCH_ID', 'ATTRIBUTE15', 1000, 'FULL', 'CONFIRMED', 'Y',
            'AP invoice header carrier; ATTRIBUTE15 is 1000 chars.' from dual
+    union all select 'APInvoices', 'AP Invoice Lines', 'DMT_AP_INVOICE_LINES_INT_TFM_TBL',
+           'REFERENCE_KEY1', 'AP_INVOICE_LINES_ALL.REFERENCE_KEY1',
+           null, null, null, 'FULL', 'CONFIRMED', 'Y',
+           -- AP invoice LINE reference carrier (backlog #12). Slot A = REFERENCE_KEY1,
+           -- the trailing (position 165) column DMT_AP_FBDI_GEN_PKG now emits on
+           -- ApInvoiceLinesInterface.csv, stamped with BUILD_REF (DMT:<run>:<wq>:<tfm>).
+           -- Oracle FBDI: AP_INVOICE_LINES_INTERFACE.REFERENCE_KEY1 has validation NONE
+           -- and destination AP_INVOICE_LINES_ALL.REFERENCE_KEY1, so it round-trips as
+           -- pure lineage. Slot B/C NULL: the line interface has no batch/group field
+           -- and no ATTRIBUTE proven to round-trip; the line reconciler already matches
+           -- on the exact line (INVOICE_ID~LINE_NUMBER) and is unchanged -- this row
+           -- documents the lineage stamp only.
+           'AP invoice LINE carrier; Slot A = REFERENCE_KEY1 -> AP_INVOICE_LINES_ALL.REFERENCE_KEY1 (round-trips, lineage only). Reconcile still matches exact line INVOICE_ID~LINE_NUMBER; carrier not read by matching.' from dual
     union all select 'ARInvoices', 'AR Lines', 'DMT_RA_LINES_TFM_TBL',
            'INTERFACE_HEADER_ATTRIBUTE1/INTERFACE_LINE_ATTRIBUTE1', null,
            'BATCH_ID', 'ATTRIBUTE30', 255, 'FULL', 'CONFIRMED', 'Y',

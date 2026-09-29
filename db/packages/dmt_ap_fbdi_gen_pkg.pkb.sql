@@ -408,7 +408,11 @@ AS
                 || '"' || REPLACE(NVL(PJC_FUNDING_SOURCE_NAME,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(PJC_FUNDING_SOURCE_NUMBER,''), '"', '""') || '"' || ','
                 || '"' || REPLACE(NVL(REQUESTER_EMAIL_ADDRESS,''), '"', '""') || '"' || ','
-                || '"' || NVL(TO_CHAR(RCV_TRANSACTION_ID), '') || '"' || CHR(10) AS csv_line
+                || '"' || NVL(TO_CHAR(RCV_TRANSACTION_ID), '') || '"' || ','
+                -- Reference carrier Slot A (backlog #12): trailing REFERENCE_KEY1
+                -- (position 165) carries the DMT lineage id stamped just before
+                -- this SELECT. Round-trips to AP_INVOICE_LINES_ALL.REFERENCE_KEY1.
+                || '"' || REPLACE(NVL(l.REFERENCE_KEY1,''), '"', '""') || '"' || CHR(10) AS csv_line
             FROM   DMT_AP_INVOICE_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.TFM_STATUS = 'STAGED'
@@ -462,6 +466,36 @@ AS
             l_ou_suffix := '_' || REPLACE(SUBSTR(p_operating_unit, 1, 30), ' ', '');
         END IF;
         x_filename := 'AP' || NVL(l_ou_suffix, '_All') || '_' || TO_CHAR(p_run_id) || '.zip';
+
+        -- ============================================================
+        -- Reference carrier Slot A (backlog #12) -- stamp the run-scoped per-record
+        -- lineage id onto every LINE BEFORE the CSV is built, so gen_lines_csv picks
+        -- up the stamped REFERENCE_KEY1 value. Carrier config
+        -- (DMT_REF_CARRIER_CFG_TBL, cemli_code APInvoices, sub_object 'AP Invoice
+        -- Lines'): Slot A = REFERENCE_KEY1 -> AP_INVOICE_LINES_ALL.REFERENCE_KEY1.
+        -- Value = DMT_REF_ID_PKG.BUILD_REF(run, work_queue, tfm) = the full
+        -- DMT:<run>:<wq>:<tfm> reference (the AP line interface has no native source
+        -- field feeding REFERENCE_KEY1, so Slot A carries the DMT id itself). This is
+        -- LINEAGE only: the reconciler is unchanged and still matches each line on the
+        -- exact line (RECON_KEY = report RECORD_KEY); REFERENCE_KEY1 is not read by
+        -- matching. WORK_QUEUE_ID uses g_gen_queue_id (the current item's real queue
+        -- id, set for every object), never g_work_queue_id (NULL for non-partitioned
+        -- objects). Scoped to the STAGED lines this GENERATE call will emit (this OU).
+        UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL l
+        SET    l.WORK_QUEUE_ID  = DMT_LOADER_PKG.g_gen_queue_id,
+               l.REFERENCE_KEY1 = DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => l.TFM_SEQUENCE_ID),
+               l.LAST_UPDATED_DATE = l_now
+        WHERE  l.RUN_ID = p_run_id
+        AND    l.TFM_STATUS = 'STAGED'
+        AND    (p_operating_unit IS NULL OR l.INVOICE_ID IN (
+                   SELECT h.INVOICE_ID
+                   FROM   DMT_AP_INVOICES_INT_TFM_TBL h
+                   WHERE  h.RUN_ID = p_run_id
+                   AND    h.TFM_STATUS IN ('STAGED','GENERATED')
+                   AND    h.OPERATING_UNIT = p_operating_unit));
 
         -- Generate both CSVs (filtered by OU when provided)
         l_hdr_csv   := gen_headers_csv(p_run_id, p_operating_unit);

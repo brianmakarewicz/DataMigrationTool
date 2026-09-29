@@ -168,9 +168,10 @@ begin
 	"PJC_FUNDING_SOURCE_NAME" VARCHAR2(240), 
 	"PJC_FUNDING_SOURCE_NUMBER" VARCHAR2(50), 
 	"REQUESTER_EMAIL_ADDRESS" VARCHAR2(240), 
-	"RCV_TRANSACTION_ID" NUMBER, 
+	"RCV_TRANSACTION_ID" NUMBER,
+	"REFERENCE_KEY1" VARCHAR2(150),
 	"FUSION_INVOICE_LINE_NUMBER" VARCHAR2(100),
-	"RESULTS_UPDATED_DATE" DATE, 
+	"RESULTS_UPDATED_DATE" DATE,
 	"TFM_STATUS" VARCHAR2(30) DEFAULT ''STAGED'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
 	"LAST_UPDATED_DATE" DATE, 
@@ -268,3 +269,24 @@ begin
 end;
 /
 COMMENT ON COLUMN "DMT_AP_INVOICE_LINES_INT_TFM_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';
+
+-- REFERENCE_KEY1 (reference carrier Slot A -- backlog #12). The AP invoice LINE
+-- lineage stamp: DMT_AP_FBDI_GEN_PKG stamps DMT_REF_ID_PKG.BUILD_REF (the full
+-- DMT:<run>:<wq>:<tfm> reference) here at generation and emits it as the trailing
+-- REFERENCE_KEY1 column of ApInvoiceLinesInterface.csv. It round-trips to
+-- AP_INVOICE_LINES_ALL.REFERENCE_KEY1 (Oracle FBDI: validation none, destination
+-- AP_INVOICE_LINES_ALL.REFERENCE_KEY1-5). Guarded in-file ALTER so an existing DB
+-- converges via db/install.sql (the CREATE above carries it for fresh installs).
+-- Pure lineage: the reconciler is unchanged and still matches on the exact line
+-- (RECON_KEY = report RECORD_KEY); this column is not read by matching.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where table_name = 'DMT_AP_INVOICE_LINES_INT_TFM_TBL' and column_name = 'REFERENCE_KEY1';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_AP_INVOICE_LINES_INT_TFM_TBL" ADD ("REFERENCE_KEY1" VARCHAR2(150))';
+  end if;
+end;
+/
+COMMENT ON COLUMN "DMT_AP_INVOICE_LINES_INT_TFM_TBL"."REFERENCE_KEY1" IS 'Reference carrier Slot A (backlog #12): DMT lineage id DMT:<run>:<wq>:<tfm> stamped at generation, emitted as trailing REFERENCE_KEY1 in ApInvoiceLinesInterface.csv, round-trips to AP_INVOICE_LINES_ALL.REFERENCE_KEY1. Lineage only; not read by reconcile matching.';
