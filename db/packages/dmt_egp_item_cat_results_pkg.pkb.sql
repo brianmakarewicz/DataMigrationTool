@@ -26,6 +26,14 @@
     -- table EGP_ITEM_CATEGORIES ('PROCESSED' = present, 'REJECTED' = absent), not
     -- from the interface PROCESS_FLAG. PROCESS_FLAG is still carried for display.
     -- Match key: ITEM_NUMBER + ORGANIZATION_CODE + CATEGORY_SET_NAME
+    --
+    -- Standard LOADED-promotion shape, natural-key variant (design: "Standard
+    -- LOADED-promotion shape", clause (1)/(5)). ItemCategories has NO registered
+    -- Fusion surrogate id (DMT_BIP_REPORT_TBL.FUSION_ID_COLUMN is empty for it): a
+    -- category assignment's identity is the natural key above, so promotion is keyed
+    -- on it and NO FUSION_*_ID is captured (none exists; none is fabricated). The
+    -- guard is the report's positive base-table presence (STATUS='PROCESSED'); a row
+    -- the base-table join does not return as PROCESSED is never promoted to LOADED.
     -- --------------------------------------------------------
     PROCEDURE PARSE_AND_UPDATE (
         p_run_id IN NUMBER,

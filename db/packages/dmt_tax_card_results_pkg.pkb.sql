@@ -10,6 +10,27 @@ AS
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_TAX_CARD_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'TaxCards';
 
+    -- --------------------------------------------------------
+    -- PROMOTE_LOADED (standard LOADED-promotion shape -- STUB)
+    -- Every results package carries one dedicated LOADED-promotion procedure of the
+    -- standard shape (design: "Standard LOADED-promotion shape"; conformant reference
+    -- DMT_CUST_RESULTS_PKG). This one is a STUB.
+    -- STUB: TaxCards (payroll calculation cards) is loaded and reconciled entirely
+    -- through the shared HDL path -- DMT_HDL_UTIL_PKG.RECONCILE_HDL promotes each
+    -- confirmed row to LOADED and DMT_HDL_UTIL_PKG.LOOKUP_FUSION_IDS captures the
+    -- Fusion DIR card id, both from within the shared HDL utility (not from a static
+    -- per-package UPDATE). Capturing the surrogate id here is a blocked object today.
+    -- There is therefore no per-package LOADED UPDATE to perform; this stub exists so
+    -- the shape reads identically package-to-package and the reviewer sees an explicit
+    -- stub, never a missing proc. RECONCILE_BATCH does the real HDL reconciliation.
+    -- --------------------------------------------------------
+    PROCEDURE PROMOTE_LOADED (
+        p_run_id IN NUMBER
+    ) IS
+    BEGIN
+        NULL; -- STUB: LOADED promotion + id capture happen inside DMT_HDL_UTIL_PKG; nothing to promote here.
+    END PROMOTE_LOADED;
+
     PROCEDURE RECONCILE_BATCH (
         p_run_id IN NUMBER,
         p_request_id     IN VARCHAR2,
@@ -51,6 +72,10 @@ AS
             p_run_id => p_run_id,
             p_object_type    => 'TaxCards',
             p_log_context    => C_CEMLI || ' > CalculationCard');
+
+        -- Standard per-package LOADED-promotion hook. For TaxCards it is a stub:
+        -- promotion + id capture are done inside DMT_HDL_UTIL_PKG above.
+        PROMOTE_LOADED(p_run_id => p_run_id);
 
 
         DMT_UTIL_PKG.LOG(

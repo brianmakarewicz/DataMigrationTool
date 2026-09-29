@@ -310,8 +310,11 @@ AS
                     error_msg       VARCHAR2(4000) PATH 'ERROR_MESSAGE'
             ) x
         ) LOOP
-            IF r.source_type = 'BASE' THEN
-                -- Tier 2: Found in base table = positively LOADED
+            IF r.source_type = 'BASE' AND r.fusion_id IS NOT NULL THEN
+                -- Tier 2: Found in base table = positively LOADED.
+                -- Standard LOADED-promotion shape: the SAME update writes the
+                -- captured FUSION_EVENT_ID, guarded statically by
+                -- r.fusion_id IS NOT NULL, so a null id can never reach LOADED.
                 UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
                 SET    TFM_STATUS               = 'LOADED',
                        FUSION_EVENT_ID      = r.fusion_id,
@@ -323,8 +326,11 @@ AS
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'INTERFACE' THEN
-                -- Tier 1: Interface table row — check tfm_status
-                IF r.fusion_status IN ('COMPLETE','COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P') THEN
+                -- Tier 1: Interface table row — check tfm_status.
+                -- Same standard guard: promote to LOADED only with a non-null
+                -- captured FUSION_EVENT_ID (r.fusion_id IS NOT NULL).
+                IF r.fusion_status IN ('COMPLETE','COMPLETED','IMPORTED','Y','PROCESSED','SUCCESS','P')
+                   AND r.fusion_id IS NOT NULL THEN
                     UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_EVENT_ID      = r.fusion_id,

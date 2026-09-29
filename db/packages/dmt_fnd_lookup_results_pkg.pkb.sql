@@ -453,7 +453,15 @@
     END FETCH_BIP_RESULTS;
 
     -- --------------------------------------------------------
-    -- PARSE_AND_UPDATE
+    -- PARSE_AND_UPDATE  (this object's LOADED-promotion procedure)
+    -- Standard LOADED-promotion shape, natural-key variant (design: "Standard
+    -- LOADED-promotion shape", clause (1)/(5) -- an object with no single Fusion
+    -- surrogate id promotes on its sanctioned natural key). FND lookups have NO
+    -- numeric surrogate in Fusion, so the natural key IS the proof: LOOKUP_TYPE for
+    -- types, LOOKUP_TYPE^LOOKUP_CODE for values (the report's RECORD_KEY). The
+    -- registered FUSION_*_ID stays NULL by design -- there is no id to capture and
+    -- none is ever fabricated. The static base-table match on the natural key is the
+    -- non-null guard: a row is promoted ONLY when the report positively returns it.
     -- Positive base-table confirmation only. Each report row is either a type
     -- found in FND_LOOKUP_TYPES (SOURCE_TYPE='TYPE') or a value found in
     -- FND_LOOKUP_VALUES_B (SOURCE_TYPE='VALUE'):

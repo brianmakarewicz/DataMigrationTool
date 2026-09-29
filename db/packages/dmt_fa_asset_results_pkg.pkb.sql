@@ -226,11 +226,19 @@
             AND    hdr.TFM_STATUS   = 'FAILED');
 
         -- Cascade to assignment TFM — LOADED under a LOADED header.
+        -- Standard LOADED-promotion shape: the assign child has its OWN registered
+        -- Fusion id (FUSION_DISTRIBUTION_ID, FA_DISTRIBUTION_HISTORY.DISTRIBUTION_ID),
+        -- back-filled above by the 'Assets Distribution' report tier. A row is
+        -- promoted to LOADED ONLY once that id is present -- the static
+        -- asn.FUSION_DISTRIBUTION_ID IS NOT NULL guard -- so an assign row whose
+        -- distribution id the report did not return is left GENERATED (surfaced by
+        -- the unaccounted sweep), never marked LOADED without its captured id.
         UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
         SET    asn.TFM_STATUS        = 'LOADED',
                asn.LAST_UPDATED_DATE = SYSDATE
         WHERE  asn.RUN_ID     = p_run_id
         AND    asn.TFM_STATUS = 'GENERATED'
+        AND    asn.FUSION_DISTRIBUTION_ID IS NOT NULL
         AND    EXISTS (
             SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
             WHERE  hdr.RUN_ID       = asn.RUN_ID
