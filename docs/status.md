@@ -1,5 +1,15 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-29 -- Unaccounted objects resolved (all traced to faulted runs, not matching bugs)
+
+**Bottom line.** The three long-standing "unaccounted" objects were NOT matching bugs -- all three trace to runs that faulted mid-reconcile and were never re-run (the reconcile correctly RAISED on a transient BIP/Fusion outage rather than fabricating a verdict). Re-running the reconcile accounts every record with real base-table / error proof and no code fix.
+
+- **Items / Item Master (4 records, run 119).** Not a bug. Re-ran the item reconcile -> 3 good items LOADED (real INVENTORY_ITEM_ID) + 1 bad item (org ZZZ) FAILED with the real "invalid organization" Fusion error. The ITEM_NUMBER+ORGANIZATION_CODE match works; the rows were stuck only because run 119's reconcile faulted. No code change needed.
+- **GL Budget Lines (run 119).** Not a bug (PR #483, merged). Same run-119 fault. Re-ran reconcile -> 2 LOADED + 1 FAILED. Added a WARN log for residual GENERATED rows.
+- **AP Invoice Lines (run 325).** No real bug. A prior sub-agent (PR #482) "fixed" a supposed Fusion line-renumbering with a per-invoice business-key fallback -- but a controlled test disproved the premise: Fusion PRESERVES the sent line number (sent line 3 -> stored line 3) and only APPENDS its own tax lines, so the original exact per-line match is correct. **Reverted #482 via PR #484 (merged).** A follow-on REFERENCE_KEY1 traceability carrier (PR #485) was CLOSED -- it breaks the AP load: the AP invoice-lines FBDI is a fixed 164-column template and REFERENCE_KEY1 is not in it (stamping it as a 165th column makes SqlLdr reject the file, 0 rows committed).
+
+**The real fix (backlogged):** backlog #95 (P2) -- a first-class "re-run reconcile for run N" capability, since faulted runs leave GENERATED rows with nothing to re-reconcile them. A per-line traceability carrier for AP is deferred until the ATTRIBUTE1 DFF segment is enabled (the business-key/deferred case per PR #481).
+
 ## Session -- 2026-09-29 -- Comparison report: APEX two-view redesign, count/$ split, cached snapshot for instant load
 
 **What was done.** The post-run comparison report got its APEX front end finished and made fast. Five PRs:
