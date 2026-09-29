@@ -653,6 +653,21 @@ list navigation-menu (
         }
     )
 
+    entry run-comparison (
+        label: Run Comparison
+        icon {
+            imageIconCssClasses: fa-balance-scale
+        }
+        layout {
+            sequence: 18
+        }
+        link {
+            target: {
+                page: 85
+            }
+        }
+    )
+
     entry run-metrics (
         label: Run Metrics
         layout {
