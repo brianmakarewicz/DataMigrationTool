@@ -639,5 +639,110 @@ AS
         END IF;
     END STOP_POLLER_IF_IDLE;
 
+    -- ============================================================
+    -- RERUN_RUN — re-run reconcile for a whole run (backlog #95).
+    -- See the package spec for the full contract. One driver, registry-
+    -- dispatched: it never calls a per-object reconciler directly —
+    -- it resets the run's UNACCOUNTED TFM rows to GENERATED (uniform
+    -- registry helper), flips the affected terminal work items back to
+    -- RECONCILING, and lets the existing poller (dispatch_reconcile ->
+    -- RECONCILE_ONE -> the object's registered RECON_PROC) do the work.
+    -- ============================================================
+    PROCEDURE RERUN_RUN (p_run_id IN NUMBER) IS
+        l_run_exists  NUMBER;
+        l_total_reset NUMBER := 0;
+        l_reset       NUMBER;
+        l_this_flip   NUMBER;
+        l_flipped     NUMBER := 0;
+    BEGIN
+        SELECT COUNT(*) INTO l_run_exists
+        FROM   DMT_PIPELINE_RUN_TBL WHERE RUN_ID = p_run_id;
+        IF l_run_exists = 0 THEN
+            RAISE_APPLICATION_ERROR(-20120,
+                'RERUN_RUN: no such run RUN_ID=' || p_run_id);
+        END IF;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'RERUN_RUN requested: resetting UNACCOUNTED rows and re-dispatching '
+            || 'reconcile for the run.',
+            'INFO', C_PKG, 'RERUN_RUN');
+
+        -- One pass per object in the run. For each object: reset its
+        -- UNACCOUNTED TFM rows to GENERATED (registry-driven, no hardcoded
+        -- table list), and only if that actually reset rows, flip that
+        -- object's terminal work items back to RECONCILING so the poller
+        -- re-dispatches them through the registered RECON_PROC. Driving the
+        -- flip off the reset row-count keeps it uniform (no per-object SQL)
+        -- and adds no new dynamic-SQL site: the "does this object still have
+        -- GENERATED rows" question is answered by the rows the reset just
+        -- produced.
+        FOR obj IN (
+            SELECT DISTINCT CEMLI_CODE
+            FROM   DMT_WORK_QUEUE_TBL
+            WHERE  RUN_ID = p_run_id
+        ) LOOP
+            l_reset := DMT_QUEUE_WORKER_PKG.RESET_UNACCOUNTED_TO_GENERATED(
+                          p_run_id     => p_run_id,
+                          p_cemli_code => obj.CEMLI_CODE);
+            l_total_reset := l_total_reset + l_reset;
+
+            IF l_reset > 0 THEN
+                -- Flip this object's terminal work items back to RECONCILING.
+                -- Clear NEXT_POLL_AFTER (immediate re-dispatch), COMPLETED_AT
+                -- and ERROR_MESSAGE (no longer terminal). Only objects that
+                -- reconcile through the queue are re-opened: those with a
+                -- registered RECON_PROC, or HDL base-proof objects (no
+                -- RECON_PROC but they DO flow through RECONCILE_ONE, which
+                -- re-runs their base-table proof). An object with neither is
+                -- left terminal — the poller has nothing to dispatch for it and
+                -- RECONCILE_ONE would raise.
+                UPDATE DMT_WORK_QUEUE_TBL q
+                SET    q.WORK_STATUS     = 'RECONCILING',
+                       q.NEXT_POLL_AFTER = NULL,
+                       q.COMPLETED_AT    = NULL,
+                       q.ERROR_MESSAGE   = NULL
+                WHERE  q.RUN_ID = p_run_id
+                AND    q.CEMLI_CODE = obj.CEMLI_CODE
+                AND    q.WORK_STATUS IN ('DONE', 'FAILED')
+                AND    ( EXISTS (SELECT 1 FROM DMT_PIPELINE_DEF_TBL d
+                                 WHERE d.CEMLI_CODE = q.CEMLI_CODE
+                                   AND d.RECON_PROC IS NOT NULL)
+                         OR EXISTS (SELECT 1 FROM DMT_BIP_REPORT_TBL b
+                                    WHERE b.CEMLI_CODE      = q.CEMLI_CODE
+                                      AND b.CONTRACT_VERSION = 1
+                                      AND b.INTERFACE_TABLE  = 'N/A (HDL)') );
+                l_this_flip := SQL%ROWCOUNT;
+                l_flipped   := l_flipped + l_this_flip;
+            END IF;
+        END LOOP;
+
+        -- Step 3: reopen the run so the heartbeat rollup re-settles it once the
+        -- re-dispatched objects finish. The rollup only considers QUEUED /
+        -- IN_PROGRESS runs, so a terminal run must be re-opened or its status
+        -- would stay stale even after the work items re-reconcile. Only reopen
+        -- when we actually flipped work items back to RECONCILING.
+        IF l_flipped > 0 THEN
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET    RUN_STATUS     = 'IN_PROGRESS',
+                   COMPLETED_DATE = NULL
+            WHERE  RUN_ID = p_run_id
+            AND    RUN_STATUS IN ('COMPLETED', 'COMPLETED_ERRORS',
+                                  'FAILED', 'NO_ROWS_PROCESSED');
+        END IF;
+
+        COMMIT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            'RERUN_RUN done: reset ' || l_total_reset || ' UNACCOUNTED row(s) to '
+            || 'GENERATED, re-dispatched ' || l_flipped || ' work item(s) to '
+            || 'RECONCILING.',
+            'INFO', C_PKG, 'RERUN_RUN');
+
+        -- Wake the poller so dispatch_reconcile picks up the RECONCILING rows.
+        IF l_flipped > 0 THEN
+            ENSURE_POLLER_RUNNING;
+        END IF;
+    END RERUN_RUN;
+
 END DMT_QUEUE_PKG;
 /

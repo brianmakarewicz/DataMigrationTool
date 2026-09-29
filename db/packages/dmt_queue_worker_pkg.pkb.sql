@@ -357,6 +357,74 @@ AS
     END SWEEP_UNACCOUNTED;
 
     -- ============================================================
+    -- RESET_UNACCOUNTED_TO_GENERATED — inverse of SWEEP_UNACCOUNTED.
+    -- Re-run-reconcile recovery path (DMT_QUEUE_PKG.RERUN_RUN, backlog
+    -- #95). Reads the SAME record-type registry SWEEP_UNACCOUNTED reads
+    -- (DMT_CEMLI_CATALOG_TBL) so it is uniform across every object with
+    -- no hardcoded table list, and flips this run's UNACCOUNTED TFM rows
+    -- back to GENERATED. Also strips the bare [UNACCOUNTED] tag this run
+    -- appended to ERROR_TEXT (the two shapes APPEND_ERROR produces:
+    -- ' | [UNACCOUNTED]' after a prior error, or a standalone
+    -- '[UNACCOUNTED]'); any prior real error text is preserved so the
+    -- next reconcile accumulates onto it exactly as a first pass would.
+    -- Does NOT commit — the caller owns the transaction. Same sanctioned
+    -- dynamic-SQL site rules as SWEEP_UNACCOUNTED (assert_catalog_identifier
+    -- on every identifier, all values bound). Returns the count of rows
+    -- reset across the object's TFM tables.
+    -- ============================================================
+    FUNCTION RESET_UNACCOUNTED_TO_GENERATED (
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_work_queue_id IN NUMBER DEFAULT NULL
+    ) RETURN NUMBER IS
+        l_sql   VARCHAR2(4000);
+        l_reset NUMBER := 0;
+    BEGIN
+        FOR r IN (
+            SELECT TFM_TABLE, NVL(STATUS_COLUMN, 'TFM_STATUS') AS STATUS_COLUMN, ROW_FILTER
+            FROM   DMT_CEMLI_CATALOG_TBL
+            WHERE  CEMLI_CODE = p_cemli_code
+            AND    TFM_TABLE IS NOT NULL
+            ORDER BY SORT_ORDER
+        ) LOOP
+            assert_catalog_identifier(r.TFM_TABLE, 'TFM_TABLE');
+            assert_catalog_identifier(r.STATUS_COLUMN, 'STATUS_COLUMN');
+
+            l_sql :=
+                'UPDATE ' || r.TFM_TABLE
+                || ' SET ' || r.STATUS_COLUMN || ' = ''GENERATED'','
+                -- Strip this run''s [UNACCOUNTED] tag, keeping any prior real
+                -- error. ERROR_TEXT is a CLOB, so plain REPLACE raises
+                -- ORA-22849; REGEXP_REPLACE is CLOB-safe. The tag is always the
+                -- LAST thing APPEND_ERROR wrote, in one of two shapes: a
+                -- standalone ''[UNACCOUNTED]'' (it was the first error) or
+                -- '' | [UNACCOUNTED]'' appended after a prior error. Strip the
+                -- optional '' | '' separator and the tag at end-of-string; if
+                -- that empties the CLOB (the standalone case), store NULL.
+                -- Brackets escaped for the regex.
+                || ' ERROR_TEXT = CASE WHEN DBMS_LOB.GETLENGTH('
+                || '   REGEXP_REPLACE(ERROR_TEXT, ''( \| )?\[UNACCOUNTED\]$'')) > 0'
+                || '   THEN REGEXP_REPLACE(ERROR_TEXT, ''( \| )?\[UNACCOUNTED\]$'')'
+                || '   ELSE NULL END '
+                || ' WHERE RUN_ID = :run_id'
+                || ' AND ' || r.STATUS_COLUMN || ' = ''UNACCOUNTED'''
+                || CASE WHEN p_work_queue_id IS NOT NULL
+                        THEN ' AND WORK_QUEUE_ID = :wq' END
+                || CASE WHEN r.ROW_FILTER IS NOT NULL
+                        THEN ' AND ' || r.ROW_FILTER END;
+
+            IF p_work_queue_id IS NOT NULL THEN
+                EXECUTE IMMEDIATE l_sql USING p_run_id, p_work_queue_id;
+            ELSE
+                EXECUTE IMMEDIATE l_sql USING p_run_id;
+            END IF;
+            l_reset := l_reset + SQL%ROWCOUNT;
+        END LOOP;
+        RETURN l_reset;
+        -- Deliberately NO COMMIT: the caller (RERUN_RUN) owns the transaction.
+    END RESET_UNACCOUNTED_TO_GENERATED;
+
+    -- ============================================================
     -- apply_accounting_gate — THE single accounting gate. The only
     -- code that writes WORK_STATUS = DONE (proposed rule "Terminal
     -- work-item states pass one accounting gate", 2026-07-08).
