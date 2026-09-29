@@ -255,6 +255,31 @@ AS
 
         x_filename := 'Expenditures_' || TO_CHAR(p_run_id) || '.zip';
 
+        -- Backlog #12 -- Slot C stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code Expenditures). The carrier map names ATTRIBUTE10 as this
+        -- object's Slot C: the DFF attribute that ALWAYS carries the full
+        -- run-scoped reference DMT:<run>:<wq>:<tfm> (the guaranteed-precise
+        -- per-row DMT identity, per the locked reference-carrier section of
+        -- DMT_DESIGN.html). Slot A (ORIG_TRANSACTION_REFERENCE) is the reconcile
+        -- match key and is already stamped by the transform; Slot C is the audit
+        -- identity. Written BEFORE gen_expenditures_csv so the value lands in the
+        -- CSV's ATTRIBUTE10 column, and scoped to the SAME partition the CSV is
+        -- built from. NVL guard: never clobber a client-populated ATTRIBUTE10 --
+        -- DMT only fills the field when the source left it empty (mirrors the
+        -- Slot A "source value if present" rule). wq segment uses g_gen_queue_id
+        -- (set for every object), never g_work_queue_id.
+        UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+        SET    ATTRIBUTE10 = NVL(ATTRIBUTE10,
+                                 DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                     p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_PJC_EXPENDITURES_TFM_TBL'))),
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_txn_source IS NULL OR USER_TRANSACTION_SOURCE = p_txn_source)
+        AND    (p_document   IS NULL OR DOCUMENT_NAME           = p_document);
+
         -- Generate CSV (scoped to the partition when a child passes source/document)
         l_exp_csv := gen_expenditures_csv(p_run_id, p_txn_source, p_document);
 
