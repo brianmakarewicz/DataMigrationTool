@@ -65,6 +65,16 @@ AS
         l_err_code  NUMBER;
         l_hdr_loaded  NUMBER := 0;  l_hdr_failed  NUMBER := 0;
         l_line_loaded NUMBER := 0;  l_line_failed NUMBER := 0;
+        l_line_fallback NUMBER := 0;
+
+        -- Per-invoice proof of at least one BASE line landing in Fusion,
+        -- keyed by the invoice-number component of a BASE-line RECORD_KEY
+        -- (the part before ':LINE:'). Value is that base line's FUSION_ID
+        -- composite (INVOICE_ID~LINE_NUMBER) so the fallback can stamp real
+        -- base-table proof, not a fabricated verdict.
+        TYPE t_base_line_proof IS TABLE OF VARCHAR2(200) INDEX BY VARCHAR2(1000);
+        l_base_line   t_base_line_proof;
+        l_inv_num     VARCHAR2(1000);
     BEGIN
         -- Generated-row count across both tiers drives the shared fetch's keyset
         -- page-count cap. Done statically here (not in the shared pkg).
@@ -154,6 +164,25 @@ AS
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_line_loaded := l_line_loaded + SQL%ROWCOUNT;
+
+                        -- Record per-invoice BASE-line proof for the fallback
+                        -- pass below. Key = invoice-number component of the
+                        -- RECORD_KEY (everything before the first ':LINE:').
+                        -- Fusion Payables renumbers/inserts lines on import
+                        -- (e.g. automatic ETAX TAX lines get their own base
+                        -- LINE_NUMBER), so the base LINE_NUMBER need not equal
+                        -- the FBDI-sent line number and the exact ':LINE:<n>'
+                        -- match can miss. Keeping the first BASE line seen per
+                        -- invoice lets a still-GENERATED sent line be accounted
+                        -- against real base-table proof for its parent invoice
+                        -- (business-key fallback: no native carrier round-trips
+                        -- and ATTRIBUTE1 is null on AP base lines here).
+                        l_inv_num := SUBSTR(l_rows(i).RECORD_KEY, 1,
+                                        INSTR(l_rows(i).RECORD_KEY, ':LINE:') - 1);
+                        IF l_inv_num IS NOT NULL
+                           AND NOT l_base_line.EXISTS(l_inv_num) THEN
+                            l_base_line(l_inv_num) := l_rows(i).FUSION_ID;
+                        END IF;
                     ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                           AND l_rows(i).ERROR_MESSAGE IS NOT NULL
                           AND l_rows(i).ERROR_MESSAGE != '#IMPORT_REPORT#' THEN
@@ -171,6 +200,50 @@ AS
                     END IF;
                 END IF;
             END LOOP;
+
+            -- ============================================================
+            -- FALLBACK PASS (lines): account any line still GENERATED after
+            -- the exact ':LINE:<n>' match, using per-invoice BASE-line proof.
+            -- ------------------------------------------------------------
+            -- Root cause this handles: Fusion Payables assigns its own base
+            -- LINE_NUMBER on import (and inserts extra ETAX/TAX lines with
+            -- their own numbers), so the base LINE_NUMBER carried in the
+            -- report's RECORD_KEY need not equal the FBDI-sent LINE_NUMBER
+            -- stamped into the TFM RECON_KEY. When they diverge, the exact
+            -- match above misses and the line is left GENERATED (unaccounted).
+            --
+            -- This is the design's business-key fallback tier: AP base lines
+            -- carry no native reference (REFERENCE_KEY1) and no ATTRIBUTE1
+            -- that round-trips on this instance, so there is no Slot A / Slot C
+            -- carrier to match on. The stable, round-tripping business key is
+            -- the parent INVOICE_NUM. A TFM line is LOADED only when a REAL
+            -- BASE line row exists for its parent invoice (positive base-table
+            -- proof, recorded above) AND that invoice's header itself LOADED
+            -- (guards against falsely passing lines of a rejected header --
+            -- those still flow to FAILED through the INTERFACE rejection tier).
+            -- The stamped FUSION_INVOICE_LINE_NUMBER is the real base-line
+            -- composite (INVOICE_ID~LINE_NUMBER), never a fabricated value.
+            IF l_base_line.COUNT > 0 THEN
+                l_inv_num := l_base_line.FIRST;
+                WHILE l_inv_num IS NOT NULL LOOP
+                    UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL ln
+                    SET    ln.TFM_STATUS                 = 'LOADED',
+                           ln.FUSION_INVOICE_LINE_NUMBER = l_base_line(l_inv_num),
+                           ln.RESULTS_UPDATED_DATE       = SYSDATE,
+                           ln.LAST_UPDATED_DATE          = SYSDATE
+                    WHERE  ln.RUN_ID = p_run_id
+                    AND    ln.TFM_STATUS = 'GENERATED'
+                    AND    ln.RECON_KEY LIKE l_inv_num || ':LINE:%'
+                    AND    EXISTS (
+                               SELECT 1 FROM DMT_AP_INVOICES_INT_TFM_TBL h
+                               WHERE  h.RUN_ID     = p_run_id
+                               AND    h.RECON_KEY  = l_inv_num
+                               AND    h.TFM_STATUS = 'LOADED');
+                    l_line_fallback := l_line_fallback + SQL%ROWCOUNT;
+                    l_inv_num := l_base_line.NEXT(l_inv_num);
+                END LOOP;
+                l_line_loaded := l_line_loaded + l_line_fallback;
+            END IF;
         END IF;
 
         -- ============================================================
@@ -215,6 +288,8 @@ AS
             p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
                            || ' | headers LOADED/FAILED: ' || l_hdr_loaded || '/' || l_hdr_failed
                            || ' | lines LOADED/FAILED: '   || l_line_loaded || '/' || l_line_failed
+                           || ' (of which ' || l_line_fallback || ' lines LOADED via the '
+                           || 'per-invoice BASE-line fallback where Fusion renumbered the line)'
                            || '. Unmatched rows left for the unaccounted sweep.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
