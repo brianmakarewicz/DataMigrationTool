@@ -239,31 +239,46 @@
                         error_msg        VARCHAR2(4000) PATH 'ERROR_MESSAGE'
                 ) x
             ) LOOP
-                IF r.fusion_status IN ('PROCESSED','SUCCESS','COMPLETED') THEN
-                    -- Known residue (objects/Suppliers/README.md Known Issues):
-                    -- the interface tier may return NULL VENDOR_SITE_ID for a
-                    -- PROCESSED site. The row stays LOADED — the dependent site
-                    -- assignments (which require the site) load with real Fusion
-                    -- ids, proving the site transitively — but the missing id is
-                    -- recorded as an appended [RECONCILE_ERROR] note so it is
-                    -- never silent. Id backfill lands with the Contract v1
-                    -- report rework (tracked work item).
+                IF r.fusion_status IN ('PROCESSED','SUCCESS','COMPLETED')
+                   AND r.vendor_site_id IS NOT NULL THEN
+                    -- Standard LOADED-promotion shape (design: "Standard
+                    -- LOADED-promotion shape"): a row is promoted to LOADED ONLY
+                    -- with its captured Fusion surrogate id (FUSION_VENDOR_SITE_ID),
+                    -- and the SAME update writes it, guarded statically by
+                    -- r.vendor_site_id IS NOT NULL. A PROCESSED site whose id the
+                    -- interface tier did not return is deliberately NOT promoted
+                    -- (see the ELSIF below) -- it is left GENERATED and surfaced by
+                    -- the unaccounted sweep, never marked LOADED without proof.
                     UPDATE DMT_POZ_SUP_SITE_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_VENDOR_SITE_ID = r.vendor_site_id,
-                           ERROR_TEXT           = CASE
-                                                      WHEN r.vendor_site_id IS NULL
-                                                      THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                          '[RECONCILE_ERROR] Fusion id not returned by interface tier')
-                                                      ELSE ERROR_TEXT
-                                                  END,
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID       = p_run_id
                     AND    VENDOR_NAME          = r.vendor_name
                     AND    VENDOR_SITE_CODE     = r.vendor_site_code
+                    AND    FUSION_VENDOR_SITE_ID IS NULL
                     AND    TFM_STATUS              != 'LOADED';
                     l_loaded := l_loaded + SQL%ROWCOUNT;
+                ELSIF r.fusion_status IN ('PROCESSED','SUCCESS','COMPLETED')
+                      AND r.vendor_site_id IS NULL THEN
+                    -- PROCESSED but the interface tier returned NO VENDOR_SITE_ID.
+                    -- Per the standard, a null id can never reach LOADED: leave the
+                    -- row GENERATED (the unaccounted sweep surfaces it) and record
+                    -- the missing id as an appended note so it is never silent.
+                    -- (Formerly this promoted to LOADED with a NULL id -- that
+                    -- silent false-positive is now surfaced. objects/Suppliers
+                    -- README Known Issues / Contract v1 report rework tracks the
+                    -- interface-tier id backfill.)
+                    UPDATE DMT_POZ_SUP_SITE_TFM_TBL
+                    SET    ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                      '[RECONCILE_ERROR] Fusion id not returned by interface tier; left unaccounted (not promoted without an id)'),
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID       = p_run_id
+                    AND    VENDOR_NAME          = r.vendor_name
+                    AND    VENDOR_SITE_CODE     = r.vendor_site_code
+                    AND    TFM_STATUS              NOT IN ('LOADED','FAILED');
                 ELSIF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE') THEN
                     -- A Fusion error is always an error (design rule 2026-09-15):
                     -- "already exists" is a rejection, not a success.
