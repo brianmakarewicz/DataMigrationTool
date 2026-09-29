@@ -92,7 +92,7 @@ BAD_KEY_REGEX = re.compile(r'-B\d+\b')
 
 def connect():
     # DMT2 is Docker-only (CLAUDE.md: no ATP yet). Honor DMT2_CONN
-    # (user/password@host:port/service) like scripts/deploy_supplier_bip_reports.py;
+    # (user/password@host:port/service) like scripts/deploy_recon_bip_reports.py;
     # fall back to the local Docker instance. The old connect_atp('queryapp')
     # target is the frozen stack's ATP and is wrong for DMT2.
     conn_str = os.environ.get('DMT2_CONN', 'dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1')

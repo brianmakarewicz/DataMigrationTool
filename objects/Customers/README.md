@@ -56,7 +56,7 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 - FBDI Generator: `db/packages/dmt_cust_fbdi_gen_pkg.*` (one GENERATE_FBDI, builds the 7-CSV zip)
 - Results/Reconciliation: `db/packages/dmt_cust_results_pkg.*` (Contract v1, shared transport)
 - BIP Data Model/Report: `bip/Customers/DMT_CUST_RECON_DM.xdm` + `DMT_CUST_RECON_RPT.xdo`
-  (deploy target `/Custom/DMT2/Customers/`; deployed by `scripts/deploy_supplier_bip_reports.py Customers`)
+  (deploy target `/Custom/DMT2/Customers/`; deployed by `scripts/deploy_recon_bip_reports.py Customers`)
 - Golden inputs: `test/golden/inputs/Customer*_input.csv`; golden zip `test/fbdi_zips/Customers_116.zip`
 - Unit test: `test/unit/test_customers.sql`; golden compare: `test/golden/test_customers_golden.sh`
 

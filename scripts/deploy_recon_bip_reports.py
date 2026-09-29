@@ -14,7 +14,7 @@ generated XML-output .xdo wrapper linked to it. The package enforces the
 The registry rows in DMT_BIP_REPORT_TBL are NOT touched here -- they are
 seeded by db/seed/dmt_bip_report_tbl.sql (supplier MERGE block).
 
-Run as:  python scripts/deploy_supplier_bip_reports.py [CemliFilter ...]
+Run as:  python scripts/deploy_recon_bip_reports.py [CemliFilter ...]
 Env:     DMT2_CONN  user/password@host:port/service
          (default: the local Docker instance dmt2-local)
 """
