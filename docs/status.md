@@ -1,5 +1,28 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-29 -- Comparison report: APEX two-view redesign, count/$ split, cached snapshot for instant load
+
+**What was done.** The post-run comparison report got its APEX front end finished and made fast. Five PRs:
+
+- **PR #476 (merged).** Added a "View run comparison report for this run" drill link on the Run Detail page (page 82) that opens the comparison page (page 85).
+- **PR #477 (merged).** Redesigned page 85 into two views: an **Overview** (one card per object, grouped by process area, with a balance badge, and an errors count that drills to the failed records) and a **Detailed comparison** (an Interactive Report). Also removed four hardcoded explanatory note strings (Talent Profiles, Project Budgets, Expenditures, Grants) from the HCM and PPM comparison packages (DMT_HCM_COMPARE_PKG / DMT_PPM_COMPARE_PKG) -- set to NULL; the balance logic did not change.
+- **PR #478 (merged).** Split the detailed comparison table into separate count and dollar columns per stage (Staged, Errors, Loaded, Variance). The dollar columns are left blank for objects that carry no money; helper columns are hidden.
+- **PR #479 (merged).** Renamed `scripts/deploy_supplier_bip_reports.py` to `deploy_recon_bip_reports.py` (it deploys the Wave-1 recon reports for the supplier family AND Customers). Added backlog item #94 (P3) to `docs/backlog.html`: a business-key checksum for money-less comparison objects.
+- **PR #480 (OPEN, awaiting the Actions reviewer).** Speed fix. New table `DMT_RUN_COMPARISON_TBL` caches one computed snapshot per run. `DMT_RUN_COMPARE_PKG.SAVE_RUN_COMPARISON(run)` makes the live Fusion pass once and stores it. Page 85 now reads that table (instant load) instead of making ~23 live Fusion calls (about 15-28 seconds) on every open. Added a "Refresh from Fusion" button (re-pulls on demand and shows "as of <timestamp>") and a "Run Comparison" entry in the navigation menu. Verified live on local app 501, run 132.
+
+**Correction to a prior status entry.** The earlier "clean up 167 stale Docker override-credential rows (NULL username)" item was a misdiagnosis. Those rows are in `DMT_ERP_INTERFACE_OPTIONS_TBL` and are SEEDED reference data -- the ERP interface options catalog (business object to FBDI/ESS job path), seeded by `db/seed/dmt_erp_interface_options_tbl.sql`, 180 rows. `FUSION_USERNAME` / `FUSION_PASSWORD` are NULL by design; credentials come from the config default (`DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS`). Deleting them would wipe the catalog and diverge from git. This is NOT a cleanup task and was removed from priorities.
+
+**What's next.**
+1. Merge PR #480 once the Actions reviewer approves.
+2. Blanket PO money: change the generator (`dmt_blanket_po_fbdi_gen_pkg`) to emit an amount-based BPA line so Fusion keeps the amount and Blanket PO money reconciles. Requires a live BlanketPOs run to verify. Not yet started.
+3. Promote the comparison feature to ATP GOLD via `scripts/ci_promote.py` -- AFTER PR #480 (and the Blanket PO change) merge, so GOLD gets the finished code. Built and proven on local Docker only.
+
+**Blockers:** None. (PR #480 is open and waiting on the automated reviewer, which is expected, not a blocker.)
+
+**Git state:** On branch `feat/comparison-cache-and-nav` (the PR #480 branch), tree clean of tracked changes. This branch is 1 commit ahead of `origin/main` (the PR #480 commit) and 1 behind (PRs #476-#479 already merged into main after this branch was cut). Untracked scratch only (worktrees, `_scratch_export501/`, `scratch_matrix*.txt`, `docs/rca_regression_2026-09-18.md`) -- safe to ignore or clean.
+
+**Next session:** first action is to sync -- `git checkout main && git fetch && git merge --ff-only origin/main`, confirm a clean tree -- BEFORE any new work. If PR #480 has merged by then, main already has the cache/nav work; if not, check the branch out again to finish it.
+
 ## Session -- 2026-09-28 -- Post-run comparison report: ALL 23 objects rolled out (PR #475); walking skeleton merged (#474)
 
 **What happened.** The walking skeleton (framework + Purchase Orders) merged to main as PR #474 -- which included a governance step the owner approved: amending coding-standard #66 to sanction the comparison framework's one dispatch site (`DMT_RUN_COMPARE_PKG.BUILD_ROWS`) as a fourth dynamic-invocation site, plus an anti-circumvention clause so nobody can smuggle a new dynamic-dispatch need through an existing site. (The automated reviewer first blocked a self-certified amendment; it was redone as a proper owner-approved accepted rule via the design-change sentinel.)
