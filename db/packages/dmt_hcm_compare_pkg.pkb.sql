@@ -290,10 +290,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_HCM_COMPARE_PKG AS
                 0, NULL, NULL, l_money_ok,
                 l_stg_cnt - l_err_cnt, NULL,
                 CASE WHEN l_stg_cnt = l_err_cnt THEN 'Y' ELSE 'N' END,
-                '0 LOADED this run (whole-file HDL rejection on an invalid '||
-                'ProfileItem METADATA attribute; all rows FAILED with a '||
-                'real Fusion error) -- Fusion success side designed, not '||
-                'yet confirmed');
+                NULL);
         END IF;
         l_key_type := 'STAMPED_REF';
 
