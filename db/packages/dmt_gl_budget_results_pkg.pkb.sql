@@ -64,6 +64,7 @@
         l_err_code  NUMBER;
         l_loaded    NUMBER := 0;
         l_failed    NUMBER := 0;
+        l_unaccounted NUMBER := 0;
     BEGIN
         -- Generated-row count (static, this object's own table) drives the shared
         -- fetch's keyset page-count cap.
@@ -151,11 +152,28 @@
         WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_GL_BUDGET_INT_TFM_TBL
                                   WHERE RUN_ID=p_run_id AND TFM_STATUS='FAILED');
 
+        -- Residual accounting: how many of this run's cells are STILL GENERATED
+        -- (unaccounted) after this pass. This is the number that let the run-119
+        -- cells sit unnoticed after that run's transient recon-report outage --
+        -- the completion log previously reported only LOADED/FAILED and never the
+        -- residual, so a partial or aborted reconcile left no loud, per-run signal
+        -- of how many records remained unaccounted. Surface it explicitly and, when
+        -- nonzero, log it at WARN so a stranded cell is visible in the run log at
+        -- the point it happens -- never a silent gap (design section 5).
+        SELECT COUNT(*) INTO l_unaccounted
+        FROM   DMT_GL_BUDGET_INT_TFM_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'GENERATED';
+
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,
             p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
                            || ' | LOADED: ' || l_loaded
-                           || ' | FAILED: ' || l_failed || '.',
+                           || ' | FAILED: ' || l_failed
+                           || ' | still UNACCOUNTED (GENERATED): ' || l_unaccounted || '.',
+            p_log_type  => CASE WHEN l_unaccounted > 0
+                                THEN DMT_UTIL_PKG.C_LOG_WARN
+                                ELSE DMT_UTIL_PKG.C_LOG_INFO END,
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
