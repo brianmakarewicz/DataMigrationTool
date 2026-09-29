@@ -13,6 +13,20 @@
     --  base64 decode -- which carried the VARCHAR2(32767) truncation bug -- is
     --  gone. PARSE_AND_UPDATE now takes the decoded XMLTYPE directly.)
 
+    -- --------------------------------------------------------
+    -- PARSE_AND_UPDATE  (this object's LOADED-promotion procedure)
+    -- Standard LOADED-promotion shape, natural-key variant (design: "Standard
+    -- LOADED-promotion shape", clause (1)/(5)) -- with an explicit caveat.
+    -- STUB-LIKE / DORMANT: PlanningBudgets targets EPBCS, which exposes NO
+    -- BIP-accessible interface or base table and NO Fusion surrogate id (its
+    -- DMT_BIP_REPORT_TBL.FUSION_ID_COLUMN is empty). Promotion here is therefore
+    -- keyed on the natural key SCENARIO and captures NO FUSION_*_ID (none exists;
+    -- none is fabricated). The guard is the report's explicit success import_status;
+    -- absence from the report is never treated as success (rows stay GENERATED for
+    -- the unaccounted sweep). This object is dormant on the demo instance; the shape
+    -- is documented here so the reviewer sees an explicit, intentional no-surrogate
+    -- promotion rather than a silent one.
+    -- --------------------------------------------------------
     PROCEDURE PARSE_AND_UPDATE (p_run_id IN NUMBER, p_xml_data IN XMLTYPE,
         p_work_queue_id IN NUMBER DEFAULT NULL) IS
         l_loaded NUMBER := 0; l_failed NUMBER := 0;
