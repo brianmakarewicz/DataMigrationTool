@@ -56,6 +56,7 @@ begin
 	"RECON_PROC" VARCHAR2(200),
 	"RECON_HAS_CEMLI_ARG" VARCHAR2(1) DEFAULT ''N'' NOT NULL ENABLE,
 	"PARTITION_KEYS_PROC" VARCHAR2(200),
+	"RESET_PROC" VARCHAR2(200),
 	 CONSTRAINT "DMT_PIPELINE_DEF_PK" PRIMARY KEY ("PIPELINE_DEF_ID")
   USING INDEX  ENABLE,
 	 CONSTRAINT "DMT_PIPELINE_DEF_UK1" UNIQUE ("CEMLI_CODE")
@@ -108,6 +109,21 @@ end;
 -- fourth EXECUTE IMMEDIATE site). Additive + nullable; converges an existing DB.
 begin
   execute immediate 'ALTER TABLE "DMT_PIPELINE_DEF_TBL" ADD ("PARTITION_KEYS_PROC" VARCHAR2(200))';
+exception when others then
+  if sqlcode not in (-1430) then raise; end if;
+end;
+/
+
+-- Backlog #95 (re-run reconcile for a run): RESET_PROC names the PKG.PROC the
+-- queue worker calls (through invoke_registered, style RECON, via the
+-- INVOKE_RESET wrapper) to reset a run's UNACCOUNTED TFM rows back to GENERATED
+-- with STATIC SQL over that object's OWN literally-named TFM table(s). Set for
+-- every FBDI/base-confirming object; NULL for objects that reset nothing (config
+-- stubs, mocks). Adds NO new dynamic-SQL site — the reset proc name is registry
+-- data validated by the same PKG.PROC allow-pattern, never a table/column name.
+-- Additive + nullable; converges an existing DB.
+begin
+  execute immediate 'ALTER TABLE "DMT_PIPELINE_DEF_TBL" ADD ("RESET_PROC" VARCHAR2(200))';
 exception when others then
   if sqlcode not in (-1430) then raise; end if;
 end;

@@ -62,5 +62,23 @@ AS
         p_report_xml     IN XMLTYPE
     );
 
+    -- RESET_UNACCOUNTED -- re-run-reconcile recovery (backlog #95). Static UPDATE
+    -- over the ONE of the five supplier TFM tables that matches p_cemli_code:
+    -- flip this run's UNACCOUNTED rows back to GENERATED and strip the bare
+    -- [UNACCOUNTED] tag so the next reconcile pass re-examines them. Dispatched
+    -- by the queue worker through the sanctioned invoke_registered site
+    -- (INVOKE_RESET, RECON_CEMLI style -- this package's RECON_HAS_CEMLI_ARG='Y'
+    -- already routes it that way); the ESS-id args are ignored. Parameter order
+    -- mirrors RECONCILE_BATCH exactly (p_run_id, p_cemli_code, p_load_ess_id,
+    -- p_import_ess_id, p_work_queue_id) since RECON_CEMLI binds positionally.
+    -- NO dynamic SQL; NO COMMIT (caller owns the txn).
+    PROCEDURE RESET_UNACCOUNTED (
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_load_ess_id   IN NUMBER DEFAULT NULL,
+        p_import_ess_id IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
+    );
+
 END DMT_POZ_SUP_RESULTS_PKG;
 /

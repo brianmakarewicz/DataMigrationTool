@@ -471,5 +471,115 @@
             RAISE;
     END RECONCILE_BATCH;
 
+    -- --------------------------------------------------------
+    -- RESET_UNACCOUNTED (backlog #95) -- see spec. Static UPDATE over the
+    -- ONE of the five compile-time-known supplier-family TFM tables that
+    -- matches p_cemli_code (same mapping PARSE_AND_UPDATE already branches
+    -- on). Flips this run's UNACCOUNTED rows back to GENERATED and strips the
+    -- trailing [UNACCOUNTED] tag from ERROR_TEXT (CLOB-safe REGEXP_REPLACE --
+    -- plain REPLACE raises ORA-22849), preserving any prior real error so the
+    -- next reconcile accumulates onto it exactly as a first pass would.
+    -- Scoped by run, and by work-queue item when given (spawn-per-partition
+    -- children). NO dynamic SQL; NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE RESET_UNACCOUNTED (
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    ) IS
+        C_PROC  CONSTANT VARCHAR2(30) := 'RESET_UNACCOUNTED';
+        l_reset NUMBER := 0;
+    BEGIN
+        IF p_cemli_code = 'Suppliers' THEN
+            UPDATE DMT_POZ_SUPPLIERS_TFM_TBL
+            SET    TFM_STATUS = 'GENERATED',
+                   ERROR_TEXT = CASE
+                                  WHEN DBMS_LOB.GETLENGTH(
+                                         REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                                  THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                                  ELSE NULL
+                                END,
+                   LAST_UPDATED_DATE = SYSDATE
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'UNACCOUNTED'
+            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+            l_reset := SQL%ROWCOUNT;
+
+        ELSIF p_cemli_code = 'SupplierAddresses' THEN
+            UPDATE DMT_POZ_SUP_ADDR_TFM_TBL
+            SET    TFM_STATUS = 'GENERATED',
+                   ERROR_TEXT = CASE
+                                  WHEN DBMS_LOB.GETLENGTH(
+                                         REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                                  THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                                  ELSE NULL
+                                END,
+                   LAST_UPDATED_DATE = SYSDATE
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'UNACCOUNTED'
+            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+            l_reset := SQL%ROWCOUNT;
+
+        ELSIF p_cemli_code = 'SupplierSites' THEN
+            UPDATE DMT_POZ_SUP_SITE_TFM_TBL
+            SET    TFM_STATUS = 'GENERATED',
+                   ERROR_TEXT = CASE
+                                  WHEN DBMS_LOB.GETLENGTH(
+                                         REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                                  THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                                  ELSE NULL
+                                END,
+                   LAST_UPDATED_DATE = SYSDATE
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'UNACCOUNTED'
+            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+            l_reset := SQL%ROWCOUNT;
+
+        ELSIF p_cemli_code = 'SupplierSiteAssignments' THEN
+            UPDATE DMT_POZ_SUP_SITE_ASSN_TFM_TBL
+            SET    TFM_STATUS = 'GENERATED',
+                   ERROR_TEXT = CASE
+                                  WHEN DBMS_LOB.GETLENGTH(
+                                         REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                                  THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                                  ELSE NULL
+                                END,
+                   LAST_UPDATED_DATE = SYSDATE
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'UNACCOUNTED'
+            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+            l_reset := SQL%ROWCOUNT;
+
+        ELSIF p_cemli_code = 'SupplierContacts' THEN
+            UPDATE DMT_POZ_SUP_CONTACTS_TFM_TBL
+            SET    TFM_STATUS = 'GENERATED',
+                   ERROR_TEXT = CASE
+                                  WHEN DBMS_LOB.GETLENGTH(
+                                         REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                                  THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                                  ELSE NULL
+                                END,
+                   LAST_UPDATED_DATE = SYSDATE
+            WHERE  RUN_ID = p_run_id
+            AND    TFM_STATUS = 'UNACCOUNTED'
+            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+            l_reset := SQL%ROWCOUNT;
+
+        ELSE
+            RAISE_APPLICATION_ERROR(-20037,
+                'RESET_UNACCOUNTED: Unknown CEMLI_CODE = ''' || p_cemli_code ||
+                '''. Valid values: Suppliers, SupplierAddresses, ' ||
+                'SupplierSites, SupplierSiteAssignments, SupplierContacts');
+        END IF;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ': reset ' || l_reset || ' UNACCOUNTED ' || p_cemli_code ||
+            ' row(s) to GENERATED for re-reconcile.',
+            'INFO', C_PKG, C_PROC);
+        -- NO COMMIT -- the caller (RERUN_RUN) owns the transaction.
+    END RESET_UNACCOUNTED;
+
 END DMT_POZ_SUP_RESULTS_PKG;
 /

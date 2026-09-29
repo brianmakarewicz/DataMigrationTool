@@ -109,5 +109,46 @@ page 82 (
         }
     )
 
+    button rerun-reconcile (
+        buttonName: RERUN_RECONCILE
+        label: Re-run reconcile
+        layout {
+            sequence: 10
+            region: @run-info
+            slot: PREVIOUS
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+            templateOptions: #DEFAULT#
+            icon: fa-refresh
+        }
+        behavior {
+            action: submitPage
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    process rerun-reconcile-process (
+        name: Re-run reconcile for this run
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                BEGIN
+                    IF :P82_RUN_ID IS NOT NULL THEN
+                        DMT_QUEUE_PKG.RERUN_RUN(:P82_RUN_ID);
+                    END IF;
+                END;
+                ```
+        }
+        execution {
+            sequence: 10
+        }
+        serverSideCondition {
+            whenButtonPressed: @rerun-reconcile
+        }
+    )
+
 )
 

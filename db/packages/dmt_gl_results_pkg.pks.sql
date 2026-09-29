@@ -78,5 +78,20 @@
         p_work_queue_id IN NUMBER   DEFAULT NULL
     );
 
+    -- RESET_UNACCOUNTED -- re-run-reconcile recovery (backlog #95). Static UPDATE
+    -- over this object's OWN literally-named TFM table(s): flip this run's
+    -- UNACCOUNTED rows back to GENERATED and strip the bare [UNACCOUNTED] tag so
+    -- the next reconcile pass re-examines them. Dispatched by the queue worker
+    -- through the sanctioned invoke_registered site (INVOKE_RESET, RECON style);
+    -- the ESS-id args are ignored. NO dynamic SQL; NO COMMIT (caller owns the txn).
+    -- GLBalances reconciles through the generic recon engine and so is
+    -- registered RECON_HAS_CEMLI_ARG='Y'; its reset is dispatched the SAME
+    -- (RECON_CEMLI) way, so this proc carries the p_cemli_code arg for shape
+    -- parity. GLBalances has a single TFM table, so p_cemli_code is accepted and
+    -- ignored.
+    PROCEDURE RESET_UNACCOUNTED (p_run_id IN NUMBER, p_cemli_code IN VARCHAR2,
+        p_load_ess_id IN NUMBER DEFAULT NULL,
+        p_import_ess_id IN NUMBER DEFAULT NULL, p_work_queue_id IN NUMBER DEFAULT NULL);
+
 END DMT_GL_RESULTS_PKG;
 /

@@ -35,5 +35,14 @@
     --  sole reconciliation path is now APPLY_CONTRACT_V1_GLBUDGETS via the shared
     --  DMT_RECON_CONTRACT_PKG.FETCH_ROWS. The private BIP SOAP transport those two
     --  procedures used is gone with them.)
+    -- RESET_UNACCOUNTED -- re-run-reconcile recovery (backlog #95). Static UPDATE
+    -- over this object's OWN literally-named TFM table(s): flip this run's
+    -- UNACCOUNTED rows back to GENERATED and strip the bare [UNACCOUNTED] tag so
+    -- the next reconcile pass re-examines them. Dispatched by the queue worker
+    -- through the sanctioned invoke_registered site (INVOKE_RESET, RECON style);
+    -- the ESS-id args are ignored. NO dynamic SQL; NO COMMIT (caller owns the txn).
+    PROCEDURE RESET_UNACCOUNTED (p_run_id IN NUMBER, p_load_ess_id IN NUMBER DEFAULT NULL,
+        p_import_ess_id IN NUMBER DEFAULT NULL, p_work_queue_id IN NUMBER DEFAULT NULL);
+
 END DMT_GL_BUDGET_RESULTS_PKG;
 /

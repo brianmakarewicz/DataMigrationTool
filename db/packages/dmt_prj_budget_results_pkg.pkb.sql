@@ -634,5 +634,44 @@ AS
             RAISE;
     END RECONCILE_BATCH;
 
+    -- --------------------------------------------------------
+    -- RESET_UNACCOUNTED (backlog #95) — see spec. Static UPDATE over the
+    -- compile-time-known ProjectBudgets TFM table. Flips this run's UNACCOUNTED
+    -- rows back to GENERATED and strips the trailing [UNACCOUNTED] tag from
+    -- ERROR_TEXT (CLOB-safe REGEXP_REPLACE — plain REPLACE raises ORA-22849),
+    -- preserving any prior real error so the next reconcile accumulates onto it
+    -- exactly as a first pass would. Scoped by run, and by work-queue item when
+    -- given (spawn-per-partition children). NO dynamic SQL; NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE RESET_UNACCOUNTED (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER   DEFAULT NULL,
+        p_import_ess_id IN NUMBER   DEFAULT NULL,
+        p_work_queue_id IN NUMBER   DEFAULT NULL
+    ) IS
+        C_PROC  CONSTANT VARCHAR2(30) := 'RESET_UNACCOUNTED';
+        l_reset NUMBER := 0;
+    BEGIN
+        UPDATE DMT_PRJ_BUDGET_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED',
+               ERROR_TEXT = CASE
+                              WHEN DBMS_LOB.GETLENGTH(
+                                     REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')) > 0
+                              THEN REGEXP_REPLACE(ERROR_TEXT, '( \| )?\[UNACCOUNTED\]$')
+                              ELSE NULL
+                            END,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS = 'UNACCOUNTED'
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        l_reset := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ': reset ' || l_reset || ' UNACCOUNTED ProjectBudgets row(s) to '
+            || 'GENERATED for re-reconcile.',
+            'INFO', C_PKG, C_PROC);
+        -- NO COMMIT — the caller (RERUN_RUN) owns the transaction.
+    END RESET_UNACCOUNTED;
+
 END DMT_PRJ_BUDGET_RESULTS_PKG;
 /

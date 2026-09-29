@@ -1247,6 +1247,50 @@ AS
     END INVOKE_APPLY;
 
     -- ============================================================
+    -- INVOKE_RESET — dispatch an object's thin static RESET_UNACCOUNTED proc
+    -- through the SAME sanctioned invoke_registered site (style RECON). Used by
+    -- the "re-run reconcile for a run" recovery path (DMT_QUEUE_PKG.RERUN_RUN,
+    -- backlog #95). A run that faulted mid-reconcile leaves rows at the terminal
+    -- status UNACCOUNTED; because SWEEP_UNACCOUNTED and every per-object reconcile
+    -- act only on GENERATED rows, simply re-dispatching the reconcile would skip
+    -- those rows. Each object's own results package carries a STATIC
+    -- RESET_UNACCOUNTED proc (a static UPDATE against its literally-named TFM
+    -- table(s) — no dynamic SQL, no catalog-name binding), and this wrapper drives
+    -- it through the ONE existing dynamic-invocation site, exactly as INVOKE_APPLY
+    -- drives the object's static APPLY proc. No new dynamic-SQL site is added: the
+    -- ONLY EXECUTE IMMEDIATE remains inside invoke_registered, and the reset proc
+    -- name is registry data (DMT_PIPELINE_DEF_TBL.RESET_PROC), a PKG.PROC validated
+    -- by the same allow-pattern, never a table or column name. The reset proc uses
+    -- the RECON call shape (p_run_id, p_load_ess_id, p_import_ess_id,
+    -- p_work_queue_id); it ignores the ESS-id args and reads only p_run_id and
+    -- p_work_queue_id. Does NOT commit — the caller (RERUN_RUN) owns the
+    -- transaction.
+    -- ============================================================
+    PROCEDURE INVOKE_RESET (
+        p_reset_proc     IN VARCHAR2,
+        p_run_id         IN NUMBER,
+        p_cemli_code     IN VARCHAR2,
+        p_has_cemli_arg  IN VARCHAR2 DEFAULT 'N',
+        p_work_queue_id  IN NUMBER DEFAULT NULL
+    ) IS
+        l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
+    BEGIN
+        -- Same style choice RECONCILE_ONE makes: the shared supplier-family reset
+        -- takes p_cemli_code (RECON_CEMLI) so ONE proc resets the right one of the
+        -- five supplier TFM tables; every other object uses the standard RECON
+        -- shape. Either way the ESS-id binds are NULL and ignored by the reset.
+        invoke_registered(
+            p_proc          => p_reset_proc,
+            p_style         => CASE p_has_cemli_arg WHEN 'Y' THEN 'RECON_CEMLI' ELSE 'RECON' END,
+            p_run_id        => p_run_id,
+            p_cemli_code    => p_cemli_code,
+            p_load_ess_id   => NULL,
+            p_import_ess_id => NULL,
+            p_work_queue_id => p_work_queue_id,
+            x_keys          => l_ignore_keys);
+    END INVOKE_RESET;
+
+    -- ============================================================
     -- submit_postrun_job — Phase-2 staged load.
     -- After the import job (e.g. PrepareMassAdditions) succeeds, a CEMLI
     -- whose registry row carries a POSTRUN_JOB runs a standalone follow-up
