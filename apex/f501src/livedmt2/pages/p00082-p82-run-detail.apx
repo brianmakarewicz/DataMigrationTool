@@ -57,6 +57,25 @@ page 82 (
         }
     )
 
+    region comparison-link (
+        name: Comparison Report Link
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                BEGIN
+                  htp.p('<div style="margin:4px 0 12px 0"><a href="'
+                    || APEX_PAGE.GET_URL(p_page => 85, p_items => 'P85_RUN_ID', p_values => TO_CHAR(:P82_RUN_ID), p_clear_cache => '85')
+                    || '" style="color:#0070d2;text-decoration:none;font-weight:600">View run comparison report for this run &rarr;</a></div>');
+                END;
+                ```
+        }
+        layout {
+            sequence: 16
+            slot: body
+        }
+    )
+
     pageItem P82_RUN_ID (
         type: hidden
         layout {
