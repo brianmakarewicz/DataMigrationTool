@@ -26,268 +26,6 @@ page 85 (
         }
     )
 
-    region comparison (
-        name: Comparison
-        type: interactiveReport
-        source {
-            location: localDatabase
-            type: sqlQuery
-            sqlQuery:
-                ```sql
-                SELECT c001 AS object_type,
-                       c002 AS key_type,
-                       n001 AS staged_count,
-                       n002 AS staged_amount,
-                       n003 AS error_count,
-                       n004 AS error_amount,
-                       n005 AS fusion_count,
-                       TO_NUMBER(c007) AS fusion_amount,
-                       TO_NUMBER(c008) AS variance_count,
-                       TO_NUMBER(c009) AS variance_amount,
-                       c003 AS in_balance,
-                       DECODE(c003, 'N', 't-Badge t-Badge--danger', 'Y', 't-Badge t-Badge--success', 't-Badge') AS in_balance_badge_class,
-                       c004 AS fusion_money_available,
-                       c005 AS amount_currency,
-                       c006 AS note
-                  FROM APEX_COLLECTIONS
-                 WHERE COLLECTION_NAME = 'RUN_COMPARISON'
-                 ORDER BY c001
-                ```
-        }
-        layout {
-            sequence: 20
-            slot: body
-        }
-        appearance {
-            template: @/standard
-            templateOptions: [
-                #DEFAULT#
-                t-Region--scrollBody
-            ]
-        }
-        pagination {
-            type: rowRangesXToY
-        }
-        performance {
-            maxRowsToProcess: 1000000
-        }
-
-        column OBJECT_TYPE (
-            type: plainText
-            heading {
-                heading: Object
-            }
-            layout {
-                sequence: 10
-            }
-            source {
-                dataType: STRING
-            }
-        )
-
-        column KEY_TYPE (
-            type: plainText
-            heading {
-                heading: Key Type
-            }
-            layout {
-                sequence: 20
-            }
-            source {
-                dataType: STRING
-            }
-        )
-
-        column STAGED_COUNT (
-            type: plainText
-            heading {
-                heading: Staged Count
-                alignment: end
-            }
-            layout {
-                sequence: 30
-                columnAlignment: end
-            }
-            source {
-                dataType: NUMBER
-            }
-        )
-
-        column STAGED_AMOUNT (
-            type: plainText
-            heading {
-                heading: Staged Amount
-                alignment: end
-            }
-            layout {
-                sequence: 40
-                columnAlignment: end
-            }
-            source {
-                dataType: NUMBER
-            }
-        )
-
-        column ERROR_COUNT (
-            type: plainText
-            heading {
-                heading: Error Count
-                alignment: end
-            }
-            layout {
-                sequence: 50
-                columnAlignment: end
-            }
-            source {
-                dataType: NUMBER
-            }
-        )
-
-        column ERROR_AMOUNT (
-            type: plainText
-            heading {
-                heading: Error Amount
-                alignment: end
-            }
-            layout {
-                sequence: 60
-                columnAlignment: end
-            }
-            source {
-                dataType: NUMBER
-            }
-        )
-
-        column FUSION_COUNT (
-            type: plainText
-            heading {
-                heading: Fusion Success Count
-                alignment: end
-            }
-            layout {
-                sequence: 70
-                columnAlignment: end
-            }
-            source {
-                dataType: NUMBER
-            }
-        )
-
-        column FUSION_AMOUNT (
-            type: plainText
-            heading {
-                heading: Fusion Success Amount
-                alignment: end
-            }
-            layout {
-                sequence: 80
-                columnAlignment: end
-            }
-            source {
-                dataType: NUMBER
-            }
-        )
-
-        column VARIANCE_COUNT (
-            type: plainText
-            heading {
-                heading: Variance Count
-                alignment: end
-            }
-            layout {
-                sequence: 90
-                columnAlignment: end
-            }
-            source {
-                dataType: NUMBER
-            }
-        )
-
-        column VARIANCE_AMOUNT (
-            type: plainText
-            heading {
-                heading: Variance Amount
-                alignment: end
-            }
-            layout {
-                sequence: 100
-                columnAlignment: end
-            }
-            source {
-                dataType: NUMBER
-            }
-        )
-
-        column IN_BALANCE (
-            type: plainText
-            heading {
-                heading: In Balance
-            }
-            layout {
-                sequence: 110
-            }
-            source {
-                dataType: STRING
-            }
-            columnFormatting {
-                htmlExpression: <span class="#IN_BALANCE_BADGE_CLASS#">#IN_BALANCE#</span>
-            }
-        )
-
-        column IN_BALANCE_BADGE_CLASS (
-            type: hidden
-            heading {
-                heading: In Balance Badge Class
-            }
-            layout {
-                sequence: 115
-            }
-            source {
-                dataType: STRING
-            }
-        )
-
-        column FUSION_MONEY_AVAILABLE (
-            type: plainText
-            heading {
-                heading: Fusion Money Available
-            }
-            layout {
-                sequence: 120
-            }
-            source {
-                dataType: STRING
-            }
-        )
-
-        column AMOUNT_CURRENCY (
-            type: plainText
-            heading {
-                heading: Currency
-            }
-            layout {
-                sequence: 130
-            }
-            source {
-                dataType: STRING
-            }
-        )
-
-        column NOTE (
-            type: plainText
-            heading {
-                heading: Note
-            }
-            layout {
-                sequence: 140
-            }
-            source {
-                dataType: STRING
-            }
-        )
-
-    )
-
     region totals (
         name: Totals
         type: plSqlDynamicContent
@@ -311,7 +49,7 @@ page 85 (
                       FROM APEX_COLLECTIONS
                      WHERE COLLECTION_NAME = 'RUN_COMPARISON';
 
-                    htp.p('<div style="margin:8px 0;font-weight:600">Totals — '
+                    htp.p('<div style="margin:8px 0;font-weight:600">Totals &mdash; '
                         || 'Staged: ' || NVL(TO_CHAR(l_stg_count), '0') || ' rows / ' || NVL(TO_CHAR(l_stg_amount), '0')
                         || ' &nbsp;|&nbsp; Errors: ' || NVL(TO_CHAR(l_err_count), '0') || ' rows / ' || NVL(TO_CHAR(l_err_amount), '0')
                         || ' &nbsp;|&nbsp; Fusion Success: ' || NVL(TO_CHAR(l_fus_count), '0') || ' rows / ' || NVL(TO_CHAR(l_fus_amount), '0')
@@ -321,9 +59,355 @@ page 85 (
                 ```
         }
         layout {
-            sequence: 25
+            sequence: 15
             slot: body
         }
+    )
+
+    region overview (
+        name: Overview
+        type: plSqlDynamicContent
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                    l_pp   VARCHAR2(100) := '***';
+                    l_url  VARCHAR2(4000);
+                    l_bal  VARCHAR2(20);
+                    l_edge VARCHAR2(20);
+                    l_soft VARCHAR2(20);
+                BEGIN
+                    IF :P85_RUN_ID IS NULL THEN
+                        htp.p('<p style="padding:12px;color:#666">Select a run above and click Go.</p>');
+                        RETURN;
+                    END IF;
+                    FOR r IN (
+                        SELECT ac.c001 object_type, ac.c003 in_balance, ac.c004 money_avail,
+                               ac.c006 note, ac.n001 stg_cnt, ac.n002 stg_amt,
+                               ac.n003 err_cnt, ac.n004 err_amt,
+                               ac.n005 fus_cnt, TO_NUMBER(ac.c007) fus_amt,
+                               NVL(sv.PIPELINE, 'Other') pipeline
+                          FROM APEX_COLLECTIONS ac
+                          LEFT JOIN (
+                                SELECT OBJECT_TYPE,
+                                       MAX(PIPELINE)   PIPELINE,
+                                       MIN(SORT_ORDER) SORT_ORDER
+                                  FROM DMT_PIPELINE_SUMMARY_V
+                                 WHERE RUN_ID = :P85_RUN_ID
+                                   AND OBJECT_TYPE != '__PIPELINE__'
+                                 GROUP BY OBJECT_TYPE
+                               ) sv
+                            ON sv.OBJECT_TYPE = ac.c001
+                         WHERE ac.COLLECTION_NAME = 'RUN_COMPARISON'
+                         ORDER BY CASE NVL(sv.PIPELINE, 'zzz')
+                                    WHEN 'Configuration' THEN 0 WHEN 'MasterData' THEN 1
+                                    WHEN 'P2P' THEN 2 WHEN 'O2C' THEN 3 WHEN 'Financials' THEN 4
+                                    WHEN 'Projects' THEN 5 WHEN 'Standalone' THEN 6 WHEN 'HCM' THEN 7
+                                    ELSE 9 END,
+                                  NVL(sv.SORT_ORDER, 999), ac.c001
+                    ) LOOP
+                        IF r.pipeline != l_pp THEN
+                            IF l_pp != '***' THEN htp.p('</div>'); END IF;
+                            htp.p('<h3 style="margin:20px 0 8px;font-size:13px;color:#555;text-transform:uppercase;letter-spacing:1px">'
+                                || APEX_ESCAPE.HTML(r.pipeline) || '</h3>'
+                                || '<div style="display:flex;flex-wrap:wrap;gap:12px">');
+                            l_pp := r.pipeline;
+                        END IF;
+
+                        IF r.in_balance = 'Y' THEN
+                            l_edge := '#2e8b57'; l_soft := '#cfe8d4'; l_bal := '&#10003; In balance';
+                        ELSIF r.in_balance = 'N' THEN
+                            l_edge := '#cc0000'; l_soft := '#f3c9c9'; l_bal := 'Out of balance';
+                        ELSE
+                            l_edge := '#b8860b'; l_soft := '#f0e0b0'; l_bal := 'Unresolved';
+                        END IF;
+
+                        l_url := APEX_PAGE.GET_URL(p_page => 52,
+                                     p_items => 'P52_RUN_ID,P52_CEMLI_CODE',
+                                     p_values => :P85_RUN_ID || ',' || r.object_type);
+
+                        htp.p('<div style="border:1px solid ' || l_soft || ';border-left:4px solid ' || l_edge
+                            || ';border-radius:8px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.05);'
+                            || 'padding:12px 14px;min-width:230px;max-width:290px">');
+                        htp.p('<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'
+                            || '<span style="font-weight:700;color:#16191f">' || APEX_ESCAPE.HTML(r.object_type) || '</span>'
+                            || '<span style="font-size:11px;font-weight:700;color:' || l_edge || '">' || l_bal || '</span></div>');
+                        htp.p('<div style="margin-top:8px;font-size:12px;color:#333;display:flex;flex-direction:column;gap:2px">');
+                        htp.p('<div>Staged: <b>' || r.stg_cnt || '</b>'
+                            || CASE WHEN r.money_avail = 'Y' THEN ' ($' || TO_CHAR(r.stg_amt, 'FM999G999G990D00') || ')' END || '</div>');
+                        htp.p('<div>Errors: <b>' || r.err_cnt || '</b>'
+                            || CASE WHEN r.money_avail = 'Y' THEN ' ($' || TO_CHAR(r.err_amt, 'FM999G999G990D00') || ')' END
+                            || CASE WHEN r.err_cnt > 0 THEN ' <a href="' || l_url
+                                 || '" style="color:#0072c6;text-decoration:none">view &rarr;</a>' END || '</div>');
+                        htp.p('<div>Loaded: <b>' || r.fus_cnt || '</b>'
+                            || CASE WHEN r.money_avail = 'Y' THEN ' ($' || TO_CHAR(r.fus_amt, 'FM999G999G990D00') || ')' END || '</div>');
+                        htp.p('</div>');
+                        IF r.note IS NOT NULL THEN
+                            htp.p('<div style="margin-top:8px;font-size:11px;color:#777;line-height:1.35">'
+                                || APEX_ESCAPE.HTML(r.note) || '</div>');
+                        END IF;
+                        htp.p('</div>');
+                    END LOOP;
+                    IF l_pp != '***' THEN htp.p('</div>'); END IF;
+                END;
+                ```
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region comparison (
+        name: Detailed comparison
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT c001 AS object_type,
+                       c003 AS in_balance,
+                       DECODE(c003, 'Y', 'In balance', 'N', 'Out of balance', 'Unresolved') AS status_label,
+                       DECODE(c003, 'N', 't-Badge t-Badge--danger', 'Y', 't-Badge t-Badge--success', 't-Badge t-Badge--warning') AS in_balance_badge_class,
+                       c006 AS note,
+                       CASE WHEN c006 IS NOT NULL THEN 'inline-block' ELSE 'none' END AS note_disp,
+                       c002 AS key_type,
+                       c004 AS fusion_money_available,
+                       c005 AS amount_currency,
+                       n001 || CASE WHEN c004 = 'Y' THEN ' ($' || TO_CHAR(n002, 'FM999G999G990D00') || ')' END AS staged_disp,
+                       n003 || CASE WHEN c004 = 'Y' THEN ' ($' || TO_CHAR(n004, 'FM999G999G990D00') || ')' END AS error_disp,
+                       n005 || CASE WHEN c004 = 'Y' THEN ' ($' || TO_CHAR(TO_NUMBER(c007), 'FM999G999G990D00') || ')' END AS loaded_disp,
+                       TO_NUMBER(c008) || CASE WHEN c004 = 'Y' THEN ' ($' || TO_CHAR(TO_NUMBER(c009), 'FM999G999G990D00') || ')' END AS variance_disp,
+                       APEX_PAGE.GET_URL(p_page => 52,
+                           p_items => 'P52_RUN_ID,P52_CEMLI_CODE',
+                           p_values => :P85_RUN_ID || ',' || c001) AS errors_link
+                  FROM APEX_COLLECTIONS
+                 WHERE COLLECTION_NAME = 'RUN_COMPARISON'
+                 ORDER BY c001
+                ```
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 1000000
+        }
+
+        column STATUS_LABEL (
+            type: plainText
+            heading {
+                heading: Status
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            columnFormatting {
+                htmlExpression: <span class="#IN_BALANCE_BADGE_CLASS#">#STATUS_LABEL#</span>
+            }
+        )
+
+        column OBJECT_TYPE (
+            type: plainText
+            heading {
+                heading: Object
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+            columnFormatting {
+                htmlExpression: <span style="font-weight:600">#OBJECT_TYPE#</span> <span title="#NOTE#" style="display:#NOTE_DISP#;cursor:help;background:#0072c6;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:10px;font-weight:700">i</span>
+            }
+        )
+
+        column STAGED_DISP (
+            type: plainText
+            heading {
+                heading: Staged
+                alignment: end
+            }
+            layout {
+                sequence: 30
+                columnAlignment: end
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column ERROR_DISP (
+            type: plainText
+            heading {
+                heading: Errors
+                alignment: end
+            }
+            layout {
+                sequence: 40
+                columnAlignment: end
+            }
+            source {
+                dataType: STRING
+            }
+            columnFormatting {
+                htmlExpression: <a href="#ERRORS_LINK#" style="color:#0072c6;text-decoration:none" title="View failed records">#ERROR_DISP#</a>
+            }
+        )
+
+        column LOADED_DISP (
+            type: plainText
+            heading {
+                heading: Loaded to Fusion
+                alignment: end
+            }
+            layout {
+                sequence: 50
+                columnAlignment: end
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column VARIANCE_DISP (
+            type: plainText
+            heading {
+                heading: Variance
+                alignment: end
+            }
+            layout {
+                sequence: 60
+                columnAlignment: end
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column IN_BALANCE (
+            type: hidden
+            heading {
+                heading: In Balance
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column IN_BALANCE_BADGE_CLASS (
+            type: hidden
+            heading {
+                heading: In Balance Badge Class
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column NOTE (
+            type: hidden
+            heading {
+                heading: Note
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column NOTE_DISP (
+            type: hidden
+            heading {
+                heading: Note Display
+            }
+            layout {
+                sequence: 100
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column ERRORS_LINK (
+            type: hidden
+            heading {
+                heading: Errors Link
+            }
+            layout {
+                sequence: 110
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column KEY_TYPE (
+            type: hidden
+            heading {
+                heading: Key Type
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column FUSION_MONEY_AVAILABLE (
+            type: hidden
+            heading {
+                heading: Fusion Money Available
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column AMOUNT_CURRENCY (
+            type: hidden
+            heading {
+                heading: Currency
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
     )
 
     pageItem P85_RUN_ID (

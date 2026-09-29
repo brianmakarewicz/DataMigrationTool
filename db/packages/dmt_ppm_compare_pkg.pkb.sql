@@ -158,7 +158,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
                 0, 0, NULL, l_money_ok,
                 l_stg_cnt - l_err_cnt, l_stg_amt - l_err_amt,
                 CASE WHEN l_stg_cnt = l_err_cnt AND l_stg_amt = l_err_amt THEN 'Y' ELSE 'N' END,
-                '0 LOADED this run (all rows FAILED with real Fusion errors) -- Fusion success side designed, not yet confirmed');
+                NULL);
         END IF;
         l_key_type := 'CAPTURED_ID';
 
@@ -310,11 +310,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
             l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
             l_fus_cnt, l_fus_amt, NVL(l_ccy,'USD'), l_money_ok,
             l_var_cnt, l_var_amt, l_bal,
-            CASE WHEN l_var_amt != 0 THEN
-                'Money variance is EXPECTED: Fusion recomputes cost (QUANTITY x rate) at import, '||
-                'so the loaded DENOM_RAW_COST honestly differs from the submitted amount. Count balances; '||
-                'this is not an accounting error.'
-            END);
+            NULL);
     END GET_EXPENDITURES_CMP;
 
     -- ------------------------------------------------------------------
@@ -501,10 +497,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
             l_stg_cnt, NULL, l_err_cnt, NULL,
             l_fus_cnt, NULL, NULL, l_money_ok,
             l_var_cnt, NULL, l_bal,
-            CASE WHEN l_fus_cnt = 0 AND l_err_cnt > 0 THEN
-                'Grants is env-blocked on this pod (demo-pod award-setup prerequisites not complete); '||
-                '0 LOADED this run, all rows FAILED with real Fusion errors.'
-            END);
+            NULL);
     END GET_GRANTS_CMP;
 
 END DMT_PPM_COMPARE_PKG;
