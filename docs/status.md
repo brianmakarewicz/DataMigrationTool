@@ -1,5 +1,35 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-30 -- Config objects: verified they are wired-but-never-loaded (NOT "DDL-only/blocked")
+
+**Bottom line.** Live checks this session corrected the status of the six configuration objects.
+They were being described as "DDL-only" or "blocked/deferred". That is wrong. Each one is wired
+and has a runner, but NONE of them has ever loaded a row into Fusion. Each has staged rows (STG)
+but zero transformed rows (TFM). "Has a runner" is not the same as "loads".
+
+**Verified status of the six config objects (per the owner's delivery rule -- file-loader first,
+then web service, then Functional Setup Manager):**
+- **ValueSets** -- must load via the FBDI / ADFdi file loader. Its REST endpoint `/valueSets`
+  does NOT exist.
+- **TaxConfig** -- must load via the Tax Configuration Workbook plus the "Import Tax Configuration
+  Content" scheduled process (ESS). Its REST endpoints `/taxRegimes` and `/taxRates` do NOT exist.
+- **PaymentTerms** -- must load via a Functional Setup Manager setup-data import. Its REST endpoint
+  `standardTerms` does NOT exist.
+- **GLCalendar** -- Functional Setup Manager or manual; there is no create service.
+- **Lookups, UnitsOfMeasure, CashBanks** -- their REST endpoints are real and can create records,
+  but loading through them is UNPROVEN. Each needs a live proving run (one GOOD row reaching the
+  base table, one BAD row failing with a real Fusion error).
+
+So: three objects are on delivery paths that are not REST at all (file loader / workbook+ESS / FSM),
+and three have real REST endpoints but have never been proven. Nothing here is "done".
+
+**Docs updated this session (docs-only PR):**
+- `docs/DMT_REBUILD_PLAN.html` section 0 object-status matrix (`#objstatus`) -- the CONFIGURATION
+  block now states the wired-but-never-loaded reality per object instead of "deferred".
+- `docs/backlog.html` -- the config-objects item (was #130) rewritten to the verified reality;
+  four new backlog items added: DFF-token-for-all rollout, carrier config table slim, finish
+  Customers on Contract v1, and MiscReceipts good test data.
+
 ## Session -- 2026-09-29 -- Reconcile-hardening goal COMPLETE; full regression (run 142) PASSES with zero new regressions
 
 **Bottom line.** The reconcile-hardening work is done and proven. A full regression run against the
