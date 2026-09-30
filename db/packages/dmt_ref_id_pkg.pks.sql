@@ -37,7 +37,6 @@
         slot_c_attribute VARCHAR2(60),
         slot_c_maxlen    NUMBER,
         ref_format       VARCHAR2(12),
-        confidence       VARCHAR2(12),
         active_flag      VARCHAR2(1)
     );
 

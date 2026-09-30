@@ -74,6 +74,25 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code Suppliers). The carrier map names ATTRIBUTE20 as this object's Slot C:
+        -- the DFF attribute that ALWAYS carries the full run-scoped reference
+        -- DMT:<run>:<wq>:<tfm>. If the flexfield segment is deployed in the instance the
+        -- token lands and gives per-record traceability; if not it simply does not land
+        -- (reconcile falls back to the business key -- no reconcile change needed). Written
+        -- BEFORE the CSV cursor so the value lands in the CSV's ATTRIBUTE20 column. NVL
+        -- guard: never clobber a client-populated ATTRIBUTE20. wq segment uses g_gen_queue_id
+        -- (set for every object). Same pattern as Expenditures/BillingEvents.
+        UPDATE DMT_POZ_SUPPLIERS_TFM_TBL
+        SET    ATTRIBUTE20 = NVL(ATTRIBUTE20,
+                                 DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                     p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_POZ_SUPPLIERS_TFM_TBL'))),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
         DBMS_LOB.CREATETEMPORARY(l_csv, TRUE);
         FOR r IN (
             SELECT

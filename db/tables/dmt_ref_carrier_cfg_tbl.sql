@@ -24,23 +24,16 @@
 -- run id and work-queue id are provenance. GLBudgets carries all slots NULL --
 -- it has no base-table surface, so it reconciles on its business key (owner
 -- decision 2026-09-19) and is present here only to record that fact.
--- CONFIDENCE records whether this row's carrier is PROVEN to work end to end:
---   CONFIRMED  -- ALL THREE of these are true, with evidence:
---                (1) SLOT_A_FIELD (or Slot C) is a loadable column in this object's
---                    FBDI/HDL template; (2) it round-trips to a real, queryable
---                    SLOT_A_BASE_COLUMN in Fusion; (3) the object's per-record
---                    reconciler actually MATCHES on that carrier (its RECON_KEY is
---                    stamped equal to the Slot A/C value, not to a business key).
---                A CONFIRMED row names the run that proved it in PROVEN_ON_RUN.
---   UNVERIFIED -- any of the three is not established. This includes rows whose
---                reconciler in fact matches on the business key (INVOICE_NUM,
---                DOCUMENT_NUM, PROJECT_NUMBER, ...) rather than the carrier; the
---                Slot A/C values here are provenance/audit only, not the match key.
---   NONE       -- the object has no such column at all.
--- PROVEN_ON_RUN is the run id that demonstrated the CONFIRMED round-trip live
--- (falsifiable: a CONFIRMED claim must cite a run; NULL where unproven). ACTIVE_FLAG
--- lets a row be disabled without deletion. The carrier is config, not code:
--- changing an object's slot is a seed edit + redeploy, no PL/SQL change.
+--
+-- ACTIVE_FLAG lets a row be disabled without deletion. The carrier is config, not
+-- code: changing an object's slot is a seed edit + redeploy, no PL/SQL change.
+--
+-- The former CONFIDENCE and PROVEN_ON_RUN columns were DROPPED (backlog #131/#132,
+-- 2026-09-30, owner sign-off): they were pure audit/status annotation and were read
+-- by no package, generator, or reconciler. The end-to-end round-trip status they
+-- recorded now lives only in the per-row NOTES prose (CARRIER_KIND=... + run
+-- citations). The guarded DROP migration below removes them from any instance that
+-- was created before this change; NOTES is the single place that status is kept.
 
 begin
   execute immediate 'CREATE TABLE "DMT_REF_CARRIER_CFG_TBL"
@@ -54,8 +47,6 @@ begin
 	"SLOT_C_ATTRIBUTE" VARCHAR2(60),
 	"SLOT_C_MAXLEN" NUMBER,
 	"REF_FORMAT" VARCHAR2(12) DEFAULT ''FULL'' NOT NULL ENABLE,
-	"CONFIDENCE" VARCHAR2(12),
-	"PROVEN_ON_RUN" NUMBER,
 	"ACTIVE_FLAG" VARCHAR2(1) DEFAULT ''Y'' NOT NULL ENABLE,
 	"NOTES" VARCHAR2(1000),
 	"CREATED_DATE" DATE DEFAULT SYSDATE,
@@ -80,11 +71,34 @@ exception when others then
 end;
 /
 
--- Idempotent add of PROVEN_ON_RUN for a table created before this column existed.
--- ORA-01430 = column already exists (fresh CREATE above already has it) -- ignore.
+-- Idempotent DROP of CONFIDENCE and PROVEN_ON_RUN (backlog #131/#132, 2026-09-30).
+-- These were audit/status columns read by no package, generator, or reconciler;
+-- the status they carried now lives only in NOTES. A fresh CREATE above no longer
+-- defines them, so drop them only from an instance created before this change.
+-- Guarded on USER_TAB_COLUMNS so the drop runs at most once and re-running the whole
+-- install script is clean (the column is simply absent on the second pass).
+declare
+  l_cnt number;
 begin
-  execute immediate 'ALTER TABLE "DMT_REF_CARRIER_CFG_TBL" ADD ("PROVEN_ON_RUN" NUMBER)';
-exception when others then
-  if sqlcode not in (-1430) then raise; end if;
+  select count(*) into l_cnt
+    from user_tab_columns
+   where table_name = 'DMT_REF_CARRIER_CFG_TBL'
+     and column_name = 'CONFIDENCE';
+  if l_cnt > 0 then
+    execute immediate 'ALTER TABLE "DMT_REF_CARRIER_CFG_TBL" DROP COLUMN "CONFIDENCE"';
+  end if;
+end;
+/
+
+declare
+  l_cnt number;
+begin
+  select count(*) into l_cnt
+    from user_tab_columns
+   where table_name = 'DMT_REF_CARRIER_CFG_TBL'
+     and column_name = 'PROVEN_ON_RUN';
+  if l_cnt > 0 then
+    execute immediate 'ALTER TABLE "DMT_REF_CARRIER_CFG_TBL" DROP COLUMN "PROVEN_ON_RUN"';
+  end if;
 end;
 /

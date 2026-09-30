@@ -68,6 +68,22 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code SupplierAddresses -> ATTRIBUTE30). Writes the full run-scoped
+        -- reference DMT:<run>:<wq>:<tfm> into the configured Slot C DFF attribute so it
+        -- lands in the CSV; if the segment is not deployed it simply does not persist
+        -- (reconcile still keys on the business key). NVL guard preserves any client value.
+        -- Same pattern as Expenditures/BillingEvents.
+        UPDATE DMT_POZ_SUP_ADDR_TFM_TBL
+        SET    ATTRIBUTE30 = NVL(ATTRIBUTE30,
+                                 DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                     p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_POZ_SUP_ADDR_TFM_TBL'))),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
         DBMS_LOB.CREATETEMPORARY(l_csv, TRUE);
         FOR r IN (
             SELECT *

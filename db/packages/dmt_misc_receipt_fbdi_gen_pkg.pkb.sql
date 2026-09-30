@@ -399,6 +399,22 @@ AS
             RETURN;
         END IF;
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code MiscReceipts -> ATTRIBUTE20 on the inventory-transaction tier). Writes
+        -- the full run-scoped reference DMT:<run>:<wq>:<tfm> into the configured Slot C DFF
+        -- attribute so it lands in the transactions CSV; if the segment is not deployed it
+        -- simply does not persist (reconcile still keys on SOURCE_LINE_ID). NVL guard
+        -- preserves any client value. Same pattern as Expenditures/BillingEvents.
+        UPDATE DMT_INV_TRX_TFM_TBL
+        SET    ATTRIBUTE20 = NVL(ATTRIBUTE20,
+                                 DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                     p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_INV_TRX_TFM_TBL'))),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
         -- Generate transactions CSV
         l_trx_csv  := gen_transactions_csv(p_run_id);
         l_trx_blob := clob_to_blob(l_trx_csv);

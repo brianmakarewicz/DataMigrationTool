@@ -463,6 +463,24 @@ AS
         END IF;
         x_filename := 'AP' || NVL(l_ou_suffix, '_All') || '_' || TO_CHAR(p_run_id) || '.zip';
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code APInvoices -> ATTRIBUTE15 on the header tier). Writes the full
+        -- run-scoped reference DMT:<run>:<wq>:<tfm> into the configured Slot C DFF attribute
+        -- so it lands in the header CSV; if the segment is not deployed it simply does not
+        -- persist (reconcile still keys on the run-prefixed INVOICE_NUM). NVL guard
+        -- preserves any client value; scoped to the same OU partition the CSV is built from.
+        -- Same pattern as Expenditures/BillingEvents.
+        UPDATE DMT_AP_INVOICES_INT_TFM_TBL
+        SET    ATTRIBUTE15 = NVL(ATTRIBUTE15,
+                                 DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                     p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_AP_INVOICES_INT_TFM_TBL'))),
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_operating_unit IS NULL OR OPERATING_UNIT = p_operating_unit);
+
         -- Generate both CSVs (filtered by OU when provided)
         l_hdr_csv   := gen_headers_csv(p_run_id, p_operating_unit);
         l_lines_csv := gen_lines_csv(p_run_id, p_operating_unit);

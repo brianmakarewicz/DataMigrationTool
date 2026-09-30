@@ -489,6 +489,24 @@ AS
                       || CASE WHEN p_batch_id IS NULL THEN '' ELSE '_' || p_batch_id END
                       || '.zip';
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code Requisitions -> ATTRIBUTE20 on the header tier). Writes the full
+        -- run-scoped reference DMT:<run>:<wq>:<tfm> into the configured Slot C DFF attribute
+        -- so it lands in the header CSV; if the segment is not deployed it simply does not
+        -- persist (reconcile still keys on the run-prefixed REQUISITION_NUMBER). NVL guard
+        -- preserves any client value; scoped to the same batch partition the CSV is built
+        -- from. Same pattern as Expenditures/BillingEvents.
+        UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
+        SET    ATTRIBUTE20 = NVL(ATTRIBUTE20,
+                                 DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                     p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_POR_REQ_HEADERS_TFM_TBL'))),
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
+
         -- Generate all 3 CSVs (filtered to one batch when p_batch_id is passed)
         l_hdr_csv   := gen_headers_csv(p_run_id, p_batch_id);
         l_lines_csv := gen_lines_csv(p_run_id, p_batch_id);
