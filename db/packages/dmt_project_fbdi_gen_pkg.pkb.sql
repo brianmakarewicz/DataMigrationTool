@@ -503,6 +503,23 @@ AS
 
         x_filename := 'Projects_' || TO_CHAR(p_run_id) || '.zip';
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code Projects -> ATTRIBUTE50 on the project header tier). Writes the full
+        -- run-scoped reference DMT:<run>:<wq>:<tfm> into the configured Slot C DFF attribute
+        -- so it lands in the projects CSV; if the segment is not deployed it simply does not
+        -- persist (reconcile still keys on PJF_PROJECTS_ALL_B.SEGMENT1, the run-prefixed
+        -- project number). NVL guard preserves any client value. Same pattern as
+        -- Expenditures/BillingEvents.
+        UPDATE DMT_PJF_PROJECTS_TFM_TBL
+        SET    ATTRIBUTE50 = NVL(ATTRIBUTE50,
+                                 DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                     p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_PJF_PROJECTS_TFM_TBL'))),
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
         -- Generate all 4 CSVs
         l_projects_csv := gen_projects_csv(p_run_id);
         l_tasks_csv    := gen_tasks_csv(p_run_id);

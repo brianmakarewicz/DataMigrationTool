@@ -42,11 +42,11 @@
         SELECT cemli_code, sub_object, tfm_table,
                slot_a_field, slot_a_base_column, slot_b_field,
                slot_c_attribute, slot_c_maxlen,
-               ref_format, confidence, active_flag
+               ref_format, active_flag
           INTO l_rec.cemli_code, l_rec.sub_object, l_rec.tfm_table,
                l_rec.slot_a_field, l_rec.slot_a_base_col, l_rec.slot_b_field,
                l_rec.slot_c_attribute, l_rec.slot_c_maxlen,
-               l_rec.ref_format, l_rec.confidence, l_rec.active_flag
+               l_rec.ref_format, l_rec.active_flag
           FROM dmt_ref_carrier_cfg_tbl
          WHERE UPPER(tfm_table) = UPPER(p_tfm_table)
            AND active_flag = 'Y';

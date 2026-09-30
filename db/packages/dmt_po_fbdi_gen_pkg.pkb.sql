@@ -656,6 +656,25 @@ AS
         END IF;
         x_filename := 'PO' || l_bu_suffix || '_' || TO_CHAR(p_run_id) || '.zip';
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code PurchaseOrders -> ATTRIBUTE20 on the header tier; the one carrier row
+        -- covers the PO/BlanketPO/Contract family, which share this header table). Writes
+        -- the full run-scoped reference DMT:<run>:<wq>:<tfm> into the configured Slot C DFF
+        -- attribute so it lands in the header CSV; if the segment is not deployed it simply
+        -- does not persist (reconcile still keys on the run-prefixed DOCUMENT_NUM/SEGMENT1).
+        -- NVL guard preserves any client value; scoped to the same BU partition the CSV is
+        -- built from. Same pattern as Expenditures/BillingEvents.
+        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
+        SET    ATTRIBUTE20 = NVL(ATTRIBUTE20,
+                                 DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                     p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_PO_HEADERS_INT_TFM_TBL'))),
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
+
         -- Generate all 4 CSVs (filtered by BU when provided)
         l_hdr_csv   := gen_headers_csv(p_run_id, p_prc_bu_name);
         l_lines_csv := gen_lines_csv(p_run_id, p_prc_bu_name);

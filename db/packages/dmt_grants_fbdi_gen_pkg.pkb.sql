@@ -677,6 +677,22 @@ AS
 
         x_filename := 'Grants_' || TO_CHAR(p_run_id) || '.zip';
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code Grants -> ATTRIBUTE20 on the award header tier). Writes the full
+        -- run-scoped reference DMT:<run>:<wq>:<tfm> into the configured Slot C DFF attribute
+        -- so it lands in the header CSV; if the segment is not deployed it simply does not
+        -- persist (reconcile still keys on SPONSOR_AWARD_NUMBER). NVL guard preserves any
+        -- client value. Same pattern as Expenditures/BillingEvents.
+        UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL
+        SET    ATTRIBUTE20 = NVL(ATTRIBUTE20,
+                                 DMT_REF_ID_PKG.BUILD_REF(
+                                     p_run_id        => p_run_id,
+                                     p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                     p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                     p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_GMS_AWD_HEADERS_TFM_TBL'))),
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
         -- Generate all 15 CSVs
         l_hdr_csv   := gen_headers_csv(p_run_id);
         l_fund_csv  := gen_funding_csv(p_run_id);
