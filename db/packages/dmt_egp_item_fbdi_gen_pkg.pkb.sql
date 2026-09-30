@@ -937,6 +937,29 @@
             RETURN;
         END IF;
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code Items -> ATTRIBUTE1 on the item header tier, owner decision 2026-09-30:
+        -- the previously-configured ATTRIBUTE50 does not exist on this TFM table -- it maxes
+        -- at ATTRIBUTE15 -- so the object defaults to ATTRIBUTE1). Writes the full run-scoped
+        -- reference DMT:<run>:<wq>:<tfm> into ATTRIBUTE1 so it lands in the items CSV; if the
+        -- segment is not deployed it simply does not persist (reconcile still keys on the
+        -- run-prefixed ITEM_NUMBER~ORGANIZATION_CODE business key). NVL guard preserves any
+        -- client value (ATTRIBUTE1 is a source pass-through, same as Expenditures/BillingEvents
+        -- ATTRIBUTE10); scoped to the same run/batch partition the CSV is built from. Same
+        -- pattern as Expenditures/BillingEvents/PurchaseOrders.
+        IF l_item_count > 0 THEN
+            UPDATE DMT_EGP_ITEM_TFM_TBL
+            SET    ATTRIBUTE1 = NVL(ATTRIBUTE1,
+                                    DMT_REF_ID_PKG.BUILD_REF(
+                                        p_run_id        => p_run_id,
+                                        p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                        p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                        p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_EGP_ITEM_TFM_TBL'))),
+                   LAST_UPDATED_DATE = l_now
+            WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+            AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));
+        END IF;
+
         -- Generate items CSV
         IF l_item_count > 0 THEN
             l_item_csv := gen_item_csv(p_run_id, p_batch_id);

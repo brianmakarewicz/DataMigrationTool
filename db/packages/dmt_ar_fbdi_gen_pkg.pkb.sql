@@ -681,6 +681,30 @@ AS
         END IF;
         x_filename := 'ARInvoices' || NVL(l_group_suffix, '_ALL') || '_' || TO_CHAR(p_run_id) || '.zip';
 
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code ARInvoices -> ATTRIBUTE1 on the AR lines tier, owner decision 2026-09-30:
+        -- the previously-configured ATTRIBUTE30 does not exist on this TFM table -- it maxes
+        -- at ATTRIBUTE15 -- so the object defaults to ATTRIBUTE1). Writes the full run-scoped
+        -- reference DMT:<run>:<wq>:<tfm> into the line-level ATTRIBUTE1 (the plain DFF segment
+        -- emitted in RaInterfaceLinesAll.csv, NOT the INTERFACE_LINE_ATTRIBUTE* linking
+        -- columns) so it lands in the CSV; if the segment is not deployed it simply does not
+        -- persist (reconcile still keys on the run-prefixed INVOICE_NUM/line business key).
+        -- NVL guard preserves any client value (ATTRIBUTE1 is a source pass-through, same as
+        -- Expenditures/BillingEvents ATTRIBUTE10); scoped to the SAME run/BU/batch-source
+        -- partition the CSV is built from. Same pattern as Expenditures/BillingEvents/
+        -- PurchaseOrders. wq segment uses g_gen_queue_id (set for every object).
+        UPDATE DMT_RA_LINES_TFM_TBL
+        SET    ATTRIBUTE1 = NVL(ATTRIBUTE1,
+                                DMT_REF_ID_PKG.BUILD_REF(
+                                    p_run_id        => p_run_id,
+                                    p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                    p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                    p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_RA_LINES_TFM_TBL'))),
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_bu_name IS NULL OR BU_NAME = p_bu_name)
+        AND    (p_batch_source_name IS NULL OR BATCH_SOURCE_NAME = p_batch_source_name);
+
         -- Generate both CSVs (filtered by BU + Transaction Source when provided)
         l_lines_csv := gen_lines_csv(p_run_id, p_bu_name, p_batch_source_name);
         l_dists_csv := gen_dists_csv(p_run_id, p_bu_name, p_batch_source_name);

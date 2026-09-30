@@ -629,6 +629,31 @@
                       || CASE WHEN p_book IS NOT NULL
                               THEN '_' || REGEXP_REPLACE(p_book, '[^A-Za-z0-9]', '_') END
                       || '.zip';
+        -- Backlog #131 -- Slot C DFF-token stamp (config-driven, DMT_REF_CARRIER_CFG_TBL,
+        -- cemli_code Assets -> ATTRIBUTE1 on the asset header tier, owner decision 2026-09-30:
+        -- the previously-configured ATTRIBUTE30 does not exist on this TFM table -- it maxes
+        -- at ATTRIBUTE15 -- so the object defaults to ATTRIBUTE1). Writes the full run-scoped
+        -- reference DMT:<run>:<wq>:<tfm> into the header ATTRIBUTE1 so it lands in the
+        -- FaMassAdditions.csv; if the segment is not deployed it simply does not persist
+        -- (reconcile still keys on the run-prefixed ASSET_NUMBER business key). NVL guard
+        -- preserves any client value (ATTRIBUTE1 is a source pass-through, same as
+        -- Expenditures/BillingEvents ATTRIBUTE10); scoped to the SAME run/book partition the
+        -- CSV is built from (book scope via the book TFM, exactly like the GENERATED update
+        -- below). Same pattern as Expenditures/BillingEvents/PurchaseOrders. wq segment uses
+        -- g_gen_queue_id (set for every object), never g_work_queue_id.
+        UPDATE DMT_FA_ASSET_HDR_TFM_TBL
+        SET    ATTRIBUTE1 = NVL(ATTRIBUTE1,
+                                DMT_REF_ID_PKG.BUILD_REF(
+                                    p_run_id        => p_run_id,
+                                    p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
+                                    p_tfm_seq_id    => TFM_SEQUENCE_ID,
+                                    p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_FA_ASSET_HDR_TFM_TBL'))),
+               LAST_UPDATED_DATE = l_now
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    (p_book IS NULL OR ASSET_NUMBER IN (
+                  SELECT ASSET_NUMBER FROM DMT_FA_ASSET_BOOK_TFM_TBL
+                  WHERE RUN_ID = p_run_id AND BOOK_TYPE_CODE = p_book));
+
         l_ma_csv   := gen_mass_additions_csv(p_run_id, p_book);
         l_dist_csv := gen_distributions_csv(p_run_id, p_book);
 
