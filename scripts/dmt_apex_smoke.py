@@ -121,6 +121,11 @@ def connect(schema):
 
 
 def ords_base_url():
+    # Override for a non-ATP target (e.g. local Docker console): set
+    # DMT2_ORDS_BASE=http://localhost:8182/ords . Default is the ATP GOLD ORDS.
+    base = os.environ.get('DMT2_ORDS_BASE')
+    if base:
+        return base.rstrip('/')
     with open(CONNECTIONS, encoding='utf-8') as fh:
         atp = json.load(fh)['atp_queryapp']
     return atp['apex_url'].rsplit('/apex', 1)[0]               # .../ords
