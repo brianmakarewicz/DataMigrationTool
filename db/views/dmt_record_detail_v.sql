@@ -362,7 +362,7 @@ SELECT 'GLBalances', 'GL Journals',
        TO_CHAR(FUSION_JE_HEADER_ID)
 FROM DMT_GL_INTERFACE_TFM_TBL
 UNION ALL
-SELECT 'GLBudgets', 'GL Budget Lines',
+SELECT 'GLBudgets', 'GL Budget Balances',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        BUDGET_NAME || ' - ' || SEGMENT1 || '.' || SEGMENT2 || '.' || SEGMENT3,
        BUDGET_NAME,

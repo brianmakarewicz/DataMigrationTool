@@ -8,17 +8,25 @@ it relies on, for a given RUN_ID. Fast, repeatable gate — no browser.
 LIVE wiring (verified against app 155 export + deployed DB, 2026-07-01):
   * Page 82 tiles  -> DMT_APEX_PAGE_PKG.RENDER_RUN_TILES reads DMT_WORK_QUEUE_TBL.CEMLI_CODE and
                       drills Page 52 (f?p=:52:) passing P52_INTEGRATION_ID,P52_CEMLI_CODE.
-  * Page 52 break  -> inline region cursors DMT_V_CEMLI_TFM_TABLES WHERE CEMLI_CODE=code,
-                      builds a per-TFM-table dynamic COUNT (WHEN OTHERS => 0), and drills
-                      Page 57 passing the branch DISPLAY_NAME as P57_SUB_OBJECT + status.
-                      Emits "No TFM table configuration found for CEMLI: X" when the cursor
+  * Page 52 break  -> inline region cursors DMT_OBJECT_FUNNEL_V WHERE CEMLI_CODE=code,
+                      which layers the pre-validation / transform-stage skips (rows that
+                      never reached a TFM table, from DMT_STG_TFM_ERROR_TBL) on top of the
+                      per-TFM-table counts, and drills Page 57 passing the DISPLAY_NAME as
+                      P57_SUB_OBJECT + status. The tile therefore counts a pre-validation
+                      failure as FAILED, exactly as the record list surfaces it. This model
+                      mirrors that: per-TFM-table dynamic COUNT (from DMT_V_CEMLI_TFM_TABLES,
+                      the same catalog the funnel builds on) PLUS the anti-joined skip rows.
+                      Emits "No TFM table configuration found for CEMLI: X" when the catalog
                       returns 0 rows (f155:60679).
   * Page 57 list   -> DMT_RECORD_DETAIL_V filtered INTEGRATION_ID(=run_id)+SUB_OBJECT[+status].
 
-  IMPORTANT: the PAGE-52 breakdown is driven by DMT_V_CEMLI_TFM_TABLES — NOT
-  DMT_OBJECT_DETAIL_V. (DMT_OBJECT_DETAIL_V drives the separate Page 55 and the Page-52
-  ESS-job header lookup; it is off the tile path.) APEX inline-region SQL does not appear
-  in ALL_DEPENDENCIES, so DMT_V_CEMLI_TFM_TABLES looks unreferenced but is very much live.
+  IMPORTANT: the PAGE-52 record breakdown is driven by DMT_OBJECT_FUNNEL_V, which is
+  DMT_OBJECT_DETAIL_V (the ~97-table TFM-status union, over DMT_V_CEMLI_TFM_TABLES's
+  catalog) FULL-OUTER-JOINed to the pre-TFM skip lanes in DMT_STG_TFM_ERROR_TBL. So the
+  tile counts BOTH the TFM-table rows AND the pre-validation/transform-stage skips. This
+  model reproduces that sum. (DMT_OBJECT_DETAIL_V by itself — TFM tables only — also drives
+  the separate Page 55 and the Page-52 ESS-job header lookup.) APEX inline-region SQL does
+  not appear in ALL_DEPENDENCIES, so these views look unreferenced but are very much live.
 
 Assertions (per RUN_ID):
   A. code-resolves : every DMT_WORK_QUEUE_TBL.CEMLI_CODE returns >=1 DMT_V_CEMLI_TFM_TABLES
@@ -113,10 +121,35 @@ for c in unresolved:
 if not unresolved:
     print("    OK    every tile code resolves to a page-52 config")
 
+# ---- pre-validation / transform-stage failures (rows that never reached a TFM
+#      table) that the LIVE page-52 tile counts too. The live tile sources from
+#      DMT_OBJECT_FUNNEL_V, which FULL-OUTER-JOINs these DMT_STG_TFM_ERROR_TBL
+#      rows on top of the TFM lanes (anti-joined against the rows that DID reach
+#      TFM, so an ALL-mode row that both errored early and later transformed is
+#      counted once — reaching TFM wins). They surface in the record list
+#      (DMT_RECORD_DETAIL_V) as FAILED, so the tile must include them or it would
+#      read short of the record list for any object that had pre-validation skips.
+#      Keyed by (CEMLI_CODE, SUB_OBJECT) exactly as the funnel view keys them.
+cur.execute("""
+    SELECT e.CEMLI_CODE, e.SUB_OBJECT, COUNT(*)
+    FROM   DMT_STG_TFM_ERROR_TBL e
+    WHERE  e.RUN_ID = :1
+      AND  NOT EXISTS (
+             SELECT 1 FROM DMT_RECORD_DETAIL_V r
+             WHERE  r.RUN_ID = e.RUN_ID
+               AND  r.CEMLI_CODE = e.CEMLI_CODE
+               AND  NVL(r.SUB_OBJECT,'~') = NVL(e.SUB_OBJECT,'~')
+               AND  r.STG_SEQUENCE_ID = e.STG_SEQUENCE_ID
+               AND  r.TFM_SEQUENCE_ID IS NOT NULL)
+    GROUP BY e.CEMLI_CODE, e.SUB_OBJECT""", [RUN_ID])
+prevalidation_failed = {(c, s): int(n) for c, s, n in cur.fetchall()}
+
 # ---- helpers replicating the live regions ----
 def page52(code):
-    """Page-52 region: per-TFM-table dynamic count with WHEN OTHERS => 0.
-       Returns {display_name: {LOADED:n, FAILED:n, TOTAL:n}}."""
+    """Page-52 tile as the LIVE UI renders it (DMT_OBJECT_FUNNEL_V): per-TFM-table
+       dynamic count PLUS the anti-joined pre-validation/transform-stage failures
+       that never reached a TFM table (counted as FAILED, exactly as the record
+       list surfaces them). Returns {display_name: {LOADED:n, FAILED:n, TOTAL:n}}."""
     out = {}
     for tbl, disp, col, filt in catalog.get(code, []):
         sql = (f"SELECT NVL(SUM(CASE WHEN {col}='LOADED' THEN 1 ELSE 0 END),0), "
@@ -126,7 +159,10 @@ def page52(code):
             sql += " AND " + filt
         try:
             cur.execute(sql, [RUN_ID]); l, f, t = cur.fetchone()
-            out[disp] = {'LOADED': int(l), 'FAILED': int(f), 'TOTAL': int(t)}
+            # fold in the pre-validation skips for this record type (keyed on the
+            # SUB_OBJECT / display_name), which the live funnel tile also counts.
+            pv = prevalidation_failed.get((code, disp), 0)
+            out[disp] = {'LOADED': int(l), 'FAILED': int(f) + pv, 'TOTAL': int(t) + pv}
         except Exception as e:
             fails.append(f"C4: page-52 count errored (silently zeroed in UI) for {code}/{disp}: {str(e)[:70]}")
             out[disp] = {'__ERR__': 1}
