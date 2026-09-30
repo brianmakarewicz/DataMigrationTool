@@ -51,8 +51,14 @@
 -- reconcile falls back to the business key (no reconcile change). Objects LEFT OUT of
 -- that rollout (no free/verified Slot C DFF attribute in their template -- not guessed):
 -- Customers, SupplierSiteAssignments, ProjectBudgets, GLBudgets (Slot C is NULL by
--- design); ARInvoices, Items, Assets (the configured Slot C names an attribute the
--- header TFM table does not have -- needs a DFF attribute identified before wiring).
+-- design).
+-- COMPLETED 2026-09-30 (backlog #131 tail, owner decision): ARInvoices, Items, Assets --
+-- their configured Slot C (ATTRIBUTE30 / ATTRIBUTE50 / ATTRIBUTE30) named an attribute the
+-- header TFM table does not have (every one maxes at ATTRIBUTE15), so the owner defaulted
+-- all three to ATTRIBUTE1 (VARCHAR2(150), MAXLEN 150). Each object's generator now stamps
+-- BUILD_REF into ATTRIBUTE1 with the same NVL guard as the other 13; ATTRIBUTE1 is a source
+-- pass-through on all three (like Expenditures/BillingEvents ATTRIBUTE10) so the guard never
+-- clobbers a client value, and each emits ATTRIBUTE1 in its CSV.
 --
 -- CARRIER KIND (token vs business key) -- recorded inline per row in NOTES/comments
 -- (no dedicated column yet; a CARRIER_KIND column would make this cleaner -- flagged
@@ -242,16 +248,38 @@ using (
            'on the base table). Slot C ATTRIBUTE15 not relied on (DFF segment not deployed).' from dual
     union all select 'ARInvoices', 'AR Lines', 'DMT_RA_LINES_TFM_TBL',
            'INTERFACE_HEADER_ATTRIBUTE1/INTERFACE_LINE_ATTRIBUTE1', null,
-           'BATCH_ID', 'ATTRIBUTE30', 255, 'FULL', 'Y',
+           'BATCH_ID', 'ATTRIBUTE1', 150, 'FULL', 'Y',
+           -- Slot C moved to ATTRIBUTE1 (owner decision 2026-09-30, backlog #131 tail).
+           -- The previously-configured ATTRIBUTE30 does not exist on DMT_RA_LINES_TFM_TBL
+           -- (it maxes at ATTRIBUTE15), which is why ARInvoices was left out of the first
+           -- DFF-token-for-all pass. Defaulted to ATTRIBUTE1 (VARCHAR2(150), so MAXLEN 150).
+           -- DMT_AR_FBDI_GEN_PKG.GENERATE_FBDI now stamps BUILD_REF into ATTRIBUTE1 under an
+           -- NVL guard before building RaInterfaceLinesAll.csv -- ATTRIBUTE1 is a source
+           -- pass-through (same as Expenditures/BillingEvents ATTRIBUTE10), so the NVL guard
+           -- never clobbers a client value. ATTRIBUTE1 is emitted in the lines CSV.
            'UNVERIFIED: DMT_AR_RESULTS_PKG does stamp RECON_KEY = INTERFACE_LINE_ATTRIBUTE1 ' ||
            '(the Slot A field), but AutoInvoice has 0 LOADED on the demo (blocked on the ' ||
            'functional owner), so the interface->base round-trip is unproven and no base ' ||
-           'column is verified. Promote to CONFIRMED once a run loads AR lines.' from dual
+           'column is verified. Slot C moved to ATTRIBUTE1 (owner default 2026-09-30; ' ||
+           'configured ATTRIBUTE30 absent -- table maxes at ATTRIBUTE15) and the generator ' ||
+           'now NVL-stamps BUILD_REF into it (DFF segment not deployed, not relied on for ' ||
+           'reconcile). Promote to CONFIRMED once a run loads AR lines.' from dual
     union all select 'Items', 'Item Master', 'DMT_EGP_ITEM_TFM_TBL',
            null, null,
-           'REQUEST_ID', 'ATTRIBUTE50', 240, 'FULL', 'Y',
+           'REQUEST_ID', 'ATTRIBUTE1', 150, 'FULL', 'Y',
+           -- Slot C moved to ATTRIBUTE1 (owner decision 2026-09-30, backlog #131 tail).
+           -- The previously-configured ATTRIBUTE50 does not exist on DMT_EGP_ITEM_TFM_TBL
+           -- (it maxes at ATTRIBUTE15), which is why Items was left out of the first
+           -- DFF-token-for-all pass. Defaulted to ATTRIBUTE1 (VARCHAR2(150), so MAXLEN 150).
+           -- DMT_EGP_ITEM_FBDI_GEN_PKG.GENERATE_FBDI now stamps BUILD_REF into ATTRIBUTE1
+           -- under an NVL guard before building EgpSystemItemsInterface.csv -- ATTRIBUTE1 is
+           -- a source pass-through (same as Expenditures/BillingEvents ATTRIBUTE10), so the
+           -- NVL guard never clobbers a client value. ATTRIBUTE1 is emitted in the items CSV.
            'UNVERIFIED: DMT_EGP_ITEM_RESULTS_PKG matches RECON_KEY = ITEM_NUMBER~ORGANIZATION_CODE ' ||
-           '(business key), not ATTRIBUTE50; the Slot C value is audit-only.' from dual
+           '(business key), not the Slot C attribute; the Slot C value is audit-only. Slot C ' ||
+           'moved to ATTRIBUTE1 (owner default 2026-09-30; configured ATTRIBUTE50 absent -- ' ||
+           'table maxes at ATTRIBUTE15) and the generator now NVL-stamps BUILD_REF into it ' ||
+           '(DFF segment not deployed, not relied on for reconcile).' from dual
     union all select 'Projects', 'Projects', 'DMT_PJF_PROJECTS_TFM_TBL',
            'PM_PROJECT_REFERENCE', 'PJF_PROJECTS_ALL_B.SEGMENT1',
            'REQUEST_ID', 'ATTRIBUTE50', 150, 'FULL', 'Y',
@@ -294,7 +322,15 @@ using (
            'key), not AWARD_SOURCE; Grants also had 0 loaded on the demo. Slot B/C audit-only.' from dual
     union all select 'Assets', 'Asset Headers', 'DMT_FA_ASSET_HDR_TFM_TBL',
            'ASSET_NUMBER', 'FA_ADDITIONS_B.ASSET_NUMBER',
-           null, 'ATTRIBUTE30', 150, 'FULL', 'Y',
+           null, 'ATTRIBUTE1', 150, 'FULL', 'Y',
+           -- Slot C moved from ATTRIBUTE30 to ATTRIBUTE1 (owner decision 2026-09-30, backlog
+           -- #131 tail). The previously-configured ATTRIBUTE30 does not exist on
+           -- DMT_FA_ASSET_HDR_TFM_TBL (it maxes at ATTRIBUTE15), which is why Assets was left
+           -- out of the first DFF-token-for-all pass. Defaulted to ATTRIBUTE1 (VARCHAR2(150),
+           -- MAXLEN 150). DMT_FA_ASSET_FBDI_GEN_PKG.GENERATE_FBDI now stamps BUILD_REF into
+           -- the header ATTRIBUTE1 under an NVL guard before building FaMassAdditions.csv --
+           -- ATTRIBUTE1 is a source pass-through (same as Expenditures/BillingEvents
+           -- ATTRIBUTE10), so the NVL guard never clobbers a client value. Emitted in the CSV.
            -- CARRIER_KIND = BUSINESS-KEY. Promoted to CONFIRMED 2026-09-30 (run-142
            -- round-trip test: 2/2 round-trip). The carrier is the BUSINESS KEY -- the
            -- run-prefixed ASSET_NUMBER in FA_ADDITIONS_B.ASSET_NUMBER, which the recon
@@ -306,7 +342,9 @@ using (
            'FA_ADDITIONS_B.ASSET_NUMBER (= the run-prefixed asset number). ' ||
            'DMT_FA_ASSET_RESULTS_PKG / recon DM key on ASSET_NUMBER. Base column filled ' ||
            'in this audit. Not a distinct DMT token -- the run-prefixed business key. ' ||
-           'Slot C ATTRIBUTE30 not relied on (DFF segment not deployed).' from dual
+           'Slot C moved to ATTRIBUTE1 (owner default 2026-09-30; configured ATTRIBUTE30 ' ||
+           'absent -- table maxes at ATTRIBUTE15) and the generator now NVL-stamps BUILD_REF ' ||
+           'into it; not relied on for reconcile (DFF segment not deployed).' from dual
     union all select 'MiscReceipts', 'Inventory Transactions', 'DMT_INV_TRX_TFM_TBL',
            'INTERFACE_SOURCE_CODE', null,
            'GROUP_ID', 'ATTRIBUTE20', 150, 'FULL', 'Y',
