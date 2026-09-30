@@ -1,5 +1,69 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-29 -- Reconcile-hardening goal COMPLETE; full regression (run 142) PASSES with zero new regressions
+
+**Bottom line.** The reconcile-hardening work is done and proven. A full regression run against the
+live Fusion demo (run 142, prefix 93222, on local Docker, main at 977ce90) PASSED with **zero new
+regressions** versus the run-351 baseline. All 34 objects / 41 work items reached a terminal state.
+Totals: **74 LOADED, 79 FAILED, 0 UNACCOUNTED, 0 stuck.** Every FAILED row carries a real
+Fusion/import error (Rule #1 holds). No object lost LOADED coverage; no new UNACCOUNTED or
+null-error rows appeared.
+
+**What was done (all landed on main via squash-merged PRs):**
+- **Uniform LOADED promotion (#493).** Every results package now uses the same shape to promote a
+  record to LOADED, gated on a real Fusion id.
+- **Config-driven carrier stamp (#492).** Expenditures and BillingEvents now stamp their traceability
+  carrier (Slot C) from config rather than in code. Deferred objects were added to the backlog.
+- **Re-run reconcile for a run (#489).** New capability to re-reconcile a whole run
+  (`DMT_QUEUE_PKG.RERUN_RUN` + a "Re-run reconcile" button on the Run Detail page, page 82). The
+  automated reviewer flagged the first attempt for adding a fifth dynamic-SQL site; it was fixed the
+  right way (option b): each results package now has a STATIC `RESET_UNACCOUNTED` proc, registered via
+  a new `RESET_PROC` column, dispatched through the EXISTING sanctioned invoke site. No new dynamic-SQL
+  site was added. Merged as 977ce90.
+- **Backlog hygiene (#491).** Items grain (#86) and Team Members (#68) marked RESOLVED with
+  base-table proof. GLBudgets cell key (#87) confirmed as a P3 backlog item.
+- **Carrier-config audit (#490) and the LOADED-standard requirements note (#488)** merged earlier.
+- **Backlog #21 audit ("conform 25 recon reports to Contract v1").** Found SUBSTANTIALLY COMPLETE /
+  SUPERSEDED: 30 of 34 objects already conform to the shipped Contract v1 (naming 100%, RECON_KEY 100%,
+  one generic parser `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` + a CONTRACT_VERSION registry 100%, params 88%,
+  `P_BATCH_ID` retired). The original "7-column" spec was intentionally revised to 9 columns on
+  2026-07-07. Residual: 4 config objects (Customers in-flight; Taxes/ValueSets/CashBanks deferred to
+  Phase 4 FBL). **#21 should be closed as superseded** (owner to confirm).
+
+**Regression detail (run 142).** Preflight passed after correcting a stale-credential issue in the
+LOCAL DB: 167 override rows in `DMT_ERP_INTERFACE_OPTIONS_TBL` still carried the previous demo
+password; all passwords are now the current demo password. The only non-clean objects are all
+PRE-EXISTING functional/environment blocks: ARInvoices (O2C AutoInvoice, 0 LOADED), Grants,
+ProjectBudgets, TalentProfiles (0 LOADED, functional setup incomplete), and the zero-record
+HCM/Benefits/MiscReceipts objects (Absences, BenBeneficiary/Dependent/Participant, PerfEvaluations,
+SalaryBases, TaxCards, W2Balances, WorkSchedules, MiscReceipts).
+
+**New non-blocking findings (UI display only -- accounting is correct; logged as follow-ups).**
+Drill-label mismatches between the page-52 tiles and the page-57 record view for 5 objects:
+- **GLBudgets** -- the tile is labeled "GL Budget Balances" but the records are labeled
+  "GL Budget Lines", so the drill link is broken.
+- **SupplierSites / SupplierAddresses / SupplierContacts / Projects "Project Tasks"** -- the page-52
+  tile under-counts by skipping `[PRE_VALIDATION]` FAILED rows that page-57 correctly shows.
+Counts are complete and balanced; only the UI drill display differs.
+
+**What's next.**
+1. Standing coverage gap (functional-owner-blocked, not code): AR Invoices (O2C AutoInvoice), Grants,
+   ProjectBudgets, TalentProfiles, and the zero-record HCM/Benefits/MiscReceipts objects. These need
+   the functional owner or seed data, not tool changes.
+2. Fix the minor page-52-vs-page-57 UI drill-label mismatches above (GLBudgets label; the four
+   pre-validation under-counts).
+3. Owner to confirm closing backlog #21 as superseded.
+
+**Blockers:** None on the DMT2 code side. The remaining non-clean objects are all functional/
+environment blocks outside our code.
+
+**Git state:** On `main`, tree clean of tracked changes (after this status/doc commit). Local was
+level with `origin/main` at 977ce90 before this commit; this commit is docs-only and pushed to
+`origin/main`. Untracked scratch only (`.claude/worktrees/`) -- safe to ignore.
+
+**Next session:** first action is to sync -- `git checkout main && git fetch && git merge --ff-only
+origin/main`, then confirm a clean tree -- BEFORE any new work.
+
 ## Session -- 2026-09-29 -- Unaccounted objects resolved (all traced to faulted runs, not matching bugs)
 
 **Bottom line.** The three long-standing "unaccounted" objects were NOT matching bugs -- all three trace to runs that faulted mid-reconcile and were never re-run (the reconcile correctly RAISED on a transient BIP/Fusion outage rather than fabricating a verdict). Re-running the reconcile accounts every record with real base-table / error proof and no code fix.
