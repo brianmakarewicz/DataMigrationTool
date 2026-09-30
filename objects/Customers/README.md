@@ -1,6 +1,25 @@
 # Customers
 
 ## Status
+2026-09-30 (backlog #133, Contract v1 finish): all seven HZ tiers are wired,
+reconcile, and report honest per-record outcomes. Verified against regression run
+142 (prefix 93222): the two account-site tiers came back 0 LOADED / 4 FAILED each,
+and that is an HONEST Fusion rejection, not a wiring bug. Each failed record carries
+a real Trading Community import error read from the live `HZ_IMP_*_T` interface
+tables — interface status 'W' (held) or 'E' (rejected) plus the genuine error
+lookup codes `HZ_IMP_INVAL_VALUE_COMPARE` (account sites / uses) and
+`HZ_IMP_INVAL_PARTY_REF` / `HZ_IMP_ACTION_MISMATCH` (parents). The G1 subtree fails
+because its party failed upstream; the BAD row points at a nonexistent account on
+purpose; and even G2/G3 — whose parent Account and PartySite both LOADED and whose
+linkage references are correctly stamped by the transform — are rejected by Fusion's
+own value-compare validation. No tier is unwired or mis-generated, so no code change:
+per the mission, a real rejection is a correct outcome, not something to "fix" by
+editing data. The `DMT_BIP_REPORT_TBL` Customers row is already converged onto the
+DMT2 catalog (`/Custom/DMT2/Customers/DMT_CUST_RECON_V2_*`, CONTRACT_VERSION = 1,
+FUSION_ID_COLUMN + RECON_KEY_SQL populated) and the V2 report is deployed additively
+at `/Custom/DMT2/Customers/` (the frozen `/Custom/DMT/` is left untouched); the seed
+is idempotent (re-run twice clean, 0 invalid objects).
+
 DMT2 offline slice proven 2026-07-09 (unit suite 27/27, golden byte-identical to
 run 116). Reconciler rebuilt fail-CLOSED / two-tier 2026-07-09 (obj/customers-rule1)
 — no more fail-open. Live Rule #1 gate PROVEN 2026-07-11: 20/20 customers reached the Fusion base
@@ -55,8 +74,14 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 - Transformer: `db/packages/dmt_cust_transform_pkg.*` (7 TRANSFORM_* procedures)
 - FBDI Generator: `db/packages/dmt_cust_fbdi_gen_pkg.*` (one GENERATE_FBDI, builds the 7-CSV zip)
 - Results/Reconciliation: `db/packages/dmt_cust_results_pkg.*` (Contract v1, shared transport)
-- BIP Data Model/Report: `bip/Customers/DMT_CUST_RECON_DM.xdm` + `DMT_CUST_RECON_RPT.xdo`
-  (deploy target `/Custom/DMT2/Customers/`; deployed by `scripts/deploy_recon_bip_reports.py Customers`)
+- BIP Data Model/Report: `bip/Customers/DMT_CUST_RECON_V2_DM.xdm` + `DMT_CUST_RECON_V2_RPT.xdo`
+  (deploy target `/Custom/DMT2/Customers/`; deployed by `scripts/deploy_recon_bip_reports.py Customers`).
+  The V2 artifacts are the live ones the `DMT_BIP_REPORT_TBL` seed row points at; they add
+  NOT-LOADED error-tier blocks for every child interface table so held/rejected child records
+  (Locations, PartySites, PartySiteUses, AccountSites, AccountSiteUses) report their real
+  interface status instead of falling to the generic reconcile sweep. The original
+  `DMT_CUST_RECON_DM.xdm` / `DMT_CUST_RECON_RPT.xdo` remain in the folder (deployed additively
+  alongside V2); V2 is the one registered and used.
 - Golden inputs: `test/golden/inputs/Customer*_input.csv`; golden zip `test/fbdi_zips/Customers_116.zip`
 - Unit test: `test/unit/test_customers.sql`; golden compare: `test/golden/test_customers_golden.sh`
 
