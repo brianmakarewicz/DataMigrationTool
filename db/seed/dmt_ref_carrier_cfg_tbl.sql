@@ -33,11 +33,33 @@
 -- *_transform_pkg showed most reconcilers join RECON_KEY = a prefixed business key,
 -- never the named Slot A field. Those rows are now UNVERIFIED with the true method.
 -- Only the carriers a reconciler actually keys on AND that were proven on a live run
--- keep CONFIRMED (GLBalances, Customers, BillingEvents, Expenditures, Workers,
--- Salaries -- all PROVEN_ON_RUN=132). The APInvoices row is the headline fix: its
--- Slot A REFERENCE_KEY1 is not in the 164-column AP-invoice-lines FBDI template AND
--- the AP reconciler matches on the prefixed INVOICE_NUM, so REFERENCE_KEY1 is removed
--- and the row is UNVERIFIED (reconciles on business key).
+-- keep CONFIRMED. Originally six (GLBalances, Customers, BillingEvents, Expenditures,
+-- Workers, Salaries -- PROVEN_ON_RUN=132); the 2026-09-30 run-142 round-trip test
+-- added Projects and Assets (PROVEN_ON_RUN=142, 2/2 each). The APInvoices row is the
+-- headline fix: its Slot A REFERENCE_KEY1 is not in the 164-column AP-invoice-lines
+-- FBDI template AND the AP reconciler matches on the prefixed INVOICE_NUM, so
+-- REFERENCE_KEY1 is removed and the row is UNVERIFIED (reconciles on business key).
+--
+-- CARRIER KIND (token vs business key) -- recorded inline per row in NOTES/comments
+-- (no dedicated column yet; a CARRIER_KIND column would make this cleaner -- flagged
+-- to the owner in the PR):
+--   DMT-TOKEN            -- the slot carries a distinct id WE mint (DMT:run:queue:tfm)
+--                           that round-trips to the base table. ONLY GLBalances
+--                           (REFERENCE22 -> GL_JE_LINES.REFERENCE_2).
+--   BUSINESS-KEY         -- CONFIRMED, but what round-trips/keys is the run-prefixed
+--                           business key, not a distinct token: Customers
+--                           (ORIG_SYSTEM_REFERENCE), Expenditures
+--                           (ORIG_TRANSACTION_REFERENCE), BillingEvents (SOURCEREF),
+--                           Workers/Salaries (SourceSystemId=PERSON_NUMBER), Projects
+--                           (SEGMENT1), Assets (ASSET_NUMBER).
+--   BUSINESS-KEY FALLBACK -- UNVERIFIED: the configured Slot A does NOT persist to the
+--                           base table (came back NULL on the run-142 test), so the
+--                           real match is the business key: PurchaseOrders (DOCUMENT_NUM
+--                           / SEGMENT1), Requisitions (REQUISITION_NUMBER), APInvoices
+--                           (INVOICE_NUM). Their non-persisting Slot A is cleared.
+-- Slot C (DFF ATTRIBUTE carriers) is NOT-RELIED-ON generally: ATTRIBUTE1/etc came back
+-- NULL on every base row inspected on run 142 (the flexfield segments are not deployed),
+-- so no Slot-C-only carrier is CONFIRMED.
 --
 -- PROVEN_ON_RUN = the run id whose live evidence backs a CONFIRMED claim (falsifiable:
 -- CONFIRMED must cite a run); NULL where unproven. Run 132 is the proven post-run
@@ -68,20 +90,26 @@ using (
     -- ================= FBDI objects =================
     select 'GLBalances' cemli_code, 'GL Journals' sub_object,
            'DMT_GL_INTERFACE_TFM_TBL' tfm_table,
-           'REFERENCE21' slot_a_field, 'GL_JE_LINES.REFERENCE_1' slot_a_base_column,
+           'REFERENCE22' slot_a_field, 'GL_JE_LINES.REFERENCE_2' slot_a_base_column,
            'GROUP_ID' slot_b_field, 'REFERENCE22' slot_c_attribute, 240 slot_c_maxlen,
-           'FULL' ref_format, 'CONFIRMED' confidence, 132 proven_on_run, 'Y' active_flag,
-           -- Slot C corrected 2026-09-19 (proof-of-recipe run 301): GL Journal
-           -- Import does NOT carry GL_INTERFACE.ATTRIBUTE20 onto GL_JE_LINES
-           -- (GL_JE_LINES has no ATTRIBUTE20; GL_JE_HEADERS has none either), so
-           -- the full ref must ride a line REFERENCE that Journal Import maps
-           -- through. REFERENCE22 -> GL_JE_LINES.REFERENCE_2 round-trips (proven,
-           -- same mechanism as REFERENCE21 -> REFERENCE_1). RECIPE LESSON for the
-           -- fan-out: Slot C must be a column the object''s import actually
-           -- carries to the base table, verified per object -- not assumed.
-           'CONFIRMED (run 132): reconciler keys RECON_KEY(=TFM_SEQUENCE_ID) stamped ' ||
-           'into REFERENCE21 -> GL_JE_LINES.REFERENCE_1 (queried live, populated). ' ||
-           'Slot C = REFERENCE22 -> GL_JE_LINES.REFERENCE_2.' notes from dual
+           'FULL' ref_format, 'CONFIRMED' confidence, 142 proven_on_run, 'Y' active_flag,
+           -- CARRIER_KIND = DMT-TOKEN (this is the ONE object that round-trips the
+           -- actual minted DMT token, not a run-prefixed business key).
+           -- Slot A/base corrected 2026-09-30 (run-142 round-trip test, re-proving
+           -- run 132): the token DMT:<run>:<queue>:<tfm> is stamped into TFM
+           -- REFERENCE22 and lands in GL_JE_LINES.REFERENCE_2 -- NOT REFERENCE_1 /
+           -- REFERENCE21 as the seed previously said. GL_JE_LINES.REFERENCE_1
+           -- carries the line SEQUENCE, not our token. The recon DM confirms this:
+           -- RECORD_KEY/SOURCE_REF = REFERENCE_1 (line key) and DMT_REFERENCE =
+           -- REFERENCE_2 (our token). Slot C = REFERENCE22 -> GL_JE_LINES.REFERENCE_2
+           -- (same column). RECIPE LESSON for the fan-out: Slot A/C must be a column
+           -- the object''s import actually carries to the base table, verified per
+           -- object -- not assumed.
+           'CONFIRMED (run 142, re-proving 132) -- CARRIER_KIND=DMT-TOKEN. The DMT ' ||
+           'token DMT:run:queue:tfm is stamped into REFERENCE22 and round-trips to ' ||
+           'GL_JE_LINES.REFERENCE_2 (queried live, populated). REFERENCE_1 carries ' ||
+           'the line sequence, not our token. Only object that round-trips the actual ' ||
+           'DMT token rather than a run-prefixed business key.' notes from dual
     union all select 'Customers', 'Parties', 'DMT_HZ_PARTIES_TFM_TBL',
            'PARTY_ORIG_SYSTEM_REFERENCE', 'HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE',
            null, null, null, 'FULL', 'CONFIRMED', 132, 'Y',
@@ -137,24 +165,49 @@ using (
            'UNVERIFIED: reconciles on LOAD_REQUEST_ID (POZ_*_INT), not on a carrier slot; ' ||
            'ATTRIBUTE20 length not re-queried.' from dual
     union all select 'Requisitions', 'Req Headers', 'DMT_POR_REQ_HEADERS_TFM_TBL',
-           'INTERFACE_SOURCE_CODE', null,
+           null, null,
            'REQUEST_ID', 'ATTRIBUTE20', 150, 'FULL', 'UNVERIFIED', null, 'Y',
-           'UNVERIFIED: DMT_REQ_RESULTS_PKG matches RECON_KEY = REQUISITION_NUMBER (business ' ||
-           'key), not INTERFACE_SOURCE_CODE; the Slot A/B/C values are audit-only.' from dual
+           -- CARRIER_KIND = BUSINESS-KEY FALLBACK. Slot A INTERFACE_SOURCE_CODE
+           -- REMOVED 2026-09-30 (run-142 round-trip test): interface-only, came back
+           -- NULL on POR_REQUISITION_HEADERS_ALL -- does NOT persist to the base table.
+           -- The recon DM keys headers on the run-prefixed REQUISITION_NUMBER and reads
+           -- interface_source_code / attribute1 only as best-effort refs (both observed
+           -- NULL). Slot C ATTRIBUTE20 is a DFF -- NOT-RELIED-ON (segment not deployed).
+           'UNVERIFIED -- CARRIER_KIND=BUSINESS-KEY FALLBACK. The real match is the ' ||
+           'run-prefixed REQUISITION_NUMBER; DMT_REQ_RESULTS_PKG / recon DM key on it, ' ||
+           'never a carrier slot. Slot A INTERFACE_SOURCE_CODE removed: interface-only, ' ||
+           'NULL on the base table (does not persist). Slot C ATTRIBUTE20 not relied on ' ||
+           '(DFF segment not deployed; ATTRIBUTE1 also NULL on the base row).' from dual
     union all select 'PurchaseOrders', 'PO Headers (covers BlanketPOs + Contracts)', 'DMT_PO_HEADERS_INT_TFM_TBL',
-           'INTERFACE_SOURCE_CODE', null,
+           null, null,
            'REQUEST_ID', 'ATTRIBUTE20', 150, 'FULL', 'UNVERIFIED', null, 'Y',
-           'UNVERIFIED: DMT_PO_RESULTS_PKG matches RECON_KEY = DOCUMENT_NUM (business key), not ' ||
-           'INTERFACE_SOURCE_CODE. ONE row for the PO_HEADERS_INTERFACE family (PurchaseOrders, ' ||
-           'BlanketPOs, Contracts share this TFM table, discriminated by STYLE_DISPLAY_NAME).' from dual
+           -- CARRIER_KIND = BUSINESS-KEY FALLBACK. Slot A INTERFACE_SOURCE_CODE
+           -- REMOVED 2026-09-30 (run-142 round-trip test): it is INTERFACE-ONLY --
+           -- it came back NULL on PO_HEADERS_ALL, so it does NOT persist to the base
+           -- table and nothing may trust it. The recon DM keys on base SEGMENT1
+           -- (= the run-prefixed DOCUMENT_NUM business key) and reads
+           -- interface_source_code only as a best-effort DMT_REFERENCE (observed NULL).
+           -- Slot C ATTRIBUTE20 is a DFF -- NOT-RELIED-ON (segment not deployed).
+           'UNVERIFIED -- CARRIER_KIND=BUSINESS-KEY FALLBACK. The real match is the ' ||
+           'run-prefixed DOCUMENT_NUM (= PO_HEADERS_ALL.SEGMENT1); DMT_PO_RESULTS_PKG / ' ||
+           'recon DM key on SEGMENT1, never a carrier slot. Slot A INTERFACE_SOURCE_CODE ' ||
+           'removed: interface-only, NULL on the base table (does not persist). Slot C ' ||
+           'ATTRIBUTE20 not relied on (DFF segment not deployed). ONE row for the ' ||
+           'PO_HEADERS_INTERFACE family (PurchaseOrders, BlanketPOs, Contracts share this ' ||
+           'TFM table, discriminated by STYLE_DISPLAY_NAME).' from dual
     union all select 'APInvoices', 'AP Invoice Headers', 'DMT_AP_INVOICES_INT_TFM_TBL',
            null, null,
            'BATCH_ID', 'ATTRIBUTE15', 1000, 'FULL', 'UNVERIFIED', null, 'Y',
-           'UNVERIFIED (audit fix 2026-09-29): the prior Slot A REFERENCE_KEY1 is REMOVED -- it ' ||
-           'is not in the fixed 164-column AP-invoice-lines FBDI template (stamping it makes ' ||
-           'SqlLdr reject the load) AND DMT_AP_RESULTS_PKG matches RECON_KEY = prefixed ' ||
-           'INVOICE_NUM (business key), never REFERENCE_KEY1. AP reconciles on the business ' ||
-           'key today; Slot B/C are audit-only.' from dual
+           -- CARRIER_KIND = BUSINESS-KEY FALLBACK. Run-142 round-trip test: on
+           -- AP_INVOICES_ALL both REFERENCE_KEY1 and ATTRIBUTE1 came back NULL, so
+           -- neither the native source-ref nor the DFF round-trips. Slot C ATTRIBUTE15
+           -- is NOT-RELIED-ON (DFF segment not deployed). Match is INVOICE_NUM.
+           'UNVERIFIED -- CARRIER_KIND=BUSINESS-KEY FALLBACK (audit fix 2026-09-29, ' ||
+           're-confirmed run 142). The real match is the run-prefixed INVOICE_NUM; ' ||
+           'DMT_AP_RESULTS_PKG / recon DM key on it. Prior Slot A REFERENCE_KEY1 removed ' ||
+           '(not in the 164-column AP FBDI template; SqlLdr rejects it) and observed NULL ' ||
+           'on AP_INVOICES_ALL. Slot C ATTRIBUTE15 not relied on (ATTRIBUTE1 also NULL on ' ||
+           'the base row -- DFF segment not deployed).' from dual
     -- AP invoice LINE tier. A row keyed on the lines TFM table exists in deployed
     -- instances (carried the same REFERENCE_KEY1/CONFIRMED defect as the header row).
     -- Seeded explicitly so the MERGE corrects it in place: REFERENCE_KEY1 is NOT in
@@ -164,10 +217,14 @@ using (
     union all select 'APInvoices', 'AP Invoice Lines', 'DMT_AP_INVOICE_LINES_INT_TFM_TBL',
            null, null,
            'BATCH_ID', 'ATTRIBUTE15', 1000, 'FULL', 'UNVERIFIED', null, 'Y',
-           'UNVERIFIED (audit fix 2026-09-29): Slot A REFERENCE_KEY1 REMOVED (not in the ' ||
-           '164-column AP-invoice-lines FBDI template; SqlLdr rejects it). DMT_AP_RESULTS_PKG ' ||
-           'keys the line tier on RECON_KEY = prefixed INVOICE_NUM||'':LINE:''||LINE_NUMBER ' ||
-           '(business key). Slot B/C audit-only.' from dual
+           -- CARRIER_KIND = BUSINESS-KEY FALLBACK. Same run-142 finding as the header
+           -- tier: REFERENCE_KEY1 and ATTRIBUTE1 NULL on the base rows. Slot C
+           -- ATTRIBUTE15 NOT-RELIED-ON (DFF segment not deployed).
+           'UNVERIFIED -- CARRIER_KIND=BUSINESS-KEY FALLBACK (audit fix 2026-09-29, ' ||
+           're-confirmed run 142). DMT_AP_RESULTS_PKG / recon DM key the line tier on the ' ||
+           'run-prefixed INVOICE_NUM||'':LINE:''||LINE_NUMBER. Slot A REFERENCE_KEY1 removed ' ||
+           '(not in the 164-column AP-invoice-lines FBDI template; SqlLdr rejects it; NULL ' ||
+           'on the base table). Slot C ATTRIBUTE15 not relied on (DFF segment not deployed).' from dual
     union all select 'ARInvoices', 'AR Lines', 'DMT_RA_LINES_TFM_TBL',
            'INTERFACE_HEADER_ATTRIBUTE1/INTERFACE_LINE_ATTRIBUTE1', null,
            'BATCH_ID', 'ATTRIBUTE30', 255, 'FULL', 'UNVERIFIED', null, 'Y',
@@ -181,10 +238,21 @@ using (
            'UNVERIFIED: DMT_EGP_ITEM_RESULTS_PKG matches RECON_KEY = ITEM_NUMBER~ORGANIZATION_CODE ' ||
            '(business key), not ATTRIBUTE50; the Slot C value is audit-only.' from dual
     union all select 'Projects', 'Projects', 'DMT_PJF_PROJECTS_TFM_TBL',
-           'PM_PROJECT_REFERENCE', null,
-           'REQUEST_ID', 'ATTRIBUTE50', 150, 'FULL', 'UNVERIFIED', null, 'Y',
-           'UNVERIFIED: DMT_PROJECT_RESULTS_PKG matches RECON_KEY = PROJECT_NUMBER ' ||
-           '(= PJF_PROJECTS_ALL_B.SEGMENT1, business key), not PM_PROJECT_REFERENCE.' from dual
+           'PM_PROJECT_REFERENCE', 'PJF_PROJECTS_ALL_B.SEGMENT1',
+           'REQUEST_ID', 'ATTRIBUTE50', 150, 'FULL', 'CONFIRMED', 142, 'Y',
+           -- CARRIER_KIND = BUSINESS-KEY. Promoted to CONFIRMED 2026-09-30 (run-142
+           -- round-trip test: 2/2 round-trip). What actually round-trips and is keyed
+           -- is the BUSINESS KEY -- the run-prefixed project number in
+           -- PJF_PROJECTS_ALL_B.SEGMENT1 -- NOT the interface PM_PROJECT_REFERENCE
+           -- (which the recon DM notes is not populated after import). SLOT_A_FIELD is
+           -- left as the interface attribute we write, but SLOT_A_BASE_COLUMN is set to
+           -- the SEGMENT1 the reconciler actually reads. Slot C ATTRIBUTE50 is a DFF --
+           -- NOT-RELIED-ON (segment not deployed).
+           'CONFIRMED (run 142) -- CARRIER_KIND=BUSINESS-KEY. Round-trips 2/2 via ' ||
+           'PJF_PROJECTS_ALL_B.SEGMENT1 (= the run-prefixed project number). ' ||
+           'DMT_PROJECT_RESULTS_PKG / recon DM key on SEGMENT1, NOT the interface ' ||
+           'PM_PROJECT_REFERENCE (not populated after import). Base column filled in ' ||
+           'this audit. Not a distinct DMT token -- the run-prefixed business key.' from dual
     union all select 'Expenditures', 'Project Expenditures', 'DMT_PJC_EXPENDITURES_TFM_TBL',
            'ORIG_TRANSACTION_REFERENCE', 'PJC_EXP_ITEMS_ALL.ORIG_TRANSACTION_REFERENCE',
            'EXP_GROUP_ID', 'ATTRIBUTE10', 150, 'FULL', 'CONFIRMED', 132, 'Y',
@@ -210,10 +278,20 @@ using (
            'UNVERIFIED: DMT_GRANTS_RESULTS_PKG matches RECON_KEY = SPONSOR_AWARD_NUMBER (business ' ||
            'key), not AWARD_SOURCE; Grants also had 0 loaded on the demo. Slot B/C audit-only.' from dual
     union all select 'Assets', 'Asset Headers', 'DMT_FA_ASSET_HDR_TFM_TBL',
-           null, null,
-           null, 'ATTRIBUTE30', 150, 'FULL', 'UNVERIFIED', null, 'Y',
-           'UNVERIFIED: DMT_FA_ASSET_RESULTS_PKG matches RECON_KEY = ASSET_NUMBER (business key), ' ||
-           'not ATTRIBUTE30; the Slot C value is audit-only.' from dual
+           'ASSET_NUMBER', 'FA_ADDITIONS_B.ASSET_NUMBER',
+           null, 'ATTRIBUTE30', 150, 'FULL', 'CONFIRMED', 142, 'Y',
+           -- CARRIER_KIND = BUSINESS-KEY. Promoted to CONFIRMED 2026-09-30 (run-142
+           -- round-trip test: 2/2 round-trip). The carrier is the BUSINESS KEY -- the
+           -- run-prefixed ASSET_NUMBER in FA_ADDITIONS_B.ASSET_NUMBER, which the recon
+           -- DM keys on directly (RECORD_KEY = SOURCE_REF = ASSET_NUMBER). SLOT_A now
+           -- names that key/base column. Slot C ATTRIBUTE30 is a DFF -- NOT-RELIED-ON
+           -- (no DMT reference DFF is stamped; the DM reads SERIAL_NUMBER as its
+           -- best-effort DMT_REFERENCE on base rows).
+           'CONFIRMED (run 142) -- CARRIER_KIND=BUSINESS-KEY. Round-trips 2/2 via ' ||
+           'FA_ADDITIONS_B.ASSET_NUMBER (= the run-prefixed asset number). ' ||
+           'DMT_FA_ASSET_RESULTS_PKG / recon DM key on ASSET_NUMBER. Base column filled ' ||
+           'in this audit. Not a distinct DMT token -- the run-prefixed business key. ' ||
+           'Slot C ATTRIBUTE30 not relied on (DFF segment not deployed).' from dual
     union all select 'MiscReceipts', 'Inventory Transactions', 'DMT_INV_TRX_TFM_TBL',
            'INTERFACE_SOURCE_CODE', null,
            'GROUP_ID', 'ATTRIBUTE20', 150, 'FULL', 'UNVERIFIED', null, 'Y',
