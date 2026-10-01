@@ -233,6 +233,36 @@
         WHERE  RUN_ID = p_run_id
         AND    RECON_KEY IS NULL;
 
+        -- Backlog #137: make INV_LOTSERIAL_INTERFACE_NUM unique PER LOAD.
+        --
+        -- This number is the key that ties a transaction line to its lot/serial
+        -- detail rows inside ONE ESS load (transaction col INV_LOTSERIAL_INTERFACE_NUM
+        -- = lot col INV_LOT_INTERFACE_NUM = serial col INV_SERIAL_INTERFACE_NUM).
+        -- Fusion requires it be unique across the transaction lines in a single load
+        -- request; a repeat poisons the whole batch with INV_BAL_REC_DUP_LOTSER_NUM.
+        --
+        -- The staged value is unreliable: when the same scenario is seeded more than
+        -- once (ALL-mode / multi-scenario runs) the clone copies the parent's staged
+        -- INV_LOTSERIAL_INTERFACE_NUM verbatim, so two distinct transaction rows in the
+        -- one load carry the SAME number -> the collision found in the #134 proof.
+        --
+        -- Fix: overwrite the carried value with this run's TFM_SEQUENCE_ID, which is a
+        -- per-run sequence and therefore unique across every transaction row in the
+        -- load. A transaction row is lot/serial-bearing exactly when it carries a
+        -- non-NULL staged INV_LOTSERIAL_INTERFACE_NUM (plain receipts never set it and
+        -- keep NULL -- no detail to link). Keying on "staged value IS NOT NULL" rather
+        -- than on a child-table join makes the rewrite unconditional per detail row, so
+        -- it still guarantees uniqueness even when a re-seeded scenario copy's child
+        -- rows point SOURCE_ID at the FIRST copy's parent (the seed-clone defect that
+        -- produced the collision). The lot and serial CSV generators resolve their link
+        -- key from this same parent value (they join back to the parent TFM), so all
+        -- three CSVs stay consistent after the rewrite.
+        UPDATE DMT_INV_TRX_TFM_TBL p
+        SET    p.INV_LOTSERIAL_INTERFACE_NUM = TO_CHAR(p.TFM_SEQUENCE_ID),
+               p.LAST_UPDATED_DATE = SYSDATE
+        WHERE  p.RUN_ID = p_run_id
+        AND    p.INV_LOTSERIAL_INTERFACE_NUM IS NOT NULL;
+
         -- Update STG stg_status
         UPDATE DMT_INV_TRX_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
@@ -248,7 +278,7 @@
         INSERT INTO DMT_INV_TRX_LOTS_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,
             INVENTORY_LOT_INTERFACE_NUMBER, INVENTORY_SERIAL_INTERFACE_NUM,
-            SOURCE_CODE, SOURCE_LINE_ID, LOT_NUMBER, DESCRIPTION,
+            SOURCE_CODE, SOURCE_ID, SOURCE_LINE_ID, LOT_NUMBER, DESCRIPTION,
             LOT_EXPIRATION_DATE, TRANSACTION_QUANTITY, PRIMARY_QUANTITY,
             SECONDARY_TRANSACTION_QUANTITY,
             ORIGINATION_TYPE, ORIGINATION_DATE, STATUS_CODE, GRADE_CODE,
@@ -259,7 +289,7 @@
         SELECT
             s.STG_SEQUENCE_ID, p_run_id,
             s.INVENTORY_LOT_INTERFACE_NUMBER, s.INVENTORY_SERIAL_INTERFACE_NUM,
-            NVL(s.SOURCE_CODE, 'DMT'), s.SOURCE_LINE_ID, s.LOT_NUMBER, s.DESCRIPTION,
+            NVL(s.SOURCE_CODE, 'DMT'), s.SOURCE_ID, s.SOURCE_LINE_ID, s.LOT_NUMBER, s.DESCRIPTION,
             s.LOT_EXPIRATION_DATE, s.TRANSACTION_QUANTITY, s.PRIMARY_QUANTITY,
             s.SECONDARY_TRANSACTION_QUANTITY,
             s.ORIGINATION_TYPE, s.ORIGINATION_DATE, s.STATUS_CODE, s.GRADE_CODE,
@@ -284,6 +314,60 @@
             WHERE  t.STG_SEQUENCE_ID = DMT_INV_TRX_LOTS_STG_TBL.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
+
+        -- Backlog #137 (reviewer follow-up): keep the parent↔lot link consistent
+        -- after the parent interface-number rewrite above.
+        --
+        -- The parent transaction's INV_LOTSERIAL_INTERFACE_NUM was just rewritten to
+        -- TO_CHAR(TFM_SEQUENCE_ID) for uniqueness. The lot TFM's own
+        -- INVENTORY_LOT_INTERFACE_NUMBER still carries the STALE staged value, so the
+        -- results-package cascade (DMT_MISC_RECEIPT_RESULTS_PKG — join
+        -- t.INV_LOTSERIAL_INTERFACE_NUM = l.INVENTORY_LOT_INTERFACE_NUMBER) would no
+        -- longer match and the lot rows would be left UNACCOUNTED. Rewrite the lot
+        -- TFM's INVENTORY_LOT_INTERFACE_NUMBER to the SAME new parent value so the
+        -- link is preserved end-to-end (transform, FBDI CSVs, and results cascade all
+        -- key on the one unique parent number).
+        --
+        -- The parent is resolved by the STABLE relationship, not the old number:
+        -- lot STG SOURCE_ID -> parent transaction STG_SEQUENCE_ID -> parent TFM
+        -- (the exact path the FBDI lot/serial generators use). TO_NUMBER(... DEFAULT
+        -- NULL ON CONVERSION ERROR) so a dirty SOURCE_ID cannot abort the transform.
+        UPDATE DMT_INV_TRX_LOTS_TFM_TBL l
+        SET    l.INVENTORY_LOT_INTERFACE_NUMBER = (
+                   SELECT p.INV_LOTSERIAL_INTERFACE_NUM
+                   FROM   DMT_INV_TRX_TFM_TBL p
+                   WHERE  p.RUN_ID = p_run_id
+                   AND    p.STG_SEQUENCE_ID =
+                          TO_NUMBER(l.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)),
+               l.LAST_UPDATED_DATE = SYSDATE
+        WHERE  l.RUN_ID = p_run_id
+        AND    l.TFM_STATUS = 'STAGED'
+        AND    EXISTS (
+                   SELECT 1 FROM DMT_INV_TRX_TFM_TBL p
+                   WHERE  p.RUN_ID = p_run_id
+                   AND    p.STG_SEQUENCE_ID =
+                          TO_NUMBER(l.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR));
+
+        -- Honest handling (reviewer point #2): a lot row whose parent transaction
+        -- cannot be resolved has no valid link to carry into the load and could never
+        -- be cascaded to a real outcome. Mark it FAILED with a real reason rather than
+        -- emitting it with a stale/NULL link and leaving it UNACCOUNTED later. Errors
+        -- accumulate (APPEND_ERROR, never overwrite).
+        UPDATE DMT_INV_TRX_LOTS_TFM_TBL l
+        SET    l.TFM_STATUS = 'FAILED',
+               l.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(l.ERROR_TEXT,
+                   '[TRANSFORM_ERROR] Lot detail has no resolvable parent inventory '
+                   || 'transaction (lot STG SOURCE_ID=' || l.SOURCE_ID
+                   || ' does not match any transformed transaction in this run); '
+                   || 'cannot link to a load and cannot be reconciled.'),
+               l.LAST_UPDATED_DATE = SYSDATE
+        WHERE  l.RUN_ID = p_run_id
+        AND    l.TFM_STATUS = 'STAGED'
+        AND    NOT EXISTS (
+                   SELECT 1 FROM DMT_INV_TRX_TFM_TBL p
+                   WHERE  p.RUN_ID = p_run_id
+                   AND    p.STG_SEQUENCE_ID =
+                          TO_NUMBER(l.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR));
 
         -- ── Serials: STG → TFM (if any exist) ──
         INSERT INTO DMT_INV_TRX_SERIALS_TFM_TBL (
