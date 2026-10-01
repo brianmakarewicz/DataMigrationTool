@@ -333,6 +333,70 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows across all
+            -- three tiers so the record-detail anti-join surfaces them as FAILED
+            -- instead of leaving the object unaccounted. Each tier mirrors its own
+            -- INSERT's predicate shape and carries the validator's SUB_OBJECT.
+            -- SQLERRM captured to a local first. Backlog #14.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                -- Tier 1: transactions
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'MiscReceipts', 'Inventory Transactions', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_INV_TRX_STG_TBL s
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND NOT EXISTS (SELECT 1 FROM DMT_INV_TRX_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Inventory Transactions');
+                UPDATE DMT_INV_TRX_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Inventory Transactions')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+
+                -- Tier 2: lots
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'MiscReceipts', 'Transaction Lots', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_INV_TRX_LOTS_STG_TBL s
+                WHERE  s.STG_STATUS IN ('NEW')
+                AND NOT EXISTS (SELECT 1 FROM DMT_INV_TRX_LOTS_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Transaction Lots');
+                UPDATE DMT_INV_TRX_LOTS_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Transaction Lots')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+
+                -- Tier 3: serials
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'MiscReceipts', 'Transaction Serials', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_INV_TRX_SERIALS_STG_TBL s
+                WHERE  s.STG_STATUS IN ('NEW')
+                AND NOT EXISTS (SELECT 1 FROM DMT_INV_TRX_SERIALS_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Transaction Serials');
+                UPDATE DMT_INV_TRX_SERIALS_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Transaction Serials')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM failed.',
