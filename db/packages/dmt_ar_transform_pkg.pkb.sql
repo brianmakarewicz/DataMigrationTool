@@ -27,24 +27,12 @@
                 'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
     END get_prefix;
 
-    -- --------------------------------------------------------
-    -- Private: read dependent prefix from CONVERSION_MASTER
-    -- --------------------------------------------------------
-    FUNCTION get_dep_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
-        l_dep_prefix VARCHAR2(30);
-    BEGIN
-        -- Backlog #142: honor the run's Dependent-Run override
-        -- (DMT_PIPELINE_RUN_TBL.DEPENDENT_PREFIX) when set; else the
-        -- run's own PREFIX. The resolved prefix is what the upstream
-        -- reference in the load file carries.
-        l_dep_prefix := DMT_UTIL_PKG.GET_DEPENDENT_PREFIX(p_run_id);
-        RETURN l_dep_prefix;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20001,
-                'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
-    END get_dep_prefix;
-
+    -- Cross-object customer references are resolved through DMT_XREF_PKG
+    -- (CUSTOMER_ACCOUNT_NUMBER), which returns the value the referenced record
+    -- actually has in Fusion -- prefixed if this tool migrated it, raw if it
+    -- pre-existed. This supersedes the former manual dependent-prefix stamping
+    -- (get_dep_prefix retired 2026-10-01 -- DMT2 backlog #19: it was dead code,
+    -- computed but never applied to any cross-object column).
 
     -- ============================================================
     -- TRANSFORM_LINES
@@ -56,7 +44,6 @@
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_prefix        VARCHAR2(30);
-        l_dep_prefix    VARCHAR2(30);
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
 
@@ -68,7 +55,6 @@
             p_procedure      => 'TRANSFORM_LINES');
 
         l_prefix     := get_prefix(p_run_id);
-        l_dep_prefix := get_dep_prefix(p_run_id);
 
 
         -- On reprocess: clear staging errors for rows being retried
