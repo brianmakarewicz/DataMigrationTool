@@ -5,7 +5,7 @@
 -- stack's own BIP catalog under /Custom/DMT2/ (never /Custom/DMT/ -- the
 -- frozen stack's catalog).
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/AR_DM.xdm','/Custom/DMT2/ARInvoices/AR_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/DMT_AR_RECON_DM.xdm','/Custom/DMT2/ARInvoices/DMT_AR_RECON_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -1531,10 +1531,12 @@ commit;
 -- Points the ARInvoices CEMLI at the nine-column Contract v1 report and sets
 -- CONTRACT_VERSION = 1 so the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
 -- runs it (a NULL/absent CONTRACT_VERSION makes the shared fetch bail with
--- "not registered as CONTRACT_VERSION = 1"). This converges the existing
--- ARInvoices row (seeded earlier in this file at the OLD AR_DM.xdm/AR_RPT.xdo
--- single-dataset report) onto the Contract v1 report DMT_AR_RECON_DM.xdm /
--- DMT_AR_RECON_RPT.xdo. ARInvoices dispatches its APPLY through RECON_PROC
+-- "not registered as CONTRACT_VERSION = 1"). The ARInvoices row is seeded
+-- earlier in this file already pointing at the Contract v1 report
+-- DMT_AR_RECON_DM.xdm / DMT_AR_RECON_RPT.xdo; this MERGE adds the four
+-- Contract v1 columns (CONTRACT_VERSION / TFM_TABLE / FUSION_ID_COLUMN /
+-- RECON_KEY_SQL). The legacy interface-only AR_DM.xdm / AR_RPT.xdo report was
+-- retired (backlog #23). ARInvoices dispatches its APPLY through RECON_PROC
 -- (DMT_AR_RESULTS_PKG.RECONCILE_BATCH -> APPLY_CONTRACT_V1_ARINVOICES), which
 -- does one static per-tier UPDATE pair discriminated by OBJECT_TYPE, so
 -- APPLY_PROC is intentionally not set here. TFM_TABLE / FUSION_ID_COLUMN carry
