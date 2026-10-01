@@ -1,5 +1,44 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-01 -- Backlog batch 7 (#71) + final sweep disposition of the remaining items
+
+**Bottom line.** Fixed one more real code item and then gave every remaining backlog item an
+explicit, written disposition, which completes the batch-by-batch sweep of the backlog. The
+backlog now stands at 122 resolved, 4 partial, 11 still-open (each with a stated reason), 5
+superseded, 2 stale, out of 144.
+
+**What was resolved (#71).** For Projects, Fusion's import job is only a thin "request accepted"
+wrapper -- it reports success before the records are actually created by a background service, so
+the reconcile could run too early and see nothing. The shared report-capture step now waits for
+that background job to finish (bounded to 10 minutes; if it times out, the rows stay in a
+not-done state rather than being given a false verdict) before the reconcile reads the result.
+Proven on a Projects run: the wait kicked in, good projects loaded with real ids, the bad row
+failed with a real error. The same step is used by a few other objects; the change only makes the
+reconcile wait for data it was going to read anyway, so it cannot turn a loaded row into a
+failure. The full all-objects confirmation run is pending behind the local scheduler issue (#144).
+
+**Why the remaining 15 items are not closed (each is annotated in the backlog).**
+- **Blocked by Fusion setup or environment (can't be proven):** #60 (HCM recon web-service 500 on
+  the pod), #85 (AR invoice-line id -- AR invoicing loads nothing until the functional owner acts),
+  #130 (config objects on file/workbook/setup-manager paths the owner controls), #72 (tax-card
+  recon, parked and env-blocked).
+- **Standing decisions / owner instruction:** #19 (cross-reference rollout is break-fix-only),
+  #138 (owner said leave it), #89 (removing dynamic SQL from the upload path waits on a design
+  decision).
+- **Infrastructure, not product code:** #62 (needs a self-hosted CI runner installed), #144 (the
+  local scheduler reliability fix -- recommended next, since it is what slows every regression).
+- **Too large/entangled to batch safely -- need a dedicated solo run:** #25 (rename sweep across
+  all views and shared seeds), #65 (reconcile-on-reference rewrite across every results package).
+- **Core done, mechanical rollout remains (partial):** #23 (two-tier recon -- only AR left, and AR
+  is blocked), #90 (table-name audit -- method set, other objects remain), #94 (money-less checksum
+  -- mechanism proven on suppliers, other objects remain).
+
+**Recommended next step.** Fix #144 (raise the local database's job-process limit and add a
+pre-run cleanup of leftover jobs). It is the single thing most slowing the regressions, and
+clearing it would make the remaining solo items (#25, #65) and any future work much faster to
+verify. Also note: several test runs (195 scenario full, 200, 201 tails) were left mid-flight by
+that scheduler starvation -- a Docker restart will clear them.
+
 ## Session -- 2026-10-01 -- Backlog batch 6 close-out (regression test data), proving the Batch-3 deferrals
 
 **Bottom line.** Three test-data backlog items were resolved, and doing so finally proved three
