@@ -123,8 +123,21 @@ def submit_run(pipelines, scenario, run_mode, on_failure):
     cur = conn.cursor()
     run_id_var = cur.var(oracledb.NUMBER)
     try:
+        # Keyword binds (position-independent): SUBMIT_PIPELINE gained the two
+        # Backlog #142 IN params (p_dependent_prefix, p_validate_upstream) ahead
+        # of the OUT x_run_id, so a positional 6-arg call would bind run_id_var to
+        # p_dependent_prefix and leave x_run_id unbound. The harness takes the
+        # package defaults for both new params (dependent-prefix auto, upstream
+        # validation off), exactly as the regression always ran.
         cur.callproc('DMT_SCHEDULER_PKG.SUBMIT_PIPELINE',
-                     [pipelines, scenario, run_mode, on_failure, 'REGRESSION_AGENT', run_id_var])
+                     keyword_parameters={
+                         'p_pipeline_codes': pipelines,
+                         'p_scenario_name': scenario,
+                         'p_run_mode': run_mode,
+                         'p_on_failure': on_failure,
+                         'p_submitted_by': 'REGRESSION_AGENT',
+                         'x_run_id': run_id_var,
+                     })
         run_id = int(run_id_var.getvalue())
         print(f"  SUBMIT_PIPELINE ok -> RUN_ID={run_id}")
         conn.call_timeout = 0
@@ -175,6 +188,10 @@ def fallback_submit(pipelines, scenario, run_mode, on_failure):
     prefix = cur.fetchone()[0]
 
     run_id_var = cur.var(oracledb.NUMBER)
+    # DEPENDENT_PREFIX and VALIDATE_UPSTREAM (Backlog #142) are intentionally
+    # omitted here: both carry table defaults (NULL = dependent-prefix auto,
+    # 'N' = upstream validation off) that match what the real SUBMIT_PIPELINE
+    # path records for a regression run, so this fallback stays equivalent.
     cur.execute("""
         INSERT INTO DMT_PIPELINE_RUN_TBL (
             PIPELINE_CODES, RUN_TYPE, SUBMITTED_BY,
