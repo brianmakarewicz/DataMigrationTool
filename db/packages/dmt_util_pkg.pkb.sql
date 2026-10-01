@@ -1262,7 +1262,8 @@
     -- (RETURN_VALUE = ledger_id~access_set_id),
     -- BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID (AutoInvoice transaction-source id),
     -- PJC_TXN_SOURCE_NAME_TO_ID and PJC_DOC_NAME_TO_ID (PPM Import and Process
-    -- Cost Transactions transaction-source id / document entry id).
+    -- Cost Transactions transaction-source id / document entry id),
+    -- BUYER_NAME_TO_BUYER_ID (procurement buyer name -> agent_id, backlog #78).
     -- --------------------------------------------------------
     PROCEDURE REFRESH_LOOKUPS IS
         C_PKG  CONSTANT VARCHAR2(30) := 'DMT_UTIL_PKG';
@@ -1360,6 +1361,39 @@
 '<element name="RETURN_VALUE" value="RETURN_VALUE" dataType="xsd:string" tagName="RETURN_VALUE"/>'||
 '</group></dataStructure></nodeList></output><eventTriggers/><lexicals/><valueSets/><bursting/></dataModel>';
 
+        -- Buyer DM: resolves a procurement buyer NAME to its numeric agent_id
+        -- (= buyer id). This is the source that backlog #78 wires so the PO
+        -- default buyer, stored by NAME in config (PO_DEFAULT_BUYER_NAME =
+        -- ''Roth, Calvin''), resolves to its instance id through GET_LOOKUP at
+        -- run time instead of falling back to the raw PO_DEFAULT_BUYER_ID --
+        -- exactly as backlog #36 already wired the requisitioning BU through
+        -- BU_NAME_TO_BU_ID. No hardcoded instance id: the id is read by name at
+        -- pipeline preflight, like the BU, ledger, AR batch-source and PJC
+        -- lookups above. Buyers are persons who are procurement agents, so the
+        -- name comes from the person-name view (FULL_NAME is the "Last, First"
+        -- form the buyer is configured by) and the id is the agent_id on
+        -- po_agents_v (the valid-buyer view). GLOBAL, currently-effective name
+        -- row only, so one name row per buyer. ''MASKED'' is excluded: Fusion
+        -- substitutes that literal for privacy-masked persons, so it is not a
+        -- real, resolvable buyer name -- loading it would map a meaningless
+        -- ''MASKED'' key to an arbitrary one of the masked agents.
+        C_BUYER_XDM CONSTANT CLOB :=
+'<?xml version="1.0" encoding="utf-8"?>'||CHR(10)||
+'<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1" defaultDataSourceRef="ApplicationDB_FSCM">'||CHR(10)||
+'<dataProperties><property name="include_parameters" value="true"/><property name="include_null_Element" value="true"/><property name="include_rowsettag" value="false"/><property name="xml_tag_case" value="upper"/></dataProperties>'||CHR(10)||
+'<dataSets><dataSet name="buyer_lookups" type="complex"><sql dataSourceRef="ApplicationDB_FSCM"><![CDATA['||
+'SELECT ''BUYER_NAME_TO_BUYER_ID'' AS LOOKUP_TYPE, n.full_name AS LOOKUP_VALUE, TO_CHAR(a.agent_id) AS RETURN_VALUE '||
+'FROM po_agents_v a, per_person_names_f n '||
+'WHERE n.person_id = a.agent_id AND n.name_type = ''GLOBAL'' '||
+'AND n.full_name != ''MASKED'' '||
+'AND TRUNC(SYSDATE) BETWEEN n.effective_start_date AND n.effective_end_date ORDER BY n.full_name'||
+']]></sql></dataSet></dataSets>'||CHR(10)||
+'<output rootName="DATA_DS" uniqueRowName="false"><nodeList name="data-structure"><dataStructure tagName="DATA_DS"><group name="G_LKP" label="G_LKP" source="buyer_lookups">'||
+'<element name="LOOKUP_TYPE" value="LOOKUP_TYPE" dataType="xsd:string" tagName="LOOKUP_TYPE"/>'||
+'<element name="LOOKUP_VALUE" value="LOOKUP_VALUE" dataType="xsd:string" tagName="LOOKUP_VALUE"/>'||
+'<element name="RETURN_VALUE" value="RETURN_VALUE" dataType="xsd:string" tagName="RETURN_VALUE"/>'||
+'</group></dataStructure></nodeList></output><eventTriggers/><lexicals/><valueSets/><bursting/></dataModel>';
+
     BEGIN
         LOG(p_message => C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
@@ -1372,11 +1406,12 @@
         DELETE FROM DMT_LOOKUP_TBL WHERE LOOKUP_TYPE IN ('BU','LEDGER');
         COMMIT;
 
-        l_dms.EXTEND(4);
+        l_dms.EXTEND(5);
         l_dms(1).dm_name := 'DMT_BU_LKP_DM';         l_dms(1).xdm_xml := C_BU_XDM;
         l_dms(2).dm_name := 'DMT_LEDGER_LKP_DM';     l_dms(2).xdm_xml := C_LEDGER_XDM;
         l_dms(3).dm_name := 'DMT_AR_SOURCE_LKP_DM';  l_dms(3).xdm_xml := C_AR_SOURCE_XDM;
         l_dms(4).dm_name := 'DMT_PJC_SOURCE_LKP_DM'; l_dms(4).xdm_xml := C_PJC_SOURCE_XDM;
+        l_dms(5).dm_name := 'DMT_BUYER_LKP_DM';      l_dms(5).xdm_xml := C_BUYER_XDM;
 
         FOR i IN 1..l_dms.COUNT LOOP
             LOG(p_message => C_PROC || ': running ' || l_dms(i).dm_name,
