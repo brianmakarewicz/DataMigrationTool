@@ -435,16 +435,37 @@ AS
             l_lots_cnt  NUMBER := 0;
         BEGIN
             DBMS_LOB.CREATETEMPORARY(l_lots_csv, TRUE);
+            -- Backlog #137: derive INV_LOT_INTERFACE_NUM from the PARENT transaction
+            -- TFM's INV_LOTSERIAL_INTERFACE_NUM (which the transform rewrote to a
+            -- per-load-unique value = parent TFM_SEQUENCE_ID), NOT from the lot TFM's
+            -- own INVENTORY_LOT_INTERFACE_NUMBER (a stale, possibly-colliding staged
+            -- value). Join lot TFM -> lot STG (SOURCE_ID = parent STG_SEQUENCE_ID) ->
+            -- parent TFM, mirroring the serials CSV join so both detail CSVs link on the
+            -- same unique parent key. LEFT JOINs preserve EVERY lot TFM row (same row set
+            -- as the former SELECT * loop): a lot row that cannot resolve a parent still
+            -- emits, falling back to its own staged INVENTORY_LOT_INTERFACE_NUMBER rather
+            -- than being silently dropped. NVL on SOURCE_ID avoids TO_NUMBER on a NULL.
             FOR lr IN (
-                SELECT * FROM DMT_INV_TRX_LOTS_TFM_TBL
-                WHERE  RUN_ID = p_run_id
-                ORDER BY TFM_SEQUENCE_ID
+                SELECT NVL(p.INV_LOTSERIAL_INTERFACE_NUM,
+                           l.INVENTORY_LOT_INTERFACE_NUMBER) AS INVENTORY_LOT_INTERFACE_NUMBER,
+                       l.INVENTORY_SERIAL_INTERFACE_NUM,
+                       l.SOURCE_CODE, l.SOURCE_LINE_ID, l.LOT_NUMBER, l.DESCRIPTION,
+                       l.LOT_EXPIRATION_DATE, l.TRANSACTION_QUANTITY, l.PRIMARY_QUANTITY
+                FROM   DMT_INV_TRX_LOTS_TFM_TBL l
+                LEFT JOIN DMT_INV_TRX_LOTS_STG_TBL ls
+                    ON ls.STG_SEQUENCE_ID = l.STG_SEQUENCE_ID
+                LEFT JOIN DMT_INV_TRX_TFM_TBL p
+                    ON p.RUN_ID  = l.RUN_ID
+                   AND p.STG_SEQUENCE_ID =
+                       TO_NUMBER(ls.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)
+                WHERE  l.RUN_ID = p_run_id
+                ORDER BY l.TFM_SEQUENCE_ID
             ) LOOP
                 l_lots_cnt := l_lots_cnt + 1;
                 -- CTL cols (after 6 system): INV_LOT_INTERFACE_NUM, INV_SERIAL_INTERFACE_NUM,
                 -- SOURCE_CODE, SOURCE_LINE_ID, LOT_NUMBER, DESCRIPTION, LOT_EXPIRATION_DATE,
                 -- TRANSACTION_QUANTITY, PRIMARY_QUANTITY
-                af(l_lots_csv, lr.INVENTORY_LOT_INTERFACE_NUMBER);   -- 1
+                af(l_lots_csv, lr.INVENTORY_LOT_INTERFACE_NUMBER);   -- 1 (= parent INV_LOTSERIAL_INTERFACE_NUM)
                 af(l_lots_csv, lr.INVENTORY_SERIAL_INTERFACE_NUM);   -- 2
                 af(l_lots_csv, lr.SOURCE_CODE);                      -- 3
                 af(l_lots_csv, fmt_num(lr.SOURCE_LINE_ID));          -- 4
@@ -475,16 +496,23 @@ AS
         BEGIN
             DBMS_LOB.CREATETEMPORARY(l_ser_csv, TRUE);
             -- Join serial TFM → serial STG (for SOURCE_ID = parent STG_SEQUENCE_ID)
-            -- → parent TFM (for INV_LOTSERIAL_INTERFACE_NUM, SOURCE_CODE, SOURCE_LINE_ID)
+            -- → parent TFM (for INV_LOTSERIAL_INTERFACE_NUM, SOURCE_CODE, SOURCE_LINE_ID).
+            -- Backlog #137: LEFT JOINs so a serial row is never silently dropped if its
+            -- parent cannot be resolved (it still emits, with a NULL link number that
+            -- Fusion will reject visibly rather than vanishing). TO_NUMBER(... DEFAULT
+            -- NULL ON CONVERSION ERROR) keeps a dirty SOURCE_ID from aborting the whole
+            -- generation with ORA-01722. INV_SERIAL_INTERFACE_NUM (col 1) is the parent's
+            -- now-unique INV_LOTSERIAL_INTERFACE_NUM, matching the transaction + lot CSVs.
             FOR sr IN (
                 SELECT s.FM_SERIAL_NUMBER, s.TO_SERIAL_NUMBER,
                        p.INV_LOTSERIAL_INTERFACE_NUM, p.SOURCE_CODE, p.SOURCE_LINE_ID
                 FROM   DMT_INV_TRX_SERIALS_TFM_TBL s
-                JOIN   DMT_INV_TRX_SERIALS_STG_TBL ss
+                LEFT JOIN DMT_INV_TRX_SERIALS_STG_TBL ss
                     ON ss.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                JOIN   DMT_INV_TRX_TFM_TBL p
+                LEFT JOIN DMT_INV_TRX_TFM_TBL p
                     ON p.RUN_ID  = s.RUN_ID
-                   AND p.STG_SEQUENCE_ID = TO_NUMBER(ss.SOURCE_ID)
+                   AND p.STG_SEQUENCE_ID =
+                       TO_NUMBER(ss.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)
                 WHERE  s.RUN_ID = p_run_id
                 ORDER BY s.TFM_SEQUENCE_ID
             ) LOOP

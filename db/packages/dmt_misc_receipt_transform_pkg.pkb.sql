@@ -233,6 +233,36 @@
         WHERE  RUN_ID = p_run_id
         AND    RECON_KEY IS NULL;
 
+        -- Backlog #137: make INV_LOTSERIAL_INTERFACE_NUM unique PER LOAD.
+        --
+        -- This number is the key that ties a transaction line to its lot/serial
+        -- detail rows inside ONE ESS load (transaction col INV_LOTSERIAL_INTERFACE_NUM
+        -- = lot col INV_LOT_INTERFACE_NUM = serial col INV_SERIAL_INTERFACE_NUM).
+        -- Fusion requires it be unique across the transaction lines in a single load
+        -- request; a repeat poisons the whole batch with INV_BAL_REC_DUP_LOTSER_NUM.
+        --
+        -- The staged value is unreliable: when the same scenario is seeded more than
+        -- once (ALL-mode / multi-scenario runs) the clone copies the parent's staged
+        -- INV_LOTSERIAL_INTERFACE_NUM verbatim, so two distinct transaction rows in the
+        -- one load carry the SAME number -> the collision found in the #134 proof.
+        --
+        -- Fix: overwrite the carried value with this run's TFM_SEQUENCE_ID, which is a
+        -- per-run sequence and therefore unique across every transaction row in the
+        -- load. A transaction row is lot/serial-bearing exactly when it carries a
+        -- non-NULL staged INV_LOTSERIAL_INTERFACE_NUM (plain receipts never set it and
+        -- keep NULL -- no detail to link). Keying on "staged value IS NOT NULL" rather
+        -- than on a child-table join makes the rewrite unconditional per detail row, so
+        -- it still guarantees uniqueness even when a re-seeded scenario copy's child
+        -- rows point SOURCE_ID at the FIRST copy's parent (the seed-clone defect that
+        -- produced the collision). The lot and serial CSV generators resolve their link
+        -- key from this same parent value (they join back to the parent TFM), so all
+        -- three CSVs stay consistent after the rewrite.
+        UPDATE DMT_INV_TRX_TFM_TBL p
+        SET    p.INV_LOTSERIAL_INTERFACE_NUM = TO_CHAR(p.TFM_SEQUENCE_ID),
+               p.LAST_UPDATED_DATE = SYSDATE
+        WHERE  p.RUN_ID = p_run_id
+        AND    p.INV_LOTSERIAL_INTERFACE_NUM IS NOT NULL;
+
         -- Update STG stg_status
         UPDATE DMT_INV_TRX_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
