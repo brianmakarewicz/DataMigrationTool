@@ -1,5 +1,42 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-09-30 -- Backlog batch close-out (UI + view-fix items), reviewer-grouped
+
+**Bottom line.** Closed out a batch of backlog items that just merged to main and recorded two
+new ones. The team is now working the backlog in batches grouped by which reviewer area they
+belong to, and the automated goal-loop is driving those batches.
+
+**What was resolved.**
+- **#45** -- RESOLVED. PR #510 added the "Prefixed key(s)" column to all four object tables in
+  section 1 of the design doc. The new column is marked red/proposed per the design-doc red-guard
+  and waits for the owner to promote it to accepted.
+- **#56** -- RESOLVED. PR #510. The separate requirements files it asked about never existed on
+  their own; that content was always inside DMT_DESIGN.html, and GENERIC_OBJECT_FLOW.html already
+  carries the current model. The one stale leftover, design_text.txt, was moved to the docs
+  archive folder.
+- **#54** -- RESOLVED. PR #511. On the ESS Job Detail page, each request id now links straight to
+  that job's output files, the duplicate attachments column was removed, and there is a clean "no
+  files" message when a job produced none. Verified on local.
+- **#73** -- RESOLVED. Already done back in PR #460; the backlog label was just stale. Filtering
+  the record list by object and by work item both work (checked on local: PurchaseOrders returned
+  661 rows).
+
+**What is partial.**
+- **#77** -- PARTIAL. PR #512. The On-Failure control on the Run Pipeline page is wired all the way
+  through and proven (a live run recorded its setting). The other two controls on that page --
+  Dependent Run and Validate Upstream -- were removed because nothing in the backend stood behind
+  them; they were dead UI. That remaining work is captured as a new follow-up item.
+
+**View fix.**
+- The record-detail view's ERROR_CATEGORY column was coming back empty for every error row. The
+  cause was a regular expression that Oracle 26ai mis-reads. It was fixed across all 83 places it
+  appears (PR #509), and the category now correctly shows TRANSFORM_ERROR, PRE_VALIDATION,
+  FUSION_ERROR, and so on. Added to the backlog as RESOLVED.
+
+**New backlog items.** Two were added: the ERROR_CATEGORY view fix above (RESOLVED), and a
+follow-up to #77 to wire the Dependent-Run and Validate-Upstream controls once the scheduler
+supports the backend parameters they need (still open).
+
 ## Session -- 2026-09-30 -- Config objects: verified they are wired-but-never-loaded (NOT "DDL-only/blocked")
 
 **Bottom line.** Live checks this session corrected the status of the six configuration objects.
