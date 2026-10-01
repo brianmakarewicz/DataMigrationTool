@@ -227,6 +227,50 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
+-- Supplier family — register the auditor columns (backlog #140, 2026-09-30).
+-- The five supplier objects DO capture and populate their Fusion base-table
+-- ids: each object's results package stamps a FUSION_*_ID column on its TFM
+-- table on a LOADED row (verified live on run 142 -- 2/2 populated+unique per
+-- object). The gap was only that these DMT_BIP_REPORT_TBL rows left
+-- FUSION_ID_COLUMN (and TFM_TABLE) NULL, so the read-only Fusion-id auditor
+-- (scripts/dmt_fusion_id_audit.sql) skipped them entirely.
+--
+-- This block sets ONLY TFM_TABLE + FUSION_ID_COLUMN on the five EXISTING rows
+-- so the auditor now covers every supplier tier. It is ADDITIVE and for the
+-- auditor's benefit ONLY: FUSION_ID_COLUMN is read solely by that read-only
+-- audit script. Runtime load/reconcile/stamp is unchanged -- the shared
+-- Contract v1 fetch gates on CONTRACT_VERSION (deliberately left unchanged /
+-- NULL here, so suppliers keep their existing bespoke reconcilers), and
+-- DMT_RECON_CONTRACT_PKG never reads TFM_TABLE / FUSION_ID_COLUMN and never
+-- builds SQL from them (db/tables/dmt_bip_report_tbl.sql header, PR #248).
+-- The supplier results packages already write FUSION_VENDOR_ID etc. directly,
+-- so there is no double-write. Each (TFM_TABLE, FUSION_ID_COLUMN) is a single
+-- plain SQL identifier the auditor validates with DBMS_ASSERT.SIMPLE_SQL_NAME.
+-- MERGE on CEMLI_CODE so re-running the seed converges the existing rows and
+-- is idempotent. CONTRACT_VERSION / RECON_KEY_SQL / everything else untouched.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 'Suppliers'                 cemli_code,
+           'DMT_POZ_SUPPLIERS_TFM_TBL'  tfm_table,
+           'FUSION_VENDOR_ID'           fusion_id_column from dual
+    union all select 'SupplierAddresses',
+           'DMT_POZ_SUP_ADDR_TFM_TBL',      'FUSION_PARTY_SITE_ID'  from dual
+    union all select 'SupplierSites',
+           'DMT_POZ_SUP_SITE_TFM_TBL',      'FUSION_VENDOR_SITE_ID' from dual
+    union all select 'SupplierSiteAssignments',
+           'DMT_POZ_SUP_SITE_ASSN_TFM_TBL', 'FUSION_ASSIGNMENT_ID'  from dual
+    union all select 'SupplierContacts',
+           'DMT_POZ_SUP_CONTACTS_TFM_TBL',  'FUSION_CONTACT_ID'     from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."TFM_TABLE"        = s.tfm_table,
+    t."FUSION_ID_COLUMN" = s.fusion_id_column;
+
+commit;
+
+-- ---------------------------------------------------------------------------
 -- Customers — Contract v1 registration (design section 5). Customers is ONE
 -- object carrying SEVEN HZ record types in ONE recon report, so unlike the
 -- single-tier readers it does NOT use the shared parser's generic TFM_TABLE /
