@@ -3,12 +3,33 @@
   CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_GL_RESULTS_PKG" AUTHID DEFINER AS
 -- ============================================================
 -- DMT_GL_RESULTS_PKG
--- Post-load BIP reconciliation for GL Balances - Two-Tier pattern.
--- Tier 1: GL_INTERFACE (INTERFACE rows: status P = LOADED, else FAILED)
--- Tier 2: GL_JE_HEADERS/GL_JE_LINES (BASE rows: positive confirmation)
--- No absence=LOADED fallback. Every row gets positive verification or
--- is marked FAILED with a reconciliation error.
--- CEMLI_CODE: 'GLBalances'
+-- Post-load BIP reconciliation for GL Balances - Contract v1, Option A.
+--
+-- GLBalances reconciles through the ONE shared Contract v1 parser
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS, exactly like the other ~29
+-- conforming objects (the Workers / Expenditures / BillingEvents
+-- template, owner decision Option A on PR #248). The shared parser
+-- runs the object's nine-column recon report over BIP, keyset-pages
+-- it, and returns the parsed rows; the APPLY here is STATIC SQL
+-- against the compile-time-known DMT_GL_INTERFACE_TFM_TBL. There is no
+-- GL-specific reader and no generic-engine dispatch any more (backlog
+-- #92 conformance migration): the standalone keyset reader
+-- FETCH_ALL_PAGES, the single-page FETCH_BIP_RESULTS, the XML
+-- PARSE_AND_UPDATE overload, and the generic-engine APPLY_GL (which
+-- read DMT_RECON_STAGE_GTT) are all retired.
+--
+-- GL two-tier semantics (FUSION_STATUS is normalized in the DM to
+-- SUCCESS/ERROR, so the APPLY is object-agnostic):
+--   BASE  + SUCCESS (balanced/postable)          => LOADED
+--   BASE  + ERROR   (unbalanced, will not post)  => FAILED
+--   INTERFACE + ERROR (Journal-Import rejection) => FAILED
+--   INTERFACE with no error is corroborating only, never LOADED on its
+--   own (LOADED requires a BASE row with a real FUSION_ID).
+-- The FUSION_ID captured on LOADED is the per-line composite
+-- JE_HEADER_ID~JE_LINE_NUM, so two lines of one journal carry DIFFERENT
+-- ids (positive proof at line grain). Rows with no match and no error
+-- STAY GENERATED (unaccounted) - the shared unaccounted sweep, never
+-- this reconciler, settles them.
 --
 -- Transport is the shared DMT_UTIL_PKG.RUN_BIP_REPORT (no private
 -- UTL_HTTP copy, no raw envelope logging - the shared transport never
@@ -16,10 +37,15 @@
 -- written to the TFM table only: nothing is written back to staging;
 -- the TFM row is the sole record of the Fusion outcome (design
 -- section 2 STG_STATUS: terminal from staging's point of view).
+-- CEMLI_CODE: 'GLBalances'
 -- ============================================================
 
-    -- Main entry point: call after POLL_ESS_JOB completes.
-    -- p_load_ess_id: Load ESS job ID. Passed as P_LOAD_REQUEST_ID.
+    -- RECONCILE_BATCH — the reconcile entry point. Dispatched by the shared
+    -- queue worker through invoke_registered's RECON style (RECON_HAS_CEMLI_ARG
+    -- = 'N'): the registry row DMT_PIPELINE_DEF_TBL.RECON_PROC points at this
+    -- proc and the worker binds (p_run_id, p_load_ess_id, p_import_ess_id,
+    -- p_work_queue_id) by name. Delegates to the private Contract v1 apply
+    -- APPLY_CONTRACT_V1_GL_BALANCES. NO COMMIT (the orchestrator owns the txn).
     PROCEDURE RECONCILE_BATCH (
         p_run_id        IN NUMBER,
         p_load_ess_id   IN NUMBER,
@@ -27,70 +53,15 @@
         p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
-    -- Run the reconciliation BIP report via the shared transport
-    -- (DMT_UTIL_PKG.RUN_BIP_REPORT) with the Contract v1 parameters
-    -- P_RUN_ID / P_LOAD_REQUEST_ID / P_IMPORT_ESS_ID / P_PREFIX
-    -- (P_BATCH_ID is retired - design section 5 / Contract v1).
-    -- PROCEDURE per the section 7 procedures-only contract (network call):
-    --   x_report_xml : decoded report data; NULL with x_error_code =
-    --                  DMT_UTIL_PKG.C_SUCCESS means zero rows.
-    --   x_error_code : DMT_UTIL_PKG.C_SUCCESS / C_ERROR (failure detail
-    --                  in DMT_LOG_TBL; exceptions never escape).
-    -- Exposed publicly for independent testing.
-    PROCEDURE FETCH_BIP_RESULTS (
-        p_run_id        IN  NUMBER,
-        p_load_ess_id   IN  NUMBER,
-        x_report_xml    OUT XMLTYPE,
-        x_error_code    OUT NUMBER,
-        p_import_ess_id IN  NUMBER DEFAULT NULL
-    );
-
-    -- Parse the BIP report data and update the TFM table only.
-    -- Exposed publicly so results can be reprocessed without re-calling Fusion.
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id     IN NUMBER,
-        p_report_xml IN XMLTYPE
-    );
-
-    -- ------------------------------------------------------------
-    -- APPLY_GL — GLBalances' thin STATIC apply, invoked by the generic recon
-    -- engine (DMT_RECON_ENGINE_PKG) through the sanctioned invoke_registered
-    -- site (style RECON). By that time the engine has staged the parsed
-    -- nine-column report into DMT_RECON_STAGE_GTT. This proc reads that GTT and
-    -- MERGEs into the LITERALLY-named DMT_GL_INTERFACE_TFM_TBL with STATIC SQL:
-    --   * LOADED   on SOURCE_TYPE='BASE' AND FUSION_STATUS='SUCCESS', capturing
-    --              FUSION_JE_HEADER_ID from the report's FUSION_ID;
-    --   * FAILED   on FUSION_STATUS='ERROR', appending the real Fusion error
-    --              tagged [FUSION_ERROR].
-    -- Rows with no match and no error STAY GENERATED (the shared sweep settles
-    -- them). Both MERGEs scope to RUN_ID, plus WORK_QUEUE_ID for a child item.
-    -- The table name is a compile-time literal here — static SQL, rule-safe.
-    --
-    -- The parameter shape matches invoke_registered's RECON style
-    -- (p_run_id, p_load_ess_id, p_import_ess_id, p_work_queue_id) so the engine
-    -- can dispatch it with no new dispatch style. Only p_run_id and
-    -- p_work_queue_id are used; the ESS ids ride the RECON signature unused.
-    -- ------------------------------------------------------------
-    PROCEDURE APPLY_GL (
-        p_run_id        IN NUMBER,
-        p_load_ess_id   IN NUMBER   DEFAULT NULL,
-        p_import_ess_id IN NUMBER   DEFAULT NULL,
-        p_work_queue_id IN NUMBER   DEFAULT NULL
-    );
-
     -- RESET_UNACCOUNTED -- re-run-reconcile recovery (backlog #95). Static UPDATE
-    -- over this object's OWN literally-named TFM table(s): flip this run's
+    -- over this object's OWN literally-named TFM table: flip this run's
     -- UNACCOUNTED rows back to GENERATED and strip the bare [UNACCOUNTED] tag so
     -- the next reconcile pass re-examines them. Dispatched by the queue worker
-    -- through the sanctioned invoke_registered site (INVOKE_RESET, RECON style);
-    -- the ESS-id args are ignored. NO dynamic SQL; NO COMMIT (caller owns the txn).
-    -- GLBalances reconciles through the generic recon engine and so is
-    -- registered RECON_HAS_CEMLI_ARG='Y'; its reset is dispatched the SAME
-    -- (RECON_CEMLI) way, so this proc carries the p_cemli_code arg for shape
-    -- parity. GLBalances has a single TFM table, so p_cemli_code is accepted and
-    -- ignored.
-    PROCEDURE RESET_UNACCOUNTED (p_run_id IN NUMBER, p_cemli_code IN VARCHAR2,
-        p_load_ess_id IN NUMBER DEFAULT NULL,
+    -- through the sanctioned invoke_registered site (INVOKE_RESET, RECON style,
+    -- RECON_HAS_CEMLI_ARG = 'N'); the ESS-id args are ignored. NO dynamic SQL; NO
+    -- COMMIT (caller owns the txn). Standard RECON reset shape (same as every
+    -- other single-table object, e.g. DMT_EXPENDITURE_RESULTS_PKG).
+    PROCEDURE RESET_UNACCOUNTED (p_run_id IN NUMBER, p_load_ess_id IN NUMBER DEFAULT NULL,
         p_import_ess_id IN NUMBER DEFAULT NULL, p_work_queue_id IN NUMBER DEFAULT NULL);
 
 END DMT_GL_RESULTS_PKG;

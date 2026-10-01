@@ -156,14 +156,16 @@ using (
     union all select 'Expenditures', 'DMT_LOADER_PKG.RUN_EXPENDITURES', 'ASYNC', 'DMT_EXPENDITURE_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_EXPENDITURE_RESULTS_PKG.GET_PARTITION_KEYS' from dual
     union all select 'Grants', 'DMT_LOADER_PKG.RUN_GRANTS', 'ASYNC', 'DMT_GRANTS_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'ProjectBudgets', 'DMT_LOADER_PKG.RUN_PROJECT_BUDGETS', 'ASYNC', 'DMT_PRJ_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
-    -- GLBalances: RECON_PROC points at the GENERIC recon engine (Option 1).
-    -- The engine pages/parses/stages the Contract v1 report, then dispatches the
-    -- object's own static apply (DMT_GL_RESULTS_PKG.APPLY_GL, registered in
-    -- DMT_BIP_REPORT_TBL.APPLY_PROC) through invoke_registered. RECON_HAS_CEMLI_ARG
-    -- = 'Y' because the engine's RECONCILE_BATCH takes p_cemli_code (it must know
-    -- which registry row / apply proc to use). The legacy per-object
-    -- DMT_GL_RESULTS_PKG.RECONCILE_BATCH is retained but no longer dispatched.
-    union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_RECON_ENGINE_PKG.RECONCILE_BATCH', 'Y', null from dual
+    -- GLBalances: RECON_PROC points at the object's OWN reconciler (Option A,
+    -- the Workers / Expenditures / BillingEvents template), conformance migration
+    -- backlog #92. DMT_GL_RESULTS_PKG.RECONCILE_BATCH calls the ONE shared Contract
+    -- v1 parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies STATIC SQL against its
+    -- compile-time-known TFM table. RECON_HAS_CEMLI_ARG = 'N' (the RECON dispatch
+    -- style binds p_run_id, p_load_ess_id, p_import_ess_id, p_work_queue_id -- no
+    -- p_cemli_code). GLBalances no longer uses the generic recon engine or
+    -- DMT_BIP_REPORT_TBL.APPLY_PROC (both cleared); there is now ONE parser, not a
+    -- GL one-off.
+    union all select 'GLBalances', 'DMT_LOADER_PKG.RUN_GL_BALANCES', 'ASYNC', 'DMT_GL_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'GLBudgets', 'DMT_LOADER_PKG.RUN_GL_BUDGETS', 'ASYNC', 'DMT_GL_BUDGET_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'Assets', 'DMT_LOADER_PKG.RUN_ASSETS', 'ASYNC', 'DMT_FA_ASSET_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_FA_ASSET_RESULTS_PKG.GET_PARTITION_KEYS' from dual
     -- PlanningBudgets: out of scope as a PIPELINE MEMBER (decided 2026-07-07) --
@@ -230,8 +232,9 @@ commit;
 -- that reconcile inline. The supplier family shares ONE cemli-aware reset proc
 -- (RECON_HAS_CEMLI_ARG='Y' already routes it RECON_CEMLI, so it resets the right
 -- one of the five supplier TFM tables). GLBalances' reset lives in its results
--- package (DMT_GL_RESULTS_PKG) — the same package that owns its recon-engine
--- APPLY_GL. Separate additive MERGE so it converges an existing database.
+-- package (DMT_GL_RESULTS_PKG) — the same package that owns its Contract v1
+-- reconciler (RECON_HAS_CEMLI_ARG = 'N', so reset dispatches RECON style, no
+-- p_cemli_code). Separate additive MERGE so it converges an existing database.
 merge into "DMT_PIPELINE_DEF_TBL" t
 using (
     select 'Suppliers' cemli_code, 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' reset_proc from dual

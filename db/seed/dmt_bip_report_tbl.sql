@@ -1362,16 +1362,21 @@ when not matched then insert
 commit;
 
 -- ---------------------------------------------------------------------------
--- GLBalances — Contract v1 registration + generic recon engine wiring.
--- GLBalances is the REFERENCE object for the Option 1 recon engine: its report
--- already conforms to Contract v1 (the nine standard columns), so the generic
--- engine (DMT_RECON_ENGINE_PKG) can page + parse + stage it, then dispatch the
--- object's OWN thin static apply, DMT_GL_RESULTS_PKG.APPLY_GL, through the
--- sanctioned invoke_registered site. APPLY_GL MERGEs from DMT_RECON_STAGE_GTT
--- into the literally-named DMT_GL_INTERFACE_TFM_TBL with STATIC SQL. The four
--- documentation columns describe the object; APPLY_PROC is what the engine
--- actually dispatches. RECON_KEY = prefixed journal key. This MERGE converges
--- the columns on the GLBalances row seeded earlier in this file.
+-- GLBalances — Contract v1 registration (design section 5), Option A (backlog
+-- #92 conformance migration). GLBalances now reconciles through the ONE shared
+-- Contract v1 parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS, exactly like the other
+-- ~29 objects (the Workers / Expenditures / BillingEvents template): its report
+-- already conforms to Contract v1 (the nine standard columns, six standard
+-- parameters, keyset pagination), and its own reconciler
+-- DMT_GL_RESULTS_PKG.RECONCILE_BATCH calls FETCH_ROWS and applies STATIC SQL
+-- against the compile-time-known DMT_GL_INTERFACE_TFM_TBL. The APPLY dispatches
+-- through RECON_PROC (DMT_GL_RESULTS_PKG.RECONCILE_BATCH, RECON_HAS_CEMLI_ARG =
+-- 'N' in DMT_PIPELINE_DEF_TBL), so APPLY_PROC is NOT used -- it is cleared here
+-- so re-running the seed converges an existing database OFF the retired generic
+-- recon engine (DMT_RECON_ENGINE_PKG). TFM_TABLE / FUSION_ID_COLUMN document the
+-- primary tier; RECON_KEY = the per-line journal key (report RECORD_KEY matched
+-- to TFM.RECON_KEY). FUSION_ID is the per-line composite JE_HEADER_ID~JE_LINE_NUM.
+-- This MERGE converges the columns on the GLBalances row seeded earlier.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
@@ -1379,8 +1384,7 @@ using (
            1                                                     contract_version,
            'DMT_GL_INTERFACE_TFM_TBL'                            tfm_table,
            'FUSION_JE_HEADER_ID'                                 fusion_id_column,
-           'prefixed GL journal reconciliation key (report RECORD_KEY matched to TFM.RECON_KEY)' recon_key_sql,
-           'DMT_GL_RESULTS_PKG.APPLY_GL'                         apply_proc
+           'per-line GL journal reconciliation key (report RECORD_KEY matched to TFM.RECON_KEY); FUSION_ID = JE_HEADER_ID~JE_LINE_NUM composite' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
@@ -1389,7 +1393,7 @@ when matched then update set
     t."TFM_TABLE"        = s.tfm_table,
     t."FUSION_ID_COLUMN" = s.fusion_id_column,
     t."RECON_KEY_SQL"    = s.recon_key_sql,
-    t."APPLY_PROC"       = s.apply_proc;
+    t."APPLY_PROC"       = NULL;
 
 commit;
 
