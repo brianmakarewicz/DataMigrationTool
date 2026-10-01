@@ -46,9 +46,13 @@
     --   ledger|budget|period|currency|seg1..seg30 (~ NULL as '#')
     -- and the TFM's RECON_KEY is stamped to exactly that string by the transform.
     -- GL_BUDGET_VERSIONS.BUDGET_VERSION_ID is VPD-blocked on the demo instance
-    -- (live SELECT -> ORA-00942), so the honest, non-null Fusion base-table id the
-    -- report returns is the cell's GL_CODE_COMBINATIONS.CODE_COMBINATION_ID; that
-    -- is what lands in FUSION_BUDGET_VERSION_ID (the TFM's Fusion-id column). Rows
+    -- (live SELECT -> ORA-00942, reconfirmed 2026-09-30), so there is no reachable
+    -- Fusion surrogate id for a cell. The honest, non-null proof of load the report
+    -- returns is therefore the cell's own NATURAL composite key built from base-table
+    -- values (backlog #87): ledger~budget~period~code_combination_id (all four parts
+    -- proven queryable as the reporting user). That composite is what the report's
+    -- FUSION_ID column now carries and what lands in FUSION_BUDGET_VERSION_ID (the
+    -- TFM's Fusion-id column, retyped NUMBER->VARCHAR2 for the composite). Rows
     -- already terminal (LOADED/FAILED) are never touched, so this runs safely
     -- alongside PARSE_AND_UPDATE without double-counting; whichever proves a cell
     -- first wins and the other's guard skips it.
@@ -105,9 +109,11 @@
                 IF l_rows(i).SOURCE_TYPE = 'BASE'
                    AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                    AND l_rows(i).FUSION_ID IS NOT NULL THEN
-                    -- Positive proof: cell present in GL_BUDGET_BALANCES resolving
-                    -- to a real code combination id. The ONLY path to LOADED.
-                    -- Static UPDATE keyed on RECON_KEY (= the cell key).
+                    -- Positive proof: cell present in GL_BUDGET_BALANCES. FUSION_ID
+                    -- is the cell's natural composite key
+                    -- ledger~budget~period~code_combination_id (backlog #87) --
+                    -- real base-table values, no VPD-blocked version id. The ONLY
+                    -- path to LOADED. Static UPDATE keyed on RECON_KEY (= the cell key).
                     UPDATE DMT_GL_BUDGET_INT_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_BUDGET_VERSION_ID = l_rows(i).FUSION_ID,

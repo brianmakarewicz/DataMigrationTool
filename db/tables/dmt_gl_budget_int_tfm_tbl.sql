@@ -48,9 +48,9 @@ begin
 	"RESULTS_UPDATED_DATE" DATE, 
 	"LAST_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
-	"RECON_KEY" VARCHAR2(1000), 
-	"FUSION_BUDGET_VERSION_ID" NUMBER, 
-	"WORK_QUEUE_ID" NUMBER, 
+	"RECON_KEY" VARCHAR2(1000),
+	"FUSION_BUDGET_VERSION_ID" VARCHAR2(200),
+	"WORK_QUEUE_ID" NUMBER,
 	 CONSTRAINT "DMT_GL_BUDGET_INT_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -80,7 +80,34 @@ begin
   select count(*) into l_n from user_tab_columns
   where  table_name = 'DMT_GL_BUDGET_INT_TFM_TBL' and column_name = 'FUSION_BUDGET_VERSION_ID';
   if l_n = 0 then
-    execute immediate 'ALTER TABLE "DMT_GL_BUDGET_INT_TFM_TBL" ADD ("FUSION_BUDGET_VERSION_ID" NUMBER)';
+    execute immediate 'ALTER TABLE "DMT_GL_BUDGET_INT_TFM_TBL" ADD ("FUSION_BUDGET_VERSION_ID" VARCHAR2(200))';
+  end if;
+end;
+/
+
+-- ---------------------------------------------------------------------------
+-- 2026-09-30 backlog #87: store the budget cell's NATURAL composite key
+-- (ledger~budget~period~code_combination_id) as proof of load instead of the
+-- VPD-blocked GL_BUDGET_VERSIONS.BUDGET_VERSION_ID. The composite is a string,
+-- so FUSION_BUDGET_VERSION_ID must be VARCHAR2, not NUMBER. A plain
+-- ALTER .. MODIFY from NUMBER to VARCHAR2 raises ORA-01439 when the column
+-- holds data, so retype via add-new / copy / drop / rename. Guarded on the
+-- CURRENT column type so this is idempotent and a no-op once converged (fresh
+-- installs already get VARCHAR2 from the CREATE above).
+-- ---------------------------------------------------------------------------
+declare
+  l_type varchar2(30);
+begin
+  select data_type into l_type from user_tab_columns
+   where table_name = 'DMT_GL_BUDGET_INT_TFM_TBL'
+     and column_name = 'FUSION_BUDGET_VERSION_ID';
+  if l_type = 'NUMBER' then
+    -- Prior NUMBER values were CODE_COMBINATION_IDs; preserve them as text so
+    -- no proof-of-load is lost during the retype (TO_CHAR is lossless here).
+    execute immediate 'ALTER TABLE "DMT_GL_BUDGET_INT_TFM_TBL" ADD ("FUSION_BUDGET_VERSION_ID_C" VARCHAR2(200))';
+    execute immediate 'UPDATE "DMT_GL_BUDGET_INT_TFM_TBL" SET "FUSION_BUDGET_VERSION_ID_C" = TO_CHAR("FUSION_BUDGET_VERSION_ID")';
+    execute immediate 'ALTER TABLE "DMT_GL_BUDGET_INT_TFM_TBL" DROP COLUMN "FUSION_BUDGET_VERSION_ID"';
+    execute immediate 'ALTER TABLE "DMT_GL_BUDGET_INT_TFM_TBL" RENAME COLUMN "FUSION_BUDGET_VERSION_ID_C" TO "FUSION_BUDGET_VERSION_ID"';
   end if;
 end;
 /
@@ -117,7 +144,7 @@ end;
 
 COMMENT ON COLUMN "DMT_GL_BUDGET_INT_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
 COMMENT ON COLUMN "DMT_GL_BUDGET_INT_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
-COMMENT ON COLUMN "DMT_GL_BUDGET_INT_TFM_TBL"."FUSION_BUDGET_VERSION_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';
+COMMENT ON COLUMN "DMT_GL_BUDGET_INT_TFM_TBL"."FUSION_BUDGET_VERSION_ID" IS 'Proof of load: the budget cell natural composite key ledger~budget~period~code_combination_id (backlog #87), captured from the Fusion base tables by BIP reconciliation. VARCHAR2 because it is a composite. Named FUSION_BUDGET_VERSION_ID for history; it does NOT hold GL_BUDGET_VERSIONS.BUDGET_VERSION_ID, which is VPD-blocked (ORA-00942) and unreadable by the reporting user.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-09 conformance review F2 (STG/TFM infra-column dictionary, design

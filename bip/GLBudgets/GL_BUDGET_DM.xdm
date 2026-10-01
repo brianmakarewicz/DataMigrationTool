@@ -91,7 +91,18 @@
 --   DMT_REFERENCE           = NULL: a budget cell has no DFF/ATTRIBUTE
 --       carrier in GL_BUDGET_BALANCES, so the Slot C reference cannot
 --       be read back. SOURCE_REF is the reliable carrier here.
---   FUSION_ID               = GL_CODE_COMBINATIONS.CODE_COMBINATION_ID.
+--   FUSION_ID               = the cell's NATURAL composite key, the four
+--       parts joined with tildes:
+--         ledger_id ~ budget_name ~ period_name ~ code_combination_id
+--       (backlog #87). The bare CODE_COMBINATION_ID is not unique proof
+--       of THIS budget cell -- the same GL account carries many periods
+--       and budgets -- so FUSION_ID now carries the full cell identity
+--       that round-trips from the base tables (all four parts proven
+--       queryable as the reporting user 2026-09-30; the design's
+--       GL_BUDGET_VERSIONS.BUDGET_VERSION_ID stays VPD-blocked,
+--       ORA-00942). FUSION_ID is a STRING (xsd:string below), not an
+--       integer, because it is now a composite. It remains non-null on
+--       every BASE/SUCCESS row.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
@@ -118,7 +129,13 @@ FROM (
                                              AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
-        gcc.code_combination_id              AS fusion_id,
+        -- Natural composite cell key as proof of load (backlog #87):
+        --   ledger_id ~ budget_name ~ period_name ~ code_combination_id.
+        -- The code_combination_id alone is not unique to a budget cell;
+        -- the four tilde-joined parts are, and all four are queryable
+        -- from the base tables (the VPD-blocked BUDGET_VERSION_ID is not).
+        bb.ledger_id || '~' || bb.budget_name || '~' || bb.period_name
+          || '~' || gcc.code_combination_id  AS fusion_id,
         CAST(NULL AS VARCHAR2(2000))         AS error_message,
         TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
         bb.ledger_id || '|' || bb.budget_name || '|' || bb.period_name
@@ -207,7 +224,7 @@ FROM (
                                              AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
-        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(200))          AS fusion_id,
         '[LINE] ' || NVL(gi.error_message,
              'Rejected by Validate and Load Budgets (cell not created in GL_BUDGET_BALANCES).')
                                              AS error_message,
@@ -249,7 +266,7 @@ FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
           <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
           <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
           <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
-          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:string"  tagName="FUSION_ID"/>
           <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
           <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
           <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
