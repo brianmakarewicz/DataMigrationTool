@@ -155,7 +155,9 @@ AS
             FROM   DMT_POZ_SUPPLIERS_TFM_TBL
             WHERE  TFM_STATUS = 'LOADED' AND ROWNUM = 1;
 
-            IF l_any_loaded > 0 AND DMT_UTIL_PKG.GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN
+            -- Backlog #142: per-run Validate-Upstream flag (was the global
+            -- DMT_CONFIG_TBL VALIDATE_UPSTREAM_DEPS switch).
+            IF l_any_loaded > 0 AND DMT_UTIL_PKG.SHOULD_VALIDATE_UPSTREAM(p_run_id) = 'Y' THEN
                 INSERT INTO DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                 SELECT p_run_id, l_cemli_code, l_so_hdr, h.STG_SEQUENCE_ID,
