@@ -118,55 +118,6 @@ page 84 (
         }
     )
 
-    pageItem P84_DEPENDENT_RUN (
-        type: selectList
-        label {
-            label: Dependent Run (optional override)
-            alignment: left
-        }
-        lov {
-            type: sqlQuery
-            sqlQuery: SELECT 'Run #' || run_id || ' - prefix ' || prefix || ' (' || NVL(scenario_name, 'all scenarios') || ', ' || TO_CHAR(submitted_date, 'YYYY-MM-DD HH24:MI') || ')' d, TO_CHAR(run_id) r FROM (SELECT DISTINCT run_id, prefix, scenario_name, submitted_date FROM dmt_prefix_history_v WHERE run_status IN ('COMPLETED', 'COMPLETED_ERRORS') AND prefix IS NOT NULL) ORDER BY submitted_date DESC
-            displayExtraValues: false
-            nullDisplayValue: -- None (automatic) --
-        }
-        layout {
-            sequence: 60
-            region: @pipeline-controls
-            slot: regionBody
-            alignment: left
-            columnSpan: 4
-        }
-        appearance {
-            height: 1
-        }
-        help {
-            helpText: Default None - references automatically carry the prefix of each parent's most recent LOADED row. Pin a specific earlier run to override that automatic resolution for this run.
-        }
-    )
-
-    pageItem P84_VALIDATE_UPSTREAM (
-        type: switch
-        label {
-            label: Validate Upstream Dependencies
-            alignment: left
-        }
-        default {
-            type: static
-            staticValue: Y
-        }
-        layout {
-            sequence: 70
-            region: @pipeline-controls
-            slot: regionBody
-            alignment: left
-            columnSpan: 4
-        }
-        help {
-            helpText: Default ON. OFF skips the cross-object pre-validation for this run - used for failed-items re-runs of a full flow. With it off, a genuinely missing parent still fails at Fusion with a reportable error.
-        }
-    )
-
     dynamicAction cancel (
         name: Cancel
         execution {
