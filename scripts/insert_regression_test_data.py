@@ -308,6 +308,31 @@ def main():
         "DMT_ZX_RATE_STG_TBL",
         "DMT_ZX_REGIME_TFM_TBL",
         "DMT_ZX_REGIME_STG_TBL",
+        # CashBanks (REST config object, three tiers bank→branch→account; TFM linked to STG
+        #  by STG_SEQUENCE_ID). Were missing from this list, so these STG tables accumulated
+        #  across reloads against the same scenario name -- same write-once-breaking
+        #  bug class as the Items/MiscReceipts accumulation above. Child→parent.
+        "DMT_CE_BANK_ACCT_TFM_TBL",
+        "DMT_CE_BANK_ACCT_STG_TBL",
+        "DMT_CE_BRANCH_TFM_TBL",
+        "DMT_CE_BRANCH_STG_TBL",
+        "DMT_CE_BANK_TFM_TBL",
+        "DMT_CE_BANK_STG_TBL",
+        # Lookups (REST config object, type + value; TFM linked to STG by STG_SEQUENCE_ID). Also missing.
+        "DMT_FND_LOOKUP_VALUE_TFM_TBL",
+        "DMT_FND_LOOKUP_VALUE_STG_TBL",
+        "DMT_FND_LOOKUP_TYPE_TFM_TBL",
+        "DMT_FND_LOOKUP_TYPE_STG_TBL",
+        # Value Sets (REST config object, set + value; TFM linked to STG by STG_SEQUENCE_ID). Also missing.
+        "DMT_FND_VS_VALUE_TFM_TBL",
+        "DMT_FND_VS_VALUE_STG_TBL",
+        "DMT_FND_VS_SET_TFM_TBL",
+        "DMT_FND_VS_SET_STG_TBL",
+        # AP Payment Terms (REST config object, header + line; TFM linked to STG by STG_SEQUENCE_ID). Missing.
+        "DMT_AP_PAY_TERM_LINE_TFM_TBL",
+        "DMT_AP_PAY_TERM_LINE_STG_TBL",
+        "DMT_AP_PAY_TERM_HDR_TFM_TBL",
+        "DMT_AP_PAY_TERM_HDR_STG_TBL",
     ]
     print("=== Cleaning up existing scenario rows ===")
     total_deleted = 0
@@ -2023,16 +2048,26 @@ def main():
     label="GOOD: 2 Each of AS88000 (serial-controlled)")
 
     # Serial child row — SOURCE_ID = parent STG_SEQUENCE_ID (for generator join)
+    # Serial VALUES must be UNIQUE per scenario (objects/MiscReceipts/README.md,
+    # "Fix"): a serial-controlled receipt CREATES new serials and a serial number
+    # must be globally unique in Fusion INV_SERIAL_NUMBERS. The fixed literals
+    # DMT-REG-SER-001/002 are already on hand (status 3) from earlier runs, so
+    # re-receiving them is rejected as a duplicate serial and the rows came back
+    # UNACCOUNTED (run 155). Embedding the write-once SCENARIO_ID makes each new
+    # scenario receive brand-new serials that post as NEW. Width of the FM..TO
+    # range stays 2 to match the qty-2 parent.
+    ser_fm = f"DMT-SER-{scenario_id}-001"
+    ser_to = f"DMT-SER-{scenario_id}-002"
     run_sql(cur, """
         INSERT INTO DMT_INV_TRX_SERIALS_STG_TBL (
             FM_SERIAL_NUMBER, TO_SERIAL_NUMBER,
             SOURCE_ID, STAGE_DATE, STG_STATUS
         ) VALUES (
-            'DMT-REG-SER-001', 'DMT-REG-SER-002',
+            :fm_ser, :to_ser,
             TO_CHAR(:pseq), SYSDATE, 'NEW'
         )
-    """, {"pseq": ser_parent_seq},
-    label="  -> Serial child: DMT-REG-SER-001 to 002")
+    """, {"fm_ser": ser_fm, "to_ser": ser_to, "pseq": ser_parent_seq},
+    label=f"  -> Serial child: {ser_fm} to {ser_to} (scenario-unique)")
 
     tag_scenario(cur, "DMT_INV_TRX_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_INV_TRX_LOTS_STG_TBL", scenario_id)
