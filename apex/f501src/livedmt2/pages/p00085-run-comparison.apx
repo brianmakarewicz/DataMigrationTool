@@ -219,6 +219,24 @@ page 85 (
                        CASE WHEN FUSION_MONEY_AVAILABLE = 'Y' THEN TO_CHAR(FUSION_SUCCESS_AMOUNT, 'FM$999G999G990D00') END AS loaded_amt,
                        VARIANCE_COUNT AS variance_count,
                        CASE WHEN FUSION_MONEY_AVAILABLE = 'Y' THEN TO_CHAR(VARIANCE_AMOUNT, 'FM$999G999G990D00') END AS variance_amt,
+                       -- Backlog #94: business-key checksum equality signal for
+                       -- money-less objects. Shown only when FUSION_MONEY_AVAILABLE='N'
+                       -- AND a checksum was computed (KEY_MATCH not null); money
+                       -- objects reconcile on amount and leave this blank.
+                       KEY_MATCH,
+                       STG_KEY_CHECKSUM,
+                       FUSION_KEY_CHECKSUM,
+                       CASE
+                         WHEN KEY_MATCH IS NULL THEN NULL
+                         WHEN KEY_MATCH = 'Y' THEN 'Keys match'
+                         WHEN KEY_MATCH = 'N' THEN 'Keys differ'
+                         ELSE 'Keys unverified'
+                       END AS key_match_label,
+                       CASE KEY_MATCH
+                         WHEN 'Y' THEN 't-Badge t-Badge--success'
+                         WHEN 'N' THEN 't-Badge t-Badge--danger'
+                         ELSE 't-Badge t-Badge--warning'
+                       END AS key_match_badge_class,
                        APEX_PAGE.GET_URL(p_page => 52,
                            p_items => 'P52_RUN_ID,P52_CEMLI_CODE',
                            p_values => :P85_RUN_ID || ',' || OBJECT_TYPE) AS errors_link
@@ -400,6 +418,22 @@ page 85 (
             }
         )
 
+        column KEY_MATCH_LABEL (
+            type: plainText
+            heading {
+                heading: Key Match
+            }
+            layout {
+                sequence: 105
+            }
+            source {
+                dataType: STRING
+            }
+            columnFormatting {
+                htmlExpression: <span class="#KEY_MATCH_BADGE_CLASS#" title="STG key checksum: #STG_KEY_CHECKSUM# &#10;Fusion key checksum: #FUSION_KEY_CHECKSUM#">#KEY_MATCH_LABEL#</span>
+            }
+        )
+
         column IN_BALANCE (
             type: hidden
             heading {
@@ -498,6 +532,58 @@ page 85 (
             }
             layout {
                 sequence: 180
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column KEY_MATCH (
+            type: hidden
+            heading {
+                heading: Key Match Flag
+            }
+            layout {
+                sequence: 190
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column STG_KEY_CHECKSUM (
+            type: hidden
+            heading {
+                heading: STG Key Checksum
+            }
+            layout {
+                sequence: 200
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column FUSION_KEY_CHECKSUM (
+            type: hidden
+            heading {
+                heading: Fusion Key Checksum
+            }
+            layout {
+                sequence: 210
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column KEY_MATCH_BADGE_CLASS (
+            type: hidden
+            heading {
+                heading: Key Match Badge Class
+            }
+            layout {
+                sequence: 220
             }
             source {
                 dataType: STRING

@@ -49,7 +49,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_RUN_COMPARE_PKG AS
                 l_out(l_out.LAST) := DMT_CMP_ROW_OBJ(
                     obj.CEMLI_CODE, obj.CEMLI_CODE, 'NONE',
                     NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'N', NULL, NULL,
-                    '?', 'Comparison unavailable: '||SUBSTR(SQLERRM,1,300));
+                    '?', 'Comparison unavailable: '||SUBSTR(SQLERRM,1,300),
+                    NULL, NULL, NULL);
             END;
         END LOOP;
         RETURN l_out;
@@ -72,12 +73,14 @@ CREATE OR REPLACE PACKAGE BODY DMT_RUN_COMPARE_PKG AS
             STG_COUNT, STG_AMOUNT, TFM_ERROR_COUNT, TFM_ERROR_AMOUNT,
             FUSION_SUCCESS_COUNT, FUSION_SUCCESS_AMOUNT, AMOUNT_CURRENCY,
             FUSION_MONEY_AVAILABLE, VARIANCE_COUNT, VARIANCE_AMOUNT,
-            IN_BALANCE, NOTE, COMPUTED_DATE)
+            IN_BALANCE, NOTE,
+            STG_KEY_CHECKSUM, FUSION_KEY_CHECKSUM, KEY_MATCH, COMPUTED_DATE)
         SELECT p_run_id, t.OBJECT_TYPE, t.CEMLI_CODE, t.KEY_TYPE,
                t.STG_COUNT, t.STG_AMOUNT, t.TFM_ERROR_COUNT, t.TFM_ERROR_AMOUNT,
                t.FUSION_SUCCESS_COUNT, t.FUSION_SUCCESS_AMOUNT, t.AMOUNT_CURRENCY,
                t.FUSION_MONEY_AVAILABLE, t.VARIANCE_COUNT, t.VARIANCE_AMOUNT,
-               t.IN_BALANCE, t.NOTE, l_now
+               t.IN_BALANCE, t.NOTE,
+               t.STG_KEY_CHECKSUM, t.FUSION_KEY_CHECKSUM, t.KEY_MATCH, l_now
           FROM TABLE(l_rows) t;
         COMMIT;
     END SAVE_RUN_COMPARISON;

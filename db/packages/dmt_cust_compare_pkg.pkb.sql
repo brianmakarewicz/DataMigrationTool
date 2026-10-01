@@ -46,7 +46,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_CUST_COMPARE_PKG AS
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, NULL, l_err_cnt, NULL,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No captured customer reference yet (in flight)');
+                'No captured customer reference yet (in flight)', NULL, NULL, NULL);
         END IF;
         l_key_type := 'CAPTURED_ID';
 
@@ -87,7 +87,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_CUST_COMPARE_PKG AS
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, NULL, l_err_cnt, NULL,
             l_fus_cnt, NULL, NULL, l_money_ok,
-            l_var_cnt, NULL, l_bal, NULL);
+            l_var_cnt, NULL, l_bal, NULL, NULL, NULL, NULL);
     END GET_COMPARISON;
 END DMT_CUST_COMPARE_PKG;
 /

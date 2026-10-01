@@ -10,15 +10,39 @@
   <dataSets>
     <dataSet name="sup_cmp_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT COUNT(DISTINCT b.vendor_id)                          AS success_count,
+-- Backlog #94: KEY_CHECKSUM is a deterministic, order-independent set-checksum
+-- over the loaded Suppliers business key (VENDOR_NAME, the prefix-carrying key
+-- per DMT_DESIGN.html object table row 1: "PREFIX + VENDOR_NAME"). It is built
+-- identically on the DMT STG/TFM side (DMT_SUP_COMPARE_PKG.GET_SUPPLIERS_CMP)
+-- so an equal set of supplier names produces an equal checksum:
+--   normalize    UPPER(TRIM(vendor_name))
+--   per-key hash ORA_HASH(normalized)
+--   set-combine  SUM over the DISTINCT normalized key set (order-independent,
+--                no 4000-byte LISTAGG overflow) || ':' || COUNT(DISTINCT key).
+-- The COUNT suffix distinguishes sets of different cardinality (not a
+-- same-cardinality value-preserving swap) -- a strong-but-not-cryptographic
+-- equality signal, the intended scope for a non-money cross-check. Grain is the set
+-- of suppliers confirmed in the base table for this run's load request id(s).
+SELECT (SELECT COUNT(DISTINCT b.vendor_id)
+        FROM   poz_suppliers_int i
+        JOIN   poz_suppliers     b ON b.vendor_id = i.vendor_id
+        WHERE  i.load_request_id IN (
+                 SELECT TO_NUMBER(REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL))
+                 FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+               ))                                           AS success_count,
        CAST(NULL AS NUMBER)                                 AS success_amount,
-       CAST(NULL AS VARCHAR2(15))                           AS amount_currency
-FROM   poz_suppliers_int i
-JOIN   poz_suppliers     b ON b.vendor_id = i.vendor_id
-WHERE  i.load_request_id IN (
-         SELECT TO_NUMBER(REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL))
-         FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
-       )
+       CAST(NULL AS VARCHAR2(15))                           AS amount_currency,
+       (SELECT TO_CHAR(NVL(SUM(ORA_HASH(k)),0)) || ':' || COUNT(*)
+        FROM (
+          SELECT DISTINCT UPPER(TRIM(b.vendor_name)) AS k
+          FROM   poz_suppliers_int i
+          JOIN   poz_suppliers     b ON b.vendor_id = i.vendor_id
+          WHERE  i.load_request_id IN (
+                   SELECT TO_NUMBER(REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL))
+                   FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+                 )
+        ))                                                  AS key_checksum
+FROM   dual
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -29,6 +53,7 @@ WHERE  i.load_request_id IN (
           <element name="SUCCESS_COUNT"    value="SUCCESS_COUNT"    dataType="xsd:string" tagName="SUCCESS_COUNT"/>
           <element name="SUCCESS_AMOUNT"   value="SUCCESS_AMOUNT"   dataType="xsd:string" tagName="SUCCESS_AMOUNT"/>
           <element name="AMOUNT_CURRENCY"  value="AMOUNT_CURRENCY"  dataType="xsd:string" tagName="AMOUNT_CURRENCY"/>
+          <element name="KEY_CHECKSUM"     value="KEY_CHECKSUM"     dataType="xsd:string" tagName="KEY_CHECKSUM"/>
         </group>
       </dataStructure>
     </nodeList>

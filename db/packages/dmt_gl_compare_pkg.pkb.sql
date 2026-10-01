@@ -57,7 +57,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No GL interface rows staged for this run yet (in flight)');
+                'No GL interface rows staged for this run yet (in flight)', NULL, NULL, NULL);
         END IF;
         l_batch    := TO_CHAR(p_run_id);
         l_key_type := 'STAMPED_REF';
@@ -102,7 +102,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
             l_fus_cnt, l_fus_amt, 'USD', l_money_ok,
-            l_var_cnt, l_var_amt, l_bal, NULL);
+            l_var_cnt, l_var_amt, l_bal, NULL, NULL, NULL, NULL);
     END GET_BALANCES_COMPARISON;
 
     -- ------------------------------------------------------------------
@@ -180,7 +180,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No captured CODE_COMBINATION_ID on a LOADED row yet (in flight)');
+                'No captured CODE_COMBINATION_ID on a LOADED row yet (in flight)', NULL, NULL, NULL);
         END IF;
         l_key_type := 'CAPTURED_ID';
 
@@ -224,7 +224,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
             l_fus_cnt, l_fus_amt, 'USD', l_money_ok,
-            l_var_cnt, l_var_amt, l_bal, NULL);
+            l_var_cnt, l_var_amt, l_bal, NULL, NULL, NULL, NULL);
     END GET_BUDGETS_COMPARISON;
 
 END DMT_GL_COMPARE_PKG;

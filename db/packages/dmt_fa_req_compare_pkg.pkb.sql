@@ -76,7 +76,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_FA_REQ_COMPARE_PKG AS
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No load request id yet (in flight)');
+                'No load request id yet (in flight)', NULL, NULL, NULL);
         END IF;
         l_key_type := 'LOAD_ID';
 
@@ -120,7 +120,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_FA_REQ_COMPARE_PKG AS
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
             l_fus_cnt, l_fus_amt, NVL(l_ccy,'USD'), l_money_ok,
-            l_var_cnt, l_var_amt, l_bal, NULL);
+            l_var_cnt, l_var_amt, l_bal, NULL, NULL, NULL, NULL);
     END GET_ASSETS_CMP;
 
     -- ------------------------------------------------------------------
@@ -209,7 +209,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_FA_REQ_COMPARE_PKG AS
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No captured FUSION_REQUISITION_HEADER_ID yet (in flight)');
+                'No captured FUSION_REQUISITION_HEADER_ID yet (in flight)', NULL, NULL, NULL);
         END IF;
         l_key_type := 'CAPTURED_ID';
 
@@ -254,7 +254,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_FA_REQ_COMPARE_PKG AS
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
             l_fus_cnt, l_fus_amt, NVL(l_ccy,'USD'), l_money_ok,
-            l_var_cnt, l_var_amt, l_bal, NULL);
+            l_var_cnt, l_var_amt, l_bal, NULL, NULL, NULL, NULL);
     END GET_REQUISITIONS_CMP;
 
 END DMT_FA_REQ_COMPARE_PKG;

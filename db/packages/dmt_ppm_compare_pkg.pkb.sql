@@ -55,7 +55,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, NULL, l_err_cnt, NULL,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No captured FUSION_PROJECT_ID yet (in flight)');
+                'No captured FUSION_PROJECT_ID yet (in flight)', NULL, NULL, NULL);
         END IF;
         l_key_type := 'CAPTURED_ID';
 
@@ -94,7 +94,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, NULL, l_err_cnt, NULL,
             l_fus_cnt, NULL, NULL, l_money_ok,
-            l_var_cnt, NULL, l_bal, NULL);
+            l_var_cnt, NULL, l_bal, NULL, NULL, NULL, NULL);
     END GET_PROJECTS_CMP;
 
     -- ------------------------------------------------------------------
@@ -158,7 +158,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
                 0, 0, NULL, l_money_ok,
                 l_stg_cnt - l_err_cnt, l_stg_amt - l_err_amt,
                 CASE WHEN l_stg_cnt = l_err_cnt AND l_stg_amt = l_err_amt THEN 'Y' ELSE 'N' END,
-                NULL);
+                NULL, NULL, NULL, NULL);
         END IF;
         l_key_type := 'CAPTURED_ID';
 
@@ -200,7 +200,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
             l_fus_cnt, l_fus_amt, NULL, l_money_ok,
-            l_var_cnt, l_var_amt, l_bal, NULL);
+            l_var_cnt, l_var_amt, l_bal, NULL, NULL, NULL, NULL);
     END GET_PROJECT_BUDGETS_CMP;
 
     -- ------------------------------------------------------------------
@@ -260,7 +260,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No import request id yet (in flight)');
+                'No import request id yet (in flight)', NULL, NULL, NULL);
         END IF;
         l_key_type := 'IMPORT_ID';
 
@@ -310,7 +310,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
             l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
             l_fus_cnt, l_fus_amt, NVL(l_ccy,'USD'), l_money_ok,
             l_var_cnt, l_var_amt, l_bal,
-            NULL);
+            NULL, NULL, NULL, NULL);
     END GET_EXPENDITURES_CMP;
 
     -- ------------------------------------------------------------------
@@ -360,7 +360,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No import request id yet (in flight)');
+                'No import request id yet (in flight)', NULL, NULL, NULL);
         END IF;
         l_key_type := 'IMPORT_ID';
 
@@ -401,7 +401,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, l_stg_amt, l_err_cnt, l_err_amt,
             l_fus_cnt, l_fus_amt, NVL(l_ccy,'USD'), l_money_ok,
-            l_var_cnt, l_var_amt, l_bal, NULL);
+            l_var_cnt, l_var_amt, l_bal, NULL, NULL, NULL, NULL);
     END GET_BILLING_EVENTS_CMP;
 
     -- ------------------------------------------------------------------
@@ -456,7 +456,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, NULL, l_err_cnt, NULL,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No import request id yet (in flight)');
+                'No import request id yet (in flight)', NULL, NULL, NULL);
         END IF;
         l_key_type := 'IMPORT_ID';
 
@@ -497,7 +497,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
             l_stg_cnt, NULL, l_err_cnt, NULL,
             l_fus_cnt, NULL, NULL, l_money_ok,
             l_var_cnt, NULL, l_bal,
-            NULL);
+            NULL, NULL, NULL, NULL);
     END GET_GRANTS_CMP;
 
 END DMT_PPM_COMPARE_PKG;
