@@ -138,5 +138,62 @@
         x_error_code OUT NUMBER
     );
 
+    -- --------------------------------------------------------
+    -- GET_RUN_FUSION_SWEEP  (backlog #93 — end-of-run load-summary sweep)
+    --
+    -- An independent, Fusion-side "what actually loaded" summary for ONE run,
+    -- across EVERY Contract v1 object the run touched. For each such object it
+    -- runs that object's Contract v1 reconciliation report LIVE over BIP (reusing
+    -- the shared DMT_RECON_CONTRACT_PKG.FETCH_ROWS — all BIP transport, no dynamic
+    -- SQL, no TFM write) and counts the base rows Fusion returned for the run. This
+    -- is a truth check that complements — and never replaces — the TFM-side
+    -- accounting in GET_RUN_ROLLUP.
+    --
+    -- Why the report, not a raw "LIKE 'DMT:...:<wqid>:...'" scan: the DMT token in
+    -- the Slot A reference only round-trips for a few objects (e.g. GLBalances); for
+    -- most objects the base table keeps no DMT token and the match is on the
+    -- object's own business key. So the sweep uses each object's ACTUAL recon match
+    -- — its registered Contract v1 report, which is already scoped to this run by
+    -- the report's P_RUN_ID / P_LOAD_REQUEST_ID parameters. The report's run scope
+    -- IS the wqid scope: FETCH_ROWS returns only this run's rows, matched by each
+    -- object's real base-table key. No assumption that the DMT token is present.
+    --
+    -- Per object the summary reports:
+    --   FUSION_BASE_ROWS   base rows Fusion returned for the run (SOURCE_TYPE='BASE'
+    --                      and FUSION_STATUS='SUCCESS' with a non-null FUSION_ID) —
+    --                      the independent "what landed" count.
+    --   FUSION_ID_COUNT    distinct non-null FUSION_IDs among those base rows.
+    --   FUSION_ERROR_ROWS  rows Fusion returned as FUSION_STATUS='ERROR'.
+    --   TFM_LOADED_ROWS    our own LOADED count from DMT_RUN_RECORDS_V (for a
+    --                      side-by-side truth check; our accounting vs Fusion's).
+    --   SWEEP_STATUS       'SWEPT'   = the live report ran and these counts are real;
+    --                      'SKIPPED' = object not registered Contract v1 (no live
+    --                                  report shape to run), counts 0 but TFM shown;
+    --                      'FETCH_FAILED' = the live report could not be reached
+    --                                  (detail logged); Fusion counts 0, TFM shown.
+    --   FETCH_NOTE         short human note (e.g. the skip/failed reason).
+    --
+    -- Read-only and honest: a FETCH_FAILED object is NOT reported as zero-loaded in
+    -- Fusion — SWEEP_STATUS flags that we could not reach the report, so the number
+    -- is "unknown", never a fabricated zero. One slow/unreachable object never
+    -- aborts the whole sweep; it is flagged and the sweep continues.
+    --
+    --   p_run_id      the pipeline run to sweep.
+    --   x_cursor      OUT one row per object the run touched, ordered OBJECT_TYPE:
+    --                   RUN_ID, CEMLI_CODE, OBJECT_TYPE, CONTRACT_VERSION,
+    --                   TFM_TOTAL_ROWS, TFM_LOADED_ROWS,
+    --                   FUSION_BASE_ROWS, FUSION_ID_COUNT, FUSION_ERROR_ROWS,
+    --                   SWEEP_STATUS, FETCH_NOTE
+    --   x_error_code  OUT C_SUCCESS once the sweep completed (even if some objects
+    --                   were SKIPPED/FETCH_FAILED — those are per-object states, not
+    --                   a sweep failure); C_ERROR only if the sweep itself could not
+    --                   run (detail logged).
+    -- --------------------------------------------------------
+    PROCEDURE GET_RUN_FUSION_SWEEP (
+        p_run_id     IN  NUMBER,
+        x_cursor     OUT SYS_REFCURSOR,
+        x_error_code OUT NUMBER
+    );
+
 END DMT_RUN_SUMMARY_PKG;
 /

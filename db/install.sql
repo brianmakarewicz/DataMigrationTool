@@ -193,6 +193,7 @@ prompt == Types ==
 @@types/dmt_partition_key_tbl.sql
 @@types/dmt_recon_row_tbl.sql
 @@types/dmt_cmp_row_typ.sql
+@@types/dmt_run_sweep_tbl.sql
 
 prompt == Tables ==
 @@tables/apex_export_tmp.sql
