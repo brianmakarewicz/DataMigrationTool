@@ -7,11 +7,28 @@ CREATE OR REPLACE PACKAGE BODY DMT_SUP_COMPARE_PKG AS
     -- BUILD_ROW is the single place for the batch-id lookup, the BIP call,
     -- and the variance/balance math (mirrors DMT_PO_COMPARE_PKG.GET_COMPARISON).
     -- No dynamic SQL and no REF CURSOR anywhere in this package (rule #66).
+    -- Backlog #94 -- business-key checksum. A deterministic, order-independent
+    -- set-checksum over an object's normalized business key(s), computed with
+    -- the IDENTICAL expression on the STG/TFM side (here) and the Fusion side
+    -- (the SUP_CMP_DM BIP data model), so an equal key set yields an equal
+    -- checksum. Shape:  SUM(ORA_HASH(UPPER(TRIM(key)))) over the DISTINCT key
+    -- set  ||':'||  COUNT(DISTINCT key). SUM over the distinct set is
+    -- order-independent and avoids the 4000-byte LISTAGG overflow at scale.
+    -- The COUNT suffix distinguishes key sets of DIFFERENT cardinality; it does
+    -- not catch a value-preserving swap within the same cardinality (additive
+    -- SUM is commutative), so this is a strong-but-not-cryptographic equality
+    -- signal, which is the intended scope for a non-money cross-check. Returned as the
+    -- VARCHAR2 the DMT_CMP_ROW_OBJ checksum attributes carry.
+    --
+    -- Only Suppliers passes a non-null p_stg_checksum today (the #94 prototype);
+    -- the other four supplier objects pass NULL and the three checksum
+    -- attributes stay NULL ("not computed") -- a documented follow-on.
     FUNCTION BUILD_ROW(
-        p_run_id    IN NUMBER,
-        p_cemli     IN VARCHAR2,
-        p_stg_cnt   IN NUMBER,
-        p_err_cnt   IN NUMBER
+        p_run_id        IN NUMBER,
+        p_cemli         IN VARCHAR2,
+        p_stg_cnt       IN NUMBER,
+        p_err_cnt       IN NUMBER,
+        p_stg_checksum  IN VARCHAR2 DEFAULT NULL
     ) RETURN DMT_CMP_ROW_OBJ IS
         l_batch     VARCHAR2(4000);
         l_xml       XMLTYPE;
@@ -21,6 +38,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_SUP_COMPARE_PKG AS
         l_path      DMT_BIP_REPORT_TBL.CMP_REPORT_CATALOG_PATH%TYPE;
         l_bal       VARCHAR2(1);
         l_var_cnt   NUMBER;
+        l_fus_chk   VARCHAR2(80);
+        l_match     VARCHAR2(1);
     BEGIN
         -- batch id list = the LOAD ESS job id(s) this run submitted for this
         -- supplier object (key path = LOAD_ID, never the prefix).
@@ -32,10 +51,13 @@ CREATE OR REPLACE PACKAGE BODY DMT_SUP_COMPARE_PKG AS
 
         IF l_batch IS NULL THEN
             -- Still in flight: no Fusion side yet. Never report 0 successes.
+            -- STG-side checksum is already known; Fusion side / match unknown.
             RETURN DMT_CMP_ROW_OBJ(p_cemli, p_cemli, 'NONE',
                 p_stg_cnt, NULL, p_err_cnt, NULL,
                 NULL, NULL, NULL, 'N', NULL, NULL, '?',
-                'No load request id yet (in flight)');
+                'No load request id yet (in flight)',
+                p_stg_checksum, NULL,
+                CASE WHEN p_stg_checksum IS NOT NULL THEN '?' END);
         END IF;
         l_key_type := 'LOAD_ID';
 
@@ -58,11 +80,13 @@ CREATE OR REPLACE PACKAGE BODY DMT_SUP_COMPARE_PKG AS
 
         IF l_xml IS NULL THEN
             l_fus_cnt := 0;
+            l_fus_chk := NULL;
         ELSE
-            SELECT TO_NUMBER(x.success_count)
-              INTO l_fus_cnt
+            SELECT TO_NUMBER(x.success_count), x.key_checksum
+              INTO l_fus_cnt, l_fus_chk
               FROM XMLTABLE('/DATA_DS/G_1' PASSING l_xml COLUMNS
-                     success_count VARCHAR2(40) PATH 'SUCCESS_COUNT') x;
+                     success_count VARCHAR2(40) PATH 'SUCCESS_COUNT',
+                     key_checksum  VARCHAR2(80) PATH 'KEY_CHECKSUM') x;
         END IF;
 
         -- count-only: no money anywhere in this family. Balance decided on
@@ -70,14 +94,30 @@ CREATE OR REPLACE PACKAGE BODY DMT_SUP_COMPARE_PKG AS
         l_var_cnt := p_stg_cnt - (NVL(l_fus_cnt,0) + p_err_cnt);
         l_bal := CASE WHEN l_var_cnt = 0 THEN 'Y' ELSE 'N' END;
 
+        -- KEY_MATCH: a non-money equality signal. Only meaningful when THIS
+        -- object computes a STG-side checksum (the #94 prototype). Y when both
+        -- sides are present and equal, N when both present and differ, ? when
+        -- either side could not be computed. NULL when the object is not wired
+        -- for checksums (p_stg_checksum NULL) -- it stays off the signal.
+        IF p_stg_checksum IS NULL THEN
+            l_match := NULL;
+        ELSIF l_fus_chk IS NULL THEN
+            l_match := '?';
+        ELSIF p_stg_checksum = l_fus_chk THEN
+            l_match := 'Y';
+        ELSE
+            l_match := 'N';
+        END IF;
+
         RETURN DMT_CMP_ROW_OBJ(p_cemli, p_cemli, l_key_type,
             p_stg_cnt, NULL, p_err_cnt, NULL,
             l_fus_cnt, NULL, NULL, 'N',
-            l_var_cnt, NULL, l_bal, NULL);
+            l_var_cnt, NULL, l_bal, NULL,
+            p_stg_checksum, l_fus_chk, l_match);
     END BUILD_ROW;
 
     FUNCTION GET_SUPPLIERS_CMP(p_run_id IN NUMBER) RETURN DMT_CMP_ROW_OBJ IS
-        l_stg_cnt NUMBER; l_err_cnt NUMBER;
+        l_stg_cnt NUMBER; l_err_cnt NUMBER; l_stg_chk VARCHAR2(80);
     BEGIN
         SELECT COUNT(DISTINCT TFM_SEQUENCE_ID)
           INTO l_stg_cnt
@@ -89,7 +129,38 @@ CREATE OR REPLACE PACKAGE BODY DMT_SUP_COMPARE_PKG AS
           FROM DMT_POZ_SUPPLIERS_TFM_TBL
          WHERE RUN_ID = p_run_id AND TFM_STATUS = 'FAILED';
 
-        RETURN BUILD_ROW(p_run_id, 'Suppliers', l_stg_cnt, l_err_cnt);
+        -- Backlog #94 STG-side business-key checksum. Business key per
+        -- DMT_DESIGN.html object table row 1 = "PREFIX + VENDOR_NAME"; the TFM
+        -- VENDOR_NAME already carries the run prefix. On the Fusion side the
+        -- supplier name is NOT a column of POZ_SUPPLIERS (verified live on the
+        -- demo instance: POZ_SUPPLIERS has PARTY_ID / SEGMENT1 / VENDOR_ID, no
+        -- VENDOR_NAME) -- it lives in HZ_PARTIES.PARTY_NAME via
+        -- POZ_SUPPLIERS.PARTY_ID, and that PARTY_NAME equals the interface
+        -- POZ_SUPPLIERS_INT.VENDOR_NAME byte-for-byte, hence equals this TFM
+        -- VENDOR_NAME. So TFM VENDOR_NAME here is the correct cross-side key
+        -- (SEGMENT1 is regenerated by Fusion auto-numbering and is NOT reliable).
+        --
+        -- Grain note (reviewer point 3): we checksum the LOADABLE set
+        -- (TFM_STATUS != 'FAILED'), i.e. the rows this run sent to Fusion. A row
+        -- Fusion rejects PER-RECORD is still non-FAILED here until reconciliation
+        -- marks it, so immediately after a load with some rejects, this STG set
+        -- can be a superset of what actually landed and KEY_MATCH may read 'N'
+        -- for that honest, transient window. That is expected -- KEY_MATCH='N'
+        -- means "the key sets differ right now", which is the signal we want; it
+        -- settles to 'Y' once every row is accounted (loaded or marked FAILED).
+        --
+        -- EXACT MIRROR of the Fusion-side expression in SUP_CMP_DM.xdm: distinct
+        -- UPPER(TRIM(name)) set, SUM(ORA_HASH) ||':'|| COUNT.
+        SELECT TO_CHAR(NVL(SUM(ORA_HASH(k)),0)) || ':' || COUNT(*)
+          INTO l_stg_chk
+          FROM (
+            SELECT DISTINCT UPPER(TRIM(VENDOR_NAME)) AS k
+              FROM DMT_POZ_SUPPLIERS_TFM_TBL
+             WHERE RUN_ID = p_run_id
+               AND NVL(TFM_STATUS,'x') != 'FAILED'
+          );
+
+        RETURN BUILD_ROW(p_run_id, 'Suppliers', l_stg_cnt, l_err_cnt, l_stg_chk);
     END GET_SUPPLIERS_CMP;
 
     FUNCTION GET_SUP_ADDR_CMP(p_run_id IN NUMBER) RETURN DMT_CMP_ROW_OBJ IS

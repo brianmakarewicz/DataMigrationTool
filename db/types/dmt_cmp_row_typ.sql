@@ -10,7 +10,7 @@
 -- type needs both dropped and recreated. Drop the collection then the
 -- object type first (FORCE, ignoring "does not exist" on a fresh DB),
 -- then recreate both cleanly. This makes a re-install pick up column-list
--- changes to the 15 standard attributes without manual intervention.
+-- changes to the standard attributes (currently 18) without manual intervention.
 DECLARE
     PROCEDURE drop_type(p_name IN VARCHAR2) IS
     BEGIN
@@ -40,7 +40,18 @@ CREATE OR REPLACE TYPE DMT_CMP_ROW_OBJ AS OBJECT (
     VARIANCE_COUNT         NUMBER,
     VARIANCE_AMOUNT        NUMBER,
     IN_BALANCE             VARCHAR2(1),     -- Y | N | ? (unknown: Fusion side not available)
-    NOTE                   VARCHAR2(400)
+    NOTE                   VARCHAR2(400),
+    -- Business-key checksum (backlog #94). A non-money equality signal for
+    -- objects that carry no monetary amount: a deterministic set-checksum over
+    -- each object's ordered, normalized business key(s), computed identically on
+    -- the STG/TFM side and the Fusion side so an equal key set yields an equal
+    -- checksum. NULL on objects that have not been wired to compute it yet
+    -- (Suppliers is the first; others follow one at a time). These are appended
+    -- (positional-contract preserving): every non-checksum consumer that
+    -- constructs this object passes trailing NULLs.
+    STG_KEY_CHECKSUM       VARCHAR2(80),   -- SUM(ORA_HASH(norm key)) ':' DISTINCT count, STG/TFM side
+    FUSION_KEY_CHECKSUM    VARCHAR2(80),   -- same expression, Fusion base-table side
+    KEY_MATCH              VARCHAR2(1)      -- Y | N | ? (null/either side unavailable) | NULL (not computed)
 );
 /
 CREATE OR REPLACE TYPE DMT_CMP_ROW_TAB AS TABLE OF DMT_CMP_ROW_OBJ;

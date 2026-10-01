@@ -24,9 +24,34 @@ begin
      "IN_BALANCE"             VARCHAR2(1),
      "NOTE"                   VARCHAR2(400),
      "COMPUTED_DATE"          TIMESTAMP,
+     "STG_KEY_CHECKSUM"       VARCHAR2(80),
+     "FUSION_KEY_CHECKSUM"    VARCHAR2(80),
+     "KEY_MATCH"              VARCHAR2(1),
      CONSTRAINT "DMT_RUN_COMPARISON_PK" PRIMARY KEY ("RUN_ID","OBJECT_TYPE")
    )';
 exception when others then
   if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+-- Business-key checksum columns (backlog #94). Guarded ADDs converge an
+-- existing table that pre-dates these columns; on a fresh install they are
+-- already in the CREATE above and these are no-ops. Mirrors the three new
+-- DMT_CMP_ROW_OBJ attributes STG_KEY_CHECKSUM / FUSION_KEY_CHECKSUM / KEY_MATCH
+-- that SAVE_RUN_COMPARISON stores. Idempotent (re-runnable; skips existing).
+declare
+  procedure add_col(p_col varchar2, p_def varchar2) is
+    n number;
+  begin
+    select count(*) into n from user_tab_columns
+     where table_name = 'DMT_RUN_COMPARISON_TBL' and column_name = p_col;
+    if n = 0 then
+      execute immediate 'ALTER TABLE "DMT_RUN_COMPARISON_TBL" ADD ("'||p_col||'" '||p_def||')';
+    end if;
+  end;
+begin
+  add_col('STG_KEY_CHECKSUM',    'VARCHAR2(80)');
+  add_col('FUSION_KEY_CHECKSUM', 'VARCHAR2(80)');
+  add_col('KEY_MATCH',           'VARCHAR2(1)');
 end;
 /

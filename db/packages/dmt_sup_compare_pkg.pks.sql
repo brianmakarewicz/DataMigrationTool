@@ -18,6 +18,15 @@ CREATE OR REPLACE PACKAGE DMT_SUP_COMPARE_PKG AS
     -- is always the object's TFM rows for the run (STG is reached only
     -- through the TFM row's STG_SEQUENCE_ID pointer per object, never by
     -- business key or prefix).
+    --
+    -- Backlog #94 -- business-key checksum (money-less objects). Because the
+    -- family carries no money, GET_SUPPLIERS_CMP additionally computes a
+    -- deterministic set-checksum over its normalized business key
+    -- (UPPER(TRIM(VENDOR_NAME))) and compares it to the same checksum computed
+    -- on the Fusion base-table side by SUP_CMP_DM, yielding a non-money
+    -- STG-vs-Fusion KEY_MATCH equality signal on the comparison row. Suppliers
+    -- is the #94 prototype; the other four functions do not yet compute a
+    -- checksum (their checksum attributes stay NULL) -- a documented follow-on.
     FUNCTION GET_SUPPLIERS_CMP(p_run_id IN NUMBER)      RETURN DMT_CMP_ROW_OBJ;
     FUNCTION GET_SUP_ADDR_CMP(p_run_id IN NUMBER)       RETURN DMT_CMP_ROW_OBJ;
     FUNCTION GET_SUP_SITES_CMP(p_run_id IN NUMBER)      RETURN DMT_CMP_ROW_OBJ;
