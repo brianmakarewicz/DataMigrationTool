@@ -895,4 +895,35 @@ begin
 exception when dup_val_on_index then null;
 end;
 /
+-- ---------------------------------------------------------------------------
+-- ValueSets (CEMLI_CODE = 'ValueSets') — FBDI-file + ESS-import load options.
+-- Backlog #130 slice: Value Set VALUES now load via an FBDI zip uploaded to UCM
+-- and imported by the Fusion "Upload Value Set Values" scheduled process
+-- (loadAndImportData), REPLACING the dead REST POST path (valueSets REST
+-- "create" action is disabled on this pod).
+--
+-- FUNCTIONAL-OWNER CONFIRMATION REQUIRED before a live run. The values below are
+-- the Oracle-documented canonical defaults for the "Upload Value Set Values"
+-- process (Oracle Applications Common guide), NOT pod-proven: on demo pod
+-- fa-esew-dev28 this process has NEVER run and its definition is ABSENT from
+-- both FUSION.ESS_REQUEST_HISTORY and FUSION.SBS_JOB_DEFINITIONS, so the exact
+-- values cannot be read back from the pod. A functional owner MUST confirm or
+-- correct, for this release:
+--   * IMPORT_JOB_NAME  — the ESS job definition path + name. Canonical default:
+--       /oracle/apps/ess/financials/commonModules/shared/applicationCore/valueSet
+--       ;FndValueSetUploadServiceJob
+--     (the loader converts the final ';' to ',' for loadAndImportData's JobName).
+--   * UCM_ACCOUNT      — the content-repository document account the zip uploads
+--     to. Canonical default below: fin/fusionAccountingHub/import.
+--   * The CSV column order DMT_FND_VS_FBL_GEN_PKG emits (Value Set Code,
+--     Independent Value, Value, Description, Enabled, Start/End dates, ...).
+-- Until confirmed, the pipeline BUILDS and SUBMITS correctly but the import ESS
+-- job is expected to error at submit (job definition not found on the pod); that
+-- real ESS error is what the load step records on each row.
+-- ---------------------------------------------------------------------------
+begin
+  insert into "DMT_ERP_INTERFACE_OPTIONS_TBL" ("ERP_INTERFACE_OPTIONS_ID","ERP_FAMILY","BUSINESS_OBJECT","UCM_ACCOUNT","LOAD_JOB_NAME","IMPORT_JOB_NAME","POST_LOAD_JOB_NAME","LOAD_INTERFACE_FLAG","LOADER_TYPE","SERVICE_NAME","CEMLI_CODE","SOURCE_ERP_OPTIONS_ID","REPORT_JOB_DEF","FUSION_USERNAME","FUSION_PASSWORD") values ('302','FND','Value Set Values','fin/fusionAccountingHub/import',NULL,'/oracle/apps/ess/financials/commonModules/shared/applicationCore/valueSet;FndValueSetUploadServiceJob',NULL,'Y','SQLLOADER',NULL,'ValueSets','302',NULL,NULL,NULL);
+exception when dup_val_on_index then null;
+end;
+/
 commit;
