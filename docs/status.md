@@ -1,5 +1,40 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-01 -- Backlog batch 5 close-out (Banks REST + Assets + PO buyer + page-84), one regression
+
+**Bottom line.** Four more backlog items were worked in parallel and closed out as one batch,
+proven by a single full regression (run 195). All four are fully resolved. The regression found
+zero new problems compared to the last known-good run.
+
+**What was resolved.**
+- **#39** -- bank accounts used to load through the old flat-file method. They now load through
+  Fusion's web service (banks, then branches, then accounts, in order), and the old flat-file
+  generator was removed. Proven live: a good bank/branch/account chain landed in Fusion with real
+  ids, and a bad bank came back with Fusion's real "country is not valid" error.
+- **#78** -- a purchase order's buyer given by name was falling back to a raw number because the
+  name-to-id lookup had never been filled in. Added the lookup (built from Fusion's buyer list)
+  so the buyer now resolves by name. Proven: 159 buyers loaded, and the sample buyer resolves by
+  name instead of the number.
+- **#139** -- the Assets book table stored the asset's id, which repeats across an asset's
+  corporate and tax books, so the uniqueness check was wrong. It now stores an asset-plus-book
+  key that is unique per book. Proven: the id auditor's Assets-book check passes.
+- **#142** -- the two Run Pipeline page controls that were removed earlier as having nothing
+  behind them now have real settings behind them: one makes a run check that an object's parent
+  loaded first, the other pins which earlier run a run depends on. Both are saved on the run and
+  actually obeyed. The regression harness was updated to match the new settings so it keeps
+  testing the real submission path.
+
+**One thing checked and cleared.** During this batch several helper agents reported ten
+comparison packages showing as broken on the shared local database. That turned out to be
+leftover state from deploying files one at a time, not a real problem: a full clean install
+recreates the shared data type and recompiles all ten, and the regression confirmed zero broken
+objects after a full install. No code fix was needed.
+
+**Known ongoing local issue (item #144).** The local database's job scheduler again ran slowly
+mid-run (it starves the run poller while long file-generation jobs hold the scheduler slots). The
+run still completed; it was nudged along with status-only actions and no staged rows were reset.
+This is the local-environment reliability item already on the backlog.
+
 ## Session -- 2026-10-01 -- Backlog batch 4 close-out (engine + suppliers + CSV + comparison), one regression
 
 **Bottom line.** Six more backlog items were worked and closed out as one batch, proven by a
