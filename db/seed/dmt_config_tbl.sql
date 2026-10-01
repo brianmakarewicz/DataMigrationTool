@@ -218,3 +218,16 @@ begin
 exception when dup_val_on_index then null;
 end;
 /
+-- Projects orphan-task pre-validation: allow a task whose parent project already
+-- exists in Fusion (loaded by an earlier DMT run) to pass instead of being rejected.
+-- N (default) = strict, batch-only: a task is an orphan unless its parent project
+-- header is in the SAME source/scenario. Y = also let a task through when its parent
+-- PROJECT_NUMBER has a prior LOADED Projects row (the DMT-side evidence that the
+-- project is already present in Fusion, resolved the same way DMT_XREF_PKG resolves
+-- cross-object references). A true orphan (parent neither in the batch nor previously
+-- loaded) is still rejected under either setting.
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('PROJECT_ALLOW_EXTERNAL_PARENT','N','Projects orphan-task pre-validation. N (default) = reject any task whose parent PROJECT_NUMBER is absent from the same source/scenario (strict, self-contained batch). Y = also allow a task through when its parent project was already loaded to Fusion by an earlier DMT run (a prior LOADED Projects TFM row for that PROJECT_NUMBER); only a true orphan (parent neither in the batch nor previously loaded) is then rejected.',sysdate,'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/

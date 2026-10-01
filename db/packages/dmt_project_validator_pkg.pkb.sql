@@ -107,8 +107,20 @@ AS
         -- regression. The parent-existence subquery correlates on SCENARIO_ID so a
         -- task is judged against projects in its own batch only (mirrors the
         -- Customers batch-parent check).
+        --
+        -- Config flag PROJECT_ALLOW_EXTERNAL_PARENT (default N) relaxes the batch
+        -- scoping for incremental migrations. When Y, a task is ALSO spared when its
+        -- parent project was already loaded to Fusion by an earlier DMT run — proven
+        -- by a prior LOADED Projects TFM row for that PROJECT_NUMBER, the same
+        -- DMT-side evidence DMT_XREF_PKG uses to resolve cross-object references.
+        -- A true orphan (parent neither in the batch nor previously loaded) is still
+        -- rejected under either setting. When N, behavior is unchanged: batch-only.
         DECLARE
-            l_orphans NUMBER;
+            l_orphans            NUMBER;
+            -- 'Y' when the flag is on; any other value keeps the strict batch-only
+            -- check. A VARCHAR2 (not a PL/SQL BOOLEAN) so it can be a SQL bind below.
+            l_allow_ext_parent   VARCHAR2(1) :=
+                NVL(DMT_UTIL_PKG.GET_CONFIG('PROJECT_ALLOW_EXTERNAL_PARENT'), 'N');
         BEGIN
             INSERT INTO DMT_STG_TFM_ERROR_TBL
                    (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
@@ -124,6 +136,18 @@ AS
                        AND    (p.SCENARIO_ID = t.SCENARIO_ID
                                OR (p.SCENARIO_ID IS NULL AND t.SCENARIO_ID IS NULL))
                    )
+            -- Flag ON ('Y'): also spare the task if its parent project already exists
+            -- in Fusion from an earlier run (a prior LOADED Projects TFM row). Flag
+            -- OFF: the l_allow_ext_parent = 'Y' guard is false, the OR short-circuits
+            -- to FALSE, and the strict batch-only check stands unchanged.
+            AND    NOT (l_allow_ext_parent = 'Y' AND EXISTS (
+                       SELECT 1
+                       FROM   DMT_PJF_PROJECTS_STG_TBL ps
+                       JOIN   DMT_PJF_PROJECTS_TFM_TBL pt
+                              ON pt.STG_SEQUENCE_ID = ps.STG_SEQUENCE_ID
+                       WHERE  ps.PROJECT_NUMBER = t.PROJECT_NUMBER
+                       AND    pt.TFM_STATUS = 'LOADED'
+                   ))
             -- Idempotent: do not double-write this run's error if pre-validation
             -- is invoked more than once for the same run.
             AND    NOT EXISTS (
