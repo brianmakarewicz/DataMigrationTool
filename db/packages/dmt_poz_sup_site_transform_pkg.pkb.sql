@@ -1,13 +1,13 @@
--- PACKAGE BODY DMT_POZ_SUP_TRANSFORM_PKG
+-- PACKAGE BODY DMT_POZ_SUP_SITE_TRANSFORM_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_POZ_SUP_TRANSFORM_PKG" AS
+  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_POZ_SUP_SITE_TRANSFORM_PKG" AS
 -- ============================================================
--- DMT_POZ_SUP_TRANSFORM_PKG Body
+-- DMT_POZ_SUP_SITE_TRANSFORM_PKG Body
 -- One supplier-family object. Procedure relocated verbatim from
 -- the former shared DMT_POZ_SUP_TRANSFORM_PKG (backlog #43).
 -- ============================================================
 
-    C_PKG CONSTANT VARCHAR2(50) := 'DMT_POZ_SUP_TRANSFORM_PKG';
+    C_PKG CONSTANT VARCHAR2(50) := 'DMT_POZ_SUP_SITE_TRANSFORM_PKG';
 
     -- --------------------------------------------------------
     -- Private: read run prefix from DMT_PIPELINE_RUN_TBL
@@ -27,23 +27,22 @@
     END get_prefix;
 
 
-    PROCEDURE TRANSFORM_SUPPLIERS (
+    PROCEDURE TRANSFORM_SITES (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
         p_scenario_id      IN NUMBER DEFAULT NULL,
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
-        l_prefix        VARCHAR2(30);
-        l_ok_count      NUMBER := 0;
-        l_fail_count    NUMBER := 0;
+        l_ok_count   NUMBER := 0;
+        l_fail_count NUMBER := 0;
+        l_prefix     VARCHAR2(30);
 
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => 'TRANSFORM_SUPPLIERS start.',
+            p_message        => 'TRANSFORM_SITES start.',
             p_package        => C_PKG,
-            p_procedure      => 'TRANSFORM_SUPPLIERS');
-
+            p_procedure      => 'TRANSFORM_SITES');
         l_prefix := get_prefix(p_run_id);
 
 
@@ -54,43 +53,86 @@
         -- shared p_scenario_id predicate.
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
-        INSERT INTO DMT_POZ_SUPPLIERS_TFM_TBL (
+        INSERT INTO DMT_POZ_SUP_SITE_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
                     IMPORT_ACTION,
                     VENDOR_NAME,
-                    VENDOR_NAME_NEW,
-                    SEGMENT1,
-                    VENDOR_NAME_ALT,
-                    ORGANIZATION_TYPE_LOOKUP_CODE,
-                    VENDOR_TYPE_LOOKUP_CODE,
-                    END_DATE_ACTIVE,
-                    BUSINESS_RELATIONSHIP,
-                    PARENT_SUPPLIER_NAME,
-                    ALIAS,
-                    DUNS_NUMBER,
-                    ONE_TIME_FLAG,
+                    PROCUREMENT_BUSINESS_UNIT_NAME,
+                    PARTY_SITE_NAME,
+                    VENDOR_SITE_CODE,
+                    VENDOR_SITE_CODE_NEW,
+                    INACTIVE_DATE,
+                    RFQ_ONLY_SITE_FLAG,
+                    PURCHASING_SITE_FLAG,
+                    PCARD_SITE_FLAG,
+                    PAY_SITE_FLAG,
+                    PRIMARY_PAY_SITE_FLAG,
+                    TAX_REPORTING_SITE_FLAG,
+                    VENDOR_SITE_CODE_ALT,
                     CUSTOMER_NUM,
-                    STANDARD_INDUSTRY_CLASS,
-                    NI_NUMBER,
-                    CORPORATE_WEBSITE,
-                    CHIEF_EXECUTIVE_TITLE,
-                    CHIEF_EXECUTIVE_NAME,
-                    BC_NOT_APPLICABLE_FLAG,
-                    TAX_COUNTRY_CODE,
-                    NUM_1099,
-                    FEDERAL_REPORTABLE_FLAG,
-                    TYPE_1099,
-                    STATE_REPORTABLE_FLAG,
-                    TAX_REPORTING_NAME,
-                    NAME_CONTROL,
-                    TAX_VERIFICATION_DATE,
-                    ALLOW_AWT_FLAG,
-                    AWT_GROUP_NAME,
+                    B2B_COMM_METHOD_CODE,
+                    B2B_SITE_CODE,
+                    SUPPLIER_NOTIF_METHOD,
+                    EMAIL_ADDRESS,
+                    FAX_COUNTRY_CODE,
+                    FAX_AREA_CODE,
+                    FAX,
+                    HOLD_FLAG,
+                    PURCHASING_HOLD_REASON,
+                    CARRIER,
+                    MODE_OF_TRANSPORT_CODE,
+                    SERVICE_LEVEL_CODE,
+                    FREIGHT_TERMS_LOOKUP_CODE,
+                    PAY_ON_CODE,
+                    FOB_LOOKUP_CODE,
+                    COUNTRY_OF_ORIGIN_CODE,
+                    BUYER_MANAGED_TRANSPORT_FLAG,
+                    PAY_ON_USE_FLAG,
+                    AGING_ONSET_POINT,
+                    AGING_PERIOD_DAYS,
+                    CONSUMPTION_ADVICE_FREQUENCY,
+                    CONSUMPTION_ADVICE_SUMMARY,
+                    DEFAULT_PAY_SITE_CODE,
+                    PAY_ON_RECEIPT_SUMMARY_CODE,
+                    GAPLESS_INV_NUM_FLAG,
+                    SELLING_COMPANY_IDENTIFIER,
+                    CREATE_DEBIT_MEMO_FLAG,
+                    ENFORCE_SHIP_TO_LOCATION_CODE,
+                    RECEIVING_ROUTING_ID,
+                    QTY_RCV_TOLERANCE,
+                    QTY_RCV_EXCEPTION_CODE,
+                    DAYS_EARLY_RECEIPT_ALLOWED,
+                    DAYS_LATE_RECEIPT_ALLOWED,
+                    ALLOW_SUBSTITUTE_RECEIPTS_FLAG,
+                    ALLOW_UNORDERED_RECEIPTS_FLAG,
+                    RECEIPT_DAYS_EXCEPTION_CODE,
+                    INVOICE_CURRENCY_CODE,
+                    INVOICE_AMOUNT_LIMIT,
+                    MATCH_OPTION,
+                    MATCH_APPROVAL_LEVEL,
+                    PAYMENT_CURRENCY_CODE,
+                    PAYMENT_PRIORITY,
+                    PAY_GROUP_LOOKUP_CODE,
+                    TOLERANCE_NAME,
+                    SERVICES_TOLERANCE,
+                    HOLD_ALL_PAYMENTS_FLAG,
+                    HOLD_UNMATCHED_INVOICES_FLAG,
+                    HOLD_FUTURE_PAYMENTS_FLAG,
+                    HOLD_BY,
+                    PAYMENT_HOLD_DATE,
+                    HOLD_REASON,
+                    TERMS_NAME,
+                    TERMS_DATE_BASIS,
+                    PAY_DATE_BASIS_LOOKUP_CODE,
+                    BANK_CHARGE_DEDUCTION_TYPE,
+                    ALWAYS_TAKE_DISC_FLAG,
+                    EXCLUDE_FREIGHT_FROM_DISCOUNT,
+                    EXCLUDE_TAX_FROM_DISCOUNT,
+                    AUTO_CALCULATE_INTEREST_FLAG,
                     VAT_CODE,
                     VAT_REGISTRATION_NUM,
-                    AUTO_TAX_CALC_OVERRIDE,
                     PAYMENT_METHOD_LOOKUP_CODE,
                     DELIVERY_CHANNEL_CODE,
                     BANK_INSTRUCTION1_CODE,
@@ -103,7 +145,9 @@
                     IBY_BANK_CHARGE_BEARER,
                     PAYMENT_REASON_CODE,
                     PAYMENT_REASON_COMMENTS,
-                    PAYMENT_FORMAT_CODE,
+                    REMIT_ADVICE_DELIVERY_METHOD,
+                    REMITTANCE_EMAIL,
+                    REMITTANCE_FAX,
                     ATTRIBUTE_CATEGORY,
                     ATTRIBUTE1,  ATTRIBUTE2,  ATTRIBUTE3,  ATTRIBUTE4,  ATTRIBUTE5,
                     ATTRIBUTE6,  ATTRIBUTE7,  ATTRIBUTE8,  ATTRIBUTE9,  ATTRIBUTE10,
@@ -126,13 +170,12 @@
                     GLOBAL_ATTRIBUTE_TIMESTAMP6,  GLOBAL_ATTRIBUTE_TIMESTAMP7,  GLOBAL_ATTRIBUTE_TIMESTAMP8,  GLOBAL_ATTRIBUTE_TIMESTAMP9,  GLOBAL_ATTRIBUTE_TIMESTAMP10,
                     GLOBAL_ATTRIBUTE_NUMBER1,  GLOBAL_ATTRIBUTE_NUMBER2,  GLOBAL_ATTRIBUTE_NUMBER3,  GLOBAL_ATTRIBUTE_NUMBER4,  GLOBAL_ATTRIBUTE_NUMBER5,
                     GLOBAL_ATTRIBUTE_NUMBER6,  GLOBAL_ATTRIBUTE_NUMBER7,  GLOBAL_ATTRIBUTE_NUMBER8,  GLOBAL_ATTRIBUTE_NUMBER9,  GLOBAL_ATTRIBUTE_NUMBER10,
-                    PARTY_NUMBER,
-                    SERVICE_LEVEL_CODE,
+                    PO_ACK_REQD_CODE,
+                    PO_ACK_REQD_DAYS,
+                    INVOICE_CHANNEL,
+                    PAYEE_SERVICE_LEVEL_CODE,
                     EXCLUSIVE_PAYMENT_FLAG,
-                    REMIT_ADVICE_DELIVERY_METHOD,
-                    REMIT_ADVICE_EMAIL,
-                    REMIT_ADVICE_FAX,
-                    DATAFOX_COMPANY_ID,
+                    OVERRIDE_B2B_COMM_CODE,
                     TFM_STATUS,
                     LAST_UPDATED_DATE
         )
@@ -141,38 +184,84 @@
                     p_run_id,
                     NULL,
                     s.IMPORT_ACTION,
-                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.VENDOR_NAME),
-                    s.VENDOR_NAME_NEW,
-                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.SEGMENT1, 25),
-                    s.VENDOR_NAME_ALT,
-                    s.ORGANIZATION_TYPE_LOOKUP_CODE,
-                    s.VENDOR_TYPE_LOOKUP_CODE,
-                    s.END_DATE_ACTIVE,
-                    s.BUSINESS_RELATIONSHIP,
-                    s.PARENT_SUPPLIER_NAME,
-                    s.ALIAS,
-                    s.DUNS_NUMBER,
-                    s.ONE_TIME_FLAG,
+                    -- Cross-object reference to the parent Supplier: resolve via xref
+                    -- so this site can load against a supplier from any prior run.
+                    DMT_XREF_PKG.SUPPLIER_NAME(s.VENDOR_NAME),
+                    s.PROCUREMENT_BUSINESS_UNIT_NAME,
+                    s.PARTY_SITE_NAME,
+                    -- The site's OWN business key: stays PREFIXED (own-key, not a ref).
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.VENDOR_SITE_CODE, 15),
+                    s.VENDOR_SITE_CODE_NEW,
+                    s.INACTIVE_DATE,
+                    s.RFQ_ONLY_SITE_FLAG,
+                    s.PURCHASING_SITE_FLAG,
+                    s.PCARD_SITE_FLAG,
+                    s.PAY_SITE_FLAG,
+                    s.PRIMARY_PAY_SITE_FLAG,
+                    s.TAX_REPORTING_SITE_FLAG,
+                    s.VENDOR_SITE_CODE_ALT,
                     s.CUSTOMER_NUM,
-                    s.STANDARD_INDUSTRY_CLASS,
-                    s.NI_NUMBER,
-                    s.CORPORATE_WEBSITE,
-                    s.CHIEF_EXECUTIVE_TITLE,
-                    s.CHIEF_EXECUTIVE_NAME,
-                    s.BC_NOT_APPLICABLE_FLAG,
-                    s.TAX_COUNTRY_CODE,
-                    s.NUM_1099,
-                    s.FEDERAL_REPORTABLE_FLAG,
-                    s.TYPE_1099,
-                    s.STATE_REPORTABLE_FLAG,
-                    s.TAX_REPORTING_NAME,
-                    s.NAME_CONTROL,
-                    s.TAX_VERIFICATION_DATE,
-                    s.ALLOW_AWT_FLAG,
-                    s.AWT_GROUP_NAME,
+                    s.B2B_COMM_METHOD_CODE,
+                    s.B2B_SITE_CODE,
+                    s.SUPPLIER_NOTIF_METHOD,
+                    s.EMAIL_ADDRESS,
+                    s.FAX_COUNTRY_CODE,
+                    s.FAX_AREA_CODE,
+                    s.FAX,
+                    s.HOLD_FLAG,
+                    s.PURCHASING_HOLD_REASON,
+                    s.CARRIER,
+                    s.MODE_OF_TRANSPORT_CODE,
+                    s.SERVICE_LEVEL_CODE,
+                    s.FREIGHT_TERMS_LOOKUP_CODE,
+                    s.PAY_ON_CODE,
+                    s.FOB_LOOKUP_CODE,
+                    s.COUNTRY_OF_ORIGIN_CODE,
+                    s.BUYER_MANAGED_TRANSPORT_FLAG,
+                    s.PAY_ON_USE_FLAG,
+                    s.AGING_ONSET_POINT,
+                    s.AGING_PERIOD_DAYS,
+                    s.CONSUMPTION_ADVICE_FREQUENCY,
+                    s.CONSUMPTION_ADVICE_SUMMARY,
+                    s.DEFAULT_PAY_SITE_CODE,
+                    s.PAY_ON_RECEIPT_SUMMARY_CODE,
+                    s.GAPLESS_INV_NUM_FLAG,
+                    s.SELLING_COMPANY_IDENTIFIER,
+                    s.CREATE_DEBIT_MEMO_FLAG,
+                    s.ENFORCE_SHIP_TO_LOCATION_CODE,
+                    s.RECEIVING_ROUTING_ID,
+                    s.QTY_RCV_TOLERANCE,
+                    s.QTY_RCV_EXCEPTION_CODE,
+                    s.DAYS_EARLY_RECEIPT_ALLOWED,
+                    s.DAYS_LATE_RECEIPT_ALLOWED,
+                    s.ALLOW_SUBSTITUTE_RECEIPTS_FLAG,
+                    s.ALLOW_UNORDERED_RECEIPTS_FLAG,
+                    s.RECEIPT_DAYS_EXCEPTION_CODE,
+                    s.INVOICE_CURRENCY_CODE,
+                    s.INVOICE_AMOUNT_LIMIT,
+                    s.MATCH_OPTION,
+                    s.MATCH_APPROVAL_LEVEL,
+                    s.PAYMENT_CURRENCY_CODE,
+                    s.PAYMENT_PRIORITY,
+                    s.PAY_GROUP_LOOKUP_CODE,
+                    s.TOLERANCE_NAME,
+                    s.SERVICES_TOLERANCE,
+                    s.HOLD_ALL_PAYMENTS_FLAG,
+                    s.HOLD_UNMATCHED_INVOICES_FLAG,
+                    s.HOLD_FUTURE_PAYMENTS_FLAG,
+                    s.HOLD_BY,
+                    s.PAYMENT_HOLD_DATE,
+                    s.HOLD_REASON,
+                    s.TERMS_NAME,
+                    s.TERMS_DATE_BASIS,
+                    s.PAY_DATE_BASIS_LOOKUP_CODE,
+                    s.BANK_CHARGE_DEDUCTION_TYPE,
+                    s.ALWAYS_TAKE_DISC_FLAG,
+                    s.EXCLUDE_FREIGHT_FROM_DISCOUNT,
+                    s.EXCLUDE_TAX_FROM_DISCOUNT,
+                    s.AUTO_CALCULATE_INTEREST_FLAG,
                     s.VAT_CODE,
                     s.VAT_REGISTRATION_NUM,
-                    s.AUTO_TAX_CALC_OVERRIDE,
                     s.PAYMENT_METHOD_LOOKUP_CODE,
                     s.DELIVERY_CHANNEL_CODE,
                     s.BANK_INSTRUCTION1_CODE,
@@ -185,7 +274,9 @@
                     s.IBY_BANK_CHARGE_BEARER,
                     s.PAYMENT_REASON_CODE,
                     s.PAYMENT_REASON_COMMENTS,
-                    s.PAYMENT_FORMAT_CODE,
+                    s.REMIT_ADVICE_DELIVERY_METHOD,
+                    s.REMITTANCE_EMAIL,
+                    s.REMITTANCE_FAX,
                     s.ATTRIBUTE_CATEGORY,
                     s.ATTRIBUTE1,  s.ATTRIBUTE2,  s.ATTRIBUTE3,  s.ATTRIBUTE4,  s.ATTRIBUTE5,
                     s.ATTRIBUTE6,  s.ATTRIBUTE7,  s.ATTRIBUTE8,  s.ATTRIBUTE9,  s.ATTRIBUTE10,
@@ -208,16 +299,15 @@
                     s.GLOBAL_ATTRIBUTE_TIMESTAMP6,  s.GLOBAL_ATTRIBUTE_TIMESTAMP7,  s.GLOBAL_ATTRIBUTE_TIMESTAMP8,  s.GLOBAL_ATTRIBUTE_TIMESTAMP9,  s.GLOBAL_ATTRIBUTE_TIMESTAMP10,
                     s.GLOBAL_ATTRIBUTE_NUMBER1,  s.GLOBAL_ATTRIBUTE_NUMBER2,  s.GLOBAL_ATTRIBUTE_NUMBER3,  s.GLOBAL_ATTRIBUTE_NUMBER4,  s.GLOBAL_ATTRIBUTE_NUMBER5,
                     s.GLOBAL_ATTRIBUTE_NUMBER6,  s.GLOBAL_ATTRIBUTE_NUMBER7,  s.GLOBAL_ATTRIBUTE_NUMBER8,  s.GLOBAL_ATTRIBUTE_NUMBER9,  s.GLOBAL_ATTRIBUTE_NUMBER10,
-                    s.PARTY_NUMBER,
-                    s.SERVICE_LEVEL_CODE,
+                    s.PO_ACK_REQD_CODE,
+                    s.PO_ACK_REQD_DAYS,
+                    s.INVOICE_CHANNEL,
+                    s.PAYEE_SERVICE_LEVEL_CODE,
                     s.EXCLUSIVE_PAYMENT_FLAG,
-                    s.REMIT_ADVICE_DELIVERY_METHOD,
-                    s.REMIT_ADVICE_EMAIL,
-                    s.REMIT_ADVICE_FAX,
-                    s.DATAFOX_COMPANY_ID,
+                    s.OVERRIDE_B2B_COMM_CODE,
                     'STAGED',
                     SYSDATE
-        FROM DMT_POZ_SUPPLIERS_STG_TBL s
+        FROM DMT_POZ_SUP_SITE_STG_TBL s
         WHERE (
             DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
             /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
@@ -227,25 +317,9 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
-            SELECT 1 FROM DMT_POZ_SUPPLIERS_TFM_TBL t
+            SELECT 1 FROM DMT_POZ_SUP_SITE_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        )
-        -- Honor pre-validation rejections in EVERY run mode. ALL/FAILED modes do
-        -- not filter on STG_STATUS, so without this a row the validator rejected
-        -- (e.g. missing mandatory VENDOR_NAME) would still be transformed and
-        -- abort the set-based INSERT (ORA-01400). Excluding rows that have a
-        -- [PRE_VALIDATION] error for this run keeps a bad row out of TFM and the
-        -- object from crashing. (Scoped fix of the ALL-mode-bypass item, §12.)
-        AND NOT EXISTS (
-            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
-            WHERE  e.RUN_ID          = p_run_id
-            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-            -- STG_SEQUENCE_ID is polymorphic (a different STG table per SUB_OBJECT)
-            -- and all 5 supplier objects share one RUN_ID, so scope to this object
-            -- or a colliding child id would wrongly drop a valid supplier row.
-            AND    e.SUB_OBJECT      = 'Suppliers'
-            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
         )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
@@ -256,7 +330,7 @@
         l_ok_count := SQL%ROWCOUNT;
 
         -- Set-based UPDATE: mark transformed STG rows
-        UPDATE DMT_POZ_SUPPLIERS_STG_TBL s
+        UPDATE DMT_POZ_SUP_SITE_STG_TBL s
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
@@ -268,17 +342,17 @@
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND    EXISTS (
-            SELECT 1 FROM DMT_POZ_SUPPLIERS_TFM_TBL t
+            SELECT 1 FROM DMT_POZ_SUP_SITE_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         );
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => 'TRANSFORM_SUPPLIERS complete. OK: ' || l_ok_count
+            p_message        => 'TRANSFORM_SITES complete. OK: ' || l_ok_count
                                 || ', FAILED: ' || l_fail_count,
             p_package        => C_PKG,
-            p_procedure      => 'TRANSFORM_SUPPLIERS');
+            p_procedure      => 'TRANSFORM_SITES');
 
     EXCEPTION
         WHEN OTHERS THEN
@@ -291,33 +365,33 @@
             BEGIN
                 INSERT INTO DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
-                SELECT p_run_id, 'Suppliers', 'Suppliers', s.STG_SEQUENCE_ID,
+                SELECT p_run_id, 'SupplierSites', 'Supplier Sites', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
-                FROM   DMT_POZ_SUPPLIERS_STG_TBL s
+                FROM   DMT_POZ_SUP_SITE_STG_TBL s
                 WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
                          OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
                 AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
-                AND NOT EXISTS (SELECT 1 FROM DMT_POZ_SUPPLIERS_TFM_TBL t
+                AND NOT EXISTS (SELECT 1 FROM DMT_POZ_SUP_SITE_TFM_TBL t
                                 WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
                 AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
                                 WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                                AND e.SUB_OBJECT = 'Suppliers');
-                UPDATE DMT_POZ_SUPPLIERS_STG_TBL
+                                AND e.SUB_OBJECT = 'Supplier Sites');
+                UPDATE DMT_POZ_SUP_SITE_STG_TBL
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
-                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Suppliers')
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Supplier Sites')
                 AND    STG_STATUS IN ('NEW','TRANSFORMED');
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
-                p_message        => 'TRANSFORM_SUPPLIERS failed.',
+                p_message        => 'TRANSFORM_SITES failed.',
                 p_package        => C_PKG,
-                p_procedure      => 'TRANSFORM_SUPPLIERS',
+                p_procedure      => 'TRANSFORM_SITES',
                 p_sqlerrm        => SQLERRM);
             RAISE;
-    END TRANSFORM_SUPPLIERS;
+    END TRANSFORM_SITES;
 
-END DMT_POZ_SUP_TRANSFORM_PKG;
+END DMT_POZ_SUP_SITE_TRANSFORM_PKG;
 /
