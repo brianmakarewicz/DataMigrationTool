@@ -1124,9 +1124,56 @@ AS
         -- APEX_DATA_PARSER exposes at most COL001..COL300, so a column the FBDI
         -- generator writes past slot 300 cannot be pulled by the fast parser.
         C_MAX_PARSER_COL CONSTANT PLS_INTEGER := 300;
+
+        -- Backlog #76: map of staging column name -> data type, so DATE/TIMESTAMP
+        -- columns can be converted with an EXPLICIT TO_DATE/TO_TIMESTAMP mask
+        -- instead of relying on a session NLS_DATE_FORMAT set via ALTER SESSION.
+        TYPE t_type_map IS TABLE OF VARCHAR2(128) INDEX BY VARCHAR2(128);
+        l_col_types    t_type_map;
+
+        -- Explicit masks matching the FBDI CSV date conventions (identical to the
+        -- formats the removed ALTER SESSION statements used).
+        c_date_fmt      CONSTANT VARCHAR2(30) := 'YYYY/MM/DD HH24:MI:SS';
+        c_timestamp_fmt CONSTANT VARCHAR2(30) := 'YYYY/MM/DD HH24:MI:SS.FF';
+
+        -- Returns the SELECT-list expression for a mapped staging column: a bare
+        -- COLnnn reference for most types, or an explicit TO_DATE/TO_TIMESTAMP
+        -- conversion for DATE/TIMESTAMP columns so parsing is independent of the
+        -- session NLS format.
+        FUNCTION select_expr (p_col_name IN VARCHAR2, p_slot IN PLS_INTEGER)
+            RETURN VARCHAR2
+        IS
+            l_type VARCHAR2(128);
+            l_col  VARCHAR2(20) := 'COL' || LPAD(p_slot, 3, '0');
+        BEGIN
+            IF l_col_types.EXISTS(p_col_name) THEN
+                l_type := l_col_types(p_col_name);
+            END IF;
+            -- Plain conversions (no DEFAULT ... ON CONVERSION ERROR): this path
+            -- has no LOG ERRORS clause, so an unparseable date must still raise
+            -- and fail the load exactly as the old implicit cast did under the
+            -- removed ALTER SESSION format — only the parse format is now pinned.
+            IF l_type = 'DATE' THEN
+                RETURN 'TO_DATE(' || l_col || ', ''' || c_date_fmt || ''')';
+            ELSIF l_type LIKE 'TIMESTAMP%' THEN
+                RETURN 'TO_TIMESTAMP(' || l_col || ', ''' || c_timestamp_fmt || ''')';
+            ELSE
+                RETURN l_col;
+            END IF;
+        END select_expr;
     BEGIN
         p_rows_loaded  := 0;
         p_rows_errored := 0;
+
+        -- Backlog #76: load the staging table's column data types up front so the
+        -- SELECT list can state an explicit date/timestamp mask per column.
+        FOR tc IN (
+            SELECT column_name, data_type
+            FROM   user_tab_columns
+            WHERE  table_name = UPPER(p_staging_table)
+        ) LOOP
+            l_col_types(tc.column_name) := tc.data_type;
+        END LOOP;
 
         -- Build positional column mapping from dictionary.
         --
@@ -1178,7 +1225,7 @@ AS
                         l_select_list := l_select_list || ', ';
                     END IF;
                     l_col_list    := l_col_list    || c.COLUMN_NAME;
-                    l_select_list := l_select_list || 'COL' || LPAD(c.FBDI_POSITION, 3, '0');
+                    l_select_list := l_select_list || select_expr(c.COLUMN_NAME, c.FBDI_POSITION);
                 END LOOP;
             ELSE
                 -- Sequential fallback (no positions seeded for this object).
@@ -1203,7 +1250,7 @@ AS
                         l_select_list := l_select_list || ', ';
                     END IF;
                     l_col_list    := l_col_list    || c.COLUMN_NAME;
-                    l_select_list := l_select_list || 'COL' || LPAD(l_col_count, 3, '0');
+                    l_select_list := l_select_list || select_expr(c.COLUMN_NAME, l_col_count);
                 END LOOP;
             END IF;
         END;
@@ -1213,10 +1260,10 @@ AS
             RETURN;
         END IF;
 
-        -- Set NLS formats to match FBDI CSV conventions (YYYY/MM/DD HH24:MI:SS)
-        -- so DATE/TIMESTAMP columns convert correctly via implicit cast
-        EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_DATE_FORMAT = ''YYYY/MM/DD HH24:MI:SS''';
-        EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_TIMESTAMP_FORMAT = ''YYYY/MM/DD HH24:MI:SS.FF''';
+        -- Backlog #76: DATE/TIMESTAMP columns are now converted with an explicit
+        -- TO_DATE/TO_TIMESTAMP mask in the SELECT list built above (select_expr),
+        -- so the load no longer depends on a session NLS format set via
+        -- ALTER SESSION.
 
         -- Build and execute: INSERT INTO staging (cols) SELECT COLnnn FROM APEX_DATA_PARSER
         -- p_skip_rows => 0 because FBDI CSVs have no header row

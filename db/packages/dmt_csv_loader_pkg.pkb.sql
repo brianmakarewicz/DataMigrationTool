@@ -14,6 +14,18 @@
     -- Column name array
     TYPE col_arr_t IS TABLE OF VARCHAR2(128) INDEX BY PLS_INTEGER;
 
+    -- Parallel data-type array (user_tab_columns.data_type for each matched
+    -- target column), used to decide whether a bound CSV value needs an
+    -- explicit TO_DATE/TO_TIMESTAMP mask instead of relying on session NLS.
+    TYPE type_arr_t IS TABLE OF VARCHAR2(128) INDEX BY PLS_INTEGER;
+
+    -- Explicit date/timestamp masks matching the FBDI/EBS generate_csv output.
+    -- These are stated on each conversion (backlog #76) so parsing no longer
+    -- depends on a mutable session NLS_DATE_FORMAT / NLS_TIMESTAMP_FORMAT set
+    -- via ALTER SESSION. The values match the formats the old ALTER SESSION set.
+    c_date_fmt      CONSTANT VARCHAR2(30) := 'YYYY/MM/DD HH24:MI:SS';
+    c_timestamp_fmt CONSTANT VARCHAR2(30) := 'YYYY/MM/DD HH24:MI:SS.FF';
+
     -- Field value array (32767 to handle any EBS column width).
     -- Issue #449: declared CHAR so a field whose UTF-8 BYTE length exceeds its
     -- CHARACTER length (e.g. MÜNSTER, GÖTEBORG) never overflows the element
@@ -100,21 +112,23 @@
         p_table_name    IN  VARCHAR2,
         p_target_cols   OUT col_arr_t,
         p_csv_positions OUT pos_arr_t,
+        p_target_types  OUT type_arr_t,
         p_has_scenario  OUT BOOLEAN
     ) IS
-        TYPE col_set_t IS TABLE OF VARCHAR2(1) INDEX BY VARCHAR2(128);
-        v_tgt_cols col_set_t;
+        TYPE col_set_t IS TABLE OF VARCHAR2(128) INDEX BY VARCHAR2(128);
+        v_tgt_cols col_set_t;   -- column_name -> data_type
         v_col_name VARCHAR2(128);
         v_idx      PLS_INTEGER := 0;
     BEGIN
         init_skip_cols;
         p_has_scenario := FALSE;
 
-        -- Load target table columns into a set
-        FOR rec IN (SELECT column_name
+        -- Load target table columns into a set keyed by name, carrying each
+        -- column's data type so the caller can pick an explicit conversion mask.
+        FOR rec IN (SELECT column_name, data_type
                       FROM user_tab_columns
                      WHERE table_name = UPPER(p_table_name)) LOOP
-            v_tgt_cols(rec.column_name) := 'Y';
+            v_tgt_cols(rec.column_name) := rec.data_type;
             IF rec.column_name = 'SCENARIO_ID' THEN
                 p_has_scenario := TRUE;
             END IF;
@@ -130,6 +144,7 @@
                 v_idx := v_idx + 1;
                 p_target_cols(v_idx) := v_col_name;
                 p_csv_positions(v_idx) := i;
+                p_target_types(v_idx) := v_tgt_cols(v_col_name);
             END IF;
         END LOOP;
     END intersect_columns;
@@ -263,6 +278,7 @@
         v_headers       col_arr_t;
         v_target_cols   col_arr_t;
         v_csv_positions pos_arr_t;
+        v_target_types  type_arr_t;
         v_has_scenario  BOOLEAN;
         v_scenario_id   NUMBER := NULL;
         v_scn_err       NUMBER;
@@ -285,10 +301,9 @@
             p_procedure => c_proc
         );
 
-        -- Match the NLS format used by EBS generate_csv so implicit
-        -- date/timestamp conversion works for CSV VARCHAR2 → DATE columns
-        EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_DATE_FORMAT = ''YYYY/MM/DD HH24:MI:SS''';
-        EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_TIMESTAMP_FORMAT = ''YYYY/MM/DD HH24:MI:SS.FF''';
+        -- Backlog #76: date/timestamp parsing no longer depends on the session
+        -- NLS format. Each DATE/TIMESTAMP column is converted with an explicit
+        -- TO_DATE/TO_TIMESTAMP mask in the INSERT built below (see step 5).
 
         -- 1. Lock and read the landing row
         SELECT csv_data, atp_table_name, scenario_name, row_count, view_name
@@ -362,7 +377,7 @@
         parse_header_row(v_csv_data, v_headers, v_offset);
 
         -- 4. Column intersection
-        intersect_columns(v_headers, v_atp_table, v_target_cols, v_csv_positions, v_has_scenario);
+        intersect_columns(v_headers, v_atp_table, v_target_cols, v_csv_positions, v_target_types, v_has_scenario);
 
         IF v_target_cols.COUNT = 0 THEN
             UPDATE dmt_csv_landing_tbl
@@ -400,7 +415,18 @@
         v_insert_sql := v_insert_sql || ') VALUES (';
         FOR i IN 1..v_target_cols.COUNT LOOP
             IF i > 1 THEN v_insert_sql := v_insert_sql || ', '; END IF;
-            v_insert_sql := v_insert_sql || ':b' || i;
+            -- Backlog #76: convert DATE/TIMESTAMP columns with an EXPLICIT mask
+            -- rather than relying on the session NLS format. The bound value is
+            -- still the raw CSV string (:bN); only the parse format is pinned.
+            IF v_target_types(i) = 'DATE' THEN
+                v_insert_sql := v_insert_sql
+                    || 'TO_DATE(:b' || i || ', ''' || c_date_fmt || ''')';
+            ELSIF v_target_types(i) LIKE 'TIMESTAMP%' THEN
+                v_insert_sql := v_insert_sql
+                    || 'TO_TIMESTAMP(:b' || i || ', ''' || c_timestamp_fmt || ''')';
+            ELSE
+                v_insert_sql := v_insert_sql || ':b' || i;
+            END IF;
         END LOOP;
         IF v_has_scenario AND v_scenario_id IS NOT NULL THEN
             v_insert_sql := v_insert_sql || ', :bscenario';
