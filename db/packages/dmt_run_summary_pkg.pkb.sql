@@ -307,5 +307,186 @@
             RAISE;
     END AUDIT_IN_FUSION;
 
+    -- --------------------------------------------------------
+    -- GET_RUN_FUSION_SWEEP
+    -- --------------------------------------------------------
+    PROCEDURE GET_RUN_FUSION_SWEEP (
+        p_run_id     IN  NUMBER,
+        x_cursor     OUT SYS_REFCURSOR,
+        x_error_code OUT NUMBER
+    ) IS
+        C_PROC        CONSTANT VARCHAR2(30) := 'GET_RUN_FUSION_SWEEP';
+        l_out         DMT_RUN_SWEEP_TBL := DMT_RUN_SWEEP_TBL();
+        l_fetch_rows  DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
+        l_fetch_code  NUMBER;
+        l_load_ess_id NUMBER;
+        l_base_rows   NUMBER;
+        l_err_rows    NUMBER;
+        l_sweep_stat  VARCHAR2(20);
+        l_note        VARCHAR2(400);
+        -- Distinct non-null FUSION_IDs, as an associative array keyed BY the id
+        -- string so a base row the report repeats (e.g. per line) counts once.
+        TYPE t_id_set IS TABLE OF VARCHAR2(1) INDEX BY VARCHAR2(200);
+        l_ids         t_id_set;
+        -- One row per DISTINCT object (CEMLI_CODE) the run touched, carrying our
+        -- own TFM counts and the object's Contract v1 registration. DMT_RUN_RECORDS_V
+        -- can expose the same CEMLI under several OBJECT_TYPE labels (multi-BU
+        -- partitions); we sweep by CEMLI_CODE (the registry + report grain) and
+        -- take MIN(OBJECT_TYPE) only as a display label.
+        CURSOR c_obj IS
+            SELECT r.CEMLI_CODE,
+                   MIN(r.OBJECT_TYPE)                                       AS OBJECT_TYPE,
+                   b.CONTRACT_VERSION,
+                   COUNT(*)                                                 AS TFM_TOTAL_ROWS,
+                   SUM(CASE WHEN r.TFM_STATUS = 'LOADED' THEN 1 ELSE 0 END) AS TFM_LOADED_ROWS
+            FROM   DMT_RUN_RECORDS_V r
+            LEFT   JOIN DMT_BIP_REPORT_TBL b
+              ON   b.CEMLI_CODE = r.CEMLI_CODE
+            WHERE  r.RUN_ID = p_run_id
+            GROUP  BY r.CEMLI_CODE, b.CONTRACT_VERSION
+            ORDER  BY MIN(r.OBJECT_TYPE);
+    BEGIN
+        x_error_code := DMT_UTIL_PKG.C_ERROR;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ': starting Fusion-side load sweep for run '
+                           || p_run_id || '.',
+            p_log_type  => DMT_UTIL_PKG.C_LOG_INFO,
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+        FOR o IN c_obj LOOP
+            l_base_rows  := 0;
+            l_err_rows   := 0;
+            l_note       := NULL;
+            l_ids.DELETE;
+
+            IF o.CONTRACT_VERSION IS NULL OR o.CONTRACT_VERSION <> 1 THEN
+                -- No live Contract v1 report shape to run — honestly skipped.
+                l_sweep_stat := 'SKIPPED';
+                l_note       := 'Not registered Contract v1 (CONTRACT_VERSION='
+                                || NVL(TO_CHAR(o.CONTRACT_VERSION), '(none)')
+                                || '); no live report to sweep.';
+            ELSE
+                -- Resolve the load ESS job id for this object/run exactly as
+                -- AUDIT_IN_FUSION does: LOAD_ESS_JOB_ID is VARCHAR2, so take the
+                -- numeric-only values and MAX them as numbers. NULL is fine —
+                -- FETCH_ROWS treats it as the Contract v1 P_LOAD_REQUEST_ID.
+                BEGIN
+                    SELECT MAX(TO_NUMBER(REGEXP_SUBSTR(LOAD_ESS_JOB_ID, '^\d+$')))
+                      INTO l_load_ess_id
+                      FROM DMT_WORK_QUEUE_TBL
+                     WHERE RUN_ID = p_run_id
+                       AND CEMLI_CODE = o.CEMLI_CODE;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_load_ess_id := NULL;
+                END;
+
+                -- Reuse the shared Contract v1 fetch verbatim. It is already scoped
+                -- to THIS run by P_RUN_ID / P_LOAD_REQUEST_ID (the report's run
+                -- filter is the wqid scope); it owns all BIP transport, never
+                -- touches a TFM table, and never raises out (reports via its code).
+                -- p_row_cap is the run/object total so the keyset paging is bounded.
+                BEGIN
+                    DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
+                        p_cemli_code  => o.CEMLI_CODE,
+                        p_run_id      => p_run_id,
+                        p_load_ess_id => l_load_ess_id,
+                        p_row_cap     => o.TFM_TOTAL_ROWS,
+                        x_rows        => l_fetch_rows,
+                        x_error_code  => l_fetch_code);
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        -- Defensive: never let one object abort the whole sweep.
+                        l_fetch_code := DMT_UTIL_PKG.C_ERROR;
+                END;
+
+                IF l_fetch_code <> DMT_UTIL_PKG.C_SUCCESS THEN
+                    -- Could not reach the report. Honest "unknown", not a zero.
+                    l_sweep_stat := 'FETCH_FAILED';
+                    l_note       := 'Live report could not be reached (detail in '
+                                    || 'DMT_LOG_TBL); Fusion counts unknown.';
+                    DMT_UTIL_PKG.LOG(
+                        p_run_id    => p_run_id,
+                        p_message   => C_PROC || ': fetch failed for '
+                                       || o.CEMLI_CODE || ' (run ' || p_run_id
+                                       || '); flagged FETCH_FAILED, sweep continues.',
+                        p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                        p_package   => C_PKG,
+                        p_procedure => C_PROC);
+                ELSE
+                    -- Count what Fusion returned for the run. The independent
+                    -- "what landed" count is BASE + SUCCESS + non-null FUSION_ID;
+                    -- distinct FUSION_IDs are tracked so a base row that the report
+                    -- repeats (e.g. per line) still counts the id once.
+                    FOR i IN 1 .. l_fetch_rows.COUNT LOOP
+                        IF l_fetch_rows(i).FUSION_STATUS = 'ERROR' THEN
+                            l_err_rows := l_err_rows + 1;
+                        ELSIF l_fetch_rows(i).SOURCE_TYPE = 'BASE'
+                          AND l_fetch_rows(i).FUSION_STATUS = 'SUCCESS'
+                          AND l_fetch_rows(i).FUSION_ID IS NOT NULL THEN
+                            l_base_rows := l_base_rows + 1;
+                            -- Track distinct ids (associative array keyed by id).
+                            l_ids(l_fetch_rows(i).FUSION_ID) := 'Y';
+                        END IF;
+                    END LOOP;
+                    l_sweep_stat := 'SWEPT';
+                END IF;
+            END IF;
+
+            l_out.EXTEND;
+            l_out(l_out.LAST) := DMT_RUN_SWEEP_OBJ(
+                CEMLI_CODE        => o.CEMLI_CODE,
+                OBJECT_TYPE       => o.OBJECT_TYPE,
+                CONTRACT_VERSION  => o.CONTRACT_VERSION,
+                TFM_TOTAL_ROWS    => o.TFM_TOTAL_ROWS,
+                TFM_LOADED_ROWS   => o.TFM_LOADED_ROWS,
+                FUSION_BASE_ROWS  => l_base_rows,
+                FUSION_ID_COUNT   => l_ids.COUNT,
+                FUSION_ERROR_ROWS => l_err_rows,
+                SWEEP_STATUS      => l_sweep_stat,
+                FETCH_NOTE        => l_note);
+        END LOOP;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ': sweep complete for run ' || p_run_id
+                           || ' — ' || l_out.COUNT || ' object(s) summarized.',
+            p_log_type  => DMT_UTIL_PKG.C_LOG_INFO,
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+        -- Return the summary as a single static SELECT over the collection.
+        OPEN x_cursor FOR
+            SELECT p_run_id            AS RUN_ID,
+                   s.CEMLI_CODE,
+                   s.OBJECT_TYPE,
+                   s.CONTRACT_VERSION,
+                   s.TFM_TOTAL_ROWS,
+                   s.TFM_LOADED_ROWS,
+                   s.FUSION_BASE_ROWS,
+                   s.FUSION_ID_COUNT,
+                   s.FUSION_ERROR_ROWS,
+                   s.SWEEP_STATUS,
+                   s.FETCH_NOTE
+            FROM   TABLE(l_out) s
+            ORDER  BY s.OBJECT_TYPE;
+
+        x_error_code := DMT_UTIL_PKG.C_SUCCESS;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed for run ' || p_run_id || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END GET_RUN_FUSION_SWEEP;
+
 END DMT_RUN_SUMMARY_PKG;
 /
