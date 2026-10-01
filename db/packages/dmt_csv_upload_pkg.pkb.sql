@@ -42,10 +42,13 @@ AS
     --     cannot be fixed at compile time.
     -- Safeguards that keep this carve-out from swallowing the rule,
     -- identical in posture to the queue engine's:
-    --   * EVERY identifier (staging table, each mapped column, and the
-    --     ERR$_ error-log table) passes DBMS_ASSERT.SIMPLE_SQL_NAME
-    --     before it is concatenated into any SQL text; no user-supplied
-    --     free text ever reaches a dynamic statement.
+    --   * EVERY interpolated identifier is anchored to a
+    --     DBMS_ASSERT.SIMPLE_SQL_NAME-checked value before it reaches
+    --     any SQL text: the staging table and each mapped column are
+    --     checked directly; the ERR$_ error-log table is the fixed
+    --     literal prefix "ERR$_" prepended to that same checked staging
+    --     table name (the only variable part), so no user-supplied free
+    --     text can reach a dynamic statement.
     --   * The CSV/ZIP content is BOUND — the BLOB travels as a bind
     --     variable (USING p_blob), as do the scenario id and the
     --     max-sequence watermark on the scenario-tag UPDATEs and the
