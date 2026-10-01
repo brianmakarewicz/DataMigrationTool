@@ -167,6 +167,34 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- record-detail anti-join surfaces them as FAILED instead of leaving
+            -- the object unaccounted. SQLERRM captured to a local first (not a
+            -- valid SQL identifier inside INSERT..SELECT). Backlog #14.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Workers', 'Workers', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_WORKER_STG_TBL s
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Workers');
+                UPDATE DMT_WORKER_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Workers')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_WORKERS failed.',
@@ -298,6 +326,34 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- record-detail anti-join surfaces them as FAILED instead of leaving
+            -- the object unaccounted. SQLERRM captured to a local first (not a
+            -- valid SQL identifier inside INSERT..SELECT). Backlog #14.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Workers', 'Person Names', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PERSON_NAME_STG_TBL s
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_PERSON_NAME_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Person Names');
+                UPDATE DMT_PERSON_NAME_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Person Names')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_PERSON_NAMES failed.',
@@ -401,6 +457,34 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- record-detail anti-join surfaces them as FAILED instead of leaving
+            -- the object unaccounted. SQLERRM captured to a local first (not a
+            -- valid SQL identifier inside INSERT..SELECT). Backlog #14.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Workers', 'Person Emails', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PERSON_EMAIL_STG_TBL s
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_PERSON_EMAIL_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Person Emails');
+                UPDATE DMT_PERSON_EMAIL_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Person Emails')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_PERSON_EMAILS failed.',
@@ -510,6 +594,34 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- record-detail anti-join surfaces them as FAILED instead of leaving
+            -- the object unaccounted. SQLERRM captured to a local first (not a
+            -- valid SQL identifier inside INSERT..SELECT). Backlog #14.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Workers', 'Person Phones', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PERSON_PHONE_STG_TBL s
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_PERSON_PHONE_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Person Phones');
+                UPDATE DMT_PERSON_PHONE_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Person Phones')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_PERSON_PHONES failed.',
@@ -641,6 +753,34 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- record-detail anti-join surfaces them as FAILED instead of leaving
+            -- the object unaccounted. SQLERRM captured to a local first (not a
+            -- valid SQL identifier inside INSERT..SELECT). Backlog #14.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Workers', 'Person Addresses', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PERSON_ADDR_STG_TBL s
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_PERSON_ADDR_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Person Addresses');
+                UPDATE DMT_PERSON_ADDR_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Person Addresses')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_PERSON_ADDRESSES failed.',
@@ -748,6 +888,34 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- record-detail anti-join surfaces them as FAILED instead of leaving
+            -- the object unaccounted. SQLERRM captured to a local first (not a
+            -- valid SQL identifier inside INSERT..SELECT). Backlog #14.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Workers', 'Person NIDs', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PERSON_NID_STG_TBL s
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_PERSON_NID_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Person NIDs');
+                UPDATE DMT_PERSON_NID_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Person NIDs')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_PERSON_NIDS failed.',
@@ -869,6 +1037,34 @@
 
     EXCEPTION
         WHEN OTHERS THEN
+            -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
+            -- record-detail anti-join surfaces them as FAILED instead of leaving
+            -- the object unaccounted. SQLERRM captured to a local first (not a
+            -- valid SQL identifier inside INSERT..SELECT). Backlog #14.
+            DECLARE
+                l_errm VARCHAR2(4000) := SUBSTR(SQLERRM, 1, 3900);
+            BEGIN
+                INSERT INTO DMT_STG_TFM_ERROR_TBL
+                       (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+                SELECT p_run_id, 'Workers', 'Person Legislation', s.STG_SEQUENCE_ID,
+                       '[TRANSFORM_ERROR] ' || l_errm
+                FROM   DMT_PERSON_LEGISL_STG_TBL s
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+                AND NOT EXISTS (SELECT 1 FROM DMT_PERSON_LEGISL_TFM_TBL t
+                                WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+                AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                                WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                                AND e.SUB_OBJECT = 'Person Legislation');
+                UPDATE DMT_PERSON_LEGISL_STG_TBL
+                SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+                WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Person Legislation')
+                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+            EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
+            END;
             DMT_UTIL_PKG.LOG_ERROR(
                 p_run_id => p_run_id,
                 p_message        => 'TRANSFORM_PERSON_LEGISL failed.',
