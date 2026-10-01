@@ -459,6 +459,10 @@ AS
                    AND p.STG_SEQUENCE_ID =
                        TO_NUMBER(ls.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)
                 WHERE  l.RUN_ID = p_run_id
+                -- Backlog #137 (reviewer follow-up): a lot row the transform marked
+                -- FAILED (no resolvable parent transaction) is never sent to Fusion —
+                -- it has no valid link. Only non-FAILED lot rows are generated.
+                AND    l.TFM_STATUS <> 'FAILED'
                 ORDER BY l.TFM_SEQUENCE_ID
             ) LOOP
                 l_lots_cnt := l_lots_cnt + 1;
