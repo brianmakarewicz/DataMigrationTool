@@ -11,28 +11,13 @@
     <dataSet name="uom_recon_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
 -- ============================================================
--- UnitsOfMeasure reconciliation data model -- BIP reconciliation
--- report contract v1 (nine columns, keyset pagination, the six
--- standard parameters). Same shape as the reference GLBalances DM
--- (bip/GLBalances/DMT_GL_BAL_RECON_DM.xdm).
+-- UnitsOfMeasure reconciliation data model -- base-table recon
+-- report (nine response columns, OBJECT_TYPE..DMT_REFERENCE).
 --
 -- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
 --   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
 --   DMT_REFERENCE.
---
--- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
---   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
---   No P_OFFSET / P_LIMIT. The shared fetch loop
---   (DMT_RECON_CONTRACT_PKG) sends exactly these six.
---
--- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
--- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
--- :P_CHUNK_SIZE of them. The shared fetch loop calls with an empty
--- cursor first, then passes the last RECORD_KEY it received on each
--- next call, until a page returns fewer than P_CHUNK_SIZE rows. An
--- empty :P_AFTER_KEY selects from the start (every non-null
--- RECORD_KEY sorts after the empty string).
 --
 -- OBJECT MODEL. UnitsOfMeasure is a REST-loaded CONFIGURATION object
 -- (POST unitsOfMeasure, one call per UOM -- not FBDI/ESS). There is
@@ -42,10 +27,9 @@
 -- The ERROR tier for UOM is not a Fusion interface table -- REST
 -- rejections are captured per-record from the POST response at load
 -- time by DMT_INV_UOM_RESULTS_PKG (that is the object's reconciler,
--- a SEPARATE track). Contract symmetry is kept by returning the
--- ERROR_MESSAGE / LOAD_REQUEST_ID / P_IMPORT_ESS_ID columns and
--- parameters even though a base row never carries them (they are
--- NULL on every BASE row here).
+-- a SEPARATE track). The ERROR_MESSAGE / LOAD_REQUEST_ID / SOURCE_REF
+-- columns are kept for shape symmetry even though a base row never
+-- carries them (they are NULL on every BASE row here).
 --
 -- KEYS:
 --   OBJECT_TYPE   = 'UnitsOfMeasure'
@@ -60,30 +44,34 @@
 --                   response, not this report)
 --   LOAD_REQUEST_ID = NULL (REST object, no ESS load request id)
 --   SOURCE_REF    = NULL (INV_UNITS_OF_MEASURE_B has no native source-
---                   reference column; Slot A read-back is not available)
---   DMT_REFERENCE = INV_UNITS_OF_MEASURE_B.ATTRIBUTE1  (Slot C read-
---                   back = the run-scoped 'DMT:<run>:...' reference)
+--                   reference column)
+--   DMT_REFERENCE = INV_UNITS_OF_MEASURE_B.ATTRIBUTE1  (returned for
+--                   context only; NOT used to scope rows -- see below)
 --
--- ROW SELECTION (Slot C DFF). Rows for a run are found by the Slot C
--- reference the tool stamps into the descriptive flexfield ATTRIBUTE1:
---   ATTRIBUTE1 LIKE 'DMT:' || :P_RUN_ID || ':%'
--- This is the contract-correct, run-scoped selector using the six
--- standard parameters only (UOM codes are 3-12 chars and are not run-
--- prefixed, so P_PREFIX cannot filter them, and there is no ESS load
--- id to filter by). NOTE: stamping ATTRIBUTE1 at load time is a
--- SEPARATE track (the REST POST body in DMT_INV_UOM_RESULTS_PKG does
--- not yet write the DFF); until that lands, this predicate returns
--- zero rows for a run, which is honest (zero base rows is never
--- LOADED). The column list, keyset, and nine-column shape are proven
--- standalone against a prior loaded UOM base row (see bip mirror
--- query.sql header for the validation).
+-- ROW SELECTION (natural key -- backlog #135). Rows for a run are found
+-- by matching INV_UNITS_OF_MEASURE_B.UOM_CODE against the run's own
+-- comma-delimited UOM-code list, exactly the way CashBanks' recon
+-- matches bank/branch/account names
+-- (bip/CashBanks/DMT_CEBANK_RECON_DM.xdm):
+--   INSTR(',' || :P_UOM_CODES || ',', ',' || b.uom_code || ',') > 0
+-- The reconciler DMT_INV_UOM_RESULTS_PKG.FETCH_BIP_RESULTS already sends
+-- this list as P_UOM_CODES (a LISTAGG of the run's GENERATED UOM_CODE
+-- values). UOM codes are the business key and are NOT run-prefixed.
+--
+-- This REPLACES the former ATTRIBUTE1 LIKE 'DMT:<run>:%' DFF filter,
+-- which returned zero rows because the REST create never persists that
+-- descriptive-flexfield marker -- so a UOM that Fusion really created
+-- could never be confirmed LOADED (proven zero in runs 143/146). The
+-- natural-key match confirms the exact codes this run sent, which is
+-- the honest base-table proof. DMT_REFERENCE still returns ATTRIBUTE1
+-- for context, but it no longer gates row selection.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
     -- Tier: BASE -- one row per UOM created in INV_UNITS_OF_MEASURE_B
-    -- for this run, found by the Slot C run reference on ATTRIBUTE1.
+    -- whose UOM_CODE is in this run's code list (P_UOM_CODES).
     SELECT
         'UnitsOfMeasure'                     AS object_type,
         b.uom_code                           AS record_key,
@@ -95,16 +83,9 @@ FROM (
         CAST(NULL AS VARCHAR2(4000))         AS source_ref,
         b.attribute1                         AS dmt_reference
     FROM   inv_units_of_measure_b b
-    WHERE  b.attribute1 LIKE 'DMT:' || :P_RUN_ID || ':%'
+    WHERE  INSTR(',' || :P_UOM_CODES || ',', ',' || b.uom_code || ',') > 0
 )
--- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
--- BIP, so treat NULL as "from the start": return every row. On later
--- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
--- greater keys are returned. RECORD_KEY (the UOM code) is compared as
--- text; the reconciler feeds back the exact key it received.
-WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
-FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -128,26 +109,12 @@ FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
   <eventTriggers/>
   <lexicals/>
   <parameters>
-    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
-               labelID="P_RUN_ID" defaultValue="" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
-               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
-               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
-               labelID="P_PREFIX" defaultValue="" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <!-- Keyset pagination: page size + cursor. The reconciler calls
-         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
-         received on each next call, until a short page returns. -->
-    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
-               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
-               refreshParamOnChange="false" useNullForAll="false"/>
-    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
-               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+    <!-- Row selection parameter (backlog #135): the comma-delimited list
+         of this run's UOM codes, sent by
+         DMT_INV_UOM_RESULTS_PKG.FETCH_BIP_RESULTS as P_UOM_CODES. This
+         is the only parameter the reconciler sends for this report. -->
+    <parameter name="P_UOM_CODES" dataType="character" rowPlacement="1"
+               labelID="P_UOM_CODES" defaultValue="" nvp="false"
                refreshParamOnChange="false" useNullForAll="false"/>
   </parameters>
   <valueSets/>

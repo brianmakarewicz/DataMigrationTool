@@ -65,6 +65,11 @@ REPORTS = [
     # P_BANK_NAMES. PARSE_BANKS requires SOURCE_TYPE=BASE_BANK, so a genuinely
     # loaded bank reconciled to 0 and was wrongly FAILED. Deploy the real pair.
     ("CashBanks",                "DMT_CEBANK_RECON_DM",        "DMT_CEBANK_RECON_RPT"),
+    # REST config base-table recon reports (backlog #135) -- natural-key
+    # match on the run's code list (P_UOM_CODES / P_TYPE_CODES+P_VALUE_KEYS),
+    # replacing the non-persisting ATTRIBUTE1 DFF run-scope filter.
+    ("UnitsOfMeasure",           "DMT_UOM_RECON_DM",           "DMT_UOM_RECON_RPT"),
+    ("Lookups",                  "DMT_LOOKUP_RECON_DM",        "DMT_LOOKUP_RECON_RPT"),
     # PPM family (2026-09-28) -- post-run comparison reports, family E.
     ("Projects",                 "PROJECT_CMP_DM",             "PROJECT_CMP_RPT"),
     ("ProjectBudgets",           "PRJ_BUDGET_CMP_DM",          "PRJ_BUDGET_CMP_RPT"),
