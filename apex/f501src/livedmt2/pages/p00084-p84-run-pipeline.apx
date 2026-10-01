@@ -87,6 +87,86 @@ page 84 (
         }
     )
 
+    pageItem P84_ON_FAILURE (
+        type: selectList
+        label {
+            label: On Failure
+            alignment: left
+        }
+        lov {
+            type: staticValues
+            staticValues: STATIC:Halt (skip dependents of a failed object);HALT,Continue (launch dependents anyway);CONTINUE
+            displayExtraValues: false
+            displayNullValue: false
+        }
+        default {
+            type: static
+            staticValue: HALT
+        }
+        layout {
+            sequence: 50
+            region: @pipeline-controls
+            slot: regionBody
+            alignment: left
+            columnSpan: 4
+        }
+        appearance {
+            height: 1
+        }
+        help {
+            helpText: Governs only a failed object's dependents; independent objects always run. Halt skips dependents when their parent fails. Continue launches them anyway, with each row's own dependency validation still applied.
+        }
+    )
+
+    pageItem P84_DEPENDENT_RUN (
+        type: selectList
+        label {
+            label: Dependent Run (optional override)
+            alignment: left
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery: SELECT 'Run #' || run_id || ' - prefix ' || prefix || ' (' || NVL(scenario_name, 'all scenarios') || ', ' || TO_CHAR(submitted_date, 'YYYY-MM-DD HH24:MI') || ')' d, TO_CHAR(run_id) r FROM (SELECT DISTINCT run_id, prefix, scenario_name, submitted_date FROM dmt_prefix_history_v WHERE run_status IN ('COMPLETED', 'COMPLETED_ERRORS') AND prefix IS NOT NULL) ORDER BY submitted_date DESC
+            displayExtraValues: false
+            nullDisplayValue: -- None (automatic) --
+        }
+        layout {
+            sequence: 60
+            region: @pipeline-controls
+            slot: regionBody
+            alignment: left
+            columnSpan: 4
+        }
+        appearance {
+            height: 1
+        }
+        help {
+            helpText: Default None - references automatically carry the prefix of each parent's most recent LOADED row. Pin a specific earlier run to override that automatic resolution for this run.
+        }
+    )
+
+    pageItem P84_VALIDATE_UPSTREAM (
+        type: switch
+        label {
+            label: Validate Upstream Dependencies
+            alignment: left
+        }
+        default {
+            type: static
+            staticValue: Y
+        }
+        layout {
+            sequence: 70
+            region: @pipeline-controls
+            slot: regionBody
+            alignment: left
+            columnSpan: 4
+        }
+        help {
+            helpText: Default ON. OFF skips the cross-object pre-validation for this run - used for failed-items re-runs of a full flow. With it off, a genuinely missing parent still fails at Fusion with a reportable error.
+        }
+    )
+
     dynamicAction cancel (
         name: Cancel
         execution {
@@ -125,7 +205,7 @@ page 84 (
         action native-javascript-code (
             action: executeJsCode
             settings {
-                jsCode: var btn=document.getElementById("btn-confirm");btn.disabled=true;btn.textContent="Submitting...";var body=new URLSearchParams();body.append("p_flow_id",$v("pFlowId"));body.append("p_flow_step_id",$v("pFlowStepId"));body.append("p_instance",$v("pInstance"));body.append("p_request","APPLICATION_PROCESS=SUBMIT_AJAX");body.append("p_json",JSON.stringify({pageItems:null,salt:null}));body.append("x01",window._planCodes||"");body.append("x02",$v("P84_SCENARIO")||"");body.append("x03",$v("P84_RUN_MODE")||"NEW");body.append("x04","HALT");fetch("wwv_flow.ajax",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8"},body:body.toString()}).then(function(r){return r.text();}).then(function(d){btn.disabled=false;btn.textContent="Confirm & Submit";d=(d||"").trim();if(d.indexOf("OK:")===0){var rid=d.substring(3).trim();var url="f?p="+$v("pFlowId")+":82:"+$v("pInstance")+"::NO::P82_RUN_ID:"+rid;document.getElementById("plan-content").innerHTML="<div style=\"text-align:center;padding:16px\"><p style=\"font-size:17px;color:#1a7d33;margin:0 0 12px\"><b>&#10003; Pipeline submitted as Run #"+rid+"</b></p><a href=\""+url+"\" style=\"display:inline-block;padding:11px 22px;color:#fff;text-decoration:none;border-radius:6px;background:#0072c6;font-weight:600\">Open Run #"+rid+" &rarr; tiles view</a></div>";document.getElementById("btn-confirm").style.display="none";document.getElementById("btn-cancel").textContent="Close";apex.message.showPageSuccess("Pipeline submitted as Run #"+rid);}else{apex.message.alert(d||"Submit returned no response");}}).catch(function(e){btn.disabled=false;btn.textContent="Confirm & Submit";apex.message.alert("Failed: "+e);});
+                jsCode: var btn=document.getElementById("btn-confirm");btn.disabled=true;btn.textContent="Submitting...";var body=new URLSearchParams();body.append("p_flow_id",$v("pFlowId"));body.append("p_flow_step_id",$v("pFlowStepId"));body.append("p_instance",$v("pInstance"));body.append("p_request","APPLICATION_PROCESS=SUBMIT_AJAX");body.append("p_json",JSON.stringify({pageItems:null,salt:null}));body.append("x01",window._planCodes||"");body.append("x02",$v("P84_SCENARIO")||"");body.append("x03",$v("P84_RUN_MODE")||"NEW");body.append("x04",$v("P84_ON_FAILURE")||"HALT");fetch("wwv_flow.ajax",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8"},body:body.toString()}).then(function(r){return r.text();}).then(function(d){btn.disabled=false;btn.textContent="Confirm & Submit";d=(d||"").trim();if(d.indexOf("OK:")===0){var rid=d.substring(3).trim();var url="f?p="+$v("pFlowId")+":82:"+$v("pInstance")+"::NO::P82_RUN_ID:"+rid;document.getElementById("plan-content").innerHTML="<div style=\"text-align:center;padding:16px\"><p style=\"font-size:17px;color:#1a7d33;margin:0 0 12px\"><b>&#10003; Pipeline submitted as Run #"+rid+"</b></p><a href=\""+url+"\" style=\"display:inline-block;padding:11px 22px;color:#fff;text-decoration:none;border-radius:6px;background:#0072c6;font-weight:600\">Open Run #"+rid+" &rarr; tiles view</a></div>";document.getElementById("btn-confirm").style.display="none";document.getElementById("btn-cancel").textContent="Close";apex.message.showPageSuccess("Pipeline submitted as Run #"+rid);}else{apex.message.alert(d||"Submit returned no response");}}).catch(function(e){btn.disabled=false;btn.textContent="Confirm & Submit";apex.message.alert("Failed: "+e);});
             }
             execution {
                 sequence: 10
