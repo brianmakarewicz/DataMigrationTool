@@ -25,6 +25,9 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
         l_path      DMT_BIP_REPORT_TBL.CMP_REPORT_CATALOG_PATH%TYPE;
         l_bal       VARCHAR2(1);
         l_var_cnt   NUMBER;
+        l_stg_chk   VARCHAR2(80);
+        l_fus_chk   VARCHAR2(80);
+        l_match     VARCHAR2(1);
     BEGIN
         -- (a) staged total: STG has no RUN_ID and holds duplicate seed rows,
         --     so the TFM run set is the authoritative record set (per discovery).
@@ -49,13 +52,37 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
          WHERE RUN_ID = p_run_id AND TFM_STATUS = 'LOADED'
            AND FUSION_PROJECT_ID IS NOT NULL;
 
+        -- Backlog #94 STG-side business-key checksum. Business key per
+        -- DMT_DESIGN.html = "PREFIX + PROJECT_NUMBER"; the TFM PROJECT_NUMBER
+        -- already carries the run prefix. On the Fusion side the same value is
+        -- PJF_PROJECTS_ALL_B.SEGMENT1 (verified live on the demo instance:
+        -- SEGMENT1 = 93270RTPRJ001/002 for the captured project_ids, matching
+        -- TFM PROJECT_NUMBER byte-for-byte). FUSION_PROJECT_ID is the surrogate
+        -- used only to FIND the Fusion row; the cross-side KEY is SEGMENT1 vs
+        -- PROJECT_NUMBER. We checksum the LOADED set here so both sides cover
+        -- the same records. EXACT MIRROR of the Fusion-side expression in
+        -- PROJECT_CMP_DM.xdm: distinct UPPER(TRIM(num)), SUM(ORA_HASH) ||':'||
+        -- COUNT.
+        SELECT TO_CHAR(NVL(SUM(ORA_HASH(k)),0)) || ':' || COUNT(*)
+          INTO l_stg_chk
+          FROM (
+            SELECT DISTINCT UPPER(TRIM(PROJECT_NUMBER)) AS k
+              FROM DMT_PJF_PROJECTS_TFM_TBL
+             WHERE RUN_ID = p_run_id AND TFM_STATUS = 'LOADED'
+               AND FUSION_PROJECT_ID IS NOT NULL
+          );
+
         IF l_batch IS NULL THEN
             -- Still in flight (no LOADED rows captured yet): never report 0
-            -- successes as if confirmed.
+            -- successes as if confirmed. On an empty LOADED set l_stg_chk is
+            -- '0:0' (NVL/COUNT), a valid "nothing loaded yet" checksum; match
+            -- is '?' until the Fusion side is available.
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, NULL, l_err_cnt, NULL,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No captured FUSION_PROJECT_ID yet (in flight)', NULL, NULL, NULL);
+                'No captured FUSION_PROJECT_ID yet (in flight)',
+                l_stg_chk, NULL,
+                CASE WHEN l_stg_chk IS NOT NULL THEN '?' END);
         END IF;
         l_key_type := 'CAPTURED_ID';
 
@@ -80,21 +107,36 @@ CREATE OR REPLACE PACKAGE BODY DMT_PPM_COMPARE_PKG AS
 
         IF l_xml IS NULL THEN
             l_fus_cnt := 0;
+            l_fus_chk := NULL;
         ELSE
-            SELECT TO_NUMBER(x.success_count)
-              INTO l_fus_cnt
+            SELECT TO_NUMBER(x.success_count), x.key_checksum
+              INTO l_fus_cnt, l_fus_chk
               FROM XMLTABLE('/DATA_DS/G_1' PASSING l_xml COLUMNS
-                     success_count VARCHAR2(40) PATH 'SUCCESS_COUNT') x;
+                     success_count VARCHAR2(40) PATH 'SUCCESS_COUNT',
+                     key_checksum  VARCHAR2(80) PATH 'KEY_CHECKSUM') x;
         END IF;
 
         -- (f) count-only balance; no money anywhere in this object.
         l_var_cnt := l_stg_cnt - (NVL(l_fus_cnt,0) + l_err_cnt);
         l_bal := CASE WHEN l_var_cnt = 0 THEN 'Y' ELSE 'N' END;
 
+        -- KEY_MATCH: non-money equality signal. Y/N when both sides present,
+        -- ? when the Fusion side could not be computed.
+        IF l_stg_chk IS NULL THEN
+            l_match := NULL;
+        ELSIF l_fus_chk IS NULL THEN
+            l_match := '?';
+        ELSIF l_stg_chk = l_fus_chk THEN
+            l_match := 'Y';
+        ELSE
+            l_match := 'N';
+        END IF;
+
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, NULL, l_err_cnt, NULL,
             l_fus_cnt, NULL, NULL, l_money_ok,
-            l_var_cnt, NULL, l_bal, NULL, NULL, NULL, NULL);
+            l_var_cnt, NULL, l_bal, NULL,
+            l_stg_chk, l_fus_chk, l_match);
     END GET_PROJECTS_CMP;
 
     -- ------------------------------------------------------------------

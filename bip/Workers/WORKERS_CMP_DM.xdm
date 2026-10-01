@@ -10,14 +10,49 @@
   <dataSets>
     <dataSet name="workers_cmp_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT COUNT(*) AS success_count
-FROM   hrc_integration_key_map m
-WHERE  m.object_name = 'Person'
-AND    m.source_system_id IN (
-         SELECT REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL)
-         FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
-       )
-AND    EXISTS (SELECT 1 FROM per_all_people_f b WHERE b.person_id = m.surrogate_id)
+-- Backlog #94. Two independent scalar subqueries over dual, so the business-key
+-- checksum can NEVER affect the count:
+--
+--   SUCCESS_COUNT -- the ORIGINAL, unchanged reconciliation count: workers
+--     confirmed via HRC_INTEGRATION_KEY_MAP (OBJECT_NAME='Person') whose
+--     SURROGATE_ID exists in PER_ALL_PEOPLE_F, for this run's batch key list.
+--     Self-contained; a checksum problem cannot zero or break it.
+--
+--   KEY_CHECKSUM -- a deterministic, order-independent set-checksum over the
+--     loaded Workers business key. The business key is PERSON_NUMBER
+--     (prefix-carrying, per DMT_DESIGN.html "PREFIX + PERSON_NUMBER"), carried
+--     as the HDL SourceSystemId in HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID.
+--     VERIFIED LIVE on the demo instance (fin_impl): SOURCE_SYSTEM_ID =
+--     93270RT-WKR-G1 for the loaded worker, matching the DMT TFM RECON_KEY
+--     byte-for-byte. Checksum recipe, identical to the STG side in
+--     DMT_HCM_COMPARE_PKG.GET_WORKERS_CMP:
+--       normalize    UPPER(TRIM(source_system_id))
+--       per-key hash ORA_HASH(normalized)
+--       set-combine  SUM over the DISTINCT normalized key set || ':' || COUNT.
+--     Same confirmed-in-base filter (EXISTS on PER_ALL_PEOPLE_F) as the count,
+--     so the checksum covers exactly the loaded set. NULL on an empty set via
+--     NVL, so it never errors the row.
+SELECT (SELECT COUNT(*)
+        FROM   hrc_integration_key_map m
+        WHERE  m.object_name = 'Person'
+        AND    m.source_system_id IN (
+                 SELECT REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL)
+                 FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+               )
+        AND    EXISTS (SELECT 1 FROM per_all_people_f b WHERE b.person_id = m.surrogate_id))
+                                                            AS success_count,
+       (SELECT TO_CHAR(NVL(SUM(ORA_HASH(k)),0)) || ':' || COUNT(*)
+        FROM (
+          SELECT DISTINCT UPPER(TRIM(m.source_system_id)) AS k
+          FROM   hrc_integration_key_map m
+          WHERE  m.object_name = 'Person'
+          AND    m.source_system_id IN (
+                   SELECT REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL)
+                   FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+                 )
+          AND    EXISTS (SELECT 1 FROM per_all_people_f b WHERE b.person_id = m.surrogate_id)
+        ))                                                  AS key_checksum
+FROM   dual
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -26,6 +61,7 @@ AND    EXISTS (SELECT 1 FROM per_all_people_f b WHERE b.person_id = m.surrogate_
       <dataStructure tagName="DATA_DS">
         <group name="G_1" label="G_1" source="workers_cmp_results">
           <element name="SUCCESS_COUNT" value="SUCCESS_COUNT" dataType="xsd:string" tagName="SUCCESS_COUNT"/>
+          <element name="KEY_CHECKSUM"  value="KEY_CHECKSUM"  dataType="xsd:string" tagName="KEY_CHECKSUM"/>
         </group>
       </dataStructure>
     </nodeList>

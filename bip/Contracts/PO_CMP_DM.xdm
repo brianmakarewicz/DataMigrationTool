@@ -10,15 +10,46 @@
   <dataSets>
     <dataSet name="contract_cmp_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT COUNT(DISTINCT h.po_header_id)                       AS success_count,
+-- Backlog #94. Independent scalar subqueries over dual, so the business-key
+-- checksum can NEVER affect the count:
+--
+--   SUCCESS_COUNT -- the ORIGINAL, unchanged reconciliation count: distinct
+--     CONTRACT-type PO headers confirmed in PO_HEADERS_ALL for this run's
+--     import request id(s). Self-contained; a checksum problem cannot zero or
+--     break it.
+--
+--   KEY_CHECKSUM -- a deterministic, order-independent set-checksum over the
+--     loaded Contracts business key. The business key is the contract document
+--     number (prefix-carrying, per DMT_DESIGN.html "PREFIX + DOCUMENT_NUM"),
+--     which on the Fusion side is PO_HEADERS_ALL.SEGMENT1. VERIFIED LIVE on the
+--     demo instance (fin_impl): SEGMENT1 = 93270RT-CPA-001 for the loaded
+--     CONTRACT header, matching the DMT TFM DOCUMENT_NUM byte-for-byte.
+--     Checksum recipe, identical to the STG side in
+--     DMT_PO_COMPARE_PKG.GET_CONTRACT_COMPARISON:
+--       normalize    UPPER(TRIM(segment1))
+--       per-key hash ORA_HASH(normalized)
+--       set-combine  SUM over the DISTINCT normalized key set || ':' || COUNT.
+--     NULL on an empty set via NVL, so it never errors the row.
+SELECT (SELECT COUNT(DISTINCT h.po_header_id)
+        FROM   po_headers_all h
+        WHERE  h.type_lookup_code = 'CONTRACT'
+        AND    h.request_id IN (
+                 SELECT TO_NUMBER(REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL))
+                 FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+               ))                                           AS success_count,
        CAST(NULL AS NUMBER)                                 AS success_amount,
-       CAST(NULL AS VARCHAR2(15))                           AS amount_currency
-FROM   po_headers_all h
-WHERE  h.type_lookup_code = 'CONTRACT'
-AND    h.request_id IN (
-         SELECT TO_NUMBER(REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL))
-         FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
-       )
+       CAST(NULL AS VARCHAR2(15))                           AS amount_currency,
+       (SELECT TO_CHAR(NVL(SUM(ORA_HASH(k)),0)) || ':' || COUNT(*)
+        FROM (
+          SELECT DISTINCT UPPER(TRIM(h.segment1)) AS k
+          FROM   po_headers_all h
+          WHERE  h.type_lookup_code = 'CONTRACT'
+          AND    h.request_id IN (
+                   SELECT TO_NUMBER(REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL))
+                   FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+                 )
+        ))                                                  AS key_checksum
+FROM   dual
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -29,6 +60,7 @@ AND    h.request_id IN (
           <element name="SUCCESS_COUNT"    value="SUCCESS_COUNT"    dataType="xsd:string" tagName="SUCCESS_COUNT"/>
           <element name="SUCCESS_AMOUNT"   value="SUCCESS_AMOUNT"   dataType="xsd:string" tagName="SUCCESS_AMOUNT"/>
           <element name="AMOUNT_CURRENCY"  value="AMOUNT_CURRENCY"  dataType="xsd:string" tagName="AMOUNT_CURRENCY"/>
+          <element name="KEY_CHECKSUM"     value="KEY_CHECKSUM"     dataType="xsd:string" tagName="KEY_CHECKSUM"/>
         </group>
       </dataStructure>
     </nodeList>

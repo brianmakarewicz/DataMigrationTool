@@ -10,13 +10,42 @@
   <dataSets>
     <dataSet name="cust_cmp_results" type="complex">
       <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
-SELECT COUNT(*) AS success_count
-FROM   hz_orig_sys_references r
-WHERE  r.owner_table_name = 'HZ_CUST_ACCOUNTS'
-AND    r.orig_system_reference IN (
-         SELECT REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL)
-         FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
-       )
+-- Backlog #94. Two independent scalar subqueries over dual, so the business-key
+-- checksum can NEVER affect the count:
+--
+--   SUCCESS_COUNT -- the ORIGINAL, unchanged reconciliation count: customer
+--     references confirmed in HZ_ORIG_SYS_REFERENCES for this run's batch id
+--     list. Self-contained; a checksum problem cannot zero or break it.
+--
+--   KEY_CHECKSUM -- a deterministic, order-independent set-checksum over the
+--     loaded Customers business key. The business key is the customer account
+--     reference (prefix-carrying, per DMT_DESIGN.html "PREFIX +
+--     CUST_ORIG_SYSTEM_REFERENCE"). VERIFIED LIVE on the demo instance
+--     (fin_impl): HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE holds that
+--     reference verbatim for OWNER_TABLE_NAME='HZ_CUST_ACCOUNTS'. Checksum
+--     recipe, identical to the STG side in DMT_CUST_COMPARE_PKG.GET_COMPARISON:
+--       normalize    UPPER(TRIM(orig_system_reference))
+--       per-key hash ORA_HASH(normalized)
+--       set-combine  SUM over the DISTINCT normalized key set || ':' || COUNT.
+--     NULL on an empty set via NVL, so it never errors the row.
+SELECT (SELECT COUNT(*)
+        FROM   hz_orig_sys_references r
+        WHERE  r.owner_table_name = 'HZ_CUST_ACCOUNTS'
+        AND    r.orig_system_reference IN (
+                 SELECT REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL)
+                 FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+               ))                                           AS success_count,
+       (SELECT TO_CHAR(NVL(SUM(ORA_HASH(k)),0)) || ':' || COUNT(*)
+        FROM (
+          SELECT DISTINCT UPPER(TRIM(r.orig_system_reference)) AS k
+          FROM   hz_orig_sys_references r
+          WHERE  r.owner_table_name = 'HZ_CUST_ACCOUNTS'
+          AND    r.orig_system_reference IN (
+                   SELECT REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL)
+                   FROM dual CONNECT BY REGEXP_SUBSTR(:P_BATCH_ID, '[^,]+', 1, LEVEL) IS NOT NULL
+                 )
+        ))                                                  AS key_checksum
+FROM   dual
       ]]></sql>
     </dataSet>
   </dataSets>
@@ -25,6 +54,7 @@ AND    r.orig_system_reference IN (
       <dataStructure tagName="DATA_DS">
         <group name="G_1" label="G_1" source="cust_cmp_results">
           <element name="SUCCESS_COUNT" value="SUCCESS_COUNT" dataType="xsd:string" tagName="SUCCESS_COUNT"/>
+          <element name="KEY_CHECKSUM"  value="KEY_CHECKSUM"  dataType="xsd:string" tagName="KEY_CHECKSUM"/>
         </group>
       </dataStructure>
     </nodeList>
