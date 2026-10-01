@@ -255,6 +255,21 @@ Prior DMT runs only did step 1; the chained `ValidateAndLoadBudgets` it triggere
 - **9683000** = `.../ledgerDefinitions/ValidateAndLoadBudgets` — STATE **12 (SUCCEEDED)**, user `CASEY.BROWN`
 - **9683001** = `.../ledgerDefinitions/LoadBudget` (child) — STATE **12 (SUCCEEDED)**
 
+### Proof-of-load key (backlog #87, 2026-09-30)
+
+The TFM Fusion-id column `FUSION_BUDGET_VERSION_ID` stores the budget cell's
+NATURAL composite key as proof of load, NOT a Fusion surrogate id:
+`ledger_id ~ budget_name ~ period_name ~ code_combination_id` (tilde-joined,
+mirroring the GLBalances `JE_HEADER_ID~JE_LINE_NUM` pattern). The design's named
+surrogate, `GL_BUDGET_VERSIONS.BUDGET_VERSION_ID`, is VPD-blocked on the demo pod
+(a live SELECT as the reporting user returns ORA-00942, reconfirmed 2026-09-30),
+so it cannot be the proof. All four composite parts were confirmed queryable from
+the base tables the reporting user can see (`GL_BUDGET_BALANCES` plus the
+`GL_LEDGERS` + `GL_CODE_COMBINATIONS` 30-segment account join). The column was
+retyped NUMBER -> VARCHAR2(200) to hold the composite. The post-run control-total
+compare still keys on bare `CODE_COMBINATION_ID`, extracted from the composite
+(the segment after the last tilde).
+
 ### Reconciliation findings (critical — differs from every other DMT CEMLI)
 
 - **`GL_BALANCES` has ZERO budget rows (`actual_flag='B'`) globally.** In Fusion Cloud, GL

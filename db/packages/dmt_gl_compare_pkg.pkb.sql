@@ -116,7 +116,9 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
     -- counter). The production-valid key is the exact
     -- CODE_COMBINATION_ID list DMT already captured on this run's LOADED
     -- TFM rows (column FUSION_BUDGET_VERSION_ID -- a documented misnomer;
-    -- it actually stores the CCID, not a budget version id) plus the
+    -- backlog #87 it now stores the cell composite
+    -- ledger~budget~period~code_combination_id, and the CCID is extracted
+    -- from it here, never a budget version id) plus the
     -- budget name. NO time window (LAST_UPDATE_DATE scoping was the first
     -- approach discovery tried and proved unreliable; it is never used
     -- here). Base table = GL_BUDGET_BALANCES, never GL_BALANCES (which
@@ -156,10 +158,14 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
            AND TFM_STATUS = 'FAILED';
 
         -- (c) captured-id batch: the CODE_COMBINATION_ID list DMT stored on
-        --     this run's LOADED TFM rows (misnamed FUSION_BUDGET_VERSION_ID
-        --     -- see discovery gotcha #1) plus the budget name, so the
-        --     report can resolve each cell with no time window.
-        SELECT LISTAGG(FUSION_BUDGET_VERSION_ID, ',')
+        --     this run's LOADED TFM rows plus the budget name, so the report
+        --     can resolve each cell with no time window.
+        --     Backlog #87: FUSION_BUDGET_VERSION_ID now holds the full cell
+        --     composite ledger~budget~period~code_combination_id, not the bare
+        --     CCID. The compare report (GL_BUDGET_CMP_DM) still keys on bare
+        --     CODE_COMBINATION_ID (TO_NUMBER over a comma list), so pull the
+        --     CCID back out -- it is the segment after the LAST tilde.
+        SELECT LISTAGG(REGEXP_SUBSTR(FUSION_BUDGET_VERSION_ID, '[^~]+$'), ',')
                  WITHIN GROUP (ORDER BY FUSION_BUDGET_VERSION_ID),
                MAX(BUDGET_NAME)
           INTO l_batch, l_budget_name
