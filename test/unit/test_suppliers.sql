@@ -368,10 +368,10 @@ begin
     from   dmt_scenario_tbl where upper(scenario_name) = 'TEST_SUPPLIERS_SCN';
 
     dmt_poz_sup_transform_pkg.transform_suppliers(:run_id, p_scenario_id => l_scn);
-    dmt_poz_sup_transform_pkg.transform_addresses(:run_id, p_scenario_id => l_scn);
-    dmt_poz_sup_transform_pkg.transform_sites(:run_id, p_scenario_id => l_scn);
-    dmt_poz_sup_transform_pkg.transform_site_assignments(:run_id, p_scenario_id => l_scn);
-    dmt_poz_sup_transform_pkg.transform_contacts(:run_id, p_scenario_id => l_scn);
+    dmt_poz_sup_addr_transform_pkg.transform_addresses(:run_id, p_scenario_id => l_scn);
+    dmt_poz_sup_site_transform_pkg.transform_sites(:run_id, p_scenario_id => l_scn);
+    dmt_poz_sup_site_assn_transform_pkg.transform_site_assignments(:run_id, p_scenario_id => l_scn);
+    dmt_poz_sup_cont_transform_pkg.transform_contacts(:run_id, p_scenario_id => l_scn);
     commit;
 
     -- 22. Supplier TFM: the 3 NEW rows transform; the TRANSFORMED

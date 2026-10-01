@@ -101,8 +101,11 @@ commit;
 -- character-exact from the retired hardcoded dispatch in
 -- DMT_QUEUE_WORKER_PKG (the ~39-branch EXECUTE_ONE CASE and the
 -- RECONCILE_ONE ELSIF chain):
---   * The five supplier-family objects share DMT_POZ_SUP_RESULTS_PKG
---     .RECONCILE_BATCH, which takes p_cemli_code (RECON_HAS_CEMLI_ARG=Y;
+--   * Each of the five supplier-family objects has its OWN per-object
+--     results package (backlog #43): DMT_POZ_SUP_RESULTS_PKG (Suppliers),
+--     DMT_POZ_SUP_ADDR_RESULTS_PKG, DMT_POZ_SUP_SITE_RESULTS_PKG,
+--     DMT_POZ_SUP_SITE_ASSN_RESULTS_PKG, DMT_POZ_SUP_CONT_RESULTS_PKG.
+--     Each .RECONCILE_BATCH retains the p_cemli_code arg (RECON_HAS_CEMLI_ARG=Y;
 --     replaces the old LIKE 'Supplier%' branch with exact registry rows).
 --   * MiscReceipts is the one SYNC object (the old code flipped
 --     DMT_LOADER_PKG.g_async_mode to FALSE for it).
@@ -134,10 +137,10 @@ merge into "DMT_PIPELINE_DEF_TBL" t
 using (
     select 'Items' cemli_code, 'DMT_LOADER_PKG.RUN_ITEMS' exec_proc, 'ASYNC' exec_mode, 'DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH' recon_proc, 'N' recon_has_cemli_arg, 'DMT_EGP_ITEM_RESULTS_PKG.GET_PARTITION_KEYS' partition_keys_proc from dual
     union all select 'Suppliers', 'DMT_LOADER_PKG.RUN_SUPPLIERS', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
-    union all select 'SupplierAddresses', 'DMT_LOADER_PKG.RUN_SUPPLIER_ADDRESSES', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
-    union all select 'SupplierSites', 'DMT_LOADER_PKG.RUN_SUPPLIER_SITES', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
-    union all select 'SupplierSiteAssignments', 'DMT_LOADER_PKG.RUN_SUPPLIER_SITE_ASSIGNMENTS', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
-    union all select 'SupplierContacts', 'DMT_LOADER_PKG.RUN_SUPPLIER_CONTACTS', 'ASYNC', 'DMT_POZ_SUP_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
+    union all select 'SupplierAddresses', 'DMT_LOADER_PKG.RUN_SUPPLIER_ADDRESSES', 'ASYNC', 'DMT_POZ_SUP_ADDR_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
+    union all select 'SupplierSites', 'DMT_LOADER_PKG.RUN_SUPPLIER_SITES', 'ASYNC', 'DMT_POZ_SUP_SITE_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
+    union all select 'SupplierSiteAssignments', 'DMT_LOADER_PKG.RUN_SUPPLIER_SITE_ASSIGNMENTS', 'ASYNC', 'DMT_POZ_SUP_SITE_ASSN_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
+    union all select 'SupplierContacts', 'DMT_LOADER_PKG.RUN_SUPPLIER_CONTACTS', 'ASYNC', 'DMT_POZ_SUP_CONT_RESULTS_PKG.RECONCILE_BATCH', 'Y', null from dual
     union all select 'Requisitions', 'DMT_LOADER_PKG.RUN_REQUISITIONS', 'ASYNC', 'DMT_REQ_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_REQ_RESULTS_PKG.GET_PARTITION_KEYS' from dual
     union all select 'PurchaseOrders', 'DMT_LOADER_PKG.RUN_PURCHASE_ORDERS', 'ASYNC', 'DMT_PO_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'BlanketPOs', 'DMT_LOADER_PKG.RUN_BLANKET_POS', 'ASYNC', 'DMT_BLANKET_PO_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
@@ -229,19 +232,20 @@ commit;
 -- site (DMT_QUEUE_WORKER_PKG.INVOKE_RESET), so NO new dynamic-SQL site is added
 -- and the four-site rule is unchanged. Registered for every FBDI/base-
 -- confirming object; NULL (unset) for config stubs, mocks, and HDL/REST objects
--- that reconcile inline. The supplier family shares ONE cemli-aware reset proc
--- (RECON_HAS_CEMLI_ARG='Y' already routes it RECON_CEMLI, so it resets the right
--- one of the five supplier TFM tables). GLBalances' reset lives in its results
+-- that reconcile inline. Each supplier-family object now has its OWN per-object
+-- results package carrying its own cemli-aware RESET_UNACCOUNTED (backlog #43);
+-- RECON_HAS_CEMLI_ARG='Y' still routes it RECON_CEMLI, so each resets its own
+-- supplier TFM table. GLBalances' reset lives in its results
 -- package (DMT_GL_RESULTS_PKG) — the same package that owns its Contract v1
 -- reconciler (RECON_HAS_CEMLI_ARG = 'N', so reset dispatches RECON style, no
 -- p_cemli_code). Separate additive MERGE so it converges an existing database.
 merge into "DMT_PIPELINE_DEF_TBL" t
 using (
     select 'Suppliers' cemli_code, 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' reset_proc from dual
-    union all select 'SupplierAddresses', 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' from dual
-    union all select 'SupplierSites', 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' from dual
-    union all select 'SupplierSiteAssignments', 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' from dual
-    union all select 'SupplierContacts', 'DMT_POZ_SUP_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'SupplierAddresses', 'DMT_POZ_SUP_ADDR_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'SupplierSites', 'DMT_POZ_SUP_SITE_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'SupplierSiteAssignments', 'DMT_POZ_SUP_SITE_ASSN_RESULTS_PKG.RESET_UNACCOUNTED' from dual
+    union all select 'SupplierContacts', 'DMT_POZ_SUP_CONT_RESULTS_PKG.RESET_UNACCOUNTED' from dual
     union all select 'PurchaseOrders', 'DMT_PO_RESULTS_PKG.RESET_UNACCOUNTED' from dual
     union all select 'BlanketPOs', 'DMT_BLANKET_PO_RESULTS_PKG.RESET_UNACCOUNTED' from dual
     union all select 'Contracts', 'DMT_CONTRACT_RESULTS_PKG.RESET_UNACCOUNTED' from dual

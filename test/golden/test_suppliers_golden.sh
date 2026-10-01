@@ -12,7 +12,10 @@
 #      tables via DMT_CSV_LOADER_PKG.LOAD_CSV (scenario-mandatory).
 #   2. Create ONE run row + prefix via DMT_PIPELINE_INIT_PKG.INIT_RUN
 #      (the goldens all come from one old-stack run: 116 / 9627).
-#   3. DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_* for all five objects.
+#   3. The per-object transform packages' TRANSFORM_* procs (backlog #43):
+#      DMT_POZ_SUP_TRANSFORM_PKG (Suppliers), DMT_POZ_SUP_ADDR_TRANSFORM_PKG,
+#      DMT_POZ_SUP_SITE_TRANSFORM_PKG, DMT_POZ_SUP_SITE_ASSN_TRANSFORM_PKG,
+#      DMT_POZ_SUP_CONT_TRANSFORM_PKG.
 #   4. The five DMT_POZ_SUP*_FBDI_GEN_PKG.GENERATE_FBDI calls.
 #   5. Extract each zip from DMT_FBDI_ZIP_TBL (base64 over
 #      dbms_output) and byte-compare against the run-116 goldens
@@ -195,10 +198,10 @@ begin
 
     -- Upstream validator deliberately NOT called — see the header comment.
     dmt_poz_sup_transform_pkg.transform_suppliers(l_run, p_scenario_id => l_scn);
-    dmt_poz_sup_transform_pkg.transform_addresses(l_run, p_scenario_id => l_scn);
-    dmt_poz_sup_transform_pkg.transform_sites(l_run, p_scenario_id => l_scn);
-    dmt_poz_sup_transform_pkg.transform_site_assignments(l_run, p_scenario_id => l_scn);
-    dmt_poz_sup_transform_pkg.transform_contacts(l_run, p_scenario_id => l_scn);
+    dmt_poz_sup_addr_transform_pkg.transform_addresses(l_run, p_scenario_id => l_scn);
+    dmt_poz_sup_site_transform_pkg.transform_sites(l_run, p_scenario_id => l_scn);
+    dmt_poz_sup_site_assn_transform_pkg.transform_site_assignments(l_run, p_scenario_id => l_scn);
+    dmt_poz_sup_cont_transform_pkg.transform_contacts(l_run, p_scenario_id => l_scn);
 
     dbms_output.put_line('RUNID:'  || l_run);
     dbms_output.put_line('PREFIX:' || l_prefix);

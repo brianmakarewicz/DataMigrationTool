@@ -1,17 +1,17 @@
--- PACKAGE DMT_POZ_SUP_RESULTS_PKG
+-- PACKAGE DMT_POZ_SUP_SITE_RESULTS_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_POZ_SUP_RESULTS_PKG"
+  CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_POZ_SUP_SITE_RESULTS_PKG"
 AUTHID DEFINER
 AS
 -- ============================================================
--- DMT_POZ_SUP_RESULTS_PKG
--- Post-load BIP reconciliation for the Suppliers supplier-family object
+-- DMT_POZ_SUP_SITE_RESULTS_PKG
+-- Post-load BIP reconciliation for the SupplierSites supplier-family object
 -- (coding standard: one results/reconciler package per object).
 -- Procedures relocated verbatim from the former shared
 -- DMT_POZ_SUP_RESULTS_PKG (behavior-preserving split, backlog #43).
 -- The p_cemli_code signature is retained: the pipeline registry
 -- dispatches RECON_PROC / reset positionally (RECON_HAS_CEMLI_ARG='Y')
--- and always passes 'Suppliers' to this package.
+-- and always passes 'SupplierSites' to this package.
 -- ============================================================
 
     PROCEDURE FETCH_BIP_RESULTS (
@@ -45,5 +45,5 @@ AS
         p_work_queue_id IN NUMBER DEFAULT NULL
     );
 
-END DMT_POZ_SUP_RESULTS_PKG;
+END DMT_POZ_SUP_SITE_RESULTS_PKG;
 /

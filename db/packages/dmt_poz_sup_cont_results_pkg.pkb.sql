@@ -1,15 +1,15 @@
--- PACKAGE BODY DMT_POZ_SUP_RESULTS_PKG
+-- PACKAGE BODY DMT_POZ_SUP_CONT_RESULTS_PKG
 
-  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_POZ_SUP_RESULTS_PKG" AS
+  CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_POZ_SUP_CONT_RESULTS_PKG" AS
 -- ============================================================
--- DMT_POZ_SUP_RESULTS_PKG Body
--- BIP reconciliation for the Suppliers supplier-family object.
+-- DMT_POZ_SUP_CONT_RESULTS_PKG Body
+-- BIP reconciliation for the SupplierContacts supplier-family object.
 -- Procedures relocated verbatim from the former shared
 -- DMT_POZ_SUP_RESULTS_PKG (backlog #43). Transport is the shared
 -- DMT_UTIL_PKG.RUN_BIP_REPORT. Outcomes written to the TFM table only.
 -- ============================================================
 
-    C_PKG CONSTANT VARCHAR2(50) := 'DMT_POZ_SUP_RESULTS_PKG';
+    C_PKG CONSTANT VARCHAR2(50) := 'DMT_POZ_SUP_CONT_RESULTS_PKG';
 
     PROCEDURE FETCH_BIP_RESULTS (
         p_run_id  IN NUMBER,
@@ -543,5 +543,5 @@
         -- NO COMMIT -- the caller (RERUN_RUN) owns the transaction.
     END RESET_UNACCOUNTED;
 
-END DMT_POZ_SUP_RESULTS_PKG;
+END DMT_POZ_SUP_CONT_RESULTS_PKG;
 /
