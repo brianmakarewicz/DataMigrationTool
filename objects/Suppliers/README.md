@@ -64,6 +64,68 @@ That multi-CSV-in-one-zip pattern does NOT apply to the supplier family.
 ## Reference Files
 None in this folder (CTL files embedded in FBDI template).
 
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object-model rule is "one object = one FBDI zip =
+one tab per record type". The supplier family is the clean case of that rule:
+it is FIVE SEPARATE OBJECTS, so there are five zips, and each zip carries
+exactly ONE CSV / one interface table / one STG table / one TFM table. There is
+no one-tab-fed-by-two-tables normalization here (unlike Assets) and no
+multi-CSV-in-one-zip bundling (unlike PurchaseOrders).
+
+**The mapping (CSV names verified from the generated test zips in
+`test/fbdi_zips/*_116.zip` — these are the names Fusion actually accepted on the
+live Stage D run — plus the five `DMT_POZ_SUP*_FBDI_GEN_PKG` bodies and the
+catalog):**
+
+| Object (zip) | FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|---|
+| Suppliers | PoSupplierImport.csv | POZ_SUPPLIERS_INT | DMT_POZ_SUPPLIERS_STG_TBL | DMT_POZ_SUPPLIERS_TFM_TBL | ALIGNED (table stem = interface table) |
+| SupplierAddresses | PozSupAddressesInt.csv | POZ_SUP_ADDRESSES_INT | DMT_POZ_SUP_ADDR_STG_TBL | DMT_POZ_SUP_ADDR_TFM_TBL | NAME-SHORTENED (ADDR = Addresses) |
+| SupplierSites | PozSupplierSitesInt.csv | POZ_SUPPLIER_SITES_INT | DMT_POZ_SUP_SITE_STG_TBL | DMT_POZ_SUP_SITE_TFM_TBL | NAME-SHORTENED (SUP_SITE = Supplier Sites) |
+| SupplierSiteAssignments | PozSiteAssignmentsInt.csv | POZ_SITE_ASSIGNMENTS_INT | DMT_POZ_SUP_SITE_ASSN_STG_TBL | DMT_POZ_SUP_SITE_ASSN_TFM_TBL | NAME-SHORTENED (SITE_ASSN = Site Assignments) |
+| SupplierContacts | PozSupContactsInt.csv | POZ_SUP_CONTACTS_INT | DMT_POZ_SUP_CONTACTS_STG_TBL | DMT_POZ_SUP_CONTACTS_TFM_TBL | NAME-SHORTENED (SUP_CONTACTS = Supplier Contacts) |
+
+**Why this is clean (no wrong-record-type risk):**
+- Every STG/TFM table maps 1:1 to exactly one interface table and one CSV. The
+  physical table stems (`POZ_SUPPLIERS`, `POZ_SUP_ADDR`, `POZ_SUP_SITE`,
+  `POZ_SUP_SITE_ASSN`, `POZ_SUP_CONTACTS`) are the Fusion `POZ_*_INT` interface
+  table names, shortened to fit the 30-byte object-name limit. "ADDR" for
+  Addresses, "ASSN" for Assignments, and dropping the `_INT` suffix are
+  abbreviations of the same record type, not a different record type.
+- The earlier backlog-#90 worry (that an object might model the wrong record
+  type) does not arise here: each DMT table is named after, and feeds, exactly
+  the interface table its generator writes. There is nothing to disprove and
+  nothing to flag as MISALIGNED.
+
+**Findings (what was fixed vs noted):**
+1. **FIXED (low-risk, doc-only):** four of the five generator package specs
+   documented FBDI filenames that the generator does not actually emit —
+   `dmt_poz_sup_addr_fbdi_gen_pkg.pks.sql` said `PoSupplierAddressImport.csv`,
+   `dmt_poz_sup_site_fbdi_gen_pkg.pks.sql` said `PoSupplierSiteImport.csv`,
+   `dmt_poz_sup_site_assn_fbdi_gen_pkg.pks.sql` said
+   `PoSupplierSiteAssignmentImport.csv`, and
+   `dmt_poz_sup_cont_fbdi_gen_pkg.pks.sql` said `PoSupplierContactImport.csv`.
+   The package bodies' `C_CSV_FILE` constants (and the generated test zips)
+   actually emit `PozSupAddressesInt.csv`, `PozSupplierSitesInt.csv`,
+   `PozSiteAssignmentsInt.csv` and `PozSupContactsInt.csv`. The four spec
+   headers were corrected to match the real emitted names. This is documentation
+   only; no runtime change. (The Suppliers spec header already matched its body,
+   `PoSupplierImport.csv`.)
+2. **NOTED (not a defect, do NOT change):** the Suppliers zip emits
+   `PoSupplierImport.csv`, which is a DMT-specific name rather than Oracle's
+   canonical `PozSuppliersInt.csv` for the Supplier Import template. It is left
+   as-is because this exact name loaded end-to-end on the live demo in Stage D
+   (run 270) — the `ImportSuppliers` job accepted it — so it is proven, not
+   broken. Renaming a proven, loading CSV for cosmetic Oracle-name parity is out
+   of scope for a doc audit and would risk the proven load path.
+3. **No physical rename.** As with Assets, renaming the STG/TFM tables to their
+   full un-abbreviated spelling is NOT done under this item: the abbreviations
+   are unambiguous, correct record types, and renaming would ripple across the
+   five validators, the shared transform/results packages, the catalog, pipeline
+   and upload seeds, views, and BIP models for no correctness gain.
+
 ## Known Issues
 - **SupplierSites: LOADED rows can carry a NULL FUSION_VENDOR_SITE_ID.** The
   interface tier (POZ_SUPPLIER_SITES_INT) reports the site PROCESSED but does

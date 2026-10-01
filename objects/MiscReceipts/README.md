@@ -163,3 +163,38 @@ JOIN INV_ORG_PARAMETERS p ON p.organization_id=e.organization_id
 WHERE p.organization_code='001'
   AND e.item_number IN ('RA-100-4935-LOT','AS88000','AS55001') AND ROWNUM<=8
 ```
+
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The rule is "one object = one FBDI zip = one tab per
+record type". MiscReceipts (on-hand quantity) is the **Inventory Transactions
+FBDI: one zip carrying 1–3 CSVs** — the transaction, plus lot and serial tabs
+emitted only when lot/serial rows exist. All three are submitted under one load.
+
+**The mapping (from `DMT_MISC_RECEIPT_FBDI_GEN_PKG` + the Inv*Interface.ctl):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| InvTransactionsInterface.csv | INV_TRANSACTIONS_INTERFACE | DMT_INV_TRX_STG_TBL | DMT_INV_TRX_TFM_TBL | NAME-SHORTENED (TRX = Transactions), model correct |
+| InvTransactionLotsInterface.csv | INV_TRANSACTIONS_LOTS_INTERFACE | DMT_INV_TRX_LOTS_STG_TBL | DMT_INV_TRX_LOTS_TFM_TBL | NAME-SHORTENED, model correct |
+| InvSerialNumbersInterface.csv | INV_SERIAL_NUMBERS_INTERFACE | DMT_INV_TRX_SERIALS_STG_TBL | DMT_INV_TRX_SERIALS_TFM_TBL | NAME-SHORTENED, model correct |
+
+Each DMT table maps 1:1 to its tab; the only drift is the abbreviation `TRX`
+for "Transactions" and `SERIALS` for "Serial Numbers" — same record type,
+shortened label. No wrong-record-type defect.
+
+**Findings:**
+1. **DOCUMENTED FINDING — stale Receiving (`RCV_*`) artifacts in this object.**
+   `objects/MiscReceipts/` ships two CTL files — `RcvHeadersInterface.ctl` and
+   `RcvTransactionsInterface.ctl` — and the schema carries `DMT_RCV_HEADERS_*`
+   and `DMT_RCV_TRANSACTIONS_*` STG/TFM tables. These belong to a *Receiving*
+   (RCV) import path, NOT the Inventory-Transactions path the live generator
+   actually uses. The catalog (db/seed/dmt_cemli_catalog_tbl.sql) confirms
+   MiscReceipts reads the `INV_TRX` pipeline tables and notes "the orphaned
+   `RCV_*` tables are a sweep candidate". So the Rcv* CTLs and DMT_RCV_* tables
+   are leftover/unused relative to the modeled path. This is flagged as a finding
+   (not renamed, not deleted under this doc-only item) — a future sweep should
+   either wire the RCV path or retire the orphaned CTLs and tables.
+2. **No physical rename needed** for the three Inv_* tables — they already mirror
+   their tabs; the `TRX`/`SERIALS` shortenings are consistent and unambiguous.

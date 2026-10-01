@@ -31,5 +31,29 @@ None in this folder.
 ## Known Issues
 None currently.
 
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object model rule is "one object = one FBDI zip =
+one tab per record type". AP Invoices is ONE zip (`ApInvoicesInterface.xlsm`)
+with TWO CSV tabs; DMT models both with one STG + one TFM table each.
+
+**The mapping (from the generator `DMT_AP_FBDI_GEN_PKG` + the catalog):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| ApInvoicesInterface.csv | AP_INVOICES_INTERFACE | DMT_AP_INVOICES_INT_STG_TBL | DMT_AP_INVOICES_INT_TFM_TBL | ALIGNED |
+| ApInvoiceLinesInterface.csv | AP_INVOICE_LINES_INTERFACE | DMT_AP_INVOICE_LINES_INT_STG_TBL | DMT_AP_INVOICE_LINES_INT_TFM_TBL | ALIGNED |
+
+**Findings:**
+1. **ALIGNED, no action.** Both tables mirror their FBDI tab and interface table
+   name-for-name (the `_INT_` infix is DMT's standard "interface-staging" marker,
+   not a drift). The generator spec-header already lists the correct two CSV
+   filenames; no comment fix was required.
+2. **No distributions tab (not a gap).** The Fusion AP FBDI has no distributions
+   CSV — distributions are auto-created server-side from line-level data during
+   import. So there is correctly no `DMT_AP_*_DISTS_*` table and no NOT-MODELED
+   finding. This matches the generator header note "NO distributions CSV".
+
 ## History
 - E2E LOADED confirmed working with OU-based grouping.

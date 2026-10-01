@@ -438,6 +438,25 @@ months-old pre-existing budget rows.
 - Consider validating `C_SKEW_HOURS` headroom vs. actual ATP↔Fusion `LAST_UPDATE_DATE` TZ offset
   (the run proved 4h is sufficient here).
 
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object model rule is "one object = one FBDI zip =
+one tab per record type". GL Budget Balances is ONE zip with ONE CSV tab; DMT
+models it with one STG + one TFM table.
+
+**The mapping (from the generator `DMT_GL_BUDGET_FBDI_GEN_PKG` + the catalog):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| GlBudgetInterface.csv | GL_BUDGET_INTERFACE | DMT_GL_BUDGET_INT_STG_TBL | DMT_GL_BUDGET_INT_TFM_TBL | ALIGNED |
+
+**Findings:**
+1. **ALIGNED, no action.** The single STG and TFM table both mirror the one FBDI
+   tab and its interface table (`GL_BUDGET_INTERFACE`); `_INT_` is DMT's standard
+   "interface-staging" marker, not a drift. The generator spec-header already
+   names the correct CSV (`GlBudgetInterface.csv`); no comment fix was required.
+
 ## Date
 
 Analysis performed: 2026-04-01

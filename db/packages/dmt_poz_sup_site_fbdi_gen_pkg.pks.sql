@@ -7,7 +7,7 @@ AS
 -- DMT_POZ_SUP_SITE_FBDI_GEN_PKG
 -- Generates the Supplier Site FBDI zip from VALIDATED staging records.
 -- Interface table: POZ_SUPPLIER_SITES_INT
--- FBDI file: PoSupplierSiteImport.csv
+-- FBDI file: PozSupplierSitesInt.csv (the name the body emits + the zip Fusion accepted)
 -- ============================================================
 
     PROCEDURE GENERATE_FBDI (

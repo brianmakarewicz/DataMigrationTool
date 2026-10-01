@@ -32,6 +32,39 @@ E2E ACCEPTED (LOADED)
 ## Reference Files
 None in this folder.
 
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object-model rule is "one object = one FBDI zip =
+one tab per record type". PurchaseOrders is ONE zip (`ImportSPOJob`,
+standard-PO style) carrying FOUR CSVs; DMT models all four with one STG and one
+TFM table each.
+
+**The mapping (from the generator `DMT_PO_FBDI_GEN_PKG` body + the catalog):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| PoHeadersInterfaceOrder.csv | PO_HEADERS_INTERFACE | DMT_PO_HEADERS_INT_STG_TBL | DMT_PO_HEADERS_INT_TFM_TBL | ALIGNED |
+| PoLinesInterfaceOrder.csv | PO_LINES_INTERFACE | DMT_PO_LINES_INT_STG_TBL | DMT_PO_LINES_INT_TFM_TBL | ALIGNED |
+| PoLineLocationsInterfaceOrder.csv | PO_LINE_LOCATIONS_INTERFACE | DMT_PO_LINE_LOCS_INT_STG_TBL | DMT_PO_LINE_LOCS_INT_TFM_TBL | NAME-SHORTENED (LINE_LOCS = Line Locations) |
+| PoDistributionsInterfaceOrder.csv | PO_DISTRIBUTIONS_INTERFACE | DMT_PO_DISTS_INT_STG_TBL | DMT_PO_DISTS_INT_TFM_TBL | NAME-SHORTENED (DISTS = Distributions) |
+
+**Notes:**
+- One record type per table, one table per CSV — the cleanest 1:1 case. Every
+  table name is the Fusion interface-table / FBDI tab name with the common
+  `_INT` (interface) tag, and two are abbreviated (`LINE_LOCS` for Line
+  Locations, `DISTS` for Distributions). No wrong-record-type defect.
+- **Shared-table note (not a misalignment):** the four PO_* STG/TFM tables are
+  shared by three objects — PurchaseOrders, BlanketPOs, and Contracts —
+  partitioned by `STYLE_DISPLAY_NAME` (`Purchase Order` /
+  `Blanket Purchase Agreement` / `Contract Purchase Agreement`) via the catalog
+  `ROW_FILTER`. The table names carry no style word because one table serves all
+  three PO document styles; this is a deliberate shared model, not a drift. See
+  the BlanketPOs and Contracts audits for how the same tables feed their style's
+  separate zip/ESS job.
+- **Generator spec header already accurate** — `dmt_po_fbdi_gen_pkg.pks.sql`
+  documents the four real Oracle FBDI filenames correctly. No fix needed.
+
 ## Known Issues
 None currently. Multi-BU grouping working correctly.
 

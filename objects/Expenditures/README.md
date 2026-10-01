@@ -262,3 +262,35 @@ Confirm none reached base: SELECT COUNT(*) FROM pjc_exp_items_all
   FBDI generator and CTL to emit the DOCUMENT_NAME / DOC_ENTRY_NAME columns. Verify the
   CTL includes those positions before changing only the seed data.
 
+
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object-model rule is "one object = one FBDI zip = one
+tab per record type". Expenditures is ONE zip with a single CSV / one interface
+table; DMT models it with one STG + one TFM table.
+
+**The mapping (from the generator `DMT_EXPENDITURE_FBDI_GEN_PKG` `REGISTER_CSV`
+call and the `FROM` table):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| PjcTxnXfaceStageAll.csv | PJC_TXN_XFACE_STAGE_ALL (base success table PJC_EXP_ITEMS_ALL) | DMT_PJC_EXPENDITURES_STG_TBL | DMT_PJC_EXPENDITURES_TFM_TBL | NAME-MISALIGNED (Expenditures = TxnXfaceStageAll), model correct |
+
+**Why it reads NAME-MISALIGNED but the model is correct (synonym, not a wrong
+record type):** the single Fusion tab `PjcTxnXfaceStageAll` carries project-costing
+transactions = "project expenditures". DMT names the table for the business concept
+(`EXPENDITURES`), the display label is "Project Expenditures". Same record type, a
+descriptive name rather than the Oracle staging-table label. One tab, one table --
+no normalization or fan-out.
+
+**Findings (what was fixed vs deferred):**
+1. **NO spec-header fix needed.** The generator spec-header already names the real
+   CSV tab `PjcTxnXfaceStageAll.csv`, matching the `REGISTER_CSV` call. Accurate.
+2. **DEFERRED (physical rename, high ripple -- DO NOT do under this item):** renaming
+   `DMT_PJC_EXPENDITURES_*` to `*_PJC_TXN_XFACE_*` would trade a clear business name
+   for the Oracle staging-table label and ripple across the validator, transformer,
+   generator, results package, catalog, pipeline and BIP. Synonym, not a wrong record
+   type -- no rename warranted. Recorded as a finding only.
+3. **No NOT-MODELED gaps.** The one CSV in the zip has a STG and a TFM table and a
+   generator branch.

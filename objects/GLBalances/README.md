@@ -68,6 +68,30 @@ None currently.
   2. **Period closed.** Test data used period `12-11` (Dec 2011) — closed. Switched to `04-26` (open). Discovered via `/fusion-query` against gl_period_statuses.
   3. **BIP reconciliation misinterpreted status P.** GL_INTERFACE status `P` = Processed (success, awaiting purge). Reconciliation was treating ALL INTERFACE rows as FAILED. Fixed to: `P` = LOADED, anything else (NEW, E, EFxx) = FAILED.
 
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object model rule is "one object = one FBDI zip =
+one tab per record type". GL Balances is ONE zip with ONE CSV tab; DMT models it
+with one STG + one TFM table.
+
+**The mapping (from the generator `DMT_GL_FBDI_GEN_PKG` + the catalog):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| GlInterface.csv | GL_INTERFACE | DMT_GL_INTERFACE_STG_TBL | DMT_GL_INTERFACE_TFM_TBL | ALIGNED |
+
+**Findings:**
+1. **ALIGNED, no action.** The single STG and TFM table both mirror the one FBDI
+   tab and its interface table (`GL_INTERFACE`) name-for-name. The generator
+   spec-header already names the correct CSV (`GlInterface.csv`); no comment fix
+   was required.
+2. **Display label "GL Journals" is not a table misalignment.** The catalog seeds
+   this object's DISPLAY_NAME as 'GL Journals' (a user-chosen console label), but
+   the physical tables keep the FBDI/interface name `GL_INTERFACE`. The label is a
+   UI concern, documented in the catalog header; it does not drift the table name
+   away from the tab, so it is not a finding against this audit.
+
 ## Lessons Learned
 - **GL_INTERFACE status P = success.** Unlike other interface tables where presence = failure, GL_INTERFACE keeps processed rows with status `P` until purged. BIP reconciliation must check the status value, not just presence.
 - **GL_INTERFACE status codes:** P=Processed(success), NEW=unprocessed, E=error, EFxx=specific error code.

@@ -7,7 +7,7 @@ AS
 -- DMT_POZ_SUP_ADDR_FBDI_GEN_PKG
 -- Generates the Supplier Address FBDI zip from VALIDATED staging records.
 -- Interface table: POZ_SUP_ADDRESSES_INT
--- FBDI file: PoSupplierAddressImport.csv
+-- FBDI file: PozSupAddressesInt.csv (the name the body emits + the zip Fusion accepted)
 -- ============================================================
 
     PROCEDURE GENERATE_FBDI (

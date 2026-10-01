@@ -46,6 +46,38 @@ None in this folder.
 - **Root cause found (2026-04-06):** ESS WAIT was caused by wrong ESS job (ImportSPOJob instead of ImportCPAJob) and wrong UCM account. Seed script already correct (row 22). Live ATP data may need UPDATE if deployed before seed was fixed.
 - ParameterList code in `dmt_loader_pkg.pkb` (Contracts block) builds 9-arg ImportSPOJob format — needs rewrite to 7-arg ImportCPAJob format.
 
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. Contracts is its OWN object — a separate zip
+(`ImportCPAJob`, UCM `prc/contractPurchaseAgreement/import`) built from the
+Contract Purchase Agreement Import template, headers only (ONE CSV, no lines).
+It reuses the shared PO headers STG/TFM table, selecting only
+`STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'` rows via the catalog
+`ROW_FILTER`.
+
+**The mapping (from the generator `DMT_CONTRACT_FBDI_GEN_PKG` body + the
+catalog):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| PoHeadersInterfaceContract.csv | PO_HEADERS_INTERFACE | DMT_PO_HEADERS_INT_STG_TBL (style = Contract Purchase Agreement) | DMT_PO_HEADERS_INT_TFM_TBL (style = Contract Purchase Agreement) | ALIGNED (shared table, style-filtered) |
+
+**Notes:**
+- A Contract Purchase Agreement is a header-only document in Fusion — no lines,
+  locations, or distributions — so the one-CSV model is correct and complete, not
+  a missing-tab gap.
+- The `PoHeadersInterfaceContract.csv` name is the CPA import template's header
+  tab; it is the correct Oracle FBDI tab name for the CPA job and is distinct
+  from the standard-PO `PoHeadersInterfaceOrder.csv` and the BPA
+  `PoHeadersInterfaceBlanket.csv`.
+- `DMT_PO_HEADERS_INT_*` is shared with PurchaseOrders and BlanketPOs and carries
+  no style word; one headers table serves all three PO styles, partitioned by
+  `STYLE_DISPLAY_NAME`. Record type matches (headers → headers), so ALIGNED.
+- **Generator spec header already accurate** —
+  `dmt_contract_fbdi_gen_pkg.pks.sql` documents "1 CSV only:
+  PoHeadersInterfaceContract.csv (no lines)", matching the body. No fix needed.
+
 ## History
 - Code completed. Blocked by demo instance ESS queue congestion.
 - 2026-04-06: Root cause identified — wrong ESS job, UCM account, and ParameterList. [DB] task created for Claude Code.

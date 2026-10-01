@@ -46,6 +46,43 @@ None in this folder.
 - **Root cause found (2026-04-06):** ESS WAIT was caused by wrong ESS job (ImportSPOJob instead of ImportBPAJob) and wrong UCM account. Seed script `schema/seed/05_dmt_erp_options_extra_seed.sql` was copying from row 21 (PO) instead of row 23 (BPA). Seed script fixed. ATP UPDATE + ParameterList code fix pending.
 - ParameterList code at `dmt_loader_pkg.pkb` line 1777 builds 9-arg ImportSPOJob format — needs rewrite to 8-arg ImportBPAJob format (see status.md [DB] task).
 
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. BlanketPOs is its OWN object — a separate zip
+(`ImportBPAJob`, UCM `prc/blanketPurchaseAgreement/import`) built from the
+Blanket Purchase Agreement Import template, NOT the standard-PO template. It
+carries TWO CSVs (headers + lines; no locations or distributions). It reuses the
+shared PO_* STG/TFM tables, selecting only `STYLE_DISPLAY_NAME = 'Blanket
+Purchase Agreement'` rows via the catalog `ROW_FILTER`.
+
+**The mapping (from the generator `DMT_BLANKET_PO_FBDI_GEN_PKG` body + the
+captured zip `test/fbdi_zips/BlanketPOs_100000905.zip` + the catalog):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| PoHeadersInterfaceBlanket.csv | PO_HEADERS_INTERFACE | DMT_PO_HEADERS_INT_STG_TBL (style = Blanket Purchase Agreement) | DMT_PO_HEADERS_INT_TFM_TBL (style = Blanket Purchase Agreement) | ALIGNED (shared table, style-filtered) |
+| PoLinesInterfaceBlanket.csv | PO_LINES_INTERFACE | DMT_PO_LINES_INT_STG_TBL (style = Blanket Purchase Agreement) | DMT_PO_LINES_INT_TFM_TBL (style = Blanket Purchase Agreement) | ALIGNED (shared table, style-filtered) |
+
+**Notes:**
+- The CSV filenames carry the `Blanket` suffix because the BPA import template's
+  tabs are named `PoHeadersInterfaceBlanket` / `PoLinesInterfaceBlanket` — these
+  ARE the correct Oracle FBDI tab names for the BPA job (verified against the
+  captured `BlanketPOs_100000905.zip`, which ships exactly those two entries).
+  This is NOT the same tab as the standard-PO `...InterfaceOrder` CSVs.
+- The STG/TFM tables (`DMT_PO_HEADERS_INT_*`, `DMT_PO_LINES_INT_*`) are shared
+  with PurchaseOrders and Contracts and carry no style word in their names; one
+  table serves all three PO document styles, partitioned by `STYLE_DISPLAY_NAME`.
+  Record type matches (headers → headers, lines → lines), so ALIGNED — the shared
+  table is a deliberate model choice, not a wrong-record-type defect.
+- **Generator spec header already accurate** —
+  `dmt_blanket_po_fbdi_gen_pkg.pks.sql` documents "2 CSVs" correctly. The
+  one-line header says `PoHeadersInterfaceOrder.csv + PoLinesInterfaceOrder.csv`
+  as a shorthand for "the PO headers/lines CSVs"; the body emits the exact
+  `...Blanket` tab names and the captured zip confirms them. Left as-is (the
+  header is a style-agnostic description, not a wrong filename claim); no code
+  change.
+
 ## History
 - Code completed. Blocked by demo instance ESS queue congestion.
 - 2026-04-06: Root cause identified — wrong ESS job, UCM account, and ParameterList. Seed script fixed. [DB] task created for Claude Code.

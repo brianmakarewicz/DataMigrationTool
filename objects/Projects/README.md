@@ -117,3 +117,51 @@ None in this folder.
 - Team Member Role: `Project Manager`
 - Expenditure Type: `Professional Services`
 
+
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object-model rule is "one object = one FBDI zip = one
+tab per record type". Projects is ONE zip (`PjfProjectsInterface.xlsm`) with four
+CSVs / four interface tables; DMT models all four, one STG + one TFM table each.
+
+**The mapping (from the generator `DMT_PROJECT_FBDI_GEN_PKG` `REGISTER_CSV` calls
+and each `gen_*_csv` function's `FROM` table):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| PjfProjectsAllXface.csv | PJF_PROJECTS_ALL_XFACE | DMT_PJF_PROJECTS_STG_TBL | DMT_PJF_PROJECTS_TFM_TBL | ALIGNED (PJF_PROJECTS) |
+| PjfProjElementsXface.csv | PJF_PROJ_ELEMENTS_XFACE (Tasks) | DMT_PJF_TASKS_STG_TBL | DMT_PJF_TASKS_TFM_TBL | NAME-MISALIGNED (Tasks = ProjElements), model correct |
+| PjfProjectPartiesInt.csv | PJF_PROJECT_PARTIES_INT (Team Members) | DMT_PJF_TEAM_MEMBERS_STG_TBL | DMT_PJF_TEAM_MEMBERS_TFM_TBL | NAME-MISALIGNED (TeamMembers = ProjectParties), model correct |
+| PjcTxnControlsStage.csv | PJC_TXN_CONTROLS_STAGE | DMT_PJC_TXN_CONTROLS_STG_TBL | DMT_PJC_TXN_CONTROLS_TFM_TBL | ALIGNED (PJC_TXN_CONTROLS) |
+
+**Why two rows read NAME-MISALIGNED but the model is correct (synonym, not a
+wrong record type):**
+- The Fusion "Tasks" record type ships on a tab Oracle names `PjfProjElements`
+  (project *elements* = tasks in the work-breakdown structure). DMT names the table
+  for the business concept (`TASKS`). Same record type, different label.
+- The Fusion "Team Members" record type ships on a tab Oracle names
+  `PjfProjectParties` (a project party playing a team-member role). DMT names the
+  table for the business concept (`TEAM_MEMBERS`). Same record type, different label.
+- `PJF_PROJECTS` and `PJC_TXN_CONTROLS` match their tabs directly (ALIGNED).
+
+**Findings (what was fixed vs deferred):**
+1. **NO spec-header fix needed.** The generator spec-header already lists the four
+   real Oracle CSV tabs (`PjfProjectsAllXface.csv`, `PjfProjElementsXface.csv`,
+   `PjfProjectPartiesInt.csv`, `PjcTxnControlsStage.csv`), matching the `REGISTER_CSV`
+   calls in the body. Accurate as-is.
+2. **DEFERRED (physical rename, high ripple -- DO NOT do under this item):** renaming
+   `DMT_PJF_TASKS_*` to `*_PROJ_ELEMENTS_*` and `DMT_PJF_TEAM_MEMBERS_*` to
+   `*_PROJECT_PARTIES_*` would match the Oracle tab labels but trade a clear
+   business name for an obscure one, and would ripple across the validator,
+   transformer, generator, results package, catalog, pipeline, views and BIP. These
+   are synonyms, not wrong record types, so no rename is warranted. Recorded as a
+   finding only.
+3. **No NOT-MODELED gaps.** All four CSVs in the Projects zip have a STG and a TFM
+   table and a generator branch.
+
+**Registry note (not a misalignment):** the "Interface Tables" line in the Pipeline
+section lists the generic Oracle names (`PJF_PROJECTS_INTERFACE`, etc.). The actual
+load/interface tables Fusion uses are the `*_XFACE` / `*_STAGE` / `*_INT` tables the
+CSVs load into (see Known Issues, `PJF_PROJECTS_ALL_XFACE`). The table above uses the
+real interface-table names the FBDI tabs resolve to.
