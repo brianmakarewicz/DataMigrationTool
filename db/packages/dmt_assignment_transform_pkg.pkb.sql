@@ -24,24 +24,10 @@
                 'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
     END get_prefix;
 
-    -- --------------------------------------------------------
-    -- Private: read dependent prefix from CONVERSION_MASTER
-    -- --------------------------------------------------------
-    FUNCTION get_dep_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
-        l_dep_prefix VARCHAR2(30);
-    BEGIN
-        -- Backlog #142: honor the run's Dependent-Run override
-        -- (DMT_PIPELINE_RUN_TBL.DEPENDENT_PREFIX) when set; else the
-        -- run's own PREFIX. The resolved prefix is what the upstream
-        -- reference in the load file carries.
-        l_dep_prefix := DMT_UTIL_PKG.GET_DEPENDENT_PREFIX(p_run_id);
-        RETURN l_dep_prefix;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20001,
-                'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
-    END get_dep_prefix;
-
+    -- get_dep_prefix retired 2026-10-01 -- DMT2 backlog #19: it was dead code,
+    -- defined but never called and never applied to any column. This package's
+    -- own natural keys (PERSON_NUMBER / ASSIGNMENT_NUMBER) are run-prefixed via
+    -- l_prefix; there is no cross-object hand-prefixing to resolve.
 
     -- ============================================================
     -- TRANSFORM_WORK_RELS
