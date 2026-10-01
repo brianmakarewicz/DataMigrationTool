@@ -1,0 +1,61 @@
+name: CI promote — local regression gate
+
+# Phase 2 of the DMT2 CI/CD pipeline (docs/cicd.md). On every push to a
+# non-main branch, a SELF-HOSTED runner on the local machine fires the same
+# deterministic regression the script-first pipeline runs as its hard gate
+# (scripts/ci_promote.py test-local), then a quick Playwright UI smoke of the
+# local APEX console.
+#
+# This is the auto-fire wrapper around the EXISTING script-first stages — it does
+# not replace or bypass the cloud reviewer. The cloud PR reviewer
+# (.github/workflows/pr-review.yml, runs-on: ubuntu-latest) is untouched and
+# remains the binding approver/merger. This workflow only proves the branch on
+# the local Docker + Fusion-demo stack that the cloud runner cannot reach.
+#
+# Requires a self-hosted runner labeled [self-hosted, dmt2-docker] installed on
+# the local machine (the one manual infra step — see docs/cicd.md). The runner
+# needs the local Docker DB up, SQLcl + JDK on PATH, oracledb/requests Python
+# deps, Node + the Playwright install, and read access to ~/workspace/connections.json.
+
+on:
+  push:
+    # Every non-main branch push fires the gate. Each run draws an ATP prefix and
+    # writes prefixed records to the shared Fusion demo pod, and prefixes are a
+    # finite 5-digit space — so skip the disposable scratch/worktree branches that
+    # aren't real candidate work (they'd each burn a prefix + a full regression).
+    branches-ignore:
+      - main
+      - 'worktree-agent-*'
+      - 'scratch/**'
+      - 'tmp/**'
+
+# Don't pile up local regression runs for the same branch: a newer push
+# supersedes an in-flight one (each run writes prefixed records to the shared
+# Fusion demo pod, so serialize per branch).
+concurrency:
+  group: ci-promote-local-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-regression-gate:
+    runs-on: [self-hosted, dmt2-docker]
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Local deploy + deterministic regression (hard gate)
+        shell: bash
+        run: |
+          python scripts/ci_promote.py test-local
+
+      - name: Playwright UI smoke (local console)
+        shell: bash
+        env:
+          # Non-admin smoke account; set as repo/runner secrets, never hardcoded.
+          DMT2_UI_USER: ${{ secrets.DMT2_UI_USER }}
+          DMT2_UI_PASS: ${{ secrets.DMT2_UI_PASS }}
+          DMT2_UI_BASE: http://localhost:8182/ords
+          DMT2_UI_APP: r/dmt/livedmt2
+          DMT2_UI_APPID: "501"
+        run: |
+          python scripts/dmt_apex_playwright_gate.py

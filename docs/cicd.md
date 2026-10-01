@@ -8,7 +8,7 @@ local. Runner: `scripts/ci_promote.py` (wraps the existing `dmt_regression_run.p
 
 | Role | DB | APEX | Schema |
 |------|----|------|--------|
-| TEST | local Docker `dmt2-local` (port 1523), Oracle Free 23ai | 24.2 (`dmt2-ords`, port 8182) | `DMT_OWNER` |
+| TEST | local Docker `dmt2-local` (port 1523), Oracle Free 23ai | 26.1 (`dmt2-ords`, port 8182; upgraded 24.2→26.1 2026-09-17 to match ATP) | `DMT_OWNER` |
 | GOLD (prod) | queryapp ATP | 26.1 | `DMT2_OWNER` |
 
 Both point at the **same Fusion demo pod**, which is why prefixes must not collide.
@@ -68,9 +68,24 @@ Fusion. **ATP's sequence is the single source of truth.**
   (`ORA-12541` on the browser), reset it with `ords config --db-pool default set
   db.hostname host.docker.internal` / `db.port 1523` / `db.servicename FREEPDB1`, then
   restart `dmt2-ords`. See `apex/README.md`.
-- **Hands-off automation (later).** This is script-first; you/the agent run it. To make
-  a `git push` auto-fire the pipeline against local Docker, install a self-hosted GitHub
-  Actions runner on this machine and call the same stages from a workflow.
+- **Hands-off automation — now wired (Phase 2).** `.github/workflows/ci-promote-local.yml`
+  fires on every push to a non-`main` branch and runs the same hard gate automatically:
+  `python scripts/ci_promote.py test-local` (deploy local + deterministic regression),
+  then a quick Playwright UI smoke of the local console
+  (`python scripts/dmt_apex_playwright_gate.py`). It runs `runs-on: [self-hosted, dmt2-docker]`
+  because only the local machine can reach the local Docker DB. It is **additive** — the cloud
+  PR reviewer (`.github/workflows/pr-review.yml`, `runs-on: ubuntu-latest`) is untouched and
+  remains the binding approver/merger; this workflow just proves the branch on the local stack
+  the cloud runner can't reach.
+  - **Manual infra step (a human does this once).** Install a self-hosted GitHub Actions
+    runner on the local machine and give it the labels `self-hosted` and `dmt2-docker`
+    (repo → Settings → Actions → Runners → New self-hosted runner). The runner's service
+    account needs: the local Docker DB (`dmt2-local`, port 1523) up, SQLcl + JDK 21 on PATH,
+    the Python deps `oracledb`/`requests`, Node + the Playwright install used by
+    `playwright_verify.js`, and read access to `~/workspace/connections.json`. Add the
+    Playwright smoke account as repo secrets `DMT2_UI_USER` / `DMT2_UI_PASS` (a non-admin
+    account — never `DMTADMIN`). Until the runner is installed, the workflow just queues;
+    everything still runs by hand with the `ci_promote.py` stages above.
 
 ## The implementation loop
 
