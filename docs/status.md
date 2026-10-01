@@ -1,5 +1,49 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-01 -- Backlog batch 4 close-out (engine + suppliers + CSV + comparison), one regression
+
+**Bottom line.** Six more backlog items were worked and closed out as one batch, proven by a
+single full regression (run 174). Three are fully resolved, two are partial (the core is done,
+a mechanical rollout to more objects remains), and one was already done under an earlier change.
+The regression found zero new problems compared to the last known-good run.
+
+**What was resolved.**
+- **#38** -- the run-cancel feature. Already gone. A check found it was removed back when the
+  engine was first built; the only "cancel" words left in the code are Fusion's own job-state
+  names and ordinary close-this-dialog buttons. Nothing to change.
+- **#43** -- the two big supplier packages (one shared transform, one shared reconciler, each
+  covering all five supplier objects) were split into one transform and one reconciler per
+  object, which is the house standard. The split only moved code, it did not rewrite it. Run 174
+  proved all five supplier objects load and fail exactly as before.
+- **#76** -- the CSV loaders used to flip the database's date format at run time. They now state
+  the exact date format on each conversion instead, so loading no longer depends on a mutable
+  session setting. Proven by deliberately setting a wrong session date format and showing the
+  loaders still parse correctly. Run 174 had no date errors.
+
+**What is partial (core done, more to do).**
+- **#90** -- checked whether the Assets staging/transform table names match the Fusion import
+  file tabs. They do not match by name, but the data is modeled correctly, so this is cosmetic
+  naming drift, not a real defect. Fixed a wrong file list in one spec comment and wrote the
+  audit into the Assets notes. The same name-vs-file check still needs doing for the other objects.
+- **#94** -- objects with no money amount (suppliers, customers, projects, and so on) had nothing
+  to compare on the post-run comparison page. Added a business-key checksum so they get a real
+  match signal, and wired it for suppliers first. Checked live against Fusion that the supplier
+  name actually comes from the party table (not where the first attempt assumed), and that the
+  existing success count cannot be broken by the new checksum. The other money-less objects still
+  need the same wiring, each against its own verified Fusion source.
+
+**Superseded.**
+- **#77** -- the On-Failure control on the Run Pipeline page already shipped and was proven. The
+  two remaining controls on that page need new scheduler settings and are tracked as item #142.
+  So #77 is closed as superseded by #142.
+
+**New backlog item.** **#144** -- on the local Docker database the job scheduler sometimes jams
+mid-run (a numeric-overflow error inside Oracle's scheduler, made worse by the database allowing
+only four job processes), which stalls a regression and forces manual cleanup and a container
+restart. This is a local-environment reliability problem, not a product defect, but it makes
+regressions slow. The fix is to raise the job-process limit and add a pre-run cleanup of leftover
+jobs.
+
 ## Session -- 2026-10-01 -- Backlog batch 3 close-out (GL + Projects + recon reports), one regression
 
 **Bottom line.** Seven backlog items were fixed, merged to main, and closed out as one batch.
