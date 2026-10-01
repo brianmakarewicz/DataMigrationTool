@@ -1,5 +1,53 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-01 -- Backlog batch 3 close-out (GL + Projects + recon reports), one regression
+
+**Bottom line.** Seven backlog items were fixed, merged to main, and closed out as one batch.
+A single full regression run (run 169, on main at commit 365a739) found zero new problems
+compared to the last known-good run. Four of the seven fixes were proven end-to-end by that
+run. The other three were merged and checked on their own, but the regression scenario has no
+test data for the objects they touch, so they were not exercised end-to-end. That gap is now
+its own backlog item so the next run proves them.
+
+**What was resolved and proven in run 169.**
+- **#92** -- GL Balances reconciliation now uses the same shared result-reader every other
+  object uses, instead of its own one-off reader. The GL line proof (journal header and line
+  number together) still gets saved. Run 169: 2 GL journal lines loaded, reconciled through
+  the shared reader.
+- **#87** -- GL Budgets was trying to save a budget-version id that Fusion blocks from being
+  read back. It now saves the budget cell key instead (ledger, budget, period, and account
+  combined). The column was widened from a number to text to hold it. Run 169: 2 budget cells
+  loaded with the cell-key proof saved.
+- **#64** -- Projects can now optionally accept a task whose parent project was already loaded
+  in an earlier run. This is off by default, so nothing changes unless someone turns it on.
+  Run 169: projects and project tasks loaded as before.
+- **#93** -- New read-only end-of-run summary that counts what landed in Fusion for each object.
+  Run 169: it ran cleanly and reported no errors.
+
+**What was fixed and merged but NOT exercised by run 169 (test-data gap, see new item #143).**
+- **#135** -- The Units-of-Measure and Lookups reconcile reports were matching Fusion rows by a
+  custom marker that these objects do not carry, so they could never confirm a load. They now
+  match on the natural business key. The implementer verified the reports against real loaded
+  ids. The regression scenario stages no UoM or Lookups rows, so this was not re-proven in run 169.
+- **#136** -- The CashBanks reconcile report existed and was correct, but it had been left out of
+  the deploy list, so the pipeline kept using an old one that returned zero. Adding it to the
+  deploy list fixes the zero-confirmed result. Same situation: no CashBanks rows in the scenario.
+- **#137** -- In item receipts (MiscReceipts), lot and serial rows in a single Fusion load could
+  share the same interface number and collide. The fix makes each parent's number unique per load
+  and rewrites the child lot rows to match, so the result-reader still ties them together. A lot
+  with no resolvable parent is now failed with a real reason and kept out of the file sent to
+  Fusion. Proven on its own with a before/after collision test (2 lot rows went from unaccounted
+  to fully accounted). The scenario has no fresh lot/serial rows, so it was not re-proven in run 169.
+
+**New backlog item.** **#143** -- the regression scenario needs a few good and bad rows added for
+MiscReceipts (lot/serial), Units-of-Measure, Lookups, and CashBanks, so the next run proves the
+three fixes above end-to-end. The rows must be added as new write-once test data, never by changing
+existing scenario rows.
+
+**Housekeeping.** Also fixed a stale typo in the backlog data (one item's status read "STILLOPEN"
+with no space, so it was dropping out of the summary counts). The backlog summary now totals 143
+items correctly.
+
 ## Session -- 2026-09-30 -- Backlog batch close-out (UI + view-fix items), reviewer-grouped
 
 **Bottom line.** Closed out a batch of backlog items that just merged to main and recorded two
