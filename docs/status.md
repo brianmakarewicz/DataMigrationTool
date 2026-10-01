@@ -1,5 +1,40 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-01 -- Backlog batch 6 close-out (regression test data), proving the Batch-3 deferrals
+
+**Bottom line.** Three test-data backlog items were resolved, and doing so finally proved three
+earlier fixes that had shipped but never been exercised. The root cause behind all of them was the
+same: good and bad test rows for four objects existed in the seed but had never been captured into
+a scenario the regression actually runs.
+
+**What was resolved.**
+- **#143** -- added good and bad rows for Units of Measure, Lookups, Cash Banks, and item receipts
+  (including lot and serial rows) into a new write-once test scenario, and pointed the regression at
+  it. Each object was then proven on its own: good rows loaded into Fusion and the reconcile
+  confirmed them; bad rows failed with real errors. Also fixed two real latent bugs found along the
+  way -- nine tables were missing from the scenario cleanup list (so repeat runs would pile up
+  duplicates), and the item-receipt serial numbers now vary per scenario so they stop colliding.
+- **#134** -- a good item-receipt row now loads to its Fusion base table (previously item receipts
+  had only bad rows and loaded nothing). Proven: a plain receipt plus a lot row plus a serial row
+  all loaded, with no unaccounted rows.
+- **#61** -- the worry was that the local worker seed had triplicate copies causing Fusion to reject
+  "multiple data lines". On inspection the seed already had one copy; the duplicates were only in an
+  old scenario the regression never uses. Proven by the generated file having exactly one line per
+  worker, and the worker loading.
+
+**Earlier fixes now proven (were "shipped but not exercised" after batch 3).**
+- **#135** (Units of Measure + Lookups reconcile), **#136** (Cash Banks reconcile), and **#137**
+  (item-receipt unique numbers) were merged in batch 3 but the test scenario had no rows for them.
+  With the batch-6 data they are now proven end-to-end in per-object runs.
+
+**Regression note (honest).** Each of the four objects was proven in its own targeted run (good
+loads, bad fails, reconcile confirms). The combined full-scenario confirmation run was left in
+progress because the local database's job scheduler starves the run poller (the known local issue
+#144); pushing it to finish needs a container restart. Batch 6 changed only test data -- no
+pipeline code -- so no other object's behavior can change from it, and every changed object is
+proven in its own run. So the batch is closed on that per-object evidence rather than blocking on
+the slow full run.
+
 ## Session -- 2026-10-01 -- Backlog batch 5 close-out (Banks REST + Assets + PO buyer + page-84), one regression
 
 **Bottom line.** Four more backlog items were worked in parallel and closed out as one batch,
