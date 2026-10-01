@@ -150,7 +150,7 @@ page 84 (
     )
 
     pageItem P84_DEPENDENT_PREFIX (
-        type: text
+        type: textField
         label {
             label: Dependent Run (prefix)
             alignment: left
@@ -163,7 +163,7 @@ page 84 (
             columnSpan: 4
         }
         appearance {
-            height: 1
+            width: 20
         }
         help {
             helpText: Optional override. Leave blank for automatic resolution (upstream references carry each parent's most recent loaded prefix). Enter an earlier run's prefix to pin this run's upstream dependency resolution to that specific run.
