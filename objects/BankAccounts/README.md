@@ -5,16 +5,16 @@ Cash Management bank account records at the bottom of the three-level bank hiera
 
 ## Load Method
 REST API
-- Endpoint: `fscmRestApi/resources/.../cashBankAccounts`
-- Pipeline: REST pipeline
+- Endpoint: `POST /fscmRestApi/resources/11.13.18.05/cashBankAccounts`
+- Pipeline: REST pipeline (part of CEMLI_CODE `CashBanks`, runner `DMT_CE_BANK_RUNNER_PKG`)
 
 ## Parent/Child
 - Parent: BankBranches (and grandparent Banks)
 - Linkage: SOURCE_GROUP_ID (links to Bank), SOURCE_LINE_ID (links to Branch)
 
 ## Staging Tables
-- STG: `DMT_BANK_ACCOUNTS_STG_TBL`
-- TFM: `DMT_BANK_ACCOUNTS_TFM_TBL`
+- STG: `DMT_CE_BANK_ACCT_STG_TBL`
+- TFM: `DMT_CE_BANK_ACCT_TFM_TBL`
 
 ## Key Columns
 - ACCOUNT_NAME
@@ -23,7 +23,13 @@ REST API
 - LEGAL_ENTITY_NAME
 
 ## Reconciliation
-REST response — success or failure determined directly from the API response payload for each record.
+Base-table BIP report (`DMT_CEBANK_RECON_RPT`), not the REST response. An account is
+marked LOADED only when it is found in `CE_BANK_ACCOUNTS`, with
+`FUSION_BANK_ACCOUNT_ID` set to the real `BANK_ACCOUNT_ID`. An account is POSTed only
+under a base-table-confirmed parent branch; one not found and carrying a real Fusion
+error is marked FAILED on that error.
 
 ## Status
-NOT BUILT — DDL deployed, pipeline packages not yet created.
+BUILT — REST pipeline. Accounts are POSTed to the `cashBankAccounts` resource after
+their parent branch is confirmed, then reconciled against `CE_BANK_ACCOUNTS`. The old
+FBL flat-file generator was retired (backlog #39).

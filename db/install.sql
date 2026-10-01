@@ -630,7 +630,6 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_bip_setup_pkg.pks.sql
 @@packages/dmt_blanket_po_fbdi_gen_pkg.pks.sql
 @@packages/dmt_blanket_po_results_pkg.pks.sql
-@@packages/dmt_ce_bank_fbl_gen_pkg.pks.sql
 @@packages/dmt_ce_bank_results_pkg.pks.sql
 @@packages/dmt_ce_bank_runner_pkg.pks.sql
 @@packages/dmt_ce_bank_transform_pkg.pks.sql
@@ -863,7 +862,6 @@ prompt == Package bodies ==
 @@packages/dmt_bip_setup_pkg.pkb.sql
 @@packages/dmt_blanket_po_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_blanket_po_results_pkg.pkb.sql
-@@packages/dmt_ce_bank_fbl_gen_pkg.pkb.sql
 @@packages/dmt_ce_bank_results_pkg.pkb.sql
 @@packages/dmt_ce_bank_runner_pkg.pkb.sql
 @@packages/dmt_ce_bank_transform_pkg.pkb.sql
