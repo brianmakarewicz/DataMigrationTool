@@ -22,6 +22,8 @@ begin
 	"RUN_MODE" VARCHAR2(20) DEFAULT ''NEW'',
 	"PREFIX" VARCHAR2(20),
 	"ON_FAILURE_POLICY" VARCHAR2(30) DEFAULT ''HALT'',
+	"DEPENDENT_PREFIX" VARCHAR2(20),
+	"VALIDATE_UPSTREAM" VARCHAR2(1) DEFAULT ''N'',
 	"PREFLIGHT_STATUS" VARCHAR2(20),
 	"SCENARIO_ID" NUMBER GENERATED ALWAYS AS ("RUN_ID"+0) VIRTUAL ,
 	 CONSTRAINT "DMT_PIPELINE_RUN_TYPE_CK" CHECK (
@@ -122,6 +124,56 @@ exception when others then
 end;
 /
 
+-- ============================================================
+-- 4) DEPENDENT_PREFIX + VALIDATE_UPSTREAM columns added (Backlog
+--    #142, 2026-10-01). Two per-run parameters backing the page-84
+--    Dependent-Run picker and Validate-Upstream toggle, threaded
+--    run submission -> this registry -> the object validators,
+--    exactly like ON_FAILURE_POLICY. These REPLACE the former
+--    global DMT_CONFIG_TBL('VALIDATE_UPSTREAM_DEPS') switch with a
+--    per-run flag, and give the dependent-prefix override a durable
+--    home on the run row (it previously defaulted silently to the
+--    run's own PREFIX).
+--
+--    DEPENDENT_PREFIX  = optional override. When set, the validators'
+--      upstream-dependency resolution pins this specific earlier
+--      run's prefix instead of the run's own PREFIX. NULL = automatic
+--      (use the run's own PREFIX, the prior behavior).
+--    VALIDATE_UPSTREAM = Y/N. Y runs the cross-object upstream
+--      "parent must be LOADED" pre-validation for this run; N skips
+--      it (a genuinely-missing parent still fails at Fusion). Default
+--      N matches the retired global switch's default.
+--
+--    (-1430 = column already exists -- already converged.)
+-- ============================================================
+begin
+  execute immediate 'ALTER TABLE "DMT_PIPELINE_RUN_TBL" ADD ("DEPENDENT_PREFIX" VARCHAR2(20))';
+exception when others then
+  if sqlcode not in (-1430) then raise; end if;
+end;
+/
+begin
+  execute immediate 'ALTER TABLE "DMT_PIPELINE_RUN_TBL" ADD ("VALIDATE_UPSTREAM" VARCHAR2(1) DEFAULT ''N'')';
+exception when others then
+  if sqlcode not in (-1430) then raise; end if;
+end;
+/
+-- Named CHECK on the Y/N domain. Drop-then-add so re-running converges
+-- a database that already has it. -2443 = constraint does not exist;
+-- -2264 = name already in use -- both mean already converged.
+begin
+  execute immediate 'ALTER TABLE "DMT_PIPELINE_RUN_TBL" DROP CONSTRAINT "DMT_PIPELINE_RUN_VALUPSTR_CK"';
+exception when others then
+  if sqlcode not in (-2443) then raise; end if;
+end;
+/
+begin
+  execute immediate 'ALTER TABLE "DMT_PIPELINE_RUN_TBL" ADD CONSTRAINT "DMT_PIPELINE_RUN_VALUPSTR_CK" CHECK (VALIDATE_UPSTREAM IN (''Y'',''N''))';
+exception when others then
+  if sqlcode not in (-2264) then raise; end if;
+end;
+/
+
 begin
   execute immediate 'CREATE INDEX "DMT_PIPELINE_RUN_STATUS_IX" ON "DMT_PIPELINE_RUN_TBL" ("RUN_STATUS")';
 exception when others then
@@ -134,5 +186,7 @@ COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."CURRENT_CEMLI" IS 'Which object type i
 COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."CURRENT_STEP" IS 'VALIDATE | GENERATE | LOAD | POLL_LOAD | POLL_IMPORT | RECONCILE';
 COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."CEMLI_SEQUENCE" IS 'Ordered CSV of all CEMLIs to run in this pipeline';
 COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."COMPLETED_CEMLIS" IS 'CSV of CEMLIs that have finished successfully';
+COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."DEPENDENT_PREFIX" IS 'Backlog #142 page-84 Dependent-Run override. NULL = automatic (upstream references resolve against the run''s own PREFIX). When set to an earlier run''s prefix, the object validators pin that specific run''s loaded rows as the upstream dependency source.';
+COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."VALIDATE_UPSTREAM" IS 'Backlog #142 page-84 Validate-Upstream toggle (Y/N, default N). Y = run the cross-object upstream dependency pre-validation (parent must be LOADED) for this run; N = skip it, a genuinely-missing parent still fails at Fusion. Per-run replacement for the retired global DMT_CONFIG_TBL(VALIDATE_UPSTREAM_DEPS) switch.';
 COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."PREFLIGHT_STATUS" IS 'Run preflight gate: NULL = not yet run; PREFLIGHTING = claimed, worker (DMT_QUEUE_WORKER_PKG.PREFLIGHT_ONE, spawned by the heartbeat) running the lookup refresh + credential checks; OK = passed, work items may dispatch; FAILED = preflight halted the run, nothing loaded';
 COMMENT ON TABLE "DMT_PIPELINE_RUN_TBL"  IS 'Async pipeline execution tracking. One row per DBMS_SCHEDULER submission.';

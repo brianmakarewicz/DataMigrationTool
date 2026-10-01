@@ -36,10 +36,11 @@
     FUNCTION get_dep_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
         l_dep_prefix VARCHAR2(30);
     BEGIN
-        SELECT PREFIX
-        INTO   l_dep_prefix
-        FROM   DMT_PIPELINE_RUN_TBL
-        WHERE  RUN_ID = p_run_id;
+        -- Backlog #142: honor the run's Dependent-Run override
+        -- (DMT_PIPELINE_RUN_TBL.DEPENDENT_PREFIX) when set; else the
+        -- run's own PREFIX. The resolved prefix is what the upstream
+        -- reference in the load file carries.
+        l_dep_prefix := DMT_UTIL_PKG.GET_DEPENDENT_PREFIX(p_run_id);
         RETURN l_dep_prefix;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN

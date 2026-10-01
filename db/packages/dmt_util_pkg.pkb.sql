@@ -180,6 +180,54 @@
     END GET_CONFIG;
 
     -- --------------------------------------------------------
+    -- SHOULD_VALIDATE_UPSTREAM (Backlog #142)
+    -- Per-run Validate-Upstream flag. Reads the run row first; only
+    -- when the run row carries no explicit value does it fall back to
+    -- the (retired) global DMT_CONFIG_TBL switch, so an older run row
+    -- written before this column existed still behaves predictably.
+    -- Any value other than 'Y' (including NULL) resolves to 'N'.
+    -- --------------------------------------------------------
+    FUNCTION SHOULD_VALIDATE_UPSTREAM (p_run_id IN NUMBER) RETURN VARCHAR2 IS
+        l_flag DMT_PIPELINE_RUN_TBL.VALIDATE_UPSTREAM%TYPE;
+    BEGIN
+        IF p_run_id IS NULL THEN
+            RETURN CASE WHEN GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN 'Y' ELSE 'N' END;
+        END IF;
+
+        SELECT VALIDATE_UPSTREAM INTO l_flag
+        FROM   DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
+
+        IF l_flag IS NULL THEN
+            RETURN CASE WHEN GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN 'Y' ELSE 'N' END;
+        END IF;
+
+        RETURN CASE WHEN l_flag = 'Y' THEN 'Y' ELSE 'N' END;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RETURN CASE WHEN GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN 'Y' ELSE 'N' END;
+    END SHOULD_VALIDATE_UPSTREAM;
+
+    -- --------------------------------------------------------
+    -- GET_DEPENDENT_PREFIX (Backlog #142)
+    -- The run's explicit Dependent-Run override when set, else the
+    -- run's own PREFIX (the prior automatic behavior).
+    -- --------------------------------------------------------
+    FUNCTION GET_DEPENDENT_PREFIX (p_run_id IN NUMBER) RETURN VARCHAR2 IS
+        l_dep_prefix DMT_PIPELINE_RUN_TBL.DEPENDENT_PREFIX%TYPE;
+        l_own_prefix DMT_PIPELINE_RUN_TBL.PREFIX%TYPE;
+    BEGIN
+        SELECT DEPENDENT_PREFIX, PREFIX
+        INTO   l_dep_prefix, l_own_prefix
+        FROM   DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
+
+        RETURN NVL(l_dep_prefix, l_own_prefix);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN RETURN NULL;
+    END GET_DEPENDENT_PREFIX;
+
+    -- --------------------------------------------------------
     -- SET_CONFIG
     -- --------------------------------------------------------
     PROCEDURE SET_CONFIG (

@@ -138,10 +138,10 @@ AS
         IF p_dependent_prefix IS NOT NULL THEN
             l_dep_prefix := p_dependent_prefix;
         ELSE
-            SELECT PREFIX
-            INTO   l_dep_prefix
-            FROM   DMT_PIPELINE_RUN_TBL
-            WHERE  RUN_ID = p_run_id;
+            -- Backlog #142: honor the run's Dependent-Run override
+            -- (DMT_PIPELINE_RUN_TBL.DEPENDENT_PREFIX) when set; else the
+            -- run's own PREFIX, exactly as before.
+            l_dep_prefix := DMT_UTIL_PKG.GET_DEPENDENT_PREFIX(p_run_id);
         END IF;
 
         -- Step 1: Record a rejection for PO headers whose supplier is not LOADED.

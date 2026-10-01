@@ -143,6 +143,8 @@ AS
         p_run_mode         IN  VARCHAR2,
         p_on_failure       IN  VARCHAR2,
         p_submitted_by     IN  VARCHAR2,
+        p_dependent_prefix IN  VARCHAR2,
+        p_validate_upstream IN VARCHAR2,
         x_run_id           OUT NUMBER
     ) IS
         l_prefix        VARCHAR2(20);
@@ -159,6 +161,7 @@ AS
         l_has_deps      BOOLEAN;
         l_is_split      NUMBER;
         l_use_prefix    VARCHAR2(10);
+        l_validate_upstream VARCHAR2(1);
         -- Engine re-review ITEM 3 (2026-07-08): ORA-30006 = FOR UPDATE WAIT
         -- expired. Without a wait limit, an idle open transaction holding the
         -- USE_PREFIX row lock would block every submission forever.
@@ -213,15 +216,26 @@ AS
             l_prefix := NULL;
         END IF;
 
+        -- Backlog #142: normalize the Validate-Upstream flag to the Y/N
+        -- domain (the run-row CHECK enforces it too; normalize here so a
+        -- NULL/blank from the UI becomes the default 'N' rather than
+        -- violating the constraint).
+        l_validate_upstream := CASE
+            WHEN UPPER(TRIM(p_validate_upstream)) = 'Y' THEN 'Y'
+            ELSE 'N'
+        END;
+
         -- Create PIPELINE_RUN row
         INSERT INTO DMT_PIPELINE_RUN_TBL (
             PIPELINE_CODES, RUN_TYPE, SUBMITTED_BY,
             CEMLI_SEQUENCE, SCENARIO_NAME, RUN_MODE,
-            PREFIX, ON_FAILURE_POLICY
+            PREFIX, ON_FAILURE_POLICY,
+            DEPENDENT_PREFIX, VALIDATE_UPSTREAM
         ) VALUES (
             p_pipeline_codes, 'PIPELINE', p_submitted_by,
             p_cemli_csv, p_scenario_name, p_run_mode,
-            l_prefix, NVL(p_on_failure, 'HALT')
+            l_prefix, NVL(p_on_failure, 'HALT'),
+            NULLIF(TRIM(p_dependent_prefix), ''), l_validate_upstream
         ) RETURNING RUN_ID INTO x_run_id;
 
         -- Determine pipeline label for each CEMLI (for multi-pipeline batches)
@@ -315,7 +329,9 @@ AS
             || ' | Pipelines: ' || p_pipeline_codes
             || ' | Prefix: ' || l_prefix
             || ' | Mode: ' || p_run_mode
-            || ' | OnFailure: ' || NVL(p_on_failure, 'HALT'),
+            || ' | OnFailure: ' || NVL(p_on_failure, 'HALT')
+            || ' | ValidateUpstream: ' || l_validate_upstream
+            || ' | DependentPrefix: ' || NVL(NULLIF(TRIM(p_dependent_prefix), ''), '(auto)'),
             'INFO', C_PKG, 'create_run_and_queue');
 
     END create_run_and_queue;
@@ -329,6 +345,8 @@ AS
         p_run_mode         IN  VARCHAR2 DEFAULT 'NEW',
         p_on_failure       IN  VARCHAR2 DEFAULT 'HALT',
         p_submitted_by     IN  VARCHAR2 DEFAULT NULL,
+        p_dependent_prefix IN  VARCHAR2 DEFAULT NULL,
+        p_validate_upstream IN VARCHAR2 DEFAULT 'N',
         x_run_id           OUT NUMBER
     ) IS
         l_all_cemlis VARCHAR2(4000);
@@ -370,6 +388,8 @@ AS
             p_run_mode       => p_run_mode,
             p_on_failure     => p_on_failure,
             p_submitted_by   => p_submitted_by,
+            p_dependent_prefix => p_dependent_prefix,
+            p_validate_upstream => p_validate_upstream,
             x_run_id         => x_run_id
         );
     END SUBMIT_PIPELINE;
@@ -383,6 +403,8 @@ AS
         p_run_mode         IN  VARCHAR2 DEFAULT 'NEW',
         p_on_failure       IN  VARCHAR2 DEFAULT 'HALT',
         p_submitted_by     IN  VARCHAR2 DEFAULT NULL,
+        p_dependent_prefix IN  VARCHAR2 DEFAULT NULL,
+        p_validate_upstream IN VARCHAR2 DEFAULT 'N',
         x_run_id           OUT NUMBER
     ) IS
         l_pipeline_codes VARCHAR2(500);
@@ -418,6 +440,8 @@ AS
             p_run_mode       => p_run_mode,
             p_on_failure     => p_on_failure,
             p_submitted_by   => p_submitted_by,
+            p_dependent_prefix => p_dependent_prefix,
+            p_validate_upstream => p_validate_upstream,
             x_run_id         => x_run_id
         );
     END SUBMIT_OBJECTS;

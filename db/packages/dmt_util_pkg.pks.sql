@@ -44,6 +44,22 @@ AS
     -- Return a config value by key. Returns NULL if key not found.
     FUNCTION GET_CONFIG (p_key IN VARCHAR2) RETURN VARCHAR2;
 
+    -- Backlog #142: per-run resolvers for the two page-84 run
+    -- parameters, read by the object validators at pre-transform time.
+    --
+    -- SHOULD_VALIDATE_UPSTREAM: 'Y' when THIS run was submitted with the
+    --   Validate-Upstream toggle on (DMT_PIPELINE_RUN_TBL.VALIDATE_UPSTREAM),
+    --   else 'N'. Replaces the former global GET_CONFIG('VALIDATE_UPSTREAM_DEPS')
+    --   switch. Falls back to that global config only when the run row has
+    --   no explicit value (NULL), so a legacy run row still behaves.
+    FUNCTION SHOULD_VALIDATE_UPSTREAM (p_run_id IN NUMBER) RETURN VARCHAR2;
+
+    -- GET_DEPENDENT_PREFIX: the prefix the validators pin upstream
+    --   dependency resolution to for this run -- the run's explicit
+    --   DEPENDENT_PREFIX override when set, otherwise the run's own PREFIX
+    --   (the prior automatic behavior).
+    FUNCTION GET_DEPENDENT_PREFIX (p_run_id IN NUMBER) RETURN VARCHAR2;
+
     -- Upsert a config value. Use for non-URL settings.
     PROCEDURE SET_CONFIG (
         p_key         IN VARCHAR2,
