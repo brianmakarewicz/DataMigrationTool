@@ -10,10 +10,11 @@
 -- DMT_BIP_REPORT_TBL, runs the object's Contract v1 report over BIP (shared
 -- transport DMT_UTIL_PKG.RUN_BIP_REPORT), pages through the result with keyset
 -- pagination (P_AFTER_KEY loops until a short page), parses every page into a
--- collection of the SEVEN standard response fields, and RETURNS that collection:
+-- collection of the standard response fields, and RETURNS that collection:
 --
 --   OBJECT_TYPE   RECORD_KEY   SOURCE_TYPE('BASE'|'INTERFACE')
 --   FUSION_STATUS('SUCCESS'|'ERROR')   FUSION_ID   ERROR_MESSAGE   LOAD_REQUEST_ID
+--   DFF_KEY (tier 2, from DMT_REFERENCE)   BUSINESS_KEY (tier 3, from SOURCE_REF)
 --
 -- The APPLY (turning these rows into LOADED/FAILED on a TFM table) lives in each
 -- object's own reconciler, as STATIC SQL against that object's compile-time-known
@@ -40,7 +41,35 @@
 
     C_PKG CONSTANT VARCHAR2(30) := 'DMT_RECON_CONTRACT_PKG';
 
-    -- The seven Contract v1 response fields, one record per report row.
+    -- The Contract v1 response fields, one record per report row.
+    --
+    -- Backlog #65 (three-tier reconcile match, owner-directed order on PR #481):
+    -- the APPLY in each object's reconciler resolves its Fusion match in priority
+    -- order, falling through only when the higher tier does not resolve a TFM row --
+    --   (1) RECORD_KEY    the Slot A native stamped reference (as today, PRIMARY);
+    --                     match TFM.RECON_KEY = RECORD_KEY.
+    --   (2) DFF_KEY       the Slot C DFF ATTRIBUTE reference (DMT_REFERENCE column of
+    --                     the recon report, the DMT:run:queue:tfm stamp). Tried ONLY
+    --                     when tier 1 matched no TFM row (RECORD_KEY null, or stamped
+    --                     ref did not round-trip). The trailing ':'/'~'-delimited
+    --                     segment of DFF_KEY is TFM_SEQUENCE_ID (see DMT_REF_ID_PKG
+    --                     .BUILD_REF), so the APPLY matches TFM_SEQUENCE_ID to it.
+    --   (3) BUSINESS_KEY  the object's native business key (SOURCE_REF column of the
+    --                     recon report). The last-resort fallback, tried ONLY when
+    --                     tiers 1 and 2 both resolved nothing -- match the object's
+    --                     own business-key TFM column to it.
+    -- Tier 1 stays primary and unchanged, so existing loaded outcomes are identical;
+    -- the fall-through is driven by a zero-row tier-1 UPDATE (SQL%ROWCOUNT = 0), so a
+    -- row that matches on RECORD_KEY never touches tier 2 or 3. Driving the
+    -- fall-through off match failure (not off a null report value) keeps keyset
+    -- pagination -- which orders by RECORD_KEY -- unchanged.
+    --
+    -- DFF_KEY and BUSINESS_KEY ride the nine-column recon report that every Contract
+    -- v1 DM already emits (SOURCE_REF = column 8, DMT_REFERENCE = column 9). A DM that
+    -- genuinely has no DFF carrier emits NULL DMT_REFERENCE -> DFF_KEY is null and
+    -- tier 2 is skipped. FETCH_ROWS parses them tolerantly: a DM that does not emit
+    -- the element at all simply yields NULL (the XMLTABLE PATH returns NULL for an
+    -- absent node), so no DM change is forced and behaviour is preserved.
     TYPE T_RECON_ROW IS RECORD (
         OBJECT_TYPE     VARCHAR2(100),
         RECORD_KEY      VARCHAR2(1000),
@@ -51,7 +80,11 @@
                                          -- '~'-joined composite id can ride the contract
                                          -- (a plain numeric id still converts implicitly).
         ERROR_MESSAGE   VARCHAR2(4000),
-        LOAD_REQUEST_ID VARCHAR2(100)
+        LOAD_REQUEST_ID VARCHAR2(100),
+        -- Backlog #65 tiers 2 and 3. Both nullable; populated from the report's
+        -- DMT_REFERENCE (Slot C DFF) and SOURCE_REF (business key) columns.
+        DFF_KEY         VARCHAR2(1000),  -- tier 2: Slot C DFF ATTRIBUTE reference
+        BUSINESS_KEY    VARCHAR2(1000)   -- tier 3: object native business key
     );
 
     -- The full parsed result (all pages), returned by FETCH.

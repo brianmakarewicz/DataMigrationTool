@@ -56,6 +56,9 @@
         l_err_code  NUMBER;
         l_loaded    NUMBER := 0;
         l_failed    NUMBER := 0;
+        l_rc        NUMBER := 0;    -- rows matched by the current tier
+        l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
+        l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
         -- Generated-row count drives the shared fetch's keyset page-count cap.
         -- Done statically here (not in the shared pkg); scoped to a child item
@@ -93,6 +96,8 @@
         END IF;
 
         FOR i IN 1 .. l_rows.COUNT LOOP
+            l_rc   := 0;       -- backlog #65: reset per row so a prior row's tier
+            l_tier := NULL;    -- cannot mislabel this row's audit log line.
             IF l_rows(i).SOURCE_TYPE = 'BASE'
                AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                AND l_rows(i).FUSION_ID IS NOT NULL THEN
@@ -101,7 +106,16 @@
                 -- per-line composite JE_HEADER_ID~JE_LINE_NUM, stamped into
                 -- FUSION_JE_HEADER_ID as line-grain proof (two lines of one
                 -- journal get DIFFERENT ids). RECON_KEY is unique per TFM line.
-                -- Static UPDATE, scoped to RUN_ID + (optional) WORK_QUEUE_ID.
+                --
+                -- Backlog #65 three-tier match (owner order on PR #481). Tier 1 is
+                -- the stamped Slot A reference (RECON_KEY = RECORD_KEY, exactly as
+                -- before). Only if tier 1 matches NO TFM row (SQL%ROWCOUNT = 0) do we
+                -- fall to tier 2 (the Slot C DFF stamp: TFM_SEQUENCE_ID = the trailing
+                -- segment of DFF_KEY) and then tier 3 (the business key: RECON_KEY =
+                -- BUSINESS_KEY -- for GL the per-line SOURCE_REF equals RECON_KEY, so
+                -- tier 3 is the same key and safely degenerate). Because every tier-1
+                -- hit short-circuits, loaded outcomes are identical to before.
+                -- Static UPDATEs, scoped to RUN_ID + (optional) WORK_QUEUE_ID.
                 UPDATE DMT_GL_INTERFACE_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_JE_HEADER_ID  = l_rows(i).FUSION_ID,
@@ -111,7 +125,54 @@
                 AND    RECON_KEY = l_rows(i).RECORD_KEY
                 AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                l_loaded := l_loaded + SQL%ROWCOUNT;
+                l_rc := SQL%ROWCOUNT;
+                l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+
+                -- Tier 2 (DFF): only when tier 1 matched nothing and a DFF stamp is
+                -- present. The trailing ':'/'~'-delimited segment of the DMT ref is
+                -- TFM_SEQUENCE_ID (DMT_REF_ID_PKG.BUILD_REF).
+                IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
+                    l_dff_seq := TO_NUMBER(
+                        REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
+                    IF l_dff_seq IS NOT NULL THEN
+                        UPDATE DMT_GL_INTERFACE_TFM_TBL
+                        SET    TFM_STATUS           = 'LOADED',
+                               FUSION_JE_HEADER_ID  = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    TFM_SEQUENCE_ID = l_dff_seq
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_rc := SQL%ROWCOUNT;
+                        IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
+                    END IF;
+                END IF;
+
+                -- Tier 3 (business key): last resort, only when tiers 1 and 2 both
+                -- matched nothing. GL's business key is the per-line reference, equal
+                -- to RECON_KEY, so this matches RECON_KEY = BUSINESS_KEY.
+                IF l_rc = 0 AND l_rows(i).BUSINESS_KEY IS NOT NULL THEN
+                    UPDATE DMT_GL_INTERFACE_TFM_TBL
+                    SET    TFM_STATUS           = 'LOADED',
+                           FUSION_JE_HEADER_ID  = l_rows(i).FUSION_ID,
+                           RESULTS_UPDATED_DATE = SYSDATE,
+                           LAST_UPDATED_DATE    = SYSDATE
+                    WHERE  RUN_ID    = p_run_id
+                    AND    RECON_KEY = l_rows(i).BUSINESS_KEY
+                    AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
+                    AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                    l_rc := SQL%ROWCOUNT;
+                    IF l_rc > 0 THEN l_tier := 'TIER3'; END IF;
+                END IF;
+
+                l_loaded := l_loaded + l_rc;
+                IF l_tier IN ('TIER2','TIER3') THEN
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        C_PROC || ': matched a LOADED GL line via ' || l_tier ||
+                        ' fallback (tier 1 stamped ref did not resolve). FUSION_ID '
+                        || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
+                END IF;
 
             ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                   AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
