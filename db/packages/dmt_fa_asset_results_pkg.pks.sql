@@ -26,6 +26,15 @@
 -- DMT_FA_ASSET_TRANSFORM_PKG). The book and assignment TFM tables have no report
 -- tier of their own; they inherit the header outcome by the existing cascade.
 --
+-- Book-grain Fusion id (backlog #139): the book TFM table is per-asset-per-BOOK
+-- grained, so when the cascade promotes a book row to LOADED it stamps the
+-- per-BOOK composite FUSION_ASSET_ID~BOOK_TYPE_CODE (the header's confirmed
+-- base-table ASSET_ID joined to this book row's own BOOK_TYPE_CODE), not the bare
+-- header id. A corporate book and a tax book of the same asset then carry
+-- DIFFERENT proof values, so the read-only Fusion-id auditor's UNIQUE check holds
+-- at book grain (mirrors GLBalances JE_HEADER_ID~JE_LINE_NUM). FUSION_ASSET_ID on
+-- DMT_FA_ASSET_BOOK_TFM_TBL is therefore VARCHAR2(100).
+--
 -- ALL-OR-NOTHING (Assets-only, preserved): the nine-column apply gives the
 -- per-row POSITIVE proof for assets that reach FA_ADDITIONS_B and the real Fusion
 -- error for interface rejections. The SQL*Loader LOAD stage is atomic per book

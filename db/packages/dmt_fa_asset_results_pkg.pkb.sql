@@ -186,16 +186,26 @@
         -- Cascade to book TFM — LOADED under a LOADED header. The book row belongs
         -- to the same asset as its header, so it carries the header's confirmed
         -- Fusion asset id (backlog #11: a LOADED row must store its Fusion base id
-        -- for the audit trail). FUSION_ASSET_ID is stamped from the header's
-        -- already-captured id, not fabricated.
+        -- for the audit trail). The book table is per-asset-per-BOOK grained, so it
+        -- stores the per-BOOK composite FUSION_ASSET_ID~BOOK_TYPE_CODE (backlog #139)
+        -- rather than the bare header id: a corporate book and a tax book of the
+        -- same asset then carry DIFFERENT proof values, so the Fusion-id auditor's
+        -- UNIQUE check is valid at book grain (mirrors GLBalances
+        -- JE_HEADER_ID~JE_LINE_NUM). Both parts are already-captured real values
+        -- (the header's confirmed base-table ASSET_ID and this book row's own
+        -- BOOK_TYPE_CODE), never fabricated.
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS         = 'LOADED',
+               -- The scalar subquery is never NULL on an updated row: the outer
+               -- WHERE EXISTS below requires a LOADED header for the same asset,
+               -- so the composite is always '<real asset_id>~<book>'. Keep this
+               -- subquery and that EXISTS in sync if either is ever edited.
                bk.FUSION_ASSET_ID    = (
                    SELECT hdr.FUSION_ASSET_ID FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
                    WHERE  hdr.RUN_ID       = bk.RUN_ID
                    AND    hdr.ASSET_NUMBER = bk.ASSET_NUMBER
                    AND    hdr.TFM_STATUS   = 'LOADED'
-                   AND    ROWNUM = 1),
+                   AND    ROWNUM = 1) || '~' || bk.BOOK_TYPE_CODE,
                bk.LAST_UPDATED_DATE  = SYSDATE
         WHERE  bk.RUN_ID     = p_run_id
         AND    bk.TFM_STATUS = 'GENERATED'

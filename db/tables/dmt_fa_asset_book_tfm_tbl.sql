@@ -26,9 +26,9 @@ begin
 	"RESULTS_UPDATED_DATE" DATE, 
 	"LAST_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
-	"RECON_KEY" VARCHAR2(1000), 
-	"FUSION_ASSET_ID" NUMBER, 
-	"WORK_QUEUE_ID" NUMBER, 
+	"RECON_KEY" VARCHAR2(1000),
+	"FUSION_ASSET_ID" VARCHAR2(100),
+	"WORK_QUEUE_ID" NUMBER,
 	 CONSTRAINT "DMT_FA_ASSET_BOOK_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -71,7 +71,11 @@ begin
   select count(*) into l_n from user_tab_columns
   where  table_name = 'DMT_FA_ASSET_BOOK_TFM_TBL' and column_name = 'FUSION_ASSET_ID';
   if l_n = 0 then
-    execute immediate 'ALTER TABLE "DMT_FA_ASSET_BOOK_TFM_TBL" ADD ("FUSION_ASSET_ID" NUMBER)';
+    -- VARCHAR2(100): the book row stores the per-book composite ASSET_ID~BOOK_TYPE_CODE
+    -- (backlog #139) so the Fusion-id auditor's UNIQUE check holds at book grain. A
+    -- pre-existing DB whose column is still NUMBER is converted by the
+    -- db/migrations/2026-10-01_assets_book_composite_id.sql backfill-and-rename.
+    execute immediate 'ALTER TABLE "DMT_FA_ASSET_BOOK_TFM_TBL" ADD ("FUSION_ASSET_ID" VARCHAR2(100))';
   end if;
 end;
 /
@@ -108,7 +112,7 @@ end;
 
 COMMENT ON COLUMN "DMT_FA_ASSET_BOOK_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
 COMMENT ON COLUMN "DMT_FA_ASSET_BOOK_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
-COMMENT ON COLUMN "DMT_FA_ASSET_BOOK_TFM_TBL"."FUSION_ASSET_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';
+COMMENT ON COLUMN "DMT_FA_ASSET_BOOK_TFM_TBL"."FUSION_ASSET_ID" IS 'Positive proof of load at the asset-BOOK grain: the composite ASSET_ID~BOOK_TYPE_CODE (FA_ADDITIONS_B.ASSET_ID from the parent header, joined to this book row''s BOOK_TYPE_CODE). A corporate book and a tax book of the same asset therefore carry DIFFERENT values, so the Fusion-id auditor UNIQUE check is valid at book grain (backlog #139; mirrors GLBalances JE_HEADER_ID~JE_LINE_NUM). Written only by the DMT_FA_ASSET_RESULTS_PKG cascade.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-09 conformance review F2 (STG/TFM infra-column dictionary, design

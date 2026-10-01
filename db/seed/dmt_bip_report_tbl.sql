@@ -3099,22 +3099,22 @@ using (
            '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_DM.xdm'          dm_catalog_path,
            '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_RPT.xdo'         report_catalog_path,
            'FA_MASS_ADDITIONS'                                        interface_table,
-           'Assets asset-book tier -- AUDITOR registration only (backlog #91). '
+           'Assets asset-book tier -- AUDITOR registration only (backlog #91/#139). '
              || 'Not a pipeline/reconcile object; DMT_FA_ASSET_RESULTS_PKG applies all '
-             || 'tiers statically (the book row inherits the header FUSION_ASSET_ID via '
+             || 'tiers statically (the book row inherits the parent header outcome via '
              || 'cascade; it has no report tier of its own). Registers the book grain so '
              || 'scripts/dmt_fusion_id_audit.sql proves every LOADED asset-book row '
-             || 'carries a populated, unique Fusion id (FA_ADDITIONS_B.ASSET_ID). '
-             || 'CAVEAT: the UNIQUE check is valid ONLY under one-book-per-asset -- the '
-             || 'book table stores the HEADER FUSION_ASSET_ID, so a corporate+tax asset '
-             || 'would share one id across two book rows and the UNIQUE check would '
-             || 'false-flag it. The POPULATED check is the real guarantee at this tier. '
-             || 'Follow-up (backlog): store a per-row composite ASSET_ID~BOOK_TYPE_CODE '
-             || '(mirrors GLBalances JE_HEADER_ID~JE_LINE_NUM) so UNIQUE is always valid.'   notes,
+             || 'carries a populated, unique Fusion id. Backlog #139: the book table is '
+             || 'per-asset-per-BOOK grained and now stores the per-BOOK composite '
+             || 'FUSION_ASSET_ID~BOOK_TYPE_CODE (FA_ADDITIONS_B.ASSET_ID joined to the '
+             || 'book row''s BOOK_TYPE_CODE), so a corporate book and a tax book of the '
+             || 'same asset carry DIFFERENT values and the UNIQUE check is valid at book '
+             || 'grain (mirrors GLBalances JE_HEADER_ID~JE_LINE_NUM). The earlier '
+             || 'one-book-per-asset caveat no longer applies.'   notes,
            null                                             contract_version,
            'DMT_FA_ASSET_BOOK_TFM_TBL'                                          tfm_table,
            'FUSION_ASSET_ID'                                          fusion_id_column,
-           'asset-book inherits header FUSION_ASSET_ID (reconciler OBJECT_TYPE ''Assets''/''Assets [<BOOK>]''; book has no own report tier) -- FUSION_ASSET_ID holds the base-table ASSET_ID' recon_key_sql
+           'asset-book composite (reconciler OBJECT_TYPE ''Assets''/''Assets [<BOOK>]''; book has no own report tier) -- FUSION_ASSET_ID holds the per-BOOK composite FA_ADDITIONS_B.ASSET_ID~BOOK_TYPE_CODE, unique at book grain (backlog #139)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
