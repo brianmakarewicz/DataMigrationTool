@@ -396,3 +396,33 @@ focused fix; track as a follow-up.
   normalizing only {RUN_ID} and {PREFIX}.
 - Frozen predecessor stack: E2E LOADED confirmed working. 7-record-type pipeline validated.
 - 2026-04-02 (frozen stack): Regression test — 38L/0F (O2C pipeline). All customers + AR invoices LOADED. BIP reconciliation confirmed working.
+
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The rule is "one object = one FBDI zip = one tab per
+record type". Customers is the **Trading Community (TCA) bulk import: one zip
+carrying SEVEN CSVs**, all submitted under one `BulkImportJob` ESS job.
+
+**The mapping (from `DMT_CUST_FBDI_GEN_PKG` + the seven HzImp*.ctl):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| HzImpPartiesT.csv | HZ_IMP_PARTIES_T | DMT_HZ_PARTIES_STG_TBL | DMT_HZ_PARTIES_TFM_TBL | ALIGNED |
+| HzImpLocationsT.csv | HZ_IMP_LOCATIONS_T | DMT_HZ_LOCATIONS_STG_TBL | DMT_HZ_LOCATIONS_TFM_TBL | ALIGNED |
+| HzImpPartySitesT.csv | HZ_IMP_PARTYSITES_T | DMT_HZ_PARTY_SITES_STG_TBL | DMT_HZ_PARTY_SITES_TFM_TBL | ALIGNED |
+| HzImpPartySiteUsesT.csv | HZ_IMP_PARTYSITEUSES_T | DMT_HZ_PARTY_SITE_USES_STG_TBL | DMT_HZ_PARTY_SITE_USES_TFM_TBL | ALIGNED |
+| HzImpAccountsT.csv | HZ_IMP_ACCOUNTS_T | DMT_HZ_ACCOUNTS_STG_TBL | DMT_HZ_ACCOUNTS_TFM_TBL | ALIGNED |
+| HzImpAcctSitesT.csv | HZ_IMP_ACCTSITES_T | DMT_HZ_ACCT_SITES_STG_TBL | DMT_HZ_ACCT_SITES_TFM_TBL | ALIGNED |
+| HzImpAcctSiteUsesT.csv | HZ_IMP_ACCTSITEUSES_T | DMT_HZ_ACCT_SITE_USES_STG_TBL | DMT_HZ_ACCT_SITE_USES_TFM_TBL | ALIGNED |
+
+All seven record types map 1:1 to their own STG/TFM pair, and each DMT name is
+the `DMT_` + Fusion-interface-root form (`HZ_PARTIES` ↔ HZ_IMP_PARTIES_T,
+`HZ_ACCT_SITES` ↔ HZ_IMP_ACCTSITES_T, etc. — `ACCT` for "Account" is the only
+abbreviation, consistent across the three account tables). No misalignment.
+
+**Findings:**
+1. **Fully ALIGNED** — every table already mirrors its tab; no physical rename
+   needed and no NOT-MODELED gap (all seven TCA import tabs are modeled).
+2. **No spec-header fix required** — `DMT_CUST_FBDI_GEN_PKG` already lists the
+   seven CSVs with their correct `HZ_IMP_*_T` interface tables.

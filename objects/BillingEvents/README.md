@@ -167,3 +167,34 @@ WHERE p.project_id IN (300000058778835) AND ROWNUM<=5
 - **Fusion returns `COMPLETE` as load_status for billing events.** Added to the success list in results package (DB-18). Prior list had `COMPLETED` but not `COMPLETE`.
 - **Report child ESS job is NOT a Fusion-modeled child.** `parentrequestid = 0` in ESS_REQUEST_HISTORY. Found via proximity query (requestid > import_ess_id with exact job definition match). Stored in `DMT_ESS_JOB_TBL` with `PARENT_REQUEST_ID = import_ess_id` for UI display.
 - **Use exact job definitions, not `%Report%` wildcards.** The proximity-based BIP query (`requestid > X AND definition LIKE '%Report%'`) picks up unrelated report jobs from other CEMLIs. Solution: store the exact report job definition in `DMT_ERP_INTERFACE_OPTIONS_TBL.REPORT_JOB_DEF` and use it as `P_JOB_DEF`. CEMLIs without a seeded value skip the lookup entirely.
+
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object-model rule is "one object = one FBDI zip = one
+tab per record type". Billing Events is ONE zip with a single CSV / one interface
+table; DMT models it with one STG + one TFM table.
+
+**The mapping (from the generator `DMT_BILLING_EVENT_FBDI_GEN_PKG` `REGISTER_CSV`
+call and the `FROM` table):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| PjbBillingEventsXface.csv | PJB_BILLING_EVENTS_INT | DMT_PJB_BILL_EVENTS_STG_TBL | DMT_PJB_BILL_EVENTS_TFM_TBL | NAME-SHORTENED (BILL_EVENTS for Billing Events), model correct |
+
+**Why it reads NAME-SHORTENED but the model is correct:** the single Fusion tab
+`PjbBillingEvents` carries billing-event records. DMT names the table
+`PJB_BILL_EVENTS` -- the PJB product prefix plus a shortening of "Billing Events".
+Same record type, a shortened name, not a wrong one. One tab, one table -- no
+fan-out.
+
+**Findings (what was fixed vs deferred):**
+1. **NO spec-header fix needed.** The generator spec-header already names the real
+   CSV tab `PjbBillingEventsXface.csv`, matching the `REGISTER_CSV` call. Accurate.
+2. **DEFERRED (physical rename, high ripple -- DO NOT do under this item):**
+   expanding `DMT_PJB_BILL_EVENTS_*` to `*_BILLING_EVENTS_*` would ripple across the
+   validator, transformer, generator, results package, catalog, pipeline and BIP for
+   no correctness gain. Shortening, not a wrong record type. Recorded as a finding
+   only.
+3. **No NOT-MODELED gaps.** The one CSV in the zip has a STG and a TFM table and a
+   generator branch.

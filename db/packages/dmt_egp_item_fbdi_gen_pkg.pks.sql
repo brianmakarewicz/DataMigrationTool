@@ -3,8 +3,13 @@
   CREATE OR REPLACE EDITIONABLE PACKAGE "DMT_EGP_ITEM_FBDI_GEN_PKG" AUTHID DEFINER AS
 -- ============================================================
 -- DMT_EGP_ITEM_FBDI_GEN_PKG
--- Generates FBDI CSV for Items (EgpItemImportTemplate).
--- ONE zip containing ONE CSV: EgpSystemItemsInterface.csv
+-- Generates the Items FBDI zip (ItemImportJobDef).
+-- ONE zip containing TWO CSVs (one import job):
+--   EgpSystemItemsInterface.csv      -> EGP_SYSTEM_ITEMS_INTERFACE   (item master)
+--   EgpItemCategoriesInterface.csv   -> EGP_ITEM_CATEGORIES_INTERFACE (item categories)
+-- The categories CSV is produced by DMT_EGP_ITEM_CAT_FBDI_GEN_PKG.GENERATE_CSV
+-- and bundled here; Item Categories is a tab of the Items zip, not a standalone
+-- import (ItemCategoryImportJobDef is not standalone -- ESS discovery 2026-05-21).
 -- FBDI pattern: no header, comma-delimited, position-based.
 -- NOTE: CTL position mapping may need adjustment once the actual
 -- EgpItemImportTemplate CTL file is verified.

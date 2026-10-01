@@ -156,3 +156,34 @@ PROCESS_FLAG for those specific rows in run 155 before treating this as an item-
 - 2026-05-21: All packages built (validator, transformer, FBDI gen, results, runner).
 - 2026-05-21: Wired into dmt_loader_pkg + dmt_scheduler_pkg P2P sequence.
   Added BIP reconciliation (RECONCILE_BATCH) to results package.
+
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The rule is "one object = one FBDI zip = one tab per
+record type". The Items object is the Item Import FBDI: **one zip carrying TWO
+CSVs** — the item master and its categories — submitted under one import job
+(`ItemImportJobDef`). Item Categories is therefore a *tab of the Items zip*, not
+a separate zip (confirmed by the generator body and the 2026-05-21 ESS-discovery
+note: `ItemCategoryImportJobDef` is not standalone). The catalog lists both
+record types ("Item Master", "Item Categories") under the single `Items` CEMLI.
+
+**The mapping (from `DMT_EGP_ITEM_FBDI_GEN_PKG` + `DMT_EGP_ITEM_CAT_FBDI_GEN_PKG` + the two `.ctl`):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| EgpSystemItemsInterface.csv | EGP_SYSTEM_ITEMS_INTERFACE | DMT_EGP_ITEM_STG_TBL | DMT_EGP_ITEM_TFM_TBL | ALIGNED |
+| EgpItemCategoriesInterface.csv | EGP_ITEM_CATEGORIES_INTERFACE | DMT_EGP_ITEM_CAT_STG_TBL | DMT_EGP_ITEM_CAT_TFM_TBL | ALIGNED |
+
+Both record types map 1:1 to their own STG/TFM pair, and each DMT name is the
+`DMT_` + Fusion-interface-root form (`EGP_ITEM` ↔ EGP_SYSTEM_ITEMS_INTERFACE,
+`EGP_ITEM_CAT` ↔ EGP_ITEM_CATEGORIES_INTERFACE). No misalignment.
+
+**Findings:**
+1. **FIXED (doc-only):** the generator spec/body header of
+   `dmt_egp_item_fbdi_gen_pkg` said the Items zip holds "ONE CSV:
+   EgpSystemItemsInterface.csv". The zip actually bundles TWO CSVs — the item
+   master plus the categories CSV produced by
+   `DMT_EGP_ITEM_CAT_FBDI_GEN_PKG.GENERATE_CSV` — under the one import job.
+   Header corrected to list both. No runtime change.
+2. **No physical rename needed** — both tables already mirror their tab.

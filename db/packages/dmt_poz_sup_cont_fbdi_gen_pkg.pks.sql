@@ -7,7 +7,7 @@ AS
 -- DMT_POZ_SUP_CONT_FBDI_GEN_PKG
 -- Generates the Supplier Contact FBDI zip from VALIDATED staging records.
 -- Interface table: POZ_SUP_CONTACTS_INT
--- FBDI file: PoSupplierContactImport.csv
+-- FBDI file: PozSupContactsInt.csv (the name the body emits + the zip Fusion accepted)
 -- ============================================================
 
     PROCEDURE GENERATE_FBDI (

@@ -92,3 +92,51 @@ report returns zero rows and the per-award rejection messages survive ONLY in Fu
   - **Conclusion:** Demo instance grants module is not configured. All business units affected.
   - Valid contract types (from REST): `Sell: Project Award Hard Limit`, `Sell: Project Award Soft Limit`
   - Valid sponsors: National Science Foundation, National Cancer Institute, Dept of Homeland Security, EPA, Dept of Education, Dept of Health and Human Services, American Heart Association, Bond, MerLabs and Co, National Institute of Health
+
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object-model rule is "one object = one FBDI zip = one
+tab per record type". Grants is ONE zip (`GmsAwardHeadersInterface.xlsm`) with
+FIFTEEN CSVs / fifteen interface tables; DMT models all fifteen, one STG + one TFM
+table each. The DMT names are direct transliterations of the Oracle interface
+tables (`GMS_AWARD_*_INTERFACE` -> `DMT_GMS_AWD_*_TFM_TBL`), shortened only where
+needed to fit the 30-byte Oracle identifier limit.
+
+**The mapping (from the generator `DMT_GRANTS_FBDI_GEN_PKG` `REGISTER_CSV` calls
+and each `gen_*_csv` function's `FROM` table):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| GmsAwardHeadersInterface.csv | GMS_AWARD_HEADERS_INTERFACE | DMT_GMS_AWD_HEADERS_STG_TBL | DMT_GMS_AWD_HEADERS_TFM_TBL | ALIGNED |
+| GmsAwardFundingInterface.csv | GMS_AWARD_FUNDING_INTERFACE | DMT_GMS_AWD_FUNDING_STG_TBL | DMT_GMS_AWD_FUNDING_TFM_TBL | ALIGNED |
+| GmsAwardProjectsInterface.csv | GMS_AWARD_PROJECTS_INTERFACE | DMT_GMS_AWD_PROJECTS_STG_TBL | DMT_GMS_AWD_PROJECTS_TFM_TBL | ALIGNED |
+| GmsAwardPersonnelInterface.csv | GMS_AWARD_PERSONNEL_INTERFACE | DMT_GMS_AWD_PERSONNEL_STG_TBL | DMT_GMS_AWD_PERSONNEL_TFM_TBL | ALIGNED |
+| GmsAwardFundSrcInterface.csv | GMS_AWARD_FUND_SRC_INTERFACE | DMT_GMS_AWD_FUND_SRC_STG_TBL | DMT_GMS_AWD_FUND_SRC_TFM_TBL | ALIGNED |
+| GmsAwardPrjFundSrcInterface.csv | GMS_AWARD_PRJ_FUND_SRC_INTERFACE | DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL | DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL | ALIGNED |
+| GmsAwardKeywordsInterface.csv | GMS_AWARD_KEYWORDS_INTERFACE | DMT_GMS_AWD_KEYWORDS_STG_TBL | DMT_GMS_AWD_KEYWORDS_TFM_TBL | ALIGNED |
+| GmsAwardBudgetPeriodsInterface.csv | GMS_AWARD_BDGT_PRDS_INTERFACE | DMT_GMS_AWD_BDGT_PRDS_STG_TBL | DMT_GMS_AWD_BDGT_PRDS_TFM_TBL | NAME-SHORTENED (BDGT_PRDS = BudgetPeriods), model correct |
+| GmsAwardCertsInterface.csv | GMS_AWARD_CERTS_INTERFACE | DMT_GMS_AWD_CERTS_STG_TBL | DMT_GMS_AWD_CERTS_TFM_TBL | ALIGNED |
+| GmsAwardCfdasInterface.csv | GMS_AWARD_CFDAS_INTERFACE | DMT_GMS_AWD_CFDAS_STG_TBL | DMT_GMS_AWD_CFDAS_TFM_TBL | ALIGNED |
+| GmsAwardFundAllocInterface.csv | GMS_AWARD_FUND_ALLOC_INTERFACE | DMT_GMS_AWD_FUND_ALLOC_STG_TBL | DMT_GMS_AWD_FUND_ALLOC_TFM_TBL | ALIGNED |
+| GmsAwardOrgCreditsInterface.csv | GMS_AWARD_ORG_CREDITS_INTERFACE | DMT_GMS_AWD_ORG_CREDITS_STG_TBL | DMT_GMS_AWD_ORG_CREDITS_TFM_TBL | ALIGNED |
+| GmsAwardPrjTaskBurdenInterface.csv | GMS_AWARD_PRJ_TSK_BRD_INTERFACE | DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL | DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL | NAME-SHORTENED (PRJ_TSK_BRD = PrjTaskBurden), model correct |
+| GmsAwardReferencesInterface.csv | GMS_AWARD_REFERENCES_INTERFACE | DMT_GMS_AWD_REFERENCES_STG_TBL | DMT_GMS_AWD_REFERENCES_TFM_TBL | ALIGNED |
+| GmsAwardTermsInterface.csv | GMS_AWARD_TERMS_INTERFACE | DMT_GMS_AWD_TERMS_STG_TBL | DMT_GMS_AWD_TERMS_TFM_TBL | ALIGNED |
+
+**Why the two NAME-SHORTENED rows are correct, not wrong record types:**
+`BDGT_PRDS` is "Budget Periods" and `PRJ_TSK_BRD` is "Project Task Burden", both
+abbreviated only to stay within Oracle's 30-byte identifier limit for the
+`DMT_GMS_AWD_*_TFM_TBL` pattern. Same record type as the tab, just abbreviated.
+
+**Findings (what was fixed vs deferred):**
+1. **NO spec-header fix needed.** The generator spec-header says "15 CSVs in one
+   ZIP" and the body's numbered `gen_*_csv` comments + `REGISTER_CSV` calls name all
+   fifteen real Oracle tabs. Accurate.
+2. **DEFERRED (physical rename -- not warranted):** the two abbreviated names are
+   forced by the identifier-length limit and are unambiguous; no rename.
+3. **No NOT-MODELED gaps.** All fifteen CSVs the Grants import template defines have
+   a STG table, a TFM table and a generator branch. (The catalog surfaces only two
+   of them -- Award Headers + Award Projects -- in the console view by design; the
+   other thirteen are still modeled and loaded, just not shown as separate console
+   tiles. That is a display choice, not a modeling gap.)

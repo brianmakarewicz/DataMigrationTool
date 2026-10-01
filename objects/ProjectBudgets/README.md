@@ -245,3 +245,40 @@ Previous test data failed because:
 
 ## Lessons Learned
 - **Never assume absence=LOADED without positive verification.** Two-tier BIP pattern queries both interface AND base tables. If neither has the row, it's FAILED, not silently LOADED.
+
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The object-model rule is "one object = one FBDI zip = one
+tab per record type". Project Budgets is ONE zip with a single CSV / one interface
+table; DMT models it with one STG + one TFM table.
+
+**The mapping (from the generator `DMT_PRJ_BUDGET_FBDI_GEN_PKG` `REGISTER_CSV`
+call and the `FROM` table):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| PjoPlanVersionsXface.csv | PJO_PLAN_VERSIONS_XFACE | DMT_PRJ_BUDGET_STG_TBL | DMT_PRJ_BUDGET_TFM_TBL | NAME-SHORTENED (PRJ_BUDGET for Project Budget / PjoPlanVersions), model correct |
+
+**Why it reads NAME-SHORTENED but the model is correct:** the single Fusion tab
+`PjoPlanVersions` carries project *plan versions* = the budget plan. DMT names the
+table `PRJ_BUDGET` (a shortening of "Project Budget", the object name and FBDI
+template `PjoBudgetInterface.xlsm`). Same record type; the DMT name follows the
+budget concept rather than the Oracle plan-version staging label. One tab, one
+table -- no fan-out.
+
+**Findings (what was fixed vs deferred):**
+1. **NO spec-header fix needed.** The generator spec-header already names the real
+   CSV tab `PjoPlanVersionsXface.csv`, matching the `REGISTER_CSV` call. Accurate.
+2. **DEFERRED (physical rename, high ripple -- DO NOT do under this item):** renaming
+   `DMT_PRJ_BUDGET_*` to `*_PJO_PLAN_VERSIONS_*` would ripple across the validator,
+   transformer, generator, results package, catalog, pipeline and BIP for no
+   correctness gain -- the name is a sensible shortening, not a wrong record type.
+   Recorded as a finding only.
+3. **No NOT-MODELED gaps.** The one CSV in the zip has a STG and a TFM table and a
+   generator branch.
+
+**Registry note (not a misalignment):** the Pipeline section's "Interface Table:
+PJO_BUDGET_INTERFACE" is the FBDI *template*-level name; the actual load/interface
+table the CSV lands in is `PJO_PLAN_VERSIONS_XFACE` (see the detailed recon notes
+below). The table above uses the real interface-table name.

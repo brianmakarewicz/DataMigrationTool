@@ -30,6 +30,30 @@ E2E LOADED (18 LOADED)
 ## Reference Files
 None in this folder.
 
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. Requisitions is ONE zip (`RequisitionImportJob`)
+carrying THREE CSVs; DMT models all three with one STG and one TFM table each.
+
+**The mapping (from the generator `DMT_REQ_FBDI_GEN_PKG` body + the captured zip
+`test/fbdi_zips/Requisitions_116.zip` + the catalog):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| PorReqHeadersInterfaceAll.csv | POR_REQ_HEADERS_INTERFACE_ALL | DMT_POR_REQ_HEADERS_STG_TBL | DMT_POR_REQ_HEADERS_TFM_TBL | ALIGNED |
+| PorReqLinesInterfaceAll.csv | POR_REQ_LINES_INTERFACE_ALL | DMT_POR_REQ_LINES_STG_TBL | DMT_POR_REQ_LINES_TFM_TBL | ALIGNED |
+| PorReqDistsInterfaceAll.csv | POR_REQ_DISTS_INTERFACE_ALL | DMT_POR_REQ_DISTS_STG_TBL | DMT_POR_REQ_DISTS_TFM_TBL | NAME-SHORTENED (DISTS = Distributions) |
+
+**Notes:**
+- One record type per table, one table per CSV — a clean 1:1 case. Every table
+  name carries the Fusion `POR_REQ` object prefix and the record type (headers /
+  lines / dists); `DISTS` is the only abbreviation (Distributions). No
+  wrong-record-type defect. The captured `Requisitions_116.zip` ships exactly
+  these three CSV entries, confirming the tab names.
+- **Generator spec header already accurate** — `dmt_req_fbdi_gen_pkg.pks.sql`
+  documents the three real Oracle FBDI filenames correctly. No fix needed.
+
 ## Known Issues
 - **Requisitions must run as calvin.roth (PO_USERNAME).** Running as fin_impl (FUSION_USERNAME) causes `po_core_s.get_ledger_id` ORA-01403 and Import ESS returns "You must enter a valid ledger ID." Fixed 2026-04-07: added Requisitions to per-CEMLI credential override in `run_one_object_type`. Credentials also passed through to POLL_ESS_JOB (l_ess_user/l_ess_pass promoted to function scope).
 - **UOM_CODE is 'ECH' (not 'Ea').** Verified 2026-04-16: `ECH` exists in `inv_units_of_measure` and loads successfully. 'Ea' does NOT exist on this instance.
