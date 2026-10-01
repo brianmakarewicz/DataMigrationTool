@@ -13,12 +13,19 @@ AS
     -- Submit one or more pipelines (CSV: 'P2P,O2C,Financials').
     -- Creates queue rows for all CEMLIs across all selected pipelines.
     -- Returns RUN_ID immediately.
+    -- p_dependent_prefix / p_validate_upstream (Backlog #142): the two
+    -- page-84 run parameters, persisted on DMT_PIPELINE_RUN_TBL and
+    -- honored by the object validators. p_dependent_prefix NULL =
+    -- automatic (use the run's own prefix); p_validate_upstream 'N'
+    -- (default) = skip the upstream pre-validation, 'Y' = enforce it.
     PROCEDURE SUBMIT_PIPELINE (
         p_pipeline_codes   IN  VARCHAR2,
         p_scenario_name    IN  VARCHAR2 DEFAULT NULL,
         p_run_mode         IN  VARCHAR2 DEFAULT 'NEW',
         p_on_failure       IN  VARCHAR2 DEFAULT 'HALT',
         p_submitted_by     IN  VARCHAR2 DEFAULT NULL,
+        p_dependent_prefix IN  VARCHAR2 DEFAULT NULL,
+        p_validate_upstream IN VARCHAR2 DEFAULT 'N',
         x_run_id           OUT NUMBER
     );
 
@@ -29,6 +36,8 @@ AS
         p_run_mode         IN  VARCHAR2 DEFAULT 'NEW',
         p_on_failure       IN  VARCHAR2 DEFAULT 'HALT',
         p_submitted_by     IN  VARCHAR2 DEFAULT NULL,
+        p_dependent_prefix IN  VARCHAR2 DEFAULT NULL,
+        p_validate_upstream IN VARCHAR2 DEFAULT 'N',
         x_run_id           OUT NUMBER
     );
 

@@ -575,6 +575,142 @@ end;
 /
 
 -- ------------------------------------------------------------
+-- Block D — Backlog #142: per-run Dependent-Run + Validate-Upstream
+--   parameters are PERSISTED on the run row by the real submission
+--   path (DMT_SUBMIT_RUN_V2 -> DMT_SCHEDULER_PKG.SUBMIT_PIPELINE ->
+--   create_run_and_queue) AND HONORED by the two DMT_UTIL_PKG
+--   resolvers the object validators read.
+--
+--   Design (DMT_DESIGN.html section 8 submission screen / section 5
+--   pre-validate):
+--     - "Validate upstream dependencies" toggle, default OFF: when ON
+--       the cross-object pre-validation runs for that run.
+--     - "Dependent run (optional override)", default None: pins a
+--       specific earlier run's prefix; None = the run's own prefix.
+--   The flags are threaded run submission -> pipeline registry and
+--   read back per-run (never a global switch).
+--
+--   Submits two real runs through DMT_SUBMIT_RUN_V2 so the ENTIRE
+--   wiring is exercised, not just the resolvers. Each created run is
+--   driven to COMPLETED and deleted at the end so reruns are stable
+--   and no STG/TFM row is ever touched (no work item is dispatched).
+-- ------------------------------------------------------------
+declare
+    c_subby   constant varchar2(40) := 'TEST_DMT_UTIL_PKG_MARKER_142';
+    l_passed  pls_integer := 0;
+    l_run_y   number;
+    l_run_n   number;
+    l_vu      varchar2(1);
+    l_dep     varchar2(20);
+    l_ownpfx  varchar2(20);
+    l_obj_y   varchar2(60);
+    l_obj_n   varchar2(60);
+
+    procedure assert (p_cond boolean, p_num pls_integer, p_name varchar2) is
+    begin
+        if p_cond then
+            l_passed := l_passed + 1;
+            dbms_output.put_line('PASS  '||lpad(p_num,2)||'  '||p_name);
+        else
+            raise_application_error(-20999, 'FAIL test '||p_num||': '||p_name);
+        end if;
+    end assert;
+
+    -- Pick a registered object not currently in an active run, so the
+    -- one-active-run-per-object submission guard does not reject us.
+    function free_object (p_exclude varchar2 default '~none~') return varchar2 is
+        l_c varchar2(60);
+    begin
+        select cemli_code into l_c from (
+            select d.cemli_code
+            from   dmt_pipeline_def_tbl d
+            where  d.exec_proc is not null
+            and    d.cemli_code <> p_exclude
+            and    not exists (
+                       select 1 from dmt_work_queue_tbl q
+                       join dmt_pipeline_run_tbl r on r.run_id = q.run_id
+                       where q.cemli_code = d.cemli_code
+                       and   r.run_status in ('QUEUED','IN_PROGRESS')
+                       and   q.work_status not in ('DONE','FAILED','SKIPPED'))
+            order by d.cemli_code)
+        where rownum = 1;
+        return l_c;
+    end free_object;
+begin
+    -- Pre-clean any run rows a prior (failed) run of this test left behind.
+    delete from dmt_work_queue_tbl
+     where run_id in (select run_id from dmt_pipeline_run_tbl where submitted_by = c_subby);
+    delete from dmt_log_tbl
+     where run_id in (select run_id from dmt_pipeline_run_tbl where submitted_by = c_subby);
+    delete from dmt_pipeline_run_tbl where submitted_by = c_subby;
+    commit;
+
+    l_obj_y := free_object;
+    l_obj_n := free_object(p_exclude => l_obj_y);
+
+    -- Run Y: Validate-Upstream ON, dependent prefix pinned to a sentinel.
+    dmt_submit_run_v2(
+        p_pipeline_codes    => 'STANDALONE:'||l_obj_y,
+        p_run_mode          => 'NEW',
+        p_on_failure        => 'HALT',
+        p_submitted_by      => c_subby,
+        p_dependent_prefix  => '99142',
+        p_validate_upstream => 'Y',
+        x_run_id            => l_run_y);
+
+    -- Run N: Validate-Upstream OFF (default path), no dependent prefix.
+    dmt_submit_run_v2(
+        p_pipeline_codes    => 'STANDALONE:'||l_obj_n,
+        p_run_mode          => 'NEW',
+        p_on_failure        => 'HALT',
+        p_submitted_by      => c_subby,
+        p_dependent_prefix  => null,
+        p_validate_upstream => 'N',
+        x_run_id            => l_run_n);
+
+    -- 30. Both new columns PERSISTED on the run row for run Y.
+    select validate_upstream, dependent_prefix
+      into l_vu, l_dep from dmt_pipeline_run_tbl where run_id = l_run_y;
+    assert(l_vu = 'Y' and l_dep = '99142', 30,
+        'DMT_SUBMIT_RUN_V2 persists VALIDATE_UPSTREAM=Y and DEPENDENT_PREFIX on the run row');
+
+    -- 31. Both new columns PERSISTED for run N (flag N, override NULL).
+    select validate_upstream, dependent_prefix
+      into l_vu, l_dep from dmt_pipeline_run_tbl where run_id = l_run_n;
+    assert(l_vu = 'N' and l_dep is null, 31,
+        'DMT_SUBMIT_RUN_V2 persists VALIDATE_UPSTREAM=N and NULL DEPENDENT_PREFIX');
+
+    -- 32. SHOULD_VALIDATE_UPSTREAM honors the per-run flag (Y vs N).
+    assert(dmt_util_pkg.should_validate_upstream(l_run_y) = 'Y'
+       and dmt_util_pkg.should_validate_upstream(l_run_n) = 'N', 32,
+        'SHOULD_VALIDATE_UPSTREAM returns the per-run flag (Y for run Y, N for run N)');
+
+    -- 33. GET_DEPENDENT_PREFIX returns the pinned override when set.
+    assert(dmt_util_pkg.get_dependent_prefix(l_run_y) = '99142', 33,
+        'GET_DEPENDENT_PREFIX returns the pinned Dependent-Run override');
+
+    -- 34. GET_DEPENDENT_PREFIX falls back to the run's OWN prefix when
+    --     no override is set (automatic resolution).
+    select prefix into l_ownpfx from dmt_pipeline_run_tbl where run_id = l_run_n;
+    assert(dmt_util_pkg.get_dependent_prefix(l_run_n) = l_ownpfx, 34,
+        'GET_DEPENDENT_PREFIX falls back to the run''s own PREFIX when no override');
+
+    -- Drive both runs terminal and remove them so reruns are stable and
+    -- the one-active-run guard is clear next time (no work item ran).
+    update dmt_work_queue_tbl set work_status = 'DONE'
+     where run_id in (l_run_y, l_run_n);
+    update dmt_pipeline_run_tbl set run_status = 'COMPLETED'
+     where run_id in (l_run_y, l_run_n);
+    delete from dmt_work_queue_tbl where run_id in (l_run_y, l_run_n);
+    delete from dmt_log_tbl where run_id in (l_run_y, l_run_n);
+    delete from dmt_pipeline_run_tbl where run_id in (l_run_y, l_run_n);
+    commit;
+
+    :passed := :passed + l_passed;
+end;
+/
+
+-- ------------------------------------------------------------
 -- Cleanup — remove every row this script created
 -- ------------------------------------------------------------
 begin
@@ -582,6 +718,8 @@ begin
     delete from dmt_log_tbl           where message    like 'INIT_RUN: orchestration=TEST_DMT_UTIL_PKG_MARKER%';
     delete from dmt_config_tbl        where config_key like 'TEST_DMT_UTIL_PKG_MARKER%';
     delete from dmt_scenario_tbl      where upper(scenario_name) like 'TEST_DMT_UTIL_PKG_MARKER%';
+    delete from dmt_work_queue_tbl    where run_id in (select run_id from dmt_pipeline_run_tbl where submitted_by = 'TEST_DMT_UTIL_PKG_MARKER_142');
+    delete from dmt_pipeline_run_tbl  where submitted_by = 'TEST_DMT_UTIL_PKG_MARKER_142';
     delete from dmt_pipeline_run_tbl  where pipeline_codes like 'TEST_DMT_UTIL_PKG_MARKER%';
     commit;
 end;

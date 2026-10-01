@@ -118,6 +118,58 @@ page 84 (
         }
     )
 
+    pageItem P84_VALIDATE_UPSTREAM (
+        type: selectList
+        label {
+            label: Validate Upstream
+            alignment: left
+        }
+        lov {
+            type: staticValues
+            staticValues: STATIC:Off (skip the parent-must-be-loaded check);N,On (require each upstream parent LOADED);Y
+            displayExtraValues: false
+            displayNullValue: false
+        }
+        default {
+            type: static
+            staticValue: N
+        }
+        layout {
+            sequence: 60
+            region: @pipeline-controls
+            slot: regionBody
+            alignment: left
+            columnSpan: 4
+        }
+        appearance {
+            height: 1
+        }
+        help {
+            helpText: Before running an object, optionally confirm its upstream dependency object already loaded. Off (default) skips the cross-object pre-validation for this run; a genuinely missing parent still fails at Fusion with a reportable error. On enforces the "parent must be LOADED" check and fails unmatched rows with a PRE_VALIDATION error.
+        }
+    )
+
+    pageItem P84_DEPENDENT_PREFIX (
+        type: textField
+        label {
+            label: Dependent Run (prefix)
+            alignment: left
+        }
+        layout {
+            sequence: 70
+            region: @pipeline-controls
+            slot: regionBody
+            alignment: left
+            columnSpan: 4
+        }
+        appearance {
+            width: 20
+        }
+        help {
+            helpText: Optional override. Leave blank for automatic resolution (upstream references carry each parent's most recent loaded prefix). Enter an earlier run's prefix to pin this run's upstream dependency resolution to that specific run.
+        }
+    )
+
     dynamicAction cancel (
         name: Cancel
         execution {
@@ -156,7 +208,7 @@ page 84 (
         action native-javascript-code (
             action: executeJsCode
             settings {
-                jsCode: var btn=document.getElementById("btn-confirm");btn.disabled=true;btn.textContent="Submitting...";var body=new URLSearchParams();body.append("p_flow_id",$v("pFlowId"));body.append("p_flow_step_id",$v("pFlowStepId"));body.append("p_instance",$v("pInstance"));body.append("p_request","APPLICATION_PROCESS=SUBMIT_AJAX");body.append("p_json",JSON.stringify({pageItems:null,salt:null}));body.append("x01",window._planCodes||"");body.append("x02",$v("P84_SCENARIO")||"");body.append("x03",$v("P84_RUN_MODE")||"NEW");body.append("x04",$v("P84_ON_FAILURE")||"HALT");fetch("wwv_flow.ajax",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8"},body:body.toString()}).then(function(r){return r.text();}).then(function(d){btn.disabled=false;btn.textContent="Confirm & Submit";d=(d||"").trim();if(d.indexOf("OK:")===0){var rid=d.substring(3).trim();var url="f?p="+$v("pFlowId")+":82:"+$v("pInstance")+"::NO::P82_RUN_ID:"+rid;document.getElementById("plan-content").innerHTML="<div style=\"text-align:center;padding:16px\"><p style=\"font-size:17px;color:#1a7d33;margin:0 0 12px\"><b>&#10003; Pipeline submitted as Run #"+rid+"</b></p><a href=\""+url+"\" style=\"display:inline-block;padding:11px 22px;color:#fff;text-decoration:none;border-radius:6px;background:#0072c6;font-weight:600\">Open Run #"+rid+" &rarr; tiles view</a></div>";document.getElementById("btn-confirm").style.display="none";document.getElementById("btn-cancel").textContent="Close";apex.message.showPageSuccess("Pipeline submitted as Run #"+rid);}else{apex.message.alert(d||"Submit returned no response");}}).catch(function(e){btn.disabled=false;btn.textContent="Confirm & Submit";apex.message.alert("Failed: "+e);});
+                jsCode: var btn=document.getElementById("btn-confirm");btn.disabled=true;btn.textContent="Submitting...";var body=new URLSearchParams();body.append("p_flow_id",$v("pFlowId"));body.append("p_flow_step_id",$v("pFlowStepId"));body.append("p_instance",$v("pInstance"));body.append("p_request","APPLICATION_PROCESS=SUBMIT_AJAX");body.append("p_json",JSON.stringify({pageItems:null,salt:null}));body.append("x01",window._planCodes||"");body.append("x02",$v("P84_SCENARIO")||"");body.append("x03",$v("P84_RUN_MODE")||"NEW");body.append("x04",$v("P84_ON_FAILURE")||"HALT");body.append("x05",$v("P84_VALIDATE_UPSTREAM")||"N");body.append("x06",$v("P84_DEPENDENT_PREFIX")||"");fetch("wwv_flow.ajax",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8"},body:body.toString()}).then(function(r){return r.text();}).then(function(d){btn.disabled=false;btn.textContent="Confirm & Submit";d=(d||"").trim();if(d.indexOf("OK:")===0){var rid=d.substring(3).trim();var url="f?p="+$v("pFlowId")+":82:"+$v("pInstance")+"::NO::P82_RUN_ID:"+rid;document.getElementById("plan-content").innerHTML="<div style=\"text-align:center;padding:16px\"><p style=\"font-size:17px;color:#1a7d33;margin:0 0 12px\"><b>&#10003; Pipeline submitted as Run #"+rid+"</b></p><a href=\""+url+"\" style=\"display:inline-block;padding:11px 22px;color:#fff;text-decoration:none;border-radius:6px;background:#0072c6;font-weight:600\">Open Run #"+rid+" &rarr; tiles view</a></div>";document.getElementById("btn-confirm").style.display="none";document.getElementById("btn-cancel").textContent="Close";apex.message.showPageSuccess("Pipeline submitted as Run #"+rid);}else{apex.message.alert(d||"Submit returned no response");}}).catch(function(e){btn.disabled=false;btn.textContent="Confirm & Submit";apex.message.alert("Failed: "+e);});
             }
             execution {
                 sequence: 10
@@ -233,7 +285,7 @@ page 84 (
         name: SUBMIT_AJAX
         type: executeCode
         source {
-            plsqlCode: DECLARE l_codes VARCHAR2(4000):=APEX_APPLICATION.G_X01; l_sc VARCHAR2(200):=APEX_APPLICATION.G_X02; l_md VARCHAR2(20):=APEX_APPLICATION.G_X03; l_onfail VARCHAR2(20):=NVL(APEX_APPLICATION.G_X04,'HALT'); l_run_id NUMBER; BEGIN IF l_codes IS NULL THEN HTP.P('ERROR:No selections'); RETURN; END IF; DMT_SUBMIT_RUN_V2(p_pipeline_codes=>l_codes, p_scenario_name=>NULLIF(l_sc,''), p_run_mode=>NVL(l_md,'NEW'), p_on_failure=>l_onfail, p_submitted_by=>V('APP_USER'), x_run_id=>l_run_id); DMT_QUEUE_PKG.ENSURE_POLLER_RUNNING; HTP.P('OK:'||l_run_id); END;
+            plsqlCode: DECLARE l_codes VARCHAR2(4000):=APEX_APPLICATION.G_X01; l_sc VARCHAR2(200):=APEX_APPLICATION.G_X02; l_md VARCHAR2(20):=APEX_APPLICATION.G_X03; l_onfail VARCHAR2(20):=NVL(APEX_APPLICATION.G_X04,'HALT'); l_valup VARCHAR2(10):=NVL(APEX_APPLICATION.G_X05,'N'); l_deppfx VARCHAR2(20):=NULLIF(TRIM(APEX_APPLICATION.G_X06),''); l_run_id NUMBER; l_dep_cnt NUMBER; BEGIN IF l_codes IS NULL THEN HTP.P('ERROR:No selections'); RETURN; END IF; IF l_deppfx IS NOT NULL THEN SELECT COUNT(*) INTO l_dep_cnt FROM DMT_PIPELINE_RUN_TBL WHERE PREFIX = l_deppfx; IF l_dep_cnt = 0 THEN HTP.P('ERROR:Dependent Run prefix '''||l_deppfx||''' matches no prior run. Leave it blank for automatic resolution, or enter an existing run''s prefix.'); RETURN; END IF; END IF; DMT_SUBMIT_RUN_V2(p_pipeline_codes=>l_codes, p_scenario_name=>NULLIF(l_sc,''), p_run_mode=>NVL(l_md,'NEW'), p_on_failure=>l_onfail, p_submitted_by=>V('APP_USER'), p_dependent_prefix=>l_deppfx, p_validate_upstream=>l_valup, x_run_id=>l_run_id); DMT_QUEUE_PKG.ENSURE_POLLER_RUNNING; HTP.P('OK:'||l_run_id); END;
         }
         execution {
             sequence: 20

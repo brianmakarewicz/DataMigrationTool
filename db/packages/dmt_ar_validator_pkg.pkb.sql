@@ -87,10 +87,10 @@ AS
         IF p_dependent_prefix IS NOT NULL THEN
             l_dep_prefix := p_dependent_prefix;
         ELSE
-            SELECT PREFIX
-            INTO   l_dep_prefix
-            FROM   DMT_PIPELINE_RUN_TBL
-            WHERE  RUN_ID = p_run_id;
+            -- Backlog #142: honor the run's Dependent-Run override
+            -- (DMT_PIPELINE_RUN_TBL.DEPENDENT_PREFIX) when set; else the
+            -- run's own PREFIX, exactly as before.
+            l_dep_prefix := DMT_UTIL_PKG.GET_DEPENDENT_PREFIX(p_run_id);
         END IF;
 
         -- Step 1: Record a rejection for AR lines whose bill-to customer account
@@ -108,7 +108,9 @@ AS
             FROM   DMT_HZ_ACCOUNTS_TFM_TBL
             WHERE  TFM_STATUS = 'LOADED' AND ROWNUM = 1;
 
-            IF l_any_loaded > 0 AND DMT_UTIL_PKG.GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN
+            -- Backlog #142: per-run Validate-Upstream flag (was the global
+            -- DMT_CONFIG_TBL VALIDATE_UPSTREAM_DEPS switch).
+            IF l_any_loaded > 0 AND DMT_UTIL_PKG.SHOULD_VALIDATE_UPSTREAM(p_run_id) = 'Y' THEN
                 INSERT INTO DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
                 SELECT p_run_id, 'ARInvoices', 'AR Lines', ln.STG_SEQUENCE_ID,

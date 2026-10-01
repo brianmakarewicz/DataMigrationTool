@@ -214,7 +214,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('VALIDATE_UPSTREAM_DEPS','N','Master switch for cross-object upstream dependency PRE-validation (the "parent must be LOADED" checks in the object validators). N (default) = skip them: references resolve through DMT_XREF_PKG (most-recent LOADED value, or raw source if the parent is pre-existing / not migrated) and a genuinely-missing parent still fails at Fusion with a reportable error. Y = enforce the checks. Per design: the tool''s job is to move data and account for every outcome, not to pre-validate.',sysdate,'DMT_OWNER');
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('VALIDATE_UPSTREAM_DEPS','N','FALLBACK ONLY, superseded by the per-run flag (Backlog #142). Cross-object upstream PRE-validation (parent-must-be-LOADED checks in the validators) is now controlled PER RUN by DMT_PIPELINE_RUN_TBL.VALIDATE_UPSTREAM (page-84 toggle), read via DMT_UTIL_PKG.SHOULD_VALIDATE_UPSTREAM; this global key is consulted only for a run row with no explicit value. N (default)=skip (references resolve via DMT_XREF_PKG; a missing parent still fails at Fusion). Y=enforce.',sysdate,'DMT_OWNER');
 exception when dup_val_on_index then null;
 end;
 /

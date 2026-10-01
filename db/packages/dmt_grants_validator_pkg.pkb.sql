@@ -63,7 +63,9 @@ AS
         -- STG_SEQUENCE_ID). Match the raw source PROJECT_NUMBER on the STG side.
         -- Rejections are recorded in the run-stamped error table; the STG row keeps
         -- its status only (no message), flagged FAILED later by FLAG_STG_FAILED (§7).
-        IF DMT_UTIL_PKG.GET_CONFIG('VALIDATE_UPSTREAM_DEPS') = 'Y' THEN
+        -- Backlog #142: per-run Validate-Upstream flag (was the global
+        -- DMT_CONFIG_TBL VALIDATE_UPSTREAM_DEPS switch).
+        IF DMT_UTIL_PKG.SHOULD_VALIDATE_UPSTREAM(p_run_id) = 'Y' THEN
         INSERT INTO DMT_STG_TFM_ERROR_TBL
                (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
         SELECT DISTINCT p_run_id, 'Grants', 'Award Projects', s.STG_SEQUENCE_ID,
