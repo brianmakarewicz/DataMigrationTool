@@ -13,6 +13,9 @@ CREATE OR REPLACE PACKAGE BODY DMT_CUST_COMPARE_PKG AS
         l_bal       VARCHAR2(1);
         l_var_cnt   NUMBER;
         l_fus_cnt   NUMBER;
+        l_stg_chk   VARCHAR2(80);
+        l_fus_chk   VARCHAR2(80);
+        l_match     VARCHAR2(1);
     BEGIN
         -- (a) staged total for the run's Accounts record type. STG has no
         --     RUN_ID; the run's record set is the TFM rows for the run.
@@ -41,12 +44,42 @@ CREATE OR REPLACE PACKAGE BODY DMT_CUST_COMPARE_PKG AS
          WHERE RUN_ID = p_run_id
            AND CUST_ORIG_SYSTEM_REFERENCE IS NOT NULL;
 
+        -- Backlog #94 STG-side business-key checksum. Business key per
+        -- DMT_DESIGN.html = "PREFIX + CUST_ORIG_SYSTEM_REFERENCE"; the TFM
+        -- CUST_ORIG_SYSTEM_REFERENCE already carries the run prefix. On the
+        -- Fusion side that same reference is stored verbatim in
+        -- HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE for
+        -- OWNER_TABLE_NAME='HZ_CUST_ACCOUNTS' (verified live on the demo
+        -- instance: 93270RT-ACCT-G2/G3 round-trip byte-for-byte). So this TFM
+        -- reference is the correct cross-side key.
+        --
+        -- Grain note: we checksum the LOADABLE set (TFM_STATUS != 'FAILED'),
+        -- i.e. the rows this run sent to Fusion. A per-record Fusion reject is
+        -- still non-FAILED here until reconciliation marks it, so for a brief
+        -- window after a load the STG set can be a superset of what landed and
+        -- KEY_MATCH may read 'N'. That is expected and settles to 'Y' once
+        -- every row is accounted. EXACT MIRROR of the Fusion-side expression
+        -- in CUST_CMP_DM.xdm: distinct UPPER(TRIM(ref)), SUM(ORA_HASH) ||':'||
+        -- COUNT.
+        SELECT TO_CHAR(NVL(SUM(ORA_HASH(k)),0)) || ':' || COUNT(*)
+          INTO l_stg_chk
+          FROM (
+            SELECT DISTINCT UPPER(TRIM(CUST_ORIG_SYSTEM_REFERENCE)) AS k
+              FROM DMT_HZ_ACCOUNTS_TFM_TBL
+             WHERE RUN_ID = p_run_id
+               AND CUST_ORIG_SYSTEM_REFERENCE IS NOT NULL
+               AND NVL(TFM_STATUS,'x') != 'FAILED'
+          );
+
         IF l_batch IS NULL THEN
-            -- Still in flight: no per-record references staged yet.
+            -- Still in flight: no per-record references staged yet. STG-side
+            -- checksum is known; Fusion side / match unknown.
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
                 l_stg_cnt, NULL, l_err_cnt, NULL,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No captured customer reference yet (in flight)', NULL, NULL, NULL);
+                'No captured customer reference yet (in flight)',
+                l_stg_chk, NULL,
+                CASE WHEN l_stg_chk IS NOT NULL THEN '?' END);
         END IF;
         l_key_type := 'CAPTURED_ID';
 
@@ -73,21 +106,38 @@ CREATE OR REPLACE PACKAGE BODY DMT_CUST_COMPARE_PKG AS
 
         IF l_xml IS NULL THEN
             l_fus_cnt := 0;
+            l_fus_chk := NULL;
         ELSE
-            SELECT TO_NUMBER(x.success_count)
-              INTO l_fus_cnt
+            SELECT TO_NUMBER(x.success_count), x.key_checksum
+              INTO l_fus_cnt, l_fus_chk
               FROM XMLTABLE('/DATA_DS/G_1' PASSING l_xml COLUMNS
-                     success_count VARCHAR2(40) PATH 'SUCCESS_COUNT') x;
+                     success_count VARCHAR2(40) PATH 'SUCCESS_COUNT',
+                     key_checksum  VARCHAR2(80) PATH 'KEY_CHECKSUM') x;
         END IF;
 
         -- (f) count-only: no money anywhere for Customers.Accounts.
         l_var_cnt := l_stg_cnt - (NVL(l_fus_cnt,0) + l_err_cnt);
         l_bal := CASE WHEN l_var_cnt = 0 THEN 'Y' ELSE 'N' END;
 
+        -- KEY_MATCH: a non-money equality signal. Y when both sides present
+        -- and equal, N when both present and differ, ? when either side could
+        -- not be computed. (l_stg_chk is always non-null here -- Customers is
+        -- wired -- so it never goes to the "not computed" NULL state.)
+        IF l_stg_chk IS NULL THEN
+            l_match := NULL;
+        ELSIF l_fus_chk IS NULL THEN
+            l_match := '?';
+        ELSIF l_stg_chk = l_fus_chk THEN
+            l_match := 'Y';
+        ELSE
+            l_match := 'N';
+        END IF;
+
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, l_key_type,
             l_stg_cnt, NULL, l_err_cnt, NULL,
             l_fus_cnt, NULL, NULL, l_money_ok,
-            l_var_cnt, NULL, l_bal, NULL, NULL, NULL, NULL);
+            l_var_cnt, NULL, l_bal, NULL,
+            l_stg_chk, l_fus_chk, l_match);
     END GET_COMPARISON;
 END DMT_CUST_COMPARE_PKG;
 /

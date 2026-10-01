@@ -224,6 +224,9 @@ CREATE OR REPLACE PACKAGE BODY DMT_PO_COMPARE_PKG AS
         l_path      DMT_BIP_REPORT_TBL.CMP_REPORT_CATALOG_PATH%TYPE;
         l_bal       VARCHAR2(1);
         l_var_cnt   NUMBER;
+        l_stg_chk   VARCHAR2(80);
+        l_fus_chk   VARCHAR2(80);
+        l_match     VARCHAR2(1);
     BEGIN
         -- (a) staged total for the run's CONTRACT transform headers.
         --     Header-only object: no line join, no money column.
@@ -249,11 +252,32 @@ CREATE OR REPLACE PACKAGE BODY DMT_PO_COMPARE_PKG AS
          WHERE RUN_ID = p_run_id AND CEMLI_CODE = C_CEMLI_C
            AND IMPORT_ESS_JOB_ID IS NOT NULL;
 
+        -- Backlog #94 STG-side business-key checksum. Business key per
+        -- DMT_DESIGN.html = "PREFIX + DOCUMENT_NUM"; the TFM DOCUMENT_NUM
+        -- already carries the run prefix. On the Fusion side the same value is
+        -- PO_HEADERS_ALL.SEGMENT1 for a CONTRACT-type header (verified live on
+        -- the demo instance: SEGMENT1 = 93270RT-CPA-001 for the loaded CPA,
+        -- matching TFM DOCUMENT_NUM byte-for-byte). We checksum the LOADABLE
+        -- CONTRACT set (TFM_STATUS != 'FAILED'). EXACT MIRROR of the Fusion-side
+        -- expression in the Contracts PO_CMP_DM.xdm: distinct UPPER(TRIM(num)),
+        -- SUM(ORA_HASH) ||':'|| COUNT.
+        SELECT TO_CHAR(NVL(SUM(ORA_HASH(k)),0)) || ':' || COUNT(*)
+          INTO l_stg_chk
+          FROM (
+            SELECT DISTINCT UPPER(TRIM(th.DOCUMENT_NUM)) AS k
+              FROM DMT_PO_HEADERS_INT_TFM_TBL th
+             WHERE th.RUN_ID = p_run_id
+               AND th.DOCUMENT_TYPE_CODE = 'CONTRACT'
+               AND NVL(th.TFM_STATUS,'x') != 'FAILED'
+          );
+
         IF l_batch IS NULL THEN
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI_C, C_CEMLI_C, 'NONE',
                 l_stg_cnt, NULL, l_err_cnt, NULL,
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
-                'No import request id yet (in flight)', NULL, NULL, NULL);
+                'No import request id yet (in flight)',
+                l_stg_chk, NULL,
+                CASE WHEN l_stg_chk IS NOT NULL THEN '?' END);
         END IF;
         l_key_type := 'IMPORT_ID';
 
@@ -278,21 +302,36 @@ CREATE OR REPLACE PACKAGE BODY DMT_PO_COMPARE_PKG AS
 
         IF l_xml IS NULL THEN
             l_fus_cnt := 0;
+            l_fus_chk := NULL;
         ELSE
-            SELECT TO_NUMBER(x.success_count)
-              INTO l_fus_cnt
+            SELECT TO_NUMBER(x.success_count), x.key_checksum
+              INTO l_fus_cnt, l_fus_chk
               FROM XMLTABLE('/DATA_DS/G_1' PASSING l_xml COLUMNS
-                     success_count VARCHAR2(40) PATH 'SUCCESS_COUNT') x;
+                     success_count VARCHAR2(40) PATH 'SUCCESS_COUNT',
+                     key_checksum  VARCHAR2(80) PATH 'KEY_CHECKSUM') x;
         END IF;
 
         -- (f) balance on count only; no money grain exists for CPA.
         l_var_cnt := l_stg_cnt - (NVL(l_fus_cnt,0) + l_err_cnt);
         l_bal := CASE WHEN l_var_cnt = 0 THEN 'Y' ELSE 'N' END;
 
+        -- KEY_MATCH: non-money equality signal. Y/N when both sides present,
+        -- ? when the Fusion side could not be computed.
+        IF l_stg_chk IS NULL THEN
+            l_match := NULL;
+        ELSIF l_fus_chk IS NULL THEN
+            l_match := '?';
+        ELSIF l_stg_chk = l_fus_chk THEN
+            l_match := 'Y';
+        ELSE
+            l_match := 'N';
+        END IF;
+
         RETURN DMT_CMP_ROW_OBJ(C_CEMLI_C, C_CEMLI_C, l_key_type,
             l_stg_cnt, NULL, l_err_cnt, NULL,
             l_fus_cnt, NULL, NULL, l_money_ok,
-            l_var_cnt, NULL, l_bal, NULL, NULL, NULL, NULL);
+            l_var_cnt, NULL, l_bal, NULL,
+            l_stg_chk, l_fus_chk, l_match);
     END GET_CONTRACT_COMPARISON;
 END DMT_PO_COMPARE_PKG;
 /
