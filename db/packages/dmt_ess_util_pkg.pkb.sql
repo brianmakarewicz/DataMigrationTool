@@ -1082,15 +1082,30 @@
         -- (early UNACCOUNTED). We now POLL that child report job to a terminal state
         -- here -- the single chokepoint every reconcile path funnels through to
         -- resolve the child -- so the report harvest and the base-table BIP read
-        -- only run after the downstream creation is observably complete. Mirrors the
-        -- house poller (DMT_LOADER_PKG.POLL_ESS_JOB): bounded wait, EXPIRED is a
-        -- not-yet-done signal (not FAILED), nothing is ever fabricated. The timeout
-        -- is deliberately well under the 20-minute "bad ParameterList" ceiling.
+        -- only run after the downstream creation is observably complete.
+        --
+        -- The poll is a SELF-CONTAINED bounded getESSJobStatus loop (same SOAP call
+        -- and same '<result>' parse as DMT_LOADER_PKG.POLL_ESS_JOB) deliberately
+        -- inlined here rather than calling POLL_ESS_JOB: POLL_ESS_JOB, on reaching a
+        -- terminal status, re-enters this package via CAPTURE_ESS_HIERARCHY +
+        -- ENUMERATE_ALL_ESS_FILES rooted at the polled id, which would itself insert
+        -- the report-child row (parent NULL) before our own INSERT, double-enumerate
+        -- its files, and orphan the wrapper->child linkage. Inlining a plain status
+        -- poll avoids that entirely and keeps our INSERT the sole writer of the
+        -- correctly-nested child row. EXPIRED is a not-yet-done signal (not FAILED);
+        -- a SOAP/transport fault is logged and tolerated; nothing is fabricated. The
+        -- bound is well under the 20-minute "bad ParameterList" ceiling.
         C_REPORT_POLL_SEC CONSTANT NUMBER := 600;  -- 10 min bounded wait for the report child
-        l_child_user   VARCHAR2(100);
-        l_child_pass   VARCHAR2(100);
+        C_REPORT_POLL_INT CONSTANT NUMBER := 30;   -- seconds between status checks
+        C_STATUS_URL      CONSTANT VARCHAR2(200) := '/fscmService/ErpIntegrationService';
         l_child_status VARCHAR2(50);
         l_child_state  NUMBER;
+        l_poll_body    VARCHAR2(4000);
+        l_poll_resp    CLOB;
+        l_poll_elapsed NUMBER := 0;
+        l_tag_start    INTEGER;
+        l_val_start    INTEGER;
+        l_val_end      INTEGER;
     BEGIN
         -- Look up the report job definition for this CEMLI.
         -- If not seeded, this CEMLI has no report child â€” return immediately.
@@ -1178,49 +1193,85 @@
         -- accept), but the child report job l_report_id -- which is what carries the
         -- real per-row outcome AND whose completion marks the records as created --
         -- may still be RUNNING/WAIT at this instant. Poll it to a terminal state
-        -- with a bounded wait, authenticating as the CEMLI's own Fusion user (the
-        -- same user that submitted the import, e.g. fin_impl for Projects). This is
-        -- the single downstream-completion signal: both the import-report harvest
-        -- and the base-table BIP read happen downstream of this call, so gating here
-        -- gates every reconcile path. On a bounded timeout the poller returns
-        -- EXPIRED -- which is honestly "not done yet", NOT a verdict: we record that
-        -- real state, read no report, and leave the rows GENERATED for the honest
-        -- unaccounted sweep (never a fabricated LOADED/FAILED). A SOAP/transport
-        -- fault inside the poll must not abort the capture: we log it and fall
-        -- through recording the real (non-terminal) state we last saw.
+        -- with a bounded wait. This is the single downstream-completion signal: both
+        -- the import-report harvest and the base-table BIP read happen downstream of
+        -- this capture, so gating here gates every reconcile path. On a bounded
+        -- timeout we record EXPIRED -- honestly "not done yet", NOT a verdict: we
+        -- read no report and leave the rows GENERATED for the honest unaccounted
+        -- sweep (never a fabricated LOADED/FAILED). A SOAP/transport fault must not
+        -- abort the capture: we log it and fall through recording the state we last
+        -- observed (RUNNING if none), never an optimistic SUCCEEDED.
         l_child_status := NULL;
-        BEGIN
-            IF p_cemli_code IS NOT NULL THEN
-                DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code, l_child_user, l_child_pass);
-            END IF;
-            DMT_LOADER_PKG.POLL_ESS_JOB(
-                p_run_id         => p_run_id,
-                p_ess_job_id     => TO_CHAR(l_report_id),
-                p_timeout_sec    => C_REPORT_POLL_SEC,
-                p_raise_on_error => FALSE,
-                p_log_context    => NVL(p_cemli_code, 'REPORT') || ' report child',
-                p_cemli_code     => p_cemli_code,
-                x_fusion_status  => l_child_status,
-                p_username       => l_child_user,
-                p_password       => l_child_pass);
-            DMT_UTIL_PKG.LOG(p_run_id,
-                C_PROC || ': report child ' || l_report_id || ' reached terminal status '
-                || NVL(l_child_status, '(unknown)') || ' before reconcile (import wrapper '
-                || p_import_ess_id || ').',
-                'INFO', C_PKG, C_PROC);
-        EXCEPTION
-            WHEN OTHERS THEN
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    C_PROC || ': poll of report child ' || l_report_id
-                    || ' did not complete cleanly (' || SUBSTR(SQLERRM, 1, 200)
-                    || '); recording last-known state and continuing.',
-                    'WARN', C_PKG, C_PROC);
-        END;
+        l_poll_body :=
+            '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" '
+            || 'xmlns:typ="' || C_ERP_NS_TYPES || '">'
+            || '<soapenv:Header/><soapenv:Body>'
+            || '<typ:getESSJobStatus><typ:requestId>' || TO_CHAR(l_report_id)
+            || '</typ:requestId></typ:getESSJobStatus>'
+            || '</soapenv:Body></soapenv:Envelope>';
 
-        -- Map the polled Fusion status back to the DMT_ESS_JOB_TBL state code. If
-        -- the poll yielded nothing usable, record RUNNING (3) rather than claiming
-        -- SUCCEEDED -- the recorded state is now the truth we observed, never an
-        -- optimistic default.
+        LOOP
+            BEGIN
+                l_poll_resp := soap_http(
+                    p_url         => RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/') || C_STATUS_URL,
+                    p_soap_action => C_ERP_NS || 'getESSJobStatus',
+                    p_body        => TO_CLOB(l_poll_body));
+            EXCEPTION
+                WHEN OTHERS THEN
+                    -- Transient transport fault on the STATUS call must never be
+                    -- conflated with the job's status: log, null the response, retry
+                    -- on the next interval. The loop is bounded, so a genuine outage
+                    -- still terminates as EXPIRED rather than a false verdict.
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        C_PROC || ': status poll transient fault on report child '
+                        || l_report_id || ' -- retrying. ' || SUBSTR(SQLERRM, 1, 150),
+                        'WARN', C_PKG, C_PROC);
+                    l_poll_resp := NULL;
+            END;
+
+            l_child_status := NULL;
+            IF l_poll_resp IS NOT NULL THEN
+                l_tag_start := DBMS_LOB.INSTR(l_poll_resp, '<result');
+                IF l_tag_start > 0 THEN
+                    l_val_start := DBMS_LOB.INSTR(l_poll_resp, '>', l_tag_start) + 1;
+                    l_val_end   := DBMS_LOB.INSTR(l_poll_resp, '</result>', l_val_start);
+                    IF l_val_end > l_val_start THEN
+                        l_child_status := DBMS_LOB.SUBSTR(l_poll_resp,
+                                              l_val_end - l_val_start, l_val_start);
+                    END IF;
+                END IF;
+            END IF;
+
+            -- Terminal states end the wait (SUCCEEDED/WARNING/ERROR/FAILED/EXPIRED).
+            IF UPPER(NVL(l_child_status, '')) IN
+                 ('SUCCEEDED', 'WARNING', 'ERROR', 'FAILED', 'EXPIRED') THEN
+                EXIT;
+            END IF;
+
+            IF l_poll_elapsed >= C_REPORT_POLL_SEC THEN
+                -- Bounded wait exhausted -> EXPIRED (not-yet-done, never FAILED).
+                l_child_status := 'EXPIRED';
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_PROC || ': report child ' || l_report_id || ' did not reach a '
+                    || 'terminal state within ' || C_REPORT_POLL_SEC || 's; recording '
+                    || 'EXPIRED. Rows stay unaccounted (never fabricated).',
+                    'WARN', C_PKG, C_PROC);
+                EXIT;
+            END IF;
+
+            DBMS_SESSION.SLEEP(C_REPORT_POLL_INT);
+            l_poll_elapsed := l_poll_elapsed + C_REPORT_POLL_INT;
+        END LOOP;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ': report child ' || l_report_id || ' observed status '
+            || NVL(l_child_status, '(unknown)') || ' after ' || l_poll_elapsed
+            || 's (import wrapper ' || p_import_ess_id || ') -- reconcile may proceed.',
+            'INFO', C_PKG, C_PROC);
+
+        -- Map the observed Fusion status to the DMT_ESS_JOB_TBL state code. Records
+        -- the state we actually observed -- RUNNING(3) if the poll yielded nothing
+        -- usable -- never an optimistic SUCCEEDED.
         l_child_state := CASE UPPER(NVL(l_child_status, 'RUNNING'))
             WHEN 'SUCCEEDED' THEN 12
             WHEN 'WARNING'   THEN 11
@@ -1231,7 +1282,9 @@
         END;
 
         -- Insert the report job as a logical child of the import job, stamping the
-        -- REAL terminal state we polled (was hardcoded 12/SUCCEEDED).
+        -- REAL observed state (was hardcoded 12/SUCCEEDED). INSERT-first keeps this
+        -- the sole writer of the correctly-nested (PARENT_REQUEST_ID + DEPTH_LEVEL)
+        -- child row; the DUP path only refreshes the observed state.
         DECLARE
             l_state_txt VARCHAR2(30) := state_text(l_child_state);
         BEGIN
@@ -1252,13 +1305,17 @@
             RETURNING ESS_JOB_ID INTO l_report_ess_job_id;
         EXCEPTION
             WHEN DUP_VAL_ON_INDEX THEN
-                -- already captured — resolve the existing local PK for the FK and
-                -- refresh its recorded state (a later capture may observe a job that
-                -- has since advanced from RUNNING to a terminal state).
+                -- Already captured (e.g. a later re-capture pass). Resolve the
+                -- existing local PK for the FK, re-assert the parent/depth linkage,
+                -- and refresh the observed state (the job may have advanced from
+                -- RUNNING to terminal since the first capture).
                 SELECT ESS_JOB_ID INTO l_report_ess_job_id
                 FROM   DMT_ESS_JOB_TBL WHERE REQUEST_ID = l_report_id;
                 UPDATE DMT_ESS_JOB_TBL
-                SET    STATE = l_child_state, STATE_TEXT = state_text(l_child_state)
+                SET    STATE             = l_child_state,
+                       STATE_TEXT        = l_state_txt,
+                       PARENT_REQUEST_ID = p_import_ess_id,
+                       DEPTH_LEVEL       = l_import_depth + 1
                 WHERE  REQUEST_ID = l_report_id;
         END;
 
