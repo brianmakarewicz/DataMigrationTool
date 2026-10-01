@@ -3,25 +3,34 @@
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_FND_VS_RESULTS_PKG" AS
 -- ============================================================
 -- DMT_FND_VS_RESULTS_PKG body
--- Value Sets: REST load + BIP base-table reconciliation.
+-- Value Sets: FBDI-file + ESS-import load + BIP base-table reconciliation.
+--
+-- LOAD mechanism (backlog #130 slice): Value Set VALUES load via the house FBDI
+-- path, NOT REST. DMT_FND_VS_FBL_GEN_PKG has already built the FBDI zip and
+-- persisted it to DMT_FBDI_ZIP_TBL (OBJECT_TYPE='FND_VS'). LOAD_VIA_FBDI hands
+-- that zip to the shared DMT_LOADER_PKG.SUBMIT_LOAD (loadAndImportData — one SOAP
+-- call that uploads the zip to UCM and submits the Fusion "Upload Value Set
+-- Values" scheduled process, FndValueSetUploadServiceJob), then polls that ESS
+-- job to a terminal state. This replaces the dead REST POST path: the valueSets
+-- REST resource has its "create" action DISABLED on the demo pod, so REST could
+-- never create a new value set value. The ERP options (UCM account, import job
+-- name, interface-details id) come from DMT_ERP_INTERFACE_OPTIONS_TBL keyed on
+-- CEMLI_CODE 'ValueSets'.
 --
 -- New reconciliation standard (DMT_DESIGN.html, PROPOSED 2026-09):
 -- reconciliation MUST be a BIP report over the Fusion BASE tables that
--- returns the base-table surrogate id. A REST load-call HTTP 200 is NOT
+-- returns the base-table surrogate id. An ESS "SUCCEEDED" is NOT itself
 -- reconciliation. ValueSets is a two-object load (a value set, then its
--- child values), so LOAD and RECONCILE are two separate phases, each
--- covering both objects:
+-- child values); LOAD and RECONCILE are two separate phases:
 --
---   LOAD  (LOAD_SETS / LOAD_VALUES): POST each GENERATED set to the
---         valueSets REST resource, then POST each GENERATED value to the
---         set's child collection. A non-2xx response or an exception is a
---         genuine load-time rejection -> its real error is STASHED into
---         ERROR_TEXT (accumulate, never overwrite). The row is NOT marked
---         terminal here; it is left GENERATED, pending base-table proof.
---         A 2xx is NOT treated as LOADED. Values are POSTed only for sets
---         whose own POST did not error (a set that failed to create cannot
---         hold values); a value whose parent set errored is left GENERATED
---         with no fabricated error (the honest sweep surfaces it).
+--   LOAD  (LOAD_VIA_FBDI): submit the one FND_VS zip via loadAndImportData and
+--         poll the upload ESS job. A SUCCEEDED/WARNING load does NOT mark any
+--         row terminal — rows stay GENERATED for the base-table report to
+--         confirm. A non-terminal/ERROR load is a genuine Fusion rejection: its
+--         real ESS status is STASHED into ERROR_TEXT (accumulate, never
+--         overwrite) on every GENERATED row so the post-reconcile sweep marks
+--         them FAILED on that real error. A transport exception is re-raised so
+--         the work item fails loudly.
 --
 --   RECONCILE (FETCH_BIP_RESULTS + PARSE_AND_UPDATE): run the base-table
 --         report DMT_VS_RECON_RPT over this run's set codes and value keys.
@@ -29,7 +38,7 @@
 --         FUSION_VALUE_SET_ID = VALUE_SET_ID. A value found in
 --         FND_VS_VALUES_B  -> LOADED with FUSION_VALUE_ID = VALUE_ID (the
 --         real surrogate ids). Rows not returned stay as the load step set
---         them: FAILED if the REST load stashed a real error, else left
+--         them: FAILED if the load stashed a real error, else left
 --         GENERATED (unaccounted) -- never a fabricated LOADED or id.
 --
 -- Transport is the shared DMT_UTIL_PKG.RUN_BIP_REPORT (no private SOAP
@@ -40,366 +49,193 @@
     C_PKG   CONSTANT VARCHAR2(50)  := 'DMT_FND_VS_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30)  := 'ValueSets';
 
-    -- Fusion REST base path for value sets
-    C_VS_PATH CONSTANT VARCHAR2(200) := '/fscmRestApi/resources/11.13.18.05/valueSets';
+    -- Terminal ESS statuses that mean the upload job carried the file through
+    -- (per-row verdicts then come from the base-table report, not from here).
+    C_STATUS_SUCCEEDED CONSTANT VARCHAR2(20) := 'SUCCEEDED';
+    C_STATUS_WARNING   CONSTANT VARCHAR2(20) := 'WARNING';
 
-    -- ModuleId for user-level value sets (same FND module GUID as lookups)
-    C_MODULE_ID CONSTANT VARCHAR2(50) := '40B3FA7250D19380E040449823C67A1A';
+    -- ============================================================
+    -- LOAD_VIA_FBDI
+    -- The LOAD step: submit the one generated FND_VS FBDI zip to Fusion via the
+    -- shared loadAndImportData path (DMT_LOADER_PKG.SUBMIT_LOAD) and poll the
+    -- upload ESS job to a terminal state. The BIP base-table report -- not the
+    -- ESS status -- is the authority for LOADED, so a SUCCEEDED/WARNING load
+    -- leaves every row GENERATED. A non-terminal/ERROR load stashes its real ESS
+    -- status into ERROR_TEXT on every GENERATED set + value row (accumulate,
+    -- never overwrite); the post-reconcile sweep then marks those FAILED on the
+    -- real error. A transport exception is re-raised. Writes the TFM tables only;
+    -- no COMMIT (the runner owns the txn).
+    -- ============================================================
+    PROCEDURE LOAD_VIA_FBDI (
+        p_run_id IN NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'LOAD_VIA_FBDI';
 
-    -- --------------------------------------------------------
-    -- Private: make a REST call and return status + response
-    -- (shared "STATUS|body" convention, same as the UOM reconciler).
-    -- --------------------------------------------------------
-    FUNCTION rest_call (
-        p_method IN VARCHAR2,  -- GET, POST, DELETE
-        p_path   IN VARCHAR2,  -- relative path after base URL
-        p_body   IN CLOB DEFAULT NULL,
-        p_run_id IN NUMBER DEFAULT NULL
-    ) RETURN CLOB
-    IS
-        l_url          VARCHAR2(4000);
-        l_http_req     UTL_HTTP.REQ;
-        l_http_resp    UTL_HTTP.RESP;
-        l_response     CLOB;
-        l_raw_body     BLOB;
-        l_raw_chunk    RAW(32767);
-        l_base_url     VARCHAR2(500);
-        l_username     VARCHAR2(100);
-        l_password     VARCHAR2(100);
-        l_status       NUMBER;
+        l_ucm_account   VARCHAR2(200);
+        l_raw_job_name  VARCHAR2(500);
+        l_job_name      VARCHAR2(500);
+        l_iface_details NUMBER;
+        l_user          VARCHAR2(100);
+        l_pass          VARCHAR2(100);
+        l_zip           BLOB;
+        l_filename      VARCHAR2(200);
+        l_load_ess_id   VARCHAR2(100);
+        l_status        VARCHAR2(50);
+        l_sep           PLS_INTEGER;
     BEGIN
-        l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_username := DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
-        l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
-        l_url      := l_base_url || p_path;
+        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
-        -- Attach a wallet only when a real one is configured; otherwise use the DB
-        -- default certificate store (as DMT_UTIL_PKG.HTTP_REQUEST and every other
-        -- HTTP caller do). An unset/placeholder WALLET_DIR must not be forced into
-        -- an invalid 'file:...' path -- that throws ORA-29273 before any auth.
-        IF INSTR(NVL(DMT_UTIL_PKG.GET_CONFIG('WALLET_DIR'),' '),'/') > 0 THEN
-            UTL_HTTP.SET_WALLET('file:' || DMT_UTIL_PKG.GET_CONFIG('WALLET_DIR'), DMT_UTIL_PKG.GET_CONFIG('WALLET_PASSWORD'));
-        END IF;
-
-        l_http_req := UTL_HTTP.BEGIN_REQUEST(l_url, p_method, 'HTTP/1.1');
-        UTL_HTTP.SET_HEADER(l_http_req, 'Authorization',
-            'Basic ' || UTL_RAW.CAST_TO_VARCHAR2(UTL_ENCODE.BASE64_ENCODE(
-                UTL_RAW.CAST_TO_RAW(l_username || ':' || l_password))));
-        UTL_HTTP.SET_HEADER(l_http_req, 'Accept', 'application/json');
-        -- Ask Fusion NOT to gzip the response. Without this, error bodies come
-        -- back gzip-compressed and land in ERROR_TEXT as unreadable binary; the
-        -- real Fusion rejection message must be human-readable per the mission
-        -- ("FAILED only with a real Fusion error string").
-        UTL_HTTP.SET_HEADER(l_http_req, 'Accept-Encoding', 'identity');
-
-        IF p_body IS NOT NULL THEN
-            UTL_HTTP.SET_HEADER(l_http_req, 'Content-Type', 'application/json');
-            UTL_HTTP.SET_HEADER(l_http_req, 'Content-Length', DBMS_LOB.GETLENGTH(p_body));
-            -- Chunked write for large payloads
-            DECLARE
-                l_offset PLS_INTEGER := 1;
-                l_amount PLS_INTEGER := 8000;
-                l_buf    VARCHAR2(8000);
-            BEGIN
-                WHILE l_offset <= DBMS_LOB.GETLENGTH(p_body) LOOP
-                    l_amount := LEAST(8000, DBMS_LOB.GETLENGTH(p_body) - l_offset + 1);
-                    DBMS_LOB.READ(p_body, l_amount, l_offset, l_buf);
-                    UTL_HTTP.WRITE_TEXT(l_http_req, l_buf);
-                    l_offset := l_offset + l_amount;
-                END LOOP;
-            END;
-        END IF;
-
-        l_http_resp := UTL_HTTP.GET_RESPONSE(l_http_req);
-        l_status := l_http_resp.status_code;
-
-        -- Read the body as RAW bytes (not text) so a gzip-compressed error body
-        -- survives intact. Fusion sometimes gzips error bodies even though we
-        -- ask for identity encoding; DMT_UTIL_PKG.GUNZIP_RESPONSE detects the
-        -- gzip magic number and inflates, otherwise returns the bytes as text.
-        DBMS_LOB.CREATETEMPORARY(l_raw_body, TRUE);
+        -- ERP options: UCM account, import job name, interface-details id. The
+        -- stored IMPORT_JOB_NAME uses ';' between package path and job definition;
+        -- loadAndImportData's <erp:JobName> needs ',' -- convert the last ';'.
         BEGIN
-            LOOP
-                UTL_HTTP.READ_RAW(l_http_resp, l_raw_chunk, 32767);
-                DBMS_LOB.WRITEAPPEND(l_raw_body, UTL_RAW.LENGTH(l_raw_chunk), l_raw_chunk);
-            END LOOP;
+            SELECT UCM_ACCOUNT,
+                   IMPORT_JOB_NAME,
+                   TO_NUMBER(NVL(SOURCE_ERP_OPTIONS_ID, ERP_INTERFACE_OPTIONS_ID))
+            INTO   l_ucm_account, l_raw_job_name, l_iface_details
+            FROM   DMT_ERP_INTERFACE_OPTIONS_TBL
+            WHERE  CEMLI_CODE = C_CEMLI;
         EXCEPTION
-            WHEN UTL_HTTP.END_OF_BODY THEN NULL;
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20040,
+                    'LOAD_VIA_FBDI: No row in DMT_ERP_INTERFACE_OPTIONS_TBL for CEMLI_CODE '''
+                    || C_CEMLI || '''. Seed the ValueSets ERP-options row (UCM account + '
+                    || 'import job name) before running the pipeline.');
         END;
-        UTL_HTTP.END_RESPONSE(l_http_resp);
 
-        l_response := DMT_UTIL_PKG.GUNZIP_RESPONSE(l_raw_body);
-        IF DBMS_LOB.ISTEMPORARY(l_raw_body) = 1 THEN
-            DBMS_LOB.FREETEMPORARY(l_raw_body);
+        l_sep := INSTR(l_raw_job_name, ';', -1);
+        IF l_sep > 0 THEN
+            l_job_name := SUBSTR(l_raw_job_name, 1, l_sep - 1) || ','
+                          || SUBSTR(l_raw_job_name, l_sep + 1);
+        ELSE
+            l_job_name := l_raw_job_name;
         END IF;
 
-        -- Prepend status code so caller can check
-        DECLARE
-            l_result CLOB;
+        -- Per-CEMLI Fusion creds (SUBMIT_LOAD falls back to config defaults if NULL).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_user, l_pass);
+
+        -- Fetch the generated zip (one FND_VS zip per run, built by the FBL gen pkg).
         BEGIN
-            DBMS_LOB.CREATETEMPORARY(l_result, TRUE);
-            DBMS_LOB.WRITEAPPEND(l_result, LENGTH(TO_CHAR(l_status)), TO_CHAR(l_status));
-            DBMS_LOB.WRITEAPPEND(l_result, 1, '|');
-            DBMS_LOB.APPEND(l_result, l_response);
-            DBMS_LOB.FREETEMPORARY(l_response);
-            RETURN l_result;
+            SELECT ZIP_CONTENT, FILENAME
+            INTO   l_zip, l_filename
+            FROM   DMT_FBDI_ZIP_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    OBJECT_TYPE = 'FND_VS';
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_PROC || ': no FND_VS zip found for this run. Nothing to load.',
+                    p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
+                RETURN;
         END;
 
-    EXCEPTION
-        WHEN OTHERS THEN
-            BEGIN UTL_HTTP.END_RESPONSE(l_http_resp); EXCEPTION WHEN OTHERS THEN NULL; END;
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                'REST call failed: ' || p_method || ' ' || p_path,
-                SQLERRM, C_PKG, 'rest_call');
-            RAISE;
-    END rest_call;
+        IF l_zip IS NULL OR DBMS_LOB.GETLENGTH(l_zip) = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': FND_VS zip is empty. Nothing to load.',
+                p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
+            RETURN;
+        END IF;
 
-    -- --------------------------------------------------------
-    -- Private: extract HTTP status from rest_call response
-    -- --------------------------------------------------------
-    FUNCTION get_status(p_response IN CLOB) RETURN NUMBER IS
-    BEGIN
-        RETURN TO_NUMBER(SUBSTR(p_response, 1, INSTR(p_response, '|') - 1));
-    END get_status;
+        -- Submit + poll. A transport failure here is a genuine load error: it is
+        -- logged and re-raised so the work item fails loudly and the runner rolls
+        -- back. (The per-row ERROR_TEXT stash below is best-effort for the log and
+        -- is itself rolled back by that same re-raise -- a transport crash leaves
+        -- no committed verdict, which is correct: the item retries from clean.)
+        BEGIN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': submitting value-set upload via loadAndImportData. '
+                || 'Job: ' || l_job_name || ' | Account: ' || l_ucm_account
+                || ' | File: ' || l_filename,
+                p_package => C_PKG, p_procedure => C_PROC);
 
-    -- ============================================================
-    -- LOAD_SETS
-    -- The LOAD step for value sets: POST each GENERATED set. The BIP base-table
-    -- report -- not the POST response -- is the authority for LOADED, so this
-    -- step NEVER marks a row terminal. It leaves every attempted row GENERATED.
-    -- A non-2xx / exception is a real Fusion rejection: its message is STASHED
-    -- into ERROR_TEXT (accumulate, never overwrite) so that if reconcile later
-    -- finds the set absent from FND_VS_VALUE_SETS, the sweep marks it FAILED on
-    -- that real error. Writes the TFM table only; no COMMIT (the runner owns
-    -- the txn).
-    -- ============================================================
-    PROCEDURE LOAD_SETS (
-        p_run_id IN NUMBER
-    ) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'LOAD_SETS';
+            l_load_ess_id := DMT_LOADER_PKG.SUBMIT_LOAD(
+                p_run_id            => p_run_id,
+                p_fbdi_zip          => l_zip,
+                p_filename          => l_filename,
+                p_job_name          => l_job_name,
+                p_interface_details => l_iface_details,
+                p_doc_account       => l_ucm_account,
+                p_parameter_list    => 'NEW,N',
+                p_log_context       => C_CEMLI,
+                p_username          => l_user,
+                p_password          => l_pass);
 
-        l_response      CLOB;
-        l_http_status   NUMBER;
-        l_body          VARCHAR2(32767);
-        l_payload       CLOB;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': upload ESS job ' || l_load_ess_id || ' submitted. Polling.',
+                p_package => C_PKG, p_procedure => C_PROC);
 
-        l_posted_count  NUMBER := 0;
-        l_reject_count  NUMBER := 0;
-        l_errmsg        VARCHAR2(4000);
-    BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
-
-        FOR r IN (
-            SELECT TFM_SEQUENCE_ID, VALUE_SET_CODE, DESCRIPTION,
-                   MODULE_ID, VALIDATION_TYPE, VALUE_DATA_TYPE, MAXIMUM_SIZE,
-                   FORMAT_TYPE, PROTECTED_FLAG, SECURITY_ENABLED_FLAG
-            FROM   DMT_FND_VS_SET_TFM_TBL
-            WHERE  RUN_ID = p_run_id
-            AND    TFM_STATUS = 'GENERATED'
-            ORDER BY TFM_SEQUENCE_ID
-        ) LOOP
-            BEGIN
-                l_payload := '{"ValueSetCode":"' || REPLACE(r.VALUE_SET_CODE, '"', '\"') || '"'
-                    || CASE WHEN r.DESCRIPTION IS NOT NULL
-                       THEN ',"Description":"' || REPLACE(r.DESCRIPTION, '"', '\"') || '"'
-                       END
-                    || ',"ModuleId":"' || NVL(r.MODULE_ID, C_MODULE_ID) || '"'
-                    || CASE WHEN r.VALIDATION_TYPE IS NOT NULL
-                       THEN ',"ValidationType":"' || REPLACE(r.VALIDATION_TYPE, '"', '\"') || '"'
-                       END
-                    || CASE WHEN r.VALUE_DATA_TYPE IS NOT NULL
-                       THEN ',"ValueDataType":"' || REPLACE(r.VALUE_DATA_TYPE, '"', '\"') || '"'
-                       END
-                    || CASE WHEN r.MAXIMUM_SIZE IS NOT NULL
-                       THEN ',"MaximumSize":' || TO_CHAR(r.MAXIMUM_SIZE)
-                       END
-                    || CASE WHEN r.FORMAT_TYPE IS NOT NULL
-                       THEN ',"FormatType":"' || REPLACE(r.FORMAT_TYPE, '"', '\"') || '"'
-                       END
-                    || CASE WHEN r.PROTECTED_FLAG IS NOT NULL
-                       THEN ',"ProtectedFlag":"' || r.PROTECTED_FLAG || '"'
-                       END
-                    || CASE WHEN r.SECURITY_ENABLED_FLAG IS NOT NULL
-                       THEN ',"SecurityEnabledFlag":"' || r.SECURITY_ENABLED_FLAG || '"'
-                       END
-                    || '}';
-
-                l_response := rest_call('POST', C_VS_PATH, l_payload, p_run_id);
-                l_http_status := get_status(l_response);
-
-                IF l_http_status IN (200, 201) THEN
-                    -- POST accepted. Row stays GENERATED for the base-table report to
-                    -- confirm (and capture FUSION_VALUE_SET_ID).
-                    l_posted_count := l_posted_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Set POSTed (awaiting base-table confirmation): ' || r.VALUE_SET_CODE
-                        || ' HTTP ' || l_http_status,
-                        p_package => C_PKG, p_procedure => C_PROC);
-                ELSE
-                    -- Non-2xx: stash the real REST error but leave the row GENERATED.
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+            DMT_LOADER_PKG.POLL_ESS_JOB(
+                p_run_id         => p_run_id,
+                p_ess_job_id     => l_load_ess_id,
+                p_timeout_sec    => 1800,
+                p_raise_on_error => FALSE,
+                p_log_context    => C_CEMLI,
+                p_cemli_code     => C_CEMLI,
+                x_fusion_status  => l_status,
+                p_username       => l_user,
+                p_password       => l_pass);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DECLARE
+                    l_errmsg VARCHAR2(4000) := SQLERRM;
+                BEGIN
                     UPDATE DMT_FND_VS_SET_TFM_TBL
                     SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
+                                          '[FUSION_ERROR] Value-set upload transport failed: ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
 
-                    l_reject_count := l_reject_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Set POST rejected (stashed, awaiting base-table verdict): '
-                        || r.VALUE_SET_CODE || ' HTTP ' || l_http_status,
-                        p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
-                END IF;
-
-                IF DBMS_LOB.ISTEMPORARY(l_response) = 1 THEN
-                    DBMS_LOB.FREETEMPORARY(l_response);
-                END IF;
-
-            EXCEPTION
-                WHEN OTHERS THEN
-                    l_errmsg := SQLERRM;
-                    UPDATE DMT_FND_VS_SET_TFM_TBL
+                    UPDATE DMT_FND_VS_VALUE_TFM_TBL
                     SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
+                                          '[FUSION_ERROR] Value-set upload transport failed: ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
 
-                    l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Set POST failed (exception, stashed): ' || r.VALUE_SET_CODE,
+                        C_PROC || ': loadAndImportData / poll failed (stashed, re-raising).',
                         l_errmsg, p_package => C_PKG, p_procedure => C_PROC);
-            END;
-        END LOOP;
+                    RAISE;
+                END;
+        END;
 
-        DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete. POSTed 2xx: ' || l_posted_count
-            || ', POST-rejected(stashed): ' || l_reject_count
-            || ' (all rows left GENERATED for base-table reconciliation).',
-            p_package => C_PKG, p_procedure => C_PROC);
+        -- Terminal ESS status reached. SUCCEEDED/WARNING -> leave rows GENERATED
+        -- for the base-table report to confirm (an ESS success is NOT a per-row
+        -- verdict). Anything else -> stash the real status on every GENERATED row
+        -- so the post-reconcile sweep marks them FAILED on that real error.
+        IF l_status IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': upload ESS ' || l_load_ess_id || ' returned ' || l_status
+                || '. Rows left GENERATED for base-table reconciliation.',
+                p_package => C_PKG, p_procedure => C_PROC);
+        ELSE
+            DECLARE
+                l_err VARCHAR2(500) :=
+                    '[LOAD_ERROR] Value Set upload ESS ' || l_load_ess_id
+                    || ' returned ' || l_status || '. See ESS logs.';
+            BEGIN
+                UPDATE DMT_FND_VS_SET_TFM_TBL
+                SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, l_err),
+                       LAST_UPDATED_DATE = SYSDATE
+                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+
+                UPDATE DMT_FND_VS_VALUE_TFM_TBL
+                SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, l_err),
+                       LAST_UPDATED_DATE = SYSDATE
+                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
+
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    C_PROC || ': upload ESS ' || l_load_ess_id || ' returned ' || l_status
+                    || '. Stashed [LOAD_ERROR] on all GENERATED rows (sweep will FAIL them).',
+                    p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
+            END;
+        END IF;
 
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,
                 C_PROC || ' failed.', SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
             RAISE;
-    END LOAD_SETS;
-
-    -- ============================================================
-    -- LOAD_VALUES
-    -- The LOAD step for values: POST each GENERATED value to its parent set's
-    -- child collection. Same policy as LOAD_SETS: never terminal, stash real
-    -- errors, leave GENERATED for base-table proof. A value whose parent set
-    -- does not exist in Fusion draws a real HTTP 404 from the child collection
-    -- endpoint -- a genuine Fusion rejection, so it is stashed like any other
-    -- and the sweep marks the row FAILED on it (never fabricated). Writes the
-    -- TFM table only; no COMMIT (the runner owns the txn).
-    -- ============================================================
-    PROCEDURE LOAD_VALUES (
-        p_run_id IN NUMBER
-    ) IS
-        C_PROC CONSTANT VARCHAR2(30) := 'LOAD_VALUES';
-
-        l_response      CLOB;
-        l_http_status   NUMBER;
-        l_body          VARCHAR2(32767);
-        l_payload       CLOB;
-
-        l_posted_count  NUMBER := 0;
-        l_reject_count  NUMBER := 0;
-        l_errmsg        VARCHAR2(4000);
-    BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
-
-        FOR r IN (
-            SELECT v.TFM_SEQUENCE_ID,
-                   v.VALUE_SET_CODE, v.VALUE, v.DESCRIPTION,
-                   v.ENABLED_FLAG, v.EFFECTIVE_START_DATE, v.EFFECTIVE_END_DATE,
-                   v.INDEPENDENT_VALUE, v.TAG
-            FROM   DMT_FND_VS_VALUE_TFM_TBL v
-            WHERE  v.RUN_ID = p_run_id
-            AND    v.TFM_STATUS = 'GENERATED'
-            ORDER BY v.VALUE_SET_CODE, v.TFM_SEQUENCE_ID
-        ) LOOP
-            BEGIN
-                l_payload := '{"Value":"' || REPLACE(r.VALUE, '"', '\"') || '"'
-                    || CASE WHEN r.DESCRIPTION IS NOT NULL
-                       THEN ',"Description":"' || REPLACE(r.DESCRIPTION, '"', '\"') || '"'
-                       END
-                    || ',"EnabledFlag":"' || NVL(r.ENABLED_FLAG, 'Y') || '"'
-                    || CASE WHEN r.INDEPENDENT_VALUE IS NOT NULL
-                       THEN ',"IndependentValue":"' || REPLACE(r.INDEPENDENT_VALUE, '"', '\"') || '"'
-                       END
-                    || CASE WHEN r.TAG IS NOT NULL
-                       THEN ',"Tag":"' || REPLACE(r.TAG, '"', '\"') || '"'
-                       END
-                    || CASE WHEN r.EFFECTIVE_START_DATE IS NOT NULL
-                       THEN ',"EffectiveStartDate":"' || TO_CHAR(r.EFFECTIVE_START_DATE, 'YYYY-MM-DD') || '"'
-                       END
-                    || CASE WHEN r.EFFECTIVE_END_DATE IS NOT NULL
-                       THEN ',"EffectiveEndDate":"' || TO_CHAR(r.EFFECTIVE_END_DATE, 'YYYY-MM-DD') || '"'
-                       END
-                    || '}';
-
-                l_response := rest_call('POST',
-                    C_VS_PATH || '/' || r.VALUE_SET_CODE || '/child/values',
-                    l_payload, p_run_id);
-                l_http_status := get_status(l_response);
-
-                IF l_http_status IN (200, 201) THEN
-                    l_posted_count := l_posted_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Value POSTed (awaiting base-table confirmation): '
-                        || r.VALUE_SET_CODE || '.' || r.VALUE || ' HTTP ' || l_http_status,
-                        p_package => C_PKG, p_procedure => C_PROC);
-                ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
-                    UPDATE DMT_FND_VS_VALUE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-
-                    l_reject_count := l_reject_count + 1;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Value POST rejected (stashed, awaiting base-table verdict): '
-                        || r.VALUE_SET_CODE || '.' || r.VALUE || ' HTTP ' || l_http_status,
-                        p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
-                END IF;
-
-                IF DBMS_LOB.ISTEMPORARY(l_response) = 1 THEN
-                    DBMS_LOB.FREETEMPORARY(l_response);
-                END IF;
-
-            EXCEPTION
-                WHEN OTHERS THEN
-                    l_errmsg := SQLERRM;
-                    UPDATE DMT_FND_VS_VALUE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-
-                    l_reject_count := l_reject_count + 1;
-                    DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Value POST failed (exception, stashed): ' || r.VALUE_SET_CODE || '.' || r.VALUE,
-                        l_errmsg, p_package => C_PKG, p_procedure => C_PROC);
-            END;
-        END LOOP;
-
-        DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete. POSTed 2xx: ' || l_posted_count
-            || ', POST-rejected(stashed): ' || l_reject_count
-            || ' (all rows left GENERATED for base-table reconciliation).',
-            p_package => C_PKG, p_procedure => C_PROC);
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                C_PROC || ' failed.', SQLERRM, p_package => C_PKG, p_procedure => C_PROC);
-            RAISE;
-    END LOAD_VALUES;
+    END LOAD_VIA_FBDI;
 
     -- --------------------------------------------------------
     -- FETCH_BIP_RESULTS
@@ -481,7 +317,7 @@
     --   VALUE -> LOADED with FUSION_VALUE_ID = the returned VALUE_ID.
     --            RECORD_KEY = VALUE_SET_CODE || '^' || VALUE.
     -- Rows not returned are left as the load step set them (FAILED with a real
-    -- REST error, else GENERATED/unaccounted) -- never a fabricated verdict or
+    -- load error, else GENERATED/unaccounted) -- never a fabricated verdict or
     -- id. Writes the TFM tables only; no COMMIT (the runner owns the txn).
     -- --------------------------------------------------------
     PROCEDURE PARSE_AND_UPDATE (
@@ -567,10 +403,10 @@
 
     -- ============================================================
     -- LOAD_AND_RECONCILE
-    -- Main entry point. LOAD sets then values via REST POST, then RECONCILE
-    -- both against the Fusion base tables via the BIP report (the new standard).
-    -- No COMMIT until the end (the runner also commits, but this keeps the two
-    -- phases in one txn).
+    -- Main entry point. LOAD via the FBDI zip + ESS upload job (LOAD_VIA_FBDI),
+    -- then RECONCILE both objects against the Fusion base tables via the BIP
+    -- report (the new standard). No COMMIT until the end (the runner also
+    -- commits, but this keeps the two phases in one txn).
     -- ============================================================
     PROCEDURE LOAD_AND_RECONCILE (
         p_run_id IN NUMBER
@@ -589,11 +425,11 @@
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
-        -- Phase 1: LOAD -- POST every GENERATED set, then every GENERATED value.
-        LOAD_SETS(p_run_id);
-        LOAD_VALUES(p_run_id);
+        -- Phase 1: LOAD -- submit the one FND_VS FBDI zip via loadAndImportData
+        -- (Upload Value Set Values ESS job) and poll it to a terminal state.
+        LOAD_VIA_FBDI(p_run_id);
 
-        -- Build the comma-delimited lists of set codes / value keys we POSTed and
+        -- Build the comma-delimited lists of set codes / value keys we loaded and
         -- still need confirmed (rows the load step did NOT mark FAILED; config
         -- codes are not run-prefixed, so match the base tables on the exact codes).
         SELECT LISTAGG(VALUE_SET_CODE, ',') WITHIN GROUP (ORDER BY VALUE_SET_CODE)
@@ -628,11 +464,10 @@
         PARSE_AND_UPDATE(p_run_id, l_xml);
 
         -- Post-reconcile sweep: any row NOT confirmed in the base table is still
-        -- GENERATED. If its POST returned a real Fusion error (stashed in
-        -- ERROR_TEXT by the load step) mark it FAILED on that real error. A row
-        -- with no stashed error AND no base-table hit is left GENERATED
-        -- (unaccounted); the accounting gate surfaces it -- we never fabricate a
-        -- verdict.
+        -- GENERATED. If the load stashed a real Fusion error in ERROR_TEXT, mark
+        -- it FAILED on that real error. A row with no stashed error AND no
+        -- base-table hit is left GENERATED (unaccounted); the accounting gate
+        -- surfaces it -- we never fabricate a verdict.
         UPDATE DMT_FND_VS_SET_TFM_TBL
         SET    TFM_STATUS           = 'FAILED',
                RESULTS_UPDATED_DATE = SYSDATE,
