@@ -7,8 +7,11 @@ AS
 -- DMT_CE_BANK_RUNNER_PKG
 -- Orchestrates the Cash Management Banks pipeline:
 -- Pre-validate -> Transform Banks -> Transform Branches
--- -> Transform Accounts -> Post-validate -> Generate FBL
--- -> Load & Reconcile
+-- -> Transform Accounts -> Post-validate -> Generate (promote
+-- STAGED TFM rows to GENERATED) -> REST Load & base-table Reconcile.
+-- Loads over the Cash Management REST resources (cashBanks /
+-- cashBankBranches / cashBankAccounts); the old FBL flat-file path
+-- is retired (backlog #39).
 -- ============================================================
 
     PROCEDURE RUN (

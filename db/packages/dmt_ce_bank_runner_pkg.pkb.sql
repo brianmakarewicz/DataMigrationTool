@@ -16,12 +16,10 @@
     ) IS
         C_PROC          CONSTANT VARCHAR2(30) := 'RUN';
         l_reprocess     BOOLEAN := FALSE;
-        l_fbl_zip       BLOB;
-        l_filename      VARCHAR2(200);
-        l_fbdi_csv_id   NUMBER;
         l_bank_count    NUMBER;
         l_branch_count  NUMBER;
         l_acct_count    NUMBER;
+        l_gen_count     NUMBER;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -71,34 +69,50 @@
             p_run_id => p_run_id
         );
 
-        -- Step 6: Generate FBL zip
-        DMT_CE_BANK_FBL_GEN_PKG.GENERATE_FBL(
-            p_run_id => p_run_id,
-            x_fbl_zip        => l_fbl_zip,
-            x_filename       => l_filename,
-            x_fbdi_csv_id    => l_fbdi_csv_id
-        );
+        -- Step 6: Generate. This object loads to Fusion over the Cash Management
+        -- REST resources (cashBanks / cashBankBranches / cashBankAccounts), not a
+        -- flat file, so "generate" no longer builds an FBL zip (the old
+        -- DMT_CE_BANK_FBL_GEN_PKG is retired, backlog #39). It simply promotes the
+        -- STAGED TFM rows of all three tiers to GENERATED -- the state the REST
+        -- load step (DMT_CE_BANK_RESULTS_PKG) consumes.
+        UPDATE DMT_CE_BANK_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        IF l_fbl_zip IS NOT NULL THEN
+        UPDATE DMT_CE_BRANCH_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
+        UPDATE DMT_CE_BANK_ACCT_TFM_TBL
+        SET    TFM_STATUS = 'GENERATED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+
+        -- Step 7: Load to Fusion via REST and reconcile against the base tables.
+        -- Gate on the presence of GENERATED TFM rows across the three tiers (the
+        -- old gate was "an FBL zip was built", which no longer applies).
+        SELECT COUNT(*) INTO l_gen_count
+        FROM   (SELECT 1 FROM DMT_CE_BANK_TFM_TBL      WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                UNION ALL
+                SELECT 1 FROM DMT_CE_BRANCH_TFM_TBL    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                UNION ALL
+                SELECT 1 FROM DMT_CE_BANK_ACCT_TFM_TBL WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED');
+
+        IF l_gen_count > 0 THEN
             DMT_UTIL_PKG.LOG(
                 p_run_id => p_run_id,
-                p_message        => 'FBL zip generated: ' || l_filename
-                                    || ', ' || DBMS_LOB.GETLENGTH(l_fbl_zip) || ' bytes.',
+                p_message        => 'Generated ' || l_gen_count
+                                    || ' TFM rows for REST load (banks/branches/accounts).',
                 p_package        => C_PKG,
                 p_procedure      => C_PROC);
-        ELSE
-            DMT_UTIL_PKG.LOG(
-                p_run_id => p_run_id,
-                p_message        => 'No rows to generate.',
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-        END IF;
-
-        -- Step 7: Load to Fusion via REST and reconcile
-        IF l_fbl_zip IS NOT NULL THEN
             DMT_CE_BANK_RESULTS_PKG.LOAD_AND_RECONCILE(
                 p_run_id => p_run_id
             );
+        ELSE
+            DMT_UTIL_PKG.LOG(
+                p_run_id => p_run_id,
+                p_message        => 'No rows to generate; skipping REST load.',
+                p_package        => C_PKG,
+                p_procedure      => C_PROC);
         END IF;
 
         COMMIT;
