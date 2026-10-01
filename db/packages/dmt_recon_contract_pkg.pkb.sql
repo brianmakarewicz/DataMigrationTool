@@ -138,6 +138,11 @@
             -- Parse this page's seven contract columns into the collection.
             l_page_rows := 0;
             l_last_key  := NULL;
+            -- Backlog #65: also parse the report's DMT_REFERENCE (Slot C DFF, tier 2)
+            -- and SOURCE_REF (business key, tier 3) columns. A DM that does not emit
+            -- these nodes yields NULL for them (XMLTABLE PATH returns NULL for an
+            -- absent element), so this is tolerant of any un-widened DM and preserves
+            -- tier-1-only behaviour.
             FOR r IN (
                 SELECT x.object_type,
                        x.record_key,
@@ -145,7 +150,9 @@
                        UPPER(x.fusion_status) AS fusion_status,
                        x.fusion_id,
                        x.error_message,
-                       x.load_request_id
+                       x.load_request_id,
+                       x.dmt_reference,
+                       x.source_ref
                 FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
                     COLUMNS
                         object_type     VARCHAR2(100)  PATH 'OBJECT_TYPE',
@@ -154,7 +161,9 @@
                         fusion_status   VARCHAR2(20)   PATH 'FUSION_STATUS',
                         fusion_id       VARCHAR2(200)  PATH 'FUSION_ID',
                         error_message   VARCHAR2(4000) PATH 'ERROR_MESSAGE',
-                        load_request_id VARCHAR2(100)  PATH 'LOAD_REQUEST_ID'
+                        load_request_id VARCHAR2(100)  PATH 'LOAD_REQUEST_ID',
+                        dmt_reference   VARCHAR2(1000) PATH 'DMT_REFERENCE',
+                        source_ref      VARCHAR2(1000) PATH 'SOURCE_REF'
                 ) x
                 ORDER BY x.record_key
             ) LOOP
@@ -166,6 +175,8 @@
                 x_rows(l_n).fusion_id       := r.fusion_id;
                 x_rows(l_n).error_message   := r.error_message;
                 x_rows(l_n).load_request_id := r.load_request_id;
+                x_rows(l_n).dff_key         := r.dmt_reference;  -- tier 2
+                x_rows(l_n).business_key     := r.source_ref;    -- tier 3
                 l_page_rows := l_page_rows + 1;
                 l_last_key  := r.record_key;
             END LOOP;
