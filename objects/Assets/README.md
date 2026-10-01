@@ -41,6 +41,61 @@ Requires FA Additions approval **disabled** on the US CORP book (instance config
 - `FaMassaddDistributions.ctl` -- CTL file for FA_MASSADD_DISTRIBUTIONS loader
 - `FaMcMassRates.ctl` -- CTL file for FA_MC_MASS_RATES loader
 
+## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
+
+Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
+(record type) it loads. The Assets object model rule is "one object = one FBDI zip
+= one tab per record type". The Assets FBDI template `FaMassAdditions.xlsm` has
+three tabs / interface tables; DMT models two of them with three source tables.
+
+**The mapping (from the generator `DMT_FA_ASSET_FBDI_GEN_PKG` + the three `.ctl`):**
+
+| FBDI tab / CSV | Interface table | Source STG table | Source TFM table | Verdict |
+|---|---|---|---|---|
+| FaMassAdditions.csv | FA_MASS_ADDITIONS | DMT_FA_ASSET_HDR_STG_TBL **+** DMT_FA_ASSET_BOOK_STG_TBL | DMT_FA_ASSET_HDR_TFM_TBL **+** DMT_FA_ASSET_BOOK_TFM_TBL | NAME-MISALIGNED, model correct |
+| FaMassaddDistributions.csv | FA_MASSADD_DISTRIBUTIONS | DMT_FA_ASSET_ASSIGN_STG_TBL | DMT_FA_ASSET_ASSIGN_TFM_TBL | NAME-MISALIGNED (Assign = Distributions), model correct |
+| FaMcMassRates.csv | FA_MC_MASS_RATES | *(none)* | *(none)* | NOT MODELED -- documented gap |
+
+**Why the names drift but the model is correct (NOT a wrong-record-type defect):**
+- The single `FaMassAdditions` tab fuses asset identity and per-book financial /
+  depreciation data into one row. One asset can have many books, so DMT correctly
+  normalizes that one tab into two source tables -- `HDR` (asset descriptive, one
+  per asset) and `BOOK` (financial, one per asset-book). The generator JOINs them on
+  `ASSET_NUMBER` to emit one FaMassAdditions row per asset-book. So "two tables feed
+  one tab" is a deliberate normalization, not a modeling error.
+- `ASSIGN` is the DMT name for the assignment/distribution record type; the Fusion
+  tab for the same record type is "Distributions" (`FaMassaddDistributions`). Same
+  record type, different label -- a synonym, not a different record type.
+- The earlier worry (recorded in backlog #90 and in DMT_DESIGN.html) that DMT might
+  have modeled the *wrong* record types ("Book/Assignment where the FBDI wants
+  Distributions/Rates") is DISPROVEN here: Book is part of the MassAdditions tab,
+  and Assignment IS the Distributions tab.
+
+**Findings (what was fixed vs deferred):**
+1. **FIXED (low-risk):** the generator package spec
+   `dmt_fa_asset_fbdi_gen_pkg.pks.sql` previously documented the CSVs as
+   `FaAssetHeaders.csv / FaAssetAssignments.csv / FaAssetBooks.csv` -- files that
+   do not exist. Corrected to the real tabs (`FaMassAdditions.csv`,
+   `FaMassaddDistributions.csv`, and the un-modeled `FaMcMassRates.csv`) with the
+   HDR+BOOK-feed-one-tab explanation. This is documentation only; no runtime change.
+2. **DEFERRED (physical rename, high ripple -- DO NOT do under this item):** renaming
+   the three physical tables to match the tabs is NOT unambiguously correct and would
+   ripple across ~248 references (eight `dmt_fa_asset_*` packages, the catalog /
+   pipeline / upload seeds, views, and the reconcile/results package which a separate
+   backlog item owns). Because HDR+BOOK feed one tab, there is no clean 1:1 rename
+   anyway (you cannot rename two tables to one tab). Recorded as a finding only.
+3. **DOCUMENTED GAP:** the `FaMcMassRates` / "Rates" tab (FA_MC_MASS_RATES,
+   multi-currency rate rows) has no STG table, no TFM table, and no generator branch.
+   DMT loads the single-currency path only. If multi-currency Assets ever enter scope,
+   a `DMT_FA_ASSET_RATES_*` table + a `gen_rates_csv` branch would be required. This
+   matches the `FaMcMassRates.ctl` being present as a reference file with no code behind it.
+
+**Registry note (not a misalignment):** `db/seed/dmt_upload_object_tbl.sql` sets
+`CSV_FILENAME = <STAGING_TABLE>.csv` (e.g. `DMT_FA_ASSET_HDR_STG_TBL.csv`). That column
+is the **inbound DMT upload-template** filename, NOT the Fusion FBDI tab name -- a
+different concept (what a user uploads into STG, documented in that seed's header). It
+is correctly following its own convention and is out of scope for FBDI-tab alignment.
+
 ## Known Issues
 - ~~**APPROVAL_TYPE_CODE missing from FBDI generator.**~~ **FIXED 2026-04-03.** APPROVAL_TYPE_CODE is a CTL expression column (`nvl2(:BATCH_NAME, 'ORA_FA_MASS', NULL)`) — it doesn't consume a CSV field. Fix: populate BATCH_NAME (CSV pos 419) with 'DMT' so the expression evaluates to 'ORA_FA_MASS'.
 - ~~**PRORATE_CONVENTION_CODE may be invalid.**~~ **FIXED 2026-04-03.** Valid value is `MID-MONTH` (hyphen), not `MID MONTH` (space). All test scripts updated. Valid values from FA_CONVENTION_TYPES: CAL MONTH, CAL DAILY, CAL NMB, FOL-MTH, HALF YEAR, MID-MONTH, plus others.
