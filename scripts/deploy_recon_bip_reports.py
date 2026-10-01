@@ -58,6 +58,13 @@ REPORTS = [
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
     ("PerfEvaluations",          "DMT_PERFEVALUATIONS_RECON_DM", "DMT_PERFEVALUATIONS_RECON_RPT"),
     ("Projects",                 "DMT_PROJECT_RECON_DM",       "DMT_PROJECT_RECON_RPT"),
+    # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
+    # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
+    # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/
+    # report was a stale generic model that emitted SOURCE_TYPE=BASE and ignored
+    # P_BANK_NAMES. PARSE_BANKS requires SOURCE_TYPE=BASE_BANK, so a genuinely
+    # loaded bank reconciled to 0 and was wrongly FAILED. Deploy the real pair.
+    ("CashBanks",                "DMT_CEBANK_RECON_DM",        "DMT_CEBANK_RECON_RPT"),
     # PPM family (2026-09-28) -- post-run comparison reports, family E.
     ("Projects",                 "PROJECT_CMP_DM",             "PROJECT_CMP_RPT"),
     ("ProjectBudgets",           "PRJ_BUDGET_CMP_DM",          "PRJ_BUDGET_CMP_RPT"),
