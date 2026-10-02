@@ -347,6 +347,9 @@ AS
         l_tsk_loaded NUMBER := 0;  l_tsk_failed NUMBER := 0;
         l_tm_loaded  NUMBER := 0;  l_tm_failed  NUMBER := 0;
         l_tc_loaded  NUMBER := 0;  l_tc_failed  NUMBER := 0;
+        l_rc        NUMBER := 0;    -- backlog #65: rows matched by the current tier
+        l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
+        l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
         -- Generated-row count across all four tiers drives the shared fetch's
         -- keyset page-count cap. Done statically here (not in the shared pkg).
@@ -386,7 +389,21 @@ AS
                 p_package   => C_PKG,
                 p_procedure => C_PROC);
         ELSE
+            -- Backlog #65 three-tier match (owner order on PR #481). Tier 1 is the
+            -- stamped recon key (RECON_KEY = RECORD_KEY, exactly as before). Tier 2
+            -- (the Slot C DFF stamp: TFM_SEQUENCE_ID = the trailing numeric segment of
+            -- DFF_KEY) is kept uniform with the shared template; Projects' DMT_REFERENCE
+            -- is the composite record-key string, not a numeric carrier, so tier 2 is
+            -- normally a no-op. There is NO tier 3 for the Projects tiers: the Projects
+            -- recon DM returns SOURCE_REF (the business key) IDENTICAL to RECORD_KEY (the
+            -- composite PROJECT_NUMBER / PROJECT_NUMBER '/' TASK_NUMBER / PROJECT_NAME
+            -- '/TM/' member / PROJECT_NUMBER '/TC/' ref), and no distinct single
+            -- source-business-key column exists on these TFM tables, so a tier-3
+            -- fall-through would be byte-redundant with tier 1. Every tier-1 hit
+            -- short-circuits, so loaded outcomes are identical to before. Static UPDATEs.
             FOR i IN 1 .. l_rows.COUNT LOOP
+                l_rc   := 0;     -- backlog #65: reset per row so a prior row's tier
+                l_tier := NULL;  -- cannot mislabel this row's audit log line.
                 -- ===== TIER: PROJECTS (OBJECT_TYPE = 'Projects') =====
                 IF l_rows(i).OBJECT_TYPE = 'Projects' THEN
                     IF l_rows(i).SOURCE_TYPE = 'BASE'
@@ -400,7 +417,31 @@ AS
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_prj_loaded := l_prj_loaded + SQL%ROWCOUNT;
+                        l_rc := SQL%ROWCOUNT;
+                        l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+                        IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
+                            l_dff_seq := TO_NUMBER(
+                                REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
+                            IF l_dff_seq IS NOT NULL THEN
+                                UPDATE DMT_PJF_PROJECTS_TFM_TBL
+                                SET    TFM_STATUS           = 'LOADED',
+                                       FUSION_PROJECT_ID    = l_rows(i).FUSION_ID,
+                                       RESULTS_UPDATED_DATE = SYSDATE,
+                                       LAST_UPDATED_DATE    = SYSDATE
+                                WHERE  RUN_ID    = p_run_id
+                                AND    TFM_SEQUENCE_ID = l_dff_seq
+                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                                l_rc := SQL%ROWCOUNT;
+                                IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
+                            END IF;
+                        END IF;
+                        l_prj_loaded := l_prj_loaded + l_rc;
+                        IF l_tier = 'TIER2' THEN
+                            DMT_UTIL_PKG.LOG(p_run_id, C_PROC
+                                || ': matched a LOADED project via TIER2 fallback '
+                                || '(tier 1 stamped key did not resolve). PROJECT_ID '
+                                || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
+                        END IF;
                     ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                           AND l_rows(i).ERROR_MESSAGE IS NOT NULL
                           AND l_rows(i).ERROR_MESSAGE != C_MARKER THEN
@@ -432,7 +473,31 @@ AS
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_tsk_loaded := l_tsk_loaded + SQL%ROWCOUNT;
+                        l_rc := SQL%ROWCOUNT;
+                        l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+                        IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
+                            l_dff_seq := TO_NUMBER(
+                                REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
+                            IF l_dff_seq IS NOT NULL THEN
+                                UPDATE DMT_PJF_TASKS_TFM_TBL
+                                SET    TFM_STATUS           = 'LOADED',
+                                       FUSION_TASK_ID       = l_rows(i).FUSION_ID,
+                                       RESULTS_UPDATED_DATE = SYSDATE,
+                                       LAST_UPDATED_DATE    = SYSDATE
+                                WHERE  RUN_ID    = p_run_id
+                                AND    TFM_SEQUENCE_ID = l_dff_seq
+                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                                l_rc := SQL%ROWCOUNT;
+                                IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
+                            END IF;
+                        END IF;
+                        l_tsk_loaded := l_tsk_loaded + l_rc;
+                        IF l_tier = 'TIER2' THEN
+                            DMT_UTIL_PKG.LOG(p_run_id, C_PROC
+                                || ': matched a LOADED task via TIER2 fallback '
+                                || '(tier 1 stamped key did not resolve). TASK_ID '
+                                || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
+                        END IF;
                     ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                           AND l_rows(i).ERROR_MESSAGE IS NOT NULL
                           AND l_rows(i).ERROR_MESSAGE != C_MARKER THEN
@@ -462,7 +527,31 @@ AS
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_tm_loaded := l_tm_loaded + SQL%ROWCOUNT;
+                        l_rc := SQL%ROWCOUNT;
+                        l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+                        IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
+                            l_dff_seq := TO_NUMBER(
+                                REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
+                            IF l_dff_seq IS NOT NULL THEN
+                                UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
+                                SET    TFM_STATUS              = 'LOADED',
+                                       FUSION_PROJECT_PARTY_ID = l_rows(i).FUSION_ID,
+                                       RESULTS_UPDATED_DATE    = SYSDATE,
+                                       LAST_UPDATED_DATE       = SYSDATE
+                                WHERE  RUN_ID    = p_run_id
+                                AND    TFM_SEQUENCE_ID = l_dff_seq
+                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                                l_rc := SQL%ROWCOUNT;
+                                IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
+                            END IF;
+                        END IF;
+                        l_tm_loaded := l_tm_loaded + l_rc;
+                        IF l_tier = 'TIER2' THEN
+                            DMT_UTIL_PKG.LOG(p_run_id, C_PROC
+                                || ': matched a LOADED team member via TIER2 fallback '
+                                || '(tier 1 stamped key did not resolve). PROJECT_PARTY_ID '
+                                || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
+                        END IF;
                     ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                           AND l_rows(i).ERROR_MESSAGE IS NOT NULL
                           AND l_rows(i).ERROR_MESSAGE != C_MARKER THEN
@@ -492,7 +581,31 @@ AS
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_tc_loaded := l_tc_loaded + SQL%ROWCOUNT;
+                        l_rc := SQL%ROWCOUNT;
+                        l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+                        IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
+                            l_dff_seq := TO_NUMBER(
+                                REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
+                            IF l_dff_seq IS NOT NULL THEN
+                                UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
+                                SET    TFM_STATUS            = 'LOADED',
+                                       FUSION_TXN_CONTROL_ID = l_rows(i).FUSION_ID,
+                                       RESULTS_UPDATED_DATE  = SYSDATE,
+                                       LAST_UPDATED_DATE     = SYSDATE
+                                WHERE  RUN_ID    = p_run_id
+                                AND    TFM_SEQUENCE_ID = l_dff_seq
+                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                                l_rc := SQL%ROWCOUNT;
+                                IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
+                            END IF;
+                        END IF;
+                        l_tc_loaded := l_tc_loaded + l_rc;
+                        IF l_tier = 'TIER2' THEN
+                            DMT_UTIL_PKG.LOG(p_run_id, C_PROC
+                                || ': matched a LOADED txn control via TIER2 fallback '
+                                || '(tier 1 stamped key did not resolve). TXN_CONTROL_ID '
+                                || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
+                        END IF;
                     ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                           AND l_rows(i).ERROR_MESSAGE IS NOT NULL
                           AND l_rows(i).ERROR_MESSAGE != C_MARKER THEN

@@ -454,6 +454,9 @@ AS
         l_err_code  NUMBER;
         l_loaded    NUMBER := 0;
         l_failed    NUMBER := 0;
+        l_rc        NUMBER := 0;    -- backlog #65: rows matched by the current tier
+        l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
+        l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
         -- Generated-row count (static, this object's own table) drives the shared
         -- fetch's keyset page-count cap.
@@ -490,12 +493,25 @@ AS
                 p_procedure => C_PROC);
         ELSE
             FOR i IN 1 .. l_rows.COUNT LOOP
+                l_rc   := 0;     -- backlog #65: reset per row so a prior row's tier
+                l_tier := NULL;  -- cannot mislabel this row's audit log line.
                 IF l_rows(i).SOURCE_TYPE = 'BASE'
                    AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                    AND l_rows(i).FUSION_ID IS NOT NULL THEN
-                    -- Positive proof: plan version found in PJO_PLAN_VERSIONS_B with
-                    -- a real id. The ONLY path to LOADED. Static UPDATE keyed on
-                    -- RECON_KEY.
+                    -- Positive proof: plan version found in PJO_PLAN_VERSIONS_B with a
+                    -- real id. The ONLY path to LOADED.
+                    --
+                    -- Backlog #65 three-tier match (owner order on PR #481). Tier 1 is
+                    -- the stamped recon key (RECON_KEY = RECORD_KEY, exactly as before).
+                    -- Only if tier 1 matches NO TFM row do we fall through: tier 2 (the
+                    -- Slot C DFF stamp: TFM_SEQUENCE_ID = the trailing numeric segment of
+                    -- DFF_KEY) -- ProjectBudgets' DMT_REFERENCE is the budget-reference
+                    -- string, not a numeric carrier, so tier 2 is normally a no-op; kept
+                    -- uniform with the shared template -- and then tier 3 (the business
+                    -- key: SRC_BUDGET_LINE_REFERENCE = BUSINESS_KEY, the native source
+                    -- budget-line reference the report returns as SOURCE_REF). Every
+                    -- tier-1 hit short-circuits, so loaded outcomes are identical to
+                    -- before. Static UPDATEs.
                     UPDATE DMT_PRJ_BUDGET_TFM_TBL
                     SET    TFM_STATUS               = 'LOADED',
                            FUSION_BUDGET_VERSION_ID = l_rows(i).FUSION_ID,
@@ -504,7 +520,47 @@ AS
                     WHERE  RUN_ID    = p_run_id
                     AND    RECON_KEY = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                    l_loaded := l_loaded + SQL%ROWCOUNT;
+                    l_rc := SQL%ROWCOUNT;
+                    l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+
+                    IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
+                        l_dff_seq := TO_NUMBER(
+                            REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
+                        IF l_dff_seq IS NOT NULL THEN
+                            UPDATE DMT_PRJ_BUDGET_TFM_TBL
+                            SET    TFM_STATUS               = 'LOADED',
+                                   FUSION_BUDGET_VERSION_ID = l_rows(i).FUSION_ID,
+                                   RESULTS_UPDATED_DATE     = SYSDATE,
+                                   LAST_UPDATED_DATE        = SYSDATE
+                            WHERE  RUN_ID    = p_run_id
+                            AND    TFM_SEQUENCE_ID = l_dff_seq
+                            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                            l_rc := SQL%ROWCOUNT;
+                            IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
+                        END IF;
+                    END IF;
+
+                    IF l_rc = 0 AND l_rows(i).BUSINESS_KEY IS NOT NULL THEN
+                        UPDATE DMT_PRJ_BUDGET_TFM_TBL
+                        SET    TFM_STATUS               = 'LOADED',
+                               FUSION_BUDGET_VERSION_ID = l_rows(i).FUSION_ID,
+                               RESULTS_UPDATED_DATE     = SYSDATE,
+                               LAST_UPDATED_DATE        = SYSDATE
+                        WHERE  RUN_ID    = p_run_id
+                        AND    SRC_BUDGET_LINE_REFERENCE = l_rows(i).BUSINESS_KEY
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        l_rc := SQL%ROWCOUNT;
+                        IF l_rc > 0 THEN l_tier := 'TIER3'; END IF;
+                    END IF;
+
+                    l_loaded := l_loaded + l_rc;
+                    IF l_tier IN ('TIER2','TIER3') THEN
+                        DMT_UTIL_PKG.LOG(p_run_id,
+                            C_PROC || ': matched a LOADED project budget via ' || l_tier ||
+                            ' fallback (tier 1 stamped key did not resolve). '
+                            || 'BUDGET_VERSION_ID ' || l_rows(i).FUSION_ID || '.',
+                            'INFO', C_PKG, C_PROC);
+                    END IF;
 
                 ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                       AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
