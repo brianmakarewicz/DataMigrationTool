@@ -196,5 +196,30 @@ shortened label. No wrong-record-type defect.
    are leftover/unused relative to the modeled path. This is flagged as a finding
    (not renamed, not deleted under this doc-only item) — a future sweep should
    either wire the RCV path or retire the orphaned CTLs and tables.
+
+   **Update (backlog #25 registry-leftovers pass, 2026-10-02).** Verified on
+   `dmt2-local` and by a blind reviewer that **no package writes the RCV STG/TFM
+   tables** — `DMT_RCV_HEADERS_TFM_TBL` has 0 rows while `DMT_INV_TRX_TFM_TBL` has
+   163 after a real run. The RCV tables are therefore permanently empty at runtime.
+   The hazard is that eight committed views still map the `MiscReceipts` CEMLI to
+   the empty RCV tables, so MiscReceipts drill-through, record detail, and run/status
+   counts read zero rows while the real data sits in `DMT_INV_TRX_*`:
+   `db/views/dmt_v_cemli_tfm_tables.sql` (43-44), `dmt_object_detail_v.sql`
+   (184-190), `dmt_record_detail_v.sql` (586-611), `dmt_run_records_v.sql` (182-185),
+   `dmt_run_status_v.sql` (207-212), `dmt_v_cemli_status.sql` (104-106),
+   `dmt_scenario_summary_v.sql` (133-137, STG tables), plus the two RCV detail views.
+   The correct fix is to repoint those views from `DMT_RCV_*` to `DMT_INV_TRX_*` and
+   THEN drop the RCV STG/TFM tables, sequences, detail views, and the `Rcv*.ctl`
+   files. It is NOT a table-name swap: the Fusion-id column changes
+   (`FUSION_RECEIPT_HEADER_ID NUMBER` -> `FUSION_ID VARCHAR2`, drop the `TO_CHAR`),
+   the RCV business columns (`RECEIPT_NUM`, `INTERFACE_LINE_NUM`, `ITEM_NUM`,
+   `HEADER_INTERFACE_NUM`) have no INV_TRX equivalents and must be remapped (e.g.
+   `ITEM_NUMBER`), and the grain changes from header + transactions (2 sub-objects)
+   to transactions + lots + serials (3 sub-objects). Because that rewrites a live
+   reconciliation/drill-through surface, it must land as one regression-verified PR
+   (full regression was out of scope for the #25 naming pass). Dropping the tables
+   without the repoint would invalidate the eight views (fails the 0-invalid gate);
+   repointing without a regression run would be an unverified UI change — so the
+   #25 pass left both halves for a dedicated follow-up and recorded them here.
 2. **No physical rename needed** for the three Inv_* tables — they already mirror
    their tabs; the `TRX`/`SERIALS` shortenings are consistent and unambiguous.
