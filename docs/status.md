@@ -1,5 +1,48 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-01 -- Backlog "do-it" wave close-out (nine items, parallel), one regression
+
+**Bottom line.** Nine backlog items the owner greenlit were worked in parallel, merged to main, and
+proven by one regression (run 203): zero new problems versus the last known-good run. Seven are
+fully resolved, one is partial (the hard part is done and proven on three objects, the rest is a
+mechanical repeat), and one -- value sets -- is built but can't finish on this demo pod.
+
+**What was resolved.**
+- **#19** -- removed leftover dead code in four transforms; every cross-object reference already
+  goes through the shared resolver. No behaviour change.
+- **#23** -- deleted the old interface-only AR reconcile report (it even pointed at the frozen old
+  stack); the real base-table check is now the only AR path.
+- **#60** -- the HCM W-2 reconcile was asking Fusion for a report under the wrong name; fixed the
+  name in both the registry and the deploy script. (Still needs the report deployed to Fusion to
+  verify, which is environment-blocked here.)
+- **#62** -- added the auto-run CI workflow (self-hosted runner + a browser UI check); a person
+  still has to install the runner once.
+- **#89** -- documented the dynamic-SQL exception for the file-upload package, matching the one the
+  queue engine already carries (owner chose "document it" over a rewrite).
+- **#90** -- finished the table-name-versus-import-tab audit across all nineteen remaining objects;
+  no real defects, just cosmetic name drift, plus a few spec-comment fixes.
+- **#94** -- extended the value fingerprint to the other money-less objects (customers, projects,
+  contracts, workers), each checked live against Fusion. (The reports need deploying to Fusion for
+  the match flag to light up in production.)
+
+**Partial.**
+- **#65** -- the new "match on the stamped reference first, then the attribute, then the business
+  key" reconcile logic is built and proven on GL Balances, Workers, and Customers (run 203 matched
+  the baseline exactly). The same small change still needs repeating on the other ~27 objects.
+
+**Built but blocked.**
+- **Value sets (part of #130)** -- replaced the dead web-service load with a real file-upload +
+  import-job pipeline. It submits correctly, but the import process isn't turned on for this demo
+  pod, so the load never runs. Ready for a functional owner to enable it.
+
+**Two new items recorded.** A pre-existing Activity-Log page drill that returns a 500 (not caused by
+this work -- no page files changed), and a cosmetic mislabel in the regression tool that counted a
+bad test row as a good one and caused a false alarm this run.
+
+**Still waiting on the owner:** #138 (how to fix the supplier validation call) and #144 (go-ahead
+to raise the local job limit and add a pre-run job cleanup). **Next:** #25, the naming sweep,
+including the APEX page updates.
+
 ## Session -- 2026-10-01 -- Backlog batch 7 (#71) + final sweep disposition of the remaining items
 
 **Bottom line.** Fixed one more real code item and then gave every remaining backlog item an
