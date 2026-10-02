@@ -40,8 +40,9 @@ UNION ALL SELECT 'Assets',               'DMT_FA_ASSET_ASSIGN_TFM_TBL',    'Asse
 UNION ALL SELECT 'Requisitions',         'DMT_POR_REQ_HEADERS_TFM_TBL',    'Req Headers',              1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Requisitions',         'DMT_POR_REQ_LINES_TFM_TBL',      'Req Lines',                2, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Requisitions',         'DMT_POR_REQ_DISTS_TFM_TBL',      'Req Distributions',        3, 'TFM_STATUS', NULL FROM DUAL
-UNION ALL SELECT 'MiscReceipts',         'DMT_RCV_HEADERS_TFM_TBL',        'Receipt Headers',          1, 'TFM_STATUS', NULL FROM DUAL
-UNION ALL SELECT 'MiscReceipts',         'DMT_RCV_TRANSACTIONS_TFM_TBL',   'Receipt Transactions',     2, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'MiscReceipts',         'DMT_INV_TRX_TFM_TBL',            'Inventory Transactions',   1, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'MiscReceipts',         'DMT_INV_TRX_LOTS_TFM_TBL',       'Transaction Lots',         2, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'MiscReceipts',         'DMT_INV_TRX_SERIALS_TFM_TBL',    'Transaction Serials',      3, 'TFM_STATUS', NULL FROM DUAL
 -- Items: item master + bundled item categories ship in one FBDI ZIP under the 'Items' CEMLI,
 -- so both TFM tables surface as sub-objects of the single Items card. Both use TFM_STATUS.
 UNION ALL SELECT 'Items',                'DMT_EGP_ITEM_TFM_TBL',           'Item Master',              1, 'TFM_STATUS', NULL FROM DUAL

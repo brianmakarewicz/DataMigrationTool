@@ -155,10 +155,6 @@ prompt == Sequences ==
 @@sequences/dmt_ra_dists_tfm_seq.sql
 @@sequences/dmt_ra_lines_stg_seq.sql
 @@sequences/dmt_ra_lines_tfm_seq.sql
-@@sequences/dmt_rcv_headers_stg_seq.sql
-@@sequences/dmt_rcv_headers_tfm_seq.sql
-@@sequences/dmt_rcv_transactions_stg_seq.sql
-@@sequences/dmt_rcv_transactions_tfm_seq.sql
 @@sequences/dmt_run_prefix_seq.sql
 @@sequences/dmt_salary_stg_seq.sql
 @@sequences/dmt_salary_tfm_seq.sql
@@ -380,10 +376,6 @@ prompt == Tables ==
 @@tables/dmt_ra_dists_tfm_tbl.sql
 @@tables/dmt_ra_lines_stg_tbl.sql
 @@tables/dmt_ra_lines_tfm_tbl.sql
-@@tables/dmt_rcv_headers_stg_tbl.sql
-@@tables/dmt_rcv_headers_tfm_tbl.sql
-@@tables/dmt_rcv_transactions_stg_tbl.sql
-@@tables/dmt_rcv_transactions_tfm_tbl.sql
 @@tables/dmt_ref_carrier_cfg_tbl.sql
 @@tables/dmt_rest_lookup_tbl.sql
 @@tables/dmt_salary_stg_tbl.sql

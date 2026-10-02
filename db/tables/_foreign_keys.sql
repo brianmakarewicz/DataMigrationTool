@@ -1318,59 +1318,9 @@ exception when others then
 end;
 /
 
--- DMT_RCV_HEADERS_STG_TBL.SYS_C00127347
-begin
-  execute immediate 'ALTER TABLE "DMT_RCV_HEADERS_STG_TBL" ADD FOREIGN KEY ("SCENARIO_ID")
-	  REFERENCES "DMT_SCENARIO_TBL" ("SCENARIO_ID") ENABLE';
-exception when others then
-  if sqlcode not in (-955,-2275,-2264) then raise; end if;
-end;
-/
-
--- DMT_RCV_HEADERS_TFM_TBL.DMT_RCV_HDR_TFM_CSV_FK
-begin
-  execute immediate 'ALTER TABLE "DMT_RCV_HEADERS_TFM_TBL" ADD CONSTRAINT "DMT_RCV_HDR_TFM_CSV_FK" FOREIGN KEY ("FBDI_CSV_ID")
-	  REFERENCES "DMT_FBDI_CSV_TBL" ("FBDI_CSV_ID") ENABLE';
-exception when others then
-  if sqlcode not in (-955,-2275,-2264) then raise; end if;
-end;
-/
-
--- DMT_RCV_HEADERS_TFM_TBL.DMT_RCV_HDR_TFM_STG_FK
-begin
-  execute immediate 'ALTER TABLE "DMT_RCV_HEADERS_TFM_TBL" ADD CONSTRAINT "DMT_RCV_HDR_TFM_STG_FK" FOREIGN KEY ("STG_SEQUENCE_ID")
-	  REFERENCES "DMT_RCV_HEADERS_STG_TBL" ("STG_SEQUENCE_ID") ENABLE';
-exception when others then
-  if sqlcode not in (-955,-2275,-2264) then raise; end if;
-end;
-/
-
--- DMT_RCV_TRANSACTIONS_STG_TBL.SYS_C00127348
-begin
-  execute immediate 'ALTER TABLE "DMT_RCV_TRANSACTIONS_STG_TBL" ADD FOREIGN KEY ("SCENARIO_ID")
-	  REFERENCES "DMT_SCENARIO_TBL" ("SCENARIO_ID") ENABLE';
-exception when others then
-  if sqlcode not in (-955,-2275,-2264) then raise; end if;
-end;
-/
-
--- DMT_RCV_TRANSACTIONS_TFM_TBL.DMT_RCV_TXN_TFM_CSV_FK
-begin
-  execute immediate 'ALTER TABLE "DMT_RCV_TRANSACTIONS_TFM_TBL" ADD CONSTRAINT "DMT_RCV_TXN_TFM_CSV_FK" FOREIGN KEY ("FBDI_CSV_ID")
-	  REFERENCES "DMT_FBDI_CSV_TBL" ("FBDI_CSV_ID") ENABLE';
-exception when others then
-  if sqlcode not in (-955,-2275,-2264) then raise; end if;
-end;
-/
-
--- DMT_RCV_TRANSACTIONS_TFM_TBL.DMT_RCV_TXN_TFM_STG_FK
-begin
-  execute immediate 'ALTER TABLE "DMT_RCV_TRANSACTIONS_TFM_TBL" ADD CONSTRAINT "DMT_RCV_TXN_TFM_STG_FK" FOREIGN KEY ("STG_SEQUENCE_ID")
-	  REFERENCES "DMT_RCV_TRANSACTIONS_STG_TBL" ("STG_SEQUENCE_ID") ENABLE';
-exception when others then
-  if sqlcode not in (-955,-2275,-2264) then raise; end if;
-end;
-/
+-- DMT_RCV_HEADERS_* / DMT_RCV_TRANSACTIONS_* foreign keys removed (backlog #25):
+-- the orphan Receiving tables were dropped in favor of the live DMT_INV_TRX_*
+-- pipeline (see db/migrations/2026-10-02_drop_orphan_rcv_tables.sql).
 
 -- DMT_SALARY_STG_TBL.SYS_C00128152
 begin
@@ -2458,23 +2408,9 @@ exception when others then
 end;
 /
 
--- DMT_RCV_HEADERS_TFM_TBL.DMT_RCV_HEADERS_TFM_WQFK
-begin
-  execute immediate 'ALTER TABLE "DMT_RCV_HEADERS_TFM_TBL" ADD CONSTRAINT "DMT_RCV_HEADERS_TFM_WQFK" FOREIGN KEY ("WORK_QUEUE_ID")
-	  REFERENCES "DMT_WORK_QUEUE_TBL" ("QUEUE_ID") ENABLE';
-exception when others then
-  if sqlcode not in (-955,-2275,-2264) then raise; end if;
-end;
-/
-
--- DMT_RCV_TRANSACTIONS_TFM_TBL.DMT_RCV_TRANSACTIONS_TFM_WQFK
-begin
-  execute immediate 'ALTER TABLE "DMT_RCV_TRANSACTIONS_TFM_TBL" ADD CONSTRAINT "DMT_RCV_TRANSACTIONS_TFM_WQFK" FOREIGN KEY ("WORK_QUEUE_ID")
-	  REFERENCES "DMT_WORK_QUEUE_TBL" ("QUEUE_ID") ENABLE';
-exception when others then
-  if sqlcode not in (-955,-2275,-2264) then raise; end if;
-end;
-/
+-- DMT_RCV_HEADERS_TFM_TBL / DMT_RCV_TRANSACTIONS_TFM_TBL work-queue foreign keys
+-- removed (backlog #25): the orphan Receiving tables were dropped
+-- (see db/migrations/2026-10-02_drop_orphan_rcv_tables.sql).
 
 -- DMT_SAL_BASIS_TFM_TBL.DMT_SAL_BASIS_TFM_WQFK
 begin
