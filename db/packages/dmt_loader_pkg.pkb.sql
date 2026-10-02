@@ -2384,8 +2384,10 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        -- Phase 1: pre-transform validation (marks staging rows FAILED on bad data).
+        -- Phase 1: pre-transform validation (records rejections for THIS object),
+        -- then flag only this object's STG rows FAILED (per-object isolation).
         DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SUPPLIERS(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SUPPLIERS_STG_FAILED(p_run_id);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -2427,6 +2429,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_ADDRESSES(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_ADDRESSES_STG_FAILED(p_run_id);
         COMMIT;
 
         DMT_POZ_SUP_ADDR_TRANSFORM_PKG.TRANSFORM_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2464,6 +2467,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITES(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITES_STG_FAILED(p_run_id);
         COMMIT;
 
         DMT_POZ_SUP_SITE_TRANSFORM_PKG.TRANSFORM_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2501,6 +2505,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITE_ASSIGNMENTS(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITE_ASSIGNMENTS_STG_FAILED(p_run_id);
         COMMIT;
 
         DMT_POZ_SUP_SITE_ASSN_TRANSFORM_PKG.TRANSFORM_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2538,6 +2543,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_CONTACTS(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_CONTACTS_STG_FAILED(p_run_id);
         COMMIT;
 
         DMT_POZ_SUP_CONT_TRANSFORM_PKG.TRANSFORM_CONTACTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);

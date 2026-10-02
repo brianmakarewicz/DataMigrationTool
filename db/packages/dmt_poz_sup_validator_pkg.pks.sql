@@ -36,5 +36,22 @@ AS
     PROCEDURE VALIDATE_SITE_ASSIGNMENTS (p_run_id IN NUMBER);
     PROCEDURE VALIDATE_CONTACTS         (p_run_id IN NUMBER);
 
+    -- Per-object STG-FAILED flaggers. Each flips ONLY its own STG table's rows
+    -- (those with a recorded error row for this run) to STG_STATUS = 'FAILED'.
+    -- A per-object supplier runner calls its matching VALIDATE_<type> then its
+    -- FLAG_<type>_STG_FAILED, so it validates and flags only its own object.
+    -- FLAG_STG_FAILED (below) calls all five in sequence; it is retained so the
+    -- VALIDATE_PRE_TRANSFORM orchestrator path is unchanged.
+    PROCEDURE FLAG_SUPPLIERS_STG_FAILED        (p_run_id IN NUMBER);
+    PROCEDURE FLAG_ADDRESSES_STG_FAILED        (p_run_id IN NUMBER);
+    PROCEDURE FLAG_SITES_STG_FAILED            (p_run_id IN NUMBER);
+    PROCEDURE FLAG_SITE_ASSIGNMENTS_STG_FAILED (p_run_id IN NUMBER);
+    PROCEDURE FLAG_CONTACTS_STG_FAILED         (p_run_id IN NUMBER);
+
+    -- Flags all five supplier STG tables FAILED from their recorded error rows.
+    -- Called by VALIDATE_PRE_TRANSFORM (orchestrator path). Delegates to the five
+    -- per-object flaggers above.
+    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER);
+
 END DMT_POZ_SUP_VALIDATOR_PKG;
 /
