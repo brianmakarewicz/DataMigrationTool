@@ -60,7 +60,7 @@ page 11 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_TAX_CARD_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_TAX_CARD_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 40
@@ -445,7 +445,7 @@ page 11 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_TAX_CARD_COMP_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_TAX_CARD_COMP_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 50
@@ -850,7 +850,7 @@ page 11 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_W2_BAL_DTL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_W2_BAL_DTL_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 20
@@ -1295,7 +1295,7 @@ page 11 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_W2_BAL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_W2_BAL_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 10

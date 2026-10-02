@@ -43,7 +43,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>50
 ,p_plug_item_display_point=>'ABOVE'
 ,p_query_type=>'SQL'
-,p_plug_source=>'SELECT * FROM DMT_V_PERSON_ADDR_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
+,p_plug_source=>'SELECT * FROM DMT_PERSON_ADDR_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'
@@ -602,7 +602,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>30
 ,p_plug_item_display_point=>'ABOVE'
 ,p_query_type=>'SQL'
-,p_plug_source=>'SELECT * FROM DMT_V_PERSON_EMAIL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
+,p_plug_source=>'SELECT * FROM DMT_PERSON_EMAIL_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'
@@ -864,7 +864,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>70
 ,p_plug_item_display_point=>'ABOVE'
 ,p_query_type=>'SQL'
-,p_plug_source=>'SELECT * FROM DMT_V_PERSON_LEGISL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
+,p_plug_source=>'SELECT * FROM DMT_PERSON_LEGISL_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'
@@ -1489,7 +1489,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>20
 ,p_plug_item_display_point=>'ABOVE'
 ,p_query_type=>'SQL'
-,p_plug_source=>'SELECT * FROM DMT_V_PERSON_NAME_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
+,p_plug_source=>'SELECT * FROM DMT_PERSON_NAME_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'
@@ -2169,7 +2169,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>60
 ,p_plug_item_display_point=>'ABOVE'
 ,p_query_type=>'SQL'
-,p_plug_source=>'SELECT * FROM DMT_V_PERSON_NID_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
+,p_plug_source=>'SELECT * FROM DMT_PERSON_NID_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'
@@ -2453,7 +2453,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>40
 ,p_plug_item_display_point=>'ABOVE'
 ,p_query_type=>'SQL'
-,p_plug_source=>'SELECT * FROM DMT_V_PERSON_PHONE_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
+,p_plug_source=>'SELECT * FROM DMT_PERSON_PHONE_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'
@@ -2748,7 +2748,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>80
 ,p_plug_item_display_point=>'ABOVE'
 ,p_query_type=>'SQL'
-,p_plug_source=>'SELECT * FROM DMT_V_WORK_REL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
+,p_plug_source=>'SELECT * FROM DMT_WORK_REL_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'
@@ -3010,7 +3010,7 @@ wwv_flow_imp_page.create_page_plug(
 ,p_plug_display_sequence=>10
 ,p_plug_item_display_point=>'ABOVE'
 ,p_query_type=>'SQL'
-,p_plug_source=>'SELECT * FROM DMT_V_WORKER_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
+,p_plug_source=>'SELECT * FROM DMT_WORKER_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)'
 ,p_plug_source_type=>'NATIVE_IR'
 ,p_prn_content_disposition=>'ATTACHMENT'
 ,p_prn_units=>'INCHES'

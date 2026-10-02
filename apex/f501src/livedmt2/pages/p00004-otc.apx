@@ -18,7 +18,7 @@ page 4 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_CUST_ACCT_SITE_USES_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_CUST_ACCT_SITE_USES_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 70
@@ -962,7 +962,7 @@ page 4 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_CUST_ACCT_SITES_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_CUST_ACCT_SITES_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 60
@@ -1968,7 +1968,7 @@ page 4 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_AR_DISTS_DETAIL
+                SELECT * FROM DMT_AR_DISTS_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -3600,7 +3600,7 @@ page 4 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_AR_LINES_DETAIL
+                SELECT * FROM DMT_AR_LINES_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -6581,7 +6581,7 @@ page 4 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_CUST_ACCOUNTS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_CUST_ACCOUNTS_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 50
@@ -7485,7 +7485,7 @@ page 4 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_CUST_LOCATIONS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_CUST_LOCATIONS_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 20
@@ -8729,7 +8729,7 @@ page 4 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_CUST_PARTIES_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_CUST_PARTIES_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 10
@@ -9564,7 +9564,7 @@ page 4 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_CUST_PARTY_SITES_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_CUST_PARTY_SITES_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 30
@@ -10568,7 +10568,7 @@ page 4 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_CUST_SITE_USES_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_CUST_SITE_USES_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 40
@@ -11474,7 +11474,7 @@ page 4 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_RCV_HEADERS_DETAIL
+                SELECT * FROM DMT_RCV_HEADERS_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -13515,7 +13515,7 @@ page 4 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_RCV_TRANSACTIONS_DETAIL
+                SELECT * FROM DMT_RCV_TRANSACTIONS_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -17031,7 +17031,7 @@ page 4 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_REQ_DISTS_DETAIL
+                SELECT * FROM DMT_REQ_DISTS_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -19625,7 +19625,7 @@ page 4 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_REQ_HEADERS_DETAIL
+                SELECT * FROM DMT_REQ_HEADERS_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -21271,7 +21271,7 @@ page 4 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_REQ_LINES_DETAIL
+                SELECT * FROM DMT_REQ_LINES_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }

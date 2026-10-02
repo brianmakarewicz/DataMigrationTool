@@ -38,7 +38,7 @@ page 6 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PERSON_ADDR_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PERSON_ADDR_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 50
@@ -807,7 +807,7 @@ page 6 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PERSON_EMAIL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PERSON_EMAIL_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 30
@@ -1144,7 +1144,7 @@ page 6 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PERSON_LEGISL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PERSON_LEGISL_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 70
@@ -2009,7 +2009,7 @@ page 6 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PERSON_NAME_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PERSON_NAME_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 20
@@ -2954,7 +2954,7 @@ page 6 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PERSON_NID_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PERSON_NID_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 60
@@ -3323,7 +3323,7 @@ page 6 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PERSON_PHONE_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PERSON_PHONE_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 40
@@ -3708,7 +3708,7 @@ page 6 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_WORK_REL_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_WORK_REL_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 80
@@ -4045,7 +4045,7 @@ page 6 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_WORKER_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_WORKER_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 10

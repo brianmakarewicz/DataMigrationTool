@@ -20,7 +20,7 @@ page 3 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_ASSET_ASSIGN_DETAIL
+                SELECT * FROM DMT_ASSET_ASSIGN_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -531,7 +531,7 @@ page 3 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_ASSET_BOOK_DETAIL
+                SELECT * FROM DMT_ASSET_BOOK_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -1012,7 +1012,7 @@ page 3 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_ASSET_HDR_DETAIL
+                SELECT * FROM DMT_ASSET_HDR_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -1837,7 +1837,7 @@ page 3 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_GL_BUDGET_DETAIL
+                SELECT * FROM DMT_GL_BUDGET_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -2670,7 +2670,7 @@ page 3 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_GL_JOURNAL_DETAIL
+                SELECT * FROM DMT_GL_JOURNAL_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -4145,7 +4145,7 @@ page 3 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_PLAN_BUDGET_DETAIL
+                SELECT * FROM DMT_PLAN_BUDGET_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }

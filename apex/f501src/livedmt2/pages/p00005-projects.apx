@@ -18,7 +18,7 @@ page 5 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_BILL_EVENTS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_BILL_EVENTS_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 50
@@ -1864,7 +1864,7 @@ page 5 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT * FROM DMT_V_EXPENDITURES_DETAIL
+                SELECT * FROM DMT_EXPENDITURES_DETAIL_V
                 WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
                 ```
         }
@@ -4043,7 +4043,7 @@ page 5 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PRJ_BUDGET_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PRJ_BUDGET_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 70
@@ -5527,7 +5527,7 @@ page 5 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PROJECT_TASKS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PROJECT_TASKS_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 20
@@ -7734,7 +7734,7 @@ page 5 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PROJECT_TEAM_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PROJECT_TEAM_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 30
@@ -8286,7 +8286,7 @@ page 5 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_PROJECTS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_PROJECTS_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 10
@@ -11037,7 +11037,7 @@ page 5 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT * FROM DMT_V_TXN_CONTROLS_DETAIL WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
+            sqlQuery: SELECT * FROM DMT_TXN_CONTROLS_DETAIL_V WHERE (:P0_SCENARIO_ID IS NULL OR SCENARIO_ID = :P0_SCENARIO_ID)
         }
         layout {
             sequence: 40
