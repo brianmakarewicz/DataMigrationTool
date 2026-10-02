@@ -205,16 +205,15 @@
     END VALIDATE_CONTACTS;
 
     -- ============================================================
-    -- FLAG_STG_FAILED — STANDARD helper (design §7). Marks every STG row FAILED
-    -- (status only, no message) that has a DMT_STG_TFM_ERROR_TBL row for this run.
-    -- The pre-validation checks above record WHY in the error table; this sets the
-    -- STG status so FAILED-mode reruns select on it. Byte-identical across validator
-    -- packages except the STG table name(s) and the SUB_OBJECT filter (tagged EDIT
-    -- regions), like SWEEP_UNACCOUNTED. Does NOT commit — the caller owns the txn.
+    -- PER-OBJECT STG-FAILED FLAGGERS (design §7). Each marks STG rows FAILED
+    -- (status only, no message) that have a DMT_STG_TFM_ERROR_TBL row for this run,
+    -- scoped to its OWN STG table and SUB_OBJECT only. The pre-validation checks
+    -- record WHY in the error table; these set the STG status so FAILED-mode reruns
+    -- select on it. A per-object supplier runner calls its matching VALIDATE_<type>
+    -- then its FLAG_<type>_STG_FAILED, giving per-object isolation. Byte-identical
+    -- across the family except the STG table name and the SUB_OBJECT filter (tagged
+    -- EDIT regions), like SWEEP_UNACCOUNTED. None commit — the caller owns the txn.
     -- ============================================================
-    -- Each per-object flagger flips ONLY its own STG table's rows (those carrying
-    -- a recorded error row for this run) to 'FAILED'. This lets a per-object
-    -- supplier runner flag just its own object, giving per-object isolation.
     PROCEDURE FLAG_SUPPLIERS_STG_FAILED (p_run_id IN NUMBER) IS
     BEGIN
         -- <<EDIT-TABLE>>
@@ -290,6 +289,10 @@
                                   );
     END FLAG_CONTACTS_STG_FAILED;
 
+    -- FLAG_STG_FAILED — flags all five supplier STG tables FAILED by delegating to
+    -- the five per-object flaggers in dependency order. Called by VALIDATE_PRE_TRANSFORM
+    -- (orchestrator path); behavior is identical to the former monolithic version.
+    -- Does NOT commit — the caller owns the txn.
     PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
     BEGIN
         -- Flag all five supplier STG tables in sequence (orchestrator path).
