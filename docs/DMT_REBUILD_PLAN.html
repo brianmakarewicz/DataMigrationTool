@@ -629,7 +629,7 @@ names (76 IR columns + 25 report lists + the page-57 region), not aliasing the v
 A separate, genuinely APEX-side issue
 remains on page&nbsp;2 (Procure&nbsp;to&nbsp;Pay): <code>ORA-06502 — character string buffer too small</code>,
 because the Suppliers interactive report displays a ~166-column <code>SELECT *</code> over
-<code>DMT_V_SUPPLIERS_DETAIL</code> and APEX's generated column list exceeds an internal buffer; the remedy
+<code>DMT_SUPPLIERS_DETAIL_V</code> and APEX's generated column list exceeds an internal buffer; the remedy
 there is to narrow that report's displayed columns.</p>
 
 <div class="overflow">
