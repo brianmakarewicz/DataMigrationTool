@@ -11,7 +11,9 @@ BAD rows must reach FAILED with reportable error text).
 Checks performed after the run:
   1. Run terminal status + queue rollup (no FAILED / stuck queue rows).
   2. Record-level verdicts from DMT_RECORD_DETAIL_V:
-       - rows whose DISPLAY_KEY carries a bad-seed marker -> must be FAILED
+       - rows whose DISPLAY_KEY carries a bad-seed marker, or that were
+         rejected before transform (a [PRE_VALIDATION] orphan skip), are
+         BAD-row outcomes -> must be FAILED (never counted good-failed)
        - all other rows                                   -> must be LOADED
        - every FAILED row must have non-empty ERROR_TEXT
        - every DONE queue object must have >= 1 record (no DONE-with-zero)
@@ -89,6 +91,19 @@ KNOWN_LOG_TYPES = {'INFO', 'WARN', 'ERROR', 'DEBUG'}
 BAD_KEY_MARKERS = ('BAD', 'DOES NOT EXIST', 'GHOST', 'NONEXIST', 'INVALID', 'FAKE')
 BAD_KEY_REGEX = re.compile(r'-B\d+\b')
 
+# A row rejected before it ever reached a transform table is surfaced by
+# DMT_RECORD_DETAIL_V with a synthesized DISPLAY_KEY of the form
+# '<Sub Object> STG#<n>' that carries NO business key, so the bad-seed marker
+# that normally lives in the key is not present. Such rows are intentional
+# pre-validation skips (e.g. a supplier Address/Site/Contact whose parent
+# supplier has no LOADED TFM row -- the classic intentional-orphan bad seed,
+# or a child orphaned by a failed parent). They are always a BAD/expected
+# FAILED outcome, never a good row that should have loaded, so they must bucket
+# BAD regardless of the DISPLAY_KEY. They are recognized by their ERROR_TEXT
+# category, which is the bracketed token at the start of the message
+# (e.g. '[PRE_VALIDATION] Supplier ... has no LOADED TFM row ... skipped.').
+PREVALIDATION_BAD_CATEGORIES = ('PRE_VALIDATION',)
+
 
 def connect():
     # DMT2 is Docker-only (CLAUDE.md: no ATP yet). Honor DMT2_CONN
@@ -109,6 +124,34 @@ def connect():
 def is_bad_key(display_key):
     k = (display_key or '').upper()
     return any(m in k for m in BAD_KEY_MARKERS) or bool(BAD_KEY_REGEX.search(k))
+
+
+def is_bad_row(display_key, error_text=None):
+    """True when a row is an intentional BAD-seed / expected-failure outcome.
+
+    Classification (either is sufficient):
+      1. the DISPLAY_KEY carries a bad-seed marker (the normal case), or
+      2. the row was rejected before transform (its ERROR_TEXT category is
+         [PRE_VALIDATION]): an intentional orphan or a child cascaded off a
+         parent that never loaded. A child is skipped pre-transform ONLY
+         because its parent has no LOADED TFM row, so this is always an
+         expected FAILED outcome, never a good row that should have loaded.
+         (If the parent failed because of a real regression, the parent's own
+         row carries that regression, so no signal is lost by trusting the
+         child skip as BAD.)
+
+    We deliberately do NOT scan the free-form ERROR_TEXT for the bad-seed
+    markers: words like INVALID / BAD / DOES NOT EXIST appear in real Fusion
+    rejection messages for genuinely-good rows, so matching them in the error
+    text would reclassify a real good-row failure as BAD and hide a true
+    regression. The bad-seed markers are only trusted inside the DISPLAY_KEY
+    (a short synthetic key we control). The orphan case the markers were meant
+    to rescue is already covered by the [PRE_VALIDATION] category above.
+    """
+    if is_bad_key(display_key):
+        return True
+    cat = re.match(r'\s*\[([^\]]+)\]', (error_text or '').upper())
+    return bool(cat and cat.group(1).strip() in PREVALIDATION_BAD_CATEGORIES)
 
 
 # ---------------------------------------------------------------------------
@@ -431,8 +474,8 @@ def evaluate(run_id, baseline_arg):
                                      'bad_loaded': 0, 'bad_failed': 0,
                                      'bad_loaded_keys': {}, 'good_failed_keys': {},
                                      'no_error_keys': {}, 'other_keys': {}})
-        bad = is_bad_key(key)
         err_txt = ' '.join(str(err or '').split())  # collapse newlines
+        bad = is_bad_row(key, err_txt)
         if status == 'LOADED':
             s['LOADED'] += 1
             s['bad_loaded' if bad else 'good_loaded'] += 1
@@ -563,14 +606,15 @@ def evaluate(run_id, baseline_arg):
     if baseline_id:
         print(f"\n[5] Baseline diff vs RUN_ID={baseline_id} (GOOD/BAD-aware: a regression is "
               f"fewer good rows loading, more good rows failing, or more bad rows loading)")
-        cur.execute("""SELECT SUB_OBJECT, DISPLAY_KEY, TFM_STATUS FROM DMT_RECORD_DETAIL_V
-                       WHERE RUN_ID = :1""", [baseline_id])
+        cur.execute("""SELECT SUB_OBJECT, DISPLAY_KEY, TFM_STATUS,
+                              DBMS_LOB.SUBSTR(ERROR_TEXT, 300, 1)
+                       FROM DMT_RECORD_DETAIL_V WHERE RUN_ID = :1""", [baseline_id])
         base = {}
-        for sub, key, status in cur.fetchall():
+        for sub, key, status, err in cur.fetchall():
             b = base.setdefault(sub, {'good_loaded': 0, 'good_failed': 0,
                                       'bad_loaded': 0, 'bad_failed': 0, 'total': 0})
             b['total'] += 1
-            bad = is_bad_key(key)
+            bad = is_bad_row(key, err)
             if status == 'LOADED':
                 b['bad_loaded' if bad else 'good_loaded'] += 1
             elif status == 'FAILED':
