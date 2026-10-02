@@ -1,5 +1,51 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-02 -- DONE: workable-items goal complete (#65 all objects, #25, #69, #145, #146), one regression
+
+**Bottom line.** All five items are finished completely -- not one object, every object -- and proven
+by a single combined regression (run 205): zero new problems except one page break this work caused,
+which was then fixed and re-proven. No "mostly done."
+
+**#65 -- rolled to every object.** The "match on the stamped reference first, then the attribute,
+then the business key" reconcile logic now covers all 30 reconcile packages (the 3 done earlier plus
+all 27 remaining), across five area PRs. The primary match is unchanged, so every object loads and
+fails exactly as before -- the regression confirmed that for all of them. Honest limit: for two
+objects (Grants, Projects) a third-tier match genuinely doesn't apply (no separate business key), and
+for accounts-receivable it can't be exercised while AR invoicing is blocked by the functional owner;
+those correctly use the first two tiers.
+
+**#25 -- finished.** The naming leftovers were mostly already done or were misreads of the catalog;
+the one real gap -- receipt drill screens reading empty orphan tables -- was fixed by repointing them
+to the live inventory tables and dropping the orphans. The regression then caught a column the
+repoint had dropped (it broke the Order-to-Cash page); that was fixed too (column restored plus a
+stale saved-report cleaned), and the page now renders clean.
+
+**#69 -- finished honestly.** The export-hygiene defects were cleaned and the reversed-log issue was
+already gone. The one remaining piece -- a zero-amount AR line -- is correctly left "unaccounted": an
+attempt to mark it "failed" was removed because it would have invented a Fusion error, which the
+mission rules forbid; there is no real error to record until AR is unblocked.
+
+**#145 -- fixed.** The Activity-Log drill that returned a 500 was tracing to the database streaming a
+large message field twice per click and exhausting the web tier's connection pool; the fix reads the
+message once and stops the whole-run report from re-rendering on a single-row drill. The pages that
+failed now load in about a second.
+
+**#146 -- fixed.** The regression tool no longer miscounts a deliberately-bad orphan row as a failed
+good row, so it stops raising a phantom "regression" every run while still catching real ones.
+
+**The combined regression (run 205).** Ran all 41 objects to completion with no manual nudging --
+the local-scheduler fix (#144) holding at full scale, up to ten workers at once. Tier-1 behaviour
+matched the baseline for every object. The only blocking finding was the page break above, now
+fixed. One pre-existing, non-deterministic issue was found and logged as its own item (#147): the
+Items reconcile sometimes reads Fusion's base table a moment before Item Import commits a row, so a
+good item can be marked failed even though it did load -- not caused by this work, and it needs a
+short settle/re-read before the Items reconcile.
+
+**Backlog now: 136 resolved, 0 partial, 4 still-open, 5 superseded, 2 stale (147).** The 4 still-open
+are all out of our hands or newly-logged: #72 (tax cards, parked/env), #85 (AR line id, AR blocked),
+#130 (config objects, functional owner), #147 (the Items timing race, new). Nothing from the
+greenlit list remains.
+
 ## Session -- 2026-10-02 -- CHECKPOINT: full #65 rollout + #25/#69/#145/#146 (in progress)
 
 **Bottom line (snapshot, mid-flight).** Working the five "workable now" items to full completion --
