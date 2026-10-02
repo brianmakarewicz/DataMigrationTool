@@ -79,17 +79,20 @@ docker exec "$CONTAINER" bash -c "echo 'alter session set container=FREEPDB1;
 exit' | sqlplus -S / as sysdba"
 
 # Assert the trigger compiled clean (CREATE OR REPLACE succeeds even on an
-# invalid body), so a bad trigger fails the build loudly instead of silently
-# disabling the self-heal.
-TRG_STATUS=$(docker exec "$CONTAINER" bash -c "echo 'alter session set container=FREEPDB1;
-set heading off feedback off pagesize 0
-select status from dba_triggers where trigger_name=''DMT_REAP_ORPHAN_JOBS_TRG'';
-exit' | sqlplus -S / as sysdba" | tr -d '[:space:]')
-if [ "$TRG_STATUS" != "ENABLED" ]; then
-  echo "ERROR: startup reap trigger DMT_REAP_ORPHAN_JOBS_TRG is '$TRG_STATUS', expected ENABLED" >&2
+# invalid body) AND the slot raise took, so either failing stops the build
+# loudly instead of silently disabling the self-heal. The assertion query lives
+# in its own committed .sql file (run exactly like the trigger file above) so no
+# SQL string literal is nested inside a bash single-quoted echo -- that nesting
+# strips the quotes and yields ORA-00904. The file prints "REAP144 <status>
+# <slots>", e.g. "REAP144 ENABLED 32".
+docker cp "$DIR/tools/sys_startup_reap_assert.sql" "$CONTAINER":/tmp/sys_startup_reap_assert.sql
+REAP_ASSERT=$(docker exec "$CONTAINER" bash -c "echo '@/tmp/sys_startup_reap_assert.sql' | sqlplus -S / as sysdba" | grep '^REAP144' | tr -s ' ')
+if [ "$REAP_ASSERT" != "REAP144 ENABLED 32" ]; then
+  echo "ERROR: startup reap self-check failed. Expected 'REAP144 ENABLED 32', got '$REAP_ASSERT'" >&2
+  echo "       (trigger status must be ENABLED and job_queue_processes must be 32)" >&2
   exit 1
 fi
-echo "Startup reap trigger DMT_REAP_ORPHAN_JOBS_TRG: ENABLED."
+echo "Startup reap trigger ENABLED and job_queue_processes=32 confirmed ($REAP_ASSERT)."
 
 echo "Running db_full/install.sql as DMT_OWNER ..."
 cd "$DIR"
