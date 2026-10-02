@@ -14,11 +14,18 @@ FBDI
 - Parent: Items (items must exist in Fusion before receipts reference them)
 - Linkage: ITEM_NUMBER in transactions references imported items
 
-## Staging Tables
-- STG (Headers): `DMT_RCV_HEADERS_STG_TBL` (DDL: `schema/tables/92_dmt_rcv_headers_stg_tbl.sql`)
-- STG (Transactions): `DMT_RCV_TRANSACTIONS_STG_TBL` (DDL: `schema/tables/93_dmt_rcv_transactions_stg_tbl.sql`)
-- TFM (Headers): `DMT_RCV_HEADERS_TFM_TBL` (DDL: `schema/tables/94_dmt_rcv_headers_tfm_tbl.sql`)
-- TFM (Transactions): `DMT_RCV_TRANSACTIONS_TFM_TBL` (DDL: `schema/tables/95_dmt_rcv_transactions_tfm_tbl.sql`)
+## Staging Tables (the live Inventory-Transactions pipeline)
+The generator writes the INV_TRX tables, NOT the (now-dropped) RCV tables.
+- STG (Transactions): `DMT_INV_TRX_STG_TBL`
+- STG (Lots): `DMT_INV_TRX_LOTS_STG_TBL`
+- STG (Serials): `DMT_INV_TRX_SERIALS_STG_TBL`
+- TFM (Transactions): `DMT_INV_TRX_TFM_TBL`
+- TFM (Lots): `DMT_INV_TRX_LOTS_TFM_TBL`
+- TFM (Serials): `DMT_INV_TRX_SERIALS_TFM_TBL`
+
+The orphan `DMT_RCV_HEADERS_*` / `DMT_RCV_TRANSACTIONS_*` STG/TFM tables and
+their sequences were dropped in backlog #25
+(`db/migrations/2026-10-02_drop_orphan_rcv_tables.sql`).
 
 ## Code References
 - Validator: `packages/validators/dmt_misc_receipt_validator_pkg`
@@ -221,5 +228,21 @@ shortened label. No wrong-record-type defect.
    without the repoint would invalidate the eight views (fails the 0-invalid gate);
    repointing without a regression run would be an unverified UI change — so the
    #25 pass left both halves for a dedicated follow-up and recorded them here.
+
+   **RESOLVED (backlog #25 finish, 2026-10-02, branch `fix/25-rcv-repoint`).**
+   All eight views were repointed from `DMT_RCV_*` to `DMT_INV_TRX_*` and the four
+   orphan RCV STG/TFM tables plus their four sequences were dropped via a guarded,
+   idempotent migration (`db/migrations/2026-10-02_drop_orphan_rcv_tables.sql`, runs
+   twice cleanly). The two drill views `DMT_RCV_HEADERS_DETAIL_V` /
+   `DMT_RCV_TRANSACTIONS_DETAIL_V` keep their names (so app-500 page 4 is unchanged)
+   but now read INV_TRX: headers = the transaction grain, transactions = the lot and
+   serial children. `DMT_RECORD_DETAIL_V` / `DMT_OBJECT_DETAIL_V` /
+   `DMT_V_CEMLI_TFM_TABLES` now break MiscReceipts into the three catalog sub-objects
+   (Inventory Transactions / Transaction Lots / Transaction Serials). Verified on
+   `dmt2-local` as DMT_OWNER: 0 invalid objects after the drop; the MiscReceipts drill
+   now returns the real loaded rows (run 198 shows 12 transactions = 7 LOADED /
+   5 FAILED, 3 lots LOADED, 1 serial LOADED) where it previously read zero. The RCV
+   `Rcv*.ctl` reference files under this folder are now dead and may be removed by a
+   later housekeeping sweep (left in place here to keep this PR to the view/table scope).
 2. **No physical rename needed** for the three Inv_* tables — they already mirror
    their tabs; the `TRX`/`SERIALS` shortenings are consistent and unambiguous.

@@ -192,11 +192,9 @@ def main():
         "DMT_POR_REQ_DISTS_TFM_TBL",
         "DMT_POR_REQ_LINES_TFM_TBL",
         "DMT_POR_REQ_HEADERS_TFM_TBL",
-        # RCV
-        "DMT_RCV_TRANSACTIONS_TFM_TBL",
-        "DMT_RCV_HEADERS_TFM_TBL",
-        # MiscReceipts (INV_TRX -- the pipeline's REAL tables; the RCV pair above are
-        #  orphans). Were missing here, so INV_TRX STG accumulated across reloads
+        # MiscReceipts (INV_TRX -- the pipeline's REAL tables). The orphan RCV
+        #  pair was dropped in backlog #25 (db/migrations/2026-10-02_drop_orphan_rcv_tables.sql).
+        #  These were missing here, so INV_TRX STG accumulated across reloads
         #  (92 rows / 0 distinct source_ids observed), causing stale-duplicate
         #  failures on MiscReceipts runs -- same bug class as the Items 15x accumulation.
         "DMT_INV_TRX_SERIALS_TFM_TBL",
@@ -254,9 +252,6 @@ def main():
         "DMT_POR_REQ_DISTS_STG_TBL",
         "DMT_POR_REQ_LINES_STG_TBL",
         "DMT_POR_REQ_HEADERS_STG_TBL",
-        # RCV transactions → headers
-        "DMT_RCV_TRANSACTIONS_STG_TBL",
-        "DMT_RCV_HEADERS_STG_TBL",
         # Asset assignments → books → headers
         "DMT_FA_ASSET_ASSIGN_STG_TBL",
         "DMT_FA_ASSET_BOOK_STG_TBL",
@@ -1940,12 +1935,6 @@ def main():
         label=f"{label}")
     tag_scenario(cur, "DMT_EGP_ITEM_CAT_STG_TBL", scenario_id)
 
-    # ====================================================================
-    # 33. MISC RECEIPTS / RCV HEADERS (DMT_RCV_HEADERS_STG_TBL)
-    #     GOOD: 2 receipt headers — org 001 (Seattle)
-    #     BAD:  1 missing SHIP_TO_ORGANIZATION_CODE [BAD-REQ]
-    #     Items must be LOADED before receipts can run.
-    # ====================================================================
     # ====================================================================
     # 33. INV TRANSACTIONS (DMT_INV_TRX_STG_TBL) — MiscReceipts
     #     Miscellaneous Receipt via INV_TRANSACTIONS_INTERFACE.
