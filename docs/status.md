@@ -1,5 +1,49 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-02 -- CHECKPOINT: full #65 rollout + #25/#69/#145/#146 (in progress)
+
+**Bottom line (snapshot, mid-flight).** Working the five "workable now" items to full completion --
+no "one object, rest staged." The big one, #65, is being rolled to ALL 27 remaining objects, not a
+sample. Most of the work is merged; two small pieces are still finishing and the single combined
+regression that gates the verdict flips has not run yet. This entry records exactly where things
+stand so the record is current.
+
+**#65 -- three-tier reconcile match, full rollout to all 27 objects.** Done as five parallel agents
+by area, each mirroring the proven Workers/GL/Customers template on its own results packages (leaf
+packages, no cross-dependency), each proving tier-1 behaviour byte-equivalent + 0 invalid + a
+tier-2/3 fallback. No schema changes were needed -- the transform tables already carry the key
+columns. PRs: P2P 6 objects (#553, merged), GLBudgets/Assets/MiscReceipts/BillingEvents (#554,
+merged), HCM group 2, 7 objects (#556, merged), HCM group 1, 5 objects (#558, merged), O2C/Projects
+5 objects (#560, open). Honest limit recorded on the item: for Grants and Projects a third-tier
+match is genuinely not applicable (no business key distinct from the stamped reference), and for AR
+it can't be exercised because AR invoicing is blocked by the functional owner -- those three keep
+the first two tiers, which is correct. PENDING: merge #560, then ONE combined regression across the
+whole pipeline proving zero new problems and that every object still loads/fails as before; only
+then does #65 flip to resolved.
+
+**#25 -- naming-registry leftovers.** Reviewed (merged, #557): most were already done or were
+misreads of the catalog (same as the earlier null-row note). One genuine gap remains and is being
+finished now -- the orphan receipt tables that eight MiscReceipts drill screens still read from
+(so those screens show empty counts); the fix repoints the screens to the live inventory tables and
+drops the orphans (PR in flight).
+
+**#69 -- reconcile cleanup.** APEX-export defects cleaned (merged, #559): removed references to four
+pages that don't exist and deleted a leftover old button template; clean import proven. The AR
+zero-amount line now reads "failed" with a real reason instead of "unaccounted" (in #560, open).
+
+**#145 -- the Activity-Log drill that returns a 500.** Being diagnosed and fixed now; the agent is
+finishing the fix and the proof that the drill renders.
+
+**#146 -- regression-tool false alarm. DONE (merged, #555).** The tool now counts a deliberately-bad
+orphan row as bad (not as a failed-good row), so it stops raising a phantom "regression" every run,
+while still catching real ones. A reporting-tool fix -- no pipeline run needed, so it's closed.
+
+**Backlog now: 132 resolved, 2 partial (#65, #25 -- both finishing), 5 still-open, 5 superseded,
+2 stale (146).** Remaining after this wave lands: the externally-blocked items (#72 TaxCards, #85 AR
+line id, #130 config objects) that wait on the functional owner / environment. Next concrete steps:
+finish #145 and the #25 receipt-table repoint, merge #560, run the one combined regression, then
+flip #65/#25/#69 to their final verdicts.
+
 ## Session -- 2026-10-02 -- Backlog #138 + #144 (last two owner decisions), one regression
 
 **Bottom line.** The two items that were waiting on an owner decision are done and proven by one
