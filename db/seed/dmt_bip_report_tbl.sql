@@ -1828,8 +1828,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Suppliers'                                          cemli_code,
-           '/Custom/DMT2/Suppliers/SUP_CMP_DM.xdm'               cmp_dm_catalog_path,
-           '/Custom/DMT2/Suppliers/SUP_CMP_RPT.xdo'              cmp_report_catalog_path,
+           '/Custom/DMT2/Suppliers/SUP_CMP_V2_DM.xdm'            cmp_dm_catalog_path,
+           '/Custom/DMT2/Suppliers/SUP_CMP_V2_RPT.xdo'           cmp_report_catalog_path,
            'DMT_SUP_COMPARE_PKG.GET_SUPPLIERS_CMP'                cmp_function
     from dual
     union all select 'SupplierAddresses',
@@ -1882,8 +1882,8 @@ using (
            'DMT_PO_COMPARE_PKG.GET_BLANKET_COMPARISON'            cmp_function
     from dual
     union all select 'Contracts',
-           '/Custom/DMT2/Contracts/PO_CMP_DM.xdm',
-           '/Custom/DMT2/Contracts/PO_CMP_RPT.xdo',
+           '/Custom/DMT2/Contracts/PO_CMP_V2_DM.xdm',
+           '/Custom/DMT2/Contracts/PO_CMP_V2_RPT.xdo',
            'DMT_PO_COMPARE_PKG.GET_CONTRACT_COMPARISON'
     from dual
 ) s
@@ -2839,8 +2839,8 @@ using (
            'DMT_AP_COMPARE_PKG.GET_COMPARISON'                  cmp_function
     from dual
     union all select 'Customers',
-           '/Custom/DMT2/Customers/CUST_CMP_DM.xdm',
-           '/Custom/DMT2/Customers/CUST_CMP_RPT.xdo',
+           '/Custom/DMT2/Customers/CUST_CMP_V2_DM.xdm',
+           '/Custom/DMT2/Customers/CUST_CMP_V2_RPT.xdo',
            'DMT_CUST_COMPARE_PKG.GET_COMPARISON'
     from dual
     union all select 'ARInvoices',
@@ -2933,8 +2933,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Projects'                                            cemli_code,
-           '/Custom/DMT2/Projects/PROJECT_CMP_DM.xdm'             cmp_dm_catalog_path,
-           '/Custom/DMT2/Projects/PROJECT_CMP_RPT.xdo'            cmp_report_catalog_path,
+           '/Custom/DMT2/Projects/PROJECT_CMP_V2_DM.xdm'          cmp_dm_catalog_path,
+           '/Custom/DMT2/Projects/PROJECT_CMP_V2_RPT.xdo'         cmp_report_catalog_path,
            'DMT_PPM_COMPARE_PKG.GET_PROJECTS_CMP'                 cmp_function
     from dual
     union all select 'ProjectBudgets',
@@ -3037,8 +3037,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Workers'                                            cemli_code,
-           '/Custom/DMT2/Workers/WORKERS_CMP_DM.xdm'             cmp_dm_catalog_path,
-           '/Custom/DMT2/Workers/WORKERS_CMP_RPT.xdo'            cmp_report_catalog_path,
+           '/Custom/DMT2/Workers/WORKERS_CMP_V2_DM.xdm'          cmp_dm_catalog_path,
+           '/Custom/DMT2/Workers/WORKERS_CMP_V2_RPT.xdo'         cmp_report_catalog_path,
            'DMT_HCM_COMPARE_PKG.GET_WORKERS_CMP'                 cmp_function
     from dual
     union all select 'Salaries',
