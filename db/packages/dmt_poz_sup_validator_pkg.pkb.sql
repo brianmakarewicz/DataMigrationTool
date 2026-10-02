@@ -212,7 +212,10 @@
     -- packages except the STG table name(s) and the SUB_OBJECT filter (tagged EDIT
     -- regions), like SWEEP_UNACCOUNTED. Does NOT commit — the caller owns the txn.
     -- ============================================================
-    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
+    -- Each per-object flagger flips ONLY its own STG table's rows (those carrying
+    -- a recorded error row for this run) to 'FAILED'. This lets a per-object
+    -- supplier runner flag just its own object, giving per-object isolation.
+    PROCEDURE FLAG_SUPPLIERS_STG_FAILED (p_run_id IN NUMBER) IS
     BEGIN
         -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUPPLIERS_STG_TBL
@@ -225,20 +228,25 @@
                                    AND SUB_OBJECT = 'Suppliers'
         -- <<END EDIT-SCOPE>>
                                   );
+    END FLAG_SUPPLIERS_STG_FAILED;
 
-        -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
-        --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
+    PROCEDURE FLAG_ADDRESSES_STG_FAILED (p_run_id IN NUMBER) IS
+    BEGIN
+        -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUP_ADDR_STG_TBL
-        -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
+        -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_STATUS IN ('NEW')
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
-        -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
+        -- <<EDIT-SCOPE>>
                                    AND SUB_OBJECT = 'Supplier Addresses'
-        -- <<END EDIT-SCOPE — nothing below this changes>>
+        -- <<END EDIT-SCOPE>>
                                   );
+    END FLAG_ADDRESSES_STG_FAILED;
 
+    PROCEDURE FLAG_SITES_STG_FAILED (p_run_id IN NUMBER) IS
+    BEGIN
         -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUP_SITE_STG_TBL
         -- <<END EDIT-TABLE>>
@@ -250,7 +258,10 @@
                                    AND SUB_OBJECT = 'Supplier Sites'
         -- <<END EDIT-SCOPE>>
                                   );
+    END FLAG_SITES_STG_FAILED;
 
+    PROCEDURE FLAG_SITE_ASSIGNMENTS_STG_FAILED (p_run_id IN NUMBER) IS
+    BEGIN
         -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUP_SITE_ASSN_STG_TBL
         -- <<END EDIT-TABLE>>
@@ -262,7 +273,10 @@
                                    AND SUB_OBJECT = 'Site Assignments'
         -- <<END EDIT-SCOPE>>
                                   );
+    END FLAG_SITE_ASSIGNMENTS_STG_FAILED;
 
+    PROCEDURE FLAG_CONTACTS_STG_FAILED (p_run_id IN NUMBER) IS
+    BEGIN
         -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUP_CONTACTS_STG_TBL
         -- <<END EDIT-TABLE>>
@@ -274,6 +288,16 @@
                                    AND SUB_OBJECT = 'Supplier Contacts'
         -- <<END EDIT-SCOPE>>
                                   );
+    END FLAG_CONTACTS_STG_FAILED;
+
+    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
+    BEGIN
+        -- Flag all five supplier STG tables in sequence (orchestrator path).
+        FLAG_SUPPLIERS_STG_FAILED(p_run_id);
+        FLAG_ADDRESSES_STG_FAILED(p_run_id);
+        FLAG_SITES_STG_FAILED(p_run_id);
+        FLAG_SITE_ASSIGNMENTS_STG_FAILED(p_run_id);
+        FLAG_CONTACTS_STG_FAILED(p_run_id);
     END FLAG_STG_FAILED;
 
     -- --------------------------------------------------------
