@@ -1,5 +1,34 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-02 -- Backlog #138 + #144 (last two owner decisions), one regression
+
+**Bottom line.** The two items that were waiting on an owner decision are done and proven by one
+regression (run 204): zero new problems versus the last known-good run. That finishes the whole
+greenlit list.
+
+**#138 — supplier "mark it failed" fix.** Each of the five supplier loaders now validates and then
+flags only its own object's rejected staging rows as failed, so a bad supplier/address/site/contact
+row no longer sits in limbo and get re-rejected every run. Proven: the good rows still load exactly
+as before, and the deliberately-bad orphan rows now correctly read "failed."
+
+**#144 — scheduler reliability, fixed on restart (your call).** Added a database startup hook: every
+time the database comes up (which is what a container restart does), it clears out any leftover
+worker jobs that were killed mid-run by the previous shutdown -- those orphans are what used to pile
+up and choke the run poller. It also leaves the always-on poller alone, and can never block the
+database from opening. The job-slot limit was raised from four to thirty-two (sized to the
+pipeline's real peak of ~15-20 workers running at once, plus the poller, plus headroom -- not
+padding). Proven two ways: a real container restart auto-cleared planted orphan jobs and kept the
+poller; and this regression ran all forty-one objects straight through with no manual nudging at all
+-- peaking at ten workers at once, which the old four slots could never have carried. The thing that
+stalled every prior run is fixed.
+
+**Where the backlog stands:** 131 resolved, 2 partial (#65 reconcile-match rollout and #25 naming
+registry items -- both have their hard part done), 6 still-open, 5 superseded, 2 stale, of 146. The
+remaining still-open items are the externally-blocked ones (functional-owner / environment /
+infrastructure) plus the two small follow-ups this work logged (#145 the pre-existing p54 drill 500,
+#146 the regression-tool labeling gap). Two environment-gated Fusion deploys are still pending when
+someone has access: the #94 comparison data models and the #60 W-2 report.
+
 ## Session -- 2026-10-01 -- Backlog #25 naming sweep (views + APEX), on its own
 
 **Bottom line.** Renamed all 78 run-detail drill views to the house naming convention and repointed
