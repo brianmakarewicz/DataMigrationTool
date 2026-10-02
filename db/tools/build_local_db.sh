@@ -55,13 +55,44 @@ echo exit | "$SQLCL" -S system/"$ORA_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1
 echo exit | "$SQLCL" -S system/"$ORA_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1 \
   @"$DIR/tools/local_lookup_setup.sql" "$LKP_LOCAL_PWD"
 
-# SYS-owned package grants SYSTEM cannot make (see local_*_setup.sql notes)
+# SYS-owned package grants SYSTEM cannot make (see local_*_setup.sql notes).
+# Backlog #144: also raise job_queue_processes so a stray orphaned worker job
+# can never starve the poller. 32 clears the ~34-object pipeline's realistic
+# peak of in-flight workers (~15-20) plus the poller, with headroom; the
+# startup trigger below clears zombies so no extra padding is needed.
 docker exec "$CONTAINER" bash -c "echo 'alter session set container=FREEPDB1;
 grant execute on dbms_network_acl_admin to DMT_OWNER;
 grant execute on utl_http to DMT_LOOKUP;
 grant execute on utl_raw to DMT_LOOKUP;
 grant execute on dbms_lob to DMT_LOOKUP;
+alter system set job_queue_processes=32 scope=both;
 exit' | sqlplus -S / as sysdba"
+
+# Backlog #144: SYS-owned AFTER STARTUP ON DATABASE trigger that force-drops
+# orphaned one-shot worker jobs (DMT_WQ_/DMT_PL_/DMT_PF_) left behind by a
+# mid-run shutdown, so a `docker restart` self-heals. Source of truth is the
+# committed db/tools/sys_startup_reap_trigger.sql; copy it into the container
+# and run it as sysdba. Preserves the persistent poller (not in those families).
+docker cp "$DIR/tools/sys_startup_reap_trigger.sql" "$CONTAINER":/tmp/sys_startup_reap_trigger.sql
+docker exec "$CONTAINER" bash -c "echo 'alter session set container=FREEPDB1;
+@/tmp/sys_startup_reap_trigger.sql
+exit' | sqlplus -S / as sysdba"
+
+# Assert the trigger compiled clean (CREATE OR REPLACE succeeds even on an
+# invalid body) AND the slot raise took, so either failing stops the build
+# loudly instead of silently disabling the self-heal. The assertion query lives
+# in its own committed .sql file (run exactly like the trigger file above) so no
+# SQL string literal is nested inside a bash single-quoted echo -- that nesting
+# strips the quotes and yields ORA-00904. The file prints "REAP144 <status>
+# <slots>", e.g. "REAP144 ENABLED 32".
+docker cp "$DIR/tools/sys_startup_reap_assert.sql" "$CONTAINER":/tmp/sys_startup_reap_assert.sql
+REAP_ASSERT=$(docker exec "$CONTAINER" bash -c "echo '@/tmp/sys_startup_reap_assert.sql' | sqlplus -S / as sysdba" | grep '^REAP144' | tr -s ' ')
+if [ "$REAP_ASSERT" != "REAP144 ENABLED 32" ]; then
+  echo "ERROR: startup reap self-check failed. Expected 'REAP144 ENABLED 32', got '$REAP_ASSERT'" >&2
+  echo "       (trigger status must be ENABLED and job_queue_processes must be 32)" >&2
+  exit 1
+fi
+echo "Startup reap trigger ENABLED and job_queue_processes=32 confirmed ($REAP_ASSERT)."
 
 echo "Running db_full/install.sql as DMT_OWNER ..."
 cd "$DIR"
