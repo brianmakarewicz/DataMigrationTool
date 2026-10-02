@@ -84,6 +84,9 @@ AS
         l_hdr_loaded  NUMBER := 0;  l_hdr_failed  NUMBER := 0;
         l_line_loaded NUMBER := 0;  l_line_failed NUMBER := 0;
         l_dist_loaded NUMBER := 0;  l_dist_failed NUMBER := 0;
+        l_rc        NUMBER := 0;    -- backlog #65: rows matched by the current tier
+        l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
+        l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
         -- Generated-row count across all three tiers drives the shared fetch's
         -- keyset page-count cap. Done statically here (not in the shared pkg).
@@ -127,15 +130,62 @@ AS
                     IF l_rows(i).SOURCE_TYPE = 'BASE'
                        AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                        AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        -- Backlog #65 three-tier match. Tier 1 is the stamped Slot A reference
+                        -- (RECON_KEY = RECORD_KEY, exactly as before). Only if tier 1 matches NO
+                        -- TFM row do we fall through: tier 2 (the Slot C DFF stamp: TFM_SEQUENCE_ID
+                        -- = trailing segment of DFF_KEY) and then tier 3 (the business key:
+                        -- RECON_KEY = BUSINESS_KEY -- the per-record SOURCE_REF equals RECON_KEY, so
+                        -- tier 3 is the same key and safely degenerate). Every tier-1 hit short-
+                        -- circuits, so loaded outcomes are identical to before.
+                        l_rc := 0; l_tier := NULL;
                         UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
-                        SET    TFM_STATUS                   = 'LOADED',
+                        SET    TFM_STATUS           = 'LOADED',
                                FUSION_REQUISITION_HEADER_ID = l_rows(i).FUSION_ID,
-                               RESULTS_UPDATED_DATE         = SYSDATE,
-                               LAST_UPDATED_DATE            = SYSDATE
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_hdr_loaded := l_hdr_loaded + SQL%ROWCOUNT;
+                        l_rc := SQL%ROWCOUNT;
+                        l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+
+                        IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
+                            l_dff_seq := TO_NUMBER(
+                                REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
+                            IF l_dff_seq IS NOT NULL THEN
+                                UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
+                                SET    TFM_STATUS           = 'LOADED',
+                                       FUSION_REQUISITION_HEADER_ID = l_rows(i).FUSION_ID,
+                                       RESULTS_UPDATED_DATE = SYSDATE,
+                                       LAST_UPDATED_DATE    = SYSDATE
+                                WHERE  RUN_ID    = p_run_id
+                                AND    TFM_SEQUENCE_ID = l_dff_seq
+                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                                l_rc := SQL%ROWCOUNT;
+                                IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
+                            END IF;
+                        END IF;
+
+                        IF l_rc = 0 AND l_rows(i).BUSINESS_KEY IS NOT NULL THEN
+                            UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
+                            SET    TFM_STATUS           = 'LOADED',
+                                   FUSION_REQUISITION_HEADER_ID = l_rows(i).FUSION_ID,
+                                   RESULTS_UPDATED_DATE = SYSDATE,
+                                   LAST_UPDATED_DATE    = SYSDATE
+                            WHERE  RUN_ID    = p_run_id
+                            AND    RECON_KEY = l_rows(i).BUSINESS_KEY
+                            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                            l_rc := SQL%ROWCOUNT;
+                            IF l_rc > 0 THEN l_tier := 'TIER3'; END IF;
+                        END IF;
+
+                        l_hdr_loaded := l_hdr_loaded + l_rc;
+                        IF l_tier IN ('TIER2','TIER3') THEN
+                            DMT_UTIL_PKG.LOG(p_run_id,
+                                C_PROC || ': matched a LOADED Requisition header via ' || l_tier ||
+                                ' fallback (tier 1 stamped ref did not resolve). FUSION_ID '
+                                || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
+                        END IF;
                     ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                           AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
                         UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
@@ -156,15 +206,62 @@ AS
                     IF l_rows(i).SOURCE_TYPE = 'BASE'
                        AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                        AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        -- Backlog #65 three-tier match. Tier 1 is the stamped Slot A reference
+                        -- (RECON_KEY = RECORD_KEY, exactly as before). Only if tier 1 matches NO
+                        -- TFM row do we fall through: tier 2 (the Slot C DFF stamp: TFM_SEQUENCE_ID
+                        -- = trailing segment of DFF_KEY) and then tier 3 (the business key:
+                        -- RECON_KEY = BUSINESS_KEY -- the per-record SOURCE_REF equals RECON_KEY, so
+                        -- tier 3 is the same key and safely degenerate). Every tier-1 hit short-
+                        -- circuits, so loaded outcomes are identical to before.
+                        l_rc := 0; l_tier := NULL;
                         UPDATE DMT_POR_REQ_LINES_TFM_TBL
-                        SET    TFM_STATUS                 = 'LOADED',
+                        SET    TFM_STATUS           = 'LOADED',
                                FUSION_REQUISITION_LINE_ID = l_rows(i).FUSION_ID,
-                               RESULTS_UPDATED_DATE       = SYSDATE,
-                               LAST_UPDATED_DATE          = SYSDATE
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_line_loaded := l_line_loaded + SQL%ROWCOUNT;
+                        l_rc := SQL%ROWCOUNT;
+                        l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+
+                        IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
+                            l_dff_seq := TO_NUMBER(
+                                REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
+                            IF l_dff_seq IS NOT NULL THEN
+                                UPDATE DMT_POR_REQ_LINES_TFM_TBL
+                                SET    TFM_STATUS           = 'LOADED',
+                                       FUSION_REQUISITION_LINE_ID = l_rows(i).FUSION_ID,
+                                       RESULTS_UPDATED_DATE = SYSDATE,
+                                       LAST_UPDATED_DATE    = SYSDATE
+                                WHERE  RUN_ID    = p_run_id
+                                AND    TFM_SEQUENCE_ID = l_dff_seq
+                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                                l_rc := SQL%ROWCOUNT;
+                                IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
+                            END IF;
+                        END IF;
+
+                        IF l_rc = 0 AND l_rows(i).BUSINESS_KEY IS NOT NULL THEN
+                            UPDATE DMT_POR_REQ_LINES_TFM_TBL
+                            SET    TFM_STATUS           = 'LOADED',
+                                   FUSION_REQUISITION_LINE_ID = l_rows(i).FUSION_ID,
+                                   RESULTS_UPDATED_DATE = SYSDATE,
+                                   LAST_UPDATED_DATE    = SYSDATE
+                            WHERE  RUN_ID    = p_run_id
+                            AND    RECON_KEY = l_rows(i).BUSINESS_KEY
+                            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                            l_rc := SQL%ROWCOUNT;
+                            IF l_rc > 0 THEN l_tier := 'TIER3'; END IF;
+                        END IF;
+
+                        l_line_loaded := l_line_loaded + l_rc;
+                        IF l_tier IN ('TIER2','TIER3') THEN
+                            DMT_UTIL_PKG.LOG(p_run_id,
+                                C_PROC || ': matched a LOADED Requisition line via ' || l_tier ||
+                                ' fallback (tier 1 stamped ref did not resolve). FUSION_ID '
+                                || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
+                        END IF;
                     ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                           AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
                         UPDATE DMT_POR_REQ_LINES_TFM_TBL
@@ -185,15 +282,62 @@ AS
                     IF l_rows(i).SOURCE_TYPE = 'BASE'
                        AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                        AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        -- Backlog #65 three-tier match. Tier 1 is the stamped Slot A reference
+                        -- (RECON_KEY = RECORD_KEY, exactly as before). Only if tier 1 matches NO
+                        -- TFM row do we fall through: tier 2 (the Slot C DFF stamp: TFM_SEQUENCE_ID
+                        -- = trailing segment of DFF_KEY) and then tier 3 (the business key:
+                        -- RECON_KEY = BUSINESS_KEY -- the per-record SOURCE_REF equals RECON_KEY, so
+                        -- tier 3 is the same key and safely degenerate). Every tier-1 hit short-
+                        -- circuits, so loaded outcomes are identical to before.
+                        l_rc := 0; l_tier := NULL;
                         UPDATE DMT_POR_REQ_DISTS_TFM_TBL
-                        SET    TFM_STATUS            = 'LOADED',
+                        SET    TFM_STATUS           = 'LOADED',
                                FUSION_DISTRIBUTION_ID = l_rows(i).FUSION_ID,
-                               RESULTS_UPDATED_DATE   = SYSDATE,
-                               LAST_UPDATED_DATE      = SYSDATE
+                               RESULTS_UPDATED_DATE = SYSDATE,
+                               LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_dist_loaded := l_dist_loaded + SQL%ROWCOUNT;
+                        l_rc := SQL%ROWCOUNT;
+                        l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+
+                        IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
+                            l_dff_seq := TO_NUMBER(
+                                REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
+                            IF l_dff_seq IS NOT NULL THEN
+                                UPDATE DMT_POR_REQ_DISTS_TFM_TBL
+                                SET    TFM_STATUS           = 'LOADED',
+                                       FUSION_DISTRIBUTION_ID = l_rows(i).FUSION_ID,
+                                       RESULTS_UPDATED_DATE = SYSDATE,
+                                       LAST_UPDATED_DATE    = SYSDATE
+                                WHERE  RUN_ID    = p_run_id
+                                AND    TFM_SEQUENCE_ID = l_dff_seq
+                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                                l_rc := SQL%ROWCOUNT;
+                                IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
+                            END IF;
+                        END IF;
+
+                        IF l_rc = 0 AND l_rows(i).BUSINESS_KEY IS NOT NULL THEN
+                            UPDATE DMT_POR_REQ_DISTS_TFM_TBL
+                            SET    TFM_STATUS           = 'LOADED',
+                                   FUSION_DISTRIBUTION_ID = l_rows(i).FUSION_ID,
+                                   RESULTS_UPDATED_DATE = SYSDATE,
+                                   LAST_UPDATED_DATE    = SYSDATE
+                            WHERE  RUN_ID    = p_run_id
+                            AND    RECON_KEY = l_rows(i).BUSINESS_KEY
+                            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                            l_rc := SQL%ROWCOUNT;
+                            IF l_rc > 0 THEN l_tier := 'TIER3'; END IF;
+                        END IF;
+
+                        l_dist_loaded := l_dist_loaded + l_rc;
+                        IF l_tier IN ('TIER2','TIER3') THEN
+                            DMT_UTIL_PKG.LOG(p_run_id,
+                                C_PROC || ': matched a LOADED Requisition distribution via ' || l_tier ||
+                                ' fallback (tier 1 stamped ref did not resolve). FUSION_ID '
+                                || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
+                        END IF;
                     ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                           AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
                         UPDATE DMT_POR_REQ_DISTS_TFM_TBL
