@@ -1,5 +1,28 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-01 -- Backlog #25 naming sweep (views + APEX), on its own
+
+**Bottom line.** Renamed all 78 run-detail drill views to the house naming convention and repointed
+the nine console pages that read them, so the screens still show their data. This was a name-only
+change -- no logic touched -- so it was verified by a clean install and an all-pages screen check
+rather than a full data-load run.
+
+**Done and proven.** 78 views renamed to the `*_V` suffix, the install list and a safe re-runnable
+migration updated, and the nine object pages in the console repointed. Checks: zero broken database
+objects, all 78 views return data, and the console re-imported and rendered all 41 pages with no
+blank screens (including the run-detail, object-detail and record-detail drill pages).
+
+**Left for a follow-up (named in the backlog item).** The smaller naming cleanups -- a few stray
+registry rows, some upload filenames, an unregistered Grants file, orphaned receipt tables -- were
+deliberately left so this stayed one coherent, verified change. Two of the original cleanup notes
+turned out not to apply: the Payroll-relationships rename is already done in live code, and the
+"delete the null row #120" note was based on a misread of the data (a null value there is normal for
+~156 inactive rows), so that row was correctly left alone.
+
+**Batch status.** This finishes the owner-greenlit list. Everything is resolved or honestly
+dispositioned except two items that need the owner's decision: how to fix the supplier validation
+call, and the go-ahead to raise the local database's job limit and add a pre-run job cleanup.
+
 ## Session -- 2026-10-01 -- Backlog "do-it" wave close-out (nine items, parallel), one regression
 
 **Bottom line.** Nine backlog items the owner greenlit were worked in parallel, merged to main, and
