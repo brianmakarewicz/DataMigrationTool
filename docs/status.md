@@ -1,5 +1,39 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-03 -- #147 shared reconcile settle/re-read (late-commit safety net), one regression
+
+**Bottom line.** Added a safety net so a good record that Fusion loaded is never falsely marked
+unaccounted just because our reconcile read the base table a beat before the row became visible.
+Built it once in the shared reconcile path so every object benefits, proved it's safe, and logged
+two honest findings the regression surfaced.
+
+**What it does.** When an object's Fusion import finished successfully but some rows aren't yet
+found in the base table, the reconcile now waits a configurable time (default 30 seconds) and
+re-reads, up to a configurable number of tries (default 2), before concluding "unaccounted." A row
+that appears on a retry is marked loaded with its real Fusion id; one that never appears stays
+honestly unaccounted -- it never invents a result. It only kicks in when the import actually
+succeeded and only for rows with no real rejection, so a genuinely-bad row or a job that crashed
+outright gets no pointless wait. Two settings control it: `RECONCILE_SETTLE_SECONDS` (30) and
+`RECONCILE_MAX_RETRIES` (2). Documented in the shared reconcile code and the Items notes.
+
+**Proven.** Unit checks showed it waits and re-reads and resolves a late row (or honestly gives up).
+The full regression (run 225) showed it introduced **zero new regressions** -- every object matched
+the prior baseline -- and it correctly stayed dormant this run (nothing needed it), so it added no
+time and no object incurred a wasted wait.
+
+**Honest findings from the run (not caused by this change), logged as new items:**
+- **#148** -- a single transient network error on a reconcile report call (not a real report fault)
+  failed a whole Items partition and stranded two category rows. The fix is a small bounded retry on
+  transient transport errors only -- leaving the "a real report fault must fail loudly" rule intact.
+- **#149** -- the Activity-Log per-row drill can time out when the log table is very large on the
+  slow local database; wants an index and periodic log pruning (separate from the earlier #145 fix).
+- Environment note (no code item): one AP invoice line failed with "accounting date not in an open
+  period" for today's date -- a Fusion demo period-close condition; confirm the AP period for the run
+  date is open before reading it as a defect.
+
+**Backlog now: 137 resolved, 0 partial, 5 still-open, 5 superseded, 2 stale (149).** Still-open are
+the externally-blocked #72/#85/#130 plus the two new findings #148/#149.
+
 ## Session -- 2026-10-02 -- DONE: workable-items goal complete (#65 all objects, #25, #69, #145, #146), one regression
 
 **Bottom line.** All five items are finished completely -- not one object, every object -- and proven
