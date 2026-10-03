@@ -66,6 +66,25 @@ Queries `EGP_SYSTEM_ITEMS_INTERFACE` by BATCH_ID.
 Match key: ITEM_NUMBER + ORGANIZATION_CODE.
 PROCESS_FLAG null/0 = success, 7 = error.
 
+### Settle + re-read before failing a late-committing item (Backlog #147)
+
+Item Import can report its ESS job finished (SUCCEEDED/WARNING) a short moment
+before a just-created item row becomes visible in the base table
+`EGP_SYSTEM_ITEMS_B` that the reconcile reads — a commit/visibility lag, not a
+missing wait (the import is already polled to terminal and every
+InterfaceLoaderController request is already reconciled). First seen in run 205:
+GOOD item `RT-PLAIN-001` was marked FAILED ("not created in base table") yet a
+REST re-check confirmed it was present in Fusion.
+
+This is now handled by a **shared** reconcile settle + re-read that protects every
+object, not just Items. Before the unaccounted sweep finalizes a row, the shared
+reconcile waits `RECONCILE_SETTLE_SECONDS` (default 30) and re-reads the base
+table for rows still awaiting confirmation, up to `RECONCILE_MAX_RETRIES`
+(default 2) times — but only after a SUCCEEDED/WARNING import, and never for a row
+that already carries a real per-row rejection. It never fabricates LOADED. See
+`docs/CONTRACT_V1_CONFORMANCE_PLAN.md` ("Shared reconcile settle + re-read") and
+`DMT_QUEUE_WORKER_PKG.RECONCILE_ONE` / `SETTLE_AND_REREAD`.
+
 ## Status
 WIRED INTO PIPELINE. Packages built. Loader + scheduler dispatch added.
 BIP artifacts created. Needs E2E test with real data.
