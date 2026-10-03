@@ -357,6 +357,220 @@ AS
     END SWEEP_UNACCOUNTED;
 
     -- ============================================================
+    -- import_succeeded (private, Backlog #147) — guard (a) for the shared
+    -- settle + re-read. TRUE when THE IMPORT reached a terminal SUCCEEDED or
+    -- WARNING state this run. That is the only condition under which a late
+    -- base-table commit is plausible, so it is the only condition under which we
+    -- spend a settle wait.
+    --
+    -- Scoping to the import specifically (not "any job for this run+object"):
+    -- DMT_ESS_JOB_TBL holds the WHOLE captured job tree (the load job, the import
+    -- job, and every descendant) all stamped with the same RUN_ID + CEMLI_CODE.
+    -- The failure shape this guard must catch is a load that SUCCEEDED while the
+    -- downstream IMPORT crashed at the job level (ERROR) -- Fusion then produced
+    -- no per-row verdict, the records are honestly UNACCOUNTED, and there is
+    -- nothing to wait for. So when the work item recorded an import request id we
+    -- check THAT request and its descendants (PARENT_REQUEST_ID = the import id);
+    -- a load-succeeded / import-crashed case then correctly returns FALSE and adds
+    -- no delay. Only when no import id was captured do we fall back to the
+    -- run+object scope (single-ESS FBDI objects where load == import are the
+    -- common fallback case, and there the two are the same job anyway).
+    --
+    -- A job-level crash (import STATE_TEXT ERROR, or no qualifying job) returns
+    -- FALSE: no per-row verdict, records honestly UNACCOUNTED (dark red), no delay
+    -- added. HDL base-proof objects are excluded by the caller; they keep their
+    -- own longer base-lag deferral loop (this avoids layering two waits).
+    -- ============================================================
+    FUNCTION import_succeeded (
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_import_ess_id IN VARCHAR2
+    ) RETURN BOOLEAN IS
+        l_n       NUMBER := 0;
+        l_imp_id  NUMBER;
+    BEGIN
+        l_imp_id := TO_NUMBER(p_import_ess_id DEFAULT NULL ON CONVERSION ERROR);
+        IF l_imp_id IS NOT NULL THEN
+            -- Scope strictly to the import request and its descendants.
+            SELECT COUNT(*)
+            INTO   l_n
+            FROM   DMT_ESS_JOB_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    (REQUEST_ID = l_imp_id OR PARENT_REQUEST_ID = l_imp_id)
+            AND    UPPER(STATE_TEXT) IN ('SUCCEEDED', 'WARNING');
+        ELSE
+            -- No import id captured -> fall back to run+object (load == import).
+            SELECT COUNT(*)
+            INTO   l_n
+            FROM   DMT_ESS_JOB_TBL
+            WHERE  RUN_ID     = p_run_id
+            AND    CEMLI_CODE = p_cemli_code
+            AND    UPPER(STATE_TEXT) IN ('SUCCEEDED', 'WARNING');
+        END IF;
+        RETURN l_n > 0;
+    END import_succeeded;
+
+    -- ============================================================
+    -- SETTLE_AND_REREAD (private, Backlog #147) — THE shared settle + re-read,
+    -- gated in RECONCILE_ONE immediately BEFORE the unaccounted sweep so it
+    -- protects EVERY object automatically (one shared place, no per-reconciler
+    -- code).
+    --
+    -- WHY: a load/import ESS job can report terminal (SUCCEEDED/WARNING) a beat
+    -- before a just-created row is query-visible in the Fusion base table that
+    -- the reconcile reads. This is a commit/visibility lag, NOT a missing wait
+    -- and NOT a missed request -- the pipeline already polls the job to terminal
+    -- and the reconciler already reads every request for the run. Without a
+    -- settle, a GOOD row read a beat too early is swept to UNACCOUNTED. (Observed
+    -- for Items in run 205: GOOD item RT-PLAIN-001 was concluded "not created in
+    -- base table" yet a REST re-check confirmed it was present in Fusion.)
+    --
+    -- GUARD (so we never waste time): this fires ONLY when BOTH
+    --   (a) the object's import ESS reached SUCCEEDED/WARNING this run
+    --       (import_succeeded) -- a late commit is only plausible after a
+    --       successful import; a job-level crash is honestly UNACCOUNTED and
+    --       there is nothing to wait for, so no delay is added; AND
+    --   (b) there are rows left awaiting base-table confirmation -- still
+    --       GENERATED with no [FUSION_ERROR] (p_awaiting, computed by the shared
+    --       ACCOUNT_ROWS x_awaiting_base). Rows that already carry a real per-row
+    --       rejection are NOT counted and are never re-read or disturbed.
+    -- A row that reconciled normally on the first pass is already LOADED/FAILED,
+    -- so it is never in p_awaiting -> short-circuits -> no wait and no change to
+    -- its outcome.
+    --
+    -- COST BOUND: the retry fires PER OBJECT, re-reading ALL of that object's
+    -- still-awaiting rows together in one re-read. Worst case is
+    -- RECONCILE_SETTLE_SECONDS * RECONCILE_MAX_RETRIES added ONCE per
+    -- object-with-awaiting-rows (~60s with the defaults), never per row.
+    --
+    -- LOOP: up to RECONCILE_MAX_RETRIES times: DBMS_SESSION.SLEEP the configured
+    -- seconds, then re-read the base table by re-invoking THIS object's
+    -- registered reconciler (the same invoke_registered RECON / RECON_CEMLI path
+    -- RECONCILE_ONE used, plus the Items-categories special case), scoped to this
+    -- work item. The reconciler promotes a now-visible row to LOADED with its
+    -- real base id and leaves genuine rejections untouched; it NEVER fabricates
+    -- LOADED. Stop early as soon as no awaiting rows remain. After the last
+    -- retry, any still-awaiting row falls through to the honest sweep (UNACCOUNTED)
+    -- exactly as before. NO COMMIT -- the caller owns the transaction.
+    --
+    -- Config (global): RECONCILE_SETTLE_SECONDS (default 30),
+    -- RECONCILE_MAX_RETRIES (default 2), via DMT_UTIL_PKG.GET_CONFIG.
+    -- ============================================================
+    PROCEDURE SETTLE_AND_REREAD (
+        p_queue_id      IN NUMBER,
+        p_run_id        IN NUMBER,
+        p_cemli_code    IN VARCHAR2,
+        p_load_ess_id   IN VARCHAR2,
+        p_import_ess_id IN VARCHAR2,
+        p_recon_proc    IN VARCHAR2,
+        p_recon_cemli   IN VARCHAR2,
+        p_scope_wq      IN NUMBER,
+        p_awaiting      IN NUMBER
+    ) IS
+        C_PROC        CONSTANT VARCHAR2(30) := 'SETTLE_AND_REREAD';
+        l_settle_secs NUMBER;
+        l_max_retries NUMBER;
+        l_awaiting    NUMBER := p_awaiting;
+        l_attempt     NUMBER := 0;
+        l_tot NUMBER; l_ld NUMBER; l_fl NUMBER; l_un NUMBER;
+        l_ignore_keys DMT_PARTITION_KEY_TBL;
+    BEGIN
+        -- Guard (b): nothing awaiting base confirmation -> nothing to settle.
+        IF NVL(l_awaiting, 0) = 0 THEN
+            RETURN;
+        END IF;
+
+        -- Guard (a): only wait when the IMPORT actually succeeded this run. A
+        -- job-level import crash leaves the records honestly UNACCOUNTED with no
+        -- delay (scoped to the import request when the work item recorded one).
+        IF NOT import_succeeded(p_run_id, p_cemli_code, p_import_ess_id) THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': ' || l_awaiting || ' row(s) awaiting base confirmation '
+                || 'for ' || p_cemli_code || ', but no SUCCEEDED/WARNING import ESS '
+                || 'this run -- not waiting (honestly UNACCOUNTED).',
+                'INFO', C_PKG, C_PROC);
+            RETURN;
+        END IF;
+
+        -- Config knobs (defaults 30s / 2 retries). NULL / non-numeric -> default;
+        -- negative -> floored at 0. 0 on either disables the settle.
+        l_settle_secs := TO_NUMBER(
+            NVL(DMT_UTIL_PKG.GET_CONFIG('RECONCILE_SETTLE_SECONDS'), '30')
+            DEFAULT 30 ON CONVERSION ERROR);
+        l_max_retries := TO_NUMBER(
+            NVL(DMT_UTIL_PKG.GET_CONFIG('RECONCILE_MAX_RETRIES'), '2')
+            DEFAULT 2 ON CONVERSION ERROR);
+        IF l_settle_secs < 0 THEN l_settle_secs := 0; END IF;
+        IF l_max_retries < 0 THEN l_max_retries := 0; END IF;
+
+        IF l_settle_secs = 0 OR l_max_retries = 0 THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': settle disabled by config (settle_secs=' || l_settle_secs
+                || ', max_retries=' || l_max_retries || ') for ' || p_cemli_code || '.',
+                'INFO', C_PKG, C_PROC);
+            RETURN;
+        END IF;
+
+        WHILE l_attempt < l_max_retries AND NVL(l_awaiting, 0) > 0 LOOP
+            l_attempt := l_attempt + 1;
+            DMT_UTIL_PKG.LOG(p_run_id,
+                C_PROC || ': ' || l_awaiting || ' GOOD ' || p_cemli_code || ' row(s) not '
+                || 'yet in the base table after a SUCCEEDED/WARNING import; waiting '
+                || l_settle_secs || 's before re-read (retry ' || l_attempt || ' of '
+                || l_max_retries || ').',
+                'INFO', C_PKG, C_PROC);
+
+            -- Settle: let the import's commit become query-visible.
+            DBMS_SESSION.SLEEP(l_settle_secs);
+
+            -- Re-read the base table: re-invoke this object's registered
+            -- reconciler, exactly as RECONCILE_ONE did, scoped to this work item.
+            -- The reconciler only ever promotes a real base-table hit to LOADED
+            -- and never touches a terminal row, so a rescued row gets its real id
+            -- and genuine rejections are left as-is.
+            IF p_recon_proc IS NOT NULL THEN
+                invoke_registered(
+                    p_proc          => p_recon_proc,
+                    p_style         => CASE p_recon_cemli WHEN 'Y' THEN 'RECON_CEMLI' ELSE 'RECON' END,
+                    p_run_id        => p_run_id,
+                    p_cemli_code    => p_cemli_code,
+                    p_load_ess_id   => TO_NUMBER(p_load_ess_id),
+                    p_import_ess_id => TO_NUMBER(p_import_ess_id),
+                    p_work_queue_id => p_queue_id,
+                    x_keys          => l_ignore_keys);
+            END IF;
+
+            -- Items special case: the Items FBDI ZIP bundles the ItemCategories
+            -- CSV, so re-read the categories too (same condition RECONCILE_ONE uses).
+            IF p_cemli_code = 'Items' THEN
+                DECLARE l_cat_gen NUMBER;
+                BEGIN
+                    SELECT COUNT(*) INTO l_cat_gen FROM DMT_EGP_ITEM_CAT_TFM_TBL
+                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
+                    AND   WORK_QUEUE_ID = p_queue_id;
+                    IF l_cat_gen > 0 THEN
+                        DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(p_run_id,
+                            TO_NUMBER(p_load_ess_id), TO_NUMBER(p_import_ess_id),
+                            p_work_queue_id => p_queue_id);
+                    END IF;
+                END;
+            END IF;
+
+            -- Recount what is still awaiting base confirmation via the shared,
+            -- sanctioned ACCOUNT_ROWS site (no new dynamic-SQL site).
+            ACCOUNT_ROWS(p_run_id, p_cemli_code, l_tot, l_ld, l_fl, l_un,
+                         p_work_queue_id => p_scope_wq,
+                         x_awaiting_base => l_awaiting);
+        END LOOP;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ' complete for ' || p_cemli_code || ' after ' || l_attempt
+            || ' retry/retries. Rows still awaiting base confirmation: '
+            || NVL(l_awaiting, 0) || ' (left to the honest sweep -- never fabricated LOADED).',
+            'INFO', C_PKG, C_PROC);
+    END SETTLE_AND_REREAD;
+
+    -- ============================================================
     -- apply_accounting_gate — THE single accounting gate. The only
     -- code that writes WORK_STATUS = DONE (proposed rule "Terminal
     -- work-item states pass one accounting gate", 2026-07-08).
@@ -999,6 +1213,49 @@ AS
                     SET ERROR_MESSAGE = NULL
                     WHERE QUEUE_ID = p_queue_id;
                 END IF;
+            END;
+        END IF;
+
+        -- Shared settle + re-read (Backlog #147). BEFORE the unaccounted sweep
+        -- finalizes anything: an import ESS can report terminal a beat before a
+        -- just-created row is query-visible in the Fusion base table the reconcile
+        -- reads (a commit/visibility lag, not a missing wait). For any GOOD row
+        -- still awaiting base confirmation -- and ONLY after a SUCCEEDED/WARNING
+        -- import, and never a row with a real per-row rejection -- wait the
+        -- configured seconds and re-read the base table, per object, up to the
+        -- configured retries. A late-committing GOOD row then resolves to LOADED
+        -- with its real base id instead of being falsely swept UNACCOUNTED. A row
+        -- that reconciled on the first pass is already terminal, so it is not in
+        -- the awaiting set and gets no wait and no outcome change. Anything still
+        -- absent after the last retry falls through to the honest sweep below.
+        -- HDL base-proof objects are handled by their own longer deferral above
+        -- and are skipped here (no double wait).
+        IF NOT is_hdl_base_proof(l_rec.CEMLI_CODE) THEN
+            DECLARE
+                l_partition_key DMT_WORK_QUEUE_TBL.PARTITION_KEY%TYPE;
+                l_scope_wq      NUMBER;
+                l_tot NUMBER; l_ld NUMBER; l_fl NUMBER; l_un NUMBER; l_awaiting NUMBER;
+            BEGIN
+                SELECT PARTITION_KEY INTO l_partition_key
+                FROM   DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
+                l_scope_wq := CASE WHEN l_partition_key IS NOT NULL
+                                    AND l_partition_key <> 'ALL'
+                                   THEN p_queue_id END;
+                -- Count rows still awaiting base confirmation via the shared
+                -- ACCOUNT_ROWS site (x_awaiting_base = GENERATED and no [FUSION_ERROR]).
+                ACCOUNT_ROWS(l_rec.RUN_ID, l_rec.CEMLI_CODE, l_tot, l_ld, l_fl, l_un,
+                             p_work_queue_id => l_scope_wq,
+                             x_awaiting_base => l_awaiting);
+                SETTLE_AND_REREAD(
+                    p_queue_id      => p_queue_id,
+                    p_run_id        => l_rec.RUN_ID,
+                    p_cemli_code    => l_rec.CEMLI_CODE,
+                    p_load_ess_id   => l_rec.LOAD_ESS_JOB_ID,
+                    p_import_ess_id => l_rec.IMPORT_ESS_JOB_ID,
+                    p_recon_proc    => l_recon_proc,
+                    p_recon_cemli   => l_recon_cemli,
+                    p_scope_wq      => l_scope_wq,
+                    p_awaiting      => l_awaiting);
             END;
         END IF;
 

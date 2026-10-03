@@ -231,3 +231,25 @@ begin
 exception when dup_val_on_index then null;
 end;
 /
+-- Shared reconcile settle + re-read (Backlog #147). Applies to EVERY object's
+-- reconcile (the shared RECONCILE_ONE path), not just Items. A load/import ESS
+-- job can report terminal (SUCCEEDED/WARNING) a beat before a just-created row
+-- is query-visible in the Fusion base table the reconcile reads -- a
+-- commit/visibility lag, NOT a missing wait (the pipeline already polls the job
+-- to terminal and reconciles every request). Without a settle, a GOOD row can be
+-- falsely concluded UNACCOUNTED. Before the shared unaccounted sweep finalizes a
+-- row, these two keys let the reconcile wait and re-read the base table for the
+-- rows still awaiting base-table confirmation -- but ONLY after the object's
+-- import reached SUCCEEDED/WARNING (a job-level crash is honestly UNACCOUNTED,
+-- nothing to wait for) and ONLY for rows with no real per-row rejection. Read via
+-- DMT_UTIL_PKG.GET_CONFIG, exactly like PROJECT_ALLOW_EXTERNAL_PARENT above.
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('RECONCILE_SETTLE_SECONDS','30','Backlog #147 (all objects). Seconds the shared reconcile waits (DBMS_SESSION.SLEEP) before each re-read of the Fusion base table for GOOD rows not yet found there -- absorbing the commit/visibility lag after the object''s import ESS reports terminal. Default 30. 0 disables the wait (single pass, no settle). Applies to every object via DMT_QUEUE_WORKER_PKG.RECONCILE_ONE.',sysdate,'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('RECONCILE_MAX_RETRIES','2','Backlog #147 (all objects). Max settle-and-re-read passes the shared reconcile makes PER OBJECT for rows awaiting base-table confirmation before the sweep finalizes them. Each pass sleeps RECONCILE_SETTLE_SECONDS then re-reads all that object''s awaiting rows at once (per object, not per row); stops early when none remain. Default 2 (~60s max per object at 30s). 0 disables. Fires only after a SUCCEEDED/WARNING import; real rejections never retried; never fabricates LOADED.',sysdate,'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/

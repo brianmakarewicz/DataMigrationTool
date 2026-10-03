@@ -77,6 +77,50 @@ loading correctly. The run surfaced two regressions, both fixed:
 (APEX drill) are all merged, to prove the full set holds end-to-end with no new UNACCOUNTED.
 This is the only open gate for the Contract v1 conformance effort.
 
+## Shared reconcile settle + re-read before finalizing UNACCOUNTED (Backlog #147)
+
+**Applies to every object**, implemented once in the shared reconcile path
+(`DMT_QUEUE_WORKER_PKG.RECONCILE_ONE`), not per reconciler.
+
+**Why.** A reconciler confirms a GOOD row LOADED only when it reads that row in
+the Fusion base table (the Contract v1 nine-column recon report). A load/import
+ESS job can report terminal (SUCCEEDED/WARNING) a short moment before a
+just-created row becomes visible to that base-table query. This is a
+commit/visibility lag, not a missing wait and not a missed request: the pipeline
+already polls the job to terminal and the reconciler already reads every request
+for the run. Read a beat too early, a GOOD row would be swept to UNACCOUNTED.
+(First observed for Items in run 205: GOOD item RT-PLAIN-001 was concluded "not
+created in base table" yet a REST re-check confirmed it was present in Fusion.)
+
+**What.** Immediately before the shared unaccounted sweep finalizes anything,
+`RECONCILE_ONE` counts the rows still awaiting base-table confirmation — still
+GENERATED with no `[FUSION_ERROR]`, from the shared `ACCOUNT_ROWS` x_awaiting_base
+count. If there are any, it waits `RECONCILE_SETTLE_SECONDS` and re-reads the base
+table (by re-invoking that object's own registered reconciler), up to
+`RECONCILE_MAX_RETRIES` times, stopping early as soon as none remain. A row that
+appears is promoted to LOADED with its real base id; anything still absent after
+the last retry falls through to the honest sweep (UNACCOUNTED) exactly as before.
+It never fabricates LOADED.
+
+**Guards (so it never wastes time).** The wait fires only when BOTH:
+(a) the object's import ESS reached SUCCEEDED/WARNING this run (a late commit is
+only plausible after a successful import; a job-level crash is honestly
+UNACCOUNTED/dark-red, nothing to wait for — no delay added); AND (b) there are
+rows awaiting base-table confirmation. A row that reconciled on the first pass is
+already LOADED/FAILED, so it is never in the awaiting set — it short-circuits with
+no wait and no change to its outcome. The retry fires **per object** (re-reading
+all that object's awaiting rows together in one re-read), so the worst-case added
+time is `RECONCILE_SETTLE_SECONDS × RECONCILE_MAX_RETRIES` once per
+object-with-awaiting-rows (~60s with the defaults), never per row. HDL base-proof
+objects keep their own longer base-lag deferral and are skipped here.
+
+**Config keys** (`db/seed/dmt_config_tbl.sql`, read via `DMT_UTIL_PKG.GET_CONFIG`):
+
+| Key | Default | Controls |
+|---|---|---|
+| `RECONCILE_SETTLE_SECONDS` | `30` | Seconds to wait before each base-table re-read. `0` disables the wait. |
+| `RECONCILE_MAX_RETRIES` | `2` | Maximum settle-and-re-read passes per object before the sweep finalizes. `0` disables retries. |
+
 ## Related
 
 - `docs/DMT_REBUILD_PLAN.html` section 0 — per-object Object Status Matrix (single source of
