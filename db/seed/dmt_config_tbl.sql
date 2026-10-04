@@ -1,4 +1,5 @@
--- Seed data for DMT_CONFIG_TBL (37 rows, snapshot 2026-07-03; +2 no-hardcoded-IDs keys 2026-07-12)
+-- Seed data for DMT_CONFIG_TBL (37 rows, snapshot 2026-07-03; +2 no-hardcoded-IDs keys 2026-07-12;
+-- +2 BIP transport-retry keys 2026-10-03, Backlog #148)
 -- Idempotent: duplicate-key inserts are skipped.
 begin
   insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('AP_IMPORT_JOB_NAME','/oracle/apps/ess/financials/payables/invoices/payablesImport,PayablesImportEss',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
@@ -250,6 +251,27 @@ end;
 /
 begin
   insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('RECONCILE_MAX_RETRIES','2','Backlog #147 (all objects). Max settle-and-re-read passes the shared reconcile makes PER OBJECT for rows awaiting base-table confirmation before the sweep finalizes them. Each pass sleeps RECONCILE_SETTLE_SECONDS then re-reads all that object''s awaiting rows at once (per object, not per row); stops early when none remain. Default 2 (~60s max per object at 30s). 0 disables. Fires only after a SUCCEEDED/WARNING import; real rejections never retried; never fabricates LOADED.',sysdate,'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
+-- BIP transport retry (Backlog #148). Bound how hard DMT_UTIL_PKG.RUN_BIP_REPORT
+-- retries the runReport POST when it hits a TRANSIENT TRANSPORT fault -- a
+-- network/connection blip (UTL_HTTP/ORA-29273 ''HTTP request failed'',
+-- connection reset, ORA-12xxx) or a transport-level HTTP 5xx with no valid SOAP
+-- body. runReport is READ-ONLY so a re-POST is side-effect free. These keys do
+-- NOT apply to a BIP SOAP FAULT (a well-formed SOAP response carrying
+-- soapenv:Fault / soap:Fault, e.g. a wrong report name or report error): a SOAP
+-- fault means a real problem, raises immediately, and is NEVER retried (standing
+-- rule bip_soap_fault_handling). A non-5xx non-2xx HTTP status (e.g. a 4xx
+-- client error) is likewise not transient and raises on the first occurrence.
+-- Read via DMT_UTIL_PKG.GET_CONFIG, exactly like the RECONCILE_* keys above.
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('BIP_TRANSPORT_MAX_RETRIES','2','Backlog #148. Max number of RETRIES DMT_UTIL_PKG.RUN_BIP_REPORT makes on the runReport POST after a TRANSIENT TRANSPORT fault (total attempts = 1 + this value). Default 2 (up to 3 attempts). 0 = no retry (single attempt). Applies ONLY to transport faults (ORA-29273/connection errors, or HTTP 5xx with no SOAP body); a BIP SOAP FAULT raises immediately and is NEVER retried per bip_soap_fault_handling. runReport is read-only so re-POST is safe.',sysdate,'DMT_OWNER');
+exception when dup_val_on_index then null;
+end;
+/
+begin
+  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('BIP_TRANSPORT_BACKOFF_SECONDS','3','Backlog #148. Seconds DMT_UTIL_PKG.RUN_BIP_REPORT waits (DBMS_SESSION.SLEEP) before each retry of the runReport POST following a transient transport fault. Default 3. 0 = retry immediately with no backoff. Only used when BIP_TRANSPORT_MAX_RETRIES > 0 and the failure was classified transport (never for a SOAP fault).',sysdate,'DMT_OWNER');
 exception when dup_val_on_index then null;
 end;
 /
