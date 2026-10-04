@@ -1012,6 +1012,29 @@
     -- contract: every failure is caught here, logged with the step in
     -- flight, and reported through x_error_code; exceptions never escape.
     -- The request envelope carries credentials and is NEVER logged.
+    --
+    -- TRANSIENT TRANSPORT RESILIENCE (Backlog #148). The runReport POST is
+    -- wrapped in a BOUNDED retry that fires ONLY on transient TRANSPORT
+    -- faults, so a single network/connection blip no longer fails a whole
+    -- object's reconcile (regression run 225: one ORA-29273 'HTTP request
+    -- failed' stranded Item Category rows that the identical call loaded in
+    -- run 205). The failure is classified:
+    --   * TRANSPORT fault (transient -> retried): HTTP_REQUEST raised
+    --     (UTL_HTTP/ORA-29273, connection reset, ORA-12xxx), OR a
+    --     transport-level HTTP 5xx carrying no valid SOAP body. runReport is
+    --     read-only, so re-POSTing is side-effect free.
+    --   * SOAP FAULT (NOT transient -> raised immediately, NEVER retried):
+    --     a well-formed SOAP response containing soapenv:Fault / soap:Fault
+    --     (e.g. wrong report name, report error). Honors the standing rule
+    --     bip_soap_fault_handling -- a SOAP fault means a real problem.
+    --   * Other non-2xx with no SOAP body (e.g. 4xx client error): NOT
+    --     transient -> raised on the first occurrence, no retry.
+    -- Attempts are bounded by 1 + BIP_TRANSPORT_MAX_RETRIES (default 2),
+    -- each retry preceded by a BIP_TRANSPORT_BACKOFF_SECONDS wait
+    -- (default 3); both read from DMT_CONFIG_TBL via GET_CONFIG. The loop
+    -- cannot spin forever (fixed FOR bound). When retries are exhausted on a
+    -- transport fault, it raises -20030 and the WHEN OTHERS below reports
+    -- C_ERROR as before.
     -- --------------------------------------------------------
     PROCEDURE RUN_BIP_REPORT (
         p_run_id      IN  NUMBER,
@@ -1038,6 +1061,24 @@
         l_pos       INTEGER;
         l_pname     VARCHAR2(200);
         l_pval      VARCHAR2(2000);
+        -- Backlog #148: bounded retry on TRANSIENT TRANSPORT faults only.
+        -- A transport fault is a network/connection blip on the runReport
+        -- POST (UTL_HTTP/ORA-29273 'HTTP request failed', connection reset,
+        -- ORA-12xxx connect errors, or a transport-level HTTP 5xx that
+        -- carries no valid SOAP body). These are transient and safe to
+        -- re-POST: runReport is READ-ONLY (it just renders a report), so a
+        -- re-POST has no side effects. A BIP SOAP FAULT (a well-formed SOAP
+        -- response carrying soapenv:Fault / soap:Fault -- e.g. wrong report
+        -- name, report error) is NOT transient: it still raises immediately
+        -- and is NEVER retried (standing rule bip_soap_fault_handling). A
+        -- non-5xx non-2xx HTTP status with no SOAP body (e.g. a 4xx client
+        -- error) is also NOT transient and raises on the first occurrence.
+        -- Attempt budget and backoff come from DMT_CONFIG_TBL via GET_CONFIG;
+        -- see the BIP_TRANSPORT_* keys in db/seed/dmt_config_tbl.sql.
+        l_max_retries    PLS_INTEGER;
+        l_backoff_secs   PLS_INTEGER;
+        l_posted_ok      BOOLEAN := FALSE;
+        l_transient_err  VARCHAR2(4000);
     BEGIN
         x_report_xml := NULL;
         x_error_code := C_ERROR;   -- pessimistic until proven successful
@@ -1124,35 +1165,113 @@
             '</v2:runReport></soapenv:Body></soapenv:Envelope>'));
         DBMS_LOB.FREETEMPORARY(l_items);
 
+        -- Attempt budget + backoff (Backlog #148). GET_CONFIG returns NULL
+        -- when a key is absent, so NVL supplies the documented defaults
+        -- (2 retries, 3-second backoff). A non-numeric value is treated as
+        -- the default rather than blowing up the reconcile. A negative or
+        -- absent retry count means "no retries" (one attempt).
+        l_step := 'reading BIP transport retry config';
+        -- A non-numeric config value raises VALUE_ERROR (ORA-06502) from
+        -- TO_NUMBER in PL/SQL; fall back to the default rather than failing.
+        BEGIN
+            l_max_retries := GREATEST(0, TO_NUMBER(NVL(GET_CONFIG('BIP_TRANSPORT_MAX_RETRIES'), '2')));
+        EXCEPTION WHEN VALUE_ERROR THEN l_max_retries := 2;
+        END;
+        BEGIN
+            l_backoff_secs := GREATEST(0, TO_NUMBER(NVL(GET_CONFIG('BIP_TRANSPORT_BACKOFF_SECONDS'), '3')));
+        EXCEPTION WHEN VALUE_ERROR THEN l_backoff_secs := 3;
+        END;
+
         -- Shared transport: credentials travel in the envelope (no Basic
         -- header); non-2xx comes back as x_status_code so this procedure
-        -- maps it to its documented -20030 code below.
-        l_step := 'posting runReport to BIP for ' || l_path;
-        HTTP_REQUEST(
-            p_url            => l_base_url || '/xmlpserver/services/v2/ReportService',
-            p_method         => 'POST',
-            p_body           => l_env,
-            p_content_type   => 'text/xml; charset=utf-8',
-            p_run_id         => p_run_id,
-            x_response       => l_resp,
-            x_status_code    => l_status,
-            p_soap_action    => '"' || C_ACTION || '"',
-            p_accept         => 'text/xml',
-            p_send_auth      => FALSE,
-            p_raise_on_error => FALSE);
+        -- maps it to its documented -20030 code below. The POST sits inside
+        -- a bounded retry loop that fires ONLY on transient transport faults
+        -- (see the variable-section note). A SOAP fault or a non-5xx HTTP
+        -- error breaks out and raises on the first occurrence -- never
+        -- retried. runReport is read-only so re-POST is side-effect free.
+        -- Total attempts = 1 + l_max_retries.
+        FOR l_attempt IN 0 .. l_max_retries LOOP
+            l_transient_err := NULL;
+            l_step := 'posting runReport to BIP for ' || l_path ||
+                      ' (attempt ' || (l_attempt + 1) || ' of ' || (l_max_retries + 1) || ')';
+            BEGIN
+                HTTP_REQUEST(
+                    p_url            => l_base_url || '/xmlpserver/services/v2/ReportService',
+                    p_method         => 'POST',
+                    p_body           => l_env,
+                    p_content_type   => 'text/xml; charset=utf-8',
+                    p_run_id         => p_run_id,
+                    x_response       => l_resp,
+                    x_status_code    => l_status,
+                    p_soap_action    => '"' || C_ACTION || '"',
+                    p_accept         => 'text/xml',
+                    p_send_auth      => FALSE,
+                    p_raise_on_error => FALSE);
+            EXCEPTION
+                WHEN OTHERS THEN
+                    -- HTTP_REQUEST raised (UTL_HTTP/ORA-29273, connection
+                    -- reset, ORA-12xxx). This is a TRANSPORT fault: there is
+                    -- no SOAP body to inspect, so it is transient by
+                    -- definition and eligible for retry.
+                    l_transient_err := SQLERRM;
+            END;
+
+            IF l_transient_err IS NULL THEN
+                l_step := 'checking BIP response status/fault for ' || l_path;
+                -- A SOAP Fault only exists inside a well-formed SOAP body
+                -- (which BIP returns with HTTP 200). Classify it FIRST and
+                -- raise immediately -- it is a real problem, NOT transient,
+                -- and is NEVER retried (bip_soap_fault_handling).
+                IF DBMS_LOB.INSTR(l_resp, 'soapenv:Fault') > 0
+                   OR DBMS_LOB.INSTR(l_resp, 'soap:Fault') > 0 THEN
+                    RAISE_APPLICATION_ERROR(-20034,
+                        C_PROC || ': SOAP Fault from BIP for ' || l_path || ' | ' ||
+                        DBMS_LOB.SUBSTR(l_resp, 1000, 1));
+                END IF;
+
+                IF l_status BETWEEN 200 AND 299 THEN
+                    l_posted_ok := TRUE;
+                    EXIT;                       -- success
+                ELSIF l_status BETWEEN 500 AND 599 THEN
+                    -- Transport-level HTTP 5xx with no SOAP body: a
+                    -- server/gateway blip, treated as transient and retried.
+                    l_transient_err := 'BIP SOAP HTTP ' || l_status || ' (no SOAP body) for ' ||
+                                       l_path || ' | ' || DBMS_LOB.SUBSTR(l_resp, 400, 1);
+                ELSE
+                    -- Any other non-2xx (e.g. 4xx client error) is NOT
+                    -- transient: raise on the first occurrence, no retry.
+                    RAISE_APPLICATION_ERROR(-20030,
+                        C_PROC || ': BIP SOAP HTTP ' || l_status || ' for ' || l_path ||
+                        ' | ' || DBMS_LOB.SUBSTR(l_resp, 400, 1));
+                END IF;
+            END IF;
+
+            -- Reached here only on a classified TRANSPORT fault. Retry if
+            -- the budget allows, else fall through and raise below.
+            IF l_attempt < l_max_retries THEN
+                LOG(p_run_id => p_run_id,
+                    p_message => C_PROC || ': transient BIP transport fault for ' || l_path ||
+                        ' on attempt ' || (l_attempt + 1) || ' of ' || (l_max_retries + 1) ||
+                        '; retrying after ' || l_backoff_secs || 's backoff. Detail: ' ||
+                        SUBSTR(l_transient_err, 1, 500),
+                    p_log_type => C_LOG_WARN,
+                    p_package => 'DMT_UTIL_PKG',
+                    p_procedure => C_PROC);
+                IF l_backoff_secs > 0 THEN
+                    DBMS_SESSION.SLEEP(l_backoff_secs);
+                END IF;
+            END IF;
+        END LOOP;
+
         DBMS_LOB.FREETEMPORARY(l_env);
 
-        l_step := 'checking BIP response status/fault for ' || l_path;
-        IF l_status NOT BETWEEN 200 AND 299 THEN
+        -- Exhausted the attempt budget on a transport fault: raise now.
+        IF NOT l_posted_ok THEN
+            l_step := 'BIP runReport transport fault exhausted retries for ' || l_path;
             RAISE_APPLICATION_ERROR(-20030,
-                C_PROC || ': BIP SOAP HTTP ' || l_status || ' for ' || l_path ||
-                ' | ' || DBMS_LOB.SUBSTR(l_resp, 400, 1));
-        END IF;
-        IF DBMS_LOB.INSTR(l_resp, 'soapenv:Fault') > 0
-           OR DBMS_LOB.INSTR(l_resp, 'soap:Fault') > 0 THEN
-            RAISE_APPLICATION_ERROR(-20034,
-                C_PROC || ': SOAP Fault from BIP for ' || l_path || ' | ' ||
-                DBMS_LOB.SUBSTR(l_resp, 1000, 1));
+                C_PROC || ': BIP runReport failed after ' || (l_max_retries + 1) ||
+                ' attempt(s) on transient transport fault for ' || l_path ||
+                ' | ' || SUBSTR(l_transient_err, 1, 1000));
         END IF;
 
         -- Extract <reportBytes> + decode + parse via the shared helper.
@@ -1163,6 +1282,19 @@
         WHEN OTHERS THEN
             x_report_xml := NULL;
             x_error_code := C_ERROR;
+            -- Defensive temp-LOB cleanup: a raise inside the retry loop (SOAP
+            -- fault / 4xx) jumps here before the post-loop FREETEMPORARY, so
+            -- release l_items / l_env if either is still a live temp LOB.
+            BEGIN
+                IF l_items IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_items) = 1 THEN
+                    DBMS_LOB.FREETEMPORARY(l_items);
+                END IF;
+            EXCEPTION WHEN OTHERS THEN NULL; END;
+            BEGIN
+                IF l_env IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_env) = 1 THEN
+                    DBMS_LOB.FREETEMPORARY(l_env);
+                END IF;
+            EXCEPTION WHEN OTHERS THEN NULL; END;
             LOG_ERROR(
                 p_run_id    => p_run_id,
                 p_message   => C_PROC || ' failed while ' || l_step ||
