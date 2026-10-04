@@ -690,6 +690,7 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_inv_uom_transform_pkg.pks.sql
 @@packages/dmt_inv_uom_validator_pkg.pks.sql
 @@packages/dmt_loader_pkg.pks.sql
+@@packages/dmt_log_pkg.pks.sql
 @@packages/dmt_misc_receipt_fbdi_gen_pkg.pks.sql
 @@packages/dmt_misc_receipt_results_pkg.pks.sql
 @@packages/dmt_misc_receipt_transform_pkg.pks.sql
@@ -922,6 +923,7 @@ prompt == Package bodies ==
 @@packages/dmt_inv_uom_transform_pkg.pkb.sql
 @@packages/dmt_inv_uom_validator_pkg.pkb.sql
 @@packages/dmt_loader_pkg.pkb.sql
+@@packages/dmt_log_pkg.pkb.sql
 @@packages/dmt_misc_receipt_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_misc_receipt_results_pkg.pkb.sql
 @@packages/dmt_misc_receipt_transform_pkg.pkb.sql
