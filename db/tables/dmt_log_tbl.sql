@@ -67,6 +67,23 @@ exception when others then
 end;
 /
 
+-- ---------------------------------------------------------------------------
+-- 2026-10-03 backlog #149 (page-54 Activity-Log per-row drill performance).
+-- The drill is always run-scoped: its report filters RUN_ID and orders by
+-- LOG_DATE DESC, LOG_ID DESC, and its Prev/Next navigation range-scans LOG_ID
+-- within a RUN_ID. This composite serves both the filter and the order in one
+-- range scan (no sort step), which the single-column DMT_LOG_N1 (RUN_ID) could
+-- not. Guarded so fresh installs get it and re-runs are a no-op; the matching
+-- db/migrations/2026-10-03_log_tbl_drill_index_and_prune.sql converges an
+-- already-installed database.
+-- ---------------------------------------------------------------------------
+begin
+  execute immediate 'CREATE INDEX "DMT_LOG_N4" ON "DMT_LOG_TBL" ("RUN_ID","LOG_DATE","LOG_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
 COMMENT ON COLUMN "DMT_LOG_TBL"."LOG_ID" IS 'PK - from DMT_LOG_ID_SEQ';
 COMMENT ON COLUMN "DMT_LOG_TBL"."RUN_ID" IS 'Run attribution (section 5) - nullable: NULL means no run context exists. Indexed, no FK by design.';
 COMMENT ON COLUMN "DMT_LOG_TBL"."QUEUE_ID" IS 'Work-item attribution (section 5) - the work item that wrote the entry. Nullable, indexed, no FK by design.';
