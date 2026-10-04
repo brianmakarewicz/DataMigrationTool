@@ -1,5 +1,46 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-03 -- #148 BIP transport-fault retry + #149 activity-log drill speed-up; one gating regression; Fusion pod credentials expired
+
+**Bottom line.** Shipped two reliability fixes and proved both work exactly as intended. The one
+combined regression that gates them could not be certified a full pass -- not because of these
+changes, but because the Fusion demo pod is now rejecting our saved credentials pod-wide, which
+stops any good row from loading. That is an environmental password expiry, independent of our code,
+and it is the one thing left to clear before a clean end-to-end run.
+
+**#148 -- a network blip no longer fails a whole batch.** When the tool asks Fusion to run a
+reconciliation report and the request fails on the network (a dropped connection or an HTTP 500
+with no real error inside it), it now waits a few seconds and tries again, a small fixed number of
+times, before giving up. Before, a single blip failed the whole group of records. Two settings
+control it: how many retries (default 2) and how long to wait between them (default 3 seconds). A
+genuine Fusion error -- the kind that means we called the wrong report, not a blip -- still fails
+immediately and is never retried, which is the behavior we want. Proven in the regression: the tool
+retried the blips exactly as designed and left the real errors to fail loudly. (PR #568, merged.)
+
+**#149 -- the activity-log drill no longer times out.** Opening a single log entry on the activity
+page used to get slow and sometimes time out once the log table grew large. Added a database index
+so that lookup is now instant: the drill opened in about 1.5 seconds over the web, where it used to
+exceed the 90-second limit. Also added a safe log-cleanup routine that deletes old log rows on a
+retention setting (default 90 days) but never touches recent data or active runs. Proven: the drill
+is fast, and the cleanup removed 53,000 old rows while leaving recent runs intact. (PR #569, merged.)
+
+**One honest follow-up logged (#150).** Fixing the single-entry drill revealed that the *whole-run*
+activity-log list on the same page still reads the entire table because of how its filter is
+written. It is about 6 seconds today and will slow as the log grows. Logged as a separate small
+item; it is a console-speed issue, not a data-accounting problem.
+
+**The blocker to flag -- Fusion demo pod credentials expired.** The regression's good rows could not
+reach Fusion's base tables because the pod returned "not authorized" (HTTP 401) to both of our shared
+service accounts. The pod itself is up (its public pages load fine); it is the saved passwords that
+no longer match. A direct test from this machine confirmed it is the pod rejecting the credentials,
+not anything in our code or local database. Loaded counts dropped from 78 in the last good run to 42
+here purely for this reason. Refreshing the demo password (or waiting for the owner to) is the next
+step before re-running to confirm the loaded count recovers.
+
+**Where the backlog stands.** 150 items: 139 resolved, 4 still open (#72 TaxCards env-parked, #85 AR
+line AR-blocked, #130 config objects functional-owner-blocked, #150 the activity-log list speed-up),
+5 superseded, 2 stale. #148 and #149 moved to resolved this session.
+
 ## Session -- 2026-10-03 -- #147 shared reconcile settle/re-read (late-commit safety net), one regression
 
 **Bottom line.** Added a safety net so a good record that Fusion loaded is never falsely marked
