@@ -43,7 +43,8 @@
         p_url              IN VARCHAR2,
         p_method           IN VARCHAR2 DEFAULT 'GET',
         p_body             IN CLOB     DEFAULT NULL,
-        p_run_id   IN NUMBER   DEFAULT NULL
+        p_run_id   IN NUMBER   DEFAULT NULL,
+        p_log_errors       IN BOOLEAN  DEFAULT TRUE
     ) RETURN CLOB IS
         l_req       UTL_HTTP.REQ;
         l_resp      UTL_HTTP.RESP;
@@ -97,7 +98,11 @@
 
     EXCEPTION
         WHEN OTHERS THEN
-            IF p_run_id IS NOT NULL THEN
+            -- p_log_errors=FALSE suppresses the ERROR row for callers that already
+            -- handle a failed call and log their own outcome (POLL_HDL's status GET,
+            -- whose expected first-poll 404 is not a real error — backlog #156). The
+            -- exception is still re-raised so the caller's own handling runs.
+            IF p_run_id IS NOT NULL AND p_log_errors THEN
                 DMT_UTIL_PKG.LOG_ERROR(p_run_id,
                     'REST_HTTP failed. URL: ' || SUBSTR(p_url, 1, 200),
                     SQLERRM, C_PKG, 'REST_HTTP');
@@ -274,16 +279,24 @@
 
         l_url := get_url() || C_HCM_REST_PATH || '/' || p_request_id;
 
-        -- Initial delay — data set may not be queryable immediately after createFileDataSet
-        DBMS_SESSION.SLEEP(10);
+        -- Initial delay — data set is NOT queryable the instant createFileDataSet
+        -- returns; a GET before it registers comes back 404. 20s covers the common
+        -- registration lag so the first poll usually hits a real status. Even when it
+        -- does not, the GET below is marked p_log_errors=>FALSE and the loop retries,
+        -- so a transient 404 is handled quietly rather than logged as an ERROR (#156).
+        DBMS_SESSION.SLEEP(20);
 
         LOOP
-            -- GET status — handle 404 gracefully (data set may not be ready yet)
+            -- GET status — handle 404 gracefully (data set may not be ready yet).
+            -- p_log_errors=>FALSE: a failed GET here is expected (not-yet-registered
+            -- or a dropped poll) and is retried on the next tick, so it must not emit
+            -- a scary ERROR row; the INFO status line below records each poll instead.
             BEGIN
                 l_response := REST_HTTP(
                     p_url            => l_url,
                     p_method         => 'GET',
-                    p_run_id => p_run_id);
+                    p_run_id => p_run_id,
+                    p_log_errors     => FALSE);
                 l_status := REGEXP_SUBSTR(l_response, '"DataSetStatusCode"\s*:\s*"([^"]+)"', 1, 1, NULL, 1);
             EXCEPTION
                 WHEN OTHERS THEN

@@ -24,11 +24,20 @@
     -- REST HTTP: execute a REST call (GET or POST with JSON body).
     -- Returns the response CLOB. Raises on non-2xx status.
     -- --------------------------------------------------------
+    --   p_log_errors: when TRUE (default), a failed call writes an ERROR row to
+    --     DMT_LOG_TBL before re-raising. POLL_HDL passes FALSE for its status GETs
+    --     because it ALREADY handles a failed GET (it treats it as "data set not
+    --     registered yet" and keeps polling) and logs its own INFO status line each
+    --     tick. Otherwise the expected 404 on the first poll — the data set is not
+    --     queryable the instant after createFileDataSet returns — would be recorded
+    --     as a scary ERROR even though the next poll 30s later succeeds on the same
+    --     URL (backlog #156). Every other caller keeps loud ERROR logging.
     FUNCTION REST_HTTP (
         p_url              IN VARCHAR2,
         p_method           IN VARCHAR2 DEFAULT 'GET',    -- GET or POST
         p_body             IN CLOB     DEFAULT NULL,     -- JSON body for POST
-        p_run_id   IN NUMBER   DEFAULT NULL
+        p_run_id   IN NUMBER   DEFAULT NULL,
+        p_log_errors       IN BOOLEAN  DEFAULT TRUE
     ) RETURN CLOB;
 
     -- --------------------------------------------------------
