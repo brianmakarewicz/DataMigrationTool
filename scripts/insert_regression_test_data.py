@@ -1902,18 +1902,34 @@ def main():
     #      GOOD: 3 category assignments — one per GOOD item (all 3 types)
     #      BAD:  1 assignment referencing nonexistent item + fake category set [BAD-UPS]
     #      Bundled with Items in same FBDI ZIP under ItemImportJobDef.
-    #      Category set "Purchasing" (ID 10000), code "999.99" verified on demo instance.
+    #
+    #      TARGET CATALOG = "eCommerce Catalog" (category_set_id 300000047481425),
+    #      which is configured MULT_ITEM_CAT_ASSIGN_FLAG = 'Y' (MULTIPLE assignment)
+    #      and has NO default category.
+    #
+    #      WHY NOT "Purchasing": the Purchasing category set is single-assignment
+    #      (MULT_ITEM_CAT_ASSIGN_FLAG = 'N') AND carries a default category, so Fusion
+    #      auto-assigns every new item one Purchasing category at item creation. A second
+    #      Purchasing assignment from our run is then rejected with EGP-2775085 ("Items
+    #      cannot be assigned to multiple categories for this catalog because the catalog
+    #      is configured for single assignment"). That is a real Fusion functional rule,
+    #      not a DMT bug — every Purchasing GOOD row therefore fails on load/re-load.
+    #      eCommerce Catalog allows multiple assignments, so assigning one (or a second,
+    #      on a re-run) never collides and the GOOD rows genuinely reach the base table
+    #      EGP_ITEM_CATEGORIES. The three codes below (Canned_Fruit, Industrial,
+    #      eCom_Bus_Prod) are standard SCM demo seed categories present on every pod and
+    #      valid for the eCommerce Catalog category set, so the fixture stays portable.
     # ====================================================================
     print("\n=== 32b. Item Categories ===")
     # Category BATCH_ID matches its item's batch so an item and its category land
     # in the same batch group (both transforms use NVL(s.BATCH_ID, run_id)).
     for item_num, org, cat_set, cat_code, cat_name, batch, label in [
-        ("DMT-RT-PLAIN-001",  MASTER_ORG, "Purchasing", "999.99",    "999.99 Miscellaneous", 8101,
-         "GOOD: Purchasing category for plain item"),
-        ("DMT-RT-SERIAL-001", MASTER_ORG, "Purchasing", "204.54",    "204.54 Laptops", 8102,
-         "GOOD: Purchasing category for serial item"),
-        ("DMT-RT-LOT-001",    MASTER_ORG, "Purchasing", "206.61",    "206.61 Monitors", 8102,
-         "GOOD: Purchasing category for lot item"),
+        ("DMT-RT-PLAIN-001",  MASTER_ORG, "eCommerce Catalog", "Canned_Fruit",  "Canned Fruit", 8101,
+         "GOOD: eCommerce Catalog (multi-assign) category for plain item"),
+        ("DMT-RT-SERIAL-001", MASTER_ORG, "eCommerce Catalog", "Industrial",    "Industrial", 8102,
+         "GOOD: eCommerce Catalog (multi-assign) category for serial item"),
+        ("DMT-RT-LOT-001",    MASTER_ORG, "eCommerce Catalog", "eCom_Bus_Prod", "Business Products", 8102,
+         "GOOD: eCommerce Catalog (multi-assign) category for lot item"),
         ("NONEXISTENT-DMT-ITEM", MASTER_ORG, "FAKE_SET", "ZZZ", "BAD Category", 8101,
          "BAD: nonexistent item + fake category set [BAD-UPS]"),
     ]:

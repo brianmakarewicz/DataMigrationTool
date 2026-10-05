@@ -1,8 +1,8 @@
 {
-  "current_scenario": "RegressionTest2610010855",
-  "scenario_id": 166,
-  "seed_sha256": "7d8de0a17ccc410a289367e62bc121cc6504806006325e5beca70acb982f9f49",
+  "current_scenario": "RegressionTest2610051423",
+  "scenario_id": 181,
+  "seed_sha256": "376d2bdf54a3267331e0bb7fcc8cb6b9b3ea6ceb9c88796ccc6b569a1f31ae02",
   "target": "local",
-  "created": "2026-10-01 08:55",
-  "note": "current_scenario is the canonical populated write-once scenario (153 staged rows on dmt2-local, minted 2026-10-01 for backlog batch 6 #143/#134/#61). It stages GOOD+BAD rows for UnitsOfMeasure, Lookups, CashBanks and MiscReceipts (plain+lot+serial) so the Batch-3 recon fixes (#135/#136/#137) are exercised end-to-end, and one-copy-per-worker HCM rows (#61). Do NOT repoint this at RegressionTest2609220552 / scenario_id 1 -- that scenario is empty (0 staged rows) and running against it produces a false all-zero regression (every object 0 LOADED), which is what happened on run 125. The harness resolves the scenario by name at runtime; scenario_id here is informational."
+  "created": "2026-10-05 14:24",
+  "note": "Write-once scenario minted 2026-10-05. Same data as the prior RegressionTest2610010855 EXCEPT the three GOOD Item Categories rows now target the 'eCommerce Catalog' category set (multiple-assignment) instead of 'Purchasing' (single-assignment). The Purchasing set auto-assigns every new item one default Purchasing category at item creation, so our second Purchasing assignment was rejected with EGP-2775085 ('single assignment' catalog) -- a real Fusion functional rule, not a DMT bug. eCommerce Catalog allows multiple assignments, so the GOOD rows genuinely reach the base table EGP_ITEM_CATEGORIES. PROVEN live 2026-10-05 (run 228, prefixes 93282/93283): DMT-RT-PLAIN-001->Canned_Fruit landed as ITEM_CATEGORY_ASSIGNMENT_ID 300000334887345 and DMT-RT-SERIAL-001->Industrial as 300000334887373; the BAD row (NONEXISTENT-DMT-ITEM/FAKE_SET) was correctly rejected. The harness resolves the scenario by name at runtime; scenario_id here is informational."
 }
