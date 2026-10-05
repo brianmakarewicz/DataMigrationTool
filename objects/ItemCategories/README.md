@@ -50,7 +50,36 @@ Reconciliation runs after the combined Items ESS job completes — Items reconci
 
 ## Status
 BUNDLED WITH ITEMS. Packages built. FBDI generator produces CSV that is included in the Items ZIP.
-BIP artifacts created. Needs E2E test with real data.
+BIP artifacts created. GOOD category assignment PROVEN LOADED to the base table live (2026-10-05).
+
+## Target catalog must allow MULTIPLE assignment (EGP-2775085)
+
+The regression GOOD rows target the **eCommerce Catalog** category set
+(`category_set_id = 300000047481425`), which is configured
+`MULT_ITEM_CAT_ASSIGN_FLAG = 'Y'` (multiple assignment) and has no default category.
+
+Do NOT target the **Purchasing** category set for a GOOD row. Purchasing is
+single-assignment (`MULT_ITEM_CAT_ASSIGN_FLAG = 'N'`) AND carries a default category,
+so Fusion auto-assigns every newly-created item one Purchasing category at item
+creation. A second Purchasing assignment from our run is then rejected with
+**EGP-2775085** ("Items cannot be assigned to multiple categories for this catalog
+because the catalog is configured for single assignment"). That is a real Fusion
+functional rule, not a DMT bug. Use a multiple-assignment catalog (eCommerce Catalog,
+UNSPSC, Fashion Catalog, Product Lines, etc.) for GOOD category test rows.
+
+### Live base-table proof (run 228, 2026-10-05, scm_impl)
+Scenario `RegressionTest2610051423`, prefixes 93282/93283. Direct read of the base
+table `EGP_ITEM_CATEGORIES` (not our reconcile):
+
+| Item (prefixed) | Category set | Category code | ITEM_CATEGORY_ASSIGNMENT_ID |
+|---|---|---|---|
+| 93283DMT-RT-PLAIN-001 | eCommerce Catalog | Canned_Fruit | 300000334887345 |
+| 93282DMT-RT-SERIAL-001 | eCommerce Catalog | Industrial | 300000334887373 |
+
+Both rows are physically present in `EGP_ITEM_CATEGORIES` under
+`category_set_id = 300000047481425`. The BAD row (NONEXISTENT-DMT-ITEM / FAKE_SET /
+ZZZ) was correctly rejected in the interface (process_status = 3) and is absent from
+the base table.
 
 ## History
 - DDL deployed initially.
@@ -59,6 +88,12 @@ BIP artifacts created. Needs E2E test with real data.
   Added BIP reconciliation (RECONCILE_BATCH) to results package.
 - 2026-05-21: ESS discovery confirmed ItemCategoryImportJobDef is NOT standalone.
   Redesigned to bundle with Items in single ZIP under ItemImportJobDef.
+- 2026-10-05: GOOD category assignment PROVEN loaded to base table. Root-caused the
+  blanket Item Categories failure to EGP-2775085 (single-assignment Purchasing catalog
+  collides with the auto-assigned default). Retargeted the regression GOOD rows to the
+  eCommerce Catalog category set (multiple-assignment). Live run 228 landed two GOOD
+  assignments in EGP_ITEM_CATEGORIES (assignment ids 300000334887345, 300000334887373);
+  BAD row correctly rejected.
 
 ## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
 
