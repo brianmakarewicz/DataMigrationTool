@@ -185,9 +185,11 @@ begin
     -- 4. ESS poll-only smoke: definitive terminal status for a known
     --    COMPLETED request id. No submit — no harmless ESS submit
     --    exists (all registered jobs are real imports), so the test
-    --    polls a finished job instead. POLL_ESS_JOB internally calls
-    --    DMT_ESS_UTIL_PKG.CAPTURE_ESS_HIERARCHY (BIP query of
-    --    ESS_REQUEST_HISTORY) and ENUMERATE_ALL_ESS_FILES.
+    --    polls a finished job instead. On a terminal status POLL_ESS_JOB
+    --    internally calls DMT_ESS_UTIL_PKG.CAPTURE_ESS_HIERARCHY (a cheap BIP
+    --    query of ESS_REQUEST_HISTORY). It no longer enumerates/downloads output
+    --    files during the poll — that is deferred to live drill-page action
+    --    (ESS-download rework).
     -- ----------------------------------------------------------
     l_ess_id := dmt_util_pkg.get_config('SMOKE_ESS_REQUEST_ID');
     if l_ess_id is null then
