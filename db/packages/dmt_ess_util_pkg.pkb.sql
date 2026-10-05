@@ -887,7 +887,13 @@
     -- ENUMERATE_ALL_ESS_FILES
     -- Loops through all jobs (depth >= 0) for an integration run and
     -- enumerates their output files into DMT_ESS_JOB_FILE_TBL.
-    -- Called after CAPTURE_ESS_HIERARCHY.
+    --
+    -- NOT called during a pipeline run (ESS-download rework): it downloads +
+    -- unzips every output file of every job just to read filenames, which is
+    -- exactly the per-cycle cost that was removed from POLL_ESS_JOB. Filename
+    -- discovery now happens lazily, one request at a time, on the drill page via
+    -- ENUMERATE_ESS_FILES. This remains only as a manual bulk-diagnostic helper —
+    -- do not re-wire it into any run-time/polling path.
     -- ============================================================
     PROCEDURE ENUMERATE_ALL_ESS_FILES (
         p_run_id IN NUMBER,
@@ -1087,12 +1093,11 @@
         -- The poll is a SELF-CONTAINED bounded getESSJobStatus loop (same SOAP call
         -- and same '<result>' parse as DMT_LOADER_PKG.POLL_ESS_JOB) deliberately
         -- inlined here rather than calling POLL_ESS_JOB: POLL_ESS_JOB, on reaching a
-        -- terminal status, re-enters this package via CAPTURE_ESS_HIERARCHY +
-        -- ENUMERATE_ALL_ESS_FILES rooted at the polled id, which would itself insert
-        -- the report-child row (parent NULL) before our own INSERT, double-enumerate
-        -- its files, and orphan the wrapper->child linkage. Inlining a plain status
-        -- poll avoids that entirely and keeps our INSERT the sole writer of the
-        -- correctly-nested child row. EXPIRED is a not-yet-done signal (not FAILED);
+        -- terminal status, re-enters this package via CAPTURE_ESS_HIERARCHY rooted at
+        -- the polled id, which would itself insert the report-child row (parent NULL)
+        -- before our own INSERT and orphan the wrapper->child linkage. Inlining a
+        -- plain status poll avoids that entirely and keeps our INSERT the sole writer
+        -- of the correctly-nested child row. EXPIRED is a not-yet-done signal (not FAILED);
         -- a SOAP/transport fault is logged and tolerated; nothing is fabricated. The
         -- bound is well under the 20-minute "bad ParameterList" ceiling.
         C_REPORT_POLL_SEC CONSTANT NUMBER := 600;  -- 10 min bounded wait for the report child

@@ -69,6 +69,11 @@
     -- Downloads the MTOM response, parses the ZIP central directory to
     -- discover filenames, inserts metadata rows into DMT_ESS_JOB_FILE_TBL.
     -- File content is NOT stored — only filenames and types.
+    --
+    -- LIVE / ON-DEMAND ONLY. This downloads a file to read its filenames, so it is
+    -- never called during a pipeline run (run-time polling is status-only — see the
+    -- ESS-download rework). It is invoked lazily by the drill page (APEX page 58,
+    -- "Fetch File List from Fusion") for the single request the user is viewing.
     PROCEDURE ENUMERATE_ESS_FILES (
         p_ess_job_id   IN NUMBER,
         p_request_id   IN NUMBER,
@@ -77,7 +82,13 @@
     );
 
     -- Enumerate files for ALL child jobs of an integration run.
-    -- Called after CAPTURE_ESS_HIERARCHY to populate DMT_ESS_JOB_FILE_TBL.
+    --
+    -- NOT part of the pipeline anymore. It downloads + unzips every output file of
+    -- every job in the run just to read filenames, so calling it per poll cycle was
+    -- the O(cycles × files) cost the ESS-download rework removed. Filename discovery
+    -- is now deferred to live user action, one request at a time, via
+    -- ENUMERATE_ESS_FILES. Retained only as a manual bulk-diagnostic helper; do NOT
+    -- wire it back into POLL_ESS_JOB or any run-time path.
     PROCEDURE ENUMERATE_ALL_ESS_FILES (
         p_run_id IN NUMBER,
         p_username       IN VARCHAR2 DEFAULT NULL,

@@ -804,19 +804,42 @@
             p_package        => C_PKG,
             p_procedure      => l_proc);
 
-        -- Capture ESS job hierarchy for diagnostics.
-        -- Runs after every terminal status so child job details are always available.
+        -- Capture ESS job hierarchy for diagnostics (cheap: one BIP query on
+        -- ESS_REQUEST_HISTORY returning ids/job-defs/states/timestamps — it does
+        -- NOT download any output file). Only run it when Fusion actually reached a
+        -- terminal state. The queue worker calls POLL_ESS_JOB with a 10-second
+        -- timeout on every tick; a still-running job returns EXPIRED here, which is
+        -- NOT terminal. Previously this block ran on EVERY tick (including EXPIRED),
+        -- re-capturing the hierarchy and — via ENUMERATE_ALL_ESS_FILES below —
+        -- re-downloading and re-unzipping every output file in the whole run each
+        -- cycle, for filenames only. That cost grew with the run (seconds early,
+        -- minutes late) and dominated wall-clock time. See the ESS-download rework.
         -- Any DB or report error here is a hard stop — do not swallow.
-        DMT_ESS_UTIL_PKG.CAPTURE_ESS_HIERARCHY(
-            p_run_id    => p_run_id,
-            p_parent_request_id => TO_NUMBER(p_ess_job_id),
-            p_cemli_code        => p_cemli_code);
-        -- Enumerate output files for each child job (metadata only, no content stored).
-        -- Must run immediately after hierarchy capture while Fusion still has the files.
-        DMT_ESS_UTIL_PKG.ENUMERATE_ALL_ESS_FILES(
-            p_run_id    => p_run_id,
-            p_username          => p_username,
-            p_password          => p_password);
+        IF l_fusion_status IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING,
+                                C_STATUS_FAILED, C_STATUS_ERROR) THEN
+            DMT_ESS_UTIL_PKG.CAPTURE_ESS_HIERARCHY(
+                p_run_id    => p_run_id,
+                p_parent_request_id => TO_NUMBER(p_ess_job_id),
+                p_cemli_code        => p_cemli_code);
+        END IF;
+
+        -- Output file ENUMERATION (download + unzip to read filenames) is NOT done
+        -- during the run. Per the ESS-download rework: run-time polling queries job
+        -- STATUS only. There is no cheap metadata API that yields the output
+        -- filenames without pulling the file bytes, so filename discovery is
+        -- deferred ENTIRELY to LIVE user action. The drill page (ESS Job Output,
+        -- APEX page 58) shows a "Fetch File List from Fusion" button when no files
+        -- are cached, which calls DMT_ESS_UTIL_PKG.ENUMERATE_ESS_FILES for that one
+        -- request on demand; the Download button then fetches the bytes for the one
+        -- chosen file via DOWNLOAD_ESS_FILE_TO_BROWSER. No ESS output file is ever
+        -- downloaded during a pipeline run.
+        --
+        -- NOTE: reconciliation does NOT depend on this enumeration. Per-record
+        -- outcomes come from BIP (base tables → LOADED) and, for the objects that
+        -- need per-row rejection text, from a single targeted download of the one
+        -- Import Report request at reconcile time (DMT_IMPORT_REPORT_PKG /
+        -- DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML) — a different, correctly-scoped path
+        -- that this change leaves untouched.
 
         -- Return terminal Fusion status to caller so it can branch
         -- (e.g. skip import lookup / BIP when Load ESS returned ERROR).
