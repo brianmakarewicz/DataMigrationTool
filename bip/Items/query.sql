@@ -60,10 +60,8 @@ FROM (
            'INTERFACE'                                     AS source_type,
            'ERROR'                                         AS fusion_status,
            CAST(NULL AS NUMBER)                            AS fusion_id,
-           '[ITEM] ' || NVL(ie.error_message,
-               'Rejected by Item Import (process_status='
-               || NVL(TO_CHAR(i.process_status), 'NULL')
-               || '; item not created in base table EGP_SYSTEM_ITEMS_B).')
+           CASE WHEN ie.error_message IS NOT NULL
+                THEN '[ITEM] ' || ie.error_message END
                                                            AS error_message,
            TO_CHAR(i.load_request_id)                      AS load_request_id,
            i.item_number                                   AS source_ref,
@@ -125,11 +123,8 @@ FROM (
            'INTERFACE'                                                          AS source_type,
            'ERROR'                                                             AS fusion_status,
            CAST(NULL AS NUMBER)                                                 AS fusion_id,
-           '[CATEGORY] ' || NVL(ce.error_message,
-               'Rejected by Item Import (process_status='
-               || NVL(TO_CHAR(ic.process_status), 'NULL')
-               || '; category assignment not created in base table '
-               || 'EGP_ITEM_CATEGORIES).')                                      AS error_message,
+           CASE WHEN ce.error_message IS NOT NULL
+                THEN '[CATEGORY] ' || ce.error_message END                      AS error_message,
            TO_CHAR(ic.load_request_id)                                          AS load_request_id,
            ic.item_number                                                       AS source_ref,
            CAST(NULL AS VARCHAR2(240))                                          AS dmt_reference
@@ -151,8 +146,17 @@ FROM (
         AND    e.error_table_name = 'EGP_ITEM_CATEGORIES_INTERFACE'
         GROUP BY e.transaction_id
     ) ce ON ce.transaction_id = ic.transaction_id
-    WHERE  :P_PREFIX IS NOT NULL
-    AND    ic.item_number LIKE :P_PREFIX || '%'
+    -- Run-scope category rows by THIS run's load request, NOT by :P_PREFIX on
+    -- ITEM_NUMBER. A category assignment's ITEM_NUMBER is resolved through the
+    -- item cross-reference (DMT_XREF_PKG.ITEM_NUMBER), so for an item that was
+    -- loaded in an EARLIER run the category carries that earlier run's prefix --
+    -- which would never match the current run's :P_PREFIX, silently dropping the
+    -- category rows and losing their real Fusion rejection (e.g. EGP-2775085).
+    -- LOAD_REQUEST_ID is stamped by this run's Item Import load on the category
+    -- interface row regardless of the item-number prefix, so it is the correct
+    -- run selector for categories.
+    WHERE  :P_LOAD_REQUEST_ID IS NOT NULL
+    AND    ic.load_request_id = :P_LOAD_REQUEST_ID
     AND    b.item_category_assignment_id IS NULL
 
     UNION ALL
@@ -174,8 +178,11 @@ FROM (
           AND b.organization_id   = ic.organization_id
           AND b.category_id       = ic.category_id
           AND b.category_set_id   = ic.category_set_id
-    WHERE  :P_PREFIX IS NOT NULL
-    AND    ic.item_number LIKE :P_PREFIX || '%'
+    -- Same run-scope as the category INTERFACE tier: by THIS run's load request,
+    -- not by :P_PREFIX on ITEM_NUMBER (categories carry the xref-resolved item
+    -- number, whose prefix may be an earlier run's). See the INTERFACE tier note.
+    WHERE  :P_LOAD_REQUEST_ID IS NOT NULL
+    AND    ic.load_request_id = :P_LOAD_REQUEST_ID
 )
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key

@@ -230,7 +230,12 @@ AS
                         -- shared DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR helper
                         -- (backlog item 28); the UPDATE itself stays static.
                         FOR i IN 1..l_ir_errors.COUNT LOOP
-                            IF l_ir_errors(i).row_identifier IS NOT NULL THEN
+                            -- Only a real per-row Fusion message is a verdict. An
+                            -- import-report error row with no message is NOT stamped
+                            -- FAILED; the TFM row is left GENERATED for the honest
+                            -- unaccounted sweep (no fabricated verdict).
+                            IF l_ir_errors(i).row_identifier IS NOT NULL
+                               AND l_ir_errors(i).error_message IS NOT NULL THEN
                                 UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                                 SET    TFM_STATUS           = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
@@ -252,17 +257,22 @@ AS
                         -- parser above does not recognise that layout, so match these
                         -- directly to their TFM row with the real Fusion message.
                         BEGIN
+                            -- Only rows with a REAL Fusion message (MESSAGE_NAME_10)
+                            -- are a verdict. A G_STAG_ERR row with no message is NOT
+                            -- stamped FAILED; its TFM row is left GENERATED for the
+                            -- honest unaccounted sweep (no fabricated verdict).
                             FOR e IN (
                                 SELECT x.ref, x.msg
                                 FROM   XMLTABLE('//G_STAG_ERR' PASSING XMLTYPE(l_ir_xml)
                                         COLUMNS ref VARCHAR2(240) PATH 'TXN_INTERFACE_ID_10',
                                                 msg VARCHAR2(400)  PATH 'MESSAGE_NAME_10') x
                                 WHERE  x.ref IS NOT NULL
+                                AND    x.msg IS NOT NULL
                             ) LOOP
                                 UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                                 SET    TFM_STATUS           = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                           '[FUSION_ERROR] ' || NVL(e.msg, 'Cost transaction rejected')),
+                                           '[FUSION_ERROR] ' || e.msg),
                                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                                 WHERE  RUN_ID = p_run_id
                                 AND    ORIG_TRANSACTION_REFERENCE = e.ref
@@ -418,7 +428,12 @@ AS
                         -- Message built by the shared ERROR_TEXT_FOR helper
                         -- (backlog item 28); UPDATE stays static.
                         FOR i IN 1..l_ir_errors.COUNT LOOP
-                            IF l_ir_errors(i).row_identifier IS NOT NULL THEN
+                            -- Only a real per-row Fusion message is a verdict. An
+                            -- import-report error row with no message is NOT stamped
+                            -- FAILED; the TFM row is left GENERATED for the honest
+                            -- unaccounted sweep (no fabricated verdict).
+                            IF l_ir_errors(i).row_identifier IS NOT NULL
+                               AND l_ir_errors(i).error_message IS NOT NULL THEN
                                 UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                                 SET    TFM_STATUS           = 'FAILED',
                                        ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
@@ -463,17 +478,21 @@ AS
             BEGIN
                 l_ir2 := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_import_ess_id);
                 IF l_ir2 IS NOT NULL AND DBMS_LOB.GETLENGTH(l_ir2) > 0 THEN
+                    -- Only rows with a REAL Fusion message (MESSAGE_NAME_10) are a
+                    -- verdict. A G_STAG_ERR row with no message is NOT stamped FAILED;
+                    -- its TFM row is left GENERATED for the honest unaccounted sweep.
                     FOR e IN (
                         SELECT x.ref, x.msg
                         FROM   XMLTABLE('//G_STAG_ERR' PASSING XMLTYPE(l_ir2)
                                 COLUMNS ref VARCHAR2(240) PATH 'TXN_INTERFACE_ID_10',
                                         msg VARCHAR2(400)  PATH 'MESSAGE_NAME_10') x
                         WHERE  x.ref IS NOT NULL
+                        AND    x.msg IS NOT NULL
                     ) LOOP
                         UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
                         SET    TFM_STATUS           = 'FAILED',
                                ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                   '[FUSION_ERROR] ' || NVL(e.msg, 'Cost transaction rejected')),
+                                   '[FUSION_ERROR] ' || e.msg),
                                RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                         WHERE  RUN_ID = p_run_id
                         AND    ORIG_TRANSACTION_REFERENCE = e.ref

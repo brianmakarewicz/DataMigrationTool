@@ -261,15 +261,27 @@
     -- loops (backlog item 28). No SQL, no table access, no dynamic SQL:
     -- each call site keeps its own static UPDATE and passes the composed
     -- text to DMT_UTIL_PKG.APPEND_ERROR.
+    --
+    -- INTEGRITY RULE (no fabricated verdicts): when the import report left
+    -- NO real per-row message, this returns NULL — it never launders a null
+    -- message into an invented default sentence. A null return means "no real
+    -- Fusion error", and callers MUST NOT stamp the row FAILED on it; the row
+    -- is left GENERATED for the honest unaccounted sweep. The p_default_msg
+    -- parameter is retained for signature compatibility but is no longer used
+    -- to manufacture a verdict.
     -- --------------------------------------------------------
     FUNCTION ERROR_TEXT_FOR (
         p_error_message IN VARCHAR2,
-        p_default_msg   IN VARCHAR2 DEFAULT 'Import error (no details)',
+        p_default_msg   IN VARCHAR2 DEFAULT NULL,
         p_tag           IN VARCHAR2 DEFAULT '[IMPORT_REPORT] '
     ) RETURN VARCHAR2
     IS
     BEGIN
-        RETURN p_tag || NVL(p_error_message, p_default_msg);
+        -- Real message or NULL — never a composed fallback.
+        IF p_error_message IS NULL THEN
+            RETURN NULL;
+        END IF;
+        RETURN p_tag || p_error_message;
     END ERROR_TEXT_FOR;
 
 END DMT_IMPORT_REPORT_PKG;

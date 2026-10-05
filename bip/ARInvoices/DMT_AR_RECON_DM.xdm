@@ -181,10 +181,9 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[LINE] ' || NVL(le.error_message,
-             'Rejected by AutoInvoice (no base transaction line created for this key; '
-             || 'AutoInvoice wrote no error row -- e.g. a job-level abort left the line '
-             || 'unprocessed).')             AS error_message,
+        CASE WHEN le.error_message IS NOT NULL
+             THEN '[LINE] ' || le.error_message END
+                                             AS error_message,
         l.load_request_id                    AS load_request_id,
         l.interface_line_attribute1          AS source_ref,
         l.interface_line_attribute2          AS dmt_reference
@@ -240,9 +239,8 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[DIST] ' || NVL(de.error_message,
-             'Rejected by AutoInvoice (no base distribution created for this key; '
-             || 'parent line not imported).') AS error_message,
+        CASE WHEN de.error_message IS NOT NULL
+             THEN '[DIST] ' || de.error_message END AS error_message,
         d.load_request_id                    AS load_request_id,
         d.account_class || ':' || d.interface_distribution_id        AS source_ref,
         CAST(NULL AS VARCHAR2(4000))         AS dmt_reference

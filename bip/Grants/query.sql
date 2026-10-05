@@ -114,18 +114,21 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[AWARD] ' || NVL(
-            NULLIF(
+        CASE WHEN NULLIF(
                 h.processed_message
                 || CASE WHEN h.message_user_details IS NOT NULL
                         THEN ' | ' || h.message_user_details ELSE '' END
                 || CASE WHEN h.message_user_action IS NOT NULL
                         THEN ' | Action: ' || h.message_user_action ELSE '' END,
-                ''),
-            'Rejected by Award Import (processed_status='
-                || NVL(h.processed_status,'NULL')
-                || '; no message written -- e.g. rejected pre-validation).')
-                                             AS error_message,
+                '') IS NOT NULL
+             THEN '[AWARD] ' || NULLIF(
+                h.processed_message
+                || CASE WHEN h.message_user_details IS NOT NULL
+                        THEN ' | ' || h.message_user_details ELSE '' END
+                || CASE WHEN h.message_user_action IS NOT NULL
+                        THEN ' | Action: ' || h.message_user_action ELSE '' END,
+                '')
+        END                                  AS error_message,
         h.load_request_id                    AS load_request_id,
         h.award_number                       AS source_ref,
         h.attribute1                         AS dmt_reference

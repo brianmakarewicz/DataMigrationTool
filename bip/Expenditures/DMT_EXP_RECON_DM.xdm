@@ -126,12 +126,14 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[INTERFACE] Rejected by Import and Process Cost Transactions '
-             || '(TRANSACTION_STATUS_CODE=' || NVL(st.transaction_status_code,'NULL')
-             || '; not costed to PJC_EXP_ITEMS_ALL). The cost interface has no '
-             || 'error-text column; the per-row Fusion rejection message is in the '
-             || 'import report XML, harvested to DMT TFM.ERROR_TEXT.'
-                                             AS error_message,
+        -- No real per-row error is available from the interface here (the cost
+        -- interface has no error-text column, and the interface status code is
+        -- non-committal, not a Fusion error). So this column returns NULL rather
+        -- than a composed sentence. The REAL per-row Fusion rejection message is
+        -- harvested separately from the Import and Process Cost Transactions
+        -- report XML by DMT_EXPENDITURE_RESULTS_PKG and stamped onto the TFM row;
+        -- a row with no real message is left UNACCOUNTED, never fabricated FAILED.
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
         st.load_request_id                   AS load_request_id,
         st.orig_transaction_reference        AS source_ref,
         st.attribute1                        AS dmt_reference

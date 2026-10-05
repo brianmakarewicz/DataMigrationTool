@@ -86,10 +86,8 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[HDR] ' || NVL(he.error_message,
-             'Rejected by Import Contract Agreements (process_code='
-             || NVL(h.process_code,'NULL')
-             || '; no header error row written -- e.g. rejected pre-validation).')
+        CASE WHEN he.error_message IS NOT NULL
+             THEN '[HDR] ' || he.error_message END
                                              AS error_message,
         h.load_request_id                    AS load_request_id,
         h.interface_header_key               AS source_ref,
