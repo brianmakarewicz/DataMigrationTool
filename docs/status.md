@@ -1,5 +1,50 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-05 -- Stop fabricating FAILED verdicts (proven, run 229); faster runs; Item Categories load proven
+
+**Bottom line.** The tool was quietly covering up rows it could not account for. About fourteen
+objects were turning rows whose outcome it had not actually found in Fusion into made-up FAILED
+verdicts. We stopped that. Reconciliation now returns either the real Fusion error for a row or
+nothing at all, so a row the tool cannot account for is left honestly UNACCOUNTED instead of being
+dressed up as a failure. We proved it in a full run against the live Fusion demo.
+
+**What changed and why it matters.** We changed every reconcile query to return the real error or
+nothing, and we changed the shared error-text helper so a missing error now returns null instead of
+inventing the string "Import error (no details)." We deployed that change and redeployed the fourteen
+affected Fusion reconcile data models in place (PR #574). This is the whole mission of the tool:
+report the truth about every record, never fabricate an outcome.
+
+**Proof -- run 229, against the live Fusion demo.** Made-up FAILED verdicts went from eleven to
+zero. Twenty rows that the tool could not account for are now honestly marked UNACCOUNTED instead of
+fake failures. Rows that genuinely loaded rose from seventy-eight to eighty-five. Nothing legitimate
+regressed -- no row that had really loaded, and no row that had really failed with a Fusion error,
+changed for the worse. The objects that flipped from fake failure to honest UNACCOUNTED were Purchase
+Orders, Requisitions, AR Invoice lines, Customers account site uses, and Item Categories.
+
+**A bonus the same fix delivered.** Two Items rows (a lot and a serial row) had been failing falsely
+because the tool read the outcome before Fusion had finished. The fix now waits for Fusion, and those
+two items actually load. Item Master now reads three loaded and one genuinely failed (a bad
+organization row with its real Fusion error). Misc Receipts picked up more loaded rows from the same
+timing fix.
+
+**Faster runs.** Runs were slow because the tool downloaded each Fusion job's output and log files
+while the run was still going. It now only asks whether the job finished and reads the outcome, and
+pulls no files during the run. Runs are materially faster (PR #572).
+
+**Un-expired the two console logins.** The two service accounts the console uses had expired; we
+refreshed them so runs could reach Fusion again.
+
+**Item Categories can load -- and one Fusion rule is a real block.** We proved item categories load by
+using a catalog that allows an item to hold more than one category assignment (the eCommerce Catalog)
+-- two categories physically landed in the Fusion base table (PR #575). The Purchasing catalog, by
+contrast, allows only a single assignment, so a second assignment is genuinely rejected by Fusion with
+error EGP-2775085. That rejection is a real Fusion functional rule, not a defect in our tool.
+
+**The one follow-up left.** When Fusion rejects a single-assignment Purchasing category with
+EGP-2775085, we do not yet capture that message onto the rejected rows, so they read UNACCOUNTED with
+blank text instead of carrying the real reason. Harvesting that EGP-2775085 text onto the rejected
+category rows is the remaining work (logged as a low-priority backlog item).
+
 ## Session -- 2026-10-03 -- #148 BIP transport-fault retry + #149 activity-log drill speed-up; one gating regression; Fusion pod credentials expired
 
 **Bottom line.** Shipped two reliability fixes and proved both work exactly as intended. The one
