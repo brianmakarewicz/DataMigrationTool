@@ -131,8 +131,16 @@
                 AND    ORGANIZATION_CODE   = r.organization_code
                 AND    TFM_STATUS         != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
-            ELSE
-                -- Rejected: no row in the base table for this item.
+            ELSIF r.error_message IS NOT NULL THEN
+                -- FAILED only with a REAL Fusion error. A non-PROCESSED status
+                -- means the item is not in the base table, but base-absence is NOT
+                -- a verdict: the item load splits across several load-controller
+                -- requests, so an item absent from THIS report may still load (and
+                -- reconcile LOADED) on a later sub-load's report. We mark FAILED
+                -- only when the report carried a real per-row Fusion error message;
+                -- otherwise the row is left GENERATED so a later reconcile can still
+                -- promote it to LOADED (this is what resolves the two-batch Items
+                -- reconcile race) and the honest sweep accounts for the rest.
                 UPDATE DMT_EGP_ITEM_TFM_TBL
                 SET    TFM_STATUS              = 'FAILED',
                        ERROR_TEXT              = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,

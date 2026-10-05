@@ -144,13 +144,14 @@ FROM (
         'INTERFACE'                                             AS source_type,
         'ERROR'                                                 AS fusion_status,
         CAST(NULL AS NUMBER)                                    AS fusion_id,
-        '[INTERFACE] Rejected by Import Budgets Interface Data '
-             || '(PROCESS_CODE=' || NVL(x.process_code,'NULL')
-             || ', LOAD_STATUS=' || NVL(x.load_status,'NULL')
-             || '; not posted to PJO_PLAN_VERSIONS_B). The budget interface '
-             || 'has no error-text column; the per-row Fusion rejection '
-             || 'message is in the Import Budgets report XML, harvested to '
-             || 'DMT TFM.ERROR_TEXT.'                           AS error_message,
+        -- No real per-row error is available from the interface here (the budget
+        -- interface has no error-text column, and the process/load status codes
+        -- are non-committal, not Fusion errors). So this column returns NULL
+        -- rather than a composed sentence. The REAL per-row Fusion rejection
+        -- message is harvested separately from the Import Budgets report XML by
+        -- DMT_PRJ_BUDGET_RESULTS_PKG and stamped onto the TFM row; a row with no
+        -- real message is left UNACCOUNTED, never fabricated FAILED.
+        CAST(NULL AS VARCHAR2(4000))                            AS error_message,
         x.load_request_id                                       AS load_request_id,
         x.src_budget_line_reference                             AS source_ref,
         x.src_budget_line_reference                             AS dmt_reference

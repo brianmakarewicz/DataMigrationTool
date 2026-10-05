@@ -126,10 +126,8 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[ASSET] ' || NVL(fma.error_msg,
-             'Not posted to FA_ADDITIONS_B (posting_status='
-             || NVL(fma.posting_status, 'NULL')
-             || '); rejected by Mass Additions import.')
+        CASE WHEN fma.error_msg IS NOT NULL
+             THEN '[ASSET] ' || fma.error_msg END
                                              AS error_message,
         fma.load_request_id                  AS load_request_id,
         fma.asset_number                     AS source_ref,

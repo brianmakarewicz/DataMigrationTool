@@ -67,10 +67,8 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[TXN] ' || NVL(
-            NVL2(t.error_code, t.error_code || ': ', NULL) || t.error_explanation,
-            'Rejected by Inventory Transaction import (process_flag=3; '
-            || 'transaction not created in base table; no error text written).')
+        CASE WHEN (NVL2(t.error_code, t.error_code || ': ', NULL) || t.error_explanation) IS NOT NULL
+             THEN '[TXN] ' || NVL2(t.error_code, t.error_code || ': ', NULL) || t.error_explanation END
                                              AS error_message,
         TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
         t.transaction_reference              AS source_ref,

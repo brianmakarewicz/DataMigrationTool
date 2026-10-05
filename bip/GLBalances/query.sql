@@ -62,8 +62,8 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[LINE] ' || NVL(gi.reference10,
-             'Rejected by Journal Import (row not created in base tables).')
+        CASE WHEN gi.reference10 IS NOT NULL
+             THEN '[LINE] ' || gi.reference10 END
                                              AS error_message,
         gi.load_request_id                   AS load_request_id,
         gi.reference21                       AS source_ref,

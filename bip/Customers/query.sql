@@ -242,15 +242,8 @@ FROM (
         'Customers.Parties~' || ip.party_orig_system_reference,
         'INTERFACE', 'ERROR',
         CAST(NULL AS NUMBER),
-        'Not created in base -- interface status ''' || ip.import_status_code || ''''
-            || CASE ip.import_status_code
-                 WHEN 'W' THEN ' (held/warning -- e.g. Fusion CDM potential-duplicate review)'
-                 WHEN 'E' THEN ' (rejected by import)'
-                 ELSE '' END
-            || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
-                    ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-                                               FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
-                    ''),
+        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+         FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
         ip.load_request_id,
         ip.party_orig_system_reference,
         CAST(NULL AS VARCHAR2(4000))
@@ -269,15 +262,8 @@ FROM (
         'Customers.Locations~' || il.location_orig_system_reference,
         'INTERFACE', 'ERROR',
         CAST(NULL AS NUMBER),
-        'Not created in base -- interface status ''' || il.import_status_code || ''''
-            || CASE il.import_status_code
-                 WHEN 'W' THEN ' (held/warning)'
-                 WHEN 'E' THEN ' (rejected by import)'
-                 ELSE '' END
-            || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = il.batch_id AND e.interface_table_name = 'HZ_IMP_LOCATIONS_T'),
-                    ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-                                               FROM hz_imp_errors e WHERE e.batch_id = il.batch_id AND e.interface_table_name = 'HZ_IMP_LOCATIONS_T'),
-                    ''),
+        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+         FROM hz_imp_errors e WHERE e.batch_id = il.batch_id AND e.interface_table_name = 'HZ_IMP_LOCATIONS_T'),
         il.load_request_id,
         il.location_orig_system_reference,
         CAST(NULL AS VARCHAR2(4000))
@@ -296,15 +282,8 @@ FROM (
         'Customers.PartySites~' || ips.site_orig_system_reference,
         'INTERFACE', 'ERROR',
         CAST(NULL AS NUMBER),
-        'Not created in base -- interface status ''' || ips.import_status_code || ''''
-            || CASE ips.import_status_code
-                 WHEN 'W' THEN ' (held/warning)'
-                 WHEN 'E' THEN ' (rejected by import)'
-                 ELSE '' END
-            || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = ips.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITES_T'),
-                    ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-                                               FROM hz_imp_errors e WHERE e.batch_id = ips.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITES_T'),
-                    ''),
+        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+         FROM hz_imp_errors e WHERE e.batch_id = ips.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITES_T'),
         ips.load_request_id,
         ips.site_orig_system_reference,
         CAST(NULL AS VARCHAR2(4000))
@@ -327,15 +306,8 @@ FROM (
         'Customers.PartySiteUses~' || ipu.site_orig_system_reference || '/' || ipu.site_use_type,
         'INTERFACE', 'ERROR',
         CAST(NULL AS NUMBER),
-        'Not created in base -- interface status ''' || ipu.import_status_code || ''''
-            || CASE ipu.import_status_code
-                 WHEN 'W' THEN ' (held/warning)'
-                 WHEN 'E' THEN ' (rejected by import)'
-                 ELSE '' END
-            || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = ipu.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITEUSES_T'),
-                    ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-                                               FROM hz_imp_errors e WHERE e.batch_id = ipu.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITEUSES_T'),
-                    ''),
+        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+         FROM hz_imp_errors e WHERE e.batch_id = ipu.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITEUSES_T'),
         ipu.load_request_id,
         ipu.site_orig_system_reference,
         CAST(NULL AS VARCHAR2(4000))
@@ -361,15 +333,8 @@ FROM (
         'Customers.Accounts~' || ia.cust_orig_system_reference,
         'INTERFACE', 'ERROR',
         CAST(NULL AS NUMBER),
-        'Not created in base -- interface status ''' || ia.import_status_code || ''''
-            || CASE ia.import_status_code
-                 WHEN 'W' THEN ' (held/warning)'
-                 WHEN 'E' THEN ' (rejected by import)'
-                 ELSE '' END
-            || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
-                    ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-                                               FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
-                    ''),
+        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+         FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
         ia.load_request_id,
         ia.cust_orig_system_reference,
         CAST(NULL AS VARCHAR2(4000))
@@ -388,15 +353,8 @@ FROM (
         'Customers.AccountSites~' || ias.cust_site_orig_sys_ref,
         'INTERFACE', 'ERROR',
         CAST(NULL AS NUMBER),
-        'Not created in base -- interface status ''' || ias.import_status_code || ''''
-            || CASE ias.import_status_code
-                 WHEN 'W' THEN ' (held/warning)'
-                 WHEN 'E' THEN ' (rejected by import)'
-                 ELSE '' END
-            || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = ias.batch_id AND e.interface_table_name = 'HZ_IMP_ACCTSITES_T'),
-                    ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-                                               FROM hz_imp_errors e WHERE e.batch_id = ias.batch_id AND e.interface_table_name = 'HZ_IMP_ACCTSITES_T'),
-                    ''),
+        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+         FROM hz_imp_errors e WHERE e.batch_id = ias.batch_id AND e.interface_table_name = 'HZ_IMP_ACCTSITES_T'),
         ias.load_request_id,
         ias.cust_site_orig_sys_ref,
         CAST(NULL AS VARCHAR2(4000))
@@ -415,15 +373,8 @@ FROM (
         'Customers.AccountSiteUses~' || iasu.cust_siteuse_orig_sys_ref,
         'INTERFACE', 'ERROR',
         CAST(NULL AS NUMBER),
-        'Not created in base -- interface status ''' || iasu.import_status_code || ''''
-            || CASE iasu.import_status_code
-                 WHEN 'W' THEN ' (held/warning)'
-                 WHEN 'E' THEN ' (rejected by import)'
-                 ELSE '' END
-            || NVL2((SELECT MAX(e.message_name) FROM hz_imp_errors e WHERE e.batch_id = iasu.batch_id AND e.interface_table_name = 'HZ_IMP_ACCTSITEUSES_T'),
-                    ' -- batch messages: ' || (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-                                               FROM hz_imp_errors e WHERE e.batch_id = iasu.batch_id AND e.interface_table_name = 'HZ_IMP_ACCTSITEUSES_T'),
-                    ''),
+        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
+         FROM hz_imp_errors e WHERE e.batch_id = iasu.batch_id AND e.interface_table_name = 'HZ_IMP_ACCTSITEUSES_T'),
         iasu.load_request_id,
         iasu.cust_siteuse_orig_sys_ref,
         CAST(NULL AS VARCHAR2(4000))

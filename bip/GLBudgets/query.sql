@@ -160,8 +160,8 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[LINE] ' || NVL(gi.error_message,
-             'Rejected by Validate and Load Budgets (cell not created in GL_BUDGET_BALANCES).')
+        CASE WHEN gi.error_message IS NOT NULL
+             THEN '[LINE] ' || gi.error_message END
                                              AS error_message,
         gi.load_request_id                   AS load_request_id,
         gi.ledger_id || '|' || gi.budget_name || '|' || gi.period_name

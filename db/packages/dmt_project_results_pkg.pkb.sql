@@ -238,14 +238,21 @@ AS
 
             -- Static UPDATEs, one per error_source. Each branch keeps its own
             -- static match predicate (compound child/parent key, or the project
-            -- INSTR token match) — no dynamic SQL. The composed [IMPORT_REPORT]
-            -- message is built by the shared ERROR_TEXT_FOR helper with the
-            -- Project default literal 'Import error'.
+            -- INSTR token match) — no dynamic SQL. ERROR_TEXT is built by the
+            -- shared ERROR_TEXT_FOR helper, which returns the REAL Fusion
+            -- message or NULL (never an invented default). The FAILED UPDATE is
+            -- guarded on l_ir_errors(i).error_message IS NOT NULL so a report
+            -- error row with no real message does NOT fabricate a verdict — the
+            -- TFM row is left GENERATED for the honest unaccounted sweep.
+            IF l_ir_errors(i).error_message IS NULL THEN
+                CONTINUE;
+            END IF;
+
             IF l_src LIKE '%TASK%' THEN
                 UPDATE DMT_PJF_TASKS_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message, 'Import error')),
+                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message)),
                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                 AND    (TASK_NAME = l_ir_errors(i).row_identifier
@@ -256,7 +263,7 @@ AS
                 UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message, 'Import error')),
+                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message)),
                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                 AND    (TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier
@@ -267,7 +274,7 @@ AS
                 UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL
                 SET    TFM_STATUS = 'FAILED',
                        ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message, 'Import error')),
+                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message)),
                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                 AND    (TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier

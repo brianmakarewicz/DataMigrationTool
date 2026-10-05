@@ -96,7 +96,13 @@
                 AND    CATEGORY_SET_NAME   = r.category_set_name
                 AND    TFM_STATUS         != 'LOADED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
-            ELSE
+            ELSIF r.error_message IS NOT NULL THEN
+                -- FAILED only with a REAL Fusion error. A non-PROCESSED status
+                -- simply means the category assignment is not in the base table;
+                -- that base-absence is NOT a verdict. We mark FAILED only when the
+                -- report carried a real per-row Fusion error message. When it did
+                -- not, the row is left GENERATED for the honest unaccounted sweep
+                -- (never a fabricated FAILED on base-absence alone).
                 UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
                 SET    TFM_STATUS              = 'FAILED',
                        ERROR_TEXT              = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,

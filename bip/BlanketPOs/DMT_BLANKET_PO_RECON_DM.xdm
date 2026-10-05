@@ -109,10 +109,8 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[HDR] ' || NVL(he.error_message,
-             'Rejected by Import Blanket Agreements (process_code='
-             || NVL(h.process_code,'NULL')
-             || '; no header error row written -- e.g. rejected pre-validation).')
+        CASE WHEN he.error_message IS NOT NULL
+             THEN '[HDR] ' || he.error_message END
                                              AS error_message,
         h.load_request_id                    AS load_request_id,
         h.interface_header_key               AS source_ref,
@@ -145,10 +143,8 @@ FROM (
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        '[LINE] ' || NVL(le.error_message,
-             'Rejected by Import Blanket Agreements (process_code='
-             || NVL(l.process_code,'NULL')
-             || '; line not created in base table).')
+        CASE WHEN le.error_message IS NOT NULL
+             THEN '[LINE] ' || le.error_message END
                                              AS error_message,
         l.load_request_id                    AS load_request_id,
         l.interface_line_key                 AS source_ref,
