@@ -21,26 +21,37 @@ What it does:
      errors that render inside an HTTP-200 page are caught here even when
      no marker is visible in the HTML.
 
-Target is a parameter. Defaults are the DMT2 rebuild app:
-  * --app        application id      (default: latest app in the workspace)
-  * --workspace  APEX workspace      (default DMT2; env DMT2_WORKSPACE)
-  * --schema     DB schema for metadata queries (default DMT2_OWNER; env DMT2_SCHEMA)
-Connection convention matches dmt_deploy.py / dmt_regression_run.py: honors
-$DMT2_CONN, else an ATP connection for --schema from connections.json.
+TARGET IS URL-DRIVEN. The environment switch is a single base-URL knob, not a
+special-case per instance or app name. Everything — app id, friendly alias,
+workspace, schema, and the DMT_SMOKE end-user credentials — is resolved from
+that base URL via scripts/dmt_apex_url_target.py (which matches connections.json).
+Point this at ATP instead of local by find-and-replacing the base URL only.
 
-Authenticated sweep (steps 2-5) requires an end-user login. There is currently
-NO dedicated non-builder smoke account in the DMT2 workspace (only the builder/
-admin DMTADMIN), and automation must NOT log in with the workspace admin account
-(throttle/lockout risk). So the login is GATED behind --user/--password: pass a
-real end-user account to run the full sweep + crawl; omit them for an
-unauthenticated reachability probe of the login page only (the default).
+  * --base-url   ORDS base            (default http://localhost:8182/ords; env DMT2_UI_BASE)
+  * --app        application id       (default: resolved from the base URL, 501 local)
+  * --app-alias  friendly app path    (default: resolved, r/dmt/livedmt2 local; env DMT2_UI_APP)
+  * --workspace  APEX workspace        (default: resolved; env DMT2_WORKSPACE)
+  * --schema     DB schema for metadata queries (default: resolved; env DMT2_SCHEMA)
+
+Credentials: the default login is the end-user smoke account DMT_SMOKE, whose
+password is read from connections.json (never hardcoded). DMT_SMOKE is a
+NON-admin end-user account, so using it satisfies the no-admin-login guard.
+Pass --user/--password to override; pass --no-login for an unauthenticated
+reachability probe of the login page only.
+
+The DB connection (used only for page inventory + activity-log queries) honors
+$DMT2_CONN, else an ATP connection for --schema from connections.json. When the
+metadata DB is NOT reachable (e.g. hitting a local console whose DB is not in
+the ATP wallet), the sweep degrades gracefully: it falls back to the known
+page inventory and skips the server-side activity-log step with a warning — the
+HTTP page sweep + link crawl still run in full.
 
 Usage:
-  python scripts/dmt_apex_smoke.py                     # unauth reachability probe (default)
-  python scripts/dmt_apex_smoke.py --user SMOKE --password ...   # full sweep + crawl
-  python scripts/dmt_apex_smoke.py --app 500 --user SMOKE --password ...
-  python scripts/dmt_apex_smoke.py --run-id 139 --user SMOKE --password ...  # assert drillable
-  python scripts/dmt_apex_smoke.py --json out.json --max-urls 250 --user SMOKE --password ...
+  python scripts/dmt_apex_smoke.py                         # local app 501 as DMT_SMOKE (full sweep)
+  python scripts/dmt_apex_smoke.py --no-login              # unauth reachability probe only
+  python scripts/dmt_apex_smoke.py --base-url https://<atp-host>/ords   # retarget to ATP by URL
+  python scripts/dmt_apex_smoke.py --run-id 229            # assert run 229 is drillable
+  python scripts/dmt_apex_smoke.py --json out.json --max-urls 250
 
 Exit codes: 0 = pass, 1 = failures (login/page/link/activity errors),
 2 = pass with warnings only.
@@ -64,10 +75,24 @@ except ImportError:
     print("The 'requests' package is required: pip install requests")
     raise
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dmt_apex_url_target as urltarget  # the one URL knob (see its docstring)
+
 CONNECTIONS = os.environ.get(
     'DMT2_CONNECTIONS', r'C:\Users\Monroe\workspace\connections.json')
-DEFAULT_SCHEMA = os.environ.get('DMT2_SCHEMA', 'DMT2_OWNER')
-DEFAULT_WORKSPACE = os.environ.get('DMT2_WORKSPACE', 'DMT2')
+
+# Known page inventory fallback — used when the metadata DB is not reachable
+# (e.g. a local console whose DB is not in the ATP wallet). The HTTP sweep +
+# link crawl still exercise the full drill chain; this just seeds the page list.
+KNOWN_PAGES = [
+    (1, 'Home'), (2, 'P2P'), (3, 'GL'), (4, 'OTC'), (5, 'Projects'),
+    (6, 'Workers'), (7, 'Time & Labor'), (8, 'Admin'),
+    (9, 'Upload Reference Guide'), (16, 'Lookup Dashboard'),
+    (52, 'Object Detail'), (53, 'ESS Job Detail'), (54, 'Activity Log'),
+    (57, 'Record Detail'), (58, 'ESS Job Output'),
+    (80, 'Run History'), (82, 'Run Detail'), (84, 'Run Pipeline'),
+    (85, 'Run Comparison'),
+]
 
 # Markers that indicate a broken page/region even when HTTP status is 200.
 # Deliberately specific — this app legitimately DISPLAYS migration error text
@@ -120,39 +145,39 @@ def connect(schema):
                             wallet_password=atp['wallet_password'])
 
 
-def ords_base_url():
-    # Override for a non-ATP target (e.g. local Docker console): set
-    # DMT2_ORDS_BASE=http://localhost:8182/ords . Default is the ATP GOLD ORDS.
-    base = os.environ.get('DMT2_ORDS_BASE')
-    if base:
-        return base.rstrip('/')
-    with open(CONNECTIONS, encoding='utf-8') as fh:
-        atp = json.load(fh)['atp_queryapp']
-    return atp['apex_url'].rsplit('/apex', 1)[0]               # .../ords
-
-
-def app_inventory(app_arg, schema, workspace):
-    conn = connect(schema)
-    cur = conn.cursor()
-    if app_arg:
-        app_id = int(app_arg)
-    else:
-        # latest app in the target workspace (default DMT2)
-        cur.execute("""SELECT MAX(application_id) FROM apex_applications
-                       WHERE UPPER(workspace) = UPPER(:1)""", [workspace])
-        row = cur.fetchone()
-        if not row or row[0] is None:
-            sys.exit(f"No APEX application found in workspace {workspace!r}. "
-                     f"Pass --app explicitly.")
-        app_id = int(row[0])
-    cur.execute("""SELECT page_id, page_name FROM apex_application_pages
-                   WHERE application_id = :1 ORDER BY page_id""", [app_id])
-    pages = cur.fetchall()
-    # activity-log timestamps run on the DB clock (UTC on ATP) — window must too
-    cur.execute("SELECT SYSDATE FROM DUAL")
-    db_now = cur.fetchone()[0]
-    conn.close()
-    return app_id, pages, db_now
+def app_inventory(app_id, schema, workspace):
+    """Return (pages, db_now, db_ok). Queries APEX metadata for the live page
+    list; if the metadata DB is not reachable (common when the target is a
+    local console not in the ATP wallet), falls back to KNOWN_PAGES and a None
+    clock so the HTTP sweep still runs in full."""
+    try:
+        conn = connect(schema)
+    except Exception as e:
+        print(f"    note: metadata DB not reachable ({str(e)[:80]}); "
+              f"using known page inventory, activity-log step will be skipped")
+        return list(KNOWN_PAGES), None, False
+    try:
+        cur = conn.cursor()
+        cur.execute("""SELECT page_id, page_name FROM apex_application_pages
+                       WHERE application_id = :1 ORDER BY page_id""", [int(app_id)])
+        pages = cur.fetchall()
+        # activity-log timestamps run on the DB clock (UTC on ATP) — window must too
+        cur.execute("SELECT SYSDATE FROM DUAL")
+        db_now = cur.fetchone()[0]
+        conn.close()
+        if not pages:
+            print(f"    note: no pages found for app {app_id} in metadata; "
+                  f"using known page inventory")
+            return list(KNOWN_PAGES), db_now, True
+        return pages, db_now, True
+    except Exception as e:
+        print(f"    note: metadata query failed ({str(e)[:80]}); "
+              f"using known page inventory")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return list(KNOWN_PAGES), None, False
 
 
 def activity_errors(app_id, since, user, schema):
@@ -306,16 +331,19 @@ def main():
                                   line_buffering=True)
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace',
                                   line_buffering=True)
-    ap = argparse.ArgumentParser(description='DMT APEX HTTP smoke / link checker')
-    ap.add_argument('--app', help='application id (default: latest app in the workspace)')
-    ap.add_argument('--workspace', default=DEFAULT_WORKSPACE,
-                    help=f'APEX workspace (default {DEFAULT_WORKSPACE}; env DMT2_WORKSPACE)')
-    ap.add_argument('--schema', default=DEFAULT_SCHEMA,
-                    help=f'DB schema for metadata queries (default {DEFAULT_SCHEMA}; env DMT2_SCHEMA)')
-    ap.add_argument('--user', help='end-user login for the authenticated sweep. '
-                    'Do NOT pass the workspace admin (DMTADMIN); a dedicated smoke '
-                    'account still needs creating. Omit for an unauthenticated probe.')
-    ap.add_argument('--password', help='password for --user')
+    ap = argparse.ArgumentParser(description='DMT APEX HTTP smoke / link checker (URL-driven)')
+    ap.add_argument('--base-url', help='ORDS base URL — the one environment knob '
+                    '(default http://localhost:8182/ords; env DMT2_UI_BASE)')
+    ap.add_argument('--app', help='application id (default: resolved from the base URL)')
+    ap.add_argument('--app-alias', help='friendly app path r/<ws>/<alias> '
+                    '(default: resolved from the base URL; env DMT2_UI_APP)')
+    ap.add_argument('--workspace', help='APEX workspace (default: resolved; env DMT2_WORKSPACE)')
+    ap.add_argument('--schema', help='DB schema for metadata queries (default: resolved; env DMT2_SCHEMA)')
+    ap.add_argument('--user', help='end-user login (default: DMT_SMOKE from connections.json). '
+                    'Do NOT pass the workspace admin (DMTADMIN/builder).')
+    ap.add_argument('--password', help='password for --user (default: resolved from connections.json)')
+    ap.add_argument('--no-login', action='store_true',
+                    help='unauthenticated reachability probe of the login page only')
     ap.add_argument('--run-id', type=int, help='assert this run id is drillable from Run History')
     ap.add_argument('--max-urls', type=int, default=350, help='crawl cap (unique URLs)')
     ap.add_argument('--per-family', type=int, default=3,
@@ -324,23 +352,32 @@ def main():
     ap.add_argument('--json', metavar='PATH')
     args = ap.parse_args()
 
-    ords_base = ords_base_url()
-    app_id, pages, db_started = app_inventory(args.app, args.schema, args.workspace)
+    # One URL knob resolves everything (app id, alias, workspace, schema, creds).
+    tgt = urltarget.resolve(base_url=args.base_url, app_id=args.app,
+                            app_path=args.app_alias, user=args.user,
+                            password=args.password, workspace=args.workspace,
+                            schema=args.schema)
+    ords_base = tgt['base_url']
+    app_id = int(tgt['app_id'])
+    ws_user = tgt['user']
+    ws_pass = tgt['password']
+
+    print(f"Target: {ords_base}/{tgt['app_path']} (app {app_id}, workspace "
+          f"{tgt['workspace']}) — resolved from {tgt['source']}")
+
+    print("\n[0] Page inventory")
+    pages, db_started, db_ok = app_inventory(app_id, tgt['schema'], tgt['workspace'])
     started = datetime.datetime.now()
-    print(f"App {app_id} (workspace {args.workspace}): {len(pages)} pages | {ords_base}")
+    print(f"    {len(pages)} pages")
 
     failures, warnings = [], []
     sess = requests.Session()
     sess.headers['User-Agent'] = 'DMT-regression-smoke/1.0'
 
-    ws_user = args.user
-    ws_pass = args.password
-
-    # Login is gated: with no --user we only probe that the login page is
-    # reachable (no non-builder smoke account exists in DMT2 yet, and the admin
-    # account must never be used from automation).
-    if not ws_user:
-        print("\n[1] Unauthenticated reachability probe (no --user given)...")
+    # Login is the default (DMT_SMOKE, a non-admin end-user account). --no-login
+    # drops to an unauthenticated reachability probe of the login page only.
+    if args.no_login:
+        print("\n[1] Unauthenticated reachability probe (--no-login)...")
         try:
             r = sess.get(f"{ords_base}/f?p={app_id}:1", timeout=60)
             if r.status_code == 200 and LOGIN_MARKER in r.text:
@@ -353,12 +390,14 @@ def main():
         except Exception as e:
             failures.append(('login-page', str(e)))
             print(f"    FAIL  {e}")
-        warnings.append(('smoke-account',
-                         'authenticated sweep skipped — pass --user/--password to run it '
-                         '(a dedicated non-admin DMT2 smoke account still needs creating; '
-                         'do NOT use DMTADMIN)'))
         report(args, app_id, failures, warnings, {}, started)
         sys.exit(1 if failures else 2)
+
+    if not ws_pass:
+        print(f"\nFAIL: no password resolved for user {ws_user}. Set it in "
+              f"connections.json (console.app_users) or pass --password / "
+              f"$DMT2_UI_PASS. Credentials are never hardcoded.")
+        sys.exit(1)
 
     print("\n[1] Login (Oracle APEX Accounts)...")
     try:
@@ -537,9 +576,17 @@ def main():
                                       f"(not visible on Run History?)"))
 
     # ---- 4. server-side activity log sweep -----------------------------------
+    if not db_ok or db_started is None:
+        print("\n[4] APEX activity log sweep — SKIPPED (metadata DB not reachable "
+              "for this target)")
+        warnings.append(('activity log', 'skipped — metadata DB not reachable; the '
+                         'HTTP page sweep + link crawl above still ran in full'))
+        report(args, app_id, failures, warnings, page_results, started,
+               link_results=link_results)
+        sys.exit(1 if failures else (2 if warnings else 0))
     print(f"\n[4] APEX activity log sweep (user {ws_user}, since {db_started:%H:%M:%S} DB time)")
     try:
-        act = activity_errors(app_id, db_started, ws_user, args.schema)
+        act = activity_errors(app_id, db_started, ws_user, tgt['schema'])
         groups = {}
         for when, pg, err in act:
             err1 = ' '.join(str(err).split())[:220]
