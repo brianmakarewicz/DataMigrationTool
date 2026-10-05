@@ -23,10 +23,14 @@
 -- RECORD_KEY equals the TFM row's RECON_KEY (stamped by the item and
 -- item-category transform packages), byte-for-byte.
 --
--- RUN SCOPING is by P_PREFIX (embedded at the front of every ITEM_NUMBER,
--- surviving to interface and base tables) so every chunk of a multi-request
--- Item Import load is seen in one pass. P_LOAD_REQUEST_ID is stamped for
--- traceability but does NOT filter rows.
+-- RUN SCOPING: the ITEM MASTER tiers scope by P_PREFIX (embedded at the front of
+-- every ITEM_NUMBER, surviving to interface and base tables) so every chunk of a
+-- multi-request Item Import load is seen in one pass. The ITEM CATEGORY tiers
+-- scope by (P_LOAD_REQUEST_ID OR P_PREFIX): a category's xref-resolved ITEM_NUMBER
+-- may carry no current-run prefix, so P_LOAD_REQUEST_ID (the InterfaceLoaderController
+-- request id Fusion stamps on the category interface row) catches those, with the
+-- P_PREFIX arm as a fallback for older loads that left LOAD_REQUEST_ID NULL. This
+-- dual scope fixed run 229's blank UNACCOUNTED EGP-2775085 category rows.
 --
 -- TIER RULES (Contract v1):
 --   BASE       -> record present in its Fusion base table => SUCCESS,
@@ -59,7 +63,10 @@ FROM (
            i.item_number || '~' || i.organization_code     AS record_key,
            'INTERFACE'                                     AS source_type,
            'ERROR'                                         AS fusion_status,
-           CAST(NULL AS NUMBER)                            AS fusion_id,
+           -- VARCHAR2 to match the BASE tier's composite fusion_id: BIP derives
+           -- one datatype per UNION column, so every branch's fusion_id must be
+           -- the same type or the report data model 500s at runtime.
+           CAST(NULL AS VARCHAR2(100))                     AS fusion_id,
            CASE WHEN ie.error_message IS NOT NULL
                 THEN '[ITEM] ' || ie.error_message END
                                                            AS error_message,
@@ -93,11 +100,19 @@ FROM (
     UNION ALL
 
     -- ---- Item master, BASE tier (positive proof -> LOADED) ------------------
+    -- FUSION_ID is the per-org composite INVENTORY_ITEM_ID~ORGANIZATION_ID from
+    -- EGP_SYSTEM_ITEMS_B: an inventory item is loaded PER ORGANIZATION, so its
+    -- real identity in the base table is the pair (INVENTORY_ITEM_ID,
+    -- ORGANIZATION_ID). The item id alone dropped the org, so two rows for the
+    -- same item in different orgs collided. Per-item-per-org grain is preserved
+    -- (RECORD_KEY = ITEM_NUMBER~ORGANIZATION_CODE, one row per org). The '~'
+    -- composite rides the shared Contract v1 string FUSION_ID (widened in #456).
     SELECT 'Item'                                          AS object_type,
            i.item_number || '~' || i.organization_code     AS record_key,
            'BASE'                                          AS source_type,
            'SUCCESS'                                       AS fusion_status,
-           b.inventory_item_id                             AS fusion_id,
+           TO_CHAR(b.inventory_item_id) || '~'
+             || TO_CHAR(b.organization_id)                 AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))                    AS error_message,
            TO_CHAR(i.load_request_id)                      AS load_request_id,
            i.item_number                                   AS source_ref,
@@ -122,7 +137,9 @@ FROM (
              || ic.category_set_name || '~' || ic.category_code                  AS record_key,
            'INTERFACE'                                                          AS source_type,
            'ERROR'                                                             AS fusion_status,
-           CAST(NULL AS NUMBER)                                                 AS fusion_id,
+           -- VARCHAR2 to match the other branches' fusion_id (BIP derives one
+           -- datatype per UNION column; a NUMBER here 500s the report).
+           CAST(NULL AS VARCHAR2(100))                                         AS fusion_id,
            CASE WHEN ce.error_message IS NOT NULL
                 THEN '[CATEGORY] ' || ce.error_message END                      AS error_message,
            TO_CHAR(ic.load_request_id)                                          AS load_request_id,
@@ -146,18 +163,26 @@ FROM (
         AND    e.error_table_name = 'EGP_ITEM_CATEGORIES_INTERFACE'
         GROUP BY e.transaction_id
     ) ce ON ce.transaction_id = ic.transaction_id
-    -- Run-scope category rows by THIS run's load request, NOT by :P_PREFIX on
-    -- ITEM_NUMBER. A category assignment's ITEM_NUMBER is resolved through the
-    -- item cross-reference (DMT_XREF_PKG.ITEM_NUMBER), so for an item that was
-    -- loaded in an EARLIER run the category carries that earlier run's prefix --
-    -- which would never match the current run's :P_PREFIX, silently dropping the
-    -- category rows and losing their real Fusion rejection (e.g. EGP-2775085).
-    -- LOAD_REQUEST_ID is stamped by this run's Item Import load on the category
-    -- interface row regardless of the item-number prefix, so it is the correct
-    -- run selector for categories.
-    WHERE  :P_LOAD_REQUEST_ID IS NOT NULL
-    AND    ic.load_request_id = :P_LOAD_REQUEST_ID
-    AND    b.item_category_assignment_id IS NULL
+    -- Run-scope category rows by EITHER of two run-scoped selectors, so no
+    -- rejected category row is ever silently dropped (the defect behind run 229's
+    -- blank UNACCOUNTED EGP-2775085 rows):
+    --   (a) ic.load_request_id = :P_LOAD_REQUEST_ID -- the bundled Item Import
+    --       stamps the InterfaceLoaderController request id (the value the
+    --       reconciler binds here) onto the category interface row. Proven live
+    --       (run 229, load_request_id 10065634/10065638) to return every rejected
+    --       category row, INCLUDING the bad row NONEXISTENT-DMT-ITEM whose item
+    --       number carries no run prefix.
+    --   (b) ic.item_number LIKE :P_PREFIX || '%' -- a safety net for rows where
+    --       Fusion left load_request_id NULL (older loads) or chunked the load
+    --       under a different id: a category whose xref-resolved item number
+    --       carries THIS run's prefix is unambiguously this run's.
+    -- Both predicates are this-run-only (the prefix is a per-run sequence value
+    -- and the load request id is this run's controller), so the OR never pulls
+    -- another run's rows. The real EGP_IMPORT_ERRORS text is harvested on
+    -- TRANSACTION_ID (join ce above); base-absence makes the row a rejection.
+    WHERE  b.item_category_assignment_id IS NULL
+    AND    (   (:P_LOAD_REQUEST_ID IS NOT NULL AND ic.load_request_id = :P_LOAD_REQUEST_ID)
+            OR (:P_PREFIX IS NOT NULL AND ic.item_number LIKE :P_PREFIX || '%') )
 
     UNION ALL
 
@@ -167,7 +192,9 @@ FROM (
              || ic.category_set_name || '~' || ic.category_code                  AS record_key,
            'BASE'                                                              AS source_type,
            'SUCCESS'                                                           AS fusion_status,
-           b.item_category_assignment_id                                       AS fusion_id,
+           -- Category tier stays OWN-grain (ITEM_CATEGORY_ASSIGNMENT_ID); wrapped
+           -- in TO_CHAR only so both tiers share the one string FUSION_ID column.
+           TO_CHAR(b.item_category_assignment_id)                              AS fusion_id,
            CAST(NULL AS VARCHAR2(4000))                                         AS error_message,
            TO_CHAR(ic.load_request_id)                                          AS load_request_id,
            ic.item_number                                                       AS source_ref,
@@ -178,11 +205,11 @@ FROM (
           AND b.organization_id   = ic.organization_id
           AND b.category_id       = ic.category_id
           AND b.category_set_id   = ic.category_set_id
-    -- Same run-scope as the category INTERFACE tier: by THIS run's load request,
-    -- not by :P_PREFIX on ITEM_NUMBER (categories carry the xref-resolved item
-    -- number, whose prefix may be an earlier run's). See the INTERFACE tier note.
-    WHERE  :P_LOAD_REQUEST_ID IS NOT NULL
-    AND    ic.load_request_id = :P_LOAD_REQUEST_ID
+    -- Same two run-scoped selectors as the category INTERFACE tier (load request
+    -- id OR this run's item-number prefix), so a genuinely loaded category is
+    -- never dropped on a NULL load_request_id. See the INTERFACE tier note.
+    WHERE  (   (:P_LOAD_REQUEST_ID IS NOT NULL AND ic.load_request_id = :P_LOAD_REQUEST_ID)
+            OR (:P_PREFIX IS NOT NULL AND ic.item_number LIKE :P_PREFIX || '%') )
 )
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
