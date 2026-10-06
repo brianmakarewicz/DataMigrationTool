@@ -1,5 +1,43 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-06 -- Five-item goal: config objects, REST honesty, log-list speed, rebuild images
+
+**Bottom line.** Worked a five-item goal. Four are fixed and merged; one (local image
+re-provisioning) is in an open pull request; and one (Payment Terms + Taxes) turned out to need a
+real new build that we deliberately deferred to next session. Nothing is deployed yet -- that is the
+first thing to do next time.
+
+**What we proved and fixed:**
+- **Configuration objects (#130).** We challenged the "a functional owner has to do something"
+  assumption by running each one against live Fusion. Units of Measure, Cash Banks, Value Sets, and
+  Customers all genuinely load good data and reject bad data with real errors -- they only ever needed
+  the right good and bad test data. Lookups was a code bug (a hard-coded module id that can be wrong,
+  and a database column too narrow to hold the real id) -- fixed in PR #586. Payment Terms and Taxes
+  genuinely cannot be created over REST on this Fusion pod (the create endpoints do not exist / are
+  read-only) -- that is proven, not assumed.
+- **A real integrity hole, found and closed (#160/#161 + #130).** Some configuration records were
+  being marked "loaded" when our own create call had actually failed -- a pre-existing Fusion row with
+  the same key made the reconcile think we had created it. PRs #584 and #586 close this: a record is
+  now marked loaded only when our own create call truly succeeded, not because a matching row already
+  existed. Payment Terms and Taxes now honestly show as unaccounted instead of falsely loaded.
+- **Activity-Log list speed (#150).** The whole-run log list used to scan the entire log table.
+  Rewritten so the common run-scoped view uses the existing index -- about ten times faster, no full
+  scan. PR #585 (merged).
+- **Local rebuild no longer breaks browser login (#159).** A fresh local rebuild used to wipe the
+  APEX browser files; now the rebuild automatically re-provisions them. PR #583 (open).
+
+**Deferred to next session, by owner decision:** re-plumb Payment Terms and Taxes onto the FBDI/import
+load path (logged as backlog #162). First have an agent vet the process -- build the import files,
+import them, confirm they land -- and document it in the objects folder; then build it out for both
+objects with real good and bad data.
+
+**First actions next session (in order):**
+1. Deploy the merged fixes to BOTH local and ATP GOLD: the migration + five packages from PR #586,
+   the six packages from PR #584, and the page-54 APEX source from PR #585 (and PR #583 once merged).
+2. Run one full regression under a new prefix to prove the REST honesty fix and the faster log list in
+   a real run (both were proven at the query/REST level, not yet in a full pipeline run).
+3. Start backlog #162 (Payment Terms + Taxes FBDI), per the vet-then-build plan above.
+
 ## Session -- 2026-10-05 -- Migrated everything to ATP GOLD and browser-verified it
 
 **Bottom line.** Everything we fixed is now on the ATP GOLD instance and proven to work in a real
