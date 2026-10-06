@@ -117,7 +117,9 @@
             DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
             /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
-          );
+          )
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -152,7 +154,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Work Relationships')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -307,7 +311,9 @@
             DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
             /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
-          );
+          )
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -342,7 +348,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Assignments')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(

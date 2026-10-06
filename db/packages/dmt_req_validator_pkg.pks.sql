@@ -20,7 +20,9 @@ AS
     -- Pre-transform validation: check upstream dependencies on STG rows.
     -- Requisitions have no upstream dependencies — stub that returns immediately.
     PROCEDURE VALIDATE_PRE_TRANSFORM (
-        p_run_id    IN NUMBER
+        p_run_id    IN NUMBER,
+        p_scenario_id     IN NUMBER   DEFAULT NULL,
+        p_run_mode        IN VARCHAR2 DEFAULT 'NEW'
     );
 
     -- Post-transform validation: data quality checks on TFM rows.

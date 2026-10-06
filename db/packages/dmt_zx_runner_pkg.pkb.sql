@@ -38,7 +38,9 @@
         -- Step 1: Pre-validate (upstream dependency check)
         DMT_ZX_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(
             p_run_id   => p_run_id,
-            p_dependent_prefix => NULL
+            p_dependent_prefix => NULL,
+            p_scenario_id      => p_scenario_id,
+            p_run_mode         => p_run_mode
         );
 
         -- Step 2: Transform regimes (STG -> TFM)
@@ -127,10 +129,10 @@
     -- RUN_STANDARD - queue-dispatch entry point (EXEC contract, LOCAL mode).
     -- The scheduler calls this with named notation
     -- (p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE).
-    -- Taxes has no scenario filter (its STG rows are scenario-tagged by the
-    -- seed and consumed by RUN_ID) and no business-unit refresh, so the extra
-    -- arguments are accepted for contract conformance and ignored; delegates
-    -- straight to RUN.
+    -- Resolves the scenario name to its id and delegates to RUN so validation
+    -- and transform are scoped to the run's scenario. Taxes has no business-unit
+    -- refresh, so p_skip_bu_refresh is accepted for contract conformance and
+    -- ignored.
     -- ============================================================
     PROCEDURE RUN_STANDARD (
         p_run_id          IN NUMBER,
@@ -139,10 +141,37 @@
         p_skip_bu_refresh IN BOOLEAN  DEFAULT FALSE
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RUN_STANDARD';
+        l_scenario_id NUMBER;
+        l_err_code    NUMBER;
     BEGIN
+        -- Resolve the scenario and scope every STG selection to it (STG
+        -- accumulates across scenarios on the shared DB). Previously the name was
+        -- accepted and dropped, so an ALL-mode run transformed every scenario's
+        -- regimes and rates.
+        DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+            p_scenario_name => p_scenario_name,
+            x_scenario_id   => l_scenario_id,
+            x_error_code    => l_err_code);
+
+        IF l_err_code != DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20101,
+                'RUN_STANDARD: could not resolve scenario "' ||
+                NVL(p_scenario_name, '(null)') || '" (detail in DMT_LOG_TBL).');
+        END IF;
+
+        -- Fail closed: a supplied scenario name must resolve to an id. A NULL id
+        -- would silently widen every STG selection to ALL scenarios.
+        IF p_scenario_name IS NOT NULL AND l_scenario_id IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20101,
+                'RUN_STANDARD: scenario "' || p_scenario_name ||
+                '" resolved to no SCENARIO_ID; refusing to run unscoped.');
+        END IF;
+
         RUN(
-            p_run_id   => p_run_id,
-            p_run_mode => p_run_mode);
+            p_run_id           => p_run_id,
+            p_run_mode         => p_run_mode,
+            p_scenario_id      => l_scenario_id,
+            p_include_untagged => 'N');
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(

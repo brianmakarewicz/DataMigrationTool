@@ -369,7 +369,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Projects')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -658,7 +660,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Project Tasks')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -838,7 +842,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Team Members')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -1027,7 +1033,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Txn Controls')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(

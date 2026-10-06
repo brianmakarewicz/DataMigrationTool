@@ -17,8 +17,10 @@
 
     -- Queue-dispatch entry point (EXEC contract, LOCAL mode). The scheduler
     -- calls this with named notation (p_run_id, p_scenario_name, p_run_mode,
-    -- p_skip_bu_refresh => TRUE). Taxes has no business-unit refresh, so the
-    -- extra arguments are accepted for contract conformance; delegates to RUN.
+    -- p_skip_bu_refresh => TRUE). Resolves p_scenario_name to its id and passes
+    -- it to RUN so every STG selection is scoped to the run's scenario (raises if
+    -- a supplied name does not resolve). Taxes has no business-unit refresh, so
+    -- p_skip_bu_refresh is accepted for contract conformance only.
     PROCEDURE RUN_STANDARD (
         p_run_id          IN NUMBER,
         p_scenario_name   IN VARCHAR2 DEFAULT NULL,

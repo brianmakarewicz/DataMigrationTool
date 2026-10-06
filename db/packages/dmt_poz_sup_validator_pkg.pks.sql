@@ -27,14 +27,14 @@ AS
     -- Pre-transform upstream dependency check for all 5 supplier object types.
     -- Marks failing rows STATUS = 'FAILED', ERROR_TEXT = '[PRE_VALIDATION] ...'.
     -- Rows that pass are left untouched (STATUS stays NEW).
-    PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER);
+    PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
 
     -- Individual object-type checks (called by VALIDATE_PRE_TRANSFORM).
-    PROCEDURE VALIDATE_SUPPLIERS        (p_run_id IN NUMBER);
-    PROCEDURE VALIDATE_ADDRESSES        (p_run_id IN NUMBER);
-    PROCEDURE VALIDATE_SITES            (p_run_id IN NUMBER);
-    PROCEDURE VALIDATE_SITE_ASSIGNMENTS (p_run_id IN NUMBER);
-    PROCEDURE VALIDATE_CONTACTS         (p_run_id IN NUMBER);
+    PROCEDURE VALIDATE_SUPPLIERS        (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
+    PROCEDURE VALIDATE_ADDRESSES        (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
+    PROCEDURE VALIDATE_SITES            (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
+    PROCEDURE VALIDATE_SITE_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
+    PROCEDURE VALIDATE_CONTACTS         (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW');
 
     -- Per-object STG-FAILED flaggers. Each flips ONLY its own STG table's rows
     -- (those with a recorded error row for this run) to STG_STATUS = 'FAILED'.
@@ -42,16 +42,16 @@ AS
     -- FLAG_<type>_STG_FAILED, so it validates and flags only its own object.
     -- FLAG_STG_FAILED (below) calls all five in sequence; it is retained so the
     -- VALIDATE_PRE_TRANSFORM orchestrator path is unchanged.
-    PROCEDURE FLAG_SUPPLIERS_STG_FAILED        (p_run_id IN NUMBER);
-    PROCEDURE FLAG_ADDRESSES_STG_FAILED        (p_run_id IN NUMBER);
-    PROCEDURE FLAG_SITES_STG_FAILED            (p_run_id IN NUMBER);
-    PROCEDURE FLAG_SITE_ASSIGNMENTS_STG_FAILED (p_run_id IN NUMBER);
-    PROCEDURE FLAG_CONTACTS_STG_FAILED         (p_run_id IN NUMBER);
+    PROCEDURE FLAG_SUPPLIERS_STG_FAILED        (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL);
+    PROCEDURE FLAG_ADDRESSES_STG_FAILED        (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL);
+    PROCEDURE FLAG_SITES_STG_FAILED            (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL);
+    PROCEDURE FLAG_SITE_ASSIGNMENTS_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL);
+    PROCEDURE FLAG_CONTACTS_STG_FAILED         (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL);
 
     -- Flags all five supplier STG tables FAILED from their recorded error rows.
     -- Called by VALIDATE_PRE_TRANSFORM (orchestrator path). Delegates to the five
     -- per-object flaggers above.
-    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER);
+    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL);
 
 END DMT_POZ_SUP_VALIDATOR_PKG;
 /

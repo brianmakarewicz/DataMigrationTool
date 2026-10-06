@@ -45,7 +45,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_HEADERS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -222,7 +224,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award Headers')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -259,7 +263,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_FUNDING_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -347,7 +353,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award Funding')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -378,7 +386,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_PROJECTS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -498,7 +508,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award Projects')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -529,7 +541,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_PERSONNEL_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -635,7 +649,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award Personnel')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -666,7 +682,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_FUND_SRC_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -754,7 +772,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award Funding Sources')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -785,7 +805,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -869,7 +891,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Project Funding Sources')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -900,7 +924,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_KEYWORDS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -982,7 +1008,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award Keywords')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -1013,7 +1041,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_BDGT_PRDS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -1095,7 +1125,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Budget Periods')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -1126,7 +1158,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_CERTS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -1214,7 +1248,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award Certifications')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -1245,7 +1281,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_CFDAS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -1327,7 +1365,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award CFDAs')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -1358,7 +1398,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_FUND_ALLOC_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -1440,7 +1482,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Funding Allocations')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -1471,7 +1515,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_ORG_CREDITS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -1553,7 +1599,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Org Credits')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -1584,7 +1632,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -1666,7 +1716,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Project Task Burden')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -1697,7 +1749,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_REFERENCES_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -1779,7 +1833,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award References')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -1810,7 +1866,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GMS_AWD_TERMS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -1894,7 +1952,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Award Terms')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(

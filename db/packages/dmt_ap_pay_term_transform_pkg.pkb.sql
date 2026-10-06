@@ -49,7 +49,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_AP_PAY_TERM_HDR_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         l_prefix := get_prefix(p_run_id);
@@ -203,7 +205,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Payment Term Headers')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -238,7 +242,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         INSERT INTO DMT_AP_PAY_TERM_LINE_TFM_TBL (
@@ -343,7 +349,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Payment Term Lines')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(
