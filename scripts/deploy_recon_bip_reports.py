@@ -42,7 +42,10 @@ REPORTS = [
     ("ARInvoices",              "DMT_AR_RECON_DM",   "DMT_AR_RECON_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
-    ("Items",                   "DMT_ITEM_RECON_DM", "DMT_ITEM_RECON_RPT"),
+    # Items V2 (2026-10-06): deployed alongside the original DMT_ITEM_RECON_DM
+    # (never overwritten). Category tiers also match request_id = import ESS
+    # id and carry MESSAGE_NAME + text from both EGP interface tables.
+    ("Items",                   "DMT_ITEM_RECON_V2_DM", "DMT_ITEM_RECON_V2_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
     ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),

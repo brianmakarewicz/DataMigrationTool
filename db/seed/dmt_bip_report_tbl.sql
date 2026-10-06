@@ -2091,16 +2091,22 @@ commit;
 -- DMT_EGP_ITEM_RESULTS_PKG.APPLY_CONTRACT_V1_ITEMS handles both TFM tables). This
 -- MERGE converges the Contract v1 columns and re-points the DM/report paths (the
 -- Items row above still names the retired ITEM_DM.xdm) to the one recon report.
+-- 2026-10-06: re-pointed to DMT_ITEM_RECON_V2_DM / _V2_RPT, deployed alongside
+-- the original (BIP objects are never overwritten). V2 fixes the Item Category
+-- tiers (run 236: rejected categories were left UNACCOUNTED).
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Items'                                             cemli_code,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V2_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V2_RPT.xdo'      report_catalog_path,
            'Item Import base-table reconciliation (Contract v1 -- nine columns, '
              || 'keyset). ONE report, two record types via OBJECT_TYPE: Item '
              || '(DMT_EGP_ITEM_TFM_TBL <- EGP_SYSTEM_ITEMS_B) and ItemCategory '
-             || '(DMT_EGP_ITEM_CAT_TFM_TBL <- EGP_ITEM_CATEGORIES).'            notes,
+             || '(DMT_EGP_ITEM_CAT_TFM_TBL <- EGP_ITEM_CATEGORIES). V2 (2026-10-06): '
+             || 'category tiers also match request_id = P_IMPORT_ESS_ID and report '
+             || 'MESSAGE_NAME + text from both EGP interface tables; deployed alongside '
+             || 'the original DMT_ITEM_RECON_DM.'                               notes,
            1                                                    contract_version,
            'DMT_EGP_ITEM_TFM_TBL'                              tfm_table,
            'FUSION_INVENTORY_ITEM_ID'                          fusion_id_column,

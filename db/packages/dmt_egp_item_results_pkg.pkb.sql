@@ -232,9 +232,19 @@
     -- terminal (LOADED/FAILED) are never touched, so this runs safely alongside the
     -- existing PARSE_AND_UPDATE path without double-counting.
     -- --------------------------------------------------------
+    --
+    -- ESS ids (run 236 fix): the report's P_LOAD_REQUEST_ID is the LOAD
+    -- (InterfaceLoaderController) request id and P_IMPORT_ESS_ID is the Item
+    -- Import request id. Fusion stamps the load id on
+    -- EGP_ITEM_CATEGORIES_INTERFACE.LOAD_REQUEST_ID and the import id on its
+    -- REQUEST_ID (verified live, run 236). Passing the import id as the load id
+    -- (the old NVL(import, load) bind) made the category tier return nothing,
+    -- because category item numbers carry a prior run's prefix (xref-resolved)
+    -- or no prefix at all, so the prefix fallback could not rescue them.
     PROCEDURE APPLY_CONTRACT_V1_ITEMS (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1_ITEMS';
         l_gen_count NUMBER := 0;
@@ -242,6 +252,7 @@
         l_err_code  NUMBER;
         l_loaded    NUMBER := 0;
         l_failed    NUMBER := 0;
+        l_idfill    NUMBER := 0;    -- LOADED category rows given their missing Fusion id
         l_rc        NUMBER := 0;    -- backlog #65: rows matched by the current tier
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
@@ -254,12 +265,13 @@
         FROM   DUAL;
 
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -426,6 +438,23 @@
                             IF l_rc > 0 THEN l_tier := 'TIER3'; END IF;
                         END IF;
 
+                        -- Id backfill (run 236 fix): a category row may already be
+                        -- LOADED with NO Fusion id, stamped by the retired secondary
+                        -- ItemCategories reconciler whose report never returned the
+                        -- assignment id. The base row is positive proof, so record its
+                        -- real ITEM_CATEGORY_ASSIGNMENT_ID. Status is not changed.
+                        IF l_rc = 0 THEN
+                            UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
+                            SET    FUSION_CATEGORY_ID   = l_rows(i).FUSION_ID,
+                                   RESULTS_UPDATED_DATE = SYSDATE,
+                                   LAST_UPDATED_DATE    = SYSDATE
+                            WHERE  RUN_ID    = p_run_id
+                            AND    RECON_KEY = l_rows(i).RECORD_KEY
+                            AND    TFM_STATUS = 'LOADED'
+                            AND    FUSION_CATEGORY_ID IS NULL;
+                            l_idfill := l_idfill + SQL%ROWCOUNT;
+                        END IF;
+
                         l_loaded := l_loaded + l_rc;
                         IF l_tier IN ('TIER2','TIER3') THEN
                             DMT_UTIL_PKG.LOG(p_run_id,
@@ -460,7 +489,10 @@
             p_run_id    => p_run_id,
             p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
                            || ' | LOADED: ' || l_loaded
-                           || ' | FAILED: ' || l_failed || '.',
+                           || ' | FAILED: ' || l_failed
+                           || ' | category ids filled on already-LOADED rows: ' || l_idfill
+                           || ' | LoadReqId: ' || NVL(TO_CHAR(p_load_ess_id), '(null)')
+                           || ' | ImportReqId: ' || NVL(TO_CHAR(p_import_ess_id), '(null)') || '.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
@@ -501,12 +533,16 @@
         -- tables, keyed on RECON_KEY. This is the ONLY path to LOADED (a real
         -- base-table row). It runs FIRST so a genuinely-costed row is confirmed
         -- before the interface/import-report harvest below looks at what is left.
-        -- Rows already terminal are untouched. The load ESS id feeds the report's
-        -- LOAD_REQUEST_ID for traceability; run-scoped selection is by the stamped
-        -- prefix (see the DM header).
+        -- Rows already terminal are untouched. Item master rows are scoped by the
+        -- run prefix. Item category rows are scoped by the LOAD ESS id (the value
+        -- Fusion stamps on EGP_ITEM_CATEGORIES_INTERFACE.LOAD_REQUEST_ID) or the
+        -- import ESS id (stamped on its REQUEST_ID), so each is passed as itself;
+        -- the old NVL(import, load) bind sent the import id as the load id and
+        -- the category tier returned nothing (run 236).
         APPLY_CONTRACT_V1_ITEMS(
-            p_run_id     => p_run_id,
-            p_request_id => TO_CHAR(NVL(p_import_ess_id, p_load_ess_id)));
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id);
 
         -- One Item Import can spread its interface rows across SEVERAL
         -- InterfaceLoaderController requests (Fusion chunks the FBDI load), and
