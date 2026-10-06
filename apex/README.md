@@ -59,3 +59,23 @@ work on both. Upgrade notes (for the next time / other environments):
   Docker restart changes container IPs and the pool loses its target, reset it:
   `ords --config /etc/ords/config config --db-pool default set db.hostname host.docker.internal`
   (and `db.port 1523`, `db.servicename FREEPDB1`), then restart the ORDS container.
+
+## APEX static images (`/i/`) are re-provisioned automatically (backlog #159)
+
+The `dmt2-ords` container serves the APEX static files (`/i/`) from the host
+bind-mount `apex/installer/apex` → `/opt/oracle/apex` (read-only); `/i/` is the
+`images/` subfolder. Those ~29k 26.1 image files (~500 MB of JS/CSS) are **not
+committed to git**, so a fresh clone or a `build_local_db.sh --fresh` leaves the
+folder empty — then `/i/` 404s, the console renders unstyled, and the Sign In
+button does nothing.
+
+**This is now handled for you.** `build_local_db.sh` runs
+`db/tools/provision_apex_images.sh` on every build. That step is idempotent and
+version-checked: if the served `images/` folder already holds APEX 26.1 it does
+nothing; otherwise it copies the image set from the known-good 26.1 source
+(`APEXResourceTracker/cicd/docker/downloads/apex/images`), verifies
+`images/apex_version.txt` says 26.1, and — when `dmt2-ords` is running — confirms
+`http://localhost:8182/i/apex_version.txt` serves HTTP 200. You can also run it
+standalone: `sh db/tools/provision_apex_images.sh`. Override the source or
+destination with `APEX_IMAGES_SRC` / `APEX_IMAGES_DEST` and the expected version
+with `APEX_VERSION`.

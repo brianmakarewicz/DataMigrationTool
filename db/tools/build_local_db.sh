@@ -121,3 +121,13 @@ echo "exec dbms_utility.compile_schema(schema => 'DMT_OWNER', compile_all => fal
 select count(*) as invalid_count from user_objects where status = 'INVALID';
 exit" | "$SQLCL" -S dmt_owner/"$DMT_LOCAL_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1
 echo "Logs: /tmp/dmt2_install.log, /tmp/dmt2_lookup_install.log"
+
+# Backlog #159: re-provision the APEX static image set the dmt2-ords web tier
+# serves at "/i/". Those ~29k 26.1 image files live on the apex/installer/apex
+# bind-mount but are NOT committed to git, so a fresh clone or rebuild leaves
+# the folder empty and the browser login to the console breaks (unstyled page,
+# dead Sign In button). This step restores them from the known-good 26.1 source
+# if missing or version-mismatched. Idempotent + version-checked — a no-op once
+# the right images are already in place. Never touches the DB.
+echo "Ensuring APEX /i/ static images are present (backlog #159) ..."
+sh "$DIR/tools/provision_apex_images.sh"
