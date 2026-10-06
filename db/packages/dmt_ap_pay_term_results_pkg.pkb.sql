@@ -222,20 +222,27 @@
                         || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    -- Non-2xx: stash the real REST error but leave the header
-                    -- GENERATED. The base-table report decides LOADED vs FAILED.
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
-                    UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
+                    -- per-record message body (#161). A blank-bodied transport code is
+                    -- NOT a per-record verdict: stash nothing, leave the header
+                    -- GENERATED so the honest accounting gate surfaces it as UNACCOUNTED.
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
+                    IF l_body IS NOT NULL THEN
+                        UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
+                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                              || SUBSTR(l_body, 1, 2000)),
+                               LAST_UPDATED_DATE = SYSDATE
+                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    END IF;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Term POST rejected (stashed, awaiting base-table verdict): '
-                        || r.NAME || ' HTTP ' || l_http_status,
+                        'Term POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL
+                             THEN 'real error stashed, awaiting base-table verdict'
+                             ELSE 'blank body, left UNACCOUNTED (no bare HTTP code stashed)'
+                        END || '): ' || r.NAME || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC, p_log_type => 'WARN');
                 END IF;
 
@@ -391,6 +398,9 @@
             IF r.source_type = 'BASE' AND r.fusion_id IS NOT NULL THEN
                 -- Positive proof: the term exists in AP_TERMS. LOADED with the
                 -- real surrogate id. Match on the run's NAME (report RECORD_KEY).
+                -- #160 guard: a header whose OWN POST failed (ERROR_TEXT stashed) is
+                -- NOT rescued to LOADED by a base-table name collision with a
+                -- pre-existing/duplicate term; its real error carries it to FAILED.
                 UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_TERM_ID       = r.fusion_id,
@@ -398,7 +408,8 @@
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID     = p_run_id
                 AND    NAME       = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL;
                 l_loaded := l_loaded + SQL%ROWCOUNT;
 
                 -- Record SOURCE_GROUP_ID->TERM_ID so the line pass can confirm
@@ -504,15 +515,19 @@
                     -- POST accepted; leave GENERATED for the line report to confirm.
                     l_posted := l_posted + 1;
                 ELSE
-                    -- Non-2xx: stash the real error, leave GENERATED. The
-                    -- AP_TERMS_LINES report decides LOADED vs FAILED.
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
-                    UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
+                    -- per-record message body (#161). A blank-bodied transport code is
+                    -- NOT a per-record verdict: stash nothing, leave the line GENERATED
+                    -- so the honest accounting gate surfaces it as UNACCOUNTED.
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
+                    IF l_body IS NOT NULL THEN
+                        UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
+                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                              || SUBSTR(l_body, 1, 2000)),
+                               LAST_UPDATED_DATE = SYSDATE
+                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    END IF;
                     l_reject := l_reject + 1;
                 END IF;
 
@@ -591,6 +606,9 @@
             ) x
         ) LOOP
             IF r.source_type = 'BASE_LINE' AND r.term_id IS NOT NULL THEN
+                -- #160 guard: a line whose OWN POST failed (ERROR_TEXT stashed) is NOT
+                -- rescued to LOADED by a base-table hit on its (term_id, sequence)
+                -- key; its real error carries it to FAILED.
                 UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL ln
                 SET    ln.TFM_STATUS           = 'LOADED',
                        ln.FUSION_TERM_ID       = r.term_id,
@@ -599,6 +617,7 @@
                 WHERE  ln.RUN_ID       = p_run_id
                 AND    ln.SEQUENCE_NUM = r.sequence_num
                 AND    ln.TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ln.ERROR_TEXT IS NULL
                 AND    EXISTS (SELECT 1 FROM DMT_AP_PAY_TERM_HDR_TFM_TBL h
                                WHERE  h.RUN_ID          = p_run_id
                                AND    h.SOURCE_GROUP_ID = ln.SOURCE_GROUP_ID
