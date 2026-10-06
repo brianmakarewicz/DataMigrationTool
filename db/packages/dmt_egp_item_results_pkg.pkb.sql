@@ -485,6 +485,51 @@
             END LOOP;
         END IF;
 
+        -- Echo Item Category outcomes back to DMT_EGP_ITEM_CAT_STG_TBL (PR #588
+        -- follow-up). The retired secondary DMT_EGP_ITEM_CAT_RESULTS_PKG used to
+        -- do this; this package now owns category reconciliation, so it owns the
+        -- echo too. Static SQL over this object's own tables, scoped to the run.
+        -- LOADED: the STG row of any LOADED category TFM row in this run.
+        UPDATE DMT_EGP_ITEM_CAT_STG_TBL stg
+        SET    stg.STG_STATUS        = 'LOADED',
+               stg.LAST_UPDATED_DATE = SYSDATE
+        WHERE  stg.STG_STATUS <> 'LOADED'
+        AND    stg.STG_SEQUENCE_ID IN (
+                   SELECT t.STG_SEQUENCE_ID FROM DMT_EGP_ITEM_CAT_TFM_TBL t
+                   WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
+
+        -- FAILED: carry the TFM row's real Fusion error onto the STG row. One STG
+        -- row can feed several TFM rows, so take the first FAILED TFM row's error
+        -- deterministically (by TFM_SEQUENCE_ID) to avoid ORA-01427. Errors
+        -- accumulate (APPEND_ERROR); the same text is never appended twice, so a
+        -- re-reconcile of the same run is idempotent.
+        MERGE INTO DMT_EGP_ITEM_CAT_STG_TBL stg
+        USING (
+            SELECT f.STG_SEQUENCE_ID, f.ERROR_TEXT
+            FROM  (SELECT t.STG_SEQUENCE_ID,
+                          t.ERROR_TEXT,
+                          ROW_NUMBER() OVER (PARTITION BY t.STG_SEQUENCE_ID
+                                             ORDER BY t.TFM_SEQUENCE_ID) rn
+                   FROM   DMT_EGP_ITEM_CAT_TFM_TBL t
+                   WHERE  t.RUN_ID = p_run_id
+                   AND    t.TFM_STATUS = 'FAILED'
+                   AND    t.STG_SEQUENCE_ID IS NOT NULL) f
+            WHERE  f.rn = 1
+        ) src
+        ON (stg.STG_SEQUENCE_ID = src.STG_SEQUENCE_ID)
+        WHEN MATCHED THEN UPDATE
+        SET    stg.STG_STATUS        = 'FAILED',
+               stg.ERROR_TEXT        = CASE
+                                         WHEN src.ERROR_TEXT IS NULL
+                                           OR (stg.ERROR_TEXT IS NOT NULL
+                                               AND DBMS_LOB.INSTR(stg.ERROR_TEXT,
+                                                     DBMS_LOB.SUBSTR(src.ERROR_TEXT, 4000, 1)) > 0)
+                                         THEN stg.ERROR_TEXT
+                                         ELSE DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
+                                                  DBMS_LOB.SUBSTR(src.ERROR_TEXT, 4000, 1))
+                                       END,
+               stg.LAST_UPDATED_DATE = SYSDATE;
+
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,
             p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
