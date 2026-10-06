@@ -4109,27 +4109,14 @@
                 -- near-simultaneously each resolve their OWN import (#75).
                 p_import_batch_id   => grp_rec.BATCH_ID);
 
-            -- Items special case (kept from the monolith, deliberately NOT
-            -- registry-expressible): the Items FBDI ZIP bundles the ItemCategories
-            -- CSV, so on a successful load this item conditionally reconciles the
-            -- categories too when this batch generated any category rows. A
-            -- data-dependent secondary reconciler does not fit the one-RECON_PROC-
-            -- per-object registry. Scoped by g_work_queue_id so a child touches only
-            -- its own rows. po_submit_and_reconcile_one already ran the primary Items
-            -- reconcile (RECONCILE_VIA_REGISTRY) and set g_reconciled_inline.
-            IF l_it_ok THEN
-                DECLARE l_cat_gen NUMBER;
-                BEGIN
-                    SELECT COUNT(*) INTO l_cat_gen FROM DMT_EGP_ITEM_CAT_TFM_TBL
-                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                    AND   (g_work_queue_id IS NULL OR WORK_QUEUE_ID = g_work_queue_id);
-                    IF l_cat_gen > 0 THEN
-                        DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(
-                            p_run_id, TO_NUMBER(l_it_load_id), TO_NUMBER(l_it_import_id),
-                            p_work_queue_id => g_work_queue_id);
-                    END IF;
-                END;
-            END IF;
+            -- Items categories: no secondary reconciler call here any more.
+            -- po_submit_and_reconcile_one already ran the Items registered
+            -- reconciler (RECONCILE_VIA_REGISTRY), and DMT_EGP_ITEM_RESULTS_PKG
+            -- reconciles Item Master AND Item Categories from the one Contract v1
+            -- report (DMT_ITEM_RECON_V2_DM). The retired DMT_EGP_ITEM_CAT_RESULTS_PKG
+            -- read a report that never carried an error message or a Fusion id,
+            -- matched without the category code, and could flip a FAILED category
+            -- row to LOADED (run 236 findings).
 
             -- Backlog #70: stamp THIS child's own distinct load + import ess ids on
             -- its own queue row (no-op outside a queue-driven partition child).
