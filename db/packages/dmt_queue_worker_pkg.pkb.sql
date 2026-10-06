@@ -628,9 +628,15 @@ AS
                 ' record(s) unaccounted (' || l_loaded || ' loaded, ' || l_failed || ' errored).',
                 'WARN', C_PKG, 'apply_accounting_gate');
         ELSE
+            -- DONE means every row is accounted for, so any ERROR_MESSAGE still on
+            -- the item is stale: a prior gate's "N record(s) unaccounted", or a
+            -- retry sentinel. Clear it, as RERUN_RUN does when it reopens an item,
+            -- so a reconcile driven straight through RECONCILE_ONE (per-object
+            -- re-reconcile) never leaves DONE showing an old failure message.
             UPDATE DMT_WORK_QUEUE_TBL
-            SET WORK_STATUS = 'DONE',
-                COMPLETED_AT = SYSTIMESTAMP
+            SET WORK_STATUS   = 'DONE',
+                ERROR_MESSAGE = NULL,
+                COMPLETED_AT  = SYSTIMESTAMP
             WHERE QUEUE_ID = p_queue_id;
             DMT_UTIL_PKG.LOG(p_run_id,
                 'Object ' || p_cemli_code || ' DONE: all records accounted (' ||
