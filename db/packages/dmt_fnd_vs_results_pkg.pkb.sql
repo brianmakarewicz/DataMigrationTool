@@ -358,6 +358,9 @@
 
             IF r.source_type = 'SET' THEN
                 -- Positive proof: the set exists in FND_VS_VALUE_SETS.
+                -- #160 guard: a set whose OWN load stashed a real error (ERROR_TEXT not
+                -- null) is NOT rescued to LOADED by a base-table code collision with a
+                -- pre-existing set; its real error carries it to FAILED.
                 UPDATE DMT_FND_VS_SET_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_VALUE_SET_ID  = r.fusion_id,
@@ -365,7 +368,8 @@
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID     = p_run_id
                 AND    VALUE_SET_CODE = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL;
                 l_sets_loaded := l_sets_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'VALUE' THEN
@@ -375,6 +379,9 @@
                     l_set_code := SUBSTR(r.record_key, 1, l_sep - 1);
                     l_value    := SUBSTR(r.record_key, l_sep + 1);
 
+                    -- #160 guard: a value whose OWN load stashed a real error is NOT
+                    -- rescued to LOADED by a base-table key collision; its real error
+                    -- carries it to FAILED.
                     UPDATE DMT_FND_VS_VALUE_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            FUSION_VALUE_ID      = r.fusion_id,
@@ -383,7 +390,8 @@
                     WHERE  RUN_ID     = p_run_id
                     AND    VALUE_SET_CODE = l_set_code
                     AND    VALUE          = l_value
-                    AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                    AND    ERROR_TEXT IS NULL;
                     l_values_loaded := l_values_loaded + SQL%ROWCOUNT;
                 END IF;
             END IF;

@@ -219,19 +219,27 @@
                         || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    -- Non-2xx: stash the real REST error but leave the row GENERATED.
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
-                    UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
+                    -- per-record message body (#161). A blank-bodied transport code is
+                    -- NOT a per-record verdict: stash nothing, leave the row GENERATED
+                    -- so the honest accounting gate surfaces it as UNACCOUNTED.
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
+                    IF l_body IS NOT NULL THEN
+                        UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
+                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                              || SUBSTR(l_body, 1, 2000)),
+                               LAST_UPDATED_DATE = SYSDATE
+                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    END IF;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Type POST rejected (stashed, awaiting base-table verdict): '
-                        || r.LOOKUP_TYPE || ' HTTP ' || l_http_status,
+                        'Type POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL
+                             THEN 'real error stashed, awaiting base-table verdict'
+                             ELSE 'blank body, left UNACCOUNTED (no bare HTTP code stashed)'
+                        END || '): ' || r.LOOKUP_TYPE || ' HTTP ' || l_http_status,
                         p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
 
@@ -334,17 +342,27 @@
                         || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
-                    UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
+                    -- per-record message body (#161). A blank-bodied transport code is
+                    -- NOT a per-record verdict: stash nothing, leave the row GENERATED
+                    -- so the honest accounting gate surfaces it as UNACCOUNTED.
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
+                    IF l_body IS NOT NULL THEN
+                        UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
+                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                              || SUBSTR(l_body, 1, 2000)),
+                               LAST_UPDATED_DATE = SYSDATE
+                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    END IF;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Value POST rejected (stashed, awaiting base-table verdict): '
+                        'Value POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL
+                             THEN 'real error stashed, awaiting base-table verdict'
+                             ELSE 'blank body, left UNACCOUNTED (no bare HTTP code stashed)'
+                        END || '): '
                         || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE || ' HTTP ' || l_http_status,
                         p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
@@ -510,13 +528,20 @@
             IF r.source_type = 'TYPE' THEN
                 -- Positive proof: the type exists in FND_LOOKUP_TYPES. LOADED by
                 -- string-key match; FUSION_LOOKUP_TYPE_ID stays NULL (no id source).
+                -- #160 guard: a row whose OWN POST failed (ERROR_TEXT stashed) is NOT
+                -- promoted on a natural-key base-table hit -- the key may be a
+                -- pre-existing/duplicate type, not proof THIS record loaded. The
+                -- ERROR_TEXT IS NULL predicate is the honest surrogate for the
+                -- FBDI path's "... AND <fusion-id> IS NOT NULL" guard (lookups have
+                -- no numeric surrogate to null-check).
                 UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID     = p_run_id
                 AND    LOOKUP_TYPE = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL;
                 l_types_loaded := l_types_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'VALUE' THEN
@@ -526,6 +551,9 @@
                     l_type := SUBSTR(r.record_key, 1, l_sep - 1);
                     l_code := SUBSTR(r.record_key, l_sep + 1);
 
+                    -- #160 guard: a value whose OWN POST failed (ERROR_TEXT stashed) is
+                    -- NOT promoted on a natural-key base-table hit. ERROR_TEXT IS NULL
+                    -- is the honest surrogate for the FBDI id non-null guard.
                     UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -533,7 +561,8 @@
                     WHERE  RUN_ID     = p_run_id
                     AND    LOOKUP_TYPE = l_type
                     AND    LOOKUP_CODE = l_code
-                    AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                    AND    ERROR_TEXT IS NULL;
                     l_values_loaded := l_values_loaded + SQL%ROWCOUNT;
                 END IF;
             END IF;
