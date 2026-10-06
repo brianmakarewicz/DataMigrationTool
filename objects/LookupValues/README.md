@@ -28,3 +28,11 @@ FBL import ESS job response. Verify lookup codes exist in Fusion by querying FND
 
 ## Status
 NOT BUILT — DDL deployed, pipeline packages not yet created.
+
+## Current implementation, run prefix and parent-failed rule (2026-10-06)
+The value's parent `LOOKUP_TYPE` carries the same run prefix as the type row; `LOOKUP_CODE`
+is unique only within its (now run-unique) type, so it is unchanged. When this run also
+sent the parent type and Fusion did not create it, the value is not sent (posting it only
+drew a blank-bodied HTTP 404, which left run 236's `DMT2_BAD_LKP/BADVAL` UNACCOUNTED). It is
+stamped `[PARENT_FAILED] ... parent lookup type "<type>" was not created in Fusion. Parent
+lookup type error: <the type's real Fusion error>` and lands FAILED.

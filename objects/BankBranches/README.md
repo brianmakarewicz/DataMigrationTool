@@ -33,3 +33,9 @@ Fusion error is marked FAILED on that error.
 BUILT — REST pipeline. Branches are POSTed to the `cashBankBranches` resource after
 their parent bank is confirmed, then reconciled against `CE_BANK_BRANCHES_V`. The
 old FBL flat-file generator was retired (backlog #39).
+
+## Run prefix and parent-failed rule (2026-10-06)
+The branch's parent `BANK_NAME` carries the run prefix (same value as the bank row), so the
+reconciler's (branch name, parent bank name) match targets this run's bank. A branch whose
+parent bank was not created is not sent and lands FAILED with a `[PARENT_FAILED]` error
+naming the bank and quoting its Fusion error (see `objects/Banks/README.md`).

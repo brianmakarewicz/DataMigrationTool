@@ -30,3 +30,9 @@ Reconciliation is a BIP report over the Fusion BASE table, not the REST response
 
 ## Status
 BUILT — REST load + base-table BIP reconciliation proven end-to-end on local Docker (backlog #11).
+
+## Run prefix (2026-10-06)
+The transform applies the run prefix to the term `NAME` (Fusion limit 50); lines link by
+SOURCE_GROUP_ID and are unchanged. A name that cannot carry the full prefix is not
+truncated; the row is FAILED with a `[TRANSFORM_ERROR]` naming the limit. The REST-vs-FBDI
+load question is deferred (backlog #162).
