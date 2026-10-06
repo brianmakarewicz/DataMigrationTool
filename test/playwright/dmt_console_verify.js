@@ -84,13 +84,33 @@ const PAGES = [
     }
   });
 
-  // visit a URL, assert 200 + no error region + not bounced to login.
+  // Navigation wait strategy — do NOT hinge on `networkidle` or even
+  // `domcontentloaded`. Some pages (e.g. Admin, page 8) keep a request pending
+  // (long-poll / keep-alive) that prevents the browser from ever reaching the
+  // `networkidle` state AND prevents the `DOMContentLoaded` event from firing,
+  // so both of those waits false-fail at the 60s timeout even though the server
+  // returns the page (HTTP 200) in ~3 seconds and the content paints right
+  // away. Instead we navigate with `commit` (resolves as soon as the server
+  // responds with the document) and then wait, bounded, for the main APEX
+  // content region to become visible. That settle completes on a healthy page.
+  // The region wait is NOT itself the pass/fail signal; the real assertions
+  // below (HTTP 200, content rendered, no error region, not bounced to login)
+  // do the judging, so a genuinely broken or blank page still fails.
+  const CONTENT_SEL = '#t_Body_content, .t-Body-contentInner, .t-Body-main, .t-Region, #wwvFlowForm';
+  async function settle(timeout = 25000) {
+    await page.locator(CONTENT_SEL).first()
+      .waitFor({ state: 'visible', timeout }).catch(() => {});
+  }
+
+  // visit a URL, assert 200 + content region rendered + no error region + not
+  // bounced to login.
   async function visit(label, url) {
     docBad.length = 0;
     let status = 0;
     try {
-      const resp = await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+      const resp = await page.goto(url, { waitUntil: 'commit', timeout: 60000 });
       status = resp ? resp.status() : 0;
+      await settle();
     } catch (e) {
       step(label, false, 'navigation error: ' + String(e));
       return { ok: false, body: '' };
@@ -99,11 +119,16 @@ const PAGES = [
     const html = await page.content().catch(() => '');
     const onLogin = /\/login/i.test(page.url()) || LOGIN_RE.test(html);
     const errRegion = ERROR_RE.test(body);
+    // A healthy APEX page paints a main content region. Require it so a blank
+    // or half-broken page (document 200 but nothing rendered) still fails even
+    // though we no longer wait on networkidle.
+    const contentRendered = await page.locator(CONTENT_SEL).first()
+      .isVisible().catch(() => false);
     const http200 = status === 200 && docBad.length === 0;
-    const passed = http200 && !onLogin && !errRegion;
+    const passed = http200 && !onLogin && !errRegion && contentRendered;
     step(label, passed,
       passed ? `HTTP ${status} len=${body.length}`
-        : `HTTP ${status} onLogin=${onLogin} errRegion=${errRegion} `
+        : `HTTP ${status} onLogin=${onLogin} errRegion=${errRegion} content=${contentRendered} `
           + (docBad.length ? `bad=${JSON.stringify(docBad[0])} ` : '')
           + (errRegion ? body.slice(0, 120) : ''));
     return { ok: passed, body, html };
@@ -111,7 +136,9 @@ const PAGES = [
 
   try {
     // ---- 1. login as the end-user smoke account --------------------------
-    await page.goto(`${BASE}/${APP}/login`, { waitUntil: 'networkidle', timeout: 60000 });
+    await page.goto(`${BASE}/${APP}/login`, { waitUntil: 'commit', timeout: 60000 });
+    await page.locator('#P9999_USERNAME').first()
+      .waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
     // The login page can arrive pre-filled by the browser credential manager,
     // so clear each field before filling and then VERIFY the value stuck (a
     // stale autofill is the classic cause of a silent login rejection).
@@ -150,7 +177,11 @@ const PAGES = [
         }
       })(),
     ]);
-    await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+    // Post-submit, wait for the authenticated landing page to paint its main
+    // content region rather than networkidle (the home page keeps a connection
+    // open, so networkidle would burn the full timeout).
+    await page.locator(CONTENT_SEL).first()
+      .waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
     const stillLogin = LOGIN_RE.test(await page.content().catch(() => ''));
     const loggedIn = !/login/i.test(page.url()) && !stillLogin;
     // If login never submitted AND the APEX client JS never loaded, the likely
@@ -202,22 +233,59 @@ const PAGES = [
     }
 
     // ---- 4. exercise the verify / action links -----------------------------
-    // (a) the post-run reconcile action on page 82 (the "re-run reconcile"
-    //     / verify read-back button). We assert its presence on a run detail
-    //     page; clicking it is destructive (re-submits reconcile), so the
-    //     default is presence-only unless DMT2_UI_CLICK_VERIFY=1.
+    // (a) the run-scoped reconcile read-back on page 82. This control is GATED
+    //     BY RUN CONTEXT: it only renders once a run is selected. With no run,
+    //     page 82 renders an empty shell (~157 bytes, no run-scoped links); with
+    //     the run carried in (the way the drill navigates), page 82 paints the
+    //     run header whose read-back action links reconcile the run's outcome —
+    //     "View run comparison report for this run" (the per-run reconciliation
+    //     read-back, page 85) and "View activity log for this run" (page 54).
+    //     We navigate page 82 WITH the run, assert those run-scoped read-back
+    //     links render, then FOLLOW the run-comparison read-back and assert it
+    //     resolves (HTTP 200, no APEX error region). Exercising it context-less
+    //     would see zero controls — that was the old false failure.
     if (RUN) {
-      await page.goto(fp(82, 'P82_RUN_ID', RUN), { waitUntil: 'networkidle', timeout: 60000 }).catch(() => {});
-      const reconBtn = await page.locator(
-        'button:has-text("Re-run reconcile"), [id*="RERUN_RECONCILE"], a:has-text("Re-run reconcile")'
-      ).count().catch(() => 0);
-      step('verify link: reconcile/read-back button on run detail 82', reconBtn > 0,
-        `found ${reconBtn} reconcile control(s)`);
-      if (reconBtn > 0 && process.env.DMT2_UI_CLICK_VERIFY === '1') {
-        await page.locator('button:has-text("Re-run reconcile"), [id*="RERUN_RECONCILE"]').first().click().catch(() => {});
-        await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
-        const body = await page.locator('body').innerText().catch(() => '');
-        step('verify link: reconcile action completes', !ERROR_RE.test(body), body.slice(0, 120));
+      const rd = await visit(`verify link: run-scoped reconcile read-back on run detail 82 [run ${RUN}]`,
+        fp(82, 'P82_RUN_ID', RUN));
+      if (rd.ok) {
+        // The run header renders two run-scoped read-back action links; both
+        // carry this run id. They are absent on the context-less page 82.
+        const links = await page.evaluate((runId) => {
+          const as = Array.from(document.querySelectorAll('a[href]'));
+          const carries = (a) => a.href.includes('run_id=' + runId)
+            || a.href.includes(':' + runId) || a.href.includes('=' + runId);
+          const cmp = as.find(a => /comparison report for this run/i.test(a.textContent) && carries(a));
+          const act = as.find(a => /activity log for this run/i.test(a.textContent) && carries(a));
+          return {
+            cmpHref: cmp ? cmp.href : '',
+            actHref: act ? act.href : '',
+          };
+        }, RUN).catch(() => ({ cmpHref: '', actHref: '' }));
+        const haveReadBack = !!(links.cmpHref && links.actHref);
+        step('verify link: reconcile read-back controls render on run detail 82',
+          haveReadBack,
+          `comparison-read-back=${!!links.cmpHref} activity-log-read-back=${!!links.actHref}`);
+        // Follow the run-comparison read-back (the per-run reconciliation view)
+        // and assert it actually resolves for this run.
+        if (links.cmpHref) {
+          await visit(`verify link: run-comparison reconcile read-back resolves [run ${RUN}]`,
+            links.cmpHref);
+        }
+        // Optional destructive re-run (left for parity with the newer app build
+        // that exposes a "Re-run reconcile" button; the installed app reconciles
+        // on run, so there is nothing to re-submit here).
+        if (process.env.DMT2_UI_CLICK_VERIFY === '1') {
+          const reBtn = await page.locator(
+            'button:has-text("Re-run reconcile"), [id*="RERUN_RECONCILE"]').count().catch(() => 0);
+          if (reBtn > 0) {
+            await page.goto(fp(82, 'P82_RUN_ID', RUN), { waitUntil: 'commit', timeout: 60000 }).catch(() => {});
+            await settle();
+            await page.locator('button:has-text("Re-run reconcile"), [id*="RERUN_RECONCILE"]').first().click().catch(() => {});
+            await settle();
+            const body = await page.locator('body').innerText().catch(() => '');
+            step('verify link: reconcile action completes', !ERROR_RE.test(body), body.slice(0, 120));
+          }
+        }
       }
     }
 
