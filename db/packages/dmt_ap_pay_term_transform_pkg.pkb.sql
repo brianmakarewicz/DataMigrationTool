@@ -90,7 +90,9 @@
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Payment Term Headers')
-        AND    STG_STATUS IN ('NEW','TRANSFORMED');
+        AND    STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         INSERT INTO DMT_AP_PAY_TERM_HDR_TFM_TBL (
                     STG_SEQUENCE_ID,
