@@ -215,7 +215,13 @@
 
                 IF l_http_status IN (200, 201) THEN
                     -- POST accepted. Header stays GENERATED for the base-table
-                    -- report to confirm (and capture FUSION_TERM_ID).
+                    -- report to confirm (and capture FUSION_TERM_ID). Stamp
+                    -- LOAD_CALL_STATUS = CREATED: honest proof OUR create for THIS
+                    -- header returned 2xx (#130 hollow-LOADED guard).
+                    UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted_count := l_posted_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Term POSTed (awaiting base-table confirmation): ' || r.NAME
@@ -227,14 +233,20 @@
                     -- NOT a per-record verdict: stash nothing, leave the header
                     -- GENERATED so the honest accounting gate surfaces it as UNACCOUNTED.
                     l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
-                    IF l_body IS NOT NULL THEN
-                        UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
-                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                              || SUBSTR(l_body, 1, 2000)),
-                               LAST_UPDATED_DATE = SYSDATE
-                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-                    END IF;
+                    -- #130: our create did NOT return 2xx -> REJECTED. This is the
+                    -- fix for the hollow-LOADED case: a duplicate-POST 400 (or a
+                    -- blank-bodied 404 against a non-existent resource) for a term
+                    -- name that already exists in AP_TERMS will NO LONGER be marked
+                    -- LOADED off the pre-existing base-table row.
+                    UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
@@ -255,7 +267,8 @@
                     -- Transport exception: stash it, leave GENERATED (same policy).
                     l_errmsg := SQLERRM;
                     UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -367,8 +380,9 @@
         x_term_map   OUT NOCOPY t_term_map
     ) IS
         C_PROC   CONSTANT VARCHAR2(30) := 'PARSE_HEADERS';
-        l_loaded NUMBER := 0;
-        l_grp    NUMBER;
+        l_loaded   NUMBER := 0;
+        l_promoted NUMBER := 0;
+        l_grp      NUMBER;
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
@@ -401,6 +415,9 @@
                 -- #160 guard: a header whose OWN POST failed (ERROR_TEXT stashed) is
                 -- NOT rescued to LOADED by a base-table name collision with a
                 -- pre-existing/duplicate term; its real error carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when OUR OWN create for
+                -- THIS header returned 2xx (LOAD_CALL_STATUS = 'CREATED'). A
+                -- base-table NAME match alone can be a pre-existing/duplicate term.
                 UPDATE DMT_AP_PAY_TERM_HDR_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_TERM_ID       = r.fusion_id,
@@ -409,11 +426,17 @@
                 WHERE  RUN_ID     = p_run_id
                 AND    NAME       = r.record_key
                 AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-                AND    ERROR_TEXT IS NULL;
-                l_loaded := l_loaded + SQL%ROWCOUNT;
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
+                l_promoted := SQL%ROWCOUNT;
+                l_loaded := l_loaded + l_promoted;
 
                 -- Record SOURCE_GROUP_ID->TERM_ID so the line pass can confirm
-                -- installments under this confirmed term.
+                -- installments under this confirmed term -- but ONLY for a header we
+                -- actually promoted to LOADED (#130). Lines must never be POSTed as
+                -- children of a term DMT did not create (a pre-existing base-table
+                -- term we merely key-matched).
+                IF l_promoted > 0 THEN
                 BEGIN
                     SELECT SOURCE_GROUP_ID INTO l_grp
                     FROM   DMT_AP_PAY_TERM_HDR_TFM_TBL
@@ -425,6 +448,7 @@
                 EXCEPTION
                     WHEN NO_DATA_FOUND THEN NULL;
                 END;
+                END IF;
             END IF;
         END LOOP;
 
@@ -513,6 +537,11 @@
 
                 IF l_http_status IN (200, 201) THEN
                     -- POST accepted; leave GENERATED for the line report to confirm.
+                    -- #130: stamp CREATED (our create for THIS line returned 2xx).
+                    UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted := l_posted + 1;
                 ELSE
                     -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
@@ -520,14 +549,16 @@
                     -- NOT a per-record verdict: stash nothing, leave the line GENERATED
                     -- so the honest accounting gate surfaces it as UNACCOUNTED.
                     l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
-                    IF l_body IS NOT NULL THEN
-                        UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
-                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                              || SUBSTR(l_body, 1, 2000)),
-                               LAST_UPDATED_DATE = SYSDATE
-                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-                    END IF;
+                    -- #130: our create did NOT return 2xx -> REJECTED.
+                    UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                 END IF;
 
@@ -539,7 +570,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -609,6 +641,8 @@
                 -- #160 guard: a line whose OWN POST failed (ERROR_TEXT stashed) is NOT
                 -- rescued to LOADED by a base-table hit on its (term_id, sequence)
                 -- key; its real error carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when OUR OWN create for
+                -- THIS line returned 2xx (LOAD_CALL_STATUS = 'CREATED').
                 UPDATE DMT_AP_PAY_TERM_LINE_TFM_TBL ln
                 SET    ln.TFM_STATUS           = 'LOADED',
                        ln.FUSION_TERM_ID       = r.term_id,
@@ -618,6 +652,7 @@
                 AND    ln.SEQUENCE_NUM = r.sequence_num
                 AND    ln.TFM_STATUS NOT IN ('LOADED','FAILED')
                 AND    ln.ERROR_TEXT IS NULL
+                AND    ln.LOAD_CALL_STATUS = 'CREATED'
                 AND    EXISTS (SELECT 1 FROM DMT_AP_PAY_TERM_HDR_TFM_TBL h
                                WHERE  h.RUN_ID          = p_run_id
                                AND    h.SOURCE_GROUP_ID = ln.SOURCE_GROUP_ID

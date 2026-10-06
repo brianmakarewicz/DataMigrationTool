@@ -215,7 +215,13 @@
 
                 IF l_http_status IN (200, 201) THEN
                     -- POST accepted. Row stays GENERATED for the base-table report to
-                    -- confirm (and capture FUSION_UOM_ID).
+                    -- confirm (and capture FUSION_UOM_ID). Stamp LOAD_CALL_STATUS =
+                    -- CREATED: honest proof OUR create for THIS record returned 2xx
+                    -- (#130 hollow-LOADED guard).
+                    UPDATE DMT_INV_UOM_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted_count := l_posted_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'UOM POSTed (awaiting base-table confirmation): ' || r.UOM_CODE
@@ -229,14 +235,17 @@
                     -- stash nothing and leave the row GENERATED so the honest accounting
                     -- gate surfaces it as UNACCOUNTED, never a bare "HTTP 404:".
                     l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
-                    IF l_body IS NOT NULL THEN
-                        UPDATE DMT_INV_UOM_TFM_TBL
-                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                              || SUBSTR(l_body, 1, 2000)),
-                               LAST_UPDATED_DATE = SYSDATE
-                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-                    END IF;
+                    -- #130: our create did NOT return 2xx -> REJECTED (keeps the row
+                    -- out of the LOADED promotion even on a blank body + key collision).
+                    UPDATE DMT_INV_UOM_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
@@ -257,7 +266,8 @@
                     -- Transport exception: stash it, leave GENERATED (same policy).
                     l_errmsg := SQLERRM;
                     UPDATE DMT_INV_UOM_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -397,6 +407,9 @@
                 -- with a pre-existing/duplicate row. Its real error carries it to the
                 -- FAILED sweep; a base-table hit on a key it shares is not proof that
                 -- THIS record loaded. Only a clean (no-error) row is promoted.
+                -- #130 hollow-LOADED guard: promote ONLY when OUR OWN create for
+                -- THIS record returned 2xx (LOAD_CALL_STATUS = 'CREATED'). A
+                -- base-table key match alone can be a pre-existing/duplicate row.
                 UPDATE DMT_INV_UOM_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_UOM_ID        = r.fusion_id,
@@ -405,7 +418,8 @@
                 WHERE  RUN_ID     = p_run_id
                 AND    UOM_CODE   = r.record_key
                 AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-                AND    ERROR_TEXT IS NULL;
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;

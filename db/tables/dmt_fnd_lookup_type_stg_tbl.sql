@@ -7,9 +7,9 @@ begin
 	"LOOKUP_TYPE" VARCHAR2(30), 
 	"MEANING" VARCHAR2(80), 
 	"DESCRIPTION" VARCHAR2(240), 
-	"MODULE_TYPE" VARCHAR2(30), 
-	"MODULE_KEY" VARCHAR2(30), 
-	"REFERENCE_GROUP_NAME" VARCHAR2(240), 
+	"MODULE_TYPE" VARCHAR2(30),
+	"MODULE_KEY" VARCHAR2(64),
+	"REFERENCE_GROUP_NAME" VARCHAR2(240),
 	"STAGE_DATE" DATE DEFAULT SYSDATE, 
 	"STG_STATUS" VARCHAR2(30) DEFAULT ''NEW'' NOT NULL ENABLE, 
 	"ERROR_TEXT" CLOB, 
@@ -73,6 +73,24 @@ begin
   if l_nullable = 'Y' then
     execute immediate 'UPDATE "DMT_FND_LOOKUP_TYPE_STG_TBL" SET "STG_STATUS" = ''NEW'' WHERE "STG_STATUS" IS NULL';
     execute immediate 'ALTER TABLE "DMT_FND_LOOKUP_TYPE_STG_TBL" MODIFY ("STG_STATUS" DEFAULT ''NEW'' NOT NULL)';
+  end if;
+end;
+/
+
+-- ---------------------------------------------------------------------------
+-- 2026-10-06 (backlog #130): MODULE_KEY must carry a 32-char Fusion module GUID
+-- per record (standardLookups ModuleId), so VARCHAR2(30) is too narrow. Widen
+-- to VARCHAR2(64). Grow-only MODIFY is loss-less; guarded so a fresh install
+-- (already 64 from the CREATE above) and a re-run are both no-ops. Mirrors
+-- db/migrations/2026-10-06_rest_load_call_status_and_module_key_widen.sql.
+-- ---------------------------------------------------------------------------
+declare
+  l_len pls_integer;
+begin
+  select char_length into l_len from user_tab_columns
+   where table_name = 'DMT_FND_LOOKUP_TYPE_STG_TBL' and column_name = 'MODULE_KEY';
+  if l_len < 64 then
+    execute immediate 'ALTER TABLE "DMT_FND_LOOKUP_TYPE_STG_TBL" MODIFY ("MODULE_KEY" VARCHAR2(64))';
   end if;
 end;
 /
