@@ -113,6 +113,20 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        -- Honor pre-validation rejections in EVERY run mode (mirrors Suppliers).
+        -- ALL/FAILED modes do not filter on STG_STATUS, so without this a row the
+        -- validator rejected (parent supplier has no LOADED row) would still be
+        -- transformed and sent to Fusion, and its TFM row would hide the
+        -- [PRE_VALIDATION] error in the record view. STG_SEQUENCE_ID restarts per
+        -- STG table and the supplier objects can share a RUN_ID, so scope to this
+        -- object's SUB_OBJECT.
+        AND NOT EXISTS (
+            SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID          = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT      = 'Site Assignments'
+            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+        )
         -- Deterministic identity assignment: order the INSERT..SELECT by the
         -- STG PK so the TFM PK (GENERATED identity) is assigned in staging order.
         -- The generator emits rows ORDER BY TFM_SEQUENCE_ID, so this keeps the
@@ -173,7 +187,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Site Assignments')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(

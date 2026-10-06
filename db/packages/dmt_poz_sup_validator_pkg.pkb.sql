@@ -21,7 +21,7 @@
     -- VALIDATE_SUPPLIERS
     -- No upstream dependency — all NEW rows pass through.
     -- --------------------------------------------------------
-    PROCEDURE VALIDATE_SUPPLIERS (p_run_id IN NUMBER) IS
+    PROCEDURE VALIDATE_SUPPLIERS (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         l_failed NUMBER := 0;
     BEGIN
         -- No upstream dependency, but VENDOR_NAME is mandatory: the TFM column is
@@ -34,7 +34,8 @@
         SELECT p_run_id, 'Suppliers', 'Suppliers', s.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] Supplier is missing the mandatory VENDOR_NAME — row rejected before transform.'
         FROM   DMT_POZ_SUPPLIERS_STG_TBL s
-        WHERE  s.STG_STATUS = 'NEW'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id)
         AND    s.VENDOR_NAME IS NULL;
         l_failed := SQL%ROWCOUNT;
 
@@ -54,7 +55,7 @@
     -- Parent Supplier must have a LOADED TFM row (any run):
     -- source-value match on VENDOR_NAME, outcome on the TFM tier.
     -- --------------------------------------------------------
-    PROCEDURE VALIDATE_ADDRESSES (p_run_id IN NUMBER) IS
+    PROCEDURE VALIDATE_ADDRESSES (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         l_failed NUMBER := 0;
     BEGIN
         -- Record the rejection in the run-stamped error table; the STG row keeps
@@ -65,7 +66,8 @@
                '[PRE_VALIDATION] Supplier ''' || a.VENDOR_NAME ||
                ''' has no LOADED TFM row in any run — address skipped.'
         FROM   DMT_POZ_SUP_ADDR_STG_TBL a
-        WHERE  a.STG_STATUS = 'NEW'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL OR a.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (
                    SELECT 1
                    FROM   DMT_POZ_SUPPLIERS_STG_TBL s
@@ -92,7 +94,7 @@
     -- Parent Supplier must have a LOADED TFM row (any run):
     -- source-value match on VENDOR_NAME, outcome on the TFM tier.
     -- --------------------------------------------------------
-    PROCEDURE VALIDATE_SITES (p_run_id IN NUMBER) IS
+    PROCEDURE VALIDATE_SITES (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         l_failed NUMBER := 0;
     BEGIN
         -- Record the rejection in the run-stamped error table; FLAG_STG_FAILED (§7)
@@ -103,7 +105,8 @@
                '[PRE_VALIDATION] Supplier ''' || si.VENDOR_NAME ||
                ''' has no LOADED TFM row in any run — site skipped.'
         FROM   DMT_POZ_SUP_SITE_STG_TBL si
-        WHERE  si.STG_STATUS = 'NEW'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, si.STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL OR si.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (
                    SELECT 1
                    FROM   DMT_POZ_SUPPLIERS_STG_TBL s
@@ -131,7 +134,7 @@
     -- source-value match on VENDOR_NAME + VENDOR_SITE_CODE,
     -- outcome on the TFM tier.
     -- --------------------------------------------------------
-    PROCEDURE VALIDATE_SITE_ASSIGNMENTS (p_run_id IN NUMBER) IS
+    PROCEDURE VALIDATE_SITE_ASSIGNMENTS (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         l_failed NUMBER := 0;
     BEGIN
         -- Record the rejection in the run-stamped error table; FLAG_STG_FAILED (§7)
@@ -143,7 +146,8 @@
                ' / ' || a.VENDOR_SITE_CODE ||
                ''' has no LOADED TFM row in any run — site assignment skipped.'
         FROM   DMT_POZ_SUP_SITE_ASSN_STG_TBL a
-        WHERE  a.STG_STATUS = 'NEW'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL OR a.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (
                    SELECT 1
                    FROM   DMT_POZ_SUP_SITE_STG_TBL sis
@@ -171,7 +175,7 @@
     -- Parent Supplier must have a LOADED TFM row (any run):
     -- source-value match on VENDOR_NAME, outcome on the TFM tier.
     -- --------------------------------------------------------
-    PROCEDURE VALIDATE_CONTACTS (p_run_id IN NUMBER) IS
+    PROCEDURE VALIDATE_CONTACTS (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         l_failed NUMBER := 0;
     BEGIN
         -- Record the rejection in the run-stamped error table; FLAG_STG_FAILED (§7)
@@ -182,7 +186,8 @@
                '[PRE_VALIDATION] Supplier ''' || c.VENDOR_NAME ||
                ''' has no LOADED TFM row in any run — contact skipped.'
         FROM   DMT_POZ_SUP_CONTACTS_STG_TBL c
-        WHERE  c.STG_STATUS = 'NEW'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, c.STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL OR c.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (
                    SELECT 1
                    FROM   DMT_POZ_SUPPLIERS_STG_TBL s
@@ -215,13 +220,14 @@
     -- Each per-object flagger flips ONLY its own STG table's rows (those carrying
     -- a recorded error row for this run) to 'FAILED'. This lets a per-object
     -- supplier runner flag just its own object, giving per-object isolation.
-    PROCEDURE FLAG_SUPPLIERS_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_SUPPLIERS_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUPPLIERS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -230,13 +236,14 @@
                                   );
     END FLAG_SUPPLIERS_STG_FAILED;
 
-    PROCEDURE FLAG_ADDRESSES_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_ADDRESSES_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUP_ADDR_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -245,13 +252,14 @@
                                   );
     END FLAG_ADDRESSES_STG_FAILED;
 
-    PROCEDURE FLAG_SITES_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_SITES_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUP_SITE_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -260,13 +268,14 @@
                                   );
     END FLAG_SITES_STG_FAILED;
 
-    PROCEDURE FLAG_SITE_ASSIGNMENTS_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_SITE_ASSIGNMENTS_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUP_SITE_ASSN_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -275,13 +284,14 @@
                                   );
     END FLAG_SITE_ASSIGNMENTS_STG_FAILED;
 
-    PROCEDURE FLAG_CONTACTS_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_CONTACTS_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE>>
         UPDATE DMT_POZ_SUP_CONTACTS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -290,21 +300,21 @@
                                   );
     END FLAG_CONTACTS_STG_FAILED;
 
-    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- Flag all five supplier STG tables in sequence (orchestrator path).
-        FLAG_SUPPLIERS_STG_FAILED(p_run_id);
-        FLAG_ADDRESSES_STG_FAILED(p_run_id);
-        FLAG_SITES_STG_FAILED(p_run_id);
-        FLAG_SITE_ASSIGNMENTS_STG_FAILED(p_run_id);
-        FLAG_CONTACTS_STG_FAILED(p_run_id);
+        FLAG_SUPPLIERS_STG_FAILED(p_run_id, p_scenario_id);
+        FLAG_ADDRESSES_STG_FAILED(p_run_id, p_scenario_id);
+        FLAG_SITES_STG_FAILED(p_run_id, p_scenario_id);
+        FLAG_SITE_ASSIGNMENTS_STG_FAILED(p_run_id, p_scenario_id);
+        FLAG_CONTACTS_STG_FAILED(p_run_id, p_scenario_id);
     END FLAG_STG_FAILED;
 
     -- --------------------------------------------------------
     -- VALIDATE_PRE_TRANSFORM
     -- Orchestrates all 5 object upstream checks in dependency order.
     -- --------------------------------------------------------
-    PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER) IS
+    PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         l_sup_failed   NUMBER;
         l_addr_failed  NUMBER;
         l_site_failed  NUMBER;
@@ -317,15 +327,15 @@
             p_package        => C_PKG,
             p_procedure      => 'VALIDATE_PRE_TRANSFORM');
 
-        VALIDATE_SUPPLIERS(p_run_id);
-        VALIDATE_ADDRESSES(p_run_id);
-        VALIDATE_SITES(p_run_id);
-        VALIDATE_SITE_ASSIGNMENTS(p_run_id);
-        VALIDATE_CONTACTS(p_run_id);
+        VALIDATE_SUPPLIERS(p_run_id, p_scenario_id, p_run_mode);
+        VALIDATE_ADDRESSES(p_run_id, p_scenario_id, p_run_mode);
+        VALIDATE_SITES(p_run_id, p_scenario_id, p_run_mode);
+        VALIDATE_SITE_ASSIGNMENTS(p_run_id, p_scenario_id, p_run_mode);
+        VALIDATE_CONTACTS(p_run_id, p_scenario_id, p_run_mode);
 
         -- Standard final step: flag the STG rows FAILED from the recorded error
         -- rows (status only, no message) so FAILED-mode reruns select on them (§7).
-        FLAG_STG_FAILED(p_run_id);
+        FLAG_STG_FAILED(p_run_id, p_scenario_id);
 
         -- Summary counts — from the run-stamped error table, never from STG.
         SELECT COUNT(*) INTO l_sup_failed FROM DMT_STG_TFM_ERROR_TBL WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Suppliers';

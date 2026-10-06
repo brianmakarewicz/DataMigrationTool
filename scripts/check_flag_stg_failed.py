@@ -9,13 +9,18 @@ is asserted, or explicitly declared NOT CHECKED):
 
 For every REQUIRED validator package (those that own one or more STG tables and use
 the named-helper form):
-  1. It defines a procedure  PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER)
-  2. Its pre-validation entry procedure calls it — a  FLAG_STG_FAILED(p_run_id)
-     invocation exists that is NOT the definition line.
-  3. Every UPDATE block inside the helper is BYTE-IDENTICAL to the template's fixed
-     region: only the STG table name (EDIT-TABLE) and the SUB_OBJECT literal
-     (EDIT-SCOPE) may vary; the SET / WHERE / sub-select lines between them must
-     match the template character-for-character.
+  1. It defines  PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER,
+     p_scenario_id IN NUMBER DEFAULT NULL)  — the helper is scenario-scoped.
+  2. Its pre-validation entry procedure calls it — a
+     FLAG_STG_FAILED(p_run_id, p_scenario_id)  invocation exists that is NOT the
+     definition line (a bare FLAG_STG_FAILED(p_run_id) would flag other
+     scenarios' rows and fails the check).
+  3. Every UPDATE block inside the helper (or, for the supplier template, inside
+     its per-object FLAG_<type>_STG_FAILED helpers) is BYTE-IDENTICAL to the
+     template's fixed region: only the STG table name (EDIT-TABLE) and the
+     SUB_OBJECT literal (EDIT-SCOPE) may vary; the SET / WHERE / scenario / sub-select
+     lines between them must match the template character-for-character. The
+     scenario line keeps the flag from touching any other scenario's STG rows.
   4. The helper body contains NO  COMMIT  (the caller owns the transaction).
 
 The template is DMT_POZ_SUP_VALIDATOR_PKG (the first object to carry the helper).
@@ -81,23 +86,29 @@ EXEMPT = [
 #   * the   AND SUB_OBJECT = '<display name>'  line   (EDIT-SCOPE)
 FIXED_BLOCK_LINES = [
     "        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE",
-    "        WHERE  STG_STATUS IN ('NEW','RETRY')",
+    "        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')",
+    "        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)",
     "        AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL",
     "                                   WHERE RUN_ID = p_run_id",
     "                                  );",
 ]
 
+SIGNATURE_RE = re.compile(
+    r"PROCEDURE\s+FLAG_STG_FAILED\s*\(\s*p_run_id\s+IN\s+NUMBER\s*,\s*"
+    r"p_scenario_id\s+IN\s+NUMBER\s+DEFAULT\s+NULL\s*\)", re.IGNORECASE)
+
 
 def _helper_body(text):
-    """Return the source of the FLAG_STG_FAILED procedure, or None."""
-    m = re.search(r"PROCEDURE\s+FLAG_STG_FAILED\b", text, re.IGNORECASE)
-    if not m:
+    """Return the source of every FLAG_*STG_FAILED procedure (the standard helper
+    plus, for the supplier template, its per-object flaggers), or None."""
+    bodies = []
+    for m in re.finditer(r"PROCEDURE\s+(FLAG_\w*STG_FAILED)\b", text, re.IGNORECASE):
+        start = m.start()
+        end = re.search(r"END\s+" + m.group(1) + r"\s*;", text[start:], re.IGNORECASE)
+        bodies.append(text[start:] if not end else text[start:start + end.end()])
+    if not any(re.match(r"PROCEDURE\s+FLAG_STG_FAILED\b", b, re.IGNORECASE) for b in bodies):
         return None
-    start = m.start()
-    end = re.search(r"END\s+FLAG_STG_FAILED\s*;", text[start:], re.IGNORECASE)
-    if not end:
-        return text[start:]        # unterminated — downstream checks flag it
-    return text[start:start + end.end()]
+    return "\n".join(bodies)
 
 
 def _fixed_lines_of_blocks(body):
@@ -106,7 +117,7 @@ def _fixed_lines_of_blocks(body):
     blocks = []
     cur = None
     for raw in body.splitlines():
-        if re.match(r"\s*UPDATE\s+DMT_OWNER\.", raw):
+        if re.match(r"\s*UPDATE\s+(DMT_OWNER\.)?DMT_\w+_STG_TBL\b", raw):
             if cur is not None:
                 blocks.append(cur)
             cur = []
@@ -140,15 +151,29 @@ def check_pkg(base):
 
     fails = []
 
-    # (2) the entry procedure must call it: FLAG_STG_FAILED(p_run_id) that is not
-    #     the PROCEDURE definition line.
-    calls = [ln for ln in text.splitlines()
-             if re.search(r"\bFLAG_STG_FAILED\s*\(\s*p_run_id", ln, re.IGNORECASE)
-             and not re.search(r"\bPROCEDURE\b", ln, re.IGNORECASE)]
+    # (1) scenario-scoped signature
+    if not SIGNATURE_RE.search(text):
+        fails.append("FLAG_STG_FAILED is not declared as (p_run_id IN NUMBER, "
+                     "p_scenario_id IN NUMBER DEFAULT NULL)")
+
+    # (2) the entry procedure must call it with the scenario:
+    #     FLAG_STG_FAILED(p_run_id, p_scenario_id) that is not the definition line.
+    #     A bare FLAG_STG_FAILED(p_run_id) call is an unscoped flag and fails.
+    code_lines = [ln for ln in text.splitlines()
+                  if not ln.strip().startswith("--")
+                  and not re.search(r"\bPROCEDURE\b", ln, re.IGNORECASE)]
+    calls = [ln for ln in code_lines
+             if re.search(r"\bFLAG_STG_FAILED\s*\(\s*p_run_id\s*,\s*p_scenario_id\s*\)",
+                          ln, re.IGNORECASE)]
+    bare = [ln for ln in code_lines
+            if re.search(r"\bFLAG_STG_FAILED\s*\(\s*p_run_id\s*\)", ln, re.IGNORECASE)]
     if not calls:
-        fails.append("FLAG_STG_FAILED is defined but never called with p_run_id "
-                     "(expected a call as the last step of the pre-validation entry "
-                     "procedure)")
+        fails.append("FLAG_STG_FAILED is defined but never called with "
+                     "(p_run_id, p_scenario_id) (expected a call as the last step of "
+                     "the pre-validation entry procedure)")
+    if bare:
+        fails.append("FLAG_STG_FAILED(p_run_id) is called without p_scenario_id "
+                     "(an unscoped flag would mark other scenarios' STG rows FAILED)")
 
     # (3) byte-identical fixed region for every UPDATE block
     blocks = _fixed_lines_of_blocks(body)

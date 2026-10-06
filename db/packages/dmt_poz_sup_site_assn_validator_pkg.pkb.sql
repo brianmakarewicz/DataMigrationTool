@@ -1,7 +1,7 @@
 -- PACKAGE BODY DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG
 
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG" AS
--- Stub: no validation rules yet. Promotes STAGED -> VALIDATED.
+-- Stub: no validation rules yet (pass-through; never writes STG status).
 -- Add validation rules here without changing the orchestration flow.
 
     -- ============================================================
@@ -12,14 +12,15 @@
     -- packages except the STG table name(s) and the SUB_OBJECT filter (tagged EDIT
     -- regions), like SWEEP_UNACCOUNTED. Does NOT commit — the caller owns the txn.
     -- ============================================================
-    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
         UPDATE DMT_POZ_SUP_SITE_ASSN_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
@@ -28,7 +29,7 @@
                                   );
     END FLAG_STG_FAILED;
 
-    PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER) IS
+    PROCEDURE VALIDATE_PRE_TRANSFORM (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW') IS
         l_valid NUMBER := 0;
         l_invalid NUMBER := 0;
     BEGIN
@@ -36,14 +37,14 @@
             'VALIDATE_PRE_TRANSFORM start (stub -- all records passed through).',
             'INFO', 'DMT_POZ_SUP_SITE_ASSN_VALIDATOR_PKG', 'VALIDATE_PRE_TRANSFORM');
 
-        UPDATE DMT_POZ_SUP_SITE_ASSN_STG_TBL
-        SET    STG_STATUS = 'VALIDATED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS = 'NEW';
-        l_valid := SQL%ROWCOUNT;
-
-        SELECT COUNT(*) INTO l_invalid
+        -- Stub: no rules yet, so nothing is rejected. Count only this run's
+        -- in-scope rows (its scenario, selected by run mode). STG status is never
+        -- written here: the retired NEW -> 'VALIDATED' promotion was unscoped and
+        -- rewrote every scenario's rows.
+        SELECT COUNT(*) INTO l_valid
         FROM   DMT_POZ_SUP_SITE_ASSN_STG_TBL
-        WHERE  STG_STATUS = 'INVALID';
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id);
 
         DMT_UTIL_PKG.LOG(p_run_id,
             'VALIDATE_PRE_TRANSFORM complete. Valid: ' || l_valid || ' | Invalid: ' || l_invalid,
@@ -51,7 +52,7 @@
 
         -- Standard final step: flag the STG rows FAILED from the recorded error
         -- rows (status only, no message) so FAILED-mode reruns select on them (§7).
-        FLAG_STG_FAILED(p_run_id);
+        FLAG_STG_FAILED(p_run_id, p_scenario_id);
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,

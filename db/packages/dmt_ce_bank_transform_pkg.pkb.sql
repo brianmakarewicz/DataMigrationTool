@@ -64,7 +64,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_CE_BANK_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Prefix-fit guard (see package header): never truncate a key.
@@ -94,7 +96,9 @@
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Banks')
-        AND    STG_STATUS IN ('NEW','TRANSFORMED');
+        AND    STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         INSERT INTO DMT_CE_BANK_TFM_TBL (
                     STG_SEQUENCE_ID,
@@ -209,7 +213,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Banks')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -246,7 +252,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_CE_BRANCH_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Prefix-fit guard on the parent-bank FK (see package header).
@@ -276,7 +284,9 @@
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Bank Branches')
-        AND    STG_STATUS IN ('NEW','TRANSFORMED');
+        AND    STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         INSERT INTO DMT_CE_BRANCH_TFM_TBL (
                     STG_SEQUENCE_ID,
@@ -391,7 +401,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Bank Branches')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -428,7 +440,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_CE_BANK_ACCT_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Prefix-fit guard on ACCOUNT_NAME and the parent-bank FK (see header).
@@ -466,7 +480,9 @@
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Bank Accounts')
-        AND    STG_STATUS IN ('NEW','TRANSFORMED');
+        AND    STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         INSERT INTO DMT_CE_BANK_ACCT_TFM_TBL (
                     STG_SEQUENCE_ID,
@@ -596,7 +612,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Bank Accounts')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(

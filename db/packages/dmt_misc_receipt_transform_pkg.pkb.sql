@@ -46,7 +46,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_INV_TRX_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- ── Main transactions: STG → TFM ──
@@ -208,6 +210,11 @@
             /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
+        -- Scope to this run's scenario. p_scenario_id was accepted but never
+        -- applied, so every scenario's staged transactions were transformed.
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1 FROM DMT_INV_TRX_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -272,7 +279,9 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
-        AND s.STG_STATUS != 'TRANSFORMED';
+        AND s.STG_STATUS != 'TRANSFORMED'
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         -- ── Lots: STG → TFM (if any exist) ──
         INSERT INTO DMT_INV_TRX_LOTS_TFM_TBL (
@@ -297,7 +306,17 @@
             s.PARENT_LOT_NUMBER, s.SUBLOT_NUM,
             'STAGED', SYSDATE
         FROM DMT_INV_TRX_LOTS_STG_TBL s
-        WHERE s.STG_STATUS IN ('NEW')
+        -- Same selection as the parent transaction tier: the run mode picks the
+        -- rows and the scenario scopes them. The former literal 'NEW' with no
+        -- scenario filter picked up every OTHER scenario's never-run detail rows
+        -- (and, in ALL mode, skipped this scenario's own already-run rows).
+        WHERE (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1 FROM DMT_INV_TRX_LOTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -308,12 +327,17 @@
 
         UPDATE DMT_INV_TRX_LOTS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
         AND    EXISTS (
             SELECT 1 FROM DMT_INV_TRX_LOTS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = DMT_INV_TRX_LOTS_STG_TBL.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         -- Backlog #137 (reviewer follow-up): keep the parent↔lot link consistent
         -- after the parent interface-number rewrite above.
@@ -389,7 +413,17 @@
             s.STATUS_NAME, s.STATUS_CODE, s.ORIGINATION_DATE,
             'STAGED', SYSDATE
         FROM DMT_INV_TRX_SERIALS_STG_TBL s
-        WHERE s.STG_STATUS IN ('NEW')
+        -- Same selection as the parent transaction tier: the run mode picks the
+        -- rows and the scenario scopes them. The former literal 'NEW' with no
+        -- scenario filter picked up every OTHER scenario's never-run detail rows
+        -- (and, in ALL mode, skipped this scenario's own already-run rows).
+        WHERE (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1 FROM DMT_INV_TRX_SERIALS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -400,12 +434,17 @@
 
         UPDATE DMT_INV_TRX_SERIALS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
         AND    EXISTS (
             SELECT 1 FROM DMT_INV_TRX_SERIALS_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = DMT_INV_TRX_SERIALS_STG_TBL.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -433,6 +472,9 @@
                 FROM   DMT_INV_TRX_STG_TBL s
                 WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
                          OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND (p_scenario_id IS NULL
+                     OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_INV_TRX_TFM_TBL t
                                 WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
                 AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
@@ -442,7 +484,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Inventory Transactions')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
                 -- Tier 2: lots
                 INSERT INTO DMT_STG_TFM_ERROR_TBL
@@ -450,7 +494,11 @@
                 SELECT p_run_id, 'MiscReceipts', 'Transaction Lots', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_INV_TRX_LOTS_STG_TBL s
-                WHERE  s.STG_STATUS IN ('NEW')
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND (p_scenario_id IS NULL
+                     OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_INV_TRX_LOTS_TFM_TBL t
                                 WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
                 AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
@@ -460,7 +508,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Transaction Lots')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
                 -- Tier 3: serials
                 INSERT INTO DMT_STG_TFM_ERROR_TBL
@@ -468,7 +518,11 @@
                 SELECT p_run_id, 'MiscReceipts', 'Transaction Serials', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_INV_TRX_SERIALS_STG_TBL s
-                WHERE  s.STG_STATUS IN ('NEW')
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                AND (p_scenario_id IS NULL
+                     OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_INV_TRX_SERIALS_TFM_TBL t
                                 WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
                 AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
@@ -478,7 +532,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Transaction Serials')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(

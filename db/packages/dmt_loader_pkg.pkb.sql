@@ -140,6 +140,14 @@
                 'resolve_scenario: GET_OR_CREATE_SCENARIO failed for scenario "' ||
                 p_scenario_name || '" (detail in DMT_LOG_TBL).');
         END IF;
+        -- Fail closed: a supplied scenario name must resolve to an id. Every
+        -- validator and transform reads a NULL id as "no scenario filter", so a
+        -- NULL here would silently widen the run to every scenario's STG rows.
+        IF p_scenario_name IS NOT NULL AND x_scenario_id IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20115,
+                'resolve_scenario: scenario "' || p_scenario_name ||
+                '" resolved to no SCENARIO_ID; refusing to run unscoped.');
+        END IF;
     END resolve_scenario;
 
     -- --------------------------------------------------------
@@ -2409,8 +2417,8 @@
 
         -- Phase 1: pre-transform validation (records rejections for THIS object),
         -- then flag only this object's STG rows FAILED (per-object isolation).
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SUPPLIERS(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SUPPLIERS_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SUPPLIERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SUPPLIERS_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -2451,8 +2459,8 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_ADDRESSES(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_ADDRESSES_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_ADDRESSES_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         DMT_POZ_SUP_ADDR_TRANSFORM_PKG.TRANSFORM_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2489,8 +2497,8 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITES(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITES_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITES_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         DMT_POZ_SUP_SITE_TRANSFORM_PKG.TRANSFORM_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2527,8 +2535,8 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITE_ASSIGNMENTS(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITE_ASSIGNMENTS_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITE_ASSIGNMENTS_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         DMT_POZ_SUP_SITE_ASSN_TRANSFORM_PKG.TRANSFORM_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2565,8 +2573,8 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_CONTACTS(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_CONTACTS_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_CONTACTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_CONTACTS_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         DMT_POZ_SUP_CONT_TRANSFORM_PKG.TRANSFORM_CONTACTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2617,7 +2625,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation (Purchase Order document type).
-        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => 'Purchase Order');
+        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (headers, lines, line locations, distributions).
@@ -2959,7 +2967,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_CUST_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_CUST_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM across all 7 customer sub-object tables.
@@ -3142,7 +3150,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_AR_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_AR_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (lines + distributions).
@@ -3315,7 +3323,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_BILLING_EVENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_BILLING_EVENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -3394,7 +3402,7 @@
         -- A spawned child was already validated + transformed by its parent;
         -- re-transforming would reset its STAGED rows. Mirrors the monolith gate.
         IF g_partition_key IS NULL THEN
-            DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
             DMT_EXPENDITURE_TRANSFORM_PKG.TRANSFORM_EXPENDITURES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
@@ -3673,7 +3681,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_GRANTS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_GRANTS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM across every award record type.
@@ -3782,7 +3790,7 @@
         -- STAGED rows — skip straight to the per-batch load. This mirrors the
         -- g_partition_key gate the monolith used for Requisitions.
         IF g_partition_key IS NULL THEN
-            DMT_REQ_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_REQ_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
             DMT_REQ_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_REQ_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -4012,8 +4020,8 @@
         -- + transformed under the Items token (bundled into the Items FBDI ZIP); there
         -- is no separate ItemCategories step in the pipeline sequence.
         IF g_partition_key IS NULL THEN
-            DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-            DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
             DMT_EGP_ITEM_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             -- Transform bundled categories before the Items FBDI generator picks them up
@@ -4183,7 +4191,7 @@
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ITEM_CATEGORIES start (validate+transform only — ESS submission via RUN_ITEMS).', 'INFO', C_PKG, C_PROC);
 
-        DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(
             p_run_id   => p_run_id,
             p_reprocess_errors => (p_run_mode = 'FAILED'),
@@ -4243,7 +4251,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_MISC_RECEIPT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_MISC_RECEIPT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -4467,7 +4475,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_PROJECT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id);
+        DMT_PROJECT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (projects, tasks, team members, txn controls).
@@ -4530,7 +4538,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation (Blanket Purchase Agreement doc type).
-        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE);
+        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (headers + lines).
@@ -4649,7 +4657,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation (Contract Purchase Agreement doc type).
-        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE);
+        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (headers only).
@@ -4774,7 +4782,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_AP_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_AP_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (headers + lines).
@@ -5049,7 +5057,7 @@
             'INFO', C_PKG, C_PROC);
 
         -- Step 1: Pre-validation (stub — no rules yet)
-        DMT_WORKER_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_WORKER_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         -- Step 2: Transform all 7 person business objects (STG → TFM)
         DMT_WORKER_TRANSFORM_PKG.TRANSFORM_WORKERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -5068,7 +5076,7 @@
         -- generate step below reads DMT_ASSIGNMENT_TFM_TBL / DMT_WORK_REL_TFM_TBL.
         -- The [PRE_VALIDATION] exclusion and the prefixing in the assignment transform
         -- are preserved (those packages are unchanged; only their call site moved).
-        DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_WORK_RELS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5182,7 +5190,7 @@
             'RUN_SALARIES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_SALARY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_SALARY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_SALARY_TRANSFORM_PKG.TRANSFORM_SALARIES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5236,7 +5244,7 @@
             'RUN_SALARY_BASES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_SAL_BASIS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_SAL_BASIS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_SAL_BASIS_TRANSFORM_PKG.TRANSFORM_SALARYBASES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5290,7 +5298,7 @@
             'RUN_ABSENCES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_ABSENCE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_ABSENCE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_ABSENCE_TRANSFORM_PKG.TRANSFORM_ABSENCEENTRIES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5344,7 +5352,7 @@
             'RUN_W2_BALANCES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_W2_BAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_W2_BAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_W2_BAL_TRANSFORM_PKG.TRANSFORM_W2BALANCES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5398,7 +5406,7 @@
             'RUN_BEN_PARTICIPANT start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_BEN_PARTIC_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_BEN_PARTIC_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_BEN_PARTIC_TRANSFORM_PKG.TRANSFORM_PARTICIPANTENROLLMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5452,7 +5460,7 @@
             'RUN_BEN_DEPENDENT start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_BEN_DEPEND_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_BEN_DEPEND_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_BEN_DEPEND_TRANSFORM_PKG.TRANSFORM_DEPENDENTENROLLMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5506,7 +5514,7 @@
             'RUN_BEN_BENEFICIARY start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_BEN_BENFY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_BEN_BENFY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_BEN_BENFY_TRANSFORM_PKG.TRANSFORM_BENEFICIARYDESIGNATIONS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5570,7 +5578,7 @@
             'RUN_TAX_CARDS start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_TAX_CARD_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_TAX_CARD_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_TAX_CARD_TRANSFORM_PKG.TRANSFORM_TAXCARDS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5624,7 +5632,7 @@
             'RUN_TALENT_PROFILES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_TALENT_PROF_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_TALENT_PROF_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_TALENT_PROF_TRANSFORM_PKG.TRANSFORM_TALENTPROFILES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5678,7 +5686,7 @@
             'RUN_PERF_EVALUATIONS start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_PERF_EVAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_PERF_EVAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_PERF_EVAL_TRANSFORM_PKG.TRANSFORM_PERFORMANCEDOCUMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5732,7 +5740,7 @@
             'RUN_WORK_SCHEDULES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_WORK_SCHED_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_WORK_SCHED_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_WORK_SCHED_TRANSFORM_PKG.TRANSFORM_WORKSCHEDULES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5806,7 +5814,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_GL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_GL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -5992,7 +6000,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_GL_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_GL_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -6164,7 +6172,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_PLAN_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_PLAN_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -6213,7 +6221,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_PRJ_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_PRJ_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -6280,7 +6288,7 @@
         -- transformed by its parent; re-transforming would reset its STAGED rows.
         -- Mirrors the g_partition_key gate the monolith used for Assets.
         IF g_partition_key IS NULL THEN
-            DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
             DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);

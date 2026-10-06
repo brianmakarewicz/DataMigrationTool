@@ -23,14 +23,15 @@ AS
     -- packages except the STG table name(s) and the SUB_OBJECT filter (tagged EDIT
     -- regions), like SWEEP_UNACCOUNTED. Does NOT commit — the caller owns the txn.
     -- ============================================================
-    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
         UPDATE DMT_WORK_REL_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
@@ -42,7 +43,8 @@ AS
         UPDATE DMT_ASSIGNMENT_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -60,7 +62,9 @@ AS
     --       generator invents from the person.
     -- --------------------------------------------------------
     PROCEDURE VALIDATE_PRE_TRANSFORM (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_scenario_id     IN NUMBER   DEFAULT NULL,
+        p_run_mode        IN VARCHAR2 DEFAULT 'NEW'
     )
     IS
         l_bad PLS_INTEGER;
@@ -77,7 +81,8 @@ AS
         SELECT p_run_id, 'Assignments', 'Assignments', a.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] ASSIGNMENT_NUMBER is required.'
         FROM   DMT_ASSIGNMENT_STG_TBL a
-        WHERE  a.STG_STATUS = 'NEW'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL OR a.SCENARIO_ID = p_scenario_id)
         AND    a.ASSIGNMENT_NUMBER IS NULL;
         l_bad := SQL%ROWCOUNT;
 
@@ -90,7 +95,7 @@ AS
 
         -- Standard final step: flag the STG rows FAILED from the recorded error
         -- rows (status only, no message) so FAILED-mode reruns select on them (§7).
-        FLAG_STG_FAILED(p_run_id);
+        FLAG_STG_FAILED(p_run_id, p_scenario_id);
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(

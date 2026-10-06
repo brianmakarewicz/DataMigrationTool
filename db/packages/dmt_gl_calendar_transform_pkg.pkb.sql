@@ -27,7 +27,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_GL_CALENDAR_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM
@@ -98,6 +100,11 @@
             /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
             OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
           )
+        -- Scope to this run's scenario (p_scenario_id was accepted but never
+        -- applied, so every scenario's staged calendar rows were transformed).
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
         AND NOT EXISTS (
             SELECT 1 FROM DMT_GL_CALENDAR_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
@@ -119,7 +126,9 @@
             SELECT 1 FROM DMT_GL_CALENDAR_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
-        );
+        )
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -147,6 +156,9 @@
                         /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
                       )
+                AND (p_scenario_id IS NULL
+                     OR s.SCENARIO_ID = p_scenario_id
+                     OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_GL_CALENDAR_TFM_TBL t
                                 WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
                 AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
@@ -156,7 +168,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'GL Calendar')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(
