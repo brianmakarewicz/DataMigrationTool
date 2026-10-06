@@ -76,6 +76,13 @@ end;
 -- not. Guarded so fresh installs get it and re-runs are a no-op; the matching
 -- db/migrations/2026-10-03_log_tbl_drill_index_and_prune.sql converges an
 -- already-installed database.
+--
+-- 2026-10-06 backlog #150 (page-54 Activity-Log LIST performance) ALSO relies
+-- on this same index. The list's run-scoped query carries an
+-- INDEX_DESC(l DMT_LOG_N4) hint and walks this index descending to serve the
+-- RUN_ID filter plus the LOG_DATE DESC, LOG_ID DESC order in one range scan.
+-- No new index was needed for #150 — do NOT drop DMT_LOG_N4; both the per-row
+-- drill (#149) and the whole-run list (#150) depend on it.
 -- ---------------------------------------------------------------------------
 begin
   execute immediate 'CREATE INDEX "DMT_LOG_N4" ON "DMT_LOG_TBL" ("RUN_ID","LOG_DATE","LOG_ID")';
