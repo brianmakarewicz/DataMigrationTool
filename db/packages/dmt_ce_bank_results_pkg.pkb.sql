@@ -245,24 +245,27 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- #130: stamp CREATED (our own POST for THIS record returned 2xx).
+                    UPDATE DMT_CE_BANK_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted := l_posted + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Bank POSTed (awaiting base-table confirmation): ' || r.BANK_NAME
                         || ' HTTP ' || l_http_status, p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
-                    -- per-record message body (#161). A blank-bodied transport code is
-                    -- NOT a per-record verdict: stash nothing, leave the row GENERATED
-                    -- so the honest accounting gate surfaces it as UNACCOUNTED.
+                    -- #130: our create did NOT return 2xx -> REJECTED (blank body still blocks LOADED).
                     l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
-                    IF l_body IS NOT NULL THEN
-                        UPDATE DMT_CE_BANK_TFM_TBL
-                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                              || SUBSTR(l_body, 1, 2000)),
-                               LAST_UPDATED_DATE = SYSDATE
-                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-                    END IF;
+                    UPDATE DMT_CE_BANK_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Bank POST rejected (' ||
@@ -278,7 +281,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_CE_BANK_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -357,24 +361,27 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- #130: stamp CREATED (our own POST for THIS record returned 2xx).
+                    UPDATE DMT_CE_BRANCH_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted := l_posted + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Branch POSTed (awaiting base-table confirmation): ' || r.BRANCH_NAME
                         || ' HTTP ' || l_http_status, p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
-                    -- per-record message body (#161). A blank-bodied transport code is
-                    -- NOT a per-record verdict: stash nothing, leave the row GENERATED
-                    -- so the honest accounting gate surfaces it as UNACCOUNTED.
+                    -- #130: our create did NOT return 2xx -> REJECTED (blank body still blocks LOADED).
                     l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
-                    IF l_body IS NOT NULL THEN
-                        UPDATE DMT_CE_BRANCH_TFM_TBL
-                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                              || SUBSTR(l_body, 1, 2000)),
-                               LAST_UPDATED_DATE = SYSDATE
-                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-                    END IF;
+                    UPDATE DMT_CE_BRANCH_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Branch POST rejected (' ||
@@ -390,7 +397,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_CE_BRANCH_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -475,24 +483,27 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- #130: stamp CREATED (our own POST for THIS record returned 2xx).
+                    UPDATE DMT_CE_BANK_ACCT_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted := l_posted + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Account POSTed (awaiting base-table confirmation): ' || r.ACCOUNT_NAME
                         || ' HTTP ' || l_http_status, p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
-                    -- per-record message body (#161). A blank-bodied transport code is
-                    -- NOT a per-record verdict: stash nothing, leave the row GENERATED
-                    -- so the honest accounting gate surfaces it as UNACCOUNTED.
+                    -- #130: our create did NOT return 2xx -> REJECTED (blank body still blocks LOADED).
                     l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
-                    IF l_body IS NOT NULL THEN
-                        UPDATE DMT_CE_BANK_ACCT_TFM_TBL
-                        SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                              '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                              || SUBSTR(l_body, 1, 2000)),
-                               LAST_UPDATED_DATE = SYSDATE
-                        WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-                    END IF;
+                    UPDATE DMT_CE_BANK_ACCT_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Account POST rejected (' ||
@@ -508,7 +519,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_CE_BANK_ACCT_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -643,6 +655,7 @@
                 -- #160 guard: a bank whose OWN POST failed (ERROR_TEXT stashed) is NOT
                 -- rescued to LOADED by a base-table name collision with a
                 -- pre-existing/duplicate bank; its real error carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when our own create for THIS record returned 2xx.
                 UPDATE DMT_CE_BANK_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_BANK_PARTY_ID = r.fusion_id,
@@ -651,7 +664,8 @@
                 WHERE  RUN_ID     = p_run_id
                 AND    BANK_NAME  = r.record_key
                 AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-                AND    ERROR_TEXT IS NULL;
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -710,6 +724,7 @@
                 -- #160 guard: a branch whose OWN POST failed (ERROR_TEXT stashed) is NOT
                 -- rescued to LOADED by a base-table name collision; its real error
                 -- carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when our own create for THIS record returned 2xx.
                 UPDATE DMT_CE_BRANCH_TFM_TBL
                 SET    TFM_STATUS             = 'LOADED',
                        FUSION_BRANCH_PARTY_ID = r.fusion_id,
@@ -719,7 +734,8 @@
                 AND    BRANCH_NAME = r.record_key
                 AND    BANK_NAME   = r.parent_bank_name
                 AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-                AND    ERROR_TEXT IS NULL;
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -775,6 +791,7 @@
                 -- #160 guard: an account whose OWN POST failed (ERROR_TEXT stashed) is
                 -- NOT rescued to LOADED by a base-table name collision; its real error
                 -- carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when our own create for THIS record returned 2xx.
                 UPDATE DMT_CE_BANK_ACCT_TFM_TBL
                 SET    TFM_STATUS             = 'LOADED',
                        FUSION_BANK_ACCOUNT_ID = r.fusion_id,
@@ -783,7 +800,8 @@
                 WHERE  RUN_ID       = p_run_id
                 AND    ACCOUNT_NAME = r.record_key
                 AND    TFM_STATUS NOT IN ('LOADED','FAILED')
-                AND    ERROR_TEXT IS NULL;
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;

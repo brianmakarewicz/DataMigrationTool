@@ -27,7 +27,8 @@ begin
 	"RUN_ID" NUMBER, 
 	"RECON_KEY" VARCHAR2(1000), 
 	"FUSION_BANK_PARTY_ID" NUMBER, 
-	"WORK_QUEUE_ID" NUMBER, 
+	"WORK_QUEUE_ID" NUMBER,
+	"LOAD_CALL_STATUS" VARCHAR2(12),
 	 CONSTRAINT "DMT_CE_BANK_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -129,3 +130,21 @@ begin
 end;
 /
 COMMENT ON COLUMN "DMT_CE_BANK_TFM_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';
+
+-- ---------------------------------------------------------------------------
+-- 2026-10-06 (backlog #130): LOAD_CALL_STATUS marker. Guarded in-file ALTER so
+-- an existing DB converges via db/install.sql (the CREATE above carries it for
+-- fresh installs). Mirrors
+-- db/migrations/2026-10-06_rest_load_call_status_and_module_key_widen.sql.
+-- ---------------------------------------------------------------------------
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where table_name = 'DMT_CE_BANK_TFM_TBL' and column_name = 'LOAD_CALL_STATUS';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_CE_BANK_TFM_TBL" ADD ("LOAD_CALL_STATUS" VARCHAR2(12))';
+  end if;
+end;
+/
+COMMENT ON COLUMN "DMT_CE_BANK_TFM_TBL"."LOAD_CALL_STATUS" IS 'Honest proof that OUR OWN REST create for THIS record returned 2xx (backlog #130). NULL = never attempted / never 2xx; CREATED = our POST returned HTTP 2xx; REJECTED = our POST returned non-2xx. Promotion to LOADED requires a base-table key match AND LOAD_CALL_STATUS = CREATED, so a create-failed row is never rescued to LOADED by a pre-existing/duplicate key collision.';
