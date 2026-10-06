@@ -1,8 +1,8 @@
 {
-  "current_scenario": "RegressionTest2610051423",
-  "scenario_id": 181,
+  "current_scenario": "RegressionTest2610061659",
+  "scenario_id": 222,
   "seed_sha256": "376d2bdf54a3267331e0bb7fcc8cb6b9b3ea6ceb9c88796ccc6b569a1f31ae02",
   "target": "local",
-  "created": "2026-10-05 14:24",
-  "note": "Write-once scenario minted 2026-10-05. Same data as the prior RegressionTest2610010855 EXCEPT the three GOOD Item Categories rows now target the 'eCommerce Catalog' category set (multiple-assignment) instead of 'Purchasing' (single-assignment). The Purchasing set auto-assigns every new item one default Purchasing category at item creation, so our second Purchasing assignment was rejected with EGP-2775085 ('single assignment' catalog) -- a real Fusion functional rule, not a DMT bug. eCommerce Catalog allows multiple assignments, so the GOOD rows genuinely reach the base table EGP_ITEM_CATEGORIES. PROVEN live 2026-10-05 (run 228, prefixes 93282/93283): DMT-RT-PLAIN-001->Canned_Fruit landed as ITEM_CATEGORY_ASSIGNMENT_ID 300000334887345 and DMT-RT-SERIAL-001->Industrial as 300000334887373; the BAD row (NONEXISTENT-DMT-ITEM/FAKE_SET) was correctly rejected. The harness resolves the scenario by name at runtime; scenario_id here is informational."
+  "created": "2026-10-06 16:59",
+  "note": "Write-once scenario minted 2026-10-06 with deploy_scenario.py --force (seed unchanged, same 182 rows as RegressionTest2610051423 / id 181) to prove the scenario-scoping fix on clean data. RETIRED, do not run: ids 201/202/203 (RegressionTest2610061137/38/39) were contaminated by local run 236, which ran before the fix and flipped their STG rows FAILED and sent their MiscReceipts/Taxes rows to Fusion; id 221 (RegressionTest2610061658) is an empty scenario left by an insert that lost its DB connection (0 STG rows). Per the never-reseed/no-reset rules none of them were edited or cleaned; they are simply excluded."
 }
