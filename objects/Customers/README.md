@@ -15,7 +15,7 @@ linkage references are correctly stamped by the transform — are rejected by Fu
 own value-compare validation. No tier is unwired or mis-generated, so no code change:
 per the mission, a real rejection is a correct outcome, not something to "fix" by
 editing data. The `DMT_BIP_REPORT_TBL` Customers row is already converged onto the
-DMT2 catalog (`/Custom/DMT2/Customers/DMT_CUST_RECON_V2_*`, CONTRACT_VERSION = 1,
+DMT2 catalog (`/Custom/DMT2/Customers/DMT_CUST_RECON_V3_*` since 2026-10-06, CONTRACT_VERSION = 1,
 FUSION_ID_COLUMN + RECON_KEY_SQL populated) and the V2 report is deployed additively
 at `/Custom/DMT2/Customers/` (the frozen `/Custom/DMT/` is left untouched); the seed
 is idempotent (re-run twice clean, 0 invalid objects).
@@ -74,14 +74,17 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 - Transformer: `db/packages/dmt_cust_transform_pkg.*` (7 TRANSFORM_* procedures)
 - FBDI Generator: `db/packages/dmt_cust_fbdi_gen_pkg.*` (one GENERATE_FBDI, builds the 7-CSV zip)
 - Results/Reconciliation: `db/packages/dmt_cust_results_pkg.*` (Contract v1, shared transport)
-- BIP Data Model/Report: `bip/Customers/DMT_CUST_RECON_V2_DM.xdm` + `DMT_CUST_RECON_V2_RPT.xdo`
+- BIP Data Model/Report: `bip/Customers/DMT_CUST_RECON_V3_DM.xdm` + `DMT_CUST_RECON_V3_RPT.xdo`
   (deploy target `/Custom/DMT2/Customers/`; deployed by `scripts/deploy_recon_bip_reports.py Customers`).
-  The V2 artifacts are the live ones the `DMT_BIP_REPORT_TBL` seed row points at; they add
-  NOT-LOADED error-tier blocks for every child interface table so held/rejected child records
-  (Locations, PartySites, PartySiteUses, AccountSites, AccountSiteUses) report their real
-  interface status instead of falling to the generic reconcile sweep. The original
-  `DMT_CUST_RECON_DM.xdm` / `DMT_CUST_RECON_RPT.xdo` remain in the folder (deployed additively
-  alongside V2); V2 is the one registered and used.
+  V3 is the live one the `DMT_BIP_REPORT_TBL` seed row points at (migration
+  `db/migrations/2026-10-06_customers_recon_v3_registry.sql`). Every INTERFACE row carries its
+  OWN outcome: its own `HZ_IMP_ERRORS` row joined on `error_id`+`batch_id` with the full
+  `FND_NEW_MESSAGES` text (tokens substituted), or, for a row Fusion held/rejected with no error of
+  its own, the not-created parent chain from the same load (each parent with its own status and
+  error). V2 built the message as a batch-wide LISTAGG of every error name for the interface table,
+  which left held Account Site Uses UNACCOUNTED and stamped G2/G3's error on G1/BAD1 (run 236
+  findings R1, `docs/findings/run236_Customers_Items_unaccounted.md`). V2 and the original
+  `DMT_CUST_RECON_DM.xdm` / `DMT_CUST_RECON_RPT.xdo` stay deployed alongside (never overwritten).
 - Golden inputs: `test/golden/inputs/Customer*_input.csv`; golden zip `test/fbdi_zips/Customers_116.zip`
 - Unit test: `test/unit/test_customers.sql`; golden compare: `test/golden/test_customers_golden.sh`
 
