@@ -1,5 +1,29 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-05 -- Migrated everything to ATP GOLD and browser-verified it
+
+**Bottom line.** Everything we fixed is now on the ATP GOLD instance and proven to work in a real
+browser. ATP's engine was behind our latest code; we brought it fully up to date and confirmed every
+page, drill, and verify link works when a person actually clicks through it.
+
+**What moved to ATP.** The database layer (all packages, views, and migrations from the current main,
+including the stop-fabricating-failures fix, the HDL polling fix, and the item-category error fix) was
+promoted with the standard promotion tool -- zero invalid objects afterward, and we confirmed the
+anti-fabrication change is present on ATP. The console application was refreshed in place from the
+authoritative source. The Fusion reconciliation reports were already current on the shared Fusion
+instance, so they needed nothing.
+
+**How we proved it.** Before migrating, we fixed the local console so a real browser could log in (the
+local server was missing the APEX browser files) and ran the full click-through test locally -- green.
+Then we ran that same click-through test against ATP: login, all twenty pages, the full drill path
+through every object down to individual loaded and failed records, the run comparison, and both
+"verify" read-back links all passed. The one failure in an earlier pass was a stale copy of the test
+script, not a real problem -- re-running the current script against ATP came back clean.
+
+**Two small follow-ups logged (neither blocks anything):** a reconcile button on the run-detail page
+has an invalid layout setting in the source so it does not render cleanly (backlog #158), and the
+local browser files get wiped by a full local rebuild and must be re-copied (backlog #159).
+
 ## Session -- 2026-10-05 -- Stop fabricating FAILED verdicts (proven, run 229); faster runs; Item Categories load proven
 
 **Bottom line.** The tool was quietly covering up rows it could not account for. About fourteen
