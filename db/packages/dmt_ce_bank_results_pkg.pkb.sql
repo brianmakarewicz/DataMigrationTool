@@ -30,13 +30,15 @@
 --
 --   HIERARCHY: branches are children of a confirmed bank; accounts are children
 --         of a confirmed branch. A tier's LOAD step only POSTs rows whose parent
---         was base-table-confirmed in the prior tier; rows under an unconfirmed
---         parent are left GENERATED (no fabricated error) for the accounting gate
---         to surface. Because GOOD demo fixtures reuse EXISTING bank/branch/
---         account records (the demo pod does not always allow REST create of
---         cash-management master data), the POST may return a 4xx duplicate --
---         but the base-table report still confirms the row LOADED and captures
---         the real surrogate id. That is the whole point of the new standard.
+--         was base-table-confirmed in the prior tier. A row under a parent that
+--         was NOT created is never sent; its outcome is known (not created
+--         because its parent failed), so it is stamped with a [PARENT_FAILED]
+--         error naming the parent (and quoting the parent's Fusion error) and
+--         the sweep lands it FAILED. UNACCOUNTED is reserved for a row whose
+--         outcome we genuinely could not find (Customers precedent, run 236).
+--         Keys carry the run prefix (DMT_CE_BANK_TRANSFORM_PKG), so each run
+--         creates its own bank/branch/account and the base-table report matches
+--         on the same prefixed names.
 --
 -- Transport is a local rest_call helper (the "STATUS|body" convention). The
 -- base-table report goes through the shared DMT_UTIL_PKG.RUN_BIP_REPORT. The
@@ -309,8 +311,8 @@
     -- The LOAD step for branches: POST each GENERATED branch whose parent bank
     -- was base-table-confirmed LOADED. Same policy as LOAD_BANKS: never terminal,
     -- non-2xx / exception stashed, row left GENERATED for the branch report to
-    -- confirm. A branch whose parent bank is not LOADED is skipped (left
-    -- GENERATED, no fabricated error) for the accounting gate to surface.
+    -- confirm. A branch whose parent bank is not LOADED is not sent and is
+    -- stamped [PARENT_FAILED] naming that bank, so the sweep lands it FAILED.
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
     -- ============================================================
     PROCEDURE LOAD_BRANCHES (
@@ -333,7 +335,10 @@
                    br.BIC_CODE, br.DESCRIPTION, br.EFT_SWIFT_CODE, br.COUNTRY_CODE,
                    (SELECT MAX(bk.TFM_STATUS) FROM DMT_CE_BANK_TFM_TBL bk
                     WHERE  bk.RUN_ID = p_run_id
-                    AND    bk.SOURCE_GROUP_ID = br.SOURCE_GROUP_ID) AS parent_status
+                    AND    bk.SOURCE_GROUP_ID = br.SOURCE_GROUP_ID) AS parent_status,
+                   (SELECT MAX(DBMS_LOB.SUBSTR(bk.ERROR_TEXT, 1500, 1)) FROM DMT_CE_BANK_TFM_TBL bk
+                    WHERE  bk.RUN_ID = p_run_id
+                    AND    bk.SOURCE_GROUP_ID = br.SOURCE_GROUP_ID) AS parent_error
             FROM   DMT_CE_BRANCH_TFM_TBL br
             WHERE  br.RUN_ID = p_run_id
             AND    br.TFM_STATUS = 'GENERATED'
@@ -341,7 +346,26 @@
         ) LOOP
             BEGIN
                 -- Only POST children under a base-table-confirmed parent bank.
+                -- A branch whose parent bank was not created is never sent to
+                -- Fusion, so its outcome is KNOWN: it was not created because its
+                -- parent failed. Record that as a real per-row error naming the
+                -- failed parent (Customers precedent, run 236) so the post-
+                -- reconcile sweep lands it FAILED -- never UNACCOUNTED, which is
+                -- reserved for "outcome genuinely not found". LOAD_CALL_STATUS
+                -- stays NULL (never attempted), so it can never be promoted.
                 IF r.parent_status IS NULL OR r.parent_status != 'LOADED' THEN
+                    UPDATE DMT_CE_BRANCH_TFM_TBL
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                               '[PARENT_FAILED] Branch not sent to Fusion: parent bank "'
+                               || r.BANK_NAME || '" was not created in Fusion'
+                               || CASE WHEN r.parent_status IS NULL
+                                       THEN ' (no parent bank row in this run).'
+                                       WHEN r.parent_error IS NOT NULL
+                                       THEN '. Parent bank error: ' || r.parent_error
+                                       ELSE ' (parent bank status ' || r.parent_status
+                                            || ', no Fusion error captured).' END),
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_skipped := l_skipped + 1;
                     CONTINUE;
                 END IF;
@@ -426,8 +450,8 @@
     -- The LOAD step for bank accounts: POST each GENERATED account whose parent
     -- branch was base-table-confirmed LOADED. Same policy: never terminal,
     -- non-2xx / exception stashed, row left GENERATED for the account report to
-    -- confirm. An account whose parent branch is not LOADED is skipped (left
-    -- GENERATED, no fabricated error).
+    -- confirm. An account whose parent branch is not LOADED is not sent and is
+    -- stamped [PARENT_FAILED] naming that branch, so the sweep lands it FAILED.
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
     -- ============================================================
     PROCEDURE LOAD_ACCOUNTS (
@@ -451,7 +475,10 @@
                    acct.DESCRIPTION, acct.IBAN, acct.CHECK_DIGITS, acct.ACCOUNT_SUFFIX,
                    (SELECT MAX(br.TFM_STATUS) FROM DMT_CE_BRANCH_TFM_TBL br
                     WHERE  br.RUN_ID = p_run_id
-                    AND    br.SOURCE_LINE_ID = acct.SOURCE_LINE_ID) AS parent_status
+                    AND    br.SOURCE_LINE_ID = acct.SOURCE_LINE_ID) AS parent_status,
+                   (SELECT MAX(DBMS_LOB.SUBSTR(br.ERROR_TEXT, 1500, 1)) FROM DMT_CE_BRANCH_TFM_TBL br
+                    WHERE  br.RUN_ID = p_run_id
+                    AND    br.SOURCE_LINE_ID = acct.SOURCE_LINE_ID) AS parent_error
             FROM   DMT_CE_BANK_ACCT_TFM_TBL acct
             WHERE  acct.RUN_ID = p_run_id
             AND    acct.TFM_STATUS = 'GENERATED'
@@ -459,7 +486,24 @@
         ) LOOP
             BEGIN
                 -- Only POST children under a base-table-confirmed parent branch.
+                -- An account whose parent branch was not created is never sent,
+                -- so it is recorded with a real per-row error naming the failed
+                -- parent and lands FAILED in the sweep -- never UNACCOUNTED (same
+                -- rule as LOAD_BRANCHES). LOAD_CALL_STATUS stays NULL.
                 IF r.parent_status IS NULL OR r.parent_status != 'LOADED' THEN
+                    UPDATE DMT_CE_BANK_ACCT_TFM_TBL
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                               '[PARENT_FAILED] Account not sent to Fusion: parent branch "'
+                               || r.BRANCH_NAME || '" of bank "' || r.BANK_NAME
+                               || '" was not created in Fusion'
+                               || CASE WHEN r.parent_status IS NULL
+                                       THEN ' (no parent branch row in this run).'
+                                       WHEN r.parent_error IS NOT NULL
+                                       THEN '. Parent branch error: ' || r.parent_error
+                                       ELSE ' (parent branch status ' || r.parent_status
+                                            || ', no Fusion error captured).' END),
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_skipped := l_skipped + 1;
                     CONTINUE;
                 END IF;
@@ -550,7 +594,7 @@
     -- one per tier: P_BANK_NAMES confirms banks over CE_BANKS_V (G_1),
     -- P_BRANCH_NAMES confirms branches over CE_BANK_BRANCHES_V (G_2), and
     -- P_ACCT_NAMES confirms accounts over CE_BANK_ACCOUNTS (G_3). Any may be blank
-    -- on a pass that does not need it. Natural keys are not run-prefixed.
+    -- on a pass that does not need it. Bank and account names carry the run prefix.
     -- PROCEDURE per the procedures-only contract: x_report_xml NULL with
     -- x_error_code = C_SUCCESS means zero rows; failures are logged and surfaced
     -- through x_error_code -- exceptions never escape.
