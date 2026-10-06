@@ -31,3 +31,24 @@ and is not found in the base view is marked FAILED on that error.
 BUILT — REST pipeline. The runner transforms, promotes STAGED TFM rows to
 GENERATED, POSTs each bank to the `cashBanks` resource, then reconciles against
 `CE_BANKS_V`. The old FBL flat-file generator was retired (backlog #39).
+
+## Run prefix (2026-10-06, owner decision)
+Like every other DMT data object, CashBanks applies the run prefix to its user-facing
+unique keys (`DMT_CE_BANK_TRANSFORM_PKG`), so each run creates its own records instead of
+colliding with earlier runs (run 236's GOOD bank failed only because `Bank of America`
+already existed: CE-660205).
+- Bank: `BANK_NAME` (Fusion limit 360) → `93300Bank of America`.
+- Branch: the parent `BANK_NAME` FK carries the same prefix; the branch name is unique
+  within that new bank, so it is unchanged.
+- Account: the parent `BANK_NAME` FK and `ACCOUNT_NAME` (limit 80) carry the prefix.
+- A key that cannot carry the full prefix within its limit is not truncated; the row is
+  recorded FAILED with a `[TRANSFORM_ERROR]` naming the limit.
+The base-table report is unchanged: it is driven by the TFM names, so it matches on the
+same prefixed values.
+
+## Parent-failed children (2026-10-06)
+A branch whose parent bank was not created (or an account whose parent branch was not
+created) is never sent to Fusion. Its outcome is known, so it is stamped
+`[PARENT_FAILED] ... parent bank "<name>" was not created in Fusion. Parent bank error:
+<the parent's real Fusion error>` and lands FAILED. Before this fix such rows were left
+GENERATED and swept UNACCOUNTED (run 236: branch `New York`, account `CA Chequing`).

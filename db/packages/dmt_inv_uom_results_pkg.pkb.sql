@@ -297,7 +297,7 @@
     -- Runs the base-table reconciliation report for this run's UOM codes.
     -- Delegates to the shared DMT_UTIL_PKG.RUN_BIP_REPORT (no private SOAP
     -- copy). The one parameter is the comma-delimited list of UOM codes
-    -- this run sent (config UOM codes are not run-prefixed). PROCEDURE per
+    -- this run sent (the run-prefixed codes from the transform). PROCEDURE per
     -- the procedures-only contract: x_report_xml NULL with x_error_code =
     -- C_SUCCESS means zero rows; failures are logged and surfaced through
     -- x_error_code -- exceptions never escape.
@@ -459,7 +459,7 @@
 
         -- Build the comma-delimited list of codes we POSTed and still need
         -- confirmed (rows the load step did NOT mark FAILED). Config UOM codes
-        -- are not run-prefixed, so we match the base table on the exact codes.
+        -- carry the run-prefix derivation, so we match the base table on the exact TFM codes.
         SELECT LISTAGG(UOM_CODE, ',') WITHIN GROUP (ORDER BY UOM_CODE)
         INTO   l_codes
         FROM   DMT_INV_UOM_TFM_TBL

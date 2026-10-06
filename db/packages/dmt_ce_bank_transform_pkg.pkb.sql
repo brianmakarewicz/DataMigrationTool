@@ -7,6 +7,38 @@
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_CE_BANK_TRANSFORM_PKG';
 
+    -- Run prefix on the user-facing unique keys (owner decision: configuration
+    -- objects prefix their keys exactly like Suppliers/Customers/Items, so a
+    -- scenario can be re-loaded run after run). Keys and Fusion limits (REST
+    -- describe; the TFM columns are the same width):
+    --   bank    BANK_NAME     360  (cashBanks.BankName; unique per country)
+    --   branch  BANK_NAME     360  (FK to the prefixed parent bank; the branch
+    --                               name is unique within that new bank)
+    --   account BANK_NAME     360  (FK) and ACCOUNT_NAME 80 (BankAccountName)
+    -- A key that cannot carry the full prefix within its limit is NOT truncated
+    -- (a truncated key can collide): the row is recorded FAILED with a
+    -- [TRANSFORM_ERROR] naming the limit. The reconciler matches the base views
+    -- on these same prefixed TFM values.
+    C_BANK_NAME_MAX    CONSTANT PLS_INTEGER := 360;
+    C_ACCOUNT_NAME_MAX CONSTANT PLS_INTEGER := 80;
+
+    -- --------------------------------------------------------
+    -- Private: read run prefix from DMT_PIPELINE_RUN_TBL
+    -- --------------------------------------------------------
+    FUNCTION get_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
+        l_prefix VARCHAR2(30);
+    BEGIN
+        SELECT PREFIX
+        INTO   l_prefix
+        FROM   DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
+        RETURN l_prefix;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20001,
+                'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
+    END get_prefix;
+
     -- ============================================================
     -- TRANSFORM_BANKS
     -- ============================================================
@@ -19,6 +51,7 @@
     ) IS
         l_ok_count   NUMBER := 0;
         l_fail_count NUMBER := 0;
+        l_prefix     VARCHAR2(30);
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -26,11 +59,42 @@
             p_package        => C_PKG,
             p_procedure      => 'TRANSFORM_BANKS');
 
+        l_prefix := get_prefix(p_run_id);
+
         IF p_reprocess_errors THEN
             UPDATE DMT_CE_BANK_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
+
+        -- Prefix-fit guard (see package header): never truncate a key.
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'CashBanks', 'Banks', s.STG_SEQUENCE_ID,
+               '[TRANSFORM_ERROR] BANK_NAME "' || s.BANK_NAME || '" cannot carry run prefix '
+               || l_prefix || ': ' || LENGTH(l_prefix || s.BANK_NAME)
+               || ' chars exceeds the Fusion limit of ' || C_BANK_NAME_MAX
+               || ' (not truncated, to avoid a key collision).'
+        FROM   DMT_CE_BANK_STG_TBL s
+        WHERE  (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND LENGTH(l_prefix || s.BANK_NAME) > C_BANK_NAME_MAX
+        AND NOT EXISTS (SELECT 1 FROM DMT_CE_BANK_TFM_TBL t
+                        WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+        AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                        WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                        AND e.SUB_OBJECT = 'Banks');
+        l_fail_count := SQL%ROWCOUNT;
+        UPDATE DMT_CE_BANK_STG_TBL
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Banks')
+        AND    STG_STATUS IN ('NEW','TRANSFORMED');
 
         INSERT INTO DMT_CE_BANK_TFM_TBL (
                     STG_SEQUENCE_ID,
@@ -58,7 +122,7 @@
                     p_run_id,
                     s.SOURCE_GROUP_ID,
                     s.COUNTRY_CODE,
-                    s.BANK_NAME,
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.BANK_NAME, C_BANK_NAME_MAX),
                     s.BANK_NUMBER,
                     s.SHORT_BANK_NAME,
                     s.DESCRIPTION,
@@ -84,6 +148,7 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND LENGTH(l_prefix || s.BANK_NAME) <= C_BANK_NAME_MAX
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
@@ -168,6 +233,7 @@
     ) IS
         l_ok_count   NUMBER := 0;
         l_fail_count NUMBER := 0;
+        l_prefix     VARCHAR2(30);
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -175,11 +241,42 @@
             p_package        => C_PKG,
             p_procedure      => 'TRANSFORM_BRANCHES');
 
+        l_prefix := get_prefix(p_run_id);
+
         IF p_reprocess_errors THEN
             UPDATE DMT_CE_BRANCH_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
+
+        -- Prefix-fit guard on the parent-bank FK (see package header).
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'CashBanks', 'Bank Branches', s.STG_SEQUENCE_ID,
+               '[TRANSFORM_ERROR] parent BANK_NAME "' || s.BANK_NAME || '" cannot carry run prefix '
+               || l_prefix || ': ' || LENGTH(l_prefix || s.BANK_NAME)
+               || ' chars exceeds the Fusion limit of ' || C_BANK_NAME_MAX
+               || ' (not truncated, to avoid a key collision).'
+        FROM   DMT_CE_BRANCH_STG_TBL s
+        WHERE  (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND LENGTH(l_prefix || s.BANK_NAME) > C_BANK_NAME_MAX
+        AND NOT EXISTS (SELECT 1 FROM DMT_CE_BRANCH_TFM_TBL t
+                        WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+        AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                        WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                        AND e.SUB_OBJECT = 'Bank Branches');
+        l_fail_count := SQL%ROWCOUNT;
+        UPDATE DMT_CE_BRANCH_STG_TBL
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Bank Branches')
+        AND    STG_STATUS IN ('NEW','TRANSFORMED');
 
         INSERT INTO DMT_CE_BRANCH_TFM_TBL (
                     STG_SEQUENCE_ID,
@@ -207,7 +304,7 @@
                     p_run_id,
                     s.SOURCE_GROUP_ID,
                     s.SOURCE_LINE_ID,
-                    s.BANK_NAME,
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.BANK_NAME, C_BANK_NAME_MAX),
                     s.BRANCH_NAME,
                     s.BRANCH_NUMBER,
                     s.BIC_CODE,
@@ -233,6 +330,7 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND LENGTH(l_prefix || s.BANK_NAME) <= C_BANK_NAME_MAX
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));
@@ -317,6 +415,7 @@
     ) IS
         l_ok_count   NUMBER := 0;
         l_fail_count NUMBER := 0;
+        l_prefix     VARCHAR2(30);
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -324,11 +423,50 @@
             p_package        => C_PKG,
             p_procedure      => 'TRANSFORM_ACCOUNTS');
 
+        l_prefix := get_prefix(p_run_id);
+
         IF p_reprocess_errors THEN
             UPDATE DMT_CE_BANK_ACCT_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
+
+        -- Prefix-fit guard on ACCOUNT_NAME and the parent-bank FK (see header).
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'CashBanks', 'Bank Accounts', s.STG_SEQUENCE_ID,
+               '[TRANSFORM_ERROR] '
+               || CASE WHEN LENGTH(l_prefix || s.ACCOUNT_NAME) > C_ACCOUNT_NAME_MAX
+                       THEN 'ACCOUNT_NAME "' || s.ACCOUNT_NAME || '" ('
+                            || LENGTH(l_prefix || s.ACCOUNT_NAME) || ' chars with prefix, limit '
+                            || C_ACCOUNT_NAME_MAX || ') ' END
+               || CASE WHEN LENGTH(l_prefix || s.BANK_NAME) > C_BANK_NAME_MAX
+                       THEN 'parent BANK_NAME "' || s.BANK_NAME || '" ('
+                            || LENGTH(l_prefix || s.BANK_NAME) || ' chars with prefix, limit '
+                            || C_BANK_NAME_MAX || ') ' END
+               || 'cannot carry run prefix ' || l_prefix
+               || ' within the Fusion limit (not truncated, to avoid a key collision).'
+        FROM   DMT_CE_BANK_ACCT_STG_TBL s
+        WHERE  (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND (LENGTH(l_prefix || s.ACCOUNT_NAME) > C_ACCOUNT_NAME_MAX
+             OR LENGTH(l_prefix || s.BANK_NAME) > C_BANK_NAME_MAX)
+        AND NOT EXISTS (SELECT 1 FROM DMT_CE_BANK_ACCT_TFM_TBL t
+                        WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+        AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                        WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                        AND e.SUB_OBJECT = 'Bank Accounts');
+        l_fail_count := SQL%ROWCOUNT;
+        UPDATE DMT_CE_BANK_ACCT_STG_TBL
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Bank Accounts')
+        AND    STG_STATUS IN ('NEW','TRANSFORMED');
 
         INSERT INTO DMT_CE_BANK_ACCT_TFM_TBL (
                     STG_SEQUENCE_ID,
@@ -363,9 +501,9 @@
                     p_run_id,
                     s.SOURCE_GROUP_ID,
                     s.SOURCE_LINE_ID,
-                    s.BANK_NAME,
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.BANK_NAME, C_BANK_NAME_MAX),
                     s.BRANCH_NAME,
-                    s.ACCOUNT_NAME,
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.ACCOUNT_NAME, C_ACCOUNT_NAME_MAX),
                     s.ACCOUNT_NUMBER,
                     s.CURRENCY_CODE,
                     s.ACCOUNT_TYPE,
@@ -396,6 +534,8 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND LENGTH(l_prefix || s.ACCOUNT_NAME) <= C_ACCOUNT_NAME_MAX
+        AND LENGTH(l_prefix || s.BANK_NAME) <= C_BANK_NAME_MAX
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL));

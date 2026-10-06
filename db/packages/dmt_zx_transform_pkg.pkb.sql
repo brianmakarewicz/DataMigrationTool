@@ -7,6 +7,24 @@
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_ZX_TRANSFORM_PKG';
 
+    -- --------------------------------------------------------
+    -- Private: read run prefix from DMT_PIPELINE_RUN_TBL
+    -- (same helper every prefixing transform carries).
+    -- --------------------------------------------------------
+    FUNCTION get_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
+        l_prefix VARCHAR2(30);
+    BEGIN
+        SELECT PREFIX
+        INTO   l_prefix
+        FROM   DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
+        RETURN l_prefix;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20001,
+                'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
+    END get_prefix;
+
     -- ============================================================
     -- TRANSFORM_REGIMES
     -- Inserts from STG to TFM for tax regimes.
@@ -20,6 +38,7 @@
     ) IS
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
+        l_prefix        VARCHAR2(30);
 
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -34,6 +53,44 @@
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
+
+        l_prefix := get_prefix(p_run_id);
+
+        -- Run prefix on the user-facing unique key(s) (owner decision: config
+        -- objects prefix keys exactly like Suppliers/Customers/Items). Prefix-fit
+        -- guard: a key that cannot carry the full prefix within its Fusion limit
+        -- is NOT truncated (a truncated key can collide). The row is recorded
+        -- FAILED with a [TRANSFORM_ERROR] naming the limit and is excluded from
+        -- the TFM insert below.
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'TaxConfig', 'Tax Regimes', s.STG_SEQUENCE_ID,
+               '[TRANSFORM_ERROR] '
+               || CASE WHEN LENGTH(l_prefix || s.TAX_REGIME_CODE) > 30
+                       THEN 'TAX_REGIME_CODE "' || s.TAX_REGIME_CODE || '" (' || LENGTH(l_prefix || s.TAX_REGIME_CODE)
+                            || ' chars with prefix, Fusion limit 30) ' END
+               || 'cannot carry run prefix ' || l_prefix
+               || ' (not truncated, to avoid a key collision).'
+        FROM   DMT_ZX_REGIME_STG_TBL s
+        WHERE  (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND (LENGTH(l_prefix || s.TAX_REGIME_CODE) > 30)
+        AND NOT EXISTS (SELECT 1 FROM DMT_ZX_REGIME_TFM_TBL t
+                        WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+        AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                        WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                        AND e.SUB_OBJECT = 'Tax Regimes');
+        l_fail_count := SQL%ROWCOUNT;
+        UPDATE DMT_ZX_REGIME_STG_TBL
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Tax Regimes')
+        AND    STG_STATUS IN ('NEW','TRANSFORMED');
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_ZX_REGIME_TFM_TBL (
@@ -65,7 +122,7 @@
                     p_run_id,
                     s.SOURCE_GROUP_ID,
 
-                    s.TAX_REGIME_CODE,
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.TAX_REGIME_CODE, 30),
                     s.TAX_REGIME_NAME,
                     s.DESCRIPTION,
                     s.EFFECTIVE_FROM,
@@ -94,6 +151,7 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND LENGTH(l_prefix || s.TAX_REGIME_CODE) <= 30
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
@@ -183,6 +241,7 @@
     ) IS
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
+        l_prefix        VARCHAR2(30);
 
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -197,6 +256,44 @@
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
             WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
         END IF;
+
+        l_prefix := get_prefix(p_run_id);
+
+        -- Run prefix on the user-facing unique key(s) (owner decision: config
+        -- objects prefix keys exactly like Suppliers/Customers/Items). Prefix-fit
+        -- guard: a key that cannot carry the full prefix within its Fusion limit
+        -- is NOT truncated (a truncated key can collide). The row is recorded
+        -- FAILED with a [TRANSFORM_ERROR] naming the limit and is excluded from
+        -- the TFM insert below.
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'TaxConfig', 'Tax Rates', s.STG_SEQUENCE_ID,
+               '[TRANSFORM_ERROR] '
+               || CASE WHEN LENGTH(l_prefix || s.TAX_REGIME_CODE) > 30
+                       THEN 'parent TAX_REGIME_CODE "' || s.TAX_REGIME_CODE || '" (' || LENGTH(l_prefix || s.TAX_REGIME_CODE)
+                            || ' chars with prefix, Fusion limit 30) ' END
+               || 'cannot carry run prefix ' || l_prefix
+               || ' (not truncated, to avoid a key collision).'
+        FROM   DMT_ZX_RATE_STG_TBL s
+        WHERE  (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND (LENGTH(l_prefix || s.TAX_REGIME_CODE) > 30)
+        AND NOT EXISTS (SELECT 1 FROM DMT_ZX_RATE_TFM_TBL t
+                        WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+        AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                        WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                        AND e.SUB_OBJECT = 'Tax Rates');
+        l_fail_count := SQL%ROWCOUNT;
+        UPDATE DMT_ZX_RATE_STG_TBL
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Tax Rates')
+        AND    STG_STATUS IN ('NEW','TRANSFORMED');
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_ZX_RATE_TFM_TBL (
@@ -231,7 +328,7 @@
                     p_run_id,
                     s.SOURCE_GROUP_ID,
 
-                    s.TAX_REGIME_CODE,
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.TAX_REGIME_CODE, 30),
                     s.TAX,
                     s.TAX_STATUS_CODE,
                     s.TAX_RATE_CODE,
@@ -263,6 +360,7 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND LENGTH(l_prefix || s.TAX_REGIME_CODE) <= 30
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))

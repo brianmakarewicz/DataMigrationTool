@@ -334,13 +334,50 @@
             SELECT v.TFM_SEQUENCE_ID,
                    v.LOOKUP_TYPE, v.LOOKUP_CODE, v.DISPLAY_SEQUENCE,
                    v.ENABLED_FLAG, v.START_DATE_ACTIVE, v.END_DATE_ACTIVE,
-                   v.MEANING, v.DESCRIPTION, v.TAG
+                   v.MEANING, v.DESCRIPTION, v.TAG,
+                   (SELECT COUNT(*) FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
+                    WHERE  t.RUN_ID = p_run_id
+                    AND    t.LOOKUP_TYPE = v.LOOKUP_TYPE) AS parent_rows,
+                   (SELECT MAX(t.LOAD_CALL_STATUS) FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
+                    WHERE  t.RUN_ID = p_run_id
+                    AND    t.LOOKUP_TYPE = v.LOOKUP_TYPE
+                    AND    t.LOAD_CALL_STATUS = 'CREATED') AS parent_created,
+                   (SELECT MAX(DBMS_LOB.SUBSTR(t.ERROR_TEXT, 1500, 1)) FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
+                    WHERE  t.RUN_ID = p_run_id
+                    AND    t.LOOKUP_TYPE = v.LOOKUP_TYPE) AS parent_error
             FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL v
             WHERE  v.RUN_ID = p_run_id
             AND    v.TFM_STATUS = 'GENERATED'
             ORDER BY v.LOOKUP_TYPE, v.DISPLAY_SEQUENCE, v.TFM_SEQUENCE_ID
         ) LOOP
             BEGIN
+                -- Parent-failed cascade (run 236 BADVAL): when this run also sent
+                -- the value's parent lookup TYPE and Fusion did NOT create it, the
+                -- value cannot be created either. Posting it anyway only draws a
+                -- blank-bodied HTTP 404 from the missing child collection, which
+                -- (#161) carries no per-record message and left the row
+                -- UNACCOUNTED although its outcome is known. So the value is not
+                -- sent; it is stamped [PARENT_FAILED] naming the failed type and
+                -- quoting the type's real Fusion error, and the sweep lands it
+                -- FAILED. LOAD_CALL_STATUS stays NULL (never attempted).
+                IF r.parent_rows > 0 AND r.parent_created IS NULL THEN
+                    UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                               '[PARENT_FAILED] Lookup code not sent to Fusion: parent lookup type "'
+                               || r.LOOKUP_TYPE || '" was not created in Fusion'
+                               || CASE WHEN r.parent_error IS NOT NULL
+                                       THEN '. Parent lookup type error: ' || r.parent_error
+                                       ELSE ' (no Fusion error captured for the parent).' END),
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    l_reject_count := l_reject_count + 1;
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Value not sent (parent lookup type not created): '
+                        || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE,
+                        p_package => C_PKG, p_procedure => C_PROC);
+                    CONTINUE;
+                END IF;
+
                 l_payload := '{"LookupCode":"' || REPLACE(r.LOOKUP_CODE, '"', '\"') || '"'
                     || ',"DisplaySequence":' || NVL(TO_CHAR(r.DISPLAY_SEQUENCE), '1')
                     || ',"EnabledFlag":"' || NVL(r.ENABLED_FLAG, 'Y') || '"'
@@ -444,7 +481,7 @@
     -- value keys. Delegates to the shared DMT_UTIL_PKG.RUN_BIP_REPORT. Two
     -- parameters: P_TYPE_CODES (comma-delimited LOOKUP_TYPE list) and
     -- P_VALUE_KEYS (comma-delimited LOOKUP_TYPE^LOOKUP_CODE composite-key list);
-    -- config codes are not run-prefixed. PROCEDURE per the procedures-only
+    -- lookup types carry the run prefix. PROCEDURE per the procedures-only
     -- contract: x_report_xml NULL with x_error_code = C_SUCCESS means zero rows;
     -- failures are logged and surfaced through x_error_code -- exceptions never
     -- escape.
@@ -658,7 +695,7 @@
 
         -- Build the comma-delimited lists of type codes / value keys we POSTed and
         -- still need confirmed (rows the load step did NOT mark FAILED; config
-        -- codes are not run-prefixed, so match the base tables on the exact codes).
+        -- types carry the run prefix, so match the base tables on the exact TFM keys).
         SELECT LISTAGG(LOOKUP_TYPE, ',') WITHIN GROUP (ORDER BY LOOKUP_TYPE)
         INTO   l_type_codes
         FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL
