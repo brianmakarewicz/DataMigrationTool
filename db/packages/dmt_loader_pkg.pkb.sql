@@ -3706,7 +3706,16 @@
         DMT_GRANTS_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
 
         -- Phase 4: submit + (async return | poll + import + reconcile).
-        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, '#NULL,#NULL,#NULL');
+        -- AwardMassImportJob ParameterList (3 args): from award number, to award
+        -- number, "report success details" (a constant Yes/No flag). 'true' matches
+        -- the owner's known-good run 10070355 and makes the Award Batch Import
+        -- Report list successful awards too (LIST_G_3) next to the failures
+        -- (LIST_G_4). docs/findings/known_good_Grants.md. This is the
+        -- loadAndImportData jobList ParameterList: ONE comma-delimited element
+        -- (proven by replay A, load 10073629 / import 10073644). The
+        -- one-<paramList>-per-argument rule applies to submitESSJobRequest
+        -- (SUBMIT_IMPORT_JOB), which Grants does not use.
+        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, '#NULL,#NULL,true');
 
         -- Phase 5: FAILED-row accounting + completion log.
         fin_finish(p_run_id, C_CEMLI, C_OBJ);

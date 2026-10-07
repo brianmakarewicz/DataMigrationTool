@@ -52,8 +52,14 @@
 
     -- Download ESS output ZIP, extract the BIP XML report, return as CLOB.
     -- Use for Import Report error parsing (e.g. ImportProjectReportJob output).
+    -- p_username / p_password (optional): download as the Fusion user that
+    -- SUBMITTED the request (Fusion refuses another user's ESS output with
+    -- HTTP 500). NULL = the global FUSION_USERNAME / FUSION_PASSWORD, i.e. the
+    -- previous behaviour, so existing callers are unchanged.
     FUNCTION GET_ESS_OUTPUT_XML (
-        p_request_id IN NUMBER
+        p_request_id IN NUMBER,
+        p_username   IN VARCHAR2 DEFAULT NULL,
+        p_password   IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB;
 
     -- Download ESS output for the given Import ESS job and log it.

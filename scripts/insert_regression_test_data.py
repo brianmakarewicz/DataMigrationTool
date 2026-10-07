@@ -189,6 +189,13 @@ def main():
         # Grants
         "DMT_GMS_AWD_PERSONNEL_TFM_TBL",
         "DMT_GMS_AWD_HDR_TFM_TBL",
+        "DMT_GMS_AWD_FUND_SRC_TFM_TBL",
+        "DMT_GMS_AWD_PROJECTS_TFM_TBL",
+        "DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL",
+        "DMT_GMS_AWD_BDGT_PRDS_TFM_TBL",
+        "DMT_GMS_AWD_ORG_CREDITS_TFM_TBL",
+        "DMT_GMS_AWD_FUNDING_TFM_TBL",
+        "DMT_GMS_AWD_FUND_ALLOC_TFM_TBL",
         # Requisitions
         "DMT_POR_REQ_DISTS_TFM_TBL",
         "DMT_POR_REQ_LINES_TFM_TBL",
@@ -247,8 +254,15 @@ def main():
         "DMT_POZ_SUP_ADDR_TFM_TBL",
         "DMT_POZ_SUPPLIERS_TFM_TBL",
         # --- STG tables (now safe to delete) ---
-        # Grants personnel
+        # Grants personnel + award children
         "DMT_GMS_AWD_PERSONNEL_STG_TBL",
+        "DMT_GMS_AWD_FUND_SRC_STG_TBL",
+        "DMT_GMS_AWD_PROJECTS_STG_TBL",
+        "DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL",
+        "DMT_GMS_AWD_BDGT_PRDS_STG_TBL",
+        "DMT_GMS_AWD_ORG_CREDITS_STG_TBL",
+        "DMT_GMS_AWD_FUNDING_STG_TBL",
+        "DMT_GMS_AWD_FUND_ALLOC_STG_TBL",
         # Requisition dists → lines → headers
         "DMT_POR_REQ_DISTS_STG_TBL",
         "DMT_POR_REQ_LINES_STG_TBL",
@@ -1678,9 +1692,25 @@ def main():
     tag_scenario(cur, "DMT_PRJ_BUDGET_STG_TBL", scenario_id)
 
     # ====================================================================
-    # 29. GRANTS (DMT_GMS_AWD_HEADERS_STG_TBL)
-    #     GOOD: 2 grant awards
-    #     BAD:  1 missing BUSINESS_UNIT [BAD-REQ]
+    # 29. GRANTS (DMT_GMS_AWD_*_STG_TBL, nine record types)
+    #     Corrected 2026-10-07 (docs/findings/known_good_Grants.md): Grants
+    #     loads when submitted as PPM_IMPL, and an award needs its children.
+    #     GOOD: RTAWD-G1, RTAWD-G2 -- full awards (funding source, project,
+    #           project funding source, budget period, org credit, personnel,
+    #           funding, funding allocation) mirroring the owner's known-good
+    #           AWDTST04B / AWDTST02B. Expected LOADED (GMS_AWARD_HEADERS_B via
+    #           OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER).
+    #     BAD:  RTAWD-BAD1 -- same full shape, primary sponsor
+    #           'No Such Sponsor DMT' [BAD-FUSION]. Expected FAILED "The value of
+    #           the attribute Primary Sponsor isn't valid." (replay A). This is
+    #           also the cross-grain failure scenario (section 5, 2026-10-07):
+    #           one award whose only defect is on the header grain; every child
+    #           row must land FAILED quoting that real error.
+    #     BAD:  RTGNT001 / RTGNT002 -- the older header+personnel-only awards.
+    #           Formerly labelled GOOD; with no project/budget period Fusion
+    #           rejects them ("No project is associated to this award...", replay
+    #           C) [BAD-FUSION].
+    #     BAD:  RTGNT-BAD1 -- missing BUSINESS_UNIT [BAD-REQ].
     # ====================================================================
     print("\n=== 29. Grants ===")
     GRANTS_BU = "Progress US Business Unit"
@@ -1710,7 +1740,7 @@ def main():
         """, {"aname": awd_name, "anum": awd_num, "tmpl": GRANTS_TEMPLATE,
               "bu": GRANTS_BU, "le": GRANTS_LE, "ctype": GRANTS_CONTRACT_TYPE,
               "sponsor": sponsor, "src": f"RT-GNT-{awd_num}"},
-        label=f"GOOD Grant: {awd_name}")
+        label=f"BAD-FUSION Grant (no children): {awd_name}")
 
     # Insert personnel (PI required for each award)
     for awd_num in ("RTGNT001", "RTGNT002"):
@@ -1725,7 +1755,7 @@ def main():
                 DATE '2025-01-01', 100, :src
             )
         """, {"anum": awd_num, "src": f"RT-GNT-PERS-{awd_num}"},
-        label=f"GOOD Grant Personnel (PI): {awd_num}")
+        label=f"BAD-FUSION Grant Personnel (PI, award has no children): {awd_num}")
     tag_scenario(cur, "DMT_GMS_AWD_PERSONNEL_STG_TBL", scenario_id)
 
     run_sql(cur, """
@@ -1748,6 +1778,106 @@ def main():
           "ctype": GRANTS_CONTRACT_TYPE},
     label="BAD Grant: missing BUSINESS_UNIT [BAD-REQ]")
     tag_scenario(cur, "DMT_GMS_AWD_HEADERS_STG_TBL", scenario_id)
+
+    # Full awards (2026-10-07). SCENARIO_ID is bound in each INSERT (section 7
+    # scenario-guard rule). Project numbers are existing Fusion projects -- the
+    # transform passes them through DMT_XREF_PKG.PROJECT_NUMBER unchanged -- so
+    # the proof run uses Validate-Upstream = N.
+    GNT_ORG = "Maintenance Prg US"
+    GNT_BURDEN = "Progress US Burden Schedule"
+    GNT_PI_EMAIL = "brock.phillips_esew-dev28@oraclepdemos.com"
+    gnt_awards = [
+        # (award_number, award_name, template, sponsor, end_date, project, amount, kind)
+        ("RTAWD-G1",   "RT Award Good-1 State",  "1 Year Award", "State Government",
+         "2027-09-01", "PRG10008", 500000, "GOOD"),
+        ("RTAWD-G2",   "RT Award Good-2 AHA",    "5 Year Award", "American Heart Association",
+         "2031-09-01", "CAP10001", 750000, "GOOD"),
+        ("RTAWD-BAD1", "RT Award Bad-1 Sponsor", "1 Year Award", "No Such Sponsor DMT",
+         "2027-09-01", "PRG10008", 500000, "BAD-FUSION"),
+    ]
+    for anum, aname, tmpl, sponsor, end_dt, proj, amt, kind in gnt_awards:
+        # Funding source used by every child row: the award's own sponsor for the
+        # GOOD rows; the BAD row keeps a valid funding source so its ONLY defect
+        # is the header's primary sponsor.
+        fsrc = sponsor if kind == "GOOD" else "State Government"
+        b = {"anum": anum, "sid": scenario_id, "end": end_dt}
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_HEADERS_STG_TBL (
+                AWARD_NAME, AWARD_NUMBER, SOURCE_TEMPLATE_NUMBER,
+                BUSINESS_UNIT, LEGAL_ENTITY, CONTRACT_TYPE, PRIMARY_SPONSOR,
+                PI_NUMBER, AWARD_START_DATE, AWARD_END_DATE, ORGANIZATION,
+                EXPANDED_AUTHORITY_FLAG, DEFAULT_BURDEN_SCHEDULE, CURRENCY_CODE,
+                SOURCE_ID, SCENARIO_ID
+            ) VALUES (
+                :aname, :anum, :tmpl,
+                :bu, :le, NULL, :sponsor,
+                '1308', DATE '2026-09-01', TO_DATE(:end, 'YYYY-MM-DD'), :org,
+                'Y', :burden, 'USD',
+                :src, :sid
+            )
+        """, dict(b, aname=aname, tmpl=tmpl, bu=GRANTS_BU, le=GRANTS_LE,
+                  sponsor=sponsor, org=GNT_ORG, burden=GNT_BURDEN,
+                  src=f"RT-GNT-{anum}"),
+        label=f"{kind} Award header: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_FUND_SRC_STG_TBL (
+                AWARD_NUMBER, FUNDING_SOURCE_NAME, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, :fsrc, :src, :sid)
+        """, {"anum": anum, "fsrc": fsrc, "src": f"RT-GNT-FSRC-{anum}", "sid": scenario_id},
+        label=f"{kind} Award funding source: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_PROJECTS_STG_TBL (
+                AWARD_NUMBER, FUNDING_SOURCE_NAME, PROJECT_NUMBER, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, NULL, :proj, :src, :sid)
+        """, {"anum": anum, "proj": proj, "src": f"RT-GNT-PROJ-{anum}", "sid": scenario_id},
+        label=f"{kind} Award project: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL (
+                AWARD_NUMBER, PROJECT_NUMBER, FUNDING_SOURCE_NAME, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, :proj, :fsrc, :src, :sid)
+        """, {"anum": anum, "proj": proj, "fsrc": fsrc, "src": f"RT-GNT-PFSRC-{anum}",
+              "sid": scenario_id},
+        label=f"{kind} Award project funding source: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_BDGT_PRDS_STG_TBL (
+                AWARD_NUMBER, BUDGET_PERIOD, START_DATE, END_DATE, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, 'Period 1', DATE '2026-09-01', TO_DATE(:end, 'YYYY-MM-DD'),
+                      :src, :sid)
+        """, dict(b, src=f"RT-GNT-BP-{anum}"),
+        label=f"{kind} Award budget period: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_ORG_CREDITS_STG_TBL (
+                AWARD_NUMBER, PROJECT_NUMBER, ORGANIZATION, CREDIT_PERCENTAGE,
+                SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, :proj, :org, 100, :src, :sid)
+        """, {"anum": anum, "proj": proj, "org": GNT_ORG, "src": f"RT-GNT-ORGCR-{anum}",
+              "sid": scenario_id},
+        label=f"{kind} Award organization credit: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_PERSONNEL_STG_TBL (
+                AWARD_NUMBER, PROJECT_NUMBER, INTERNAL, PERSON_EMAIL, ROLE,
+                START_DATE, END_DATE, CREDIT_PERCENTAGE, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, NULL, 'Y', :em, 'Principal Investigator',
+                      DATE '2026-09-01', TO_DATE(:end, 'YYYY-MM-DD'), 100, :src, :sid)
+        """, dict(b, em=GNT_PI_EMAIL, src=f"RT-GNT-PERS2-{anum}"),
+        label=f"{kind} Award personnel (PI): {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_FUNDING_STG_TBL (
+                AWARD_NUMBER, BUDGET_PERIOD_NAME, FUNDING_SOURCE_NAME, ISSUE_TYPE,
+                ISSUE_NUMBER, ISSUE_DATE, DIRECT_FUNDING_AMOUNT, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, 'Period 1', :fsrc, 'Base', 'Base 1', DATE '2026-09-01',
+                      :amt, :src, :sid)
+        """, {"anum": anum, "fsrc": fsrc, "amt": amt, "src": f"RT-GNT-FUND-{anum}",
+              "sid": scenario_id},
+        label=f"{kind} Award funding: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_FUND_ALLOC_STG_TBL (
+                AWARD_NUMBER, PROJECT_NUMBER, ISSUE_NUMBER, FUNDING_AMOUNT,
+                SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, :proj, 'Base 1', :amt, :src, :sid)
+        """, {"anum": anum, "proj": proj, "amt": amt, "src": f"RT-GNT-FALLOC-{anum}",
+              "sid": scenario_id},
+        label=f"{kind} Award funding allocation: {anum}")
 
     # ====================================================================
     # 30. ASSETS (DMT_FA_ASSET_HDR_STG_TBL)
@@ -2988,6 +3118,14 @@ def main():
         ("DMT_PJB_BILL_EVENTS_STG_TBL",          "STG_STATUS"),
         # Grants
         ("DMT_GMS_AWD_HEADERS_STG_TBL",          "STG_STATUS"),
+        ("DMT_GMS_AWD_PERSONNEL_STG_TBL",        "STG_STATUS"),
+        ("DMT_GMS_AWD_FUND_SRC_STG_TBL",         "STG_STATUS"),
+        ("DMT_GMS_AWD_PROJECTS_STG_TBL",         "STG_STATUS"),
+        ("DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL",     "STG_STATUS"),
+        ("DMT_GMS_AWD_BDGT_PRDS_STG_TBL",        "STG_STATUS"),
+        ("DMT_GMS_AWD_ORG_CREDITS_STG_TBL",      "STG_STATUS"),
+        ("DMT_GMS_AWD_FUNDING_STG_TBL",          "STG_STATUS"),
+        ("DMT_GMS_AWD_FUND_ALLOC_STG_TBL",       "STG_STATUS"),
         # Assets
         ("DMT_FA_ASSET_HDR_STG_TBL",             "STG_STATUS"),
         ("DMT_FA_ASSET_BOOK_STG_TBL",            "STG_STATUS"),

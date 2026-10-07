@@ -49,7 +49,7 @@ exception when others then
 end;
 /
 
-COMMENT ON TABLE "DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL"  IS 'Grant award project task burden staging. CSV: GmsAwardPrjTaskBurdenInterface.csv.';
+COMMENT ON TABLE "DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL"  IS 'Grant award project task burden staging. CSV: GmsAwardPrjTaskBrdInterface.csv.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

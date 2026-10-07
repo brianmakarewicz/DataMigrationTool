@@ -11,7 +11,7 @@
   "csvs": [
     { "template": "GmsAwardHeadersInterface.csv",        "fbdi_name": "GmsAwardHeadersInterface.csv" },
     { "template": "GmsAwardPersonnelInterface.csv",      "fbdi_name": "GmsAwardPersonnelInterface.csv" },
-    { "template": "GmsAwardBudgetPeriodsInterface.csv",  "fbdi_name": "GmsAwardBudgetPeriodsInterface.csv" }
+    { "template": "GmsAwardBudgetPeriodsInterface.csv",  "fbdi_name": "GmsAwardBdgtPeriodsInterface.csv" }
   ],
   "discovery": [
     {

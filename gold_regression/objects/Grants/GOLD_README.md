@@ -142,7 +142,10 @@ live from that window and fixed:
 3. **Budget periods (`GMS_BP_ONE_EXISTS` / `GMS_BP_CAFT_ISSUE` — "You must enter the budget
    periods manually. You must define at least one budget period").** Award Mass Import does
    NOT auto-generate budget periods from the template; the FBDI must carry a
-   `GmsAwardBudgetPeriodsInterface.csv`. Fix: added that CSV (AWARD_NUMBER, BUDGET_PERIOD name,
+   budget-period CSV. (Its name inside the zip must be the template's
+   `GmsAwardBdgtPeriodsInterface.csv`; it was first added as `GmsAwardBudgetPeriodsInterface.csv`,
+   which Fusion's loader does not match to a control file -- corrected in recipe.json 2026-10-07,
+   docs/findings/known_good_Grants.md.) Fix: added that CSV (AWARD_NUMBER, BUDGET_PERIOD name,
    START_DATE, END_DATE) with one yearly period per good award spanning the award window, and
    the template discovery prefers `BUDGET_PERIOD_COUNT = 1` (e.g. `VU Funded Award`) so one
    period matches the one-year award window.

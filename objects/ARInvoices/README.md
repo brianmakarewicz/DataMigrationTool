@@ -26,7 +26,9 @@ E2E LOADED
 - BIP Data Model/Report: `bip/ARInvoices/`
 
 ## Reference Files
-None in this folder.
+- `known_good/` — the owner's known-good AutoInvoice run (Fusion process 10071776): submitted zip,
+  FBDI template (.xlsm), a re-prefixed GOOD+BAD variant proven standalone on 2026-10-07, probe
+  files, scripts and ESS-log evidence. Analysis: `docs/findings/known_good_ARInvoices.md`.
 
 ## Known Issues
 None currently.

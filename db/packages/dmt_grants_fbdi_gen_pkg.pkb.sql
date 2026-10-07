@@ -441,7 +441,8 @@ AS
     END gen_keywords_csv;
 
     -- ============================================================
-    -- 8. GmsAwardBudgetPeriodsInterface.csv
+    -- 8. GmsAwardBdgtPeriodsInterface.csv (exact template name; Fusion's
+    --    loader matches the control file by this name)
     -- ============================================================
     FUNCTION gen_budget_periods_csv (p_run_id IN NUMBER) RETURN CLOB IS
         l_csv CLOB;
@@ -553,7 +554,7 @@ AS
     END gen_org_credits_csv;
 
     -- ============================================================
-    -- 13. GmsAwardPrjTaskBurdenInterface.csv
+    -- 13. GmsAwardPrjTaskBrdInterface.csv (exact template name)
     -- ============================================================
     FUNCTION gen_prj_task_burden_csv (p_run_id IN NUMBER) RETURN CLOB IS
         l_csv CLOB;
@@ -765,7 +766,7 @@ AS
             DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 7, 'Grants', 'GmsAwardKeywordsInterface.csv', 0, l_kw_csv, l_kw_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_bdgt_csv) > 0 THEN
-            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 8, 'Grants', 'GmsAwardBudgetPeriodsInterface.csv', 0, l_bdgt_csv, l_bdgt_csv_id);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 8, 'Grants', 'GmsAwardBdgtPeriodsInterface.csv', 0, l_bdgt_csv, l_bdgt_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_cert_csv) > 0 THEN
             DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 9, 'Grants', 'GmsAwardCertsInterface.csv', 0, l_cert_csv, l_cert_csv_id);
@@ -780,7 +781,7 @@ AS
             DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 12, 'Grants', 'GmsAwardOrgCreditsInterface.csv', 0, l_orgcr_csv, l_orgcr_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_ptbrd_csv) > 0 THEN
-            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 13, 'Grants', 'GmsAwardPrjTaskBurdenInterface.csv', 0, l_ptbrd_csv, l_ptbrd_csv_id);
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 13, 'Grants', 'GmsAwardPrjTaskBrdInterface.csv', 0, l_ptbrd_csv, l_ptbrd_csv_id);
         END IF;
         IF DBMS_LOB.GETLENGTH(l_ref_csv) > 0 THEN
             DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 14, 'Grants', 'GmsAwardReferencesInterface.csv', 0, l_ref_csv, l_ref_csv_id);
