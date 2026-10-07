@@ -1813,7 +1813,8 @@ def main():
     #           also the cross-grain failure scenario (section 5, 2026-10-07):
     #           one award whose only defect is on the header grain; every child
     #           row must land FAILED quoting that real error.
-    #     BAD:  RTGNT001 / RTGNT002 -- the older header+personnel-only awards.
+    #     BAD:  RTGNT-BAD2 / RTGNT-BAD3 -- the older header+personnel-only awards
+    #           (named RTGNT001 / RTGNT002 in scenarios up to RegressionTest2610071920).
     #           Formerly labelled GOOD; with no project/budget period Fusion
     #           rejects them ("No project is associated to this award...", replay
     #           C) [BAD-FUSION].
@@ -1825,8 +1826,8 @@ def main():
     GRANTS_TEMPLATE = "1 Year Award"
     GRANTS_CONTRACT_TYPE = "Sell: Project Award Hard Limit"
     for awd_name, awd_num, sponsor in [
-        ("RT Grant Good-1", "RTGNT001", "Department of Homeland Security"),
-        ("RT Grant Good-2", "RTGNT002", "Environmental Protection Agency"),
+        ("RT Grant Bad-2", "RTGNT-BAD2", "Department of Homeland Security"),
+        ("RT Grant Bad-3", "RTGNT-BAD3", "Environmental Protection Agency"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_GMS_AWD_HEADERS_STG_TBL (
@@ -1850,7 +1851,7 @@ def main():
         label=f"BAD-FUSION Grant (no children): {awd_name}")
 
     # Insert personnel (PI required for each award)
-    for awd_num in ("RTGNT001", "RTGNT002"):
+    for awd_num in ("RTGNT-BAD2", "RTGNT-BAD3"):
         run_sql(cur, """
             INSERT INTO DMT_GMS_AWD_PERSONNEL_STG_TBL (
                 AWARD_NUMBER, INTERNAL, PERSON_EMAIL,
