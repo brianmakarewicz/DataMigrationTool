@@ -287,7 +287,7 @@ end;
 -- re-running is a no-op.
 merge into "DMT_CONFIG_TBL" t
 using (select 'AR_GROUP_BY_DMT_INVOICE' config_key, 'Y' config_value,
-              'ARInvoices (Y/N, default Y). Y = every AR line carries ''DMT <run-prefixed invoice key>'' in INTERNAL_NOTES (appended after any source note as ''<note> | DMT <key>''; the source note is truncated to fit 240, never the key). INTERNAL_NOTES is a mandatory AutoInvoice grouping attribute, so each DMT source invoice becomes exactly one Fusion invoice, and a rejected line left in the interface by an earlier run can no longer hold back a new run''s lines. N = the source note passes through unchanged; DMT invoices with identical grouping attributes may then merge into one Fusion invoice (and a rejection spreads across all of them), and leftover rejected interface rows from earlier runs can hold back new runs until purged.' description
+              'ARInvoices Y/N, default Y. Y = each AR line gets ''DMT <run-prefixed invoice key>'' in INTERNAL_NOTES (after any source note; the note is truncated, never the key). INTERNAL_NOTES is an AutoInvoice grouping attribute, so each DMT invoice is one Fusion invoice and old rejected interface rows cannot hold back new runs. N = source note unchanged; DMT invoices with equal grouping values may merge (one rejection fails all) and old rejected rows can hold back new runs until purged.' description
        from dual) s
 on (t."CONFIG_KEY" = s.config_key)
 when not matched then insert ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY")
