@@ -25,7 +25,7 @@
 -- record types on both BASE and INTERFACE tiers, so each record is confirmed
 -- against its own base id or its own interface row.
 --
--- Per-row error attribution (V4 report, DMT_CUST_RECON_V4_DM): an INTERFACE/ERROR
+-- Per-row error attribution (V5 report, DMT_CUST_RECON_V5_DM): an INTERFACE/ERROR
 -- row is returned ONLY when the interface row has its OWN Fusion error -- its
 -- HZ_IMP_ERRORS rows joined on error_id + batch_id, full text resolved from
 -- FND_NEW_MESSAGES with tokens, e.g.
@@ -35,7 +35,7 @@
 -- its own is not in the report at all, so it stays GENERATED and the shared sweep
 -- marks it UNACCOUNTED (V3 composed a status-code sentence for such rows and it was
 -- stamped [FUSION_ERROR] with no real error behind it -- removed). An ERROR row that
--- arrives with no message (a report defect, never expected from V4) is logged as a
+-- arrives with no message (a report defect, never expected from V5) is logged as a
 -- WARN and left for the sweep -- never given a fabricated verdict.
 --
 -- Outcomes are written to the seven TFM tables only: nothing is written back to
@@ -200,7 +200,7 @@
                 l_rc   := 0;
                 l_tier := NULL;  -- backlog #65: reset per row (audit-log safety)
 
-                -- The V4 report returns an ERROR row only with the record's own
+                -- The V5 report returns an ERROR row only with the record's own
                 -- HZ_IMP_ERRORS text. If one ever arrives without a message, say so loudly
                 -- and leave the record for the sweep -- never invent a verdict.
                 IF l_rows(i).FUSION_STATUS = 'ERROR' AND l_rows(i).ERROR_MESSAGE IS NULL THEN
