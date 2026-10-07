@@ -146,6 +146,13 @@ rejected).
   - Valid contract types (from REST): `Sell: Project Award Hard Limit`, `Sell: Project Award Soft Limit`
   - Valid sponsors: National Science Foundation, National Cancer Institute, Dept of Homeland Security, EPA, Dept of Education, Dept of Health and Human Services, American Heart Association, Bond, MerLabs and Co, National Institute of Health
 
+- 2026-10-07: **First DMT E2E LOAD.** Run 242 (prefix 93298, scenario RegressionTest2610071115, local Docker),
+  submitted as PPM_IMPL: load 10073794 (9 SQL*Loader children), import AwardMassImportJob 10073807, report
+  10073809. 93298RTAWD-G1 / -G2 LOADED (GMS_AWARD_HEADERS_B ids 300000334921417 / 300000334921449, created by
+  PPM_IMPL, one project link each); 93298RTAWD-BAD1 FAILED "The value of the attribute Primary Sponsor isn't
+  valid." with all 8 children FAILED quoting it; RTGNT001/002 FAILED "No project is associated to this award";
+  RTGNT-BAD1 FAILED "You must provide a value for the Business Unit attribute." 0 UNACCOUNTED.
+
 ## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
 
 Backlog #90 asks whether every STG/TFM table name mirrors the FBDI CSV tab
