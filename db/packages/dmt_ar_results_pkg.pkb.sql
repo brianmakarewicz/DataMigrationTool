@@ -349,9 +349,13 @@ AS
     -- AutoInvoice holds back every other line it would have grouped onto that
     -- invoice and writes NO error for them (Fusion 10073725 / 10073734,
     -- docs/findings/known_good_ARInvoices.md). Grouping does not look at
-    -- INTERFACE_LINE_ATTRIBUTE1, so lines of DIFFERENT DMT source invoices merge
-    -- into one Fusion invoice (probes 97732-97734 -> customer_trx_id 1585948), and
-    -- an error crosses DMT invoice boundaries the same way.
+    -- INTERFACE_LINE_ATTRIBUTE1. With config AR_GROUP_BY_DMT_INVOICE = 'Y' the
+    -- transform stamps the DMT invoice key into INTERNAL_NOTES (a grouping
+    -- attribute), so the Fusion invoice equals the DMT invoice; with 'N' DMT
+    -- invoices sharing grouping values merge in Fusion (probes 97732-97734 ->
+    -- customer_trx_id 1585948) and an error crosses DMT invoice boundaries the same
+    -- way. No switch is needed here: the key below compares the values actually
+    -- sent, INTERNAL_NOTES included, so it follows whichever grouping Fusion used.
     --
     -- Sources: AR lines and distributions of this run (and work item) with
     --   TFM_STATUS = 'FAILED' carrying their OWN real Fusion error -- ERROR_TEXT

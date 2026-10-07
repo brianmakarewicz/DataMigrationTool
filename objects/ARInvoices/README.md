@@ -38,7 +38,9 @@ Live standard violations / gaps still present in this object's code (section 5 /
    `DMT_AR_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` quotes a rejected line's (or distribution's)
    real Fusion error onto every other non-LOADED line and distribution DMT sent with the same
    AutoInvoice grouping values, because the AR document is the Fusion invoice, not the DMT source
-   invoice (section 5 AR note, decided 2026-10-07). Limits: (a) the grouping key is built from
+   invoice (section 5 AR note, decided 2026-10-07). With config `AR_GROUP_BY_DMT_INVOICE = Y`
+   (default) the transform stamps `DMT <invoice key>` into INTERNAL_NOTES, so the Fusion invoice
+   equals the DMT invoice and an error spreads only within it. Limits: (a) the grouping key is built from
    the values DMT sent, compared literally; AutoInvoice compares the ids it derives from them
    (customer, site, type, terms), so two different spellings that resolve to the same id would
    group in Fusion but not here; (b) the pod's grouping rule is hard-coded (Oracle mandatory set
@@ -91,6 +93,11 @@ models both with one STG + one TFM table each.
    fix was required.
 
 ## History
+- 2026-10-07 cross-grain propagation (branch `fix-ar-cross-grain-propagation`):
+  `PROPAGATE_DOCUMENT_ERRORS` quotes a rejected row's real error onto the rest of its Fusion
+  invoice; line apply pinned by ATTRIBUTE2; INTERNAL_NOTES grouping stamp behind config
+  `AR_GROUP_BY_DMT_INVOICE` (default Y); recon report V2 (`DMT_AR_RECON_V2_DM`) fixes ORA-01489
+  when a line error carries INTERFACE_DISTRIBUTION_ID = 0; cross-grain regression rows RT-AR-XG-*.
 - 2026-10-07 known-good fixes (branch `fix-ar-invoices-known-good`): INTERFACE_LINE_ATTRIBUTE1
   is always run-prefixed (lines and distributions); the hardcoded fallback context
   `DMT Migration` is gone and a line without a context is rejected at pre-validation; the extra

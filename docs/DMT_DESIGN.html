@@ -569,13 +569,21 @@
       <div style="color:#b42318"><strong>AR Invoices note</strong> <span style="color:#b42318;font-weight:700">[DECIDED 2026-10-07 (owner)]</span>: for AR the document is the
       <em>Fusion</em> invoice that AutoInvoice builds with its grouping rule, not the DMT source invoice. AutoInvoice groups lines on the grouping-rule
       attributes (Oracle's mandatory set plus, on this pod's External Source rule, <code>SALES_ORDER</code>) and does not look at
-      <code>INTERFACE_LINE_ATTRIBUTE1</code>, so lines of different DMT source invoices can merge into one Fusion invoice, and a rejected line's
-      error crosses DMT invoice boundaries the same way. Every line and distribution DMT sent with the same grouping values (same run, work item,
-      business unit and batch source) that is not LOADED lands FAILED quoting the rejected row's real error under its own key, e.g.
-      <code>[FUSION_ERROR] Rejected with document: line 93301INV-100/2: &lt;real message&gt;</code>. LOADED counts are unaffected; FAILED counts exceed
-      the own-error counts, and the number of Fusion invoices can differ from the number of source invoices while the amounts still tie.
-      Implemented in <code>DMT_AR_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS</code>; message format shared through
-      <code>DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR</code>.</div></li>
+      <code>INTERFACE_LINE_ATTRIBUTE1</code>. <span style="color:#b42318"><strong>DMT forces Fusion's grouping to match DMT invoices</strong> by stamping
+      <code>'DMT ' || &lt;run-prefixed invoice key&gt;</code> into <code>INTERNAL_NOTES</code> on every line (after any source note,
+      <code>'&lt;note&gt; | DMT &lt;key&gt;'</code>; the source note is truncated to fit 240 characters, never the key). <code>INTERNAL_NOTES</code>
+      is a mandatory grouping attribute, so each DMT invoice becomes exactly one Fusion invoice and an error spreads only within that DMT invoice.
+      The same stamp stops a rejected line left in the interface by an earlier run from holding back a new run's lines (they no longer share
+      grouping values), so no purge is needed before a run (proven standalone 2026-10-07, probes 97741/97742,
+      <code>docs/findings/known_good_ARInvoices.md</code>). The stamp is the configuration setting <code>AR_GROUP_BY_DMT_INVOICE</code>
+      (<code>DMT_CONFIG_TBL</code>, Y/N, default <strong>Y</strong>). Turning it off (N) passes the source note through unchanged; the cost is
+      that DMT invoices with identical grouping values may merge into one Fusion invoice (a rejection then spreads across all of them), and leftover
+      rejected interface rows from earlier runs can hold back new runs until they are purged.
+      Every line and distribution DMT sent with the same grouping values as a rejected row (same run, work item, business unit and batch source,
+      compared on the values actually sent, <code>INTERNAL_NOTES</code> included) that is not LOADED lands FAILED quoting the rejected row's real
+      error under the rejected row's own key, e.g. <code>[FUSION_ERROR] Rejected with document: line 93301INV-100/2: &lt;real message&gt;</code>.
+      LOADED rows are never touched. Implemented in <code>DMT_AR_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS</code>; message format shared through
+      <code>DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR</code>.</span></div></li>
     <li><strong>absence ≠ LOADED.</strong> 0 BIP rows is never treated as success — it is investigated. A row that comes back with neither positive Fusion id nor an error is <em>UNRECONCILED</em> — a derived classification (<code>FAILED</code> + no <code>ERROR_TEXT</code>), not a stored status; see the status vocabulary in the Overview.</li>
     <li><strong>Object-status accounting.</strong> An object is DONE iff every record is accounted for (base-loaded OR interface-errored); FAILED only if any record is unaccounted. A Load ESS ERROR marks all GENERATED rows FAILED and routes to reconcile — it never short-circuits.</li>
   </ul>

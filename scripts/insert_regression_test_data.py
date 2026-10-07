@@ -1191,9 +1191,10 @@ def main():
     # 19b. AR CROSS-GRAIN failure scenario (design section 5, "Whole-document
     #      rejection carries the real error to every grain", decided 2026-10-07;
     #      backlog #194). AutoInvoice's "Reject invoice" rule holds back every
-    #      valid line it would group onto an invoice that has a rejected line, and
-    #      writes NO error for them; the AR document is the FUSION invoice
-    #      (AutoInvoice grouping rule), so it can span DMT source invoices.
+    #      valid line it groups onto an invoice that has a rejected line, and
+    #      writes NO error for them. With AR_GROUP_BY_DMT_INVOICE = 'Y' (default)
+    #      the transform stamps 'DMT <invoice key>' into INTERNAL_NOTES, a
+    #      mandatory grouping attribute, so one DMT invoice = one Fusion invoice.
     #      XG-A: one DMT invoice (ATTRIBUTE1 86753201), two lines:
     #            line 1 fully valid; line 2's ONLY defect is a nonexistent memo
     #            line name -- a LINE-level field, NOT a grouping attribute, so
@@ -1201,23 +1202,24 @@ def main():
     #            valid REV distribution (100%, account copied from a LOADED
     #            Progress US invoice: 1001-0000-00000-44105-0000-0000-00000000).
     #      XG-B: a SEPARATE DMT invoice (ATTRIBUTE1 86753202), one valid line with
-    #            the SAME grouping attributes as XG-A (bill-to, site, dates, type,
-    #            terms, currency, conversion, no sales order), so Fusion merges it
-    #            into XG-A's invoice and holds it back too.
-    #      Expected: XG-A line 2 FAILED with its own real error; XG-A line 1,
-    #      XG-B line 1 and both distributions FAILED quoting it ("Rejected with
-    #      document: line <attr1>/2: ..."). Same BU + batch source as the GOOD rows
-    #      (one partition, one job). TRX_DATE/GL_DATE 2026-03-18 differ from
-    #      RT-AR-KG-G2 (same bill-to 70075), so the GOOD rows are never grouped
-    #      with this document and stay LOADED.
+    #            the SAME source grouping attributes as XG-A (bill-to, site, dates,
+    #            type, terms, currency, conversion, no sales order). Only the DMT
+    #            INTERNAL_NOTES stamp tells the two apart, so XG-B must stay its own
+    #            Fusion invoice and LOAD (with the stamp off it would merge into
+    #            XG-A and be held back).
+    #      Expected: XG-A line 2 FAILED with its own real error; XG-A line 1 and
+    #      both XG-A distributions FAILED quoting it ("Rejected with document:
+    #      line <attr1>/2: ..."); XG-B LOADED. Same BU + batch source as the GOOD
+    #      rows (one partition, one job). TRX_DATE/GL_DATE 2026-03-18 differ from
+    #      RT-AR-KG-G2 (same bill-to 70075).
     XG_DATE = "2026-03-18"
     for src, amount, desc, memo, attr1, attr2, label in [
         ("RT-AR-XG-A1", 300.00, "XG-A line 1: valid line held with its invoice",
          "Tuition and Fees",            "86753201", "1", "XG-GOOD-SIBLING"),
         ("RT-AR-XG-A2-BAD", 200.00, "BAD XG-A line 2: invalid memo line (line-level only)",
          "DMT XG INVALID MEMO LINE",    "86753201", "2", "BAD"),
-        ("RT-AR-XG-B1", 150.00, "XG-B line 1: valid line merged into XG-A invoice",
-         "Tuition and Fees",            "86753202", "1", "XG-GOOD-MERGED"),
+        ("RT-AR-XG-B1", 150.00, "XG-B line 1: valid separate invoice, same grouping as XG-A",
+         "Tuition and Fees",            "86753202", "1", "GOOD"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_RA_LINES_STG_TBL (
