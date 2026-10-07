@@ -1422,13 +1422,23 @@ commit;
 -- tier tables statically. RECON_KEY per tier (stamped by DMT_REQ_TRANSFORM_PKG,
 -- = each tier's report RECORD_KEY): headers = REQUISITION_NUMBER (prefixed);
 -- lines = INTERFACE_LINE_KEY; dists = INTERFACE_LINE_KEY||':DIST:'||number.
+-- V2 (2026-10-07, owner decision): DMT_REQ_RECON_V2_DM finds rows only by the
+-- work item's Fusion job ids (base headers/lines by REQUEST_ID = import id, base
+-- distributions through their loaded line, interface rows and errors by
+-- LOAD_REQUEST_ID = load id AND REQUEST_ID = import id); the run prefix and run
+-- id are never search values. V1 (DMT_REQ_RECON_DM) stays deployed; BIP objects
+-- are never overwritten. The two auditor rows below point at V2 too.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
-    select 'Requisitions'                                          cemli_code,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_RPT.xdo'       report_catalog_path,
-           'Requisition import reconciliation (Contract v1, multi-tier)' notes,
+    select 'Requisitions'                                       cemli_code,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V2_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V2_RPT.xdo'       report_catalog_path,
+           'Requisition import reconciliation (Contract v1, multi-tier). V2 (2026-10-07): '
+           || 'rows found only by the work item''s Fusion job ids (base by the import '
+           || 'REQUEST_ID, interface and errors by LOAD_REQUEST_ID + REQUEST_ID), never by '
+           || 'the run prefix or run id; called once per work item. Deployed alongside V1, '
+           || 'never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_POR_REQ_HEADERS_TFM_TBL'                           tfm_table,
            'FUSION_REQUISITION_HEADER_ID'                          fusion_id_column,
@@ -2396,8 +2406,8 @@ using (
     select 100000051                                            bip_report_id,
            'Requisitions.Line'                                        cemli_code,
            'Requisition Line'                                        object_type,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V2_RPT.xdo'         report_catalog_path,
            'POR_REQ_LINES_INTERFACE_ALL'                                        interface_table,
            'Requisitions requisition line tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_REQ_RESULTS_PKG applies all '
@@ -2446,8 +2456,8 @@ using (
     select 100000052                                            bip_report_id,
            'Requisitions.Distribution'                                        cemli_code,
            'Requisition Distribution'                                        object_type,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V2_RPT.xdo'         report_catalog_path,
            'POR_REQ_DISTRIBUTIONS_INT_ALL'                                        interface_table,
            'Requisitions requisition distribution tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_REQ_RESULTS_PKG applies all '

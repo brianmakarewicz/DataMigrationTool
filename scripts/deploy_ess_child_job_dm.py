@@ -1,10 +1,15 @@
 #!/usr/bin/env python
-"""Dev/test shim: deploy the common ESS child-job data model to /Custom/DMT2/common
+"""Dev/test shim: deploy the common ESS child-job data model (V2) to /Custom/DMT2/common
 via the DB's own DMT_BIP_DEPLOY_PKG (git-first: reads the committed .xdm file),
 then optionally run a parametrized runReport self-test.
 
 No pipeline logic here -- deployment + verification only. The catalog write and
 the /Custom/DMT2 folder guard are enforced server-side by the PL/SQL package.
+
+V2 (2026-10-07) adds P_BATCH_ARG_POS -- which submitted argument of the import
+job carries the batch id (Items 1, Requisitions 2). It is deployed under its own
+name ALONGSIDE the original DMT_ESS_CHILD_JOB_DM / _RPT, which are never
+overwritten (this script no longer deploys V1).
 
 Usage:
     python scripts/deploy_ess_child_job_dm.py            # deploy DM only
@@ -14,10 +19,11 @@ import os, re, sys
 import oracledb
 
 REPO = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-XDM_PATH = os.path.join(REPO, "bip", "common", "DMT_ESS_CHILD_JOB_DM.xdm")
+XDM_PATH = os.path.join(REPO, "bip", "common", "DMT_ESS_CHILD_JOB_V2_DM.xdm")
 FOLDER = "/Custom/DMT2/common"
-DM_NAME = "DMT_ESS_CHILD_JOB_DM"
-RPT_PATH = "/Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo"
+DM_NAME = "DMT_ESS_CHILD_JOB_V2_DM"
+RPT_NAME = "DMT_ESS_CHILD_JOB_V2_RPT"
+RPT_PATH = "/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V2_RPT.xdo"
 JOB_DEF = "ItemImportJobDef"
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"
 
@@ -28,7 +34,7 @@ def connect():
     return oracledb.connect(user=u, password=p, dsn=dsn)
 
 
-def run_report(cur, load_ess, batch_id):
+def run_report(cur, load_ess, batch_id, job_def=JOB_DEF, arg_pos=""):
     """Call runReport exactly as get_import_ess_id does, via the DB SOAP helper."""
     plsql = r"""
 DECLARE
@@ -49,6 +55,7 @@ BEGIN
     ||'<v2:item><v2:name>P_LOAD_ESS_ID</v2:name><v2:values><v2:item>'||:load||'</v2:item></v2:values></v2:item>'
     ||'<v2:item><v2:name>P_JOB_DEF</v2:name><v2:values><v2:item>'||:jdef||'</v2:item></v2:values></v2:item>'
     ||'<v2:item><v2:name>P_BATCH_ID</v2:name><v2:values><v2:item>'||:batch||'</v2:item></v2:values></v2:item>'
+    ||'<v2:item><v2:name>P_BATCH_ARG_POS</v2:name><v2:values><v2:item>'||:pos||'</v2:item></v2:values></v2:item>'
     ||'</v2:listOfParamNameValues></v2:parameterNameValues>'
     ||'<v2:sizeOfDataChunkDownload>-1</v2:sizeOfDataChunkDownload></v2:reportRequest>'
     ||'<v2:userID>'||l_u||'</v2:userID><v2:password>'||l_p||'</v2:password>'
@@ -71,8 +78,8 @@ BEGIN
 END;
 """
     out = cur.var(oracledb.STRING)
-    cur.execute(plsql, {"rpt": RPT_PATH, "load": str(load_ess), "jdef": JOB_DEF,
-                        "batch": str(batch_id), "out": out})
+    cur.execute(plsql, {"rpt": RPT_PATH, "load": str(load_ess), "jdef": job_def,
+                        "batch": str(batch_id), "pos": str(arg_pos), "out": out})
     return out.getvalue()
 
 
@@ -83,17 +90,21 @@ def main():
     # Deploy the DM + its XML-output report wrapper together (single sanctioned
     # call; deletes prior versions, redeploys both so the report re-surfaces the
     # DM's parameters including the new P_BATCH_ID). Report name matches the path
-    # get_import_ess_id calls: DMT_ESS_CHILD_JOB_RPT.xdo.
+    # get_import_ess_id calls: DMT_ESS_CHILD_JOB_V2_RPT.xdo.
     cur.execute("""BEGIN DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT(
                        p_folder=>:f, p_dm_name=>:dm, p_rpt_name=>:rpt, p_xdm_xml=>:d); END;""",
-                {"f": FOLDER, "dm": DM_NAME, "rpt": "DMT_ESS_CHILD_JOB_RPT", "d": xdm})
+                {"f": FOLDER, "dm": DM_NAME, "rpt": RPT_NAME, "d": xdm})
     conn.commit()
-    print(f"Deployed {FOLDER}/{DM_NAME}.xdm + DMT_ESS_CHILD_JOB_RPT.xdo ({len(xdm)} bytes).")
+    print(f"Deployed {FOLDER}/{DM_NAME}.xdm + {RPT_NAME}.xdo ({len(xdm)} bytes).")
 
     if do_test:
         print("\n=== Parametrized runReport self-test (run 351 loads) ===")
         for batch, load in (("8101", "10010820"), ("8102", "10010821")):
             rid = run_report(cur, load, batch)
+            print(f"  batch {batch}  load {load}  -> import REQUESTID = {rid}")
+        print("=== Requisitions: batch id is argument 2 (run 251 loads; expect 10074973 / 10074977) ===")
+        for batch, load in (("7001", "10074966"), ("7002", "10074968")):
+            rid = run_report(cur, load, batch, job_def="RequisitionImportJob", arg_pos="2")
             print(f"  batch {batch}  load {load}  -> import REQUESTID = {rid}")
         print("=== Backward-compat test (no batch id -> proximity/absparent fallback) ===")
         rid = run_report(cur, "10010820", "")
