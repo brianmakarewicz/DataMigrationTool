@@ -1,44 +1,54 @@
 # Project Budgets
 
 ## Status
-**GOOD load FUNCTIONALLY BLOCKED. BAD row valid. All rows honestly accounted (FAILED with real Fusion errors).**
+**WORKING (2026-10-07). GOOD row LOADED in `PJO_PLAN_VERSIONS_B`, BAD row FAILED with the real
+Fusion error, 0 UNACCOUNTED.** Proof: local run 244 (prefix 93300), scenario
+`RegressionTest2610071114`:
 
-The earlier "E2E LOADED 3/3 on 2026-04-01 (integration_id=100000027, prefix=9123)" claim was a
-**reconciliation FALSE POSITIVE** — the rows never reached the Fusion base table. Verified live
-this session: nothing was created in `PJO_PLAN_VERSIONS_B` on 2026-04-01. The old reconciler used
-an "absence = LOADED" fallback (if the interface table showed no error, it assumed success), which
-reported LOADED without ever confirming a base-table row. The two-tier positive-verification recon
-was added 2026-04-02 specifically to kill that fallback, and the import-report harvest was added
-this session (#79) so per-row rejections carry their real Fusion message.
+| Row | Outcome | Fusion evidence |
+|---|---|---|
+| GOOD `93300RT-PJB-GOOD1` (CFIT022, Cost and Revenue Budget, LINE, Baseline) | LOADED | `PJO_PLAN_VERSIONS_B.PLAN_VERSION_ID` 100002666840879, plan status B (baselined, current), `PM_BUDGET_REFERENCE` = `93300RT-PJB-GOOD1` |
+| BAD `93300RT-PJB-BAD1` (project NOPROJ999) | FAILED | `[FUSION_ERROR] The project number NOPROJ999 doesn't exist in Oracle Fusion Project Portfolio Management. Enter a valid project number.` (from the BudgetsXfaceBIP import report, LIST_G_12) |
 
-### Why a GOOD load is functionally blocked on this pod
-Budgetary control is **not** the blocker — the plan type `Approved Cost Budget` has
-`BUDGETARY_CONTROLS_FLAG = N`. The real blockers to getting a row into the base table on this
-demo instance are functional (owned by the functional/setup owner, not this tool):
+What fixed it (owner-approved, from `docs/findings/known_good_ProjectBudgets.md`):
+1. **FBDI column 29 is the template marker**, not REQUEST_ID: `-1318020000`, or `-1318020001`
+   when any row in the file carries a flexfield attribute (the template's GenCSV macro does
+   exactly this). Without it Fusion drops quantities and fails LINE budgets.
+2. **The run prefix goes on `SRC_BUDGET_LINE_REFERENCE` (so `RECON_KEY` and Fusion
+   `PM_BUDGET_REFERENCE`) and `PLAN_VERSION_NAME`.** A value that cannot carry the prefix within
+   its limit (100 / 240) fails the row with `[TRANSFORM_ERROR]`; it is never truncated.
+3. **Recon data model V2** (`DMT_PRJ_BUDGET_RECON_V2_DM` / `_RPT`, deployed alongside the original
+   `PRJ_BUDGET_DM`) scopes the run by `PM_BUDGET_REFERENCE LIKE prefix` OR the prefixed project
+   number, so a budget on an EXISTING project reconciles. Interface rows are purged by Fusion
+   (BudgetImportReport runs with PURGE), so the real per-row error comes from the BudgetsXfaceBIP
+   report; the DM returns the Contract v1 `#IMPORT_REPORT#` marker on INTERFACE/ERROR rows.
+4. **Regression rows** mirror the owner's known-good CFIT022 record (BAD = NOPROJ999). The old
+   `Approved Cost Budget` rows on the in-run sponsored RT projects could never load
+   (`PJO_FPT_CANT_BUD_SPON_PRJ`); earlier write-once scenarios keep them untouched.
 
-1. **Sponsored (grants) projects require an award.** The migrated RT projects use a sponsored
-   grants project type, so Fusion demands an `AWARD_NUMBER` and rejects the budget with
-   `PJO_BOI_AWARD_NUM_NOT_PROVD`. Awards are not provisioned on this pod (grants are blocked).
-2. **Non-sponsored projects need resource-level budget data.** For non-sponsored projects,
-   `Approved Cost Budget` is configured at the resource-assignment level, so a summary-level
-   budget row is rejected — it needs a `TASK_NUMBER` and `RESOURCE_NAME`.
+**Base table / match key (record-accounting rule):** base table `PJO_PLAN_VERSIONS_B` (interface
+`PJO_PLAN_VERSIONS_XFACE` is distinct and purged). Match key: `RECON_KEY` =
+prefixed `SRC_BUDGET_LINE_REFERENCE` = `PJO_PLAN_VERSIONS_B.PM_BUDGET_REFERENCE`; the Fusion id
+stored is `PLAN_VERSION_ID` in `FUSION_BUDGET_VERSION_ID`.
 
-Getting a GOOD row to land therefore needs either award provisioning or resource-level budget
-data from the functional owner. Until then GOOD rows are correctly reported FAILED with the real
-Fusion rejection message — honest accounting, which is what this tool is for.
+Each regression run creates one more baselined version of the Cost and Revenue Budget on
+CFIT022 (Fusion's behavior for `Create` without a plan version number).
 
-### The BAD row is valid
-`NOPROJ999` is a genuinely invalid project number and Fusion rejects it with the real error
-`PJO_XFACE_INVALID_PROJ_NUM` ("The project number NOPROJ999 doesn't exist..."). That is a correct,
-reportable failure.
+### History of the earlier "blocked" status
+The earlier "E2E LOADED 3/3 on 2026-04-01 (prefix 9123)" claim was a reconciliation false
+positive. The rows then targeted `Approved Cost Budget` on sponsored projects, which Fusion
+refuses (`PJO_FPT_CANT_BUD_SPON_PRJ`), and the generator left the template marker empty. Both
+are fixed above; the known-good comparison proved neither the ESS parameters nor budgetary
+control was the cause.
 
 ## Pipeline
 - Module: Projects
 - FBDI Template: PjoBudgetInterface.xlsm
-- Interface Table: PJO_BUDGET_INTERFACE
+- Interface Table: PJO_PLAN_VERSIONS_XFACE (template-level name PJO_BUDGET_INTERFACE)
+- Base Table: PJO_PLAN_VERSIONS_B
 - UCM Account: prj/projectControl/import
 - ESS Job: ImportBudgetsInterfaceData
-- ParameterList: UNKNOWN -- needs discovery
+- ParameterList: `#NULL` (no business value is an ESS parameter; verified against owner run 10071416)
 - Loader Type: SQLLOADER
 - Auth User: fin_impl
 
@@ -218,6 +228,26 @@ Previous test data failed because:
 4. `PROJECT_NAME = 'RT Project Good-1'` -- did not exist. Fixed to matching names from Fusion REST API.
 
 ## Known Issues
+Live accepted-standard (DMT_DESIGN section 7) violations still present in this object's code,
+all pre-existing and not introduced by the 2026-10-07 fix:
+- Procedures-only rule: `DMT_PRJ_BUDGET_FBDI_GEN_PKG.gen_budget_csv` (reads a table) and
+  `DMT_PRJ_BUDGET_RESULTS_PKG.resolve_report_ess_id` (calls the ESS capture) are private
+  functions, not on the permitted-function list.
+- Error-code contract: the four packages signal failure by RAISE, not an `x_error_code` OUT
+  parameter (codebase-wide retrofit, section 12).
+- One BEGIN/END per procedure: `apply_import_report` keeps nested BEGIN/EXCEPTION blocks that log
+  a WARN and leave rows for the unaccounted sweep; the transform's WHEN OTHERS handler uses the
+  shared backlog #14 nested block that `check_transform_error.py` requires.
+- Transform-stage errlog (`LOG ERRORS INTO DMT_TFM_ERRLOG`, PROPOSED) not adopted; the transform
+  uses the backlog #14 inline handler.
+- Recon report returns nine columns (adds SOURCE_REF / DMT_REFERENCE beyond the seven), which the
+  shared `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` reads as its tier-3 business key.
+- Run scoping in the recon DM uses the run prefix as a search value (`LIKE :P_PREFIX || '%'`),
+  which the Contract v1 P_PREFIX parameter allows but the "prefix is never a search value" rule
+  discourages; it was owner-approved for this fix because no request id or work-queue id survives
+  onto `PJO_PLAN_VERSIONS_B` for a non-partitioned object.
+
+Other notes:
 - BI SQL endpoint (`analyticsRes/v1/sql`) requires SSO auth -- returns login redirect with basic auth. Not usable from scripts.
 - GL period names not directly queryable via REST. Period format confirmed as `MM-YY` from PlanningOptions and previous BIP queries.
 - No projects currently at STATUS=LOADED in ATP, so ProjectBudgets validation upstream project check is bypassed (only enforced when at least one project is LOADED).
@@ -242,6 +272,11 @@ Previous test data failed because:
   read its import report; all siblings already did. Replayed against run 121: three UNACCOUNTED
   rows flipped to FAILED with real errors, 0 UNACCOUNTED. GOOD load is functionally blocked
   (award provisioning or resource-level budget data — functional owner).
+- 2026-10-07 (known-good fix): column-29 template marker, run prefix on the budget reference
+  and plan version name, recon DM V2 scoped by `PM_BUDGET_REFERENCE`, legacy `P_BATCH_ID` recon
+  path removed, regression rows mirror the known-good CFIT022 record. Local run 244 (prefix
+  93300): GOOD LOADED (plan version 100002666840879, status B), BAD FAILED with
+  `PJO_XFACE_INVALID_PROJ_NUM`, 0 UNACCOUNTED.
 
 ## Lessons Learned
 - **Never assume absence=LOADED without positive verification.** Two-tier BIP pattern queries both interface AND base tables. If neither has the row, it's FAILED, not silently LOADED.
