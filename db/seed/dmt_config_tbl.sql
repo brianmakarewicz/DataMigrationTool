@@ -275,3 +275,21 @@ begin
 exception when dup_val_on_index then null;
 end;
 /
+-- ARInvoices grouping stamp (owner decision 2026-10-07). AutoInvoice groups lines
+-- into invoices by its grouping rule, which on this pod ignores
+-- INTERFACE_LINE_ATTRIBUTE1, so two DMT source invoices with the same customer and
+-- dates merge into one Fusion invoice, and a leftover rejected interface line from
+-- an earlier run silently holds back a new run's lines. Y stamps 'DMT <run-prefixed
+-- invoice key>' into INTERNAL_NOTES (a mandatory grouping attribute), so each DMT
+-- invoice is its own Fusion invoice. Read once per batch by
+-- DMT_AR_TRANSFORM_PKG.TRANSFORM_LINES via DMT_UTIL_PKG.GET_CONFIG. MERGE inserts
+-- only when missing, so an administrator's later choice is never overwritten;
+-- re-running is a no-op.
+merge into "DMT_CONFIG_TBL" t
+using (select 'AR_GROUP_BY_DMT_INVOICE' config_key, 'Y' config_value,
+              'ARInvoices Y/N, default Y. Y = each AR line gets ''DMT <run-prefixed invoice key>'' in INTERNAL_NOTES (after any source note; the note is truncated, never the key). INTERNAL_NOTES is an AutoInvoice grouping attribute, so each DMT invoice is one Fusion invoice and old rejected interface rows cannot hold back new runs. N = source note unchanged; DMT invoices with equal grouping values may merge (one rejection fails all) and old rejected rows can hold back new runs until purged.' description
+       from dual) s
+on (t."CONFIG_KEY" = s.config_key)
+when not matched then insert ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY")
+     values (s.config_key, s.config_value, s.description, sysdate, 'DMT_OWNER');
+commit;

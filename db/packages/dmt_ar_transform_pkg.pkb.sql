@@ -7,6 +7,12 @@
 -- Applies run prefix to TRX_NUMBER and to the transaction flexfield key
 -- INTERFACE_LINE_ATTRIBUTE1 (lines and distributions alike).
 -- Applies dependent prefix to customer account numbers.
+-- Stamps 'DMT <invoice key>' into INTERNAL_NOTES (an AutoInvoice grouping
+-- attribute) when config AR_GROUP_BY_DMT_INVOICE = 'Y', so each DMT invoice is
+-- its own Fusion invoice.
+--
+-- REVISIONS:
+--   2026-10-07  BM  INTERNAL_NOTES grouping stamp (AR_GROUP_BY_DMT_INVOICE).
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_AR_TRANSFORM_PKG';
@@ -45,6 +51,7 @@
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_prefix        VARCHAR2(30);
+        l_group_by_dmt_inv VARCHAR2(1);   -- AR_GROUP_BY_DMT_INVOICE, read once per batch
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
 
@@ -56,6 +63,17 @@
             p_procedure      => 'TRANSFORM_LINES');
 
         l_prefix     := get_prefix(p_run_id);
+        -- Config DMT_CONFIG_TBL.AR_GROUP_BY_DMT_INVOICE (seeded 'Y'): stamp the DMT
+        -- invoice key into INTERNAL_NOTES so Fusion groups exactly one DMT invoice
+        -- per Fusion invoice. Read once per batch; only 'Y' stamps.
+        l_group_by_dmt_inv := DMT_UTIL_PKG.GET_CONFIG('AR_GROUP_BY_DMT_INVOICE');
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => 'TRANSFORM_LINES: AR_GROUP_BY_DMT_INVOICE = '
+                           || NVL(l_group_by_dmt_inv, '(not set)')
+                           || ' (Y = INTERNAL_NOTES carries the DMT invoice key).',
+            p_package   => C_PKG,
+            p_procedure => 'TRANSFORM_LINES');
 
 
         -- On reprocess: clear staging errors for rows being retried
@@ -396,7 +414,29 @@
                     s.HEADER_ATTRIBUTE13, s.HEADER_ATTRIBUTE14, s.HEADER_ATTRIBUTE15,
                     s.BU_NAME,
                     s.COMMENTS,
-                    s.INTERNAL_NOTES,
+                    -- INTERNAL_NOTES is a MANDATORY AutoInvoice grouping attribute (and a
+                    -- header-level internal text field, RA_CUSTOMER_TRX_ALL.INTERNAL_NOTES,
+                    -- VARCHAR2 240). With AR_GROUP_BY_DMT_INVOICE = 'Y' it carries
+                    -- 'DMT ' || the run-prefixed source invoice key (the SAME value as
+                    -- INTERFACE_LINE_ATTRIBUTE1 above), appended after any source note as
+                    -- '<note> | DMT <key>' -- the source note is truncated, never the key.
+                    -- Every line of one DMT invoice therefore groups onto its own Fusion
+                    -- invoice: two DMT invoices never merge, and a leftover rejected line
+                    -- from an earlier run never holds a new run's lines back (proven
+                    -- standalone, probes 97741/97742, docs/findings/known_good_ARInvoices.md).
+                    -- 'N' (or no key) passes the source note through unchanged.
+                    CASE
+                        WHEN l_group_by_dmt_inv = 'Y'
+                         AND DMT_UTIL_PKG.PREFIXED(l_prefix, NVL(s.INTERFACE_LINE_ATTRIBUTE1, s.TRX_NUMBER), 30) IS NOT NULL
+                        THEN CASE
+                                 WHEN s.INTERNAL_NOTES IS NULL
+                                 THEN 'DMT ' || DMT_UTIL_PKG.PREFIXED(l_prefix, NVL(s.INTERFACE_LINE_ATTRIBUTE1, s.TRX_NUMBER), 30)
+                                 ELSE SUBSTR(s.INTERNAL_NOTES, 1,
+                                             240 - LENGTH(' | DMT ' || DMT_UTIL_PKG.PREFIXED(l_prefix, NVL(s.INTERFACE_LINE_ATTRIBUTE1, s.TRX_NUMBER), 30)))
+                                      || ' | DMT ' || DMT_UTIL_PKG.PREFIXED(l_prefix, NVL(s.INTERFACE_LINE_ATTRIBUTE1, s.TRX_NUMBER), 30)
+                             END
+                        ELSE s.INTERNAL_NOTES
+                    END,
                     s.RESET_TRX_DATE_FLAG,
                     'STAGED',
                     SYSDATE

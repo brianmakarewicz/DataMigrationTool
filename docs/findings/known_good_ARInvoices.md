@@ -189,6 +189,40 @@ attributes with a GOOD row (a bad bill-to account, as below, is safe — proven 
 errored line left in the interface from an earlier run can silently hold back later GOOD rows,
 which DMT would report as UNACCOUNTED.
 
+### INTERNAL_NOTES grouping probes (2026-10-07, prefixes 97741 / 97742)
+
+Question: can DMT make AutoInvoice put each DMT source invoice on its own Fusion invoice? The
+pod's External Source grouping rule ignores `INTERFACE_LINE_ATTRIBUTE1`, so two DMT invoices with
+the same customer and dates merge (probes 97732-97734 above), and a rejected line left in the
+interface holds back later lines with the same grouping values. `INTERNAL_NOTES` is one of
+Oracle's mandatory grouping attributes and a header-level internal text field.
+
+CSV position: **289** of `RaInterfaceLinesAll.csv` (template label "Notes from Source", after the
+GenCSV column move; 287 = Business Unit Name, 288 = Comments). `DMT_AR_FBDI_GEN_PKG` already
+writes `INTERNAL_NOTES` at position 289. Script: `objects/ARInvoices/known_good/scripts/internal_notes_probe.py`
+(rows built from the known-good row 1; every row: Progress US Business Unit, External Source,
+Invoice, 30 Net, USD, bill-to 122133 / site 1430587, trx and GL date 2026/03/19; only
+`INTERNAL_NOTES`, the flexfield key, amount and (row C) memo line differ).
+
+| Load | Row | INTERNAL_NOTES | Result |
+|---|---|---|---|
+| 10074732 (import 10074736) | A, good | `DMT 97741A` | LOADED: customer_trx_id **1586950**, trx 103108, header INTERNAL_NOTES `DMT 97741A` |
+| 10074732 (import 10074736) | B, good, same grouping as A | `DMT 97741B` | LOADED as a **separate** invoice: customer_trx_id **1586951**, trx 103109 |
+| 10074732 (import 10074736) | C, bad memo line, same grouping as A/B | `DMT 97741C` | Rejected per row (*You must enter a valid memo line name...*); did not hold A or B back |
+| 10074738 (import 10074742) | D, good, same grouping as C, C still in the interface | `DMT 97742D` | LOADED: customer_trx_id **1586953**, trx 103110 -- **not held** by the leftover rejected C |
+
+Both proofs hold: different `INTERNAL_NOTES` split otherwise identical lines into two invoices, and
+a leftover rejected line no longer holds back a later load's good line. `INTERNAL_NOTES`
+round-trips to `RA_CUSTOMER_TRX_ALL.INTERNAL_NOTES`.
+
+Cleanup: InterfaceLoaderPurge **10074752** for load 10074732 (row C), arguments `2, , <id>, <id>,
+, ORA_FBDI, USER`; 0 interface rows remain for `9774%`. Load 10074738 left nothing in the
+interface. The base invoices 1586950, 1586951 and 1586953 remain.
+
+Adopted in DMT (owner decision 2026-10-07): `DMT_AR_TRANSFORM_PKG` stamps
+`'DMT ' || <run-prefixed invoice key>` (after any source note) into `INTERNAL_NOTES`, switchable
+through config `AR_GROUP_BY_DMT_INVOICE` (default Y).
+
 ### Cleanup
 
 All my interface leftovers were purged (InterfaceLoaderPurge 10073730 for load 10073678 and 10073739

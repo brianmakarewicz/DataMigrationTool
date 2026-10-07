@@ -66,13 +66,6 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|ARInvoices|DMT_AR_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/ARInvoices/query.sql does not match the SQL of the deployed DMT_AR_RECON_DM.xdm (query.sql names: DMT_AR_RECON_DM, DMT_GL_BAL_RECON_DM, DMT_REQ_RECON_DM)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-MIRROR|Assets|DMT_FA_ASSET_RECON_DM",
       "backlog": 215,
       "found": "2026-10-07",

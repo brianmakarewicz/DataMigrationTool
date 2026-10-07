@@ -42,6 +42,9 @@ REPORTS = [
     ("APInvoices",              "DMT_AP_RECON_DM",   "DMT_AP_RECON_RPT"),
     ("Customers",               "DMT_CUST_RECON_V3_DM", "DMT_CUST_RECON_V3_RPT"),
     ("ARInvoices",              "DMT_AR_RECON_DM",   "DMT_AR_RECON_RPT"),
+    # ARInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
+    # interface error aggregation scoped to the load (V1 hit ORA-01489).
+    ("ARInvoices",              "DMT_AR_RECON_V2_DM", "DMT_AR_RECON_V2_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
     # Items V2 (2026-10-06): deployed alongside the original DMT_ITEM_RECON_DM

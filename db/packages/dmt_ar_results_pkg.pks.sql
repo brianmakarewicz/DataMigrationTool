@@ -27,6 +27,11 @@ AS
 -- distribution row for that key is positive proof the line's distributions
 -- landed.
 --
+-- After the per-row apply, RECONCILE_BATCH propagates each rejected row's real
+-- Fusion error to the other rows of the same Fusion invoice (AutoInvoice
+-- grouping), before the shared UNACCOUNTED sweep (design section 5,
+-- whole-document rejection, decided 2026-10-07).
+--
 -- The BIP report path + CONTRACT_VERSION are read from DMT_BIP_REPORT_TBL at
 -- runtime by the shared fetch. CEMLI_CODE: 'ARInvoices'.
 -- ============================================================

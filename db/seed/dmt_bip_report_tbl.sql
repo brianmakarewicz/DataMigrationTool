@@ -5,7 +5,7 @@
 -- stack's own BIP catalog under /Custom/DMT2/ (never /Custom/DMT/ -- the
 -- frozen stack's catalog).
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/DMT_AR_RECON_DM.xdm','/Custom/DMT2/ARInvoices/DMT_AR_RECON_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V2_DM.xdm','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V2_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -1565,9 +1565,11 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'ARInvoices'                                             cemli_code,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_DM.xdm'           dm_catalog_path,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_RPT.xdo'          report_catalog_path,
-           'AR AutoInvoice import reconciliation (Contract v1, multi-tier)' notes,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V2_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V2_RPT.xdo'       report_catalog_path,
+           'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V2 (2026-10-07): '
+           || 'interface error aggregation scoped to the load (V1 hit ORA-01489); '
+           || 'deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_RA_LINES_TFM_TBL'                                  tfm_table,
            'FUSION_CUSTOMER_TRX_ID'                                fusion_id_column,

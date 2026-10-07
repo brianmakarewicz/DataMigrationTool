@@ -34,17 +34,19 @@ E2E LOADED
 Live standard violations / gaps still present in this object's code (section 5 / section 7 of
 `docs/DMT_DESIGN.html`):
 
-1. **Whole-document rejection is not yet propagated across grains (section 5, decided
-   2026-10-07).** AutoInvoice's invalid-lines rule "Reject invoice" holds back every valid line
-   that would have joined an invoice with an errored line, and writes NO error for the held lines
-   (proven: Fusion 10073725 / 10073734, `docs/findings/known_good_ARInvoices.md`). DMT does not
-   yet quote the errored line's real Fusion error onto those held lines (or onto a rejected
-   line's distributions, whose interface rows carry no error of their own), so such rows would be
-   left UNACCOUNTED. Doing it needs the reconciliation report to identify the invoice a held line
-   would have grouped into (AutoInvoice grouping rules, per batch source) — a new BIP version.
-   The regression BAD row is deliberately on its own invoice (different bill-to account), so the
-   current scenario is not affected; the cross-grain regression scenario the rule requires is
-   not built yet.
+1. **Whole-document rejection — implemented 2026-10-07, with these limits.**
+   `DMT_AR_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` quotes a rejected line's (or distribution's)
+   real Fusion error onto every other non-LOADED line and distribution DMT sent with the same
+   AutoInvoice grouping values, because the AR document is the Fusion invoice, not the DMT source
+   invoice (section 5 AR note, decided 2026-10-07). With config `AR_GROUP_BY_DMT_INVOICE = Y`
+   (default) the transform stamps `DMT <invoice key>` into INTERNAL_NOTES, so the Fusion invoice
+   equals the DMT invoice and an error spreads only within it. Limits: (a) the grouping key is built from
+   the values DMT sent, compared literally; AutoInvoice compares the ids it derives from them
+   (customer, site, type, terms), so two different spellings that resolve to the same id would
+   group in Fusion but not here; (b) the pod's grouping rule is hard-coded (Oracle mandatory set
+   plus SALES_ORDER), not read at runtime; (c) keyset paging of the
+   recon report orders by RECORD_KEY = ATTRIBUTE1, which every line of one DMT invoice shares,
+   so a page boundary inside such a run of rows can drop one (only above 5,000 rows).
 2. **Null transaction-flexfield key is not synthesized.** A line with neither
    `INTERFACE_LINE_ATTRIBUTE1` nor `TRX_NUMBER` in STG reaches the FBDI with a NULL key (the
    section 7 rule "Null FBDI source references are synthesized deterministically" is not applied).
@@ -91,6 +93,14 @@ models both with one STG + one TFM table each.
    fix was required.
 
 ## History
+- 2026-10-07 cross-grain propagation (branch `fix-ar-cross-grain-propagation`):
+  `PROPAGATE_DOCUMENT_ERRORS` quotes a rejected row's real error onto the rest of its Fusion
+  invoice; line apply pinned by ATTRIBUTE2; INTERNAL_NOTES grouping stamp behind config
+  `AR_GROUP_BY_DMT_INVOICE` (default Y); recon report V2 (`DMT_AR_RECON_V2_DM`) fixes ORA-01489
+  when a line error carries INTERFACE_DISTRIBUTION_ID = 0; cross-grain regression rows RT-AR-XG-*.
+  Proof run 249 (prefix 93305, scenario RegressionTest2610071705): 3 lines LOADED (incl. XG-B,
+  same grouping values as XG-A but its own Fusion invoice), XG-A line 2 FAILED with its own
+  memo-line error, XG-A line 1 and both XG-A distributions FAILED quoting it, 0 UNACCOUNTED.
 - 2026-10-07 known-good fixes (branch `fix-ar-invoices-known-good`): INTERFACE_LINE_ATTRIBUTE1
   is always run-prefixed (lines and distributions); the hardcoded fallback context
   `DMT Migration` is gone and a line without a context is rejected at pre-validation; the extra

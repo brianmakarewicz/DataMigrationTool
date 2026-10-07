@@ -286,7 +286,8 @@ def main():
         "DMT_GL_INTERFACE_STG_TBL",
         # Project Budgets
         "DMT_PRJ_BUDGET_STG_TBL",
-        # AR
+        # AR (distributions first: they reference their line)
+        "DMT_RA_DISTS_STG_TBL",
         "DMT_RA_LINES_STG_TBL",
         # AP lines → invoices
         "DMT_AP_INVOICE_LINES_INT_STG_TBL",
@@ -1186,7 +1187,86 @@ def main():
         """, {"bu": AR_BU, "bill_acct": bill_acct, "bill_site": bill_site,
               "amt": amount, "descr": desc, "attr1": attr1, "memo": memo, "src": src},
         label=f"{label} AR Invoice: {src}")
+
+    # 19b. AR CROSS-GRAIN failure scenario (design section 5, "Whole-document
+    #      rejection carries the real error to every grain", decided 2026-10-07;
+    #      backlog #194). AutoInvoice's "Reject invoice" rule holds back every
+    #      valid line it groups onto an invoice that has a rejected line, and
+    #      writes NO error for them. With AR_GROUP_BY_DMT_INVOICE = 'Y' (default)
+    #      the transform stamps 'DMT <invoice key>' into INTERNAL_NOTES, a
+    #      mandatory grouping attribute, so one DMT invoice = one Fusion invoice.
+    #      XG-A: one DMT invoice (ATTRIBUTE1 86753201), two lines:
+    #            line 1 fully valid; line 2's ONLY defect is a nonexistent memo
+    #            line name -- a LINE-level field, NOT a grouping attribute, so
+    #            both lines still group onto one Fusion invoice. Each line has one
+    #            valid REV distribution (100%, account copied from a LOADED
+    #            Progress US invoice: 1001-0000-00000-44105-0000-0000-00000000).
+    #      XG-B: a SEPARATE DMT invoice (ATTRIBUTE1 86753202), one valid line with
+    #            the SAME source grouping attributes as XG-A (bill-to, site, dates,
+    #            type, terms, currency, conversion, no sales order). Only the DMT
+    #            INTERNAL_NOTES stamp tells the two apart, so XG-B must stay its own
+    #            Fusion invoice and LOAD (with the stamp off it would merge into
+    #            XG-A and be held back).
+    #      Expected: XG-A line 2 FAILED with its own real error; XG-A line 1 and
+    #      both XG-A distributions FAILED quoting it ("Rejected with document:
+    #      line <attr1>/2: ..."); XG-B LOADED. Same BU + batch source as the GOOD
+    #      rows (one partition, one job). TRX_DATE/GL_DATE 2026-03-18 differ from
+    #      RT-AR-KG-G2 (same bill-to 70075).
+    XG_DATE = "2026-03-18"
+    for src, amount, desc, memo, attr1, attr2, label in [
+        ("RT-AR-XG-A1", 300.00, "XG-A line 1: valid line held with its invoice",
+         "Tuition and Fees",            "86753201", "1", "XG-GOOD-SIBLING"),
+        ("RT-AR-XG-A2-BAD", 200.00, "BAD XG-A line 2: invalid memo line (line-level only)",
+         "DMT XG INVALID MEMO LINE",    "86753201", "2", "BAD"),
+        ("RT-AR-XG-B1", 150.00, "XG-B line 1: valid separate invoice, same grouping as XG-A",
+         "Tuition and Fees",            "86753202", "1", "GOOD"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_RA_LINES_STG_TBL (
+                BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
+                TERM_NAME, TRX_DATE, GL_DATE,
+                TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER, BILL_CUSTOMER_SITE_NUMBER,
+                LINE_TYPE, DESCRIPTION,
+                CURRENCY_CODE, CONVERSION_TYPE, CONVERSION_RATE,
+                AMOUNT, QUANTITY, UNIT_SELLING_PRICE,
+                INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1,
+                INTERFACE_LINE_ATTRIBUTE2, DEFAULT_TAXATION_COUNTRY,
+                MEMO_LINE_NAME, SOURCE_ID
+            ) VALUES (
+                :bu, 'External Source', 'Invoice',
+                '30 Net', TO_DATE(:dt, 'YYYY-MM-DD'), TO_DATE(:dt, 'YYYY-MM-DD'),
+                NULL, '70075', '245921',
+                'LINE', :descr,
+                'USD', 'User', 1,
+                :amt, 1, :amt,
+                'EXTERNAL_SOURCE', :attr1,
+                :attr2, 'US',
+                :memo, :src
+            )
+        """, {"bu": AR_BU, "dt": XG_DATE, "amt": amount, "descr": desc,
+              "attr1": attr1, "attr2": attr2, "memo": memo, "src": src},
+        label=f"{label} AR Invoice (cross-grain): {src}")
     tag_scenario(cur, "DMT_RA_LINES_STG_TBL", scenario_id)
+
+    for src, amount, attr1, attr2 in [
+        ("RT-AR-XG-A1-REV", 300.00, "86753201", "1"),
+        ("RT-AR-XG-A2-BAD-REV", 200.00, "86753201", "2"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_RA_DISTS_STG_TBL (
+                BU_NAME, ACCOUNT_CLASS, AMOUNT, PERCENT,
+                INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1, INTERFACE_LINE_ATTRIBUTE2,
+                SEGMENT1, SEGMENT2, SEGMENT3, SEGMENT4, SEGMENT5, SEGMENT6, SEGMENT7,
+                SOURCE_ID
+            ) VALUES (
+                :bu, 'REV', :amt, 100,
+                'EXTERNAL_SOURCE', :attr1, :attr2,
+                '1001', '0000', '00000', '44105', '0000', '0000', '00000000',
+                :src
+            )
+        """, {"bu": AR_BU, "amt": amount, "attr1": attr1, "attr2": attr2, "src": src},
+        label=f"AR Distribution (cross-grain): {src}")
+    tag_scenario(cur, "DMT_RA_DISTS_STG_TBL", scenario_id)
 
     # ====================================================================
     # 20. GL JOURNALS (DMT_GL_INTERFACE_STG_TBL)
