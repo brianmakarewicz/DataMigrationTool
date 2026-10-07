@@ -17,11 +17,15 @@
 
     -- --------------------------------------------------------
     -- Private: SOAP HTTP POST with Basic Auth (same pattern as DMT_LOADER_PKG)
+    -- p_username / p_password (optional): authenticate as a per-object Fusion
+    -- user (DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS); NULL = the global user.
     -- --------------------------------------------------------
     FUNCTION soap_http (
         p_url         IN VARCHAR2,
         p_soap_action IN VARCHAR2,
-        p_body        IN CLOB
+        p_body        IN CLOB,
+        p_username    IN VARCHAR2 DEFAULT NULL,
+        p_password    IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB IS
         l_req      UTL_HTTP.REQ;
         l_resp     UTL_HTTP.RESP;
@@ -33,7 +37,7 @@
         l_auth     VARCHAR2(500);
     BEGIN
         -- Central encode+CRLF-strip (was a private copy of the same logic)
-        l_auth := DMT_UTIL_PKG.BASIC_AUTH_HEADER;
+        l_auth := DMT_UTIL_PKG.BASIC_AUTH_HEADER(p_username => p_username, p_password => p_password);
 
         UTL_HTTP.SET_RESPONSE_ERROR_CHECK(FALSE);
         UTL_HTTP.SET_TRANSFER_TIMEOUT(300);
@@ -679,9 +683,13 @@
     -- GET_ESS_OUTPUT_XML
     -- Downloads ESS output ZIP, extracts the BIP XML report file.
     -- Returns as CLOB. Used for Import Report error parsing.
+    -- p_username / p_password: optional submitter credentials (see spec);
+    -- NULL keeps the global-user behaviour for every existing caller.
     -- ============================================================
     FUNCTION GET_ESS_OUTPUT_XML (
-        p_request_id IN NUMBER
+        p_request_id IN NUMBER,
+        p_username   IN VARCHAR2 DEFAULT NULL,
+        p_password   IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB IS
         l_zip      BLOB;
         l_entries  t_zip_entries;
@@ -692,7 +700,7 @@
         l_lang_ctx INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
         l_warning  INTEGER;
     BEGIN
-        l_zip := GET_ESS_ZIP(p_request_id);
+        l_zip := GET_ESS_ZIP(p_request_id => p_request_id, p_username => p_username, p_password => p_password);
         IF l_zip IS NULL THEN
             RETURN NULL;
         END IF;
@@ -1111,6 +1119,15 @@
         l_tag_start    INTEGER;
         l_val_start    INTEGER;
         l_val_end      INTEGER;
+        -- Per-object Fusion credentials (DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS). The
+        -- report child is submitted by Fusion as the user that submitted the
+        -- import, and getESSJobStatus / downloadESSJobExecutionDetails refuse
+        -- another user's request with HTTP 500 (FND_CMN_SYS_ERR) -- proven for
+        -- Grants (PPM_IMPL submit, FIN_IMPL poll), docs/findings/known_good_Grants.md.
+        -- A CEMLI with no per-object user falls back to the global user, so its
+        -- behaviour is unchanged.
+        l_ess_user     VARCHAR2(100);
+        l_ess_pass     VARCHAR2(100);
     BEGIN
         -- Look up the report job definition for this CEMLI.
         -- If not seeded, this CEMLI has no report child â€” return immediately.
@@ -1128,6 +1145,8 @@
             C_PROC || ' start. Import ESS: ' || p_import_ess_id ||
             ', report job def: ' || l_report_job_def,
             'INFO', C_PKG, C_PROC);
+
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code, x_username => l_ess_user, x_password => l_ess_pass);
 
         l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
         l_bip_user := NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_USERNAME'), DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME'));
@@ -1220,7 +1239,9 @@
                 l_poll_resp := soap_http(
                     p_url         => RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/') || C_STATUS_URL,
                     p_soap_action => C_ERP_NS || 'getESSJobStatus',
-                    p_body        => TO_CLOB(l_poll_body));
+                    p_body        => TO_CLOB(l_poll_body),
+                    p_username    => l_ess_user,
+                    p_password    => l_ess_pass);
             EXCEPTION
                 WHEN OTHERS THEN
                     -- Transient transport fault on the STATUS call must never be
@@ -1333,7 +1354,9 @@
         BEGIN
             ENUMERATE_ESS_FILES(
                 p_ess_job_id => l_report_ess_job_id,
-                p_request_id => l_report_id);
+                p_request_id => l_report_id,
+                p_username   => l_ess_user,
+                p_password   => l_ess_pass);
         EXCEPTION
             WHEN OTHERS THEN
                 DMT_UTIL_PKG.LOG(p_run_id,
