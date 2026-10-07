@@ -71,11 +71,24 @@ button does nothing.
 
 **This is now handled for you.** `build_local_db.sh` runs
 `db/tools/provision_apex_images.sh` on every build. That step is idempotent and
-version-checked: if the served `images/` folder already holds APEX 26.1 it does
-nothing; otherwise it copies the image set from the known-good 26.1 source
-(`APEXResourceTracker/cicd/docker/downloads/apex/images`), verifies
-`images/apex_version.txt` says 26.1, and — when `dmt2-ords` is running — confirms
-`http://localhost:8182/i/apex_version.txt` serves HTTP 200. You can also run it
-standalone: `sh db/tools/provision_apex_images.sh`. Override the source or
-destination with `APEX_IMAGES_SRC` / `APEX_IMAGES_DEST` and the expected version
-with `APEX_VERSION`.
+version-checked, and it never touches the database:
+
+- **Destination.** It writes to the host folder that the `dmt2-ords` container
+  actually bind-mounts at `/opt/oracle/apex` (read from `docker inspect`), plus
+  `/images`. If that container does not exist it falls back to
+  `<repo>/apex/installer/apex/images`. `APEX_IMAGES_DEST` overrides both.
+- **Source.** Set `APEX_IMAGES_SRC` to a populated APEX 26.1 `images/` folder. If
+  it is unset, the script uses the sibling-workspace folder
+  `../APEXResourceTracker/cicd/docker/downloads/apex/images` when it exists. No
+  machine-specific path is committed.
+- **Behaviour.** If the destination already holds APEX 26.1, it copies nothing.
+  Otherwise it copies the source in additively (it never deletes files from the
+  destination) and verifies `images/apex_version.txt` says 26.1. If no source is
+  configured, it prints a warning and exits successfully, so the DB build still
+  works on machines and CI runners without the image set.
+- **Live check.** When `dmt2-ords` is running, it requires
+  `http://localhost:8182/i/apex_version.txt` to return HTTP 200 with version 26.1,
+  and fails the step otherwise.
+
+You can also run it on its own: `sh db/tools/provision_apex_images.sh`. The
+expected version can be changed with `APEX_VERSION`.

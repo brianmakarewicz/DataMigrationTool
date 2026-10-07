@@ -126,8 +126,10 @@ echo "Logs: /tmp/dmt2_install.log, /tmp/dmt2_lookup_install.log"
 # serves at "/i/". Those ~29k 26.1 image files live on the apex/installer/apex
 # bind-mount but are NOT committed to git, so a fresh clone or rebuild leaves
 # the folder empty and the browser login to the console breaks (unstyled page,
-# dead Sign In button). This step restores them from the known-good 26.1 source
-# if missing or version-mismatched. Idempotent + version-checked — a no-op once
-# the right images are already in place. Never touches the DB.
+# dead Sign In button). This step restores them from APEX_IMAGES_SRC (see the
+# script header) into the folder dmt2-ords actually mounts, if missing or
+# version-mismatched. Idempotent + version-checked — a no-op once the right
+# images are already in place; only warns (never fails the build) when no image
+# source is configured. Never touches the DB.
 echo "Ensuring APEX /i/ static images are present (backlog #159) ..."
 sh "$DIR/tools/provision_apex_images.sh"
