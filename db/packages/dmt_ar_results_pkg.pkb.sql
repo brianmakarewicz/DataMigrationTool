@@ -74,6 +74,22 @@ AS
     -- Guard against it so a marker never produces a FAILED with fake text.
     C_IMPORT_MARKER CONSTANT VARCHAR2(30) := '#IMPORT_REPORT#';
 
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
+    -- Working set: "line TARGET_LINE_SEQ is on the same Fusion invoice as the
+    -- source row SOURCE_SEQ (an AR line or distribution with its own real Fusion
+    -- error) and must carry QUOTED_ERROR". The target line's flexfield key rides
+    -- along so its distributions can be found without a second grouping pass.
+    TYPE T_DOC_PAIR IS RECORD (
+        TARGET_LINE_SEQ   NUMBER,          -- DMT_RA_LINES_TFM_TBL.TFM_SEQUENCE_ID
+        TARGET_CONTEXT    VARCHAR2(150),
+        TARGET_ATTRIBUTE1 VARCHAR2(150),
+        TARGET_ATTRIBUTE2 VARCHAR2(150),
+        SOURCE_KIND       VARCHAR2(4),     -- 'LINE' | 'DIST'
+        SOURCE_SEQ        NUMBER,          -- TFM_SEQUENCE_ID in the source's own table
+        QUOTED_ERROR      VARCHAR2(4000)   -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
+
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_ARINVOICES (private)
     -- The Contract v1 apply for both ARInvoices tiers, Option A shape. One shared
@@ -373,20 +389,6 @@ AS
     -- SELECT (the only place the grouping attributes are listed), then ONE static
     -- bulk UPDATE (FORALL) per target table. NO dynamic SQL; NO COMMIT (caller owns the txn).
     -- --------------------------------------------------------
-    -- Working set: "line TARGET_LINE_SEQ is on the same Fusion invoice as the
-    -- source row SOURCE_SEQ (an AR line or distribution with its own real Fusion
-    -- error) and must carry QUOTED_ERROR". The target line's flexfield key rides
-    -- along so its distributions can be found without a second grouping pass.
-    TYPE T_DOC_PAIR IS RECORD (
-        TARGET_LINE_SEQ   NUMBER,          -- DMT_RA_LINES_TFM_TBL.TFM_SEQUENCE_ID
-        TARGET_CONTEXT    VARCHAR2(150),
-        TARGET_ATTRIBUTE1 VARCHAR2(150),
-        TARGET_ATTRIBUTE2 VARCHAR2(150),
-        SOURCE_KIND       VARCHAR2(4),     -- 'LINE' | 'DIST'
-        SOURCE_SEQ        NUMBER,          -- TFM_SEQUENCE_ID in the source's own table
-        QUOTED_ERROR      VARCHAR2(4000)   -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
-    );
-    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
         p_run_id        IN NUMBER,
