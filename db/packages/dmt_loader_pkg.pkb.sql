@@ -1779,13 +1779,11 @@
     --     spawn-per-partition: no CHILD_PARTITION_COLUMN in DMT_CEMLI_SPLIT_CFG,
     --     no PARTITION_KEYS_PROC). Same shape as the Purchasing family; it reuses
     --     po_submit_and_reconcile_one and settles inline (g_reconciled_inline).
-    --   * ARInvoices — GROUPED by (BU_NAME, BATCH_SOURCE_NAME). AR AutoInvoice is
-    --     a TWO-job flow: loadAndImportData chains AutoInvoiceImportEss (staging
-    --     only), then a SECOND AutoInvoiceMasterEss job actually creates the
-    --     transactions. That extra job is NOT in po_submit_and_reconcile_one, so
-    --     ARInvoices uses ar_submit_and_reconcile_one below (identical to the PO
-    --     helper plus the AR Master block copied verbatim from the retired nested
-    --     submit_and_reconcile_one).
+    --   * ARInvoices — GROUPED by (BU_NAME, BATCH_SOURCE_NAME). loadAndImportData
+    --     chains AutoInvoiceImportEss, which creates the transactions itself (base
+    --     REQUEST_ID = the import id). ARInvoices uses ar_submit_and_reconcile_one
+    --     below. (The former second AutoInvoiceMasterEss job was removed -- see
+    --     docs/findings/known_good_ARInvoices.md.)
     --   * MiscReceipts — SINGLE-LOAD SYNC. loadAndImportData does not chain an
     --     import for INV transactions (interfaceDetails is DMT-local, not a real
     --     Fusion FUN_ERP_INTERFACE_OPTIONS row), so the import step submits
@@ -1800,12 +1798,8 @@
     -- ========================================================================
 
     -- Shared helper for ARInvoices: submit one (BU, batch source) group's FBDI zip,
-    -- poll load+import ESS, run the AutoInvoiceMasterEss second job, reconcile via
-    -- BIP. Identical to po_submit_and_reconcile_one EXCEPT for the AR two-job Master
-    -- block (copied verbatim from the retired nested submit_and_reconcile_one AR
-    -- special case): once the import (staging) job SUCCEEDs, submit
-    -- AutoInvoiceMasterEss and re-point x_import_ess_id at it -- THAT job creates the
-    -- transactions and is the one reconciliation keys against. Sets g_reconciled_inline.
+    -- poll load + the chained AutoInvoiceImportEss (which creates the transactions),
+    -- reconcile via BIP against that import request. Sets g_reconciled_inline.
     PROCEDURE ar_submit_and_reconcile_one (
         p_run_id          IN NUMBER,
         p_cemli_code      IN VARCHAR2,
@@ -1879,7 +1873,7 @@
                 x_import_ess_id := NULL;
         END;
 
-        -- Poll Import (staging) job.
+        -- Poll Import job (AutoInvoiceImportEss -- creates the transactions).
         IF x_import_ess_id IS NOT NULL THEN
             COMMIT;
             DMT_UTIL_PKG.LOG(p_run_id,
@@ -1890,117 +1884,18 @@
         END IF;
 
         -- ============================================================
-        -- AR AutoInvoice is a TWO-job flow.
-        -- loadAndImportData chains AutoInvoiceImportEss, which ONLY stages
-        -- rows into RA_INTERFACE_LINES_ALL and reports SUCCEEDED without
-        -- importing anything. The transactions are actually created by a
-        -- SECOND job, AutoInvoiceMasterEss ("Import Receivables Transactions
-        -- Using AutoInvoice"). Without it, good invoices sit at
-        -- INTERFACE_STATUS = NULL forever. So once the import (staging) job
-        -- has SUCCEEDED, submit the Master job and make IT the job the
-        -- reconciler waits on. (Proven contract: MCCS RICE_005 AR package.)
+        -- AR AutoInvoice is a ONE-job flow: the import job creates the invoices.
+        -- loadAndImportData chains AutoInvoiceImportEss ("Import AutoInvoice"),
+        -- and THAT job creates the transactions: in the owner's known-good run
+        -- (Fusion 10071776) and in standalone proofs 10073584 / 10073734,
+        -- RA_CUSTOMER_TRX_ALL.REQUEST_ID equals the AutoInvoiceImportEss request
+        -- id. Fusion itself then chains AutoInvoiceMainEss (the Execution Report).
+        -- The former extra AutoInvoiceMasterEss submission was removed
+        -- (docs/findings/known_good_ARInvoices.md, code change 3): it was not
+        -- needed, every standalone Master attempt on the pod aborted, it sent all
+        -- its arguments in ONE <paramList> element, and it re-pointed
+        -- reconciliation at the wrong job. Reconciliation keys on the import id.
         -- ============================================================
-        IF x_import_ess_id IS NOT NULL
-           AND l_load_status IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
-            DECLARE
-                l_master_ess_id  VARCHAR2(100);
-                l_trx_source_id  VARCHAR2(100);
-                l_batch_source   VARCHAR2(500);
-                l_bu_count       NUMBER;
-                l_param_master   VARCHAR2(4000);
-                l_resp           CLOB;
-                l_tag_s          INTEGER;
-                l_val_s          INTEGER;
-                l_val_e          INTEGER;
-                l_master_status  VARCHAR2(50);
-            BEGIN
-                -- Batch source name is the 2nd comma slot of the AR param list
-                -- (built as BU_NAME,BATCH_SOURCE_NAME,DATE,...).
-                l_batch_source := SUBSTR(p_param_list,
-                                         INSTR(p_param_list, ',') + 1,
-                                         INSTR(p_param_list, ',', 1, 2) - INSTR(p_param_list, ',') - 1);
-
-                -- Resolve the batch source NAME to its numeric transaction-source id
-                -- (no hardcoded Fusion ids -- setup table read at preflight).
-                l_trx_source_id := DMT_UTIL_PKG.GET_LOOKUP('BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID', l_batch_source);
-
-                -- Distinct BU count across this run's AR rows -- position 1 of the
-                -- Master param list.
-                SELECT COUNT(DISTINCT BU_NAME) INTO l_bu_count
-                FROM   DMT_RA_LINES_TFM_TBL
-                WHERE  RUN_ID = p_run_id;
-
-                -- Master param list: tilde(~)-separated with #NULL for empty
-                -- slots (NOT empty strings -- empty strings make Fusion collapse
-                -- the slots so the trailing flag lands in the wrong position;
-                -- that was the documented run-179 blocker). Slot layout, matching
-                -- MCCS exactly:
-                --   pos1  = COUNT(DISTINCT BU_NAME)
-                --   pos2  = #NULL
-                --   pos3  = numeric trx_source_id
-                --   pos4  = current date YYYY-MM-DD (an OPEN period)
-                --   pos5..24 = #NULL
-                --   then N, Y, trailing ~
-                l_param_master :=
-                    l_bu_count || '~#NULL~' || l_trx_source_id || '~' ||
-                    TO_CHAR(SYSDATE, 'YYYY-MM-DD') ||
-                    '~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~' ||
-                    '#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~N~Y~';
-
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'AR two-job flow: import (staging) job ' || x_import_ess_id ||
-                    ' SUCCEEDED. Submitting AutoInvoiceMasterEss. ParameterList: ' || l_param_master,
-                    'INFO', C_PKG, p_obj || ' > ' || C_PROC);
-
-                -- Submit AutoInvoiceMasterEss via the same submitESSJobRequest
-                -- SOAP envelope pattern used for PollTMEssJob (MiscReceipts).
-                l_resp := soap_http(
-                    p_url            => erp_soap_url,
-                    p_soap_action    => 'http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/submitESSJobRequest',
-                    p_body           => TO_CLOB(
-                        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' ||
-                        'xmlns:typ="http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/types/">' ||
-                        '<soapenv:Header/><soapenv:Body>' ||
-                        '<typ:submitESSJobRequest>' ||
-                        '<typ:jobPackageName>/oracle/apps/ess/financials/receivables/transactions/autoInvoices</typ:jobPackageName>' ||
-                        '<typ:jobDefinitionName>AutoInvoiceMasterEss</typ:jobDefinitionName>' ||
-                        '<typ:paramList>' || l_param_master || '</typ:paramList>' ||
-                        '</typ:submitESSJobRequest>' ||
-                        '</soapenv:Body></soapenv:Envelope>'),
-                    p_run_id         => p_run_id,
-                    p_username       => p_username,
-                    p_password       => p_password);
-
-                l_tag_s := DBMS_LOB.INSTR(l_resp, '<result');
-                IF l_tag_s > 0 THEN
-                    l_val_s := DBMS_LOB.INSTR(l_resp, '>', l_tag_s) + 1;
-                    l_val_e := DBMS_LOB.INSTR(l_resp, '</result>', l_val_s);
-                    IF l_val_e > l_val_s THEN
-                        l_master_ess_id := DBMS_LOB.SUBSTR(l_resp, l_val_e - l_val_s, l_val_s);
-                    END IF;
-                END IF;
-
-                IF l_master_ess_id IS NULL THEN
-                    RAISE_APPLICATION_ERROR(-20051,
-                        'AR: failed to submit AutoInvoiceMasterEss. Response: ' ||
-                        DBMS_LOB.SUBSTR(l_resp, 500, 1));
-                END IF;
-
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'AutoInvoiceMasterEss submitted. ESS ID: ' || l_master_ess_id ||
-                    ' (' || p_group_label || ').',
-                    'INFO', C_PKG, p_obj || ' > ' || C_PROC);
-
-                -- Poll the Master job to terminal -- do NOT raise on error.
-                POLL_ESS_JOB(p_run_id, l_master_ess_id, 1800, FALSE, p_obj, p_cemli_code,
-                             l_master_status, p_username => p_username, p_password => p_password);
-
-                -- Re-point x_import_ess_id at the Master job: THIS is the job that
-                -- creates the transactions, so it is the one reconciliation must
-                -- wait on and key against.
-                x_import_ess_id := l_master_ess_id;
-            END;
-        END IF;
 
         -- Capture the Report child ESS job + parse import-report errors (generic;
         -- no-op for objects without a REPORT_JOB_DEF). Mirrors the nested helper.
@@ -2039,9 +1934,9 @@
         END IF;
 
         -- Backlog #70 (non-partitioned): stamp this work item's own load + import ess
-        -- ids on its own queue row. For AR the import id is the AutoInvoiceMasterEss
-        -- id (x_import_ess_id was re-pointed to it above), so the tile shows the job
-        -- that actually created the transactions. Last group with real ids wins.
+        -- ids on its own queue row. For AR the import id is the AutoInvoiceImportEss
+        -- id -- the job that actually created the transactions (base REQUEST_ID).
+        -- Last group with real ids wins.
         stamp_item_ess_ids(x_load_ess_id, x_import_ess_id);
 
         -- Reconcile via BIP — single registry-driven dispatch (once per group).
@@ -3116,13 +3011,12 @@
 
     -- --------------------------------------------------------
     -- RUN_AR_INVOICES (public) — self-contained recipe (backlog #8, fourth family).
-    -- GROUPED by (BU_NAME, BATCH_SOURCE_NAME): one FBDI zip + one loadAndImportData +
-    -- the AutoInvoiceMasterEss second job + one BIP reconcile per group, all inline
+    -- GROUPED by (BU_NAME, BATCH_SOURCE_NAME): one FBDI zip + one loadAndImportData
+    -- (chaining AutoInvoiceImportEss) + one BIP reconcile per group, all inline
     -- in a single work-queue item (NOT spawn-per-partition -- ARInvoices is in
     -- DMT_CEMLI_SPLIT_CFG with CHILD_PARTITION_COLUMN NULL, so it loads as one work
-    -- item like the Purchasing family). Uses ar_submit_and_reconcile_one for the AR
-    -- two-job flow. Upstream dependency: customers must be LOADED. Behaviour is
-    -- byte-for-byte the pre-refactor ARInvoices block of run_one_object_type.
+    -- item like the Purchasing family). Uses ar_submit_and_reconcile_one.
+    -- Upstream dependency: customers must be LOADED.
     -- --------------------------------------------------------
     PROCEDURE RUN_AR_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC   CONSTANT VARCHAR2(40) := 'RUN_AR_INVOICES';
@@ -3167,8 +3061,8 @@
         DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_ar_user, l_ar_pass);
 
         -- Phase 3+4: per-group load cycle. Each distinct (BU_NAME, BATCH_SOURCE_NAME)
-        -- gets its own FBDI zip, loadAndImportData call, AutoInvoiceMasterEss second
-        -- job, and BIP reconciliation (inline per group).
+        -- gets its own FBDI zip, loadAndImportData call (chaining AutoInvoiceImportEss),
+        -- and BIP reconciliation (inline per group).
         FOR grp_rec IN (
             SELECT DISTINCT BU_NAME, BATCH_SOURCE_NAME
             FROM   DMT_RA_LINES_TFM_TBL
@@ -3203,7 +3097,7 @@
                 || ',' || TO_CHAR(SYSDATE, 'YYYY-MM-DD')
                 || ',#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL'
                 || ',#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL'
-                || ',#NULL,N,#NULL';
+                || ',#NULL,Y,#NULL';  -- arg 23 Base Due Date on Transaction Date = Y (known-good 10071776; template default)
             DMT_UTIL_PKG.LOG(p_run_id,
                 'AR ParameterList: ' || l_ar_param,
                 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);

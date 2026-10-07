@@ -31,7 +31,34 @@ E2E LOADED
   files, scripts and ESS-log evidence. Analysis: `docs/findings/known_good_ARInvoices.md`.
 
 ## Known Issues
-None currently.
+Live standard violations / gaps still present in this object's code (section 5 / section 7 of
+`docs/DMT_DESIGN.html`):
+
+1. **Whole-document rejection is not yet propagated across grains (section 5, decided
+   2026-10-07).** AutoInvoice's invalid-lines rule "Reject invoice" holds back every valid line
+   that would have joined an invoice with an errored line, and writes NO error for the held lines
+   (proven: Fusion 10073725 / 10073734, `docs/findings/known_good_ARInvoices.md`). DMT does not
+   yet quote the errored line's real Fusion error onto those held lines (or onto a rejected
+   line's distributions, whose interface rows carry no error of their own), so such rows would be
+   left UNACCOUNTED. Doing it needs the reconciliation report to identify the invoice a held line
+   would have grouped into (AutoInvoice grouping rules, per batch source) — a new BIP version.
+   The regression BAD row is deliberately on its own invoice (different bill-to account), so the
+   current scenario is not affected; the cross-grain regression scenario the rule requires is
+   not built yet.
+2. **Null transaction-flexfield key is not synthesized.** A line with neither
+   `INTERFACE_LINE_ATTRIBUTE1` nor `TRX_NUMBER` in STG reaches the FBDI with a NULL key (the
+   section 7 rule "Null FBDI source references are synthesized deterministically" is not applied).
+3. Pre-existing package-wide deviations shared with most DMT packages: no NAME/PURPOSE/REVISIONS
+   header, procedures signal failure by re-raising rather than an `x_error_code` OUT parameter,
+   no `l_step` breadcrumbs, and the validator keeps one nested DECLARE block for the upstream
+   check.
+4. The reconciliation report matches base lines on `INTERFACE_LINE_ATTRIBUTE1 LIKE :P_PREFIX||'%'`
+   (prefix as a search value) rather than on base `REQUEST_ID = :P_IMPORT_ESS_ID`.
+5. The Record Detail "Verify in Fusion" REST lookup (`DMT_REST_LOOKUP_TBL` rows `ARInvoices` /
+   `AR Lines`) queries `receivablesInvoices` by `TransactionNumber = TFM.TRX_NUMBER`. For an
+   auto-numbering source (External Source) DMT sends no transaction number, so the key is empty
+   and the button returns NOT_FOUND even for a LOADED invoice (seen on proof run 245). It should key
+   on `FUSION_CUSTOMER_TRX_ID` (CustomerTransactionId) instead.
 
 ## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
 
@@ -64,5 +91,12 @@ models both with one STG + one TFM table each.
    fix was required.
 
 ## History
+- 2026-10-07 known-good fixes (branch `fix-ar-invoices-known-good`): INTERFACE_LINE_ATTRIBUTE1
+  is always run-prefixed (lines and distributions); the hardcoded fallback context
+  `DMT Migration` is gone and a line without a context is rejected at pre-validation; the extra
+  `AutoInvoiceMasterEss` submission is removed and reconciliation keys on the
+  `AutoInvoiceImportEss` request (which creates the invoices); ParameterList argument 23 (Base
+  Due Date on Transaction Date) is `Y`. Regression rows now mirror the known-good record
+  (context `EXTERNAL_SOURCE`, no transaction number, Progress US Business Unit).
 - E2E LOADED confirmed working with BU+BatchSource grouping.
 - 24-arg ParameterList documented in memory/project_c006_ar_invoices.md.
