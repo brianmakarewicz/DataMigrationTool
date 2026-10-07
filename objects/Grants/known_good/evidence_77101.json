@@ -1,0 +1,72 @@
+{
+  "prefix": "77101",
+  "role": "ppm_impl",
+  "user": "ppm_impl",
+  "parameter_list": "#NULL,#NULL,true",
+  "load_request_id": "10073629",
+  "load_status": "SUCCEEDED",
+  "import_request_id": "10073644",
+  "report_request_id": "10073652",
+  "import_status": "SUCCEEDED",
+  "import_props": {
+    "ERROR_RECORDS": "1",
+    "SUCCESS_RECORDS": "5",
+    "TOTAL_RECORDS": "6",
+    "submit.argument1": null,
+    "submit.argument2": null,
+    "submit.argument3": "true"
+  },
+  "report_status": "SUCCEEDED",
+  "report_files": [
+    "ESS_O_10073652_BIP.xml"
+  ],
+  "TOTAL_COUNT": "6",
+  "SUCCESS_COUNT": "5",
+  "FAILURE_COUNT": "1",
+  "BATCH_STATUS": "COMPLETED W/ERRORS",
+  "report_rows": [
+    {
+      "award": "77101AWDTST06X",
+      "status": null,
+      "code": null,
+      "message": "The value of the attribute Primary Sponsor isn&apos;t valid."
+    }
+  ],
+  "base": [
+    {
+      "NUM": "77101AWDTST01B",
+      "ID": "300000334921091",
+      "BU": "300000075888561",
+      "CB": "PPM_IMPL",
+      "CD": "2026-10-07 14:45:29"
+    },
+    {
+      "NUM": "77101AWDTST02B",
+      "ID": "300000334921137",
+      "BU": "300000075888561",
+      "CB": "PPM_IMPL",
+      "CD": "2026-10-07 14:45:35"
+    },
+    {
+      "NUM": "77101AWDTST03B",
+      "ID": "300000334921164",
+      "BU": "300000075888561",
+      "CB": "PPM_IMPL",
+      "CD": "2026-10-07 14:45:39"
+    },
+    {
+      "NUM": "77101AWDTST04B",
+      "ID": "300000334921202",
+      "BU": "300000075888561",
+      "CB": "PPM_IMPL",
+      "CD": "2026-10-07 14:45:48"
+    },
+    {
+      "NUM": "77101AWDTST05B",
+      "ID": "300000334921234",
+      "BU": "300000075888561",
+      "CB": "PPM_IMPL",
+      "CD": "2026-10-07 14:45:52"
+    }
+  ]
+}
