@@ -1934,13 +1934,21 @@ commit;
 -- cascade. RECON_KEY (stamped by DMT_FA_ASSET_TRANSFORM_PKG, = the header report
 -- RECORD_KEY) = prefixed ASSET_NUMBER on both BASE and INTERFACE. The SQL*Loader
 -- all-or-nothing log path (ACCOUNT_ALL_OR_NOTHING) is unchanged.
+-- V2 (2026-10-07, owner decision): DMT_FA_ASSET_RECON_V2_DM finds rows only by
+-- the work item's load job id: base assets and distributions through their
+-- POSTED FA_MASS_ADDITIONS row (LOAD_REQUEST_ID = load id; FA_ADDITIONS_B has no
+-- request id), interface rejections by LOAD_REQUEST_ID. The run prefix is never
+-- a search value. V1 (DMT_FA_ASSET_RECON_DM) stays deployed; BIP objects are
+-- never overwritten. The Assets.Book / Assets.Assignment auditor rows point at V2 too.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Assets'                                              cemli_code,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_RPT.xdo'      report_catalog_path,
-           'Fixed asset mass additions reconciliation (Contract v1, single ASSET tier; book/assignment cascade; SQL*Loader all-or-nothing preserved)' notes,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_RPT.xdo'   report_catalog_path,
+           'Fixed asset mass additions reconciliation (Contract v1, single ASSET tier; book/assignment cascade; SQL*Loader all-or-nothing preserved). '
+           || 'V2 (2026-10-07): rows found only by the work item''s load job id (base assets through their POSTED '
+           || 'FA_MASS_ADDITIONS row, interface by LOAD_REQUEST_ID), never by the run prefix; deployed alongside V1.' notes,
            1                                                      contract_version,
            'DMT_FA_ASSET_HDR_TFM_TBL'                            tfm_table,
            'FUSION_ASSET_ID'                                     fusion_id_column,
@@ -3125,8 +3133,8 @@ using (
     select 100000060                                            bip_report_id,
            'Assets.Book'                                        cemli_code,
            'Asset Book'                                        object_type,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_RPT.xdo'         report_catalog_path,
            'FA_MASS_ADDITIONS'                                        interface_table,
            'Assets asset-book tier -- AUDITOR registration only (backlog #91/#139). '
              || 'Not a pipeline/reconcile object; DMT_FA_ASSET_RESULTS_PKG applies all '
@@ -3183,8 +3191,8 @@ using (
     select 100000061                                            bip_report_id,
            'Assets.Assignment'                                        cemli_code,
            'Asset Assignment'                                        object_type,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_RPT.xdo'         report_catalog_path,
            'FA_MASS_ADDITIONS'                                        interface_table,
            'Assets asset-assignment tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_FA_ASSET_RESULTS_PKG applies all '
