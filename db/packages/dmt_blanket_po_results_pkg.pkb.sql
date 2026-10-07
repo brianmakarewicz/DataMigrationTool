@@ -35,11 +35,32 @@ AS
 --
 -- RECON_KEY on each tier's TFM row is stamped by DMT_PO_TRANSFORM_PKG to equal
 -- that tier's report RECORD_KEY (headers = DOCUMENT_NUM; lines = DOCUMENT_NUM ||
--- ':LN:' || LINE_NUM). No STG echo, no parent/child cascade.
+-- ':LN:' || LINE_NUM). No STG echo. After the per-row apply,
+-- PROPAGATE_DOCUMENT_ERRORS quotes a rejected header's real Fusion error onto the
+-- lines Import Blanket Agreements rejected with it (design section 5,
+-- whole-document rejection; header -> lines only, see the procedure).
+--
+-- REVISIONS:
+--   2026-10-07  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS): a
+--                   rejected blanket header's error reaches its lines.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_BLANKET_PO_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'BlanketPOs';
+
+    -- This object's rows in the shared PO TFM tables (the catalog ROW_FILTER for
+    -- BlanketPOs): headers whose STYLE_DISPLAY_NAME is the blanket style.
+    C_STYLE CONSTANT VARCHAR2(30) := 'Blanket Purchase Agreement';
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
+    -- Working set: "the blanket agreement DOC_KEY has a header SOURCE_SEQ with its
+    -- own real Fusion error, so its lines must carry QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        DOC_KEY      DMT_PO_HEADERS_INT_TFM_TBL.INTERFACE_HEADER_KEY%TYPE,  -- the agreement
+        SOURCE_SEQ   NUMBER,           -- the header's TFM_SEQUENCE_ID
+        QUOTED_ERROR VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_BLANKET_POS (private)
@@ -272,6 +293,104 @@ AS
     END APPLY_CONTRACT_V1_BLANKET_POS;
 
     -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private)
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain" (decided 2026-10-07), applied in the direction Fusion actually
+    -- rejects. Import Blanket Agreements rejects every line of an agreement whose
+    -- HEADER is rejected, writing PO_INTERFACE_ERRORS only on the header (live:
+    -- 16 BLANKET documents with a REJECTED header + error and REJECTED lines with
+    -- none). It does NOT reject the header when only a line fails: it accepts the
+    -- agreement and rejects that line alone (live: 7 ACCEPTED headers beside a
+    -- REJECTED line; docs/findings/cross_grain_conformance_review.md). So the only
+    -- whole-document case is header -> lines; a line's own error stays on that
+    -- line, and its header and sibling lines keep their own outcomes.
+    --
+    -- The document is the agreement: one header interface row
+    -- (INTERFACE_HEADER_KEY) and the lines carrying that key; keys are
+    -- run-prefixed, so the key is RUN_ID + INTERFACE_HEADER_KEY. Only this object's
+    -- rows are read or written: headers of the blanket style (C_STYLE, the
+    -- catalog ROW_FILTER) and their lines, so a Standard PO or Contract in the
+    -- same shared tables is never touched. Rows are scoped to the work item the
+    -- way the shared sweep scopes it.
+    --
+    -- Sources: blanket headers of this run and work item with TFM_STATUS =
+    --   'FAILED' carrying their OWN real Fusion error ('[FUSION_ERROR]', no
+    --   C_DOC_ERROR_MARKER).
+    -- Targets: the lines of that agreement that Fusion received (FBDI_CSV_ID set,
+    --   not STAGED) and that are not LOADED (LOADED rows are never touched), and
+    --   that do not already carry the exact quote. The quote is appended
+    --   (APPEND_ERROR, never overwrite) and the line set FAILED.
+    -- Idempotent: the "already carries the exact quote" guard means a second
+    --   reconcile pass adds nothing.
+    -- One collection of (agreement, header, quote) pairs by ONE static SELECT,
+    -- then ONE static bulk UPDATE (FORALL): a MERGE cannot read a PL/SQL record
+    -- collection through TABLE() (ORA-00902, AR run 248). NO dynamic SQL; NO
+    -- COMMIT (caller owns the txn).
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_lines  NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting rejected blanket headers for run ' || p_run_id;
+        SELECT h.INTERFACE_HEADER_KEY,
+               h.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'header', h.RECON_KEY,
+                   DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG)))
+        BULK COLLECT INTO l_pairs
+        FROM   DMT_PO_HEADERS_INT_TFM_TBL h
+        WHERE  h.RUN_ID = p_run_id
+        AND    h.STYLE_DISPLAY_NAME = C_STYLE
+        -- Work-item scope, as the shared sweep scopes it: rows stamped with
+        -- another work item are excluded; unstamped rows are run-scoped.
+        AND    (p_work_queue_id IS NULL OR h.WORK_QUEUE_ID IS NULL
+                OR h.WORK_QUEUE_ID = p_work_queue_id)
+        AND    h.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, l_marker) = 0;
+
+        l_step := 'appending quoted document errors to blanket lines';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PO_LINES_INT_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INTERFACE_HEADER_KEY = l_pairs(i).DOC_KEY
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_lines := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rejected blanket headers: ' || l_pairs.COUNT
+                           || ' | lines given a quoted document error: ' || l_lines || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged).
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
@@ -290,6 +409,12 @@ AS
             p_procedure      => C_PROC);
 
         APPLY_CONTRACT_V1_BLANKET_POS(p_run_id, p_load_ess_id, p_import_ess_id);
+
+        -- Whole-document rejection (design section 5): lines Import Blanket
+        -- Agreements rejected with their header carry the header's real error.
+        -- Runs after the per-row apply and BEFORE the shared unaccounted sweep
+        -- (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
