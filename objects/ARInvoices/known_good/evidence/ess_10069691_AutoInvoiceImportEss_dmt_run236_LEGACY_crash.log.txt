@@ -1,0 +1,278 @@
+=== 10069691.log
+ Start Total count of argument ::: 25
+ First value ::: RAXTRX
+ Second value ::: 300000046987012
+ 23 ::: N
+ 24 ::: 
+ 25 ::: (null)
+-------------------------------------------------------------------------
+ Printing AutoInvoice parameters 
+Argument List 0::: Program Name                  ::: RAXTRX.
+Argument List 1::: Parallel Module Name          ::: MAIN.
+Argument List 2::: Running Mode                  ::: T.
+Argument List 3::: Batch Source Sequence Id      ::: .
+Argument List 4::: Batch Source Name             ::: External Source.
+Argument List 5::: Default Date                  ::: 2026-10-06.
+Argument List 6::: Transaction Flexfield         ::: .
+Argument List 7::: Transaction Type              ::: .
+Argument List 8::: (Low) Bill To Customer Number ::: .
+Argument List 9::: (High) Bill To Customer Number::: .
+Argument List 10::: (Low) Bill To Customer Name   ::: .
+Argument List 11::: (High) Bill To Customer Name  ::: .
+Argument List 12::: (Low) GL Date                 ::: .
+Argument List 13::: (High) GL Date                ::: .
+Argument List 14::: (Low) Ship Date               ::: .
+Argument List 15::: (High) Ship Date              ::: .
+Argument List 16::: (Low) Transaction Number      ::: .
+Argument List 17::: (High) Transaction Number     ::: .
+Argument List 18::: (Low) Sales Order Number      ::: .
+Argument List 19::: (High) Sales Order Number     ::: .
+Argument List 20::: (Low) Invoice Date            ::: .
+Argument List 21::: (High) Invoice Date           ::: .
+Argument List 22::: (Low) Ship To Customer Number ::: .
+Argument List 23::: (High) Ship To Customer Number::: .
+Argument List 24::: (Low) Ship To Customer Name   ::: .
+Argument List 25::: (High) Ship To Customer Name  ::: .
+Argument List 26::: Call RAXTRX from RAXMTR flag  ::: N.
+Argument List 27::: Base Due Date on Trx Date     ::: N.
+Argument List 28::: Due Date Adjustment Days      ::: .
+Argument List 29::: Org Id                        ::: 300000046987012.
+raassc()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:20)
+Before setting request_id and org_id
+Successfully set request_id
+Successfully set org_id
+raassc()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:20)
+raagsp()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:20)
+Profile option - Tax Exemption Override Control - is not set.
+raagsp()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:20)
+Invoking instrumentation 
+raaini()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:20)
+raaapx()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:20)
+raaapx()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:21)
+raagbo()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:21)
+Dumping the data fetched from RA_BATCH_SOURCES
+batch_source_seq_id = 300000047311509
+batch_source_name = External Source
+auto_trx_numbering_flag = Y
+copy_doc_number_flag = N
+cust_trx_type_rule = R
+sold_customer_rule = R
+bill_customer_rule = R
+bill_address_rule = R
+bill_contact_rule = R
+ship_customer_rule = R
+ship_address_rule = R
+ship_contact_rule = R
+memo_reason_rule = R
+term_rule = R
+invoicing_rule_rule = R
+accounting_rule_rule = R
+unit_of_measure_rule = R
+agreement_rule = I
+inventory_item_rule = R
+fob_point_rule = S
+ship_via_rule = S
+invalid_lines_rule = R
+salesperson_rule = R
+sales_credit_type_rule = R
+accounting_flexfield_rule = R
+invalid_tax_rate_rule = R
+rev_acc_allocation_rule = P
+gl_date_period_rule = A
+create_clearing_flag = Y
+derive_date_flag = Y
+sales_credit_rule = P
+sales_territory_rule = R
+receipt_method_rule = R
+customer_bank_account_rule = R
+related_document_rule = R
+memo_line_rule = R
+allow_sales_credit_flag = Y
+receipt_handling_option = A
+allow_duplicate_trx_num_flag = N
+control_trx_completion_flag = N
+l_doc_sequence_level = N
+raagbo -  gib->raagixsnf = 0
+AR Document sequencing level is set to Not Used
+l_enf_correlation_flag = N
+raagbo -  gib->raagixecf = 0
+Enforce Correlation is not enabled at ledger level
+Brazil fiscal document enable flag::N
+Brazil fiscal document flag return status::S	�
+Brazil fiscal document flag is disabled
+Portugal feature enabled flag return status::N
+Portugal feature enabled flag is disabled
+
+ Consolidation Billing Enabled N
+raagbo - gib->raagixuix FIN_IMPL
+raagbo -gib->raagixlul  5D308D5DDBE0BD98E0632460F00AC473
+raagbo()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:21)
+ before entering raaggi
+raaggi()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:21)
+raaggi -1 - gib->raagixuix FIN_IMPL
+raaggi -1 - gib->raagixlul 5D308D5DDBE0BD98E0632460F00AC473
+raagixpfx = 0
+raagixtpf = 0
+raagixddf = 1
+raagixacf = 1
+raagixagd = 1
+raagixatn = 1
+raagixadn = 0
+raagixcte = 0
+raagixdfd = 
+raagixctc = 0
+raagixrmx = T
+raagixfdx = 2026-10-06
+raagixbix = 
+raagixbsi = 300000047311509
+raagixbnx = External Source
+raagixoix = 300000046987012
+raagixrix = 10069691
+raagixpix = 222
+raagixpai = 222
+raagixuix = FIN_IMPL
+raagixunx = 
+raagixanx = AR
+raagixlul = 5D308D5DDBE0BD98E0632460F00AC473
+raagixasc = 1
+raagixrho = A
+raagixrsf = 0
+raagixcbf = 0
+raagixuax = 1
+raagixtao = 0
+raagixptf = 1
+raagixstf = 0
+raagixrfi = 0
+raagixtac = 0
+raagixcai = 21
+raagixsbi = 300000046975971
+raagixcpr = 2
+raagixmau = 
+raagixmlx = 1
+raagixmbx = 10508000
+raagixafp = Account
+raagixifp = 
+raagixtfp = 
+Argbdf = 0
+Argddo = -9999
+raagixctf = 0
+raaggi()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:21)
+ after executing raaggi
+raaseb()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:21)
+raaseb()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:21)
+ before calling arcdsu do setup 
+raaini()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+
+ raamai_main() - Value of bat src===>External Source
+ 
+ raamai_main()+ gib.cons_bat_src IS FALSE 
+
+ Consolidation is not enabled and not called from Master Value of called from RAAMTR flag::: N
+AutoInvoice Import is not called from Master
+ into parallelization 2nd if MAIN
+raapft()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raagtr()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+crb->raaucrpn = RAXTRX
+crb->raaucrcr = 10069691
+crb->raaucrnt = 0
+crb->raaucrml = 1
+raagtr()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raamil()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+ Else - called from RAAMTR flag::: N
+Bu_name =US1 Business Unit 
+94 row(s) updated org_id in ra_interface_lines_all 
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raacrf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raaasf()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:22)
+raagtf()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:23)
+ ---------------------------error ------------------------------------- 
+You must enter a valid context for the LEGACY flexfield.
+ ---------------------------!!!!!------------------------------------- 
+AFDICT_APP_PREFIX-FND-04000: The process has encountered a SQL error. (ERRNO=20301) (ROUTINE=fdpgrs) (REASON=ORA-20301: ESS request id 76254 not found
+ORA-06512: at "FUSION_ORA_ESS.ESS_MESG", line 83
+ORA-06512: at "FUSION_ORA_ESS.ESSI_RT", line 306
+ORA-06512: at "FUSION_ORA_ESS.ESS_RUNTIME", line 1418) (SQLSTMT=)
+Error calling fdfdfa().
+Error calling raagtf().
+Error calling raamil().
+Error calling raapft().
+raafds()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:23)
+raafeb()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:23)
+raafeb()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:23)
+raafds()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:23)
+CONC-REQ RETURNED NO MESG
+
++---------------------------------------------------------------------------+
+UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:45:23)
+
++---------------------------------------------------------------------------+
+Brazil feature check for Org ID: 300000046987012
+Brazil feature check: l_feature_enabled = N
+Checking for legal_entity_id::300000046973970
+Portugal feature is disabled.
+sql raamil()+
+Batch Source Name :External Source
+Nullify aborted request_id : 0 row(s) updated.
+sql raamil()-
+

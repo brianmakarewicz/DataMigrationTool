@@ -30,13 +30,15 @@
 --
 --   HIERARCHY: branches are children of a confirmed bank; accounts are children
 --         of a confirmed branch. A tier's LOAD step only POSTs rows whose parent
---         was base-table-confirmed in the prior tier; rows under an unconfirmed
---         parent are left GENERATED (no fabricated error) for the accounting gate
---         to surface. Because GOOD demo fixtures reuse EXISTING bank/branch/
---         account records (the demo pod does not always allow REST create of
---         cash-management master data), the POST may return a 4xx duplicate --
---         but the base-table report still confirms the row LOADED and captures
---         the real surrogate id. That is the whole point of the new standard.
+--         was base-table-confirmed in the prior tier. A row under a parent that
+--         was NOT created is never sent; its outcome is known (not created
+--         because its parent failed), so it is stamped with a [PARENT_FAILED]
+--         error naming the parent (and quoting the parent's Fusion error) and
+--         the sweep lands it FAILED. UNACCOUNTED is reserved for a row whose
+--         outcome we genuinely could not find (Customers precedent, run 236).
+--         Keys carry the run prefix (DMT_CE_BANK_TRANSFORM_PKG), so each run
+--         creates its own bank/branch/account and the base-table report matches
+--         on the same prefixed names.
 --
 -- Transport is a local rest_call helper (the "STATUS|body" convention). The
 -- base-table report goes through the shared DMT_UTIL_PKG.RUN_BIP_REPORT. The
@@ -245,21 +247,32 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- #130: stamp CREATED (our own POST for THIS record returned 2xx).
+                    UPDATE DMT_CE_BANK_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted := l_posted + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Bank POSTed (awaiting base-table confirmation): ' || r.BANK_NAME
                         || ' HTTP ' || l_http_status, p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+                    -- #130: our create did NOT return 2xx -> REJECTED (blank body still blocks LOADED).
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
                     UPDATE DMT_CE_BANK_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Bank POST rejected (stashed, awaiting base-table verdict): '
+                        'Bank POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL THEN 'real error stashed'
+                             ELSE 'blank body, left UNACCOUNTED' END || '): '
                         || r.BANK_NAME || ' HTTP ' || l_http_status, 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
 
@@ -270,7 +283,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_CE_BANK_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -297,8 +311,8 @@
     -- The LOAD step for branches: POST each GENERATED branch whose parent bank
     -- was base-table-confirmed LOADED. Same policy as LOAD_BANKS: never terminal,
     -- non-2xx / exception stashed, row left GENERATED for the branch report to
-    -- confirm. A branch whose parent bank is not LOADED is skipped (left
-    -- GENERATED, no fabricated error) for the accounting gate to surface.
+    -- confirm. A branch whose parent bank is not LOADED is not sent and is
+    -- stamped [PARENT_FAILED] naming that bank, so the sweep lands it FAILED.
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
     -- ============================================================
     PROCEDURE LOAD_BRANCHES (
@@ -321,7 +335,10 @@
                    br.BIC_CODE, br.DESCRIPTION, br.EFT_SWIFT_CODE, br.COUNTRY_CODE,
                    (SELECT MAX(bk.TFM_STATUS) FROM DMT_CE_BANK_TFM_TBL bk
                     WHERE  bk.RUN_ID = p_run_id
-                    AND    bk.SOURCE_GROUP_ID = br.SOURCE_GROUP_ID) AS parent_status
+                    AND    bk.SOURCE_GROUP_ID = br.SOURCE_GROUP_ID) AS parent_status,
+                   (SELECT MAX(DBMS_LOB.SUBSTR(bk.ERROR_TEXT, 1500, 1)) FROM DMT_CE_BANK_TFM_TBL bk
+                    WHERE  bk.RUN_ID = p_run_id
+                    AND    bk.SOURCE_GROUP_ID = br.SOURCE_GROUP_ID) AS parent_error
             FROM   DMT_CE_BRANCH_TFM_TBL br
             WHERE  br.RUN_ID = p_run_id
             AND    br.TFM_STATUS = 'GENERATED'
@@ -329,7 +346,26 @@
         ) LOOP
             BEGIN
                 -- Only POST children under a base-table-confirmed parent bank.
+                -- A branch whose parent bank was not created is never sent to
+                -- Fusion, so its outcome is KNOWN: it was not created because its
+                -- parent failed. Record that as a real per-row error naming the
+                -- failed parent (Customers precedent, run 236) so the post-
+                -- reconcile sweep lands it FAILED -- never UNACCOUNTED, which is
+                -- reserved for "outcome genuinely not found". LOAD_CALL_STATUS
+                -- stays NULL (never attempted), so it can never be promoted.
                 IF r.parent_status IS NULL OR r.parent_status != 'LOADED' THEN
+                    UPDATE DMT_CE_BRANCH_TFM_TBL
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                               '[PARENT_FAILED] Branch not sent to Fusion: parent bank "'
+                               || r.BANK_NAME || '" was not created in Fusion'
+                               || CASE WHEN r.parent_status IS NULL
+                                       THEN ' (no parent bank row in this run).'
+                                       WHEN r.parent_error IS NOT NULL
+                                       THEN '. Parent bank error: ' || r.parent_error
+                                       ELSE ' (parent bank status ' || r.parent_status
+                                            || ', no Fusion error captured).' END),
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_skipped := l_skipped + 1;
                     CONTINUE;
                 END IF;
@@ -349,21 +385,32 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- #130: stamp CREATED (our own POST for THIS record returned 2xx).
+                    UPDATE DMT_CE_BRANCH_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted := l_posted + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Branch POSTed (awaiting base-table confirmation): ' || r.BRANCH_NAME
                         || ' HTTP ' || l_http_status, p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+                    -- #130: our create did NOT return 2xx -> REJECTED (blank body still blocks LOADED).
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
                     UPDATE DMT_CE_BRANCH_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Branch POST rejected (stashed, awaiting base-table verdict): '
+                        'Branch POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL THEN 'real error stashed'
+                             ELSE 'blank body, left UNACCOUNTED' END || '): '
                         || r.BRANCH_NAME || ' HTTP ' || l_http_status, 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
 
@@ -374,7 +421,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_CE_BRANCH_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -402,8 +450,8 @@
     -- The LOAD step for bank accounts: POST each GENERATED account whose parent
     -- branch was base-table-confirmed LOADED. Same policy: never terminal,
     -- non-2xx / exception stashed, row left GENERATED for the account report to
-    -- confirm. An account whose parent branch is not LOADED is skipped (left
-    -- GENERATED, no fabricated error).
+    -- confirm. An account whose parent branch is not LOADED is not sent and is
+    -- stamped [PARENT_FAILED] naming that branch, so the sweep lands it FAILED.
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
     -- ============================================================
     PROCEDURE LOAD_ACCOUNTS (
@@ -427,7 +475,10 @@
                    acct.DESCRIPTION, acct.IBAN, acct.CHECK_DIGITS, acct.ACCOUNT_SUFFIX,
                    (SELECT MAX(br.TFM_STATUS) FROM DMT_CE_BRANCH_TFM_TBL br
                     WHERE  br.RUN_ID = p_run_id
-                    AND    br.SOURCE_LINE_ID = acct.SOURCE_LINE_ID) AS parent_status
+                    AND    br.SOURCE_LINE_ID = acct.SOURCE_LINE_ID) AS parent_status,
+                   (SELECT MAX(DBMS_LOB.SUBSTR(br.ERROR_TEXT, 1500, 1)) FROM DMT_CE_BRANCH_TFM_TBL br
+                    WHERE  br.RUN_ID = p_run_id
+                    AND    br.SOURCE_LINE_ID = acct.SOURCE_LINE_ID) AS parent_error
             FROM   DMT_CE_BANK_ACCT_TFM_TBL acct
             WHERE  acct.RUN_ID = p_run_id
             AND    acct.TFM_STATUS = 'GENERATED'
@@ -435,7 +486,24 @@
         ) LOOP
             BEGIN
                 -- Only POST children under a base-table-confirmed parent branch.
+                -- An account whose parent branch was not created is never sent,
+                -- so it is recorded with a real per-row error naming the failed
+                -- parent and lands FAILED in the sweep -- never UNACCOUNTED (same
+                -- rule as LOAD_BRANCHES). LOAD_CALL_STATUS stays NULL.
                 IF r.parent_status IS NULL OR r.parent_status != 'LOADED' THEN
+                    UPDATE DMT_CE_BANK_ACCT_TFM_TBL
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                               '[PARENT_FAILED] Account not sent to Fusion: parent branch "'
+                               || r.BRANCH_NAME || '" of bank "' || r.BANK_NAME
+                               || '" was not created in Fusion'
+                               || CASE WHEN r.parent_status IS NULL
+                                       THEN ' (no parent branch row in this run).'
+                                       WHEN r.parent_error IS NOT NULL
+                                       THEN '. Parent branch error: ' || r.parent_error
+                                       ELSE ' (parent branch status ' || r.parent_status
+                                            || ', no Fusion error captured).' END),
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_skipped := l_skipped + 1;
                     CONTINUE;
                 END IF;
@@ -459,21 +527,32 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- #130: stamp CREATED (our own POST for THIS record returned 2xx).
+                    UPDATE DMT_CE_BANK_ACCT_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted := l_posted + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Account POSTed (awaiting base-table confirmation): ' || r.ACCOUNT_NAME
                         || ' HTTP ' || l_http_status, p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+                    -- #130: our create did NOT return 2xx -> REJECTED (blank body still blocks LOADED).
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
                     UPDATE DMT_CE_BANK_ACCT_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Account POST rejected (stashed, awaiting base-table verdict): '
+                        'Account POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL THEN 'real error stashed'
+                             ELSE 'blank body, left UNACCOUNTED' END || '): '
                         || r.ACCOUNT_NAME || ' HTTP ' || l_http_status, 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
 
@@ -484,7 +563,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_CE_BANK_ACCT_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -514,7 +594,7 @@
     -- one per tier: P_BANK_NAMES confirms banks over CE_BANKS_V (G_1),
     -- P_BRANCH_NAMES confirms branches over CE_BANK_BRANCHES_V (G_2), and
     -- P_ACCT_NAMES confirms accounts over CE_BANK_ACCOUNTS (G_3). Any may be blank
-    -- on a pass that does not need it. Natural keys are not run-prefixed.
+    -- on a pass that does not need it. Bank and account names carry the run prefix.
     -- PROCEDURE per the procedures-only contract: x_report_xml NULL with
     -- x_error_code = C_SUCCESS means zero rows; failures are logged and surfaced
     -- through x_error_code -- exceptions never escape.
@@ -616,6 +696,10 @@
             ) x
         ) LOOP
             IF r.source_type = 'BASE_BANK' AND r.fusion_id IS NOT NULL THEN
+                -- #160 guard: a bank whose OWN POST failed (ERROR_TEXT stashed) is NOT
+                -- rescued to LOADED by a base-table name collision with a
+                -- pre-existing/duplicate bank; its real error carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when our own create for THIS record returned 2xx.
                 UPDATE DMT_CE_BANK_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_BANK_PARTY_ID = r.fusion_id,
@@ -623,7 +707,9 @@
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID     = p_run_id
                 AND    BANK_NAME  = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -679,6 +765,10 @@
             ) x
         ) LOOP
             IF r.source_type = 'BASE_BRANCH' AND r.fusion_id IS NOT NULL THEN
+                -- #160 guard: a branch whose OWN POST failed (ERROR_TEXT stashed) is NOT
+                -- rescued to LOADED by a base-table name collision; its real error
+                -- carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when our own create for THIS record returned 2xx.
                 UPDATE DMT_CE_BRANCH_TFM_TBL
                 SET    TFM_STATUS             = 'LOADED',
                        FUSION_BRANCH_PARTY_ID = r.fusion_id,
@@ -687,7 +777,9 @@
                 WHERE  RUN_ID      = p_run_id
                 AND    BRANCH_NAME = r.record_key
                 AND    BANK_NAME   = r.parent_bank_name
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -740,6 +832,10 @@
             ) x
         ) LOOP
             IF r.source_type = 'BASE_ACCOUNT' AND r.fusion_id IS NOT NULL THEN
+                -- #160 guard: an account whose OWN POST failed (ERROR_TEXT stashed) is
+                -- NOT rescued to LOADED by a base-table name collision; its real error
+                -- carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when our own create for THIS record returned 2xx.
                 UPDATE DMT_CE_BANK_ACCT_TFM_TBL
                 SET    TFM_STATUS             = 'LOADED',
                        FUSION_BANK_ACCOUNT_ID = r.fusion_id,
@@ -747,7 +843,9 @@
                        LAST_UPDATED_DATE      = SYSDATE
                 WHERE  RUN_ID       = p_run_id
                 AND    ACCOUNT_NAME = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;

@@ -21,9 +21,27 @@
 -- '[FUSION_ERROR] ' || message (never composed). Everything else (INTERFACE tier,
 -- non-terminal) is left for the shared unaccounted sweep -- never fabricated.
 --
--- There is NO parent->child cascade: the V2 report now covers all seven record
--- types on both BASE and INTERFACE tiers, so each record type is confirmed against
--- its own base id -- no fabricated cascade is needed.
+-- There is NO parent->child cascade in this package: the report covers all seven
+-- record types on both BASE and INTERFACE tiers, so each record is confirmed
+-- against its own base id or its own interface row.
+--
+-- Per-row error attribution (V3 report, DMT_CUST_RECON_V3_DM, run 236 findings R1):
+-- every INTERFACE/ERROR row now carries ITS OWN outcome, never a batch-wide list:
+--   * the row's own HZ_IMP_ERRORS text (joined on error_id + batch_id, full text
+--     resolved from FND_NEW_MESSAGES with tokens), e.g.
+--     'HZ_IMP_INVAL_VALUE_COMPARE: The value in the SET_CODE column isn't valid...';
+--   * or, for a row Fusion held/rejected with no error of its own (status W/E,
+--     ERROR_ID NULL), the reason read from its own ancestor chain in the same load,
+--     e.g. 'Not created: Fusion left this row at import status W with no error of
+--     its own. Parent records not created: account site <ref> rejected (status E):
+--     <that parent's own error text>';
+--   * or, for a root record Fusion held with nothing failed above it, a statement
+--     of exactly that (status W, no error recorded, no parent failed).
+-- Both are real Fusion interface outcomes, so this APPLY marks the row FAILED with
+-- '[FUSION_ERROR] ' || message. Only a record absent from BOTH the base and the
+-- interface (no report row at all) is left GENERATED for the shared sweep. An
+-- ERROR row that arrives with no message (a report defect, never expected from V3)
+-- is logged as a WARN and left for the sweep -- never given a fabricated verdict.
 --
 -- Outcomes are written to the seven TFM tables only: nothing is written back to
 -- staging; the TFM row is the sole record of the Fusion outcome (design section 2).
@@ -134,6 +152,7 @@
         l_rc        NUMBER := 0;
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
+        l_no_msg    NUMBER := 0;     -- ERROR rows the report sent with no message
     BEGIN
         -- Generated-row count across all SEVEN Customer TFM tables (static, this
         -- object's own tables) drives the shared fetch's keyset page-count cap.
@@ -185,6 +204,19 @@
             FOR i IN 1 .. l_rows.COUNT LOOP
                 l_rc   := 0;
                 l_tier := NULL;  -- backlog #65: reset per row (audit-log safety)
+
+                -- The V3 report guarantees a per-row message on every ERROR row
+                -- (its own error, its failed parent chain, or the root-hold
+                -- statement). If one ever arrives without a message, say so loudly
+                -- and leave the record for the sweep -- never invent a verdict.
+                IF l_rows(i).FUSION_STATUS = 'ERROR' AND l_rows(i).ERROR_MESSAGE IS NULL THEN
+                    l_no_msg := l_no_msg + 1;
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        C_PROC || ': report ERROR row has no ERROR_MESSAGE for '
+                        || l_rows(i).RECORD_KEY || ' (' || l_rows(i).SOURCE_TYPE
+                        || '); left for the unaccounted sweep.',
+                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+                END IF;
 
                 -- ---- Parties --------------------------------------------------
                 IF l_rows(i).OBJECT_TYPE = 'Customers.Parties' THEN
@@ -472,7 +504,8 @@
             p_run_id    => p_run_id,
             p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
                            || ' | LOADED: ' || l_loaded
-                           || ' | FAILED: ' || l_failed || '.',
+                           || ' | FAILED: ' || l_failed
+                           || ' | ERROR rows without message: ' || l_no_msg || '.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
 

@@ -4,7 +4,8 @@
 -- ============================================================
 -- DMT_AR_TRANSFORM_PKG Body
 -- ARInvoices transformation.
--- Applies run prefix to TRX_NUMBER.
+-- Applies run prefix to TRX_NUMBER and to the transaction flexfield key
+-- INTERFACE_LINE_ATTRIBUTE1 (lines and distributions alike).
 -- Applies dependent prefix to customer account numbers.
 -- ============================================================
 
@@ -61,7 +62,9 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_RA_LINES_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -271,8 +274,19 @@
 
 
 
-                    NVL(s.INTERFACE_LINE_CONTEXT, 'DMT Migration'),
-                    NVL(s.INTERFACE_LINE_ATTRIBUTE1, DMT_UTIL_PKG.PREFIXED(l_prefix, s.TRX_NUMBER, 30)),
+                    -- Line Transactions flexfield context is BUSINESS DATA from the file.
+                    -- No fallback: an undefined context (the former hardcoded
+                    -- 'DMT Migration', or 'LEGACY') is FATAL to the whole AutoInvoice job
+                    -- ("You must enter a valid context for the ... flexfield"). A NULL
+                    -- context is rejected per row by DMT_AR_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM.
+                    s.INTERFACE_LINE_CONTEXT,
+                    -- ALWAYS run-prefix the transaction flexfield key, also when STG supplies
+                    -- it: AutoInvoice requires CONTEXT + INTERFACE_LINE_ATTRIBUTE1..15 to be
+                    -- unique across every line ever imported, so an unprefixed re-run is
+                    -- rejected as a duplicate (proven, Fusion request 10073683).
+                    -- TRANSFORM_DISTS applies the IDENTICAL prefix to its ATTRIBUTE1 so the
+                    -- line<->distribution linkage still matches. RECON_KEY is stamped from it.
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, NVL(s.INTERFACE_LINE_ATTRIBUTE1, s.TRX_NUMBER), 30),
 
                     NVL(s.INTERFACE_LINE_ATTRIBUTE2, TO_CHAR(s.STG_SEQUENCE_ID)),
                     s.INTERFACE_LINE_ATTRIBUTE3,
@@ -419,7 +433,8 @@
         -- RECON_KEY so it equals the line RECORD_KEY the recon report emits.
         -- The ARInvoices Contract v1 data model (DMT_AR_RECON_DM.xdm) emits BOTH
         -- the BASE line RECORD_KEY and the INTERFACE line RECORD_KEY as
-        -- INTERFACE_LINE_ATTRIBUTE1 (= the prefixed TRX_NUMBER). AutoInvoice
+        -- INTERFACE_LINE_ATTRIBUTE1 (= the run-prefixed STG ATTRIBUTE1, else the
+        -- run-prefixed TRX_NUMBER). AutoInvoice
         -- PERSISTS INTERFACE_LINE_ATTRIBUTE1 onto the base line
         -- RA_CUSTOMER_TRX_LINES_ALL, so the stamped value survives to the base
         -- table and returns unchanged. The shared reconciler
@@ -485,7 +500,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'AR Lines')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -507,6 +524,7 @@
         p_scenario_id      IN NUMBER DEFAULT NULL,
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
+        l_prefix        VARCHAR2(30);
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
 
@@ -517,12 +535,15 @@
             p_package        => C_PKG,
             p_procedure      => 'TRANSFORM_DISTS');
 
+        l_prefix := get_prefix(p_run_id);
 
         -- On reprocess: clear staging errors for rows being retried
         IF p_reprocess_errors THEN
             UPDATE DMT_RA_DISTS_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
@@ -577,7 +598,9 @@
                     s.ACCTD_AMOUNT,
 
                     s.INTERFACE_LINE_CONTEXT,
-                    s.INTERFACE_LINE_ATTRIBUTE1,
+                    -- Same run prefix as the parent line's ATTRIBUTE1 (TRANSFORM_LINES), so the
+                    -- distribution still links to its line on CONTEXT + ATTRIBUTE1.
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.INTERFACE_LINE_ATTRIBUTE1, 30),
                     s.INTERFACE_LINE_ATTRIBUTE2,
                     s.INTERFACE_LINE_ATTRIBUTE3,
                     s.INTERFACE_LINE_ATTRIBUTE4,
@@ -759,7 +782,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'AR Distributions')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
             DMT_UTIL_PKG.LOG_ERROR(

@@ -28,3 +28,9 @@ REST response: HTTP 201 = LOADED, HTTP 4xx/5xx = FAILED. Fusion-assigned TaxRegi
 
 ## Status
 NOT BUILT — DDL deployed, pipeline packages not yet created.
+
+## Run prefix (2026-10-06)
+CEMLI `TaxConfig`. The transform applies the run prefix to `TAX_REGIME_CODE` (Fusion limit
+30) on the regime row and on each rate's parent `TAX_REGIME_CODE`. A code that cannot carry
+the full prefix is not truncated; the row is FAILED with a `[TRANSFORM_ERROR]` naming the
+limit. The REST-vs-FBDI load question is deferred (backlog #162).

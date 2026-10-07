@@ -4,10 +4,32 @@
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_PRJ_BUDGET_FBDI_GEN_PKG';
 
 -- ============================================================
+-- NAME:    DMT_PRJ_BUDGET_FBDI_GEN_PKG
+-- PURPOSE: ProjectBudgets FBDI generator (PjoPlanVersionsXface.csv -> zip)
+-- REVISIONS:
+--  1.1  2026-10-07  Column 29 = template marker -1318020000/-1318020001 (was empty, mislabelled REQUEST_ID)
+-- ============================================================
 -- ProjectBudgets FBDI generator.
 -- CSV: PjoPlanVersionsXface.csv (62 columns, position-based, no header)
 -- Column order verified against PjoPlanVersionsXface.ctl from Fusion 25C.
+--
+-- Column 29 is the FBDI TEMPLATE MARKER, not REQUEST_ID. The template's GenCSV
+-- macro (objects/ProjectBudgets/known_good/original/
+-- ProjectBudgetsImportTemplate_GenCSV_macro.txt) writes it into every row:
+--   -1318020000  when no descriptive flexfield attribute is filled in anywhere
+--                in the file, or
+--   -1318020001  when ANY row in the file has ATTRIBUTE_CATEGORY or
+--                ATTRIBUTE1..30 populated (the macro does a file-level CountA
+--                over sheet columns AE:BI and stamps the result on every row).
+-- Without it Fusion reads the file differently: quantities are dropped
+-- (PJO_XFACE_AMT_MISSING) and LINE budgets fail with PJO_XFACE_GENERIC_ERROR.
+-- Proven by the known-good comparison (docs/findings/known_good_ProjectBudgets.md,
+-- variants B vs C: the marker alone made DMT's layout load like the known-good
+-- file). It is a fixed template-format constant, not a business value.
 -- ============================================================
+
+    C_TEMPLATE_MARKER     CONSTANT VARCHAR2(20) := '-1318020000';
+    C_TEMPLATE_MARKER_DFF CONSTANT VARCHAR2(20) := '-1318020001';
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
         l_blob         BLOB;
@@ -56,8 +78,29 @@
     FUNCTION gen_budget_csv (p_run_id IN NUMBER) RETURN CLOB IS
         l_csv CLOB;
         l_line VARCHAR2(32767);
+        l_marker  VARCHAR2(20) := C_TEMPLATE_MARKER;
+        l_dff_cnt NUMBER;
     BEGIN
         DBMS_LOB.CREATETEMPORARY(l_csv, TRUE);
+        -- File-level template marker (column 29), exactly as the GenCSV macro:
+        -- if any row in this file carries a flexfield attribute, every row gets
+        -- -1318020001; otherwise every row gets -1318020000.
+        SELECT COUNT(*) INTO l_dff_cnt
+        FROM   DMT_PRJ_BUDGET_TFM_TBL t
+        WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED'
+        AND    COALESCE(t.ATTRIBUTE_CATEGORY,
+                        t.ATTRIBUTE1,  t.ATTRIBUTE2,  t.ATTRIBUTE3,  t.ATTRIBUTE4,  t.ATTRIBUTE5,
+                        t.ATTRIBUTE6,  t.ATTRIBUTE7,  t.ATTRIBUTE8,  t.ATTRIBUTE9,  t.ATTRIBUTE10,
+                        t.ATTRIBUTE11, t.ATTRIBUTE12, t.ATTRIBUTE13, t.ATTRIBUTE14, t.ATTRIBUTE15,
+                        t.ATTRIBUTE16, t.ATTRIBUTE17, t.ATTRIBUTE18, t.ATTRIBUTE19, t.ATTRIBUTE20,
+                        t.ATTRIBUTE21, t.ATTRIBUTE22, t.ATTRIBUTE23, t.ATTRIBUTE24, t.ATTRIBUTE25,
+                        t.ATTRIBUTE26, t.ATTRIBUTE27, t.ATTRIBUTE28, t.ATTRIBUTE29, t.ATTRIBUTE30)
+               IS NOT NULL
+        AND    ROWNUM = 1;
+        IF l_dff_cnt > 0 THEN
+            l_marker := C_TEMPLATE_MARKER_DFF;
+        END IF;
+
         FOR r IN (
             SELECT t.* FROM DMT_PRJ_BUDGET_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED'
@@ -93,7 +136,7 @@
                 q(r.LINE_TYPE)                       || ',' ||  -- 26
                 qd(r.PLANNING_START_DATE)            || ',' ||  -- 27
                 qd(r.PLANNING_END_DATE)              || ',' ||  -- 28
-                '""'                                 || ',' ||  -- 29 REQUEST_ID (auto-populated)
+                q(l_marker)                          || ',' ||  -- 29 template marker (-1318020000 / -1318020001 with DFF)
                 q(r.ATTRIBUTE_CATEGORY)              || ',' ||  -- 30
                 q(r.ATTRIBUTE1)  || ',' || q(r.ATTRIBUTE2)  || ',' ||  -- 31-32
                 q(r.ATTRIBUTE3)  || ',' || q(r.ATTRIBUTE4)  || ',' ||  -- 33-34

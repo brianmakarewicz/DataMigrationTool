@@ -188,7 +188,8 @@ page 54 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT l.LOG_ID,
+                SELECT /*+ INDEX_DESC(l DMT_LOG_N4) */
+                       l.LOG_ID,
                        l.RUN_ID,
                        (SELECT MAX(q.CEMLI_CODE)
                           FROM DMT_WORK_QUEUE_TBL q
@@ -201,13 +202,13 @@ page 54 (
                        SUBSTR(l.MESSAGE, 1, 300) AS MESSAGE,
                        l.SQLERRM_TEXT AS ERROR
                 FROM DMT_LOG_TBL l
-                WHERE (:P54_RUN_ID    IS NULL OR l.RUN_ID = :P54_RUN_ID)
+                WHERE l.RUN_ID = :P54_RUN_ID
                   AND (:P54_QUEUE_ID  IS NULL OR l.QUEUE_ID      = :P54_QUEUE_ID)
                   AND (:P54_LOG_LEVEL IS NULL OR l.LOG_TYPE       = :P54_LOG_LEVEL)
                   AND (:P54_SOURCE    IS NULL OR l.PACKAGE_NAME   = :P54_SOURCE)
                   AND (:P54_CEMLI_CODE IS NULL OR l.QUEUE_ID IN (
                          SELECT q.QUEUE_ID FROM DMT_WORK_QUEUE_TBL q
-                         WHERE (:P54_RUN_ID IS NULL OR q.RUN_ID = :P54_RUN_ID)
+                         WHERE q.RUN_ID = :P54_RUN_ID
                            AND q.CEMLI_CODE = :P54_CEMLI_CODE))
                 ORDER BY l.LOG_DATE DESC, l.LOG_ID DESC
                 ```
@@ -262,8 +263,8 @@ page 54 (
             savedReportMappingIdentifier: 99540511
         }
         serverSideCondition {
-            type: itemIsNull
-            item: P54_LOG_ID
+            type: expression
+            plsqlExpression: :P54_LOG_ID IS NULL AND :P54_RUN_ID IS NOT NULL
         }
 
         column ERROR (
@@ -427,6 +428,300 @@ page 54 (
         )
 
         savedReport RUNLOG123 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn LOG_ID (
+                sequence: 1
+            )
+
+            displayColumn RUN_ID (
+                sequence: 2
+            )
+
+            displayColumn CEMLI_CODE (
+                sequence: 3
+            )
+
+            displayColumn LOG_TIME (
+                sequence: 4
+            )
+
+            displayColumn LOG_TYPE (
+                sequence: 5
+            )
+
+            displayColumn PACKAGE_NAME (
+                sequence: 6
+            )
+
+            displayColumn PROCEDURE_NAME (
+                sequence: 7
+            )
+
+            displayColumn MESSAGE (
+                sequence: 8
+            )
+
+            displayColumn ERROR (
+                sequence: 9
+            )
+
+            displayColumn QUEUE_ID (
+                sequence: 10
+            )
+
+        )
+
+    )
+
+    region log-entries-all (
+        name: Activity Log
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT l.LOG_ID,
+                       l.RUN_ID,
+                       (SELECT MAX(q.CEMLI_CODE)
+                          FROM DMT_WORK_QUEUE_TBL q
+                         WHERE q.QUEUE_ID = l.QUEUE_ID) AS CEMLI_CODE,
+                       l.QUEUE_ID,
+                       TO_CHAR(l.LOG_DATE, 'MM/DD HH24:MI:SS') AS LOG_TIME,
+                       l.LOG_TYPE,
+                       l.PACKAGE_NAME,
+                       l.PROCEDURE_NAME,
+                       SUBSTR(l.MESSAGE, 1, 300) AS MESSAGE,
+                       l.SQLERRM_TEXT AS ERROR
+                FROM DMT_LOG_TBL l
+                WHERE (:P54_QUEUE_ID  IS NULL OR l.QUEUE_ID      = :P54_QUEUE_ID)
+                  AND (:P54_LOG_LEVEL IS NULL OR l.LOG_TYPE       = :P54_LOG_LEVEL)
+                  AND (:P54_SOURCE    IS NULL OR l.PACKAGE_NAME   = :P54_SOURCE)
+                  AND (:P54_CEMLI_CODE IS NULL OR l.QUEUE_ID IN (
+                         SELECT q.QUEUE_ID FROM DMT_WORK_QUEUE_TBL q
+                         WHERE q.CEMLI_CODE = :P54_CEMLI_CODE))
+                ORDER BY l.LOG_DATE DESC, l.LOG_ID DESC
+                ```
+            pageItemsToSubmit: [
+                P54_RUN_ID
+                P54_QUEUE_ID
+                P54_CEMLI_CODE
+                P54_LOG_LEVEL
+                P54_SOURCE
+            ]
+        }
+        layout {
+            sequence: 31
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        link {
+            linkColumn: customTarget
+            target: {
+                page: 54
+                items: {
+                    P54_LOG_ID: #LOG_ID#
+                    P54_RUN_ID: #RUN_ID#
+                }
+                clearCache: 54
+            }
+            linkIcon: <span class="fa fa-chevron-right"></span>
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        performance {
+            maxRowsToProcess: 5000
+        }
+        download {
+            formats: [
+                csv
+                html
+            ]
+        }
+        messages {
+            whenNoDataFound: No log entries match the current filters.
+        }
+        advanced {
+            savedReportMappingIdentifier: 99540512
+        }
+        serverSideCondition {
+            type: expression
+            plsqlExpression: :P54_LOG_ID IS NULL AND :P54_RUN_ID IS NULL
+        }
+
+        column ERROR (
+            type: plainText
+            heading {
+                heading: Error
+            }
+            layout {
+                sequence: 90
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column LOG_ID (
+            type: plainText
+            heading {
+                heading: Log ID
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        column RUN_ID (
+            type: plainText
+            heading {
+                heading: Run #
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column CEMLI_CODE (
+            type: plainText
+            heading {
+                heading: Object
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column QUEUE_ID (
+            type: plainText
+            heading {
+                heading: Work Item
+            }
+            layout {
+                sequence: 35
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column LOG_TIME (
+            type: plainText
+            heading {
+                heading: Time
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column LOG_TYPE (
+            type: plainText
+            heading {
+                heading: Level
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column PACKAGE_NAME (
+            type: plainText
+            heading {
+                heading: Source Package
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column PROCEDURE_NAME (
+            type: plainText
+            heading {
+                heading: Procedure
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column MESSAGE (
+            type: plainText
+            heading {
+                heading: Message
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        savedReport RUNLOG124 (
             visibility: primaryDefault
             view {
                 rowsPerPage: 50

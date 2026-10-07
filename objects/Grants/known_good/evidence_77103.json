@@ -1,0 +1,48 @@
+{
+  "prefix": "77103",
+  "role": "ppm_impl",
+  "user": "ppm_impl",
+  "parameter_list": "#NULL,#NULL,#NULL",
+  "load_request_id": "10073688",
+  "load_status": "SUCCEEDED",
+  "import_request_id": "10073694",
+  "report_request_id": "10073695",
+  "import_status": "SUCCEEDED",
+  "import_props": {
+    "ERROR_RECORDS": "3",
+    "SUCCESS_RECORDS": "0",
+    "TOTAL_RECORDS": "3",
+    "submit.argument1": null,
+    "submit.argument2": null,
+    "submit.argument3": null
+  },
+  "report_status": "SUCCEEDED",
+  "report_files": [
+    "ESS_O_10073695_BIP.xml"
+  ],
+  "TOTAL_COUNT": "3",
+  "SUCCESS_COUNT": "0",
+  "FAILURE_COUNT": "3",
+  "BATCH_STATUS": "COMPLETED W/ERRORS",
+  "report_rows": [
+    {
+      "award": "77103RTGNT001",
+      "status": null,
+      "code": null,
+      "message": "No project is associated to this award. You must associate at least one project to the award.\nYou can create line and project linkage for the award contract only if there is a project assigned to the external funding source of the award."
+    },
+    {
+      "award": "77103RTGNT002",
+      "status": null,
+      "code": null,
+      "message": "No project is associated to this award. You must associate at least one project to the award.\nYou can create line and project linkage for the award contract only if there is a project assigned to the external funding source of the award."
+    },
+    {
+      "award": "77103RTGNT-BAD1",
+      "status": null,
+      "code": null,
+      "message": "You must provide a value for the Business Unit attribute."
+    }
+  ],
+  "base": []
+}

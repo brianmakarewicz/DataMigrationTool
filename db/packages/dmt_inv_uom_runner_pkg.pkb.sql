@@ -35,7 +35,9 @@
         -- Step 1: Pre-validate
         DMT_INV_UOM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(
             p_run_id   => p_run_id,
-            p_dependent_prefix => NULL
+            p_dependent_prefix => NULL,
+            p_scenario_id      => p_scenario_id,
+            p_run_mode         => p_run_mode
         );
 
         -- Step 2: Transform
@@ -129,6 +131,14 @@
             RAISE_APPLICATION_ERROR(-20101,
                 'RUN_STANDARD: could not resolve scenario "' ||
                 NVL(p_scenario_name, '(null)') || '" (detail in DMT_LOG_TBL).');
+        END IF;
+
+        -- Fail closed: a supplied scenario name must resolve to an id. A NULL id
+        -- would silently widen every STG selection to ALL scenarios.
+        IF p_scenario_name IS NOT NULL AND l_scenario_id IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20101,
+                'RUN_STANDARD: scenario "' || p_scenario_name ||
+                '" resolved to no SCENARIO_ID; refusing to run unscoped.');
         END IF;
 
         RUN(

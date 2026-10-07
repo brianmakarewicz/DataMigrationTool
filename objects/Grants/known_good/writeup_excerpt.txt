@@ -1,0 +1,14 @@
+Source: Google Drive, folder "Report Requests/DMT" (id 1rCRrHNo0JB3VCAVHFrGE6hmSVtAcYXv9),
+file writeup.txt (id 1jbiM22-Uor3ykStCsRa8X_GHaiPJ-urP), supplied by the object owner.
+
+Grants - Load Interface File for Import - Import Awards
+Successful load Process ID: 10070355
+
+Companion files in the same folder:
+  GmsAwardsImport.zip   (Drive id 1BcmT06XmcD4aC2hv3KxoIiEpqqAqjcbO) - the zip that was submitted
+  ImportAwards.xlsm     (Drive id 1e1qk73Jf9FMkLp8koMYkOW643N_QHrJ4) - the FBDI template that generated it
+
+Fusion facts read back for 10070355 (fusion_ora_ess.request_history / request_property):
+  Submitter: PPM_IMPL (both the Load Interface File job 10070343 and the import 10070355), submitted from the UI.
+  AwardMassImportJob 10070355: SUCCEEDED, TOTAL_RECORDS=5, SUCCESS_RECORDS=5, ERROR_RECORDS=0.
+  Awards created: AWDTST01B..AWDTST05B (GMS_AWARD_HEADERS_B ids 300000334908358, ...403, ...430, ...467, ...499).

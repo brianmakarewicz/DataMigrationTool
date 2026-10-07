@@ -42,9 +42,25 @@
     -- Fusion REST base path for standard lookups
     C_LOOKUPS_PATH CONSTANT VARCHAR2(200) := '/fscmRestApi/resources/11.13.18.05/standardLookups';
 
-    -- ModuleId for user-level lookup types (same common FND module GUID as
-    -- value sets; required by the standardLookups REST API on create).
-    C_MODULE_ID CONSTANT VARCHAR2(50) := '40B3FA7250D19380E040449823C67A1A';
+    -- Default ModuleId for user-level lookup types, required by the
+    -- standardLookups REST API on create. CONFIGURABLE per instance via
+    -- DMT_CONFIG_TBL key LOOKUP_DEFAULT_MODULE_ID (seeded by
+    -- db/migrations/2026-10-06_rest_load_call_status_and_module_key_widen.sql).
+    -- The literal below is the hard fallback when the key is absent, and is the
+    -- proven-valid instance module id (direct POST -> HTTP 201, type confirmed in
+    -- FND_LOOKUP_TYPES). The former hard-code '40B3FA7250D19380E040449823C67A1A'
+    -- was observed returning HTTP 400 "Invalid Module ID" during the #130 live
+    -- investigation, so the id must never again be a bare un-overridable literal.
+    C_MODULE_ID_FALLBACK CONSTANT VARCHAR2(50) := '817AA25E27D8124DE0401490D3C54C17';
+
+    -- Resolve the active default module id: config override, else the proven
+    -- fallback. A blank/absent config value falls back, never sends an empty id.
+    FUNCTION default_module_id RETURN VARCHAR2 IS
+        l_cfg VARCHAR2(500);
+    BEGIN
+        l_cfg := DMT_UTIL_PKG.GET_CONFIG('LOOKUP_DEFAULT_MODULE_ID');
+        RETURN NVL(TRIM(l_cfg), C_MODULE_ID_FALLBACK);
+    END default_module_id;
 
     -- --------------------------------------------------------
     -- Private: make a REST call and return status + response
@@ -204,7 +220,7 @@
                     || CASE WHEN r.DESCRIPTION IS NOT NULL
                        THEN ',"Description":"' || REPLACE(r.DESCRIPTION, '"', '\"') || '"'
                        END
-                    || ',"ModuleId":"' || NVL(r.MODULE_KEY, C_MODULE_ID) || '"'
+                    || ',"ModuleId":"' || NVL(r.MODULE_KEY, default_module_id) || '"'
                     || '}';
 
                 l_response := rest_call('POST', C_LOOKUPS_PATH, l_payload, p_run_id);
@@ -212,26 +228,46 @@
 
                 IF l_http_status IN (200, 201) THEN
                     -- POST accepted. Row stays GENERATED for the base-table report to
-                    -- confirm (no id to capture on lookups).
+                    -- confirm (no id to capture on lookups). Stamp LOAD_CALL_STATUS =
+                    -- CREATED: honest proof OUR OWN create for THIS record returned 2xx,
+                    -- so PARSE_AND_UPDATE may promote it (base-table key match alone is
+                    -- not enough -- #130 hollow-LOADED guard).
+                    UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted_count := l_posted_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Type POSTed (awaiting base-table confirmation): ' || r.LOOKUP_TYPE
                         || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    -- Non-2xx: stash the real REST error but leave the row GENERATED.
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+                    -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
+                    -- per-record message body (#161). A blank-bodied transport code is
+                    -- NOT a per-record verdict: stash nothing, leave the row GENERATED
+                    -- so the honest accounting gate surfaces it as UNACCOUNTED.
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
+                    -- Record that OUR create for THIS record did NOT return 2xx
+                    -- (#130): LOAD_CALL_STATUS = REJECTED keeps the row out of the
+                    -- LOADED promotion even when the error body is blank and a
+                    -- pre-existing base-table row shares its key.
                     UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Type POST rejected (stashed, awaiting base-table verdict): '
-                        || r.LOOKUP_TYPE || ' HTTP ' || l_http_status,
+                        'Type POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL
+                             THEN 'real error stashed, awaiting base-table verdict'
+                             ELSE 'blank body, left UNACCOUNTED (no bare HTTP code stashed)'
+                        END || '): ' || r.LOOKUP_TYPE || ' HTTP ' || l_http_status,
                         p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
 
@@ -243,7 +279,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -297,13 +334,50 @@
             SELECT v.TFM_SEQUENCE_ID,
                    v.LOOKUP_TYPE, v.LOOKUP_CODE, v.DISPLAY_SEQUENCE,
                    v.ENABLED_FLAG, v.START_DATE_ACTIVE, v.END_DATE_ACTIVE,
-                   v.MEANING, v.DESCRIPTION, v.TAG
+                   v.MEANING, v.DESCRIPTION, v.TAG,
+                   (SELECT COUNT(*) FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
+                    WHERE  t.RUN_ID = p_run_id
+                    AND    t.LOOKUP_TYPE = v.LOOKUP_TYPE) AS parent_rows,
+                   (SELECT MAX(t.LOAD_CALL_STATUS) FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
+                    WHERE  t.RUN_ID = p_run_id
+                    AND    t.LOOKUP_TYPE = v.LOOKUP_TYPE
+                    AND    t.LOAD_CALL_STATUS = 'CREATED') AS parent_created,
+                   (SELECT MAX(DBMS_LOB.SUBSTR(t.ERROR_TEXT, 1500, 1)) FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
+                    WHERE  t.RUN_ID = p_run_id
+                    AND    t.LOOKUP_TYPE = v.LOOKUP_TYPE) AS parent_error
             FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL v
             WHERE  v.RUN_ID = p_run_id
             AND    v.TFM_STATUS = 'GENERATED'
             ORDER BY v.LOOKUP_TYPE, v.DISPLAY_SEQUENCE, v.TFM_SEQUENCE_ID
         ) LOOP
             BEGIN
+                -- Parent-failed cascade (run 236 BADVAL): when this run also sent
+                -- the value's parent lookup TYPE and Fusion did NOT create it, the
+                -- value cannot be created either. Posting it anyway only draws a
+                -- blank-bodied HTTP 404 from the missing child collection, which
+                -- (#161) carries no per-record message and left the row
+                -- UNACCOUNTED although its outcome is known. So the value is not
+                -- sent; it is stamped [PARENT_FAILED] naming the failed type and
+                -- quoting the type's real Fusion error, and the sweep lands it
+                -- FAILED. LOAD_CALL_STATUS stays NULL (never attempted).
+                IF r.parent_rows > 0 AND r.parent_created IS NULL THEN
+                    UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
+                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                               '[PARENT_FAILED] Lookup code not sent to Fusion: parent lookup type "'
+                               || r.LOOKUP_TYPE || '" was not created in Fusion'
+                               || CASE WHEN r.parent_error IS NOT NULL
+                                       THEN '. Parent lookup type error: ' || r.parent_error
+                                       ELSE ' (no Fusion error captured for the parent).' END),
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
+                    l_reject_count := l_reject_count + 1;
+                    DMT_UTIL_PKG.LOG(p_run_id,
+                        'Value not sent (parent lookup type not created): '
+                        || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE,
+                        p_package => C_PKG, p_procedure => C_PROC);
+                    CONTINUE;
+                END IF;
+
                 l_payload := '{"LookupCode":"' || REPLACE(r.LOOKUP_CODE, '"', '\"') || '"'
                     || ',"DisplaySequence":' || NVL(TO_CHAR(r.DISPLAY_SEQUENCE), '1')
                     || ',"EnabledFlag":"' || NVL(r.ENABLED_FLAG, 'Y') || '"'
@@ -328,23 +402,41 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- #130: stamp CREATED -- our own POST for THIS value returned 2xx.
+                    UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted_count := l_posted_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Value POSTed (awaiting base-table confirmation): '
                         || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+                    -- Non-2xx. Stash a [FUSION_ERROR] ONLY when Fusion returned a real
+                    -- per-record message body (#161). A blank-bodied transport code is
+                    -- NOT a per-record verdict: stash nothing, leave the row GENERATED
+                    -- so the honest accounting gate surfaces it as UNACCOUNTED.
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
+                    -- #130: our create did NOT return 2xx -> REJECTED (keeps the row
+                    -- out of the LOADED promotion even on a blank body + key collision).
                     UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Value POST rejected (stashed, awaiting base-table verdict): '
+                        'Value POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL
+                             THEN 'real error stashed, awaiting base-table verdict'
+                             ELSE 'blank body, left UNACCOUNTED (no bare HTTP code stashed)'
+                        END || '): '
                         || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE || ' HTTP ' || l_http_status,
                         p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
@@ -357,7 +449,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -388,7 +481,7 @@
     -- value keys. Delegates to the shared DMT_UTIL_PKG.RUN_BIP_REPORT. Two
     -- parameters: P_TYPE_CODES (comma-delimited LOOKUP_TYPE list) and
     -- P_VALUE_KEYS (comma-delimited LOOKUP_TYPE^LOOKUP_CODE composite-key list);
-    -- config codes are not run-prefixed. PROCEDURE per the procedures-only
+    -- lookup types carry the run prefix. PROCEDURE per the procedures-only
     -- contract: x_report_xml NULL with x_error_code = C_SUCCESS means zero rows;
     -- failures are logged and surfaced through x_error_code -- exceptions never
     -- escape.
@@ -510,13 +603,26 @@
             IF r.source_type = 'TYPE' THEN
                 -- Positive proof: the type exists in FND_LOOKUP_TYPES. LOADED by
                 -- string-key match; FUSION_LOOKUP_TYPE_ID stays NULL (no id source).
+                -- #160 guard: a row whose OWN POST failed (ERROR_TEXT stashed) is NOT
+                -- promoted on a natural-key base-table hit -- the key may be a
+                -- pre-existing/duplicate type, not proof THIS record loaded. The
+                -- ERROR_TEXT IS NULL predicate is the honest surrogate for the
+                -- FBDI path's "... AND <fusion-id> IS NOT NULL" guard (lookups have
+                -- no numeric surrogate to null-check).
+                -- #130 hollow-LOADED guard: promote ONLY when OUR OWN create for
+                -- THIS type returned 2xx (LOAD_CALL_STATUS = 'CREATED'). A
+                -- base-table key match alone can be a PRE-EXISTING type DMT never
+                -- created; ERROR_TEXT IS NULL is not enough because a blank-bodied
+                -- 404 stashes no error. Only a record we actually created is LOADED.
                 UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID     = p_run_id
                 AND    LOOKUP_TYPE = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_types_loaded := l_types_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'VALUE' THEN
@@ -526,6 +632,11 @@
                     l_type := SUBSTR(r.record_key, 1, l_sep - 1);
                     l_code := SUBSTR(r.record_key, l_sep + 1);
 
+                    -- #160 guard: a value whose OWN POST failed (ERROR_TEXT stashed) is
+                    -- NOT promoted on a natural-key base-table hit. ERROR_TEXT IS NULL
+                    -- is the honest surrogate for the FBDI id non-null guard.
+                    -- #130 hollow-LOADED guard: promote ONLY when OUR OWN create for
+                    -- THIS value returned 2xx (LOAD_CALL_STATUS = 'CREATED').
                     UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            RESULTS_UPDATED_DATE = SYSDATE,
@@ -533,7 +644,9 @@
                     WHERE  RUN_ID     = p_run_id
                     AND    LOOKUP_TYPE = l_type
                     AND    LOOKUP_CODE = l_code
-                    AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                    AND    ERROR_TEXT IS NULL
+                    AND    LOAD_CALL_STATUS = 'CREATED';
                     l_values_loaded := l_values_loaded + SQL%ROWCOUNT;
                 END IF;
             END IF;
@@ -582,7 +695,7 @@
 
         -- Build the comma-delimited lists of type codes / value keys we POSTed and
         -- still need confirmed (rows the load step did NOT mark FAILED; config
-        -- codes are not run-prefixed, so match the base tables on the exact codes).
+        -- types carry the run prefix, so match the base tables on the exact TFM keys).
         SELECT LISTAGG(LOOKUP_TYPE, ',') WITHIN GROUP (ORDER BY LOOKUP_TYPE)
         INTO   l_type_codes
         FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL

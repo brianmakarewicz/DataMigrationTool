@@ -7,6 +7,24 @@
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_FND_VS_TRANSFORM_PKG';
 
+    -- --------------------------------------------------------
+    -- Private: read run prefix from DMT_PIPELINE_RUN_TBL
+    -- (same helper every prefixing transform carries).
+    -- --------------------------------------------------------
+    FUNCTION get_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
+        l_prefix VARCHAR2(30);
+    BEGIN
+        SELECT PREFIX
+        INTO   l_prefix
+        FROM   DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
+        RETURN l_prefix;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20001,
+                'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
+    END get_prefix;
+
     -- ============================================================
     -- TRANSFORM_SETS
     -- Inserts from STG to TFM for value set definitions.
@@ -20,6 +38,7 @@
     ) IS
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
+        l_prefix        VARCHAR2(30);
 
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -32,8 +51,50 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_FND_VS_SET_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
+
+        l_prefix := get_prefix(p_run_id);
+
+        -- Run prefix on the user-facing unique key(s) (owner decision: config
+        -- objects prefix keys exactly like Suppliers/Customers/Items). Prefix-fit
+        -- guard: a key that cannot carry the full prefix within its Fusion limit
+        -- is NOT truncated (a truncated key can collide). The row is recorded
+        -- FAILED with a [TRANSFORM_ERROR] naming the limit and is excluded from
+        -- the TFM insert below.
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'ValueSets', 'Value Sets', s.STG_SEQUENCE_ID,
+               '[TRANSFORM_ERROR] '
+               || CASE WHEN LENGTH(l_prefix || s.VALUE_SET_CODE) > 60
+                       THEN 'VALUE_SET_CODE "' || s.VALUE_SET_CODE || '" (' || LENGTH(l_prefix || s.VALUE_SET_CODE)
+                            || ' chars with prefix, Fusion limit 60) ' END
+               || 'cannot carry run prefix ' || l_prefix
+               || ' (not truncated, to avoid a key collision).'
+        FROM   DMT_FND_VS_SET_STG_TBL s
+        WHERE  (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND (LENGTH(l_prefix || s.VALUE_SET_CODE) > 60)
+        AND NOT EXISTS (SELECT 1 FROM DMT_FND_VS_SET_TFM_TBL t
+                        WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+        AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                        WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                        AND e.SUB_OBJECT = 'Value Sets');
+        l_fail_count := SQL%ROWCOUNT;
+        UPDATE DMT_FND_VS_SET_STG_TBL
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Value Sets')
+        AND    STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_FND_VS_SET_TFM_TBL (
@@ -59,7 +120,7 @@
                     p_run_id,
                     s.SOURCE_GROUP_ID,
 
-                    s.VALUE_SET_CODE,
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.VALUE_SET_CODE, 60),
                     s.DESCRIPTION,
                     s.MODULE_ID,
                     s.VALIDATION_TYPE,
@@ -82,6 +143,7 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND LENGTH(l_prefix || s.VALUE_SET_CODE) <= 60
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
@@ -144,7 +206,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Value Sets')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(
@@ -170,6 +234,7 @@
     ) IS
         l_ok_count      NUMBER := 0;
         l_fail_count    NUMBER := 0;
+        l_prefix        VARCHAR2(30);
 
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -182,8 +247,50 @@
         IF p_reprocess_errors THEN
             UPDATE DMT_FND_VS_VALUE_STG_TBL
             SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED');
+            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
+            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
         END IF;
+
+        l_prefix := get_prefix(p_run_id);
+
+        -- Run prefix on the user-facing unique key(s) (owner decision: config
+        -- objects prefix keys exactly like Suppliers/Customers/Items). Prefix-fit
+        -- guard: a key that cannot carry the full prefix within its Fusion limit
+        -- is NOT truncated (a truncated key can collide). The row is recorded
+        -- FAILED with a [TRANSFORM_ERROR] naming the limit and is excluded from
+        -- the TFM insert below.
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'ValueSets', 'Value Set Values', s.STG_SEQUENCE_ID,
+               '[TRANSFORM_ERROR] '
+               || CASE WHEN LENGTH(l_prefix || s.VALUE_SET_CODE) > 60
+                       THEN 'parent VALUE_SET_CODE "' || s.VALUE_SET_CODE || '" (' || LENGTH(l_prefix || s.VALUE_SET_CODE)
+                            || ' chars with prefix, Fusion limit 60) ' END
+               || 'cannot carry run prefix ' || l_prefix
+               || ' (not truncated, to avoid a key collision).'
+        FROM   DMT_FND_VS_VALUE_STG_TBL s
+        WHERE  (
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+          )
+        AND (p_scenario_id IS NULL
+             OR s.SCENARIO_ID = p_scenario_id
+             OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND (LENGTH(l_prefix || s.VALUE_SET_CODE) > 60)
+        AND NOT EXISTS (SELECT 1 FROM DMT_FND_VS_VALUE_TFM_TBL t
+                        WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
+        AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                        WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                        AND e.SUB_OBJECT = 'Value Set Values');
+        l_fail_count := SQL%ROWCOUNT;
+        UPDATE DMT_FND_VS_VALUE_STG_TBL
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Value Set Values')
+        AND    STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_FND_VS_VALUE_TFM_TBL (
@@ -208,7 +315,7 @@
                     p_run_id,
                     s.SOURCE_GROUP_ID,
 
-                    s.VALUE_SET_CODE,
+                    DMT_UTIL_PKG.PREFIXED(l_prefix, s.VALUE_SET_CODE, 60),
                     s.VALUE,
                     s.DESCRIPTION,
                     s.ENABLED_FLAG,
@@ -230,6 +337,7 @@
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
         )
+        AND LENGTH(l_prefix || s.VALUE_SET_CODE) <= 60
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
@@ -292,7 +400,9 @@
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                            WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Value Set Values')
-                AND    STG_STATUS IN ('NEW','TRANSFORMED');
+                AND    STG_STATUS IN ('NEW','TRANSFORMED')
+                AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                        OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;  -- fail-path diagnostics must never throw
             END;
             DMT_UTIL_PKG.LOG_ERROR(

@@ -33,3 +33,8 @@ error is marked FAILED on that error.
 BUILT — REST pipeline. Accounts are POSTed to the `cashBankAccounts` resource after
 their parent branch is confirmed, then reconciled against `CE_BANK_ACCOUNTS`. The old
 FBL flat-file generator was retired (backlog #39).
+
+## Run prefix and parent-failed rule (2026-10-06)
+`ACCOUNT_NAME` (Fusion limit 80) and the parent `BANK_NAME` carry the run prefix. An account
+whose parent branch was not created is not sent and lands FAILED with a `[PARENT_FAILED]`
+error naming the branch and quoting its Fusion error (see `objects/Banks/README.md`).

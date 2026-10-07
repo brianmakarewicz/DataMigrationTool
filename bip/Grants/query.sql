@@ -1,93 +1,58 @@
 -- ============================================================
--- Grants BIP reconciliation query -- BIP reconciliation report
--- contract v1 (nine columns, keyset pagination). Data source:
--- ApplicationDB_FSCM. This mirrors the SQL embedded in
--- DMT_GRANT_RECON_DM.xdm for review; the .xdm is authoritative.
+-- Grants reconciliation data model V2 -- BIP reconciliation report
+-- contract v1 (nine columns, keyset pagination, the six standard
+-- parameters). Deployed ALONGSIDE V1 (DMT_GRANT_RECON_DM.xdm), never
+-- overwriting it. bip/Grants/query.sql is a byte-for-byte copy of this
+-- SQL text (section 7: repo query must exactly match the deployed query).
 --
--- NINE columns, in contract order:
+-- WHY V2 (docs/findings/known_good_Grants.md, 2026-10-07): an award
+-- created by FBDI import carries NO request id and NO sponsor award
+-- number. On every known-good and replay award GMS_AWARD_HEADERS_B
+-- DC_REQUEST_ID, SUMMARY_REQUEST_ID, SPONSOR_AWARD_NUMBER, ATTRIBUTE1
+-- and OKC_K_HEADERS_ALL_B.REQUEST_ID are all NULL. V1 scoped the BASE
+-- tier by DC_REQUEST_ID = :P_IMPORT_ESS_ID and keyed on
+-- SPONSOR_AWARD_NUMBER, so a successfully created award was never
+-- found and every good row stayed UNACCOUNTED.
+--
+-- V2 BASE tier: the award number IS the contract number. Join
+-- OKC_K_HEADERS_ALL_B on ID (current version, VERSION_TYPE = 'C'),
+-- key on CONTRACT_NUMBER (= the prefixed AWARD_NUMBER DMT stamps at
+-- transform and stores as RECON_KEY), and scope the run by the
+-- prefix: CONTRACT_NUMBER LIKE :P_PREFIX || '%' AND AWARD_SOURCE =
+-- 'FBDI'. Verified live 2026-10-07 against the prefix-77101 replay:
+-- five rows, one per award, ids 300000334921091 .. 300000334921234.
+-- An unrelated award whose number happens to start with the same
+-- digits can appear here; it matches no TFM RECON_KEY, so it is
+-- inert in the reconciler (never applied).
+--
+-- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
 --   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
---   DMT_REFERENCE
---
+--   DMT_REFERENCE.
 -- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
---   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY. No P_OFFSET / P_LIMIT.
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
 --
--- Keyset: ORDER BY RECORD_KEY, only rows whose RECORD_KEY sorts
--- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
---
--- OBJECT: Grants award headers (AwardMassImportJob). Awards import
--- as ONE object (the header). The award children -- projects,
--- funding, personnel, terms, etc. -- have NO persistent Fusion base
--- or interface tables to reconcile against on this pod (verified:
--- no GMS_AWARD_PROJ% tables exist; the *_INT interface tables are
--- PURGED by Fusion right after import). So this DM reconciles the
--- award HEADER tier only; per-award children are covered indirectly
--- (a header that reached the base table imported its children with
--- it, and a rejected header carries its real Fusion message).
---
--- TWO tiers, discriminated by OBJECT_TYPE / SOURCE_TYPE and
--- UNION ALL-ed, then ordered by RECORD_KEY:
---
---   BASE      -- rows that reached GMS_AWARD_HEADERS_B for this run.
---     Run scoping: DC_REQUEST_ID = :P_IMPORT_ESS_ID. (VERIFIED on
---     the live pod: for AWARD_SOURCE='FBDI' rows, SUMMARY_REQUEST_ID
---     is always NULL and DC_REQUEST_ID carries the real import ESS
---     request id -- e.g. DC_REQUEST_ID=8317302. The old two-column
---     stub filtered on SUMMARY_REQUEST_ID and would have returned
---     zero base rows.) AWARD_SOURCE='FBDI' excludes UI-entered awards.
---     FUSION_ID = ID (award id). RECORD_KEY = SPONSOR_AWARD_NUMBER
---     when present, else a stable 'AWARD_ID:'||ID key so the keyset
---     order is never null. SOURCE_REF = AWARD_SOURCE ('FBDI'/'UI').
---     DMT_REFERENCE = ATTRIBUTE1 (DMT descriptive-flexfield slot).
---
---   INTERFACE -- rows still in GMS_AWARD_HEADERS_INT after import
---     that Fusion did not mark successful. Run scoping:
---     LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID. RECORD_KEY = AWARD_NUMBER
---     (the prefixed number DMT stamps at transform, so it reads back
---     exactly). Real Fusion error text from PROCESSED_MESSAGE +
---     MESSAGE_USER_DETAILS + MESSAGE_USER_ACTION (never CAST(NULL) -- AD#19).
---
---     !! FUSION PURGES GMS_AWARD_HEADERS_INT (and the award
---     interface/error tables) IMMEDIATELY AFTER EVERY AwardMassImportJob
---     RUN -- on SUCCESS AND on REJECT alike (documented + verified live
---     in objects/Grants/README.md, "Reconciliation -- Award Batch Import
---     Report"). So this INTERFACE tier is STRUCTURALLY EXPECTED TO RETURN
---     ZERO ROWS in production; it does NOT capture per-award rejections.
---     Do NOT assume it populates on a fresh run.
---
---     Real per-award rejection messages come from the Award Batch Import
---     Report path -- a SEPARATE child ESS request (ImportAwardReportJob /
---     AwardBatchImportReportDm) parsed by dmt_grants_results_pkg
---     (apply_award_import_report / PARSE_AND_UPDATE). Whoever wires this
---     DM into the generic Contract v1 recon engine MUST keep that
---     fallback. Unlike GLBalances / Requisitions -- whose interface tiers
---     DO persist and populate -- this object's interface table is purged,
---     so trusting interface-tier absence as LOADED would re-introduce the
---     already-fixed "interface purged -> UNACCOUNTED" bug.
---
--- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
---   BASE (present in base table) => SUCCESS.
---   INTERFACE (rejection left behind, if ever present) => ERROR.
--- FUSION_ID non-null on every BASE row; ERROR_MESSAGE non-null on
--- every ERROR row.
---
--- POD NOTE: Grants is NOT configured on the demo pod. GMS_AWARD_HEADERS_B
--- still holds 117 historical rows (57 FBDI / 44 UI from earlier work), so
--- the BASE tier's shape is proven against real data. The INTERFACE tier
--- was NOT exercised against a real rejected import -- and cannot reliably
--- be, since Fusion purges the interface table right after import -- so its
--- documented role here is the zero-row purge case described above.
+-- TWO tiers via SOURCE_TYPE, UNION ALL, ordered by RECORD_KEY:
+--   BASE      -- award in GMS_AWARD_HEADERS_B (positive proof).
+--                FUSION_ID = GMS_AWARD_HEADERS_B.ID.
+--   INTERFACE -- GMS_AWARD_HEADERS_INT rows left behind that Fusion
+--                did not mark successful, keyed on the same prefixed
+--                AWARD_NUMBER. Fusion purges the award interface
+--                tables right after AwardMassImportJob, so this tier
+--                is normally zero rows. The real per-award rejection
+--                messages come from Fusion's Award Batch Import Report
+--                (ImportAwardReportJob, LIST_G_4/G_4 PROCESSED_MESSAGE),
+--                read by DMT_GRANTS_RESULTS_PKG.apply_award_import_report.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    -- Tier: BASE -- award headers that reached GMS_AWARD_HEADERS_B
-    -- for this import request. Run-scoped by DC_REQUEST_ID.
+    -- Tier: BASE -- awards that reached GMS_AWARD_HEADERS_B, found by
+    -- their (prefixed) contract number.
     SELECT
         'Grants'                             AS object_type,
-        NVL(b.sponsor_award_number,
-            'AWARD_ID:' || b.id)             AS record_key,
+        k.contract_number                    AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
         b.id                                 AS fusion_id,
@@ -96,21 +61,19 @@ FROM (
         b.award_source                       AS source_ref,
         b.attribute1                         AS dmt_reference
     FROM   gms_award_headers_b b
-    WHERE  b.dc_request_id = :P_IMPORT_ESS_ID
-    AND    b.award_source  = 'FBDI'
+    JOIN   okc_k_headers_all_b k
+           ON  k.id           = b.id
+           AND k.version_type = 'C'
+    WHERE  k.contract_number LIKE :P_PREFIX || '%'
+    AND    b.award_source    = 'FBDI'
 
     UNION ALL
 
-    -- Tier: INTERFACE -- award headers still in the interface table
-    -- after import that Fusion did not mark successful = rejections.
-    -- RECORD_KEY aligned with the BASE tier: both tiers key on
-    -- SPONSOR_AWARD_NUMBER, falling back to the prefixed AWARD_NUMBER here
-    -- (no Fusion award id on the interface row). Structurally zero-rows on
-    -- this pod (Fusion purges the interface table after import).
+    -- Tier: INTERFACE -- award-header rejections left behind (normally
+    -- zero rows; Fusion purges the interface table after import).
     SELECT
         'Grants'                             AS object_type,
-        NVL(h.sponsor_award_number,
-            h.award_number)                  AS record_key,
+        h.award_number                       AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -136,9 +99,9 @@ FROM (
     WHERE  h.load_request_id = :P_LOAD_REQUEST_ID
     AND    NVL(UPPER(h.processed_status),'X') NOT IN ('SUCCESS','S','PROCESSED')
 )
--- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
--- BIP, so treat NULL as "from the start". On later pages it carries the
--- previous page's last RECORD_KEY; only greater keys are returned.
+-- Keyset predicate. Empty P_AFTER_KEY (first page) binds NULL => from
+-- the start. Later pages carry the previous page's last RECORD_KEY;
+-- only greater keys are returned.
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY

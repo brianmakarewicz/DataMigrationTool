@@ -140,6 +140,14 @@
                 'resolve_scenario: GET_OR_CREATE_SCENARIO failed for scenario "' ||
                 p_scenario_name || '" (detail in DMT_LOG_TBL).');
         END IF;
+        -- Fail closed: a supplied scenario name must resolve to an id. Every
+        -- validator and transform reads a NULL id as "no scenario filter", so a
+        -- NULL here would silently widen the run to every scenario's STG rows.
+        IF p_scenario_name IS NOT NULL AND x_scenario_id IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20115,
+                'resolve_scenario: scenario "' || p_scenario_name ||
+                '" resolved to no SCENARIO_ID; refusing to run unscoped.');
+        END IF;
     END resolve_scenario;
 
     -- --------------------------------------------------------
@@ -1771,13 +1779,11 @@
     --     spawn-per-partition: no CHILD_PARTITION_COLUMN in DMT_CEMLI_SPLIT_CFG,
     --     no PARTITION_KEYS_PROC). Same shape as the Purchasing family; it reuses
     --     po_submit_and_reconcile_one and settles inline (g_reconciled_inline).
-    --   * ARInvoices — GROUPED by (BU_NAME, BATCH_SOURCE_NAME). AR AutoInvoice is
-    --     a TWO-job flow: loadAndImportData chains AutoInvoiceImportEss (staging
-    --     only), then a SECOND AutoInvoiceMasterEss job actually creates the
-    --     transactions. That extra job is NOT in po_submit_and_reconcile_one, so
-    --     ARInvoices uses ar_submit_and_reconcile_one below (identical to the PO
-    --     helper plus the AR Master block copied verbatim from the retired nested
-    --     submit_and_reconcile_one).
+    --   * ARInvoices — GROUPED by (BU_NAME, BATCH_SOURCE_NAME). loadAndImportData
+    --     chains AutoInvoiceImportEss, which creates the transactions itself (base
+    --     REQUEST_ID = the import id). ARInvoices uses ar_submit_and_reconcile_one
+    --     below. (The former second AutoInvoiceMasterEss job was removed -- see
+    --     docs/findings/known_good_ARInvoices.md.)
     --   * MiscReceipts — SINGLE-LOAD SYNC. loadAndImportData does not chain an
     --     import for INV transactions (interfaceDetails is DMT-local, not a real
     --     Fusion FUN_ERP_INTERFACE_OPTIONS row), so the import step submits
@@ -1792,12 +1798,8 @@
     -- ========================================================================
 
     -- Shared helper for ARInvoices: submit one (BU, batch source) group's FBDI zip,
-    -- poll load+import ESS, run the AutoInvoiceMasterEss second job, reconcile via
-    -- BIP. Identical to po_submit_and_reconcile_one EXCEPT for the AR two-job Master
-    -- block (copied verbatim from the retired nested submit_and_reconcile_one AR
-    -- special case): once the import (staging) job SUCCEEDs, submit
-    -- AutoInvoiceMasterEss and re-point x_import_ess_id at it -- THAT job creates the
-    -- transactions and is the one reconciliation keys against. Sets g_reconciled_inline.
+    -- poll load + the chained AutoInvoiceImportEss (which creates the transactions),
+    -- reconcile via BIP against that import request. Sets g_reconciled_inline.
     PROCEDURE ar_submit_and_reconcile_one (
         p_run_id          IN NUMBER,
         p_cemli_code      IN VARCHAR2,
@@ -1871,7 +1873,7 @@
                 x_import_ess_id := NULL;
         END;
 
-        -- Poll Import (staging) job.
+        -- Poll Import job (AutoInvoiceImportEss -- creates the transactions).
         IF x_import_ess_id IS NOT NULL THEN
             COMMIT;
             DMT_UTIL_PKG.LOG(p_run_id,
@@ -1882,117 +1884,18 @@
         END IF;
 
         -- ============================================================
-        -- AR AutoInvoice is a TWO-job flow.
-        -- loadAndImportData chains AutoInvoiceImportEss, which ONLY stages
-        -- rows into RA_INTERFACE_LINES_ALL and reports SUCCEEDED without
-        -- importing anything. The transactions are actually created by a
-        -- SECOND job, AutoInvoiceMasterEss ("Import Receivables Transactions
-        -- Using AutoInvoice"). Without it, good invoices sit at
-        -- INTERFACE_STATUS = NULL forever. So once the import (staging) job
-        -- has SUCCEEDED, submit the Master job and make IT the job the
-        -- reconciler waits on. (Proven contract: MCCS RICE_005 AR package.)
+        -- AR AutoInvoice is a ONE-job flow: the import job creates the invoices.
+        -- loadAndImportData chains AutoInvoiceImportEss ("Import AutoInvoice"),
+        -- and THAT job creates the transactions: in the owner's known-good run
+        -- (Fusion 10071776) and in standalone proofs 10073584 / 10073734,
+        -- RA_CUSTOMER_TRX_ALL.REQUEST_ID equals the AutoInvoiceImportEss request
+        -- id. Fusion itself then chains AutoInvoiceMainEss (the Execution Report).
+        -- The former extra AutoInvoiceMasterEss submission was removed
+        -- (docs/findings/known_good_ARInvoices.md, code change 3): it was not
+        -- needed, every standalone Master attempt on the pod aborted, it sent all
+        -- its arguments in ONE <paramList> element, and it re-pointed
+        -- reconciliation at the wrong job. Reconciliation keys on the import id.
         -- ============================================================
-        IF x_import_ess_id IS NOT NULL
-           AND l_load_status IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
-            DECLARE
-                l_master_ess_id  VARCHAR2(100);
-                l_trx_source_id  VARCHAR2(100);
-                l_batch_source   VARCHAR2(500);
-                l_bu_count       NUMBER;
-                l_param_master   VARCHAR2(4000);
-                l_resp           CLOB;
-                l_tag_s          INTEGER;
-                l_val_s          INTEGER;
-                l_val_e          INTEGER;
-                l_master_status  VARCHAR2(50);
-            BEGIN
-                -- Batch source name is the 2nd comma slot of the AR param list
-                -- (built as BU_NAME,BATCH_SOURCE_NAME,DATE,...).
-                l_batch_source := SUBSTR(p_param_list,
-                                         INSTR(p_param_list, ',') + 1,
-                                         INSTR(p_param_list, ',', 1, 2) - INSTR(p_param_list, ',') - 1);
-
-                -- Resolve the batch source NAME to its numeric transaction-source id
-                -- (no hardcoded Fusion ids -- setup table read at preflight).
-                l_trx_source_id := DMT_UTIL_PKG.GET_LOOKUP('BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID', l_batch_source);
-
-                -- Distinct BU count across this run's AR rows -- position 1 of the
-                -- Master param list.
-                SELECT COUNT(DISTINCT BU_NAME) INTO l_bu_count
-                FROM   DMT_RA_LINES_TFM_TBL
-                WHERE  RUN_ID = p_run_id;
-
-                -- Master param list: tilde(~)-separated with #NULL for empty
-                -- slots (NOT empty strings -- empty strings make Fusion collapse
-                -- the slots so the trailing flag lands in the wrong position;
-                -- that was the documented run-179 blocker). Slot layout, matching
-                -- MCCS exactly:
-                --   pos1  = COUNT(DISTINCT BU_NAME)
-                --   pos2  = #NULL
-                --   pos3  = numeric trx_source_id
-                --   pos4  = current date YYYY-MM-DD (an OPEN period)
-                --   pos5..24 = #NULL
-                --   then N, Y, trailing ~
-                l_param_master :=
-                    l_bu_count || '~#NULL~' || l_trx_source_id || '~' ||
-                    TO_CHAR(SYSDATE, 'YYYY-MM-DD') ||
-                    '~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~' ||
-                    '#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~#NULL~N~Y~';
-
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'AR two-job flow: import (staging) job ' || x_import_ess_id ||
-                    ' SUCCEEDED. Submitting AutoInvoiceMasterEss. ParameterList: ' || l_param_master,
-                    'INFO', C_PKG, p_obj || ' > ' || C_PROC);
-
-                -- Submit AutoInvoiceMasterEss via the same submitESSJobRequest
-                -- SOAP envelope pattern used for PollTMEssJob (MiscReceipts).
-                l_resp := soap_http(
-                    p_url            => erp_soap_url,
-                    p_soap_action    => 'http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/submitESSJobRequest',
-                    p_body           => TO_CLOB(
-                        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' ||
-                        'xmlns:typ="http://xmlns.oracle.com/apps/financials/commonModules/shared/model/erpIntegrationService/types/">' ||
-                        '<soapenv:Header/><soapenv:Body>' ||
-                        '<typ:submitESSJobRequest>' ||
-                        '<typ:jobPackageName>/oracle/apps/ess/financials/receivables/transactions/autoInvoices</typ:jobPackageName>' ||
-                        '<typ:jobDefinitionName>AutoInvoiceMasterEss</typ:jobDefinitionName>' ||
-                        '<typ:paramList>' || l_param_master || '</typ:paramList>' ||
-                        '</typ:submitESSJobRequest>' ||
-                        '</soapenv:Body></soapenv:Envelope>'),
-                    p_run_id         => p_run_id,
-                    p_username       => p_username,
-                    p_password       => p_password);
-
-                l_tag_s := DBMS_LOB.INSTR(l_resp, '<result');
-                IF l_tag_s > 0 THEN
-                    l_val_s := DBMS_LOB.INSTR(l_resp, '>', l_tag_s) + 1;
-                    l_val_e := DBMS_LOB.INSTR(l_resp, '</result>', l_val_s);
-                    IF l_val_e > l_val_s THEN
-                        l_master_ess_id := DBMS_LOB.SUBSTR(l_resp, l_val_e - l_val_s, l_val_s);
-                    END IF;
-                END IF;
-
-                IF l_master_ess_id IS NULL THEN
-                    RAISE_APPLICATION_ERROR(-20051,
-                        'AR: failed to submit AutoInvoiceMasterEss. Response: ' ||
-                        DBMS_LOB.SUBSTR(l_resp, 500, 1));
-                END IF;
-
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'AutoInvoiceMasterEss submitted. ESS ID: ' || l_master_ess_id ||
-                    ' (' || p_group_label || ').',
-                    'INFO', C_PKG, p_obj || ' > ' || C_PROC);
-
-                -- Poll the Master job to terminal -- do NOT raise on error.
-                POLL_ESS_JOB(p_run_id, l_master_ess_id, 1800, FALSE, p_obj, p_cemli_code,
-                             l_master_status, p_username => p_username, p_password => p_password);
-
-                -- Re-point x_import_ess_id at the Master job: THIS is the job that
-                -- creates the transactions, so it is the one reconciliation must
-                -- wait on and key against.
-                x_import_ess_id := l_master_ess_id;
-            END;
-        END IF;
 
         -- Capture the Report child ESS job + parse import-report errors (generic;
         -- no-op for objects without a REPORT_JOB_DEF). Mirrors the nested helper.
@@ -2031,9 +1934,9 @@
         END IF;
 
         -- Backlog #70 (non-partitioned): stamp this work item's own load + import ess
-        -- ids on its own queue row. For AR the import id is the AutoInvoiceMasterEss
-        -- id (x_import_ess_id was re-pointed to it above), so the tile shows the job
-        -- that actually created the transactions. Last group with real ids wins.
+        -- ids on its own queue row. For AR the import id is the AutoInvoiceImportEss
+        -- id -- the job that actually created the transactions (base REQUEST_ID).
+        -- Last group with real ids wins.
         stamp_item_ess_ids(x_load_ess_id, x_import_ess_id);
 
         -- Reconcile via BIP — single registry-driven dispatch (once per group).
@@ -2409,8 +2312,8 @@
 
         -- Phase 1: pre-transform validation (records rejections for THIS object),
         -- then flag only this object's STG rows FAILED (per-object isolation).
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SUPPLIERS(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SUPPLIERS_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SUPPLIERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SUPPLIERS_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -2451,8 +2354,8 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_ADDRESSES(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_ADDRESSES_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_ADDRESSES_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         DMT_POZ_SUP_ADDR_TRANSFORM_PKG.TRANSFORM_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2489,8 +2392,8 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITES(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITES_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITES_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         DMT_POZ_SUP_SITE_TRANSFORM_PKG.TRANSFORM_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2527,8 +2430,8 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITE_ASSIGNMENTS(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITE_ASSIGNMENTS_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_SITE_ASSIGNMENTS_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         DMT_POZ_SUP_SITE_ASSN_TRANSFORM_PKG.TRANSFORM_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2565,8 +2468,8 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_CONTACTS(p_run_id);
-        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_CONTACTS_STG_FAILED(p_run_id);
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_CONTACTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        DMT_POZ_SUP_VALIDATOR_PKG.FLAG_CONTACTS_STG_FAILED(p_run_id, p_scenario_id => v_scenario_id);
         COMMIT;
 
         DMT_POZ_SUP_CONT_TRANSFORM_PKG.TRANSFORM_CONTACTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -2617,7 +2520,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation (Purchase Order document type).
-        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => 'Purchase Order');
+        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (headers, lines, line locations, distributions).
@@ -2959,7 +2862,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_CUST_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_CUST_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM across all 7 customer sub-object tables.
@@ -3108,13 +3011,12 @@
 
     -- --------------------------------------------------------
     -- RUN_AR_INVOICES (public) — self-contained recipe (backlog #8, fourth family).
-    -- GROUPED by (BU_NAME, BATCH_SOURCE_NAME): one FBDI zip + one loadAndImportData +
-    -- the AutoInvoiceMasterEss second job + one BIP reconcile per group, all inline
+    -- GROUPED by (BU_NAME, BATCH_SOURCE_NAME): one FBDI zip + one loadAndImportData
+    -- (chaining AutoInvoiceImportEss) + one BIP reconcile per group, all inline
     -- in a single work-queue item (NOT spawn-per-partition -- ARInvoices is in
     -- DMT_CEMLI_SPLIT_CFG with CHILD_PARTITION_COLUMN NULL, so it loads as one work
-    -- item like the Purchasing family). Uses ar_submit_and_reconcile_one for the AR
-    -- two-job flow. Upstream dependency: customers must be LOADED. Behaviour is
-    -- byte-for-byte the pre-refactor ARInvoices block of run_one_object_type.
+    -- item like the Purchasing family). Uses ar_submit_and_reconcile_one.
+    -- Upstream dependency: customers must be LOADED.
     -- --------------------------------------------------------
     PROCEDURE RUN_AR_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC   CONSTANT VARCHAR2(40) := 'RUN_AR_INVOICES';
@@ -3142,7 +3044,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_AR_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_AR_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (lines + distributions).
@@ -3159,8 +3061,8 @@
         DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(C_CEMLI, l_ar_user, l_ar_pass);
 
         -- Phase 3+4: per-group load cycle. Each distinct (BU_NAME, BATCH_SOURCE_NAME)
-        -- gets its own FBDI zip, loadAndImportData call, AutoInvoiceMasterEss second
-        -- job, and BIP reconciliation (inline per group).
+        -- gets its own FBDI zip, loadAndImportData call (chaining AutoInvoiceImportEss),
+        -- and BIP reconciliation (inline per group).
         FOR grp_rec IN (
             SELECT DISTINCT BU_NAME, BATCH_SOURCE_NAME
             FROM   DMT_RA_LINES_TFM_TBL
@@ -3195,7 +3097,7 @@
                 || ',' || TO_CHAR(SYSDATE, 'YYYY-MM-DD')
                 || ',#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL'
                 || ',#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL'
-                || ',#NULL,N,#NULL';
+                || ',#NULL,Y,#NULL';  -- arg 23 Base Due Date on Transaction Date = Y (known-good 10071776; template default)
             DMT_UTIL_PKG.LOG(p_run_id,
                 'AR ParameterList: ' || l_ar_param,
                 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);
@@ -3315,7 +3217,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_BILLING_EVENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_BILLING_EVENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -3394,7 +3296,7 @@
         -- A spawned child was already validated + transformed by its parent;
         -- re-transforming would reset its STAGED rows. Mirrors the monolith gate.
         IF g_partition_key IS NULL THEN
-            DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
             DMT_EXPENDITURE_TRANSFORM_PKG.TRANSFORM_EXPENDITURES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
@@ -3673,7 +3575,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_GRANTS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_GRANTS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM across every award record type.
@@ -3698,7 +3600,16 @@
         DMT_GRANTS_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename, l_csv_id);
 
         -- Phase 4: submit + (async return | poll + import + reconcile).
-        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, '#NULL,#NULL,#NULL');
+        -- AwardMassImportJob ParameterList (3 args): from award number, to award
+        -- number, "report success details" (a constant Yes/No flag). 'true' matches
+        -- the owner's known-good run 10070355 and makes the Award Batch Import
+        -- Report list successful awards too (LIST_G_3) next to the failures
+        -- (LIST_G_4). docs/findings/known_good_Grants.md. This is the
+        -- loadAndImportData jobList ParameterList: ONE comma-delimited element
+        -- (proven by replay A, load 10073629 / import 10073644). The
+        -- one-<paramList>-per-argument rule applies to submitESSJobRequest
+        -- (SUBMIT_IMPORT_JOB), which Grants does not use.
+        l_ok := fin_after_generate(p_run_id, C_CEMLI, C_OBJ, l_zip, l_filename, '#NULL,#NULL,true');
 
         -- Phase 5: FAILED-row accounting + completion log.
         fin_finish(p_run_id, C_CEMLI, C_OBJ);
@@ -3782,7 +3693,7 @@
         -- STAGED rows — skip straight to the per-batch load. This mirrors the
         -- g_partition_key gate the monolith used for Requisitions.
         IF g_partition_key IS NULL THEN
-            DMT_REQ_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_REQ_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
             DMT_REQ_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_REQ_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -4012,8 +3923,8 @@
         -- + transformed under the Items token (bundled into the Items FBDI ZIP); there
         -- is no separate ItemCategories step in the pipeline sequence.
         IF g_partition_key IS NULL THEN
-            DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
-            DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
             DMT_EGP_ITEM_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             -- Transform bundled categories before the Items FBDI generator picks them up
@@ -4109,27 +4020,14 @@
                 -- near-simultaneously each resolve their OWN import (#75).
                 p_import_batch_id   => grp_rec.BATCH_ID);
 
-            -- Items special case (kept from the monolith, deliberately NOT
-            -- registry-expressible): the Items FBDI ZIP bundles the ItemCategories
-            -- CSV, so on a successful load this item conditionally reconciles the
-            -- categories too when this batch generated any category rows. A
-            -- data-dependent secondary reconciler does not fit the one-RECON_PROC-
-            -- per-object registry. Scoped by g_work_queue_id so a child touches only
-            -- its own rows. po_submit_and_reconcile_one already ran the primary Items
-            -- reconcile (RECONCILE_VIA_REGISTRY) and set g_reconciled_inline.
-            IF l_it_ok THEN
-                DECLARE l_cat_gen NUMBER;
-                BEGIN
-                    SELECT COUNT(*) INTO l_cat_gen FROM DMT_EGP_ITEM_CAT_TFM_TBL
-                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                    AND   (g_work_queue_id IS NULL OR WORK_QUEUE_ID = g_work_queue_id);
-                    IF l_cat_gen > 0 THEN
-                        DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(
-                            p_run_id, TO_NUMBER(l_it_load_id), TO_NUMBER(l_it_import_id),
-                            p_work_queue_id => g_work_queue_id);
-                    END IF;
-                END;
-            END IF;
+            -- Items categories: no secondary reconciler call here any more.
+            -- po_submit_and_reconcile_one already ran the Items registered
+            -- reconciler (RECONCILE_VIA_REGISTRY), and DMT_EGP_ITEM_RESULTS_PKG
+            -- reconciles Item Master AND Item Categories from the one Contract v1
+            -- report (DMT_ITEM_RECON_V2_DM). The retired DMT_EGP_ITEM_CAT_RESULTS_PKG
+            -- read a report that never carried an error message or a Fusion id,
+            -- matched without the category code, and could flip a FAILED category
+            -- row to LOADED (run 236 findings).
 
             -- Backlog #70: stamp THIS child's own distinct load + import ess ids on
             -- its own queue row (no-op outside a queue-driven partition child).
@@ -4196,7 +4094,7 @@
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_ITEM_CATEGORIES start (validate+transform only — ESS submission via RUN_ITEMS).', 'INFO', C_PKG, C_PROC);
 
-        DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_EGP_ITEM_CAT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(
             p_run_id   => p_run_id,
             p_reprocess_errors => (p_run_mode = 'FAILED'),
@@ -4256,7 +4154,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_MISC_RECEIPT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_MISC_RECEIPT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -4480,7 +4378,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_PROJECT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id);
+        DMT_PROJECT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (projects, tasks, team members, txn controls).
@@ -4543,7 +4441,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation (Blanket Purchase Agreement doc type).
-        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE);
+        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (headers + lines).
@@ -4662,7 +4560,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation (Contract Purchase Agreement doc type).
-        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE);
+        DMT_PO_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (headers only).
@@ -4787,7 +4685,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_AP_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_AP_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM (headers + lines).
@@ -5062,7 +4960,7 @@
             'INFO', C_PKG, C_PROC);
 
         -- Step 1: Pre-validation (stub — no rules yet)
-        DMT_WORKER_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_WORKER_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         -- Step 2: Transform all 7 person business objects (STG → TFM)
         DMT_WORKER_TRANSFORM_PKG.TRANSFORM_WORKERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
@@ -5081,7 +4979,7 @@
         -- generate step below reads DMT_ASSIGNMENT_TFM_TBL / DMT_WORK_REL_TFM_TBL.
         -- The [PRE_VALIDATION] exclusion and the prefixing in the assignment transform
         -- are preserved (those packages are unchanged; only their call site moved).
-        DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_ASSIGNMENT_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_WORK_RELS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_ASSIGNMENT_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5195,7 +5093,7 @@
             'RUN_SALARIES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_SALARY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_SALARY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_SALARY_TRANSFORM_PKG.TRANSFORM_SALARIES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5249,7 +5147,7 @@
             'RUN_SALARY_BASES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_SAL_BASIS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_SAL_BASIS_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_SAL_BASIS_TRANSFORM_PKG.TRANSFORM_SALARYBASES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5303,7 +5201,7 @@
             'RUN_ABSENCES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_ABSENCE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_ABSENCE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_ABSENCE_TRANSFORM_PKG.TRANSFORM_ABSENCEENTRIES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5357,7 +5255,7 @@
             'RUN_W2_BALANCES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_W2_BAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_W2_BAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_W2_BAL_TRANSFORM_PKG.TRANSFORM_W2BALANCES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5411,7 +5309,7 @@
             'RUN_BEN_PARTICIPANT start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_BEN_PARTIC_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_BEN_PARTIC_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_BEN_PARTIC_TRANSFORM_PKG.TRANSFORM_PARTICIPANTENROLLMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5465,7 +5363,7 @@
             'RUN_BEN_DEPENDENT start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_BEN_DEPEND_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_BEN_DEPEND_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_BEN_DEPEND_TRANSFORM_PKG.TRANSFORM_DEPENDENTENROLLMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5519,7 +5417,7 @@
             'RUN_BEN_BENEFICIARY start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_BEN_BENFY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_BEN_BENFY_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_BEN_BENFY_TRANSFORM_PKG.TRANSFORM_BENEFICIARYDESIGNATIONS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5583,7 +5481,7 @@
             'RUN_TAX_CARDS start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_TAX_CARD_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_TAX_CARD_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_TAX_CARD_TRANSFORM_PKG.TRANSFORM_TAXCARDS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5637,7 +5535,7 @@
             'RUN_TALENT_PROFILES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_TALENT_PROF_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_TALENT_PROF_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_TALENT_PROF_TRANSFORM_PKG.TRANSFORM_TALENTPROFILES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5691,7 +5589,7 @@
             'RUN_PERF_EVALUATIONS start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_PERF_EVAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_PERF_EVAL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_PERF_EVAL_TRANSFORM_PKG.TRANSFORM_PERFORMANCEDOCUMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5745,7 +5643,7 @@
             'RUN_WORK_SCHEDULES start. Integration ID: ' || p_run_id,
             'INFO', C_PKG, C_PROC);
 
-        DMT_WORK_SCHED_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_WORK_SCHED_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
 
         DMT_WORK_SCHED_TRANSFORM_PKG.TRANSFORM_WORKSCHEDULES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
@@ -5819,7 +5717,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_GL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_GL_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -6005,7 +5903,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_GL_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_GL_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -6177,7 +6075,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_PLAN_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_PLAN_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -6226,7 +6124,7 @@
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
         -- Phase 1: pre-transform validation.
-        DMT_PRJ_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+        DMT_PRJ_BUDGET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
         -- Phase 2: transform STG -> TFM.
@@ -6293,7 +6191,7 @@
         -- transformed by its parent; re-transforming would reset its STAGED rows.
         -- Mirrors the g_partition_key gate the monolith used for Assets.
         IF g_partition_key IS NULL THEN
-            DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id);
+            DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
             DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);

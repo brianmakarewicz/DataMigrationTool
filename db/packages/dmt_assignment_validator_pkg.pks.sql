@@ -19,7 +19,9 @@ AS
     -- Future: verify PERSON_NUMBER exists in DMT_WORKER_STG_TBL with STG_STATUS = LOADED.
     -- Stub — no rules implemented yet. Logs start/complete only.
     PROCEDURE VALIDATE_PRE_TRANSFORM (
-        p_run_id IN NUMBER
+        p_run_id IN NUMBER,
+        p_scenario_id     IN NUMBER   DEFAULT NULL,
+        p_run_mode        IN VARCHAR2 DEFAULT 'NEW'
     );
 
     -- Post-transform validation: data quality checks on TFM rows.

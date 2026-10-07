@@ -210,22 +210,33 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- #130: stamp CREATED (our own POST for THIS record returned 2xx).
+                    UPDATE DMT_ZX_REGIME_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted := l_posted + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Regime POSTed (awaiting base-table confirmation): ' || r.TAX_REGIME_CODE
                         || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+                    -- #130: our create did NOT return 2xx -> REJECTED (blank body still blocks LOADED).
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
                     UPDATE DMT_ZX_REGIME_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Regime POST rejected (stashed, awaiting base-table verdict): '
+                        'Regime POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL THEN 'real error stashed'
+                             ELSE 'blank body, left UNACCOUNTED' END || '): '
                         || r.TAX_REGIME_CODE || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC, p_log_type => 'WARN');
                 END IF;
@@ -238,7 +249,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_ZX_REGIME_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -341,22 +353,33 @@
                 l_http_status := get_status(l_response);
 
                 IF l_http_status IN (200, 201) THEN
+                    -- #130: stamp CREATED (our own POST for THIS record returned 2xx).
+                    UPDATE DMT_ZX_RATE_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted := l_posted + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Rate POSTed (awaiting base-table confirmation): '
                         || r.TAX_REGIME_CODE || '.' || r.TAX_RATE_CODE || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+                    -- #130: our create did NOT return 2xx -> REJECTED (blank body still blocks LOADED).
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
                     UPDATE DMT_ZX_RATE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'Rate POST rejected (stashed, awaiting base-table verdict): '
+                        'Rate POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL THEN 'real error stashed'
+                             ELSE 'blank body, left UNACCOUNTED' END || '): '
                         || r.TAX_REGIME_CODE || '.' || r.TAX_RATE_CODE || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC, p_log_type => 'WARN');
                 END IF;
@@ -369,7 +392,8 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_ZX_RATE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -501,6 +525,10 @@
             ) x
         ) LOOP
             IF r.source_type = 'BASE_REGIME' AND r.fusion_id IS NOT NULL THEN
+                -- #160 guard: a regime whose OWN POST failed (ERROR_TEXT stashed) is NOT
+                -- rescued to LOADED by a base-table code collision; its real error
+                -- carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when our own create for THIS record returned 2xx.
                 UPDATE DMT_ZX_REGIME_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_TAX_REGIME_ID = r.fusion_id,
@@ -508,7 +536,9 @@
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID          = p_run_id
                 AND    TAX_REGIME_CODE = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -562,6 +592,10 @@
             ) x
         ) LOOP
             IF r.source_type = 'BASE_RATE' AND r.fusion_id IS NOT NULL THEN
+                -- #160 guard: a rate whose OWN POST failed (ERROR_TEXT stashed) is NOT
+                -- rescued to LOADED by a base-table code collision; its real error
+                -- carries it to FAILED.
+                -- #130 hollow-LOADED guard: promote ONLY when our own create for THIS record returned 2xx.
                 UPDATE DMT_ZX_RATE_TFM_TBL
                 SET    TFM_STATUS          = 'LOADED',
                        FUSION_TAX_RATE_ID  = r.fusion_id,
@@ -569,7 +603,9 @@
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID        = p_run_id
                 AND    TAX_RATE_CODE = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;

@@ -540,21 +540,13 @@ AS
                     x_keys          => l_ignore_keys);
             END IF;
 
-            -- Items special case: the Items FBDI ZIP bundles the ItemCategories
-            -- CSV, so re-read the categories too (same condition RECONCILE_ONE uses).
-            IF p_cemli_code = 'Items' THEN
-                DECLARE l_cat_gen NUMBER;
-                BEGIN
-                    SELECT COUNT(*) INTO l_cat_gen FROM DMT_EGP_ITEM_CAT_TFM_TBL
-                    WHERE RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
-                    AND   WORK_QUEUE_ID = p_queue_id;
-                    IF l_cat_gen > 0 THEN
-                        DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(p_run_id,
-                            TO_NUMBER(p_load_ess_id), TO_NUMBER(p_import_ess_id),
-                            p_work_queue_id => p_queue_id);
-                    END IF;
-                END;
-            END IF;
+            -- Items categories: no secondary reconciler here any more. The Items
+            -- registered reconciler (DMT_EGP_ITEM_RESULTS_PKG, re-invoked above)
+            -- covers both record types, Item Master and Item Categories, from the
+            -- one Contract v1 report. The retired DMT_EGP_ITEM_CAT_RESULTS_PKG
+            -- read a report that never carried an error message or a Fusion id,
+            -- matched without the category code, and could flip a FAILED category
+            -- row to LOADED (run 236 findings).
 
             -- Recount what is still awaiting base confirmation via the shared,
             -- sanctioned ACCOUNT_ROWS site (no new dynamic-SQL site).
@@ -628,9 +620,15 @@ AS
                 ' record(s) unaccounted (' || l_loaded || ' loaded, ' || l_failed || ' errored).',
                 'WARN', C_PKG, 'apply_accounting_gate');
         ELSE
+            -- DONE means every row is accounted for, so any ERROR_MESSAGE still on
+            -- the item is stale: a prior gate's "N record(s) unaccounted", or a
+            -- retry sentinel. Clear it, as RERUN_RUN does when it reopens an item,
+            -- so a reconcile driven straight through RECONCILE_ONE (per-object
+            -- re-reconcile) never leaves DONE showing an old failure message.
             UPDATE DMT_WORK_QUEUE_TBL
-            SET WORK_STATUS = 'DONE',
-                COMPLETED_AT = SYSTIMESTAMP
+            SET WORK_STATUS   = 'DONE',
+                ERROR_MESSAGE = NULL,
+                COMPLETED_AT  = SYSTIMESTAMP
             WHERE QUEUE_ID = p_queue_id;
             DMT_UTIL_PKG.LOG(p_run_id,
                 'Object ' || p_cemli_code || ' DONE: all records accounted (' ||
@@ -1065,29 +1063,15 @@ AS
                 x_keys          => l_ignore_keys);
         END IF;
 
-        -- Items special case (kept from the retired chain, deliberately NOT
-        -- registry-expressible yet: the Items FBDI ZIP bundles the
-        -- ItemCategories CSV, so an Items work item conditionally reconciles
-        -- the categories too when this run generated any category rows.
-        -- A data-dependent secondary reconciler does not fit the
-        -- one-RECON_PROC-per-object registry; folding this into the Items
-        -- results package is the clean end state.)
-        IF l_rec.CEMLI_CODE = 'Items' THEN
-            DECLARE l_cat_gen NUMBER;
-            BEGIN
-                -- Work-queue-ID core: only reconcile categories THIS item generated.
-                -- Scoping by WORK_QUEUE_ID stops one Items batch's reconcile from
-                -- touching another still-in-flight batch's category rows.
-                SELECT COUNT(*) INTO l_cat_gen FROM DMT_EGP_ITEM_CAT_TFM_TBL
-                WHERE RUN_ID = l_rec.RUN_ID AND TFM_STATUS = 'GENERATED'
-                AND   WORK_QUEUE_ID = p_queue_id;
-                IF l_cat_gen > 0 THEN
-                    DMT_EGP_ITEM_CAT_RESULTS_PKG.RECONCILE_BATCH(l_rec.RUN_ID,
-                        TO_NUMBER(l_rec.LOAD_ESS_JOB_ID), TO_NUMBER(l_rec.IMPORT_ESS_JOB_ID),
-                        p_work_queue_id => p_queue_id);
-                END IF;
-            END;
-        END IF;
+        -- Items categories: the secondary DMT_EGP_ITEM_CAT_RESULTS_PKG call that
+        -- used to follow here is retired (run 236 findings). Folding category
+        -- reconciliation into the Items results package was the stated clean end
+        -- state, and it is now done: DMT_EGP_ITEM_RESULTS_PKG.RECONCILE_BATCH
+        -- reconciles Item Master AND Item Categories from the one Contract v1
+        -- report (DMT_ITEM_RECON_V2_DM), with real Fusion ids and real error text.
+        -- The retired path's report never carried an error message or an id,
+        -- matched without the category code, and could flip a FAILED category
+        -- row to LOADED.
 
         -- HDL base-table lag deferral (retry-on-base-lag, capped). HDL loads are
         -- asynchronous: after the HDL data set finishes, loaded rows take time to

@@ -28,3 +28,8 @@ FBL import ESS job response. Success determined by ESS job completion status and
 
 ## Status
 NOT BUILT — DDL deployed, pipeline packages not yet created.
+
+## Run prefix (2026-10-06)
+The transform applies the run prefix to `VALUE_SET_CODE` (Fusion limit 60) on the set row
+and on each value's parent `VALUE_SET_CODE`. A code that cannot carry the full prefix is not
+truncated; the row is FAILED with a `[TRANSFORM_ERROR]` naming the limit.

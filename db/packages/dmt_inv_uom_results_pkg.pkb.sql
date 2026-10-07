@@ -156,13 +156,15 @@
     -- The LOAD step: POST each GENERATED UOM to Fusion. The BIP base-table
     -- report -- not the POST response -- is the authority for LOADED, so this
     -- step NEVER marks a row terminal. It leaves every attempted row GENERATED.
-    -- A non-2xx / exception is a real Fusion rejection: its message is STASHED
-    -- into ERROR_TEXT (accumulate, never overwrite) so that if the reconcile
-    -- step later finds the row absent from the base table, the sweep can mark it
-    -- FAILED with that real error. If the reconcile step DOES find the row in the
-    -- base table (e.g. a duplicate POST 400 for a UOM that already exists), the
-    -- stash is harmless context and the row is correctly marked LOADED. This
-    -- keeps the base table the single source of truth for the outcome.
+    -- A non-2xx with a real per-record message body is a real Fusion rejection:
+    -- that message is STASHED into ERROR_TEXT (accumulate, never overwrite) so
+    -- the post-reconcile sweep can mark the row FAILED with that real error. A
+    -- blank-bodied transport code is NOT stashed (#161) -- the row stays
+    -- UNACCOUNTED rather than carrying a bare "HTTP 404:".
+    -- #160: a row whose OWN POST failed (ERROR_TEXT stashed) is NEVER promoted to
+    -- LOADED, even if the base-table report returns its natural key -- that key may
+    -- belong to a different/pre-existing row, so a key collision is not proof that
+    -- THIS record loaded. PARSE_AND_UPDATE promotes only clean (no-error) rows.
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
     -- ============================================================
     PROCEDURE LOAD_UOMS (
@@ -213,28 +215,45 @@
 
                 IF l_http_status IN (200, 201) THEN
                     -- POST accepted. Row stays GENERATED for the base-table report to
-                    -- confirm (and capture FUSION_UOM_ID).
+                    -- confirm (and capture FUSION_UOM_ID). Stamp LOAD_CALL_STATUS =
+                    -- CREATED: honest proof OUR create for THIS record returned 2xx
+                    -- (#130 hollow-LOADED guard).
+                    UPDATE DMT_INV_UOM_TFM_TBL
+                    SET    LOAD_CALL_STATUS = 'CREATED',
+                           LAST_UPDATED_DATE = SYSDATE
+                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_posted_count := l_posted_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'UOM POSTed (awaiting base-table confirmation): ' || r.UOM_CODE
                         || ' HTTP ' || l_http_status,
                         p_package => C_PKG, p_procedure => C_PROC);
                 ELSE
-                    -- Non-2xx: stash the real REST error but leave the row GENERATED.
-                    -- The base-table report decides LOADED vs FAILED. If the report
-                    -- finds this code absent, the sweep marks it FAILED on this error.
-                    l_body := DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1);
+                    -- Non-2xx. Only stash a [FUSION_ERROR] when Fusion returned a real
+                    -- per-record message body (#161). A genuine message lets the sweep
+                    -- mark the row FAILED on that real error. A blank-bodied transport
+                    -- code (e.g. "HTTP 404" with no body) is NOT a per-record verdict:
+                    -- stash nothing and leave the row GENERATED so the honest accounting
+                    -- gate surfaces it as UNACCOUNTED, never a bare "HTTP 404:".
+                    l_body := TRIM(DBMS_LOB.SUBSTR(l_response, 2000, INSTR(l_response, '|') + 1));
+                    -- #130: our create did NOT return 2xx -> REJECTED (keeps the row
+                    -- out of the LOADED promotion even on a blank body + key collision).
                     UPDATE DMT_INV_UOM_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                          || SUBSTR(l_body, 1, 2000)),
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = CASE WHEN l_body IS NOT NULL
+                                             THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
+                                                    || SUBSTR(l_body, 1, 2000))
+                                             ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
-                        'UOM POST rejected (stashed, awaiting base-table verdict): '
-                        || r.UOM_CODE || ' HTTP ' || l_http_status,
+                        'UOM POST rejected (' ||
+                        CASE WHEN l_body IS NOT NULL
+                             THEN 'real error stashed, awaiting base-table verdict'
+                             ELSE 'blank body, left UNACCOUNTED (no bare HTTP code stashed)'
+                        END || '): ' || r.UOM_CODE || ' HTTP ' || l_http_status,
                         p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
                 END IF;
 
@@ -247,7 +266,8 @@
                     -- Transport exception: stash it, leave GENERATED (same policy).
                     l_errmsg := SQLERRM;
                     UPDATE DMT_INV_UOM_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                    SET    LOAD_CALL_STATUS = 'REJECTED',
+                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
                                           '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -277,7 +297,7 @@
     -- Runs the base-table reconciliation report for this run's UOM codes.
     -- Delegates to the shared DMT_UTIL_PKG.RUN_BIP_REPORT (no private SOAP
     -- copy). The one parameter is the comma-delimited list of UOM codes
-    -- this run sent (config UOM codes are not run-prefixed). PROCEDURE per
+    -- this run sent (the run-prefixed codes from the transform). PROCEDURE per
     -- the procedures-only contract: x_report_xml NULL with x_error_code =
     -- C_SUCCESS means zero rows; failures are logged and surfaced through
     -- x_error_code -- exceptions never escape.
@@ -382,6 +402,14 @@
             IF r.source_type = 'BASE' AND r.fusion_id IS NOT NULL THEN
                 -- Positive proof: the UOM exists in the base table. LOADED with the
                 -- real surrogate id. Match on the run's UOM_CODE (report RECORD_KEY).
+                -- #160 guard: a row whose OWN POST failed (ERROR_TEXT already stashed)
+                -- must NOT be rescued to LOADED by a base-table natural-key collision
+                -- with a pre-existing/duplicate row. Its real error carries it to the
+                -- FAILED sweep; a base-table hit on a key it shares is not proof that
+                -- THIS record loaded. Only a clean (no-error) row is promoted.
+                -- #130 hollow-LOADED guard: promote ONLY when OUR OWN create for
+                -- THIS record returned 2xx (LOAD_CALL_STATUS = 'CREATED'). A
+                -- base-table key match alone can be a pre-existing/duplicate row.
                 UPDATE DMT_INV_UOM_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_UOM_ID        = r.fusion_id,
@@ -389,7 +417,9 @@
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID     = p_run_id
                 AND    UOM_CODE   = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL
+                AND    LOAD_CALL_STATUS = 'CREATED';
                 l_loaded := l_loaded + SQL%ROWCOUNT;
             END IF;
         END LOOP;
@@ -429,7 +459,7 @@
 
         -- Build the comma-delimited list of codes we POSTed and still need
         -- confirmed (rows the load step did NOT mark FAILED). Config UOM codes
-        -- are not run-prefixed, so we match the base table on the exact codes.
+        -- carry the run-prefix derivation, so we match the base table on the exact TFM codes.
         SELECT LISTAGG(UOM_CODE, ',') WITHIN GROUP (ORDER BY UOM_CODE)
         INTO   l_codes
         FROM   DMT_INV_UOM_TFM_TBL

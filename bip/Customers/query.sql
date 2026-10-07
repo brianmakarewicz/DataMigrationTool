@@ -1,6 +1,6 @@
 -- ============================================================
 -- Customers BIP reconciliation query -- MIRROR of the deployed
--- data model bip/Customers/DMT_CUST_RECON_V2_DM.xdm (deploy target
+-- data model bip/Customers/DMT_CUST_RECON_V3_DM.xdm (deploy target
 -- /Custom/DMT2/Customers/). The SQL below is the byte-exact CDATA
 -- body of that .xdm; the .xdm is authoritative -- regenerate this
 -- file from the .xdm whenever the data model changes so the mirror
@@ -8,99 +8,254 @@
 -- pagination.
 -- ============================================================
 -- ============================================================
--- Customers reconciliation data model -- BIP reconciliation
+-- Customers reconciliation data model V3 -- BIP reconciliation
 -- report contract v1 (nine columns, keyset pagination, the six
--- standard parameters). Same shape as DMT_GL_BAL_RECON_DM.xdm and
--- DMT_AR_RECON_DM.xdm.
+-- standard parameters). Deployed ALONGSIDE V2 (never overwrite a BIP
+-- object); DMT_BIP_REPORT_TBL row 100000012 points the reconciler here.
+--
+-- WHY V3 (docs/findings/run236_Customers_Items_unaccounted.md, R1):
+-- V2 built every INTERFACE-tier ERROR_MESSAGE as a LISTAGG of ALL
+-- HZ_IMP_ERRORS message names for that interface table in the whole
+-- batch. The batch (5001) is shared by every run and prefix, so V2
+-- (a) returned NULL for a held row whose table had no batch errors
+-- (Account Site Uses: swept to UNACCOUNTED) and (b) stamped another
+-- row's error onto a row that had none (Account Sites G1/BAD1 got
+-- G2/G3's HZ_IMP_INVAL_VALUE_COMPARE). V3 does no batch-wide
+-- aggregation anywhere. Every INTERFACE row carries ITS OWN outcome:
+--
+--   1. OWN ERROR: the row's own HZ_IMP_ERRORS rows, joined exactly on
+--      error_id + batch_id (every HZ_IMP_*_T row carries ERROR_ID;
+--      proven live run 236). Text = MESSAGE_NAME: full message text,
+--      taken from ERROR_MSG_TEXT when Fusion filled it, otherwise
+--      resolved from FND_NEW_MESSAGES (US) with the error row's
+--      TOKEN1..TOKEN5 substituted, e.g.
+--      "HZ_IMP_INVAL_VALUE_COMPARE: The value in the SET_CODE column
+--      isn't valid. You must enter a value of SET_CODE from the
+--      FND_SETID_SETS_VL table."
+--   2. NO OWN ERROR (status W/E with ERROR_ID NULL): a message naming
+--      the real reason Fusion did not create the row, read from the
+--      row's own ancestor chain in the SAME load: every parent,
+--      grandparent and great-grandparent that is absent from the
+--      Fusion base (HZ_ORIG_SYS_REFERENCES), each with its own import
+--      status and its own error text, or "not found in this import or
+--      in Fusion" when the referenced parent was never sent. Example:
+--      "Not created: Fusion left this row at import status W with no
+--      error of its own. Parent records not created: account site
+--      93292RT-ASITE-G2 rejected (status E): HZ_IMP_INVAL_VALUE_COMPARE:
+--      The value in the SET_CODE column isn't valid. ..."
+--   3. NO OWN ERROR AND NO FAILED ANCESTOR (a root record Fusion held):
+--      "Not created: Fusion left this row at import status W and
+--      recorded no error for it; none of its parent records failed."
+--   Every message is built from real Fusion interface/error rows only.
+--
+-- Ancestor edges (the HZ_IMP_*_T parent reference columns):
+--   PartySites      -> party (PARTY_ORIG_SYSTEM_REFERENCE),
+--                      location (LOCATION_ORIG_SYSTEM_REFERENCE)
+--   PartySiteUses   -> party site (SITE_ORIG_SYSTEM_REFERENCE),
+--                      party (PARTY_ORIG_SYSTEM_REFERENCE)
+--   Accounts        -> party (PARTY_ORIG_SYSTEM_REFERENCE)
+--   AccountSites    -> account (CUST_ORIG_SYSTEM_REFERENCE),
+--                      party site (SITE_ORIG_SYSTEM_REFERENCE)
+--   AccountSiteUses -> account site (CUST_SITE_ORIG_SYS_REF)
+--   Parties, Locations have no parent. The deepest chain
+--   (AccountSiteUses -> AccountSites -> PartySites -> Locations) is
+--   three edges, so a fixed three-level closure covers every chain.
 --
 -- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
 --   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
 --   DMT_REFERENCE.
---
 -- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
 --   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
---   No P_OFFSET / P_LIMIT.
+-- KEYSET pagination on RECORD_KEY exactly as V2.
 --
--- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
--- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
--- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
--- with an empty cursor first, then passes the last RECORD_KEY it
--- received on each next call, until a page returns fewer than
--- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
--- (every non-null RECORD_KEY sorts after the empty string).
+-- KEYS (unchanged from V2, the #12 carrier map):
+--   SOURCE_REF (Slot A) = the record type's run-prefixed native
+--     ORIG_SYSTEM_REFERENCE. RECORD_KEY = <OBJECT_TYPE> '~' SOURCE_REF
+--     (PartySiteUses append '/' SITE_USE_TYPE). DMT_REFERENCE NULL.
+--   FUSION_ID = HZ_ORIG_SYS_REFERENCES.OWNER_TABLE_ID on BASE rows.
 --
--- MULTI-TIER object. Customers is ONE FBDI zip (BulkImportJob)
--- carrying SEVEN record types (Parties, Locations, PartySites,
--- PartySiteUses, Accounts, AccountSites, AccountSiteUses). Each has
--- its own interface table (HZ_IMP_*_T) and its own Trading Community
--- base identity, so this DM UNION ALLs SEVEN BASE + SEVEN INTERFACE
--- blocks, ordered by RECORD_KEY. OBJECT_TYPE names the record type.
---
--- KEYS (per the #12 carrier map, dmt_ref_carrier_cfg_tbl.sql --
--- the Customers/Parties row is the TEMPLATE for the whole TCA family):
---   SOURCE_REF  (Slot A) = the record type's native run-prefixed
---     ORIG_SYSTEM_REFERENCE, read back from the Fusion BASE table
---     HZ_ORIG_SYS_REFERENCES.ORIG_SYSTEM_REFERENCE on the BASE tier
---     and taken from the interface row's own *_ORIG_SYSTEM_REF column
---     on the INTERFACE tier. This is the identity carrier that
---     verifiably round-trips (the #12 round-trip proof).
---   RECORD_KEY = <OBJECT_TYPE> || '~' || SOURCE_REF, so it is unique
---     across ALL tiers (native references are not globally unique on
---     their own -- PartySites and PartySiteUses both carry the SITE
---     reference, so the record type is folded in to disambiguate).
---     PartySiteUses also appends the site use type because two uses
---     (BILL_TO / SHIP_TO) can share one site reference. RECORD_KEY is
---     the value the reconciler matches to the TFM RECON_KEY column.
---   DMT_REFERENCE (Slot C) = NULL for every Customers record type.
---     The HZ interface tables expose only ATTRIBUTE1..ATTRIBUTE20 and
---     none is proven to round-trip to an HZ base column, so -- per the
---     carrier-map lesson (never invent a Slot C) -- no DFF reference
---     is read back. The run-scoped DMT:run:queue:tfm reference rides
---     Slot A (SOURCE_REF); DMT_REFERENCE stays NULL, as the carrier
---     config declares (Slot C = NULL for the TCA family).
---   FUSION_ID = the record type's Fusion base id, i.e.
---     HZ_ORIG_SYS_REFERENCES.OWNER_TABLE_ID (the PARTY_ID for
---     Parties, CUST_ACCOUNT_ID for Accounts, and so on). Non-null on
---     every BASE row.
---
--- ROW SELECTION:
---   BASE  rows: HZ_ORIG_SYS_REFERENCES for the record type's owner
---         table where ORIG_SYSTEM_REFERENCE LIKE :P_PREFIX || '%'.
---         A base identity row means the record was created in the
---         Fusion base table -> SUCCESS, with the real OWNER_TABLE_ID.
---   INTERFACE rows: HZ_IMP_*_T rows for this load
---         (LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID) NOT created in base.
---         The import does not delete interface rows, so created rows
---         persist there too; the INTERFACE tier returns only rows with
---         NO matching base identity (NOT EXISTS against
---         HZ_ORIG_SYS_REFERENCES), so no record is counted twice. Each
---         is a rejection/hold -> ERROR, carrying its own
---         IMPORT_STATUS_CODE and the batch HZ_IMP_ERRORS messages.
---   :P_RUN_ID / :P_IMPORT_ESS_ID are declared for contract symmetry;
---   :P_IMPORT_ESS_ID is stamped into LOAD_REQUEST_ID on the BASE tier
---   (the base identity row carries no load-request id of its own).
---
--- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
---   BASE  (identity present in HZ_ORIG_SYS_REFERENCES) => SUCCESS
---   INTERFACE (row not created, left in the interface) => ERROR
--- FUSION_ID is non-null on every BASE row. ERROR_MESSAGE is non-null
--- on every ERROR row (the interface row's own import status,
--- decoded, plus the batch's HZ_IMP_ERRORS message names).
---
--- HONEST NOTE (objects/Customers/README.md): the customer bulk
--- import has had job-level batch-id trouble on this demo instance,
--- so some runs left records at the interface rather than the base
--- tables. The BASE tiers are the correct shape for a clean import
--- (20/20 to hz_cust_accounts, 2026-07-11); the INTERFACE tiers
--- report whatever the import left behind. Nothing is fabricated:
--- SUCCESS only with a real base id, ERROR only with a real status.
+-- ROW SELECTION (unchanged from V2):
+--   BASE rows: HZ_ORIG_SYS_REFERENCES for the owner table where the
+--     reference LIKE :P_PREFIX || '%' -> SUCCESS with the real base id.
+--   INTERFACE rows: HZ_IMP_*_T rows of this load
+--     (LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID, the load ESS id) with
+--     IMPORT_STATUS_CODE <> 'S' and NO base identity -> ERROR with the
+--     per-row message above. (V3 also applies the base anti-join to
+--     AccountSiteUses, mirroring its BASE tier, so no record can be
+--     counted twice.)
+-- FUSION_STATUS is exactly SUCCESS/ERROR. ERROR_MESSAGE is non-null on
+-- every ERROR row by construction (the CASE always yields text).
 -- ============================================================
+WITH
+-- ld: every interface row of THIS load, all seven record types,
+-- normalized to one shape. REF is the identity other rows use to name
+-- this row as a parent; P1/P2 are this row's parent references.
+ld AS (
+    SELECT 'PARTY' tier, 'Customers.Parties' object_type,
+           'Customers.Parties~' || t.party_orig_system_reference record_key,
+           t.party_orig_system_reference ref, t.party_orig_system_reference source_ref,
+           CAST(NULL AS VARCHAR2(30)) use_type,
+           t.import_status_code st, t.error_id, t.batch_id, t.load_request_id,
+           CAST(NULL AS VARCHAR2(30)) p1_tier, CAST(NULL AS VARCHAR2(255)) p1_ref,
+           CAST(NULL AS VARCHAR2(30)) p2_tier, CAST(NULL AS VARCHAR2(255)) p2_ref
+    FROM   hz_imp_parties_t t
+    WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
+    UNION ALL
+    SELECT 'LOCATION', 'Customers.Locations',
+           'Customers.Locations~' || t.location_orig_system_reference,
+           t.location_orig_system_reference, t.location_orig_system_reference,
+           NULL, t.import_status_code, t.error_id, t.batch_id, t.load_request_id,
+           NULL, NULL, NULL, NULL
+    FROM   hz_imp_locations_t t
+    WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
+    UNION ALL
+    SELECT 'PARTYSITE', 'Customers.PartySites',
+           'Customers.PartySites~' || t.site_orig_system_reference,
+           t.site_orig_system_reference, t.site_orig_system_reference,
+           NULL, t.import_status_code, t.error_id, t.batch_id, t.load_request_id,
+           'PARTY', t.party_orig_system_reference,
+           'LOCATION', t.location_orig_system_reference
+    FROM   hz_imp_partysites_t t
+    WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
+    UNION ALL
+    SELECT 'PARTYSITEUSE', 'Customers.PartySiteUses',
+           'Customers.PartySiteUses~' || t.site_orig_system_reference || '/' || t.site_use_type,
+           t.site_orig_system_reference || '/' || t.site_use_type, t.site_orig_system_reference,
+           t.site_use_type, t.import_status_code, t.error_id, t.batch_id, t.load_request_id,
+           'PARTYSITE', t.site_orig_system_reference,
+           'PARTY', t.party_orig_system_reference
+    FROM   hz_imp_partysiteuses_t t
+    WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
+    UNION ALL
+    SELECT 'ACCOUNT', 'Customers.Accounts',
+           'Customers.Accounts~' || t.cust_orig_system_reference,
+           t.cust_orig_system_reference, t.cust_orig_system_reference,
+           NULL, t.import_status_code, t.error_id, t.batch_id, t.load_request_id,
+           'PARTY', t.party_orig_system_reference, NULL, NULL
+    FROM   hz_imp_accounts_t t
+    WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
+    UNION ALL
+    SELECT 'ACCTSITE', 'Customers.AccountSites',
+           'Customers.AccountSites~' || t.cust_site_orig_sys_ref,
+           t.cust_site_orig_sys_ref, t.cust_site_orig_sys_ref,
+           NULL, t.import_status_code, t.error_id, t.batch_id, t.load_request_id,
+           'ACCOUNT', t.cust_orig_system_reference,
+           'PARTYSITE', t.site_orig_system_reference
+    FROM   hz_imp_acctsites_t t
+    WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
+    UNION ALL
+    SELECT 'ACCTSITEUSE', 'Customers.AccountSiteUses',
+           'Customers.AccountSiteUses~' || t.cust_siteuse_orig_sys_ref,
+           t.cust_siteuse_orig_sys_ref, t.cust_siteuse_orig_sys_ref,
+           NULL, t.import_status_code, t.error_id, t.batch_id, t.load_request_id,
+           'ACCTSITE', t.cust_site_orig_sys_ref, NULL, NULL
+    FROM   hz_imp_acctsiteuses_t t
+    WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
+),
+-- errline: one line per OWN error row of this load's interface rows,
+-- joined exactly on error_id + batch_id (never batch-wide). Full text
+-- from ERROR_MSG_TEXT, else FND_NEW_MESSAGES (US) with tokens
+-- substituted into the {TOKEN} placeholders Fusion messages use.
+errline AS (
+    SELECT e.error_id, e.batch_id, e.error_seq_id,
+           SUBSTR(e.message_name || ': ' ||
+             NVL(e.error_msg_text,
+               REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                 NVL((SELECT MAX(m.message_text) FROM fnd_new_messages m
+                      WHERE m.message_name = e.message_name
+                      AND   m.language_code = 'US'),
+                     '(no message text found in FND_NEW_MESSAGES)'),
+                 '{' || e.token1_name || '}', e.token1_value),
+                 '{' || e.token2_name || '}', e.token2_value),
+                 '{' || e.token3_name || '}', e.token3_value),
+                 '{' || e.token4_name || '}', e.token4_value),
+                 '{' || e.token5_name || '}', e.token5_value)),
+             1, 1800) AS line
+    FROM   hz_imp_errors e
+    JOIN   (SELECT DISTINCT error_id, batch_id FROM ld WHERE error_id IS NOT NULL) k
+      ON   k.error_id = e.error_id
+     AND   k.batch_id = e.batch_id
+),
+ownerr AS (
+    SELECT error_id, batch_id,
+           LISTAGG(line, ' | ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY error_seq_id) AS msg
+    FROM   errline
+    GROUP BY error_id, batch_id
+),
+node AS (
+    SELECT ld.*, o.msg AS own_msg
+    FROM   ld
+    LEFT JOIN ownerr o
+      ON   o.error_id = ld.error_id
+     AND   o.batch_id = ld.batch_id
+),
+-- edge / anc: the parent closure, up to three levels (see header).
+edge AS (
+    SELECT DISTINCT tier c_tier, ref c_ref, p1_tier p_tier, p1_ref p_ref
+    FROM   ld WHERE p1_ref IS NOT NULL
+    UNION
+    SELECT DISTINCT tier, ref, p2_tier, p2_ref
+    FROM   ld WHERE p2_ref IS NOT NULL
+),
+anc AS (
+    SELECT e1.c_tier, e1.c_ref, e1.p_tier a_tier, e1.p_ref a_ref, 1 depth
+    FROM   edge e1
+    UNION ALL
+    SELECT e1.c_tier, e1.c_ref, e2.p_tier, e2.p_ref, 2
+    FROM   edge e1
+    JOIN   edge e2 ON e2.c_tier = e1.p_tier AND e2.c_ref = e1.p_ref
+    UNION ALL
+    SELECT e1.c_tier, e1.c_ref, e3.p_tier, e3.p_ref, 3
+    FROM   edge e1
+    JOIN   edge e2 ON e2.c_tier = e1.p_tier AND e2.c_ref = e1.p_ref
+    JOIN   edge e3 ON e3.c_tier = e2.p_tier AND e3.c_ref = e2.p_ref
+),
+-- cause: each ancestor that is NOT in the Fusion base, described by its
+-- own interface status and its own error text (or as never sent).
+cause AS (
+    SELECT a.c_tier, a.c_ref, a.a_tier, a.a_ref, MIN(a.depth) depth,
+           MAX(
+             DECODE(a.a_tier, 'PARTY', 'party', 'LOCATION', 'location',
+                    'PARTYSITE', 'party site', 'ACCOUNT', 'account',
+                    'ACCTSITE', 'account site', LOWER(a.a_tier))
+             || ' ' || a.a_ref ||
+             CASE
+               WHEN n.tier IS NULL THEN ' not found in this import or in Fusion'
+               WHEN n.st = 'E'     THEN ' rejected (status E)'
+               WHEN n.st = 'W'     THEN ' held (status W)'
+               ELSE ' not created (status ' || NVL(n.st, 'null') || ')'
+             END ||
+             CASE WHEN n.own_msg IS NOT NULL
+                  THEN ': ' || SUBSTR(n.own_msg, 1, 900) END
+           ) AS descr
+    FROM   anc a
+    LEFT JOIN node n
+      ON   n.tier = a.a_tier
+     AND   n.ref  = a.a_ref
+    WHERE  NOT EXISTS (
+             SELECT 1 FROM hz_orig_sys_references r
+             WHERE  r.orig_system_reference = a.a_ref
+             AND    r.owner_table_name = DECODE(a.a_tier,
+                      'PARTY',     'HZ_PARTIES',
+                      'LOCATION',  'HZ_LOCATIONS',
+                      'PARTYSITE', 'HZ_PARTY_SITES',
+                      'ACCOUNT',   'HZ_CUST_ACCOUNTS',
+                      'ACCTSITE',  'HZ_CUST_ACCT_SITES_ALL'))
+    GROUP BY a.c_tier, a.c_ref, a.a_tier, a.a_ref
+),
+causes AS (
+    SELECT c_tier, c_ref,
+           LISTAGG(descr, '; ' ON OVERFLOW TRUNCATE)
+             WITHIN GROUP (ORDER BY depth, a_tier, a_ref) AS msg
+    FROM   cause
+    GROUP BY c_tier, c_ref
+)
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    -- ================= BASE tier: positive proof, one block per record type =================
+    -- ================= BASE tier: positive proof (unchanged from V2) =================
 
     -- BASE / Parties -- HZ_PARTIES, FUSION_ID = PARTY_ID.
     SELECT
@@ -152,18 +307,8 @@ FROM (
     UNION ALL
 
     -- BASE / PartySiteUses -- HZ_PARTY_SITE_USES, FUSION_ID = PARTY_SITE_USE_ID.
-    -- A loaded site use has NO orig-system reference of its own: TCA registers
-    -- HZ_ORIG_SYS_REFERENCES rows only for parties and party-sites, never for
-    -- site uses (confirmed live -- OWNER_TABLE_NAME='HZ_PARTY_SITE_USES'
-    -- returns zero run-prefixed rows, and the source has no SITEUSE_ORIG_SYSTEM_REF
-    -- column so it is NULL end to end). So we iterate the base HZ_PARTY_SITE_USES
-    -- rows and reach the identity carrier through the PARENT party-site's
-    -- reference (OWNER_TABLE_NAME='HZ_PARTY_SITES', OWNER_TABLE_ID=PARTY_SITE_ID),
-    -- folding SITE_USE_TYPE in to disambiguate the (at most one per type) uses
-    -- that share a site. This is the proven pattern from DMT_CUST_RECON_DM.xdm.
-    -- RECORD_KEY = parent-site reference '/' SITE_USE_TYPE, identical to the
-    -- INTERFACE side, and unique per site use (verified live: no duplicate
-    -- parent-ref+type across loaded data).
+    -- A site use has no orig-system reference of its own, so it is reached
+    -- through its PARENT party-site reference + SITE_USE_TYPE (as in V2).
     SELECT
         'Customers.PartySiteUses',
         'Customers.PartySiteUses~' || pr.orig_system_reference || '/' || su.site_use_type,
@@ -229,164 +374,61 @@ FROM (
 
     UNION ALL
 
-    -- ============ INTERFACE tier: rejections/holds only (no base identity) ============
-    -- Row-precise on the interface row's own IMPORT_STATUS_CODE
-    -- (S = created -> BASE tier, excluded here; anything else = not
-    -- created = ERROR: W = held/warning, E = rejected). The batch
-    -- HZ_IMP_ERRORS.MESSAGE_NAME list is appended as context. NOT
-    -- EXISTS against HZ_ORIG_SYS_REFERENCES prevents double counting.
-
-    -- INTERFACE / Parties -- HZ_IMP_PARTIES_T, ref PARTY_ORIG_SYSTEM_REFERENCE.
+    -- ============ INTERFACE tier: one row per not-created interface row ============
+    -- Every record type in ONE block over the normalized load (ld/node).
+    -- ERROR_MESSAGE is the row's OWN error text, or the derived reason
+    -- from its own ancestor chain, or the root-hold statement -- never
+    -- another row's error and never a batch-wide list.
     SELECT
-        'Customers.Parties',
-        'Customers.Parties~' || ip.party_orig_system_reference,
+        n.object_type,
+        n.record_key,
         'INTERFACE', 'ERROR',
         CAST(NULL AS NUMBER),
-        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-         FROM hz_imp_errors e WHERE e.batch_id = ip.batch_id AND e.interface_table_name = 'HZ_IMP_PARTIES_T'),
-        ip.load_request_id,
-        ip.party_orig_system_reference,
+        CAST(
+          CASE
+            WHEN n.own_msg IS NOT NULL THEN SUBSTR(n.own_msg, 1, 3900)
+            WHEN c.msg IS NOT NULL THEN
+                 'Not created: Fusion left this row at import status '
+                 || NVL(n.st, 'null') || ' with no error of its own. '
+                 || 'Parent records not created: ' || SUBSTR(c.msg, 1, 3700)
+            ELSE 'Not created: Fusion left this row at import status '
+                 || NVL(n.st, 'null') || ' and recorded no error for it; '
+                 || 'none of its parent records failed.'
+          END AS VARCHAR2(4000)),
+        n.load_request_id,
+        n.source_ref,
         CAST(NULL AS VARCHAR2(4000))
-    FROM   hz_imp_parties_t ip
-    WHERE  ip.load_request_id = :P_LOAD_REQUEST_ID
-    AND    NVL(ip.import_status_code, 'X') <> 'S'
-    AND    NOT EXISTS (SELECT 1 FROM hz_orig_sys_references r
-                       WHERE r.owner_table_name = 'HZ_PARTIES'
-                       AND   r.orig_system_reference = ip.party_orig_system_reference)
-
-    UNION ALL
-
-    -- INTERFACE / Locations -- HZ_IMP_LOCATIONS_T, ref LOCATION_ORIG_SYSTEM_REFERENCE.
-    SELECT
-        'Customers.Locations',
-        'Customers.Locations~' || il.location_orig_system_reference,
-        'INTERFACE', 'ERROR',
-        CAST(NULL AS NUMBER),
-        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-         FROM hz_imp_errors e WHERE e.batch_id = il.batch_id AND e.interface_table_name = 'HZ_IMP_LOCATIONS_T'),
-        il.load_request_id,
-        il.location_orig_system_reference,
-        CAST(NULL AS VARCHAR2(4000))
-    FROM   hz_imp_locations_t il
-    WHERE  il.load_request_id = :P_LOAD_REQUEST_ID
-    AND    NVL(il.import_status_code, 'X') <> 'S'
-    AND    NOT EXISTS (SELECT 1 FROM hz_orig_sys_references r
-                       WHERE r.owner_table_name = 'HZ_LOCATIONS'
-                       AND   r.orig_system_reference = il.location_orig_system_reference)
-
-    UNION ALL
-
-    -- INTERFACE / PartySites -- HZ_IMP_PARTYSITES_T, ref SITE_ORIG_SYSTEM_REFERENCE.
-    SELECT
-        'Customers.PartySites',
-        'Customers.PartySites~' || ips.site_orig_system_reference,
-        'INTERFACE', 'ERROR',
-        CAST(NULL AS NUMBER),
-        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-         FROM hz_imp_errors e WHERE e.batch_id = ips.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITES_T'),
-        ips.load_request_id,
-        ips.site_orig_system_reference,
-        CAST(NULL AS VARCHAR2(4000))
-    FROM   hz_imp_partysites_t ips
-    WHERE  ips.load_request_id = :P_LOAD_REQUEST_ID
-    AND    NVL(ips.import_status_code, 'X') <> 'S'
-    AND    NOT EXISTS (SELECT 1 FROM hz_orig_sys_references r
-                       WHERE r.owner_table_name = 'HZ_PARTY_SITES'
-                       AND   r.orig_system_reference = ips.site_orig_system_reference)
-
-    UNION ALL
-
-    -- INTERFACE / PartySiteUses -- HZ_IMP_PARTYSITEUSES_T. The site use has no
-    -- reference of its own (SITEUSE_ORIG_SYSTEM_REF is NULL end to end), so the
-    -- identity carrier is the PARENT party-site reference SITE_ORIG_SYSTEM_REFERENCE,
-    -- exactly as on the BASE tier, so both keys are computed from the same value.
-    -- RECORD_KEY = parent-site reference '/' SITE_USE_TYPE.
-    SELECT
-        'Customers.PartySiteUses',
-        'Customers.PartySiteUses~' || ipu.site_orig_system_reference || '/' || ipu.site_use_type,
-        'INTERFACE', 'ERROR',
-        CAST(NULL AS NUMBER),
-        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-         FROM hz_imp_errors e WHERE e.batch_id = ipu.batch_id AND e.interface_table_name = 'HZ_IMP_PARTYSITEUSES_T'),
-        ipu.load_request_id,
-        ipu.site_orig_system_reference,
-        CAST(NULL AS VARCHAR2(4000))
-    FROM   hz_imp_partysiteuses_t ipu
-    WHERE  ipu.load_request_id = :P_LOAD_REQUEST_ID
-    AND    NVL(ipu.import_status_code, 'X') <> 'S'
-    -- Double-count anti-join: mirror the BASE tier exactly. A site use that WAS
-    -- created in base (reached via its parent party-site reference + SITE_USE_TYPE)
-    -- must not also be reported ERROR here. So exclude interface rows whose parent
-    -- site reference + site-use type already produced a base HZ_PARTY_SITE_USES row.
-    AND    NOT EXISTS (SELECT 1 FROM hz_party_site_uses su
-                       JOIN   hz_orig_sys_references pr
-                         ON   pr.owner_table_name = 'HZ_PARTY_SITES'
-                        AND   pr.owner_table_id   = su.party_site_id
-                       WHERE  pr.orig_system_reference = ipu.site_orig_system_reference
-                       AND    su.site_use_type        = ipu.site_use_type)
-
-    UNION ALL
-
-    -- INTERFACE / Accounts -- HZ_IMP_ACCOUNTS_T, ref CUST_ORIG_SYSTEM_REFERENCE.
-    SELECT
-        'Customers.Accounts',
-        'Customers.Accounts~' || ia.cust_orig_system_reference,
-        'INTERFACE', 'ERROR',
-        CAST(NULL AS NUMBER),
-        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-         FROM hz_imp_errors e WHERE e.batch_id = ia.batch_id AND e.interface_table_name = 'HZ_IMP_ACCOUNTS_T'),
-        ia.load_request_id,
-        ia.cust_orig_system_reference,
-        CAST(NULL AS VARCHAR2(4000))
-    FROM   hz_imp_accounts_t ia
-    WHERE  ia.load_request_id = :P_LOAD_REQUEST_ID
-    AND    NVL(ia.import_status_code, 'X') <> 'S'
-    AND    NOT EXISTS (SELECT 1 FROM hz_orig_sys_references r
-                       WHERE r.owner_table_name = 'HZ_CUST_ACCOUNTS'
-                       AND   r.orig_system_reference = ia.cust_orig_system_reference)
-
-    UNION ALL
-
-    -- INTERFACE / AccountSites -- HZ_IMP_ACCTSITES_T, ref CUST_SITE_ORIG_SYS_REF.
-    SELECT
-        'Customers.AccountSites',
-        'Customers.AccountSites~' || ias.cust_site_orig_sys_ref,
-        'INTERFACE', 'ERROR',
-        CAST(NULL AS NUMBER),
-        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-         FROM hz_imp_errors e WHERE e.batch_id = ias.batch_id AND e.interface_table_name = 'HZ_IMP_ACCTSITES_T'),
-        ias.load_request_id,
-        ias.cust_site_orig_sys_ref,
-        CAST(NULL AS VARCHAR2(4000))
-    FROM   hz_imp_acctsites_t ias
-    WHERE  ias.load_request_id = :P_LOAD_REQUEST_ID
-    AND    NVL(ias.import_status_code, 'X') <> 'S'
-    AND    NOT EXISTS (SELECT 1 FROM hz_orig_sys_references r
-                       WHERE r.owner_table_name = 'HZ_CUST_ACCT_SITES_ALL'
-                       AND   r.orig_system_reference = ias.cust_site_orig_sys_ref)
-
-    UNION ALL
-
-    -- INTERFACE / AccountSiteUses -- HZ_IMP_ACCTSITEUSES_T, ref CUST_SITEUSE_ORIG_SYS_REF.
-    SELECT
-        'Customers.AccountSiteUses',
-        'Customers.AccountSiteUses~' || iasu.cust_siteuse_orig_sys_ref,
-        'INTERFACE', 'ERROR',
-        CAST(NULL AS NUMBER),
-        (SELECT LISTAGG(DISTINCT e.message_name, '; ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY e.message_name)
-         FROM hz_imp_errors e WHERE e.batch_id = iasu.batch_id AND e.interface_table_name = 'HZ_IMP_ACCTSITEUSES_T'),
-        iasu.load_request_id,
-        iasu.cust_siteuse_orig_sys_ref,
-        CAST(NULL AS VARCHAR2(4000))
-    FROM   hz_imp_acctsiteuses_t iasu
-    WHERE  iasu.load_request_id = :P_LOAD_REQUEST_ID
-    AND    NVL(iasu.import_status_code, 'X') <> 'S'
+    FROM   node n
+    LEFT JOIN causes c
+      ON   c.c_tier = n.tier
+     AND   c.c_ref  = n.ref
+    WHERE  NVL(n.st, 'X') <> 'S'
+    -- Double-count anti-join: a record that IS in the base is reported by
+    -- the BASE tier only. PartySiteUses mirror their BASE tier exactly
+    -- (parent party-site reference + SITE_USE_TYPE); every other record
+    -- type checks its own reference in HZ_ORIG_SYS_REFERENCES.
+    AND    NOT EXISTS (
+             SELECT 1 FROM hz_orig_sys_references r
+             WHERE  n.tier <> 'PARTYSITEUSE'
+             AND    r.orig_system_reference = n.ref
+             AND    r.owner_table_name = DECODE(n.tier,
+                      'PARTY',       'HZ_PARTIES',
+                      'LOCATION',    'HZ_LOCATIONS',
+                      'PARTYSITE',   'HZ_PARTY_SITES',
+                      'ACCOUNT',     'HZ_CUST_ACCOUNTS',
+                      'ACCTSITE',    'HZ_CUST_ACCT_SITES_ALL',
+                      'ACCTSITEUSE', 'HZ_CUST_SITE_USES_ALL'))
+    AND    NOT EXISTS (
+             SELECT 1 FROM hz_party_site_uses su
+             JOIN   hz_orig_sys_references pr
+               ON   pr.owner_table_name = 'HZ_PARTY_SITES'
+              AND   pr.owner_table_id   = su.party_site_id
+             WHERE  n.tier = 'PARTYSITEUSE'
+             AND    pr.orig_system_reference = n.source_ref
+             AND    su.site_use_type        = n.use_type)
 )
--- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
--- BIP, so treat NULL as "from the start": return every row. On later
--- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
--- greater keys are returned. RECORD_KEY is compared as text (the recon
--- key is a string); the reconciler feeds back the exact key it received.
+-- Keyset predicate (unchanged from V2). An empty P_AFTER_KEY (first page)
+-- binds to NULL in BIP: return every row; later pages return keys after it.
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY

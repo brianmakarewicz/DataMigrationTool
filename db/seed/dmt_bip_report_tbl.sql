@@ -35,7 +35,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -128,10 +128,10 @@ using (
            'POZ_SUPPLIERS_INT' interface_table,
            'Supplier header import reconciliation' notes from dual
     union all select 100000012, 'Customers', 'Customer',
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm',
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo',
            'HZ_IMP_PARTIES_T',
-           'Customer party import reconciliation (Contract v1). V2 (Fix A): adds NOT-LOADED error-tier blocks for all child interface tables (Locations, PartySites, PartySiteUses, AccountSites, AccountSiteUses) so held/rejected child records report their real interface status instead of the generic reconcile sweep. Deployed additively alongside the v1 DMT_CUST_RECON_* artifacts.' from dual
+           'Customer party import reconciliation (Contract v1). V3: every interface row carries its OWN outcome (own HZ_IMP_ERRORS row joined on error_id+batch_id, full FND_NEW_MESSAGES text with tokens; or, for a held/cascaded row with no error of its own, the failed parent chain from the same load). Replaces V2''s batch-wide message LISTAGG (run 236 findings R1). Deployed alongside V2 and v1, never overwriting them.' from dual
     union all select 100000014, 'SupplierAddresses', 'Supplier Address',
            '/Custom/DMT2/SupplierAddresses/SUP_ADDR_DM.xdm',
            '/Custom/DMT2/SupplierAddresses/SUP_ADDR_RPT.xdo',
@@ -174,8 +174,8 @@ using (
            'FA_MASS_ADDITIONS',
            'Fixed asset mass additions import reconciliation' from dual
     union all select 100000007, 'Grants', 'Grant/Award',
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_DM.xdm',
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_RPT.xdo',
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_DM.xdm',
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_RPT.xdo',
            'GMS_AWARD_HEADERS_INT',
            'Grants/awards import reconciliation (Contract v1, nine-column)' from dual
     union all select 100000008, 'MiscReceipts', 'Misc Receipt (Items on Hand)',
@@ -289,15 +289,15 @@ using (
     select 100000012                                                    bip_report_id,
            'Customers'                                                  cemli_code,
            'Customer'                                                   object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'            dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'          report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'            dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'          report_catalog_path,
            'HZ_IMP_PARTIES_T'                                           interface_table,
-           'Customer party import reconciliation (Contract v1). V2 (Fix A): '
-              || 'adds NOT-LOADED error-tier blocks for all child interface tables '
-              || '(Locations, PartySites, PartySiteUses, AccountSites, AccountSiteUses) '
-              || 'so held/rejected child records report their real interface status '
-              || 'instead of the generic reconcile sweep. Deployed additively alongside '
-              || 'the v1 DMT_CUST_RECON_* artifacts.'                   notes,
+           'Customer party import reconciliation (Contract v1). V3: every interface '
+              || 'row carries its OWN outcome (own HZ_IMP_ERRORS row joined on '
+              || 'error_id+batch_id, full FND_NEW_MESSAGES text with tokens; or, for a '
+              || 'held/cascaded row with no error of its own, the failed parent chain '
+              || 'from the same load). Replaces V2''s batch-wide message LISTAGG (run 236 '
+              || 'findings R1). Deployed alongside V2 and v1, never overwriting them.' notes,
            1                                                            contract_version,
            'DMT_HZ_PARTIES_TFM_TBL (+ 6 sibling TFM tables -- seven record types, dispatched by OBJECT_TYPE in DMT_CUST_RESULTS_PKG)' tfm_table,
            'FUSION_PARTY_ID (+ per-record-type Fusion id columns)'      fusion_id_column,
@@ -336,27 +336,35 @@ commit;
 -- (PjoPlanVersionsXface.csv via prj/projectControl/import), interface table
 -- PJO_PLAN_VERSIONS_XFACE, base table PJO_PLAN_VERSIONS_B; FUSION_ID =
 -- PLAN_VERSION_ID stamped into FUSION_BUDGET_VERSION_ID. RECON_KEY =
--- SRC_BUDGET_LINE_REFERENCE, the native source budget line reference the
--- transform copies through unchanged; it survives verbatim onto the base row as
--- PM_BUDGET_REFERENCE, which is the DM's BASE-tier RECORD_KEY (the transform
--- prefixes PROJECT_NUMBER / PROJECT_NAME only, never the budget reference). Kept
--- in its own MERGE so this block also converges the Contract v1 columns on the
+-- SRC_BUDGET_LINE_REFERENCE, the native source budget line reference, which the
+-- transform PREFIXES with the run prefix (2026-10-07); it survives verbatim onto
+-- the base row as PM_BUDGET_REFERENCE, the DM's BASE-tier RECORD_KEY. Kept in its
+-- own MERGE so this block also converges the Contract v1 columns on the
 -- ProjectBudgets row seeded earlier in this file.
+-- 2026-10-07: re-pointed to DMT_PRJ_BUDGET_RECON_V2_DM / _V2_RPT, deployed alongside the
+-- original (BIP objects are never overwritten). V2 scopes the run by
+-- PM_BUDGET_REFERENCE LIKE prefix (OR the prefixed project number), so a budget
+-- loaded onto an EXISTING project (e.g. CFIT022) is matched; V1 only matched
+-- budgets on projects created in the same run (docs/findings/
+-- known_good_ProjectBudgets.md). Existing DBs converge via
+-- db/migrations/2026-10-07_project_budgets_recon_v2_registry.sql.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 100000019                                                    bip_report_id,
            'ProjectBudgets'                                             cemli_code,
            'Project Budget'                                             object_type,
-           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_DM.xdm'              dm_catalog_path,
-           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_RPT.xdo'            report_catalog_path,
+           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V2_DM.xdm'           dm_catalog_path,
+           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V2_RPT.xdo'         report_catalog_path,
            'PJO_PLAN_VERSIONS_XFACE'                                    interface_table,
            'Project budget import reconciliation (Contract v1) - '
-              || 'PjoPlanVersionsXface.csv via prj/projectControl/import'  notes,
+              || 'PjoPlanVersionsXface.csv via prj/projectControl/import. V2 '
+              || '(2026-10-07): run scoped by PM_BUDGET_REFERENCE LIKE prefix OR '
+              || 'prefixed project number; deployed alongside V1, never overwriting it.'  notes,
            1                                                            contract_version,
            'DMT_PRJ_BUDGET_TFM_TBL'                                     tfm_table,
            'FUSION_BUDGET_VERSION_ID'                                   fusion_id_column,
-           'SRC_BUDGET_LINE_REFERENCE -- source budget line ref, survives as PM_BUDGET_REFERENCE on the base row' recon_key_sql
+           'SRC_BUDGET_LINE_REFERENCE -- run-prefixed source budget line ref, survives as PM_BUDGET_REFERENCE on the base row' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
@@ -1583,46 +1591,45 @@ commit;
 -- template (award-header tier). The four Contract v1 columns (CONTRACT_VERSION,
 -- TFM_TABLE, FUSION_ID_COLUMN, RECON_KEY_SQL) drive the shared parser
 -- DMT_RECON_CONTRACT_PKG.FETCH_ROWS, which runs the nine-column Grants recon
--- report DMT_GRANT_RECON_RPT (data model DMT_GRANT_RECON_DM.xdm, deployed to
--- /Custom/DMT2/Grants). This block also converges the Contract v1 columns on the
--- Grants row seeded earlier in this file (the base union-merge sets only the
--- legacy 6 columns).
+-- report DMT_GRANT_RECON_V2_RPT (data model DMT_GRANT_RECON_V2_DM.xdm, deployed to
+-- /Custom/DMT2/Grants alongside V1, which is never overwritten). This block also
+-- converges the Contract v1 columns on the Grants row seeded earlier in this file
+-- (the base union-merge sets only the legacy 6 columns).
 --
 -- The Grants recon report reconciles the AWARD HEADER tier ONLY: awards import
--- as ONE object, the header. The 14 award children (funding, projects, personnel,
--- terms, ...) have NO persistent Fusion base/interface tables on this pod, so the
--- report emits no child tiers; the reconciler accounts the children by the parent
+-- as ONE object, the header. The 14 award children are accounted by the parent
 -- award's verdict (cascade by AWARD_NUMBER, DMT_GRANTS_RESULTS_PKG). Header tier:
 --   OBJECT_TYPE     'Grants'
 --   TFM_TABLE       DMT_GMS_AWD_HEADERS_TFM_TBL
 --   FUSION_ID       FUSION_AWARD_ID  (= GMS_AWARD_HEADERS_B.ID on the BASE tier)
---   RECON_KEY       SPONSOR_AWARD_NUMBER -- the DM's BASE-tier RECORD_KEY
---                   NVL(SPONSOR_AWARD_NUMBER,'AWARD_ID:'||ID). The transform stamps
---                   SPONSOR_AWARD_NUMBER (the 'AWARD_ID:' fallback needs the Fusion
---                   award id, which does not exist until the base row lands, so a
---                   sponsor-null award keys on the fallback only and stays GENERATED,
---                   never fabricated).
--- Grants is env-blocked on the demo pod (module not configured), so fresh awards
--- reject at import; GMS_AWARD_HEADERS_B holds 117 historical rows that prove the
--- BASE tier's column shape. Real per-award rejection messages come from Fusion's
--- Award Batch Import Report (interface table is purged after import); the
--- reconciler retains that fallback (apply_award_import_report).
+--   RECON_KEY       AWARD_NUMBER (prefixed) -- the V2 DM's BASE-tier RECORD_KEY is
+--                   OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, the award number Fusion
+--                   stores. V1 keyed on SPONSOR_AWARD_NUMBER and scoped by
+--                   DC_REQUEST_ID; both are NULL on FBDI-created awards
+--                   (docs/findings/known_good_Grants.md), so V1 could never find a
+--                   loaded award. V2 scopes by CONTRACT_NUMBER LIKE prefix||'%'.
+-- Grants loads on the demo pod when submitted as PPM_IMPL (interface options row
+-- 57 carries the per-object user). Real per-award rejection messages come from
+-- Fusion's Award Batch Import Report (interface table is purged after import);
+-- the reconciler retains that fallback (apply_award_import_report).
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 100000007                                            bip_report_id,
            'Grants'                                             cemli_code,
            'Grant/Award'                                        object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_DM.xdm'         dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_RPT.xdo'        report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_DM.xdm'         dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_RPT.xdo'        report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                              interface_table,
            'Grants award-header import reconciliation (Contract v1, nine-column). '
              || 'Header tier only; 14 children accounted by parent-award verdict. '
-             || 'Award Batch Import Report fallback for purged-interface rejections.' notes,
+             || 'Award Batch Import Report fallback for purged-interface rejections. '
+             || 'V2 (2026-10-07): BASE tier keyed on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, '
+             || 'prefix-scoped (FBDI awards carry no request id / sponsor number).' notes,
            1                                                    contract_version,
            'DMT_GMS_AWD_HEADERS_TFM_TBL'                        tfm_table,
            'FUSION_AWARD_ID'                                    fusion_id_column,
-           'SPONSOR_AWARD_NUMBER -- DM BASE key NVL(SPONSOR_AWARD_NUMBER,''AWARD_ID:''||ID); transform stamps SPONSOR_AWARD_NUMBER (Fusion-id fallback unreachable at transform)' recon_key_sql
+           'AWARD_NUMBER -- V2 DM BASE key OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER (prefixed award number); transform stamps the prefixed AWARD_NUMBER' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
@@ -2091,16 +2098,22 @@ commit;
 -- DMT_EGP_ITEM_RESULTS_PKG.APPLY_CONTRACT_V1_ITEMS handles both TFM tables). This
 -- MERGE converges the Contract v1 columns and re-points the DM/report paths (the
 -- Items row above still names the retired ITEM_DM.xdm) to the one recon report.
+-- 2026-10-06: re-pointed to DMT_ITEM_RECON_V2_DM / _V2_RPT, deployed alongside
+-- the original (BIP objects are never overwritten). V2 fixes the Item Category
+-- tiers (run 236: rejected categories were left UNACCOUNTED).
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Items'                                             cemli_code,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V2_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V2_RPT.xdo'      report_catalog_path,
            'Item Import base-table reconciliation (Contract v1 -- nine columns, '
              || 'keyset). ONE report, two record types via OBJECT_TYPE: Item '
              || '(DMT_EGP_ITEM_TFM_TBL <- EGP_SYSTEM_ITEMS_B) and ItemCategory '
-             || '(DMT_EGP_ITEM_CAT_TFM_TBL <- EGP_ITEM_CATEGORIES).'            notes,
+             || '(DMT_EGP_ITEM_CAT_TFM_TBL <- EGP_ITEM_CATEGORIES). V2 (2026-10-06): '
+             || 'category tiers also match request_id = P_IMPORT_ESS_ID and report '
+             || 'MESSAGE_NAME + text from both EGP interface tables; deployed alongside '
+             || 'the original DMT_ITEM_RECON_DM.'                               notes,
            1                                                    contract_version,
            'DMT_EGP_ITEM_TFM_TBL'                              tfm_table,
            'FUSION_INVENTORY_ITEM_ID'                          fusion_id_column,
@@ -2479,8 +2492,8 @@ using (
     select 100000053                                            bip_report_id,
            'Customers.Parties'                                        cemli_code,
            'Customer Party'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
            'HZ_IMP_PARTIES_T'                                        interface_table,
            'Customers customer party tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2529,8 +2542,8 @@ using (
     select 100000054                                            bip_report_id,
            'Customers.Locations'                                        cemli_code,
            'Customer Location'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
            'HZ_IMP_LOCATIONS_T'                                        interface_table,
            'Customers customer location tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2579,8 +2592,8 @@ using (
     select 100000055                                            bip_report_id,
            'Customers.PartySites'                                        cemli_code,
            'Customer Party Site'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
            'HZ_IMP_PARTYSITES_T'                                        interface_table,
            'Customers customer party site tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2629,8 +2642,8 @@ using (
     select 100000056                                            bip_report_id,
            'Customers.PartySiteUses'                                        cemli_code,
            'Customer Party Site Use'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
            'HZ_IMP_PARTYSITEUSES_T'                                        interface_table,
            'Customers customer party site use tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2679,8 +2692,8 @@ using (
     select 100000057                                            bip_report_id,
            'Customers.Accounts'                                        cemli_code,
            'Customer Account'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
            'HZ_IMP_ACCOUNTS_T'                                        interface_table,
            'Customers customer account tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2729,8 +2742,8 @@ using (
     select 100000058                                            bip_report_id,
            'Customers.AccountSites'                                        cemli_code,
            'Customer Account Site'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
            'HZ_IMP_ACCT_SITES_T'                                        interface_table,
            'Customers customer account site tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2779,8 +2792,8 @@ using (
     select 100000059                                            bip_report_id,
            'Customers.AccountSiteUses'                                        cemli_code,
            'Customer Account Site Use'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V2_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
            'HZ_IMP_ACCTSITE_USES_T'                                        interface_table,
            'Customers customer account site use tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '

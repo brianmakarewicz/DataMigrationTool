@@ -14,7 +14,9 @@ generated XML-output .xdo wrapper linked to it. The package enforces the
 The registry rows in DMT_BIP_REPORT_TBL are NOT touched here -- they are
 seeded by db/seed/dmt_bip_report_tbl.sql (supplier MERGE block).
 
-Run as:  python scripts/deploy_recon_bip_reports.py [CemliFilter ...]
+Run as:  python scripts/deploy_recon_bip_reports.py [CemliFilter ...] [dm=DM_NAME ...]
+         (dm=... deploys only the named data model(s), e.g. dm=DMT_GRANT_RECON_V2_DM,
+          so a new version can be pushed without re-pushing its CEMLI's other pairs)
 Env:     DMT2_CONN  user/password@host:port/service
          (default: the local Docker instance dmt2-local)
 """
@@ -38,11 +40,14 @@ REPORTS = [
     ("BlanketPOs",              "BLANKET_PO_DM",     "BLANKET_PO_RPT"),
     ("Contracts",               "CONTRACT_DM",       "CONTRACT_RPT"),
     ("APInvoices",              "DMT_AP_RECON_DM",   "DMT_AP_RECON_RPT"),
-    ("Customers",               "DMT_CUST_RECON_V2_DM", "DMT_CUST_RECON_V2_RPT"),
+    ("Customers",               "DMT_CUST_RECON_V3_DM", "DMT_CUST_RECON_V3_RPT"),
     ("ARInvoices",              "DMT_AR_RECON_DM",   "DMT_AR_RECON_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
-    ("Items",                   "DMT_ITEM_RECON_DM", "DMT_ITEM_RECON_RPT"),
+    # Items V2 (2026-10-06): deployed alongside the original DMT_ITEM_RECON_DM
+    # (never overwritten). Category tiers also match request_id = import ESS
+    # id and carry MESSAGE_NAME + text from both EGP interface tables.
+    ("Items",                   "DMT_ITEM_RECON_V2_DM", "DMT_ITEM_RECON_V2_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
     ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),
@@ -58,6 +63,14 @@ REPORTS = [
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
     ("PerfEvaluations",          "DMT_PERFEVALUATIONS_RECON_DM", "DMT_PERFEVALUATIONS_RECON_RPT"),
     ("Projects",                 "DMT_PROJECT_RECON_DM",       "DMT_PROJECT_RECON_RPT"),
+    # ProjectBudgets recon V2 (2026-10-07, known-good fix): deployed alongside the
+    # original PRJ_BUDGET_DM (never overwritten). Run scoped by the prefixed
+    # PM_BUDGET_REFERENCE so budgets on EXISTING projects reconcile.
+    ("ProjectBudgets",           "DMT_PRJ_BUDGET_RECON_V2_DM",           "DMT_PRJ_BUDGET_RECON_V2_RPT"),
+    # Grants V2 (2026-10-07, docs/findings/known_good_Grants.md): BASE tier keyed
+    # on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, prefix-scoped. Deployed alongside
+    # the original DMT_GRANT_RECON_DM (never overwritten).
+    ("Grants",                   "DMT_GRANT_RECON_V2_DM",      "DMT_GRANT_RECON_V2_RPT"),
     # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
     # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
     # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/
@@ -131,9 +144,13 @@ def get_dbms_output(cur):
 
 
 def main():
-    cemli_filter = [a.lower() for a in sys.argv[1:]]
+    args = sys.argv[1:]
+    dm_filter = [a[3:].lower() for a in args if a.lower().startswith("dm=")]
+    cemli_filter = [a.lower() for a in args if not a.lower().startswith("dm=")]
     reports = [r for r in REPORTS
                if not cemli_filter or r[0].lower() in cemli_filter]
+    reports = [r for r in reports
+               if not dm_filter or r[1].lower() in dm_filter]
 
     conn = connect()
     cur = conn.cursor()

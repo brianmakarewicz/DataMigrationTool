@@ -25,14 +25,15 @@ AS
     -- packages except the STG table name(s) and the SUB_OBJECT filter (tagged EDIT
     -- regions), like SWEEP_UNACCOUNTED. Does NOT commit — the caller owns the txn.
     -- ============================================================
-    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
         UPDATE DMT_PJF_PROJECTS_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
@@ -44,7 +45,8 @@ AS
         UPDATE DMT_PJF_TASKS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -56,7 +58,8 @@ AS
         UPDATE DMT_PJF_TEAM_MEMBERS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -68,7 +71,8 @@ AS
         UPDATE DMT_PJC_TXN_CONTROLS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -80,7 +84,8 @@ AS
     PROCEDURE VALIDATE_PRE_TRANSFORM (
         p_run_id    IN NUMBER,
         p_dependent_prefix  IN VARCHAR2 DEFAULT NULL,
-        p_scenario_id       IN NUMBER   DEFAULT NULL
+        p_scenario_id       IN NUMBER   DEFAULT NULL,
+        p_run_mode        IN VARCHAR2 DEFAULT 'NEW'
     )
     IS
     BEGIN
@@ -101,10 +106,11 @@ AS
         -- only TFM rows, so the excluded orphan is not unaccounted; the funnel view
         -- surfaces it as PREVALIDATION_FAILED.
         --
-        -- The check is scoped by SCENARIO_ID and does NOT depend on STG_STATUS:
-        -- ALL/FAILED-mode runs reuse the same write-once STG rows (already
-        -- TRANSFORMED from a prior run), so a NEW filter would never fire in
-        -- regression. The parent-existence subquery correlates on SCENARIO_ID so a
+        -- The check is scoped by SCENARIO_ID and selects rows with the shared
+        -- run-mode predicate (STG_ROW_SELECTED), never a literal 'NEW': ALL-mode
+        -- runs reuse the same write-once STG rows (already TRANSFORMED from a
+        -- prior run), so a NEW filter would never fire in regression, while ALL
+        -- selects the whole scenario. The parent-existence subquery correlates on SCENARIO_ID so a
         -- task is judged against projects in its own batch only (mirrors the
         -- Customers batch-parent check).
         --
@@ -129,6 +135,7 @@ AS
                    ''' is not present in this source — orphan task skipped.'
             FROM   DMT_PJF_TASKS_STG_TBL t
             WHERE  t.PROJECT_NUMBER IS NOT NULL
+            AND    DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, t.STG_STATUS) = 'Y'
             AND    (p_scenario_id IS NULL OR t.SCENARIO_ID = p_scenario_id)
             AND    NOT EXISTS (
                        SELECT 1 FROM DMT_PJF_PROJECTS_STG_TBL p
@@ -175,7 +182,7 @@ AS
 
         -- Standard final step: flag the STG rows FAILED from the recorded error
         -- rows (status only, no message) so FAILED-mode reruns select on them (§7).
-        FLAG_STG_FAILED(p_run_id);
+        FLAG_STG_FAILED(p_run_id, p_scenario_id);
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(

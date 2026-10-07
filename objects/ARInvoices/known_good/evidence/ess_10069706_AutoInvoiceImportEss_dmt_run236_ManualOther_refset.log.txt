@@ -1,0 +1,62 @@
+=== 10069706.log
+####[2026-10-06T17:49:52.129+00:00] [INFO]  Start Total count of argument ::: 25
+ First value ::: RAXTRX
+ Second value ::: 300000046987012
+ 23 ::: N
+ 24 ::: 
+ 25 ::: (null)
+-------------------------------------------------------------------------
+ Printing AutoInvoice parameters 
+Argument List 0::: Program Name                  ::: RAXTRX.
+Argument List 1::: Parallel Module Name          ::: MAIN.
+Argument List 2::: Running Mode                  ::: T.
+Argument List 3::: Batch Source Sequence Id      ::: .
+Argument List 4::: Batch Source Name             ::: Manual-Other.
+Argument List 5::: Default Date                  ::: 2026-10-06.
+Argument List 6::: Transaction Flexfield         ::: .
+Argument List 7::: Transaction Type              ::: .
+Argument List 8::: (Low) Bill To Customer Number ::: .
+Argument List 9::: (High) Bill To Customer Number::: .
+Argument List 10::: (Low) Bill To Customer Name   ::: .
+Argument List 11::: (High) Bill To Customer Name  ::: .
+Argument List 12::: (Low) GL Date                 ::: .
+Argument List 13::: (High) GL Date                ::: .
+Argument List 14::: (Low) Ship Date               ::: .
+Argument List 15::: (High) Ship Date              ::: .
+Argument List 16::: (Low) Transaction Number      ::: .
+Argument List 17::: (High) Transaction Number     ::: .
+Argument List 18::: (Low) Sales Order Number      ::: .
+Argument List 19::: (High) Sales Order Number     ::: .
+Argument List 20::: (Low) Invoice Date            ::: .
+Argument List 21::: (High) Invoice Date           ::: .
+Argument List 22::: (Low) Ship To Customer Number ::: .
+Argument List 23::: (High) Ship To Customer Number::: .
+Argument List 24::: (Low) Ship To Customer Name   ::: .
+Argument List 25::: (High) Ship To Customer Name  ::: .
+Argument List 26::: Call RAXTRX from RAXMTR flag  ::: N.
+Argument List 27::: Base Due Date on Trx Date     ::: N.
+Argument List 28::: Due Date Adjustment Days      ::: .
+Argument List 29::: Org Id                        ::: 300000046987012.
+raassc()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:49:50)
+Before setting request_id and org_id
+Successfully set request_id
+Successfully set org_id
+raassc()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:49:50)
+raagsp()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:49:50)
+Profile option - Tax Exemption Override Control - is not set.
+raagsp()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:49:50)
+Invoking instrumentation 
+raaini()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:49:50)
+raaapx()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:49:50)
+raaapx()- UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:49:50)
+raagbo()+ UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:49:50)
+The transaction source isn't valid for the business unit based on reference set association.
+Error calling raagbo().
+Error calling raaini().
+PROFILES-CANNOT READ (OPTION=ZX_ALLOW_TRX_LINE_EXEMPTIONS)
+
++---------------------------------------------------------------------------+
+UTIL-CURRENT TIME (DATE=06-OCT-2026) (TIME=17:49:50)
+
++---------------------------------------------------------------------------+
+

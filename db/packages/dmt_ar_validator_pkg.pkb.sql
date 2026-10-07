@@ -23,14 +23,15 @@ AS
     -- packages except the STG table name(s) and the SUB_OBJECT filter (tagged EDIT
     -- regions), like SWEEP_UNACCOUNTED. Does NOT commit — the caller owns the txn.
     -- ============================================================
-    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER) IS
+    PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL) IS
     BEGIN
         -- <<EDIT-TABLE — the object's STG table. Repeat this whole UPDATE block
         --   (EDIT-TABLE through the ';') once per STG table the object owns.>>
         UPDATE DMT_RA_LINES_STG_TBL
         -- <<END EDIT-TABLE — everything below is FIXED until EDIT-SCOPE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
@@ -42,7 +43,8 @@ AS
         UPDATE DMT_RA_DISTS_STG_TBL
         -- <<END EDIT-TABLE>>
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
-        WHERE  STG_STATUS IN ('NEW')
+        WHERE  STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id)
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE>>
@@ -69,12 +71,15 @@ AS
     -- --------------------------------------------------------
     PROCEDURE VALIDATE_PRE_TRANSFORM (
         p_run_id    IN NUMBER,
-        p_dependent_prefix  IN VARCHAR2 DEFAULT NULL
+        p_dependent_prefix  IN VARCHAR2 DEFAULT NULL,
+        p_scenario_id     IN NUMBER   DEFAULT NULL,
+        p_run_mode        IN VARCHAR2 DEFAULT 'NEW'
     )
     IS
         l_dep_prefix    VARCHAR2(30);
         l_line_failed   NUMBER := 0;
         l_dist_failed   NUMBER := 0;
+        l_ctx_failed    NUMBER := 0;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -92,6 +97,35 @@ AS
             -- run's own PREFIX, exactly as before.
             l_dep_prefix := DMT_UTIL_PKG.GET_DEPENDENT_PREFIX(p_run_id);
         END IF;
+
+        -- Step 0 (always enforced): the Line Transactions flexfield context is
+        -- required business data. AutoInvoice treats a missing/undefined context as a
+        -- FATAL job-level error, so a line without one is rejected here, per row,
+        -- with a clear message instead of crashing the whole AutoInvoice job. (The
+        -- transformer no longer supplies a fallback context.) A distribution without
+        -- a context cannot link to its line, so it is rejected the same way.
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'ARInvoices', 'AR Lines', ln.STG_SEQUENCE_ID,
+               '[PRE_VALIDATION] INTERFACE_LINE_CONTEXT (Line Transactions Flexfield Context) is ' ||
+               'required. Supply a context defined in Fusion for the Line Transactions flexfield ' ||
+               '(for example EXTERNAL_SOURCE) -- AR invoice line skipped.'
+        FROM   DMT_RA_LINES_STG_TBL ln
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ln.STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL OR ln.SCENARIO_ID = p_scenario_id)
+        AND    ln.INTERFACE_LINE_CONTEXT IS NULL;
+        l_ctx_failed := SQL%ROWCOUNT;
+
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'ARInvoices', 'AR Distributions', d.STG_SEQUENCE_ID,
+               '[PRE_VALIDATION] INTERFACE_LINE_CONTEXT (Line Transactions Flexfield Context) is ' ||
+               'required on the distribution to link it to its invoice line -- distribution skipped.'
+        FROM   DMT_RA_DISTS_STG_TBL d
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, d.STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL OR d.SCENARIO_ID = p_scenario_id)
+        AND    d.INTERFACE_LINE_CONTEXT IS NULL;
+        l_ctx_failed := l_ctx_failed + SQL%ROWCOUNT;
 
         -- Step 1: Record a rejection for AR lines whose bill-to customer account
         -- is not LOADED. Only enforced when customer accounts have been migrated
@@ -118,7 +152,8 @@ AS
                        ln.BILL_CUSTOMER_ACCOUNT_NUMBER ||
                        ''' is not loaded — AR invoice line skipped.'
                 FROM   DMT_RA_LINES_STG_TBL ln
-                WHERE  ln.STG_STATUS IN ('NEW')
+                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ln.STG_STATUS) = 'Y'
+                AND    (p_scenario_id IS NULL OR ln.SCENARIO_ID = p_scenario_id)
                 AND    ln.BILL_CUSTOMER_ACCOUNT_NUMBER IS NOT NULL
                 AND    NOT EXISTS (
                            SELECT 1
@@ -140,7 +175,8 @@ AS
                        d.INTERFACE_LINE_ATTRIBUTE1 ||
                        ''') failed upstream validation — distribution skipped.'
                 FROM   DMT_RA_DISTS_STG_TBL d
-                WHERE  d.STG_STATUS IN ('NEW')
+                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, d.STG_STATUS) = 'Y'
+                AND    (p_scenario_id IS NULL OR d.SCENARIO_ID = p_scenario_id)
                 AND    EXISTS (
                            SELECT 1
                            FROM   DMT_RA_LINES_STG_TBL ln
@@ -152,18 +188,20 @@ AS
                            AND    ln.INTERFACE_LINE_ATTRIBUTE1 = d.INTERFACE_LINE_ATTRIBUTE1
                        );
                 l_dist_failed := SQL%ROWCOUNT;
-
-                -- Standard final step: flag the STG rows FAILED from the recorded
-                -- error rows (status only, no message) so FAILED-mode reruns select
-                -- on them (§7).
-                FLAG_STG_FAILED(p_run_id);
             END IF;
         END;
+
+        -- Standard final step (section 7): flag the STG rows FAILED from the recorded
+        -- error rows (status only, no message) so FAILED-mode reruns select on them.
+        -- Runs unconditionally so every check above (missing context AND upstream)
+        -- is covered by the one call.
+        FLAG_STG_FAILED(p_run_id, p_scenario_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'VALIDATE_PRE_TRANSFORM complete. Pre-validation failures — ' ||
-                                'Lines: ' || l_line_failed ||
+                                'Missing context: ' || l_ctx_failed ||
+                                ' | Lines: ' || l_line_failed ||
                                 ' | Distributions: ' || l_dist_failed,
             p_package        => C_PKG,
             p_procedure      => 'VALIDATE_PRE_TRANSFORM');

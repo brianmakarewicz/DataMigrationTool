@@ -70,6 +70,7 @@
         p_run_id IN NUMBER
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'LOAD_VIA_FBDI';
+        C_LOAD_POLL_SEC CONSTANT PLS_INTEGER := 1800;   -- DMT poll window for the upload ESS
 
         l_ucm_account   VARCHAR2(200);
         l_raw_job_name  VARCHAR2(500);
@@ -167,7 +168,7 @@
             DMT_LOADER_PKG.POLL_ESS_JOB(
                 p_run_id         => p_run_id,
                 p_ess_job_id     => l_load_ess_id,
-                p_timeout_sec    => 1800,
+                p_timeout_sec    => C_LOAD_POLL_SEC,
                 p_raise_on_error => FALSE,
                 p_log_context    => C_CEMLI,
                 p_cemli_code     => C_CEMLI,
@@ -208,11 +209,60 @@
                 || '. Rows left GENERATED for base-table reconciliation.',
                 p_package => C_PKG, p_procedure => C_PROC);
         ELSE
+            -- The row message must carry the REAL Fusion state, never DMT's own
+            -- poll-window artifact. POLL_ESS_JOB returns 'EXPIRED' when OUR
+            -- p_timeout_sec window ran out while Fusion still reported a
+            -- non-terminal state (WAIT/READY/RUNNING) -- 'EXPIRED' is then not a
+            -- Fusion status at all. In that case read Fusion's own state for the
+            -- request from ESS_REQUEST_HISTORY (CAPTURE_ESS_HIERARCHY -> one BIP
+            -- query, recorded in DMT_ESS_JOB_TBL) and report it. Rows are still
+            -- stashed (and swept FAILED): a request still queued after the full
+            -- window has never turned into a load on this pod (runs 202/235/236:
+            -- every upload ESS sat in WAIT ~38 min, then Fusion ran it and it
+            -- ended ERROR -- "erpFamily is null" -- with nothing in the base tables).
             DECLARE
-                l_err VARCHAR2(500) :=
-                    '[LOAD_ERROR] Value Set upload ESS ' || l_load_ess_id
-                    || ' returned ' || l_status || '. See ESS logs.';
+                l_fusion_state VARCHAR2(30);
+                l_err          VARCHAR2(1000);
             BEGIN
+                IF l_status = 'EXPIRED' THEN
+                    BEGIN
+                        DMT_ESS_UTIL_PKG.CAPTURE_ESS_HIERARCHY(
+                            p_run_id            => p_run_id,
+                            p_parent_request_id => TO_NUMBER(l_load_ess_id),
+                            p_cemli_code        => C_CEMLI);
+
+                        SELECT MAX(STATE_TEXT) KEEP (DENSE_RANK LAST ORDER BY ESS_JOB_ID)
+                        INTO   l_fusion_state
+                        FROM   DMT_ESS_JOB_TBL
+                        WHERE  RUN_ID = p_run_id
+                        AND    REQUEST_ID = TO_NUMBER(l_load_ess_id);
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            -- Diagnostic lookup only: fall back to "unknown", never guess.
+                            l_fusion_state := NULL;
+                            DMT_UTIL_PKG.LOG(p_run_id,
+                                C_PROC || ': could not read Fusion state for ESS '
+                                || l_load_ess_id || ': ' || SUBSTR(SQLERRM, 1, 300),
+                                p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
+                    END;
+
+                    l_err := '[LOAD_ERROR] Value Set upload ESS ' || l_load_ess_id
+                        || ' did not finish within DMT''s ' || C_LOAD_POLL_SEC || 's poll window. Fusion state at'
+                        || ' that point: ' || NVL(l_fusion_state, 'unknown (state lookup failed)')
+                        || CASE WHEN l_fusion_state IN ('WAIT', 'READY', 'BLOCKED', 'PAUSED',
+                                                        'SCHEDULE_ENDED', 'PENDING_VALIDATION',
+                                                        'VALIDATION_FAILED')
+                                THEN ' -- the job had not started, so no row reached Fusion.'
+                                ELSE '.'
+                           END
+                        || ' Check ESS request ' || l_load_ess_id
+                        || ' in Fusion Scheduled Processes for its final outcome.';
+                ELSE
+                    l_err := '[LOAD_ERROR] Value Set upload ESS ' || l_load_ess_id
+                        || ' ended in Fusion state ' || l_status
+                        || '. See the ESS log for request ' || l_load_ess_id || '.';
+                END IF;
+
                 UPDATE DMT_FND_VS_SET_TFM_TBL
                 SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, l_err),
                        LAST_UPDATED_DATE = SYSDATE
@@ -224,7 +274,9 @@
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED';
 
                 DMT_UTIL_PKG.LOG(p_run_id,
-                    C_PROC || ': upload ESS ' || l_load_ess_id || ' returned ' || l_status
+                    C_PROC || ': upload ESS ' || l_load_ess_id || ' poll result ' || l_status
+                    || CASE WHEN l_fusion_state IS NOT NULL
+                            THEN ' (Fusion state ' || l_fusion_state || ')' END
                     || '. Stashed [LOAD_ERROR] on all GENERATED rows (sweep will FAIL them).',
                     p_log_type => 'WARN', p_package => C_PKG, p_procedure => C_PROC);
             END;
@@ -358,6 +410,9 @@
 
             IF r.source_type = 'SET' THEN
                 -- Positive proof: the set exists in FND_VS_VALUE_SETS.
+                -- #160 guard: a set whose OWN load stashed a real error (ERROR_TEXT not
+                -- null) is NOT rescued to LOADED by a base-table code collision with a
+                -- pre-existing set; its real error carries it to FAILED.
                 UPDATE DMT_FND_VS_SET_TFM_TBL
                 SET    TFM_STATUS           = 'LOADED',
                        FUSION_VALUE_SET_ID  = r.fusion_id,
@@ -365,7 +420,8 @@
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID     = p_run_id
                 AND    VALUE_SET_CODE = r.record_key
-                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                AND    ERROR_TEXT IS NULL;
                 l_sets_loaded := l_sets_loaded + SQL%ROWCOUNT;
 
             ELSIF r.source_type = 'VALUE' THEN
@@ -375,6 +431,9 @@
                     l_set_code := SUBSTR(r.record_key, 1, l_sep - 1);
                     l_value    := SUBSTR(r.record_key, l_sep + 1);
 
+                    -- #160 guard: a value whose OWN load stashed a real error is NOT
+                    -- rescued to LOADED by a base-table key collision; its real error
+                    -- carries it to FAILED.
                     UPDATE DMT_FND_VS_VALUE_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            FUSION_VALUE_ID      = r.fusion_id,
@@ -383,7 +442,8 @@
                     WHERE  RUN_ID     = p_run_id
                     AND    VALUE_SET_CODE = l_set_code
                     AND    VALUE          = l_value
-                    AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                    AND    TFM_STATUS NOT IN ('LOADED','FAILED')
+                    AND    ERROR_TEXT IS NULL;
                     l_values_loaded := l_values_loaded + SQL%ROWCOUNT;
                 END IF;
             END IF;

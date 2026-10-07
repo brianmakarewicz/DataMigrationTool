@@ -30,8 +30,9 @@ Proven runs (source of truth for GOOD data):
   Requisitions:   int=100000024, prefix=9169 —  6 LOADED (objects/Requisitions/README.md)
 
   GLBudgets: run 112, prefix 9623 — 4 LOADED / 1 FAILED (objects/GLBudget/README.md)
-  ProjectBudgets:  int=100000027, prefix=9123 — 3 LOADED (objects/ProjectBudgets/README.md;
-                   regression rows target the RT projects, prefixed at transform)
+  ProjectBudgets:  the 2026-04-01 "3 LOADED" (prefix 9123) was a recon false positive.
+                   Rows now mirror the owner's known-good CFIT022 record
+                   (docs/findings/known_good_ProjectBudgets.md).
 
 Not yet E2E tested (data is speculative):
   PlanningBudgets  — missing DMT_ERP_INTERFACE_OPTIONS_TBL config
@@ -188,6 +189,13 @@ def main():
         # Grants
         "DMT_GMS_AWD_PERSONNEL_TFM_TBL",
         "DMT_GMS_AWD_HDR_TFM_TBL",
+        "DMT_GMS_AWD_FUND_SRC_TFM_TBL",
+        "DMT_GMS_AWD_PROJECTS_TFM_TBL",
+        "DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL",
+        "DMT_GMS_AWD_BDGT_PRDS_TFM_TBL",
+        "DMT_GMS_AWD_ORG_CREDITS_TFM_TBL",
+        "DMT_GMS_AWD_FUNDING_TFM_TBL",
+        "DMT_GMS_AWD_FUND_ALLOC_TFM_TBL",
         # Requisitions
         "DMT_POR_REQ_DISTS_TFM_TBL",
         "DMT_POR_REQ_LINES_TFM_TBL",
@@ -246,8 +254,15 @@ def main():
         "DMT_POZ_SUP_ADDR_TFM_TBL",
         "DMT_POZ_SUPPLIERS_TFM_TBL",
         # --- STG tables (now safe to delete) ---
-        # Grants personnel
+        # Grants personnel + award children
         "DMT_GMS_AWD_PERSONNEL_STG_TBL",
+        "DMT_GMS_AWD_FUND_SRC_STG_TBL",
+        "DMT_GMS_AWD_PROJECTS_STG_TBL",
+        "DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL",
+        "DMT_GMS_AWD_BDGT_PRDS_STG_TBL",
+        "DMT_GMS_AWD_ORG_CREDITS_STG_TBL",
+        "DMT_GMS_AWD_FUNDING_STG_TBL",
+        "DMT_GMS_AWD_FUND_ALLOC_STG_TBL",
         # Requisition dists → lines → headers
         "DMT_POR_REQ_DISTS_STG_TBL",
         "DMT_POR_REQ_LINES_STG_TBL",
@@ -1112,53 +1127,65 @@ def main():
 
     # ====================================================================
     # 19. AR INVOICES (DMT_RA_LINES_STG_TBL)
-    #     GOOD: 2 AR transactions against existing customer
-    #     BAD:  1 with invalid customer account [BAD-LKP]
+    #     Mirrors the owner's known-good AutoInvoice run (Fusion 10071776; see
+    #     docs/findings/known_good_ARInvoices.md and objects/ARInvoices/known_good/).
+    #     All three rows sit in ONE partition (same BU + batch source), so a single
+    #     AutoInvoice job judges them all per row:
+    #       * context EXTERNAL_SOURCE (a defined Line Transactions flexfield context;
+    #         the former 'LEGACY' crashed the whole job),
+    #       * NO transaction number (External Source auto-numbers; a supplied number
+    #         is rejected per row),
+    #       * bill-to site, quantity, unit price, memo line and taxation country as
+    #         in the known-good file.
+    #     INTERFACE_LINE_ATTRIBUTE1 is run-prefixed by the transformer, so the
+    #     scenario can be re-run under new prefixes without duplicate-key rejection.
+    #     GOOD: 2 lines against pre-existing Fusion customer accounts.
+    #     BAD:  1 line with a nonexistent bill-to account [BAD-LKP]. The defect is
+    #           deliberately NOT on the batch source or BU (those partition the job,
+    #           so a bad value there aborts the whole job instead of one row), and it
+    #           has a different bill-to account from every GOOD row, so AutoInvoice
+    #           never groups it into a GOOD row's invoice (an errored sibling on the
+    #           same invoice silently holds back valid lines).
+    #     Dates must fall in an open AR period of the Progress US ledger at run time.
+    #     (Replaces the former RT-AR-G1/G2 'LEGACY' rows and the Manual-Other BAD row,
+    #     which crashed their AutoInvoice jobs at job level; scenarios already
+    #     minted with those rows are untouched.)
     # ====================================================================
     print("\n=== 19. AR Invoices ===")
-    for trx_num, bill_acct, amount, desc in [
-        ("RT-AR-G1", CUST_ACCT_NO, 3200.00, "RT professional services"),
-        ("RT-AR-G2", CUST_ACCT_NO, 1800.00, "RT maintenance contract"),
+    AR_BU = "Progress US Business Unit"
+    for src, bill_acct, bill_site, amount, desc, memo, attr1, label in [
+        ("RT-AR-KG-G1",   "122133",    "1430587", 1000.00, "Sentinal Desktop",
+         "Venue Fee",        "86753101", "GOOD"),
+        ("RT-AR-KG-G2",   "70075",     "245921",   250.00, "Sentinal Desktop Monitor",
+         "Tuition and Fees", "86753102", "GOOD"),
+        ("RT-AR-KG-BAD1", "999999999", "1430587", 1000.00, "BAD: nonexistent bill-to account",
+         "Venue Fee",        "86753103", "BAD"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_RA_LINES_STG_TBL (
                 BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
                 TERM_NAME, TRX_DATE, GL_DATE,
-                TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER,
+                TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER, BILL_CUSTOMER_SITE_NUMBER,
                 LINE_TYPE, DESCRIPTION,
-                CURRENCY_CODE, AMOUNT,
+                CURRENCY_CODE, CONVERSION_TYPE, CONVERSION_RATE,
+                AMOUNT, QUANTITY, UNIT_SELLING_PRICE,
                 INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1,
-                INTERFACE_LINE_ATTRIBUTE2, SOURCE_ID
+                INTERFACE_LINE_ATTRIBUTE2, DEFAULT_TAXATION_COUNTRY,
+                MEMO_LINE_NAME, SOURCE_ID
             ) VALUES (
                 :bu, 'External Source', 'Invoice',
-                'Net 30', DATE '2025-06-15', DATE '2025-06-15',
-                :trx, :bill_acct,
+                '30 Net', DATE '2026-03-17', DATE '2026-03-17',
+                NULL, :bill_acct, :bill_site,
                 'LINE', :descr,
-                'USD', :amt,
-                'LEGACY', :trx, '1', :src
+                'USD', 'User', 1,
+                :amt, 1, :amt,
+                'EXTERNAL_SOURCE', :attr1,
+                '1', 'US',
+                :memo, :src
             )
-        """, {"bu": BU, "trx": trx_num, "bill_acct": bill_acct,
-              "amt": amount, "descr": desc, "src": f"RT-{trx_num}"},
-        label=f"GOOD AR Invoice: {trx_num}")
-
-    run_sql(cur, """
-        INSERT INTO DMT_RA_LINES_STG_TBL (
-            BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
-            TERM_NAME, TRX_DATE, GL_DATE,
-            TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER,
-            LINE_TYPE, DESCRIPTION,
-            CURRENCY_CODE, AMOUNT,
-            INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1,
-            INTERFACE_LINE_ATTRIBUTE2, SOURCE_ID
-        ) VALUES (
-            :bu, 'Manual-Other', 'Invoice',
-            'Net 30', DATE '2025-06-15', DATE '2025-06-15',
-            'RT-AR-BAD1', '99999',
-            'LINE', 'BAD: invalid customer account',
-            'USD', 500.00,
-            'LEGACY', 'RT-AR-BAD1', '1', 'RT-AR-BAD1'
-        )
-    """, {"bu": BU}, label="BAD AR Invoice: invalid customer acct [BAD-LKP]")
+        """, {"bu": AR_BU, "bill_acct": bill_acct, "bill_site": bill_site,
+              "amt": amount, "descr": desc, "attr1": attr1, "memo": memo, "src": src},
+        label=f"{label} AR Invoice: {src}")
     tag_scenario(cur, "DMT_RA_LINES_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1631,53 +1658,71 @@ def main():
 
     # ====================================================================
     # 28a. PROJECT BUDGETS (DMT_PRJ_BUDGET_STG_TBL)
-    #     GOOD: 2 budget lines against the RT projects loaded earlier in
-    #           the same run. Plan type / period format / currency proven
-    #           E2E LOADED 2026-04-01 (int=100000027, prefix=9123,
-    #           objects/ProjectBudgets/README.md). Transform applies the
-    #           run prefix to PROJECT_NUMBER/NAME to match the migrated
-    #           Fusion projects.
-    #     BAD:  1 for non-existent project [BAD-UPS] — fails
-    #           pre-validation (PROJECT_NAME not LOADED in projects STG).
+    #     Mirrors the owner's known-good Fusion UI run (Import Project Budgets
+    #     request 10071416, docs/findings/known_good_ProjectBudgets.md): the
+    #     CFIT022 record that landed clean as a Baseline plan version.
+    #     GOOD: 1 LINE budget on the EXISTING Fusion project CFIT022 ("Data
+    #           Load 6"), plan type 'Cost and Revenue Budget', project-level
+    #           task CFIT022, resource 'Financial Resources', 2026/01/01 to
+    #           2028/01/01, raw cost 70000 + revenue 80000, Baseline, Create.
+    #           No DMT xref match for CFIT022, so the project passes through
+    #           raw; the transform prefixes SRC_BUDGET_LINE_REFERENCE and
+    #           PLAN_VERSION_NAME, so each run creates one new baselined
+    #           version that the V2 recon DM finds by PM_BUDGET_REFERENCE.
+    #     BAD:  same record on project/task NOPROJ999 [BAD-LKP] -> Fusion
+    #           rejects with PJO_XFACE_INVALID_PROJ_NUM, harvested per row from
+    #           the BudgetsXfaceBIP import report.
+    #     Replaces (going forward) the old 'Approved Cost Budget' rows on the
+    #     in-run RT projects: their sponsored project type made Fusion refuse
+    #     them (PJO_FPT_CANT_BUD_SPON_PRJ), so a GOOD row could never load.
+    #     Earlier write-once scenarios keep their old rows untouched.
     # ====================================================================
     print("\n=== 28a. Project Budgets ===")
-    for pnum, pname, period, amount in [
-        ("RTPRJ001", "RT Project Good-1", "01-25", 50000.00),
-        ("RTPRJ002", "RT Project Good-2", "02-25", 75000.00),
+    for label, pnum, pname, ref in [
+        ("GOOD Project Budget: CFIT022 Cost and Revenue Budget (LINE)",
+         "CFIT022", "Data Load 6", "RT-PJB-GOOD1"),
+        ("BAD Project Budget: non-existent project NOPROJ999 [BAD-LKP]",
+         "NOPROJ999", "RT NoSuch Project", "RT-PJB-BAD1"),
     ]:
-        # PLAN_VERSION_STATUS is mandatory on the refreshed instance
-        # (PJO_XFACE_NO_VER_STATUS rejection in run 115, import job 9697704).
         run_sql(cur, """
             INSERT INTO DMT_PRJ_BUDGET_STG_TBL (
                 FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
-                PLAN_VERSION_NAME, PLAN_VERSION_STATUS, PERIOD_NAME, PLANNING_CURRENCY,
-                TOTAL_TC_RAW_COST, SRC_BUDGET_LINE_REFERENCE, SOURCE_ID
+                TASK_NUMBER, PLAN_VERSION_NAME, PLAN_VERSION_STATUS,
+                RESOURCE_NAME, LINE_TYPE,
+                PLANNING_START_DATE, PLANNING_END_DATE, PLANNING_CURRENCY,
+                TOTAL_TC_RAW_COST, TOTAL_TC_REVENUE,
+                SRC_BUDGET_LINE_REFERENCE, PROCESSING_MODE, SOURCE_ID
             ) VALUES (
-                'Approved Cost Budget', :pnum, :pname,
-                'Version 1', 'Working', :period, 'USD',
-                :amt, :ref, :src
+                'Cost and Revenue Budget', :pnum, :pname,
+                :pnum, 'RT Budget Version', 'Baseline',
+                'Financial Resources', 'LINE',
+                DATE '2026-01-01', DATE '2028-01-01', 'USD',
+                70000, 80000,
+                :ref, 'Create', :ref
             )
-        """, {"pnum": pnum, "pname": pname, "period": period,
-              "amt": amount, "ref": f"RT-PJB-{pnum}", "src": f"RT-PJB-{pnum}"},
-        label=f"GOOD Project Budget: {pnum}/{period}")
-
-    run_sql(cur, """
-        INSERT INTO DMT_PRJ_BUDGET_STG_TBL (
-            FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
-            PLAN_VERSION_NAME, PLAN_VERSION_STATUS, PERIOD_NAME, PLANNING_CURRENCY,
-            TOTAL_TC_RAW_COST, SRC_BUDGET_LINE_REFERENCE, SOURCE_ID
-        ) VALUES (
-            'Approved Cost Budget', 'NOPROJ999', 'RT NoSuch Project',
-            'Version 1', 'Working', '01-25', 'USD',
-            999.99, 'RT-PJB-BAD1', 'RT-PJB-BAD1'
-        )
-    """, label="BAD Project Budget: non-existent project [BAD-UPS]")
+        """, {"pnum": pnum, "pname": pname, "ref": ref}, label=label)
     tag_scenario(cur, "DMT_PRJ_BUDGET_STG_TBL", scenario_id)
 
     # ====================================================================
-    # 29. GRANTS (DMT_GMS_AWD_HEADERS_STG_TBL)
-    #     GOOD: 2 grant awards
-    #     BAD:  1 missing BUSINESS_UNIT [BAD-REQ]
+    # 29. GRANTS (DMT_GMS_AWD_*_STG_TBL, nine record types)
+    #     Corrected 2026-10-07 (docs/findings/known_good_Grants.md): Grants
+    #     loads when submitted as PPM_IMPL, and an award needs its children.
+    #     GOOD: RTAWD-G1, RTAWD-G2 -- full awards (funding source, project,
+    #           project funding source, budget period, org credit, personnel,
+    #           funding, funding allocation) mirroring the owner's known-good
+    #           AWDTST04B / AWDTST02B. Expected LOADED (GMS_AWARD_HEADERS_B via
+    #           OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER).
+    #     BAD:  RTAWD-BAD1 -- same full shape, primary sponsor
+    #           'No Such Sponsor DMT' [BAD-FUSION]. Expected FAILED "The value of
+    #           the attribute Primary Sponsor isn't valid." (replay A). This is
+    #           also the cross-grain failure scenario (section 5, 2026-10-07):
+    #           one award whose only defect is on the header grain; every child
+    #           row must land FAILED quoting that real error.
+    #     BAD:  RTGNT001 / RTGNT002 -- the older header+personnel-only awards.
+    #           Formerly labelled GOOD; with no project/budget period Fusion
+    #           rejects them ("No project is associated to this award...", replay
+    #           C) [BAD-FUSION].
+    #     BAD:  RTGNT-BAD1 -- missing BUSINESS_UNIT [BAD-REQ].
     # ====================================================================
     print("\n=== 29. Grants ===")
     GRANTS_BU = "Progress US Business Unit"
@@ -1707,7 +1752,7 @@ def main():
         """, {"aname": awd_name, "anum": awd_num, "tmpl": GRANTS_TEMPLATE,
               "bu": GRANTS_BU, "le": GRANTS_LE, "ctype": GRANTS_CONTRACT_TYPE,
               "sponsor": sponsor, "src": f"RT-GNT-{awd_num}"},
-        label=f"GOOD Grant: {awd_name}")
+        label=f"BAD-FUSION Grant (no children): {awd_name}")
 
     # Insert personnel (PI required for each award)
     for awd_num in ("RTGNT001", "RTGNT002"):
@@ -1722,7 +1767,7 @@ def main():
                 DATE '2025-01-01', 100, :src
             )
         """, {"anum": awd_num, "src": f"RT-GNT-PERS-{awd_num}"},
-        label=f"GOOD Grant Personnel (PI): {awd_num}")
+        label=f"BAD-FUSION Grant Personnel (PI, award has no children): {awd_num}")
     tag_scenario(cur, "DMT_GMS_AWD_PERSONNEL_STG_TBL", scenario_id)
 
     run_sql(cur, """
@@ -1745,6 +1790,106 @@ def main():
           "ctype": GRANTS_CONTRACT_TYPE},
     label="BAD Grant: missing BUSINESS_UNIT [BAD-REQ]")
     tag_scenario(cur, "DMT_GMS_AWD_HEADERS_STG_TBL", scenario_id)
+
+    # Full awards (2026-10-07). SCENARIO_ID is bound in each INSERT (section 7
+    # scenario-guard rule). Project numbers are existing Fusion projects -- the
+    # transform passes them through DMT_XREF_PKG.PROJECT_NUMBER unchanged -- so
+    # the proof run uses Validate-Upstream = N.
+    GNT_ORG = "Maintenance Prg US"
+    GNT_BURDEN = "Progress US Burden Schedule"
+    GNT_PI_EMAIL = "brock.phillips_esew-dev28@oraclepdemos.com"
+    gnt_awards = [
+        # (award_number, award_name, template, sponsor, end_date, project, amount, kind)
+        ("RTAWD-G1",   "RT Award Good-1 State",  "1 Year Award", "State Government",
+         "2027-09-01", "PRG10008", 500000, "GOOD"),
+        ("RTAWD-G2",   "RT Award Good-2 AHA",    "5 Year Award", "American Heart Association",
+         "2031-09-01", "CAP10001", 750000, "GOOD"),
+        ("RTAWD-BAD1", "RT Award Bad-1 Sponsor", "1 Year Award", "No Such Sponsor DMT",
+         "2027-09-01", "PRG10008", 500000, "BAD-FUSION"),
+    ]
+    for anum, aname, tmpl, sponsor, end_dt, proj, amt, kind in gnt_awards:
+        # Funding source used by every child row: the award's own sponsor for the
+        # GOOD rows; the BAD row keeps a valid funding source so its ONLY defect
+        # is the header's primary sponsor.
+        fsrc = sponsor if kind == "GOOD" else "State Government"
+        b = {"anum": anum, "sid": scenario_id, "end": end_dt}
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_HEADERS_STG_TBL (
+                AWARD_NAME, AWARD_NUMBER, SOURCE_TEMPLATE_NUMBER,
+                BUSINESS_UNIT, LEGAL_ENTITY, CONTRACT_TYPE, PRIMARY_SPONSOR,
+                PI_NUMBER, AWARD_START_DATE, AWARD_END_DATE, ORGANIZATION,
+                EXPANDED_AUTHORITY_FLAG, DEFAULT_BURDEN_SCHEDULE, CURRENCY_CODE,
+                SOURCE_ID, SCENARIO_ID
+            ) VALUES (
+                :aname, :anum, :tmpl,
+                :bu, :le, NULL, :sponsor,
+                '1308', DATE '2026-09-01', TO_DATE(:end, 'YYYY-MM-DD'), :org,
+                'Y', :burden, 'USD',
+                :src, :sid
+            )
+        """, dict(b, aname=aname, tmpl=tmpl, bu=GRANTS_BU, le=GRANTS_LE,
+                  sponsor=sponsor, org=GNT_ORG, burden=GNT_BURDEN,
+                  src=f"RT-GNT-{anum}"),
+        label=f"{kind} Award header: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_FUND_SRC_STG_TBL (
+                AWARD_NUMBER, FUNDING_SOURCE_NAME, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, :fsrc, :src, :sid)
+        """, {"anum": anum, "fsrc": fsrc, "src": f"RT-GNT-FSRC-{anum}", "sid": scenario_id},
+        label=f"{kind} Award funding source: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_PROJECTS_STG_TBL (
+                AWARD_NUMBER, FUNDING_SOURCE_NAME, PROJECT_NUMBER, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, NULL, :proj, :src, :sid)
+        """, {"anum": anum, "proj": proj, "src": f"RT-GNT-PROJ-{anum}", "sid": scenario_id},
+        label=f"{kind} Award project: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL (
+                AWARD_NUMBER, PROJECT_NUMBER, FUNDING_SOURCE_NAME, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, :proj, :fsrc, :src, :sid)
+        """, {"anum": anum, "proj": proj, "fsrc": fsrc, "src": f"RT-GNT-PFSRC-{anum}",
+              "sid": scenario_id},
+        label=f"{kind} Award project funding source: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_BDGT_PRDS_STG_TBL (
+                AWARD_NUMBER, BUDGET_PERIOD, START_DATE, END_DATE, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, 'Period 1', DATE '2026-09-01', TO_DATE(:end, 'YYYY-MM-DD'),
+                      :src, :sid)
+        """, dict(b, src=f"RT-GNT-BP-{anum}"),
+        label=f"{kind} Award budget period: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_ORG_CREDITS_STG_TBL (
+                AWARD_NUMBER, PROJECT_NUMBER, ORGANIZATION, CREDIT_PERCENTAGE,
+                SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, :proj, :org, 100, :src, :sid)
+        """, {"anum": anum, "proj": proj, "org": GNT_ORG, "src": f"RT-GNT-ORGCR-{anum}",
+              "sid": scenario_id},
+        label=f"{kind} Award organization credit: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_PERSONNEL_STG_TBL (
+                AWARD_NUMBER, PROJECT_NUMBER, INTERNAL, PERSON_EMAIL, ROLE,
+                START_DATE, END_DATE, CREDIT_PERCENTAGE, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, NULL, 'Y', :em, 'Principal Investigator',
+                      DATE '2026-09-01', TO_DATE(:end, 'YYYY-MM-DD'), 100, :src, :sid)
+        """, dict(b, em=GNT_PI_EMAIL, src=f"RT-GNT-PERS2-{anum}"),
+        label=f"{kind} Award personnel (PI): {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_FUNDING_STG_TBL (
+                AWARD_NUMBER, BUDGET_PERIOD_NAME, FUNDING_SOURCE_NAME, ISSUE_TYPE,
+                ISSUE_NUMBER, ISSUE_DATE, DIRECT_FUNDING_AMOUNT, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, 'Period 1', :fsrc, 'Base', 'Base 1', DATE '2026-09-01',
+                      :amt, :src, :sid)
+        """, {"anum": anum, "fsrc": fsrc, "amt": amt, "src": f"RT-GNT-FUND-{anum}",
+              "sid": scenario_id},
+        label=f"{kind} Award funding: {anum}")
+        run_sql(cur, """
+            INSERT INTO DMT_GMS_AWD_FUND_ALLOC_STG_TBL (
+                AWARD_NUMBER, PROJECT_NUMBER, ISSUE_NUMBER, FUNDING_AMOUNT,
+                SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, :proj, 'Base 1', :amt, :src, :sid)
+        """, {"anum": anum, "proj": proj, "amt": amt, "src": f"RT-GNT-FALLOC-{anum}",
+              "sid": scenario_id},
+        label=f"{kind} Award funding allocation: {anum}")
 
     # ====================================================================
     # 30. ASSETS (DMT_FA_ASSET_HDR_STG_TBL)
@@ -2985,6 +3130,14 @@ def main():
         ("DMT_PJB_BILL_EVENTS_STG_TBL",          "STG_STATUS"),
         # Grants
         ("DMT_GMS_AWD_HEADERS_STG_TBL",          "STG_STATUS"),
+        ("DMT_GMS_AWD_PERSONNEL_STG_TBL",        "STG_STATUS"),
+        ("DMT_GMS_AWD_FUND_SRC_STG_TBL",         "STG_STATUS"),
+        ("DMT_GMS_AWD_PROJECTS_STG_TBL",         "STG_STATUS"),
+        ("DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL",     "STG_STATUS"),
+        ("DMT_GMS_AWD_BDGT_PRDS_STG_TBL",        "STG_STATUS"),
+        ("DMT_GMS_AWD_ORG_CREDITS_STG_TBL",      "STG_STATUS"),
+        ("DMT_GMS_AWD_FUNDING_STG_TBL",          "STG_STATUS"),
+        ("DMT_GMS_AWD_FUND_ALLOC_STG_TBL",       "STG_STATUS"),
         # Assets
         ("DMT_FA_ASSET_HDR_STG_TBL",             "STG_STATUS"),
         ("DMT_FA_ASSET_BOOK_STG_TBL",            "STG_STATUS"),

@@ -14,7 +14,9 @@ AS
 
     PROCEDURE VALIDATE_PRE_TRANSFORM (
         p_run_id   IN NUMBER,
-        p_dependent_prefix IN VARCHAR2 DEFAULT NULL
+        p_dependent_prefix IN VARCHAR2 DEFAULT NULL,
+        p_scenario_id     IN NUMBER   DEFAULT NULL,
+        p_run_mode        IN VARCHAR2 DEFAULT 'NEW'
     );
 
     PROCEDURE VALIDATE_POST_TRANSFORM (

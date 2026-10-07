@@ -1,5 +1,10 @@
 -- MIRROR of the deployed Contract-v1 data model
--- bip/Items/DMT_ITEM_RECON_DM.xdm (deploy target /Custom/DMT2/Items/).
+-- bip/Items/DMT_ITEM_RECON_V2_DM.xdm (deploy target /Custom/DMT2/Items/).
+-- V2 (2026-10-06) is deployed alongside the original DMT_ITEM_RECON_DM.xdm
+-- (BIP objects are never overwritten). V2 category tiers also accept
+-- request_id = P_IMPORT_ESS_ID, and the category ERROR_MESSAGE is
+-- MESSAGE_NAME: TEXT from EGP_IMPORT_ERRORS for both the category and the
+-- item interface table under the row's TRANSACTION_ID + REQUEST_ID.
 -- The SQL below is the byte-exact CDATA body of that .xdm; regenerate
 -- this file from the .xdm whenever the data model changes -- the mirror
 -- must never drift.
@@ -140,8 +145,7 @@ FROM (
            -- VARCHAR2 to match the other branches' fusion_id (BIP derives one
            -- datatype per UNION column; a NUMBER here 500s the report).
            CAST(NULL AS VARCHAR2(100))                                         AS fusion_id,
-           CASE WHEN ce.error_message IS NOT NULL
-                THEN '[CATEGORY] ' || ce.error_message END                      AS error_message,
+           ce.error_message                                                     AS error_message,
            TO_CHAR(ic.load_request_id)                                          AS load_request_id,
            ic.item_number                                                       AS source_ref,
            CAST(NULL AS VARCHAR2(240))                                          AS dmt_reference
@@ -152,17 +156,35 @@ FROM (
           AND b.category_id       = ic.category_id
           AND b.category_set_id   = ic.category_set_id
     LEFT   JOIN (
+        -- V2: real Fusion error per category row = every EGP_IMPORT_ERRORS row
+        -- Fusion logged under the category row's TRANSACTION_ID and REQUEST_ID,
+        -- from the category interface table AND the item interface table (a
+        -- category naming a missing item gets EGP_ITEM_NOT_EXIST logged against
+        -- EGP_SYSTEM_ITEMS_INTERFACE with the same transaction id). Each message
+        -- is MESSAGE_NAME: [COLUMN: ] TEXT; category errors first, then by id.
         SELECT e.transaction_id,
+               e.request_id,
                LISTAGG(
-                   CASE WHEN e.error_column_name IS NOT NULL
-                        THEN e.error_column_name || ': ' || e.message_text
-                        ELSE e.message_text END,
-                   ' | ') WITHIN GROUP (ORDER BY e.error_id) AS error_message
+                   e.message_name || ': '
+                   || CASE WHEN e.error_column_name IS NOT NULL
+                           THEN e.error_column_name || ': ' END
+                   || COALESCE(e.message_text,
+                          (SELECT MAX(m.message_text)
+                           FROM   fnd_new_messages m
+                           WHERE  m.message_name  = e.message_name
+                           AND    m.language_code = 'US')),
+                   '; ') WITHIN GROUP (
+                       ORDER BY CASE e.error_table_name
+                                     WHEN 'EGP_ITEM_CATEGORIES_INTERFACE' THEN 0
+                                     ELSE 1 END,
+                                e.error_id) AS error_message
         FROM   egp_import_errors e
         WHERE  e.transaction_id > 0
-        AND    e.error_table_name = 'EGP_ITEM_CATEGORIES_INTERFACE'
-        GROUP BY e.transaction_id
+        AND    e.error_table_name IN ('EGP_ITEM_CATEGORIES_INTERFACE',
+                                      'EGP_SYSTEM_ITEMS_INTERFACE')
+        GROUP BY e.transaction_id, e.request_id
     ) ce ON ce.transaction_id = ic.transaction_id
+        AND ce.request_id     = ic.request_id
     -- Run-scope category rows by EITHER of two run-scoped selectors, so no
     -- rejected category row is ever silently dropped (the defect behind run 229's
     -- blank UNACCOUNTED EGP-2775085 rows):
@@ -180,8 +202,12 @@ FROM (
     -- and the load request id is this run's controller), so the OR never pulls
     -- another run's rows. The real EGP_IMPORT_ERRORS text is harvested on
     -- TRANSACTION_ID (join ce above); base-absence makes the row a rejection.
+    -- V2 adds selector (c) ic.request_id = :P_IMPORT_ESS_ID: Fusion stamps the
+    -- Item Import request id there (verified live run 236), so a caller that
+    -- binds either ESS id still reaches the row.
     WHERE  b.item_category_assignment_id IS NULL
     AND    (   (:P_LOAD_REQUEST_ID IS NOT NULL AND ic.load_request_id = :P_LOAD_REQUEST_ID)
+            OR (:P_IMPORT_ESS_ID   IS NOT NULL AND ic.request_id      = :P_IMPORT_ESS_ID)
             OR (:P_PREFIX IS NOT NULL AND ic.item_number LIKE :P_PREFIX || '%') )
 
     UNION ALL
@@ -209,6 +235,7 @@ FROM (
     -- id OR this run's item-number prefix), so a genuinely loaded category is
     -- never dropped on a NULL load_request_id. See the INTERFACE tier note.
     WHERE  (   (:P_LOAD_REQUEST_ID IS NOT NULL AND ic.load_request_id = :P_LOAD_REQUEST_ID)
+            OR (:P_IMPORT_ESS_ID   IS NOT NULL AND ic.request_id      = :P_IMPORT_ESS_ID)
             OR (:P_PREFIX IS NOT NULL AND ic.item_number LIKE :P_PREFIX || '%') )
 )
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
