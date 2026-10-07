@@ -5,12 +5,25 @@ ci_promote.py - DMT2 CI/CD promotion pipeline (script-first).
 The deterministic regression is the gate. Nothing reaches prod (ATP) until the
 branch passes the same regression on local (TEST).
 
-Pipeline (owner design 2026-09-17):
-  1. deploy-local  - install the working tree's db/ into local Docker (idempotent).
-  2. test-local    - run the deterministic regression on local. HARD GATE.
-  3. merge         - merge the PR to main (only after test-local passes).
-  4. deploy-prod   - deploy committed db/ (+ APEX) to ATP (gold).
-  5. test-prod     - run the SAME regression on ATP to confirm the deploy.
+Pipeline (owner design 2026-09-17; promotion gate added 2026-10-07):
+  1. deploy-local       - install the working tree's db/ into local Docker (idempotent).
+  2. regression-local   - run the full deterministic regression on local.
+  3. clickthrough-local - Playwright console click-through for that same run id.
+     (test-local = steps 1-3 in one go.)
+  4. merge              - merge the PR to main (only after test-local passes).
+  5. deploy-prod        - deploy committed db/ (+ APEX) to ATP (gold). REFUSES to
+                          run unless the promotion gate passes (see below).
+  6. test-prod          - run the SAME regression on ATP, then the click-through
+                          against the ATP console for that ATP run.
+
+THE PROMOTION GATE (scripts/promotion_gate.py). Steps 1-3 each record evidence
+(git commit SHA, tree SHA, run id, verdict, time) in the gitignored
+.ci_evidence/promotion_evidence.json, and every record and every gate decision
+is appended to .ci_evidence/promotion_log.jsonl. deploy-prod refuses unless that
+evidence shows, for the exact code being promoted: a clean local deploy, a FULL
+local regression with verdict PASS (exit 0) that finished within the last 24h,
+and a PASS click-through for that same run id, run after the regression. There
+is no override flag. `python scripts/ci_promote.py gate` checks without deploying.
 
 Prefix leapfrog (so local and prod never push duplicate records to the shared
 Fusion pod): ATP's DMT_RUN_PREFIX_SEQ is the single source of truth. For a local
@@ -23,7 +36,10 @@ Instances (from ~/workspace/connections.json; never hardcode creds):
   atp   (GOLD) : DMT2_OWNER @ queryapp_tp                 (ATP + APEX 26.1)
 
 Examples:
-  python scripts/ci_promote.py test-local                 # deploy branch to local + gate
+  python scripts/ci_promote.py test-local                 # deploy local + full regression + click-through
+  python scripts/ci_promote.py gate                       # show whether HEAD may be promoted
+  python scripts/ci_promote.py runtime-config --target atp --yes   # Fusion passwords + ACL on ATP
+  python scripts/ci_promote.py clickthrough-atp --run-id 412   # click-through against ATP
   python scripts/ci_promote.py promote --pr 281           # full pipeline for a PR
   python scripts/ci_promote.py test-prod                  # re-verify prod only
   python scripts/ci_promote.py deploy-local               # just sync local from the tree
@@ -39,6 +55,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 WS   = Path.home() / "workspace"
 sys.path.insert(0, str(WS))
+sys.path.insert(0, str(REPO / "scripts"))
+import promotion_gate as gate            # the hard gate in front of deploy-prod
+import dmt_apex_url_target as urltarget  # the one console URL knob
 
 JDK  = "C:/Users/Monroe/tools/jdk-21.0.11+10"
 SQLCL= "C:/Users/Monroe/tools/sqlcl/bin/sql.exe"
@@ -155,7 +174,11 @@ def force_local_prefix(v):
 
 # ---------------------------------------------------------------- regression
 def run_regression(target, pipelines=None):
-    """Run the deterministic regression against the target. Returns True on pass.
+    """Run the deterministic regression against the target.
+
+    Returns a dict: ok (True only on verdict PASS / exit 0), run_id, verdict,
+    exit_code, pipelines, started_at, finished_at. The run id and verdict come
+    from the harness's own --json summary, never from guessing.
     pipelines: optional subset (e.g. 'HCM') passed to dmt_regression_run.py."""
     env = dict(os.environ)
     t = TARGET[target]()
@@ -167,26 +190,145 @@ def run_regression(target, pipelines=None):
         env["TNS_ADMIN"] = t["tns"]
         env["DMT2_WALLET"] = t["tns"]
         env["DMT2_WALLET_PW"] = _conns()["atp_queryapp"]["wallet_password"]
-    cmd = [sys.executable, str(REPO / "scripts" / "dmt_regression_run.py")]
+    fd, json_path = tempfile.mkstemp(prefix="dmt2_regression_", suffix=".json")
+    os.close(fd)
+    cmd = [sys.executable, str(REPO / "scripts" / "dmt_regression_run.py"),
+           "--json", json_path]
     if pipelines:
         cmd += ["--pipelines", pipelines]
     print(f"[regression:{target}] launching deterministic regression "
           f"({pipelines or 'ALL pipelines'}) ...")
+    started = gate._iso(gate._now())
     rc = subprocess.run(cmd, env=env).returncode
-    print(f"[regression:{target}] {'PASS' if rc == 0 else 'FAIL'} (exit {rc})")
-    return rc == 0
+    finished = gate._iso(gate._now())
+    summary = {}
+    try:
+        summary = json.loads(Path(json_path).read_text(encoding="utf-8") or "{}")
+    except (OSError, ValueError):
+        summary = {}
+    finally:
+        try:
+            os.remove(json_path)
+        except OSError:
+            pass
+    res = {"ok": rc == 0 and summary.get("verdict") == "PASS",
+           "run_id": summary.get("run_id"),
+           "verdict": summary.get("verdict") or "UNKNOWN (no JSON summary)",
+           "exit_code": rc,
+           "pipelines": summary.get("pipeline_codes") or pipelines or gate.FULL_PIPELINES,
+           "target": target, "started_at": started, "finished_at": finished}
+    print(f"[regression:{target}] run {res['run_id']}: "
+          f"{'PASS' if res['ok'] else 'FAIL'} (verdict {res['verdict']}, exit {rc})")
+    return res
+
+# ---------------------------------------------------------------- click-through
+def console_base(target):
+    """ORDS base URL of the DMT2 console on the target. Local is the built-in
+    default of the URL knob; ATP comes from connections.json."""
+    if target == "local":
+        return urltarget.DEFAULT_BASE
+    url = _conns()["atp_queryapp"]["apex_workspaces"]["DMT2"]["app_url"]
+    return urltarget._norm(url)
+
+def run_clickthrough(target, run_id):
+    """Run the Playwright console click-through (test/playwright/
+    dmt_console_verify.py) for run_id against the target console. Returns a
+    dict with ok/verdict/exit_code/steps; ok only on verdict PASS and exit 0."""
+    base = console_base(target)
+    fd, json_path = tempfile.mkstemp(prefix="dmt2_clickthrough_", suffix=".json")
+    os.close(fd)
+    cmd = [sys.executable, str(REPO / "test" / "playwright" / "dmt_console_verify.py"),
+           "--base-url", base, "--run-id", str(run_id), "--json-out", json_path]
+    print(f"[clickthrough:{target}] {base} drilling run {run_id} ...")
+    rc = subprocess.run(cmd).returncode
+    out = {}
+    try:
+        out = json.loads(Path(json_path).read_text(encoding="utf-8") or "{}")
+    except (OSError, ValueError):
+        out = {}
+    finally:
+        try:
+            os.remove(json_path)
+        except OSError:
+            pass
+    steps = out.get("steps") or []
+    res = {"ok": rc == 0 and out.get("verdict") == "PASS",
+           "run_id": run_id, "base_url": base, "exit_code": rc,
+           "verdict": out.get("verdict") or "UNKNOWN (no JSON result)",
+           "steps_total": len(steps),
+           "steps_passed": sum(1 for x in steps if x.get("ok")),
+           "failed_steps": [x.get("name") for x in steps if not x.get("ok")][:20]}
+    print(f"[clickthrough:{target}] run {run_id}: "
+          f"{'PASS' if res['ok'] else 'FAIL'} ({res['steps_passed']}/{res['steps_total']} steps)")
+    return res
 
 # ---------------------------------------------------------------- stages
 def stage_deploy_local():
-    ok = deploy_db("local") and deploy_apex("local")
+    """Deploy the working tree to local, then re-assert the Fusion credentials
+    (the seeds a deploy re-runs can leave them masked or stale)."""
+    ident = gate.code_identity()
+    ok = deploy_db("local") and deploy_apex("local") and stage_runtime_config("local")
+    gate.record("deploy_local", {"ok": ok}, ident)
     return ok
+
+def stage_regression_local(pipelines=None):
+    """Full regression on local, with the ATP prefix leapfrog, recorded as
+    promotion evidence. A --pipelines subset is recorded too, but the gate only
+    accepts the full pipeline set."""
+    ident = gate.code_identity()
+    v = next_prefix_from_atp()
+    force_local_prefix(v)
+    res = run_regression("local", pipelines)
+    gate.record("regression", res, ident)
+    return res["ok"]
+
+def stage_clickthrough_local(run_id=None):
+    """Click-through of the local console for the recorded regression run
+    (or an explicit --run-id), recorded as promotion evidence."""
+    ident = gate.code_identity()
+    if not run_id:
+        reg = (gate.load_evidence() or {}).get("regression") or {}
+        run_id = reg.get("run_id")
+        if not run_id:
+            print("[clickthrough-local] no regression run recorded; run "
+                  "regression-local first or pass --run-id"); return False
+    res = run_clickthrough("local", run_id)
+    gate.record("clickthrough_local", res, ident)
+    return res["ok"]
+
+def stage_clickthrough_atp(run_id):
+    """Post-promotion click-through of the ATP console. Logged durably; it
+    does not feed the gate (the gate is about what was proven locally)."""
+    if not run_id:
+        print("[clickthrough-atp] --run-id is required (an ATP run id)"); return False
+    ident = gate.code_identity()
+    res = run_clickthrough("atp", run_id)
+    gate.record("clickthrough_atp", res, ident)
+    return res["ok"]
+
+def stage_runtime_config(target):
+    """Fill the Fusion passwords (global + per-object overrides such as Grants'
+    ppm_impl) and the Fusion network ACL on the target, from connections.json,
+    via db/tools/setup_runtime_config.py. Secrets never live in git, so a deploy
+    can leave these masked or stale; run this after every deploy."""
+    t = TARGET[target]()
+    env = dict(os.environ)
+    env["DMT2_CONN"] = f"{t['schema']}/{t['pw']}@{t['dsn'].replace('//','')}" \
+        if target == "local" else f"{t['schema']}/{t['pw']}@{t['dsn']}"
+    if t["tns"]:
+        env["DMT2_WALLET"] = t["tns"]
+        env["DMT2_WALLET_PW"] = _conns()["atp_queryapp"]["wallet_password"]
+    rc = subprocess.run([sys.executable, str(REPO / "db" / "tools" / "setup_runtime_config.py")],
+                        env=env).returncode
+    print(f"[runtime-config:{target}] {'OK' if rc == 0 else 'FAILED'}")
+    return rc == 0
 
 def stage_test_local(pipelines=None):
     if not stage_deploy_local():
         print("[test-local] deploy failed; not running regression"); return False
-    v = next_prefix_from_atp()
-    force_local_prefix(v)
-    return run_regression("local", pipelines)
+    if not stage_regression_local(pipelines):
+        print("[test-local] regression did not pass; not running the click-through"); return False
+    return stage_clickthrough_local()
 
 def stage_merge(pr, wait_min=15):
     """Respect the mandated review gate. CLAUDE.md: the pr-review.yml GitHub Action
@@ -232,41 +374,70 @@ def stage_deploy_prod(yes):
         print("[deploy-prod] refusing without --yes (prod-affecting)"); return False
     subprocess.run(["git", "checkout", "main"], cwd=REPO)
     subprocess.run(["git", "pull", "--ff-only"], cwd=REPO)
-    return deploy_db("atp") and deploy_apex("atp")
+    # THE GATE: checked against the exact commit about to be deployed (main
+    # HEAD after the pull). No override flag exists.
+    if not gate.enforce(stage="deploy-prod"):
+        print("[deploy-prod] NOT deploying to ATP: the promotion gate refused.")
+        return False
+    return deploy_db("atp") and deploy_apex("atp") and stage_runtime_config("atp")
 
 def stage_test_prod(yes, pipelines=None):
+    """Regression on ATP, then the console click-through against ATP for that
+    same ATP run. Passes only if both pass."""
     if not yes:
         print("[test-prod] refusing without --yes (writes test data to Fusion from prod)"); return False
-    return run_regression("atp", pipelines)  # ATP pulls its own NEXTVAL = v+1
+    res = run_regression("atp", pipelines)  # ATP pulls its own NEXTVAL = v+1
+    gate.log_event({"event": "record", "step": "regression_atp", **res})
+    if not res["run_id"]:
+        print("[test-prod] no ATP run id came back; cannot run the ATP click-through")
+        return False
+    ct_ok = stage_clickthrough_atp(res["run_id"])
+    return res["ok"] and ct_ok
 
 def main():
     ap = argparse.ArgumentParser(description="DMT2 CI/CD promotion pipeline")
-    ap.add_argument("stage", choices=["deploy-local", "test-local", "merge",
-                                      "deploy-prod", "test-prod", "promote"])
+    ap.add_argument("stage", choices=["deploy-local", "runtime-config", "regression-local",
+                                      "clickthrough-local", "test-local", "gate",
+                                      "merge", "deploy-prod", "test-prod",
+                                      "clickthrough-atp", "promote"])
     ap.add_argument("--pr", type=int, help="PR number to merge in the promote flow")
     ap.add_argument("--yes", action="store_true",
                     help="authorize prod-affecting stages (or set PROMOTE_YES=1)")
-    ap.add_argument("--pipelines", help="regression pipeline subset, e.g. HCM (default: all)")
+    ap.add_argument("--pipelines", help="regression pipeline subset, e.g. HCM (default: all; "
+                                        "a subset is never accepted by the promotion gate)")
+    ap.add_argument("--run-id", type=int, help="run id for clickthrough-local / clickthrough-atp")
+    ap.add_argument("--target", choices=["local", "atp"], default="local",
+                    help="instance for runtime-config (default local)")
     a = ap.parse_args()
     yes = a.yes or os.environ.get("PROMOTE_YES") == "1"
 
-    if a.stage == "deploy-local":  sys.exit(0 if stage_deploy_local() else 1)
-    if a.stage == "test-local":    sys.exit(0 if stage_test_local(a.pipelines) else 1)
-    if a.stage == "merge":         sys.exit(0 if stage_merge(a.pr) else 1)
-    if a.stage == "deploy-prod":   sys.exit(0 if stage_deploy_prod(yes) else 1)
-    if a.stage == "test-prod":     sys.exit(0 if stage_test_prod(yes, a.pipelines) else 1)
+    if a.stage == "deploy-local":       sys.exit(0 if stage_deploy_local() else 1)
+    if a.stage == "runtime-config":
+        if a.target == "atp" and not yes:
+            print("[runtime-config] refusing to write ATP config without --yes"); sys.exit(1)
+        sys.exit(0 if stage_runtime_config(a.target) else 1)
+    if a.stage == "regression-local":   sys.exit(0 if stage_regression_local(a.pipelines) else 1)
+    if a.stage == "clickthrough-local": sys.exit(0 if stage_clickthrough_local(a.run_id) else 1)
+    if a.stage == "test-local":         sys.exit(0 if stage_test_local(a.pipelines) else 1)
+    if a.stage == "gate":               sys.exit(0 if gate.enforce(stage="gate (check only)") else 1)
+    if a.stage == "merge":              sys.exit(0 if stage_merge(a.pr) else 1)
+    if a.stage == "deploy-prod":        sys.exit(0 if stage_deploy_prod(yes) else 1)
+    if a.stage == "test-prod":          sys.exit(0 if stage_test_prod(yes, a.pipelines) else 1)
+    if a.stage == "clickthrough-atp":   sys.exit(0 if stage_clickthrough_atp(a.run_id) else 1)
 
     # promote: full pipeline with the deterministic gate
-    print("=== PROMOTE: test-local (gate) -> merge -> deploy-prod -> test-prod ===")
+    print("=== PROMOTE: test-local (regression + click-through) -> merge -> "
+          "deploy-prod (gate) -> test-prod (ATP regression + click-through) ===")
     if not stage_test_local(a.pipelines):
-        sys.exit("GATE FAILED on local regression - not merging, not deploying.")
+        sys.exit("GATE FAILED on local regression / click-through - not merging, not deploying.")
     if not stage_merge(a.pr):
         sys.exit("Merge failed - stopping before prod.")
     if not stage_deploy_prod(yes):
-        sys.exit("Prod deploy failed.")
+        sys.exit("Prod deploy refused or failed.")
     if not stage_test_prod(yes, a.pipelines):
-        sys.exit("PROD REGRESSION FAILED after deploy - investigate immediately.")
-    print("=== PROMOTE complete: local passed, merged, deployed to ATP, prod verified. ===")
+        sys.exit("PROD REGRESSION OR ATP CLICK-THROUGH FAILED after deploy - investigate immediately.")
+    print("=== PROMOTE complete: local regression + click-through passed, merged, "
+          "deployed to ATP, ATP regression + click-through passed. ===")
 
 if __name__ == "__main__":
     main()

@@ -47,6 +47,36 @@ Stages (each runnable alone):
 
 Scope a run with `--pipelines HCM` (default: all five — P2P, O2C, FINANCIALS, PROJECTS, HCM).
 
+## The promotion gate (hard, no override)
+
+Owner's rule: nothing is promoted to ATP unless the exact code being promoted passed a
+**full local regression** AND the **Playwright console click-through for that same run**
+(`test/playwright/dmt_console_verify.py --run-id N`). After promotion, the same
+click-through runs against ATP. The step-by-step runbook is the project skill
+`.claude/skills/deploy-dmt2-atp/SKILL.md`.
+
+`deploy-prod` enforces this through `scripts/promotion_gate.py`:
+
+- `deploy-local`, `regression-local` and `clickthrough-local` (or `test-local`, which runs
+  all three) each record evidence in the gitignored `.ci_evidence/promotion_evidence.json`:
+  the git commit SHA, the git tree SHA, whether the tree was clean, the run id, the verdict
+  and the time. Every record and every gate decision is also appended to
+  `.ci_evidence/promotion_log.jsonl`.
+- `deploy-prod` refuses unless, for the commit it is about to deploy: the local deploy was
+  clean and happened before the regression started; the regression covered every pipeline,
+  had verdict PASS (exit 0) and finished within 24 hours; and a PASS click-through ran for
+  that same run id after the regression finished. The working tree must be clean.
+- Evidence matches when the commit SHA matches, or when the git tree SHA matches (identical
+  files, e.g. after the reviewer's squash merge). Any file difference refuses.
+- There is no override flag. `python scripts/ci_promote.py gate` shows the decision
+  without deploying. `python test/unit/test_promotion_gate.py` proves the refusals offline
+  with fake evidence in a temp directory.
+- `test-prod` now runs the ATP regression and then the click-through against the ATP
+  console for that ATP run (`clickthrough-atp --run-id N` repeats just the click-through).
+- `runtime-config --target local|atp` re-applies the Fusion passwords (global and per-object
+  overrides such as Grants' `ppm_impl`) and the Fusion network access from
+  `connections.json`. `deploy-local` and `deploy-prod` run it automatically after deploying.
+
 ## Prefix leapfrog (no duplicate records in the shared Fusion pod)
 
 Each run stamps every test record with a numeric prefix from `DMT_RUN_PREFIX_SEQ`.

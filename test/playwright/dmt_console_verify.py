@@ -24,10 +24,12 @@ Usage:
   python test/playwright/dmt_console_verify.py --run-id 229         # drill run 229
   python test/playwright/dmt_console_verify.py --base-url https://<atp-host>/ords --run-id 351
   python test/playwright/dmt_console_verify.py --cemlis Suppliers,Customers --run-id 229
+  python test/playwright/dmt_console_verify.py --run-id 229 --json-out result.json
 
 Exit codes: 0 = all steps passed, 1 = a failure, 2 = env/creds missing.
 """
 import argparse
+import datetime
 import json
 import os
 import subprocess
@@ -56,6 +58,9 @@ def main():
     ap.add_argument("--cmp-run-id", help="run id with comparison data for page 85 (default: --run-id)")
     ap.add_argument("--cemlis", help="comma object codes to drill "
                     "(default Suppliers,PurchaseOrders,GLBalances,Customers,Assets)")
+    ap.add_argument("--json-out", help="also write the full result (verdict + every step) "
+                    "to this JSON file; scripts/ci_promote.py records it as "
+                    "promotion evidence")
     ap.add_argument("--click-verify", action="store_true",
                     help="actually CLICK the reconcile/read-back button (destructive: "
                          "re-submits reconcile). Default is presence-only.")
@@ -105,10 +110,23 @@ def main():
                     break
                 except ValueError:
                     continue
+    def write_json(res, verdict):
+        if not args.json_out:
+            return
+        payload = {"verdict": verdict, "node_exit_code": p.returncode,
+                   "base_url": tgt["base_url"], "app_path": tgt["app_path"],
+                   "app_id": tgt["app_id"], "run_id": args.run_id,
+                   "finished_at": datetime.datetime.now(datetime.timezone.utc)
+                   .isoformat(timespec="seconds"),
+                   "steps": (res or {}).get("steps", [])}
+        with open(args.json_out, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=1)
+
     if result is None:
         print("[playwright-verify] could not parse node output:")
         print(p.stdout)
         print(p.stderr[-1000:])
+        write_json(None, "FAIL")
         sys.exit(1)
 
     for s in result.get("steps", []):
@@ -117,8 +135,12 @@ def main():
     if p.stderr.strip():
         print("[playwright-verify] node stderr:\n" + p.stderr.strip()[-800:])
     verdict = result.get("verdict", "FAIL")
+    # A PASS verdict with a non-zero node exit is not a pass.
+    if p.returncode != 0:
+        verdict = "FAIL"
     print(f"[playwright-verify] VERDICT: {verdict}  ({tgt['base_url']}/{tgt['app_path']})")
-    sys.exit(0 if verdict == "PASS" and p.returncode == 0 else 1)
+    write_json(result, verdict)
+    sys.exit(0 if verdict == "PASS" else 1)
 
 
 if __name__ == "__main__":

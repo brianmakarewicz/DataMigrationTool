@@ -103,6 +103,24 @@ node test/playwright/dmt_console_verify.js
    - the app's own checksummed drill hyperlinks scraped from Run History, followed and
      asserted 200 + no error region.
 
+How each page is judged (hardened 2026-10-07, because the promotion gate depends on it):
+
+- **Waits for content, not a fixed time.** After navigating, the script polls the main
+  content region until it holds real text, no APEX "processing" spinner is showing, and the
+  text has stopped changing for a second (up to 60 seconds). Before this, a page could be
+  judged before its report rendered: Run History was measured with no rows, so its drill
+  links were silently never followed.
+- **Nearly empty pages fail.** A page whose main content region has fewer than 40
+  characters of text (dropdown option lists excluded) fails, even with HTTP 200. The
+  threshold is fixed in the script, not an environment setting.
+- **HTTP 572 is retried once.** ORDS returns 572 when its connection pool is exhausted.
+  The page (or login, or the ESS file-list call) is retried once after 15 seconds and the
+  step says "retried once after HTTP 572". A second 572 fails.
+- **Run detail must show the run.** The run-detail drill fails if the page does not show
+  `Run #<id>`, and Run History must offer drill links when a run id is given.
+- `--json-out FILE` writes the verdict and every step to a JSON file;
+  `scripts/ci_promote.py` records it as promotion evidence.
+
 Exit codes: `0` all passed, `1` a failure, `2` env/credentials missing.
 
 ## Known local gotcha — ORDS `/i/` static assets returning HTTP 500
