@@ -1,0 +1,44 @@
+name: Standards conformance checkers
+
+# Runs the repository's static conformance checkers (scripts/check_*.py) on every
+# pull request and on pushes to main. They read committed files only -- no database,
+# no Fusion -- so they need nothing but Python 3.
+#
+# Violations that already existed when a rule was introduced are listed in
+# scripts/standards_known_violations.json (each tied to a docs/backlog.html item) and
+# do not fail; only a NEW violation fails the job.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checkers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: FLAG_STG_FAILED helper (validators)
+        if: always()
+        run: python scripts/check_flag_stg_failed.py
+
+      - name: Honest accounting (FBDI + config reconcilers, runners, shared engine)
+        if: always()
+        run: python scripts/check_sweep_unaccounted.py
+
+      - name: Transformer [TRANSFORM_ERROR] accounting path
+        if: always()
+        run: python scripts/check_transform_error.py
+
+      - name: BIP reconciliation reports (.xdm + query.sql)
+        if: always()
+        run: python scripts/check_bip_recon_reports.py
