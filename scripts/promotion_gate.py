@@ -34,13 +34,32 @@ reason: the PR reviewer squash-merges, so main gets a new commit SHA whose files
 are byte-for-byte identical to the branch commit the regression ran on. Any
 difference in any file changes the tree SHA, so the gate still refuses.
 
-There is no override flag. To get past the gate, run the regression and the
-click-through on the code you want to promote.
+To get past the gate, run the regression and the click-through on the code you
+want to promote.
+
+The owner override (owner only, never agents or CI)
+---------------------------------------------------
+The owner (2026-10-07) kept the gate strict and allowed exactly one exception: an
+explicit override by the owner personally, `ci_promote.py deploy-prod --yes
+--owner-override "<reason>"`. It is deliberately narrow:
+  * it waives ONLY regression and click-through failures. Missing or failed local
+    deploy evidence, a dirty working tree, or missing/unreadable evidence are
+    never waivable;
+  * it needs a non-empty reason;
+  * it needs an interactive typed confirmation: the person types the short SHA of
+    the commit being promoted. stdin must be a real terminal (TTY), so an agent,
+    a pipe or CI cannot use it;
+  * every attempt, accepted or refused, is printed loudly and appended to
+    promotion_log.jsonl with the reason, SHA, git user, time and the failing
+    checks it bypassed.
+Agents must never use it: a gate refusal is reported to the owner.
 """
 import datetime as _dt
+import getpass
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -62,6 +81,11 @@ LOCAL_UI_PREFIXES =("http://localhost", "http://127.0.0.1")
 EVIDENCE_FILE = "promotion_evidence.json"
 LOG_FILE = "promotion_log.jsonl"
 SCHEMA_VERSION = 1
+
+# Gate checks are grouped so the owner override can tell which failures it may
+# waive. Only these two groups are waivable; everything else (local deploy,
+# dirty tree, missing or unreadable evidence) always blocks.
+WAIVABLE = ("regression", "clickthrough")
 
 
 # ---------------------------------------------------------------- locations
@@ -186,14 +210,24 @@ def check_gate(ident=None, now=None, evidence=None):
 
     Returns (ok, lines): ok is True only when every check passed; lines is a
     human-readable explanation, one check per line, suitable for printing."""
+    ok, lines, _ = check_gate_detail(ident, now, evidence)
+    return ok, lines
+
+
+def check_gate_detail(ident=None, now=None, evidence=None):
+    """check_gate plus the failing checks as (group, message) pairs, where
+    group is one of: general, deploy, regression, clickthrough."""
     ident = ident or code_identity()
     now = now or _now()
     ev = evidence if evidence is not None else load_evidence()
     lines, ok = [], True
+    failures = []
+    group = "general"
 
     def fail(msg):
         nonlocal ok
         ok = False
+        failures.append((group, msg))
         lines.append("  REFUSED  " + msg)
 
     def good(msg):
@@ -210,14 +244,15 @@ def check_gate(ident=None, now=None, evidence=None):
         fail(f"no promotion evidence found at {where}. Run the full local "
              f"regression and the local click-through first "
              f"(python scripts/ci_promote.py test-local).")
-        return False, lines
+        return False, lines, failures
     if "_unreadable" in ev:
         fail(f"promotion evidence at {where} is unreadable: {ev['_unreadable']}")
-        return False, lines
+        return False, lines, failures
 
     max_age = _dt.timedelta(hours=MAX_EVIDENCE_AGE_HOURS)
 
     # ---- 1. local deploy of this code -----------------------------------
+    group = "deploy"
     dep = ev.get("deploy_local")
     if not dep:
         fail("no record that this code was deployed to the local DB "
@@ -231,6 +266,7 @@ def check_gate(ident=None, now=None, evidence=None):
             fail("local deploy ran from a working tree with uncommitted changes")
 
     # ---- 2. full local regression ---------------------------------------
+    group = "regression"
     reg = ev.get("regression")
     reg_end = None
     if not reg:
@@ -274,6 +310,7 @@ def check_gate(ident=None, now=None, evidence=None):
                      f"test the deployed code")
 
     # ---- 3. local click-through for the same run ------------------------
+    group = "clickthrough"
     ct = ev.get("clickthrough_local")
     if not ct:
         fail("no local console click-through evidence "
@@ -305,13 +342,97 @@ def check_gate(ident=None, now=None, evidence=None):
                 fail(f"local click-through ({ct.get('at')}) ran before regression "
                      f"run {reg.get('run_id')} finished ({reg.get('finished_at')})")
 
-    return ok, lines
+    return ok, lines, failures
 
 
-def enforce(ident=None, stage="deploy-prod"):
-    """Print the gate decision, log it durably, and return True/False."""
+# ---------------------------------------------------------------- owner override
+def git_user():
+    """Who is at the keyboard, as git knows them (name <email>), plus the OS
+    login, for the override log."""
+    parts = []
+    for key in ("user.name", "user.email"):
+        try:
+            parts.append(_git("config", key))
+        except RuntimeError:
+            parts.append("?")
+    try:
+        os_user = getpass.getuser()
+    except Exception:  # noqa: BLE001 - best effort only
+        os_user = "?"
+    return f"{parts[0]} <{parts[1]}> (os user {os_user})"
+
+
+def authorize_owner_override(reason, ident, failures, stdin=None,
+                             ask=None, user=None):
+    """Decide whether the owner override may waive this gate refusal.
+
+    Returns (accepted, message). Refuses unless: stdin is an interactive TTY,
+    the reason is non-empty, every failing check is a waivable one
+    (regression / click-through), and the person types the commit's short SHA.
+    Every attempt is logged to promotion_log.jsonl. `stdin`, `ask` (the prompt
+    function) and `user` exist so the tests can drive it."""
+    stdin = stdin if stdin is not None else sys.stdin
+    ask = ask or input
+    short = ident["commit"][:7]
+    bypassed = [m for g, m in failures if g in WAIVABLE]
+    blocking = [m for g, m in failures if g not in WAIVABLE]
+    who = user or git_user()
+
+    def done(accepted, why):
+        log_event({"event": "owner_override",
+                   "decision": "ACCEPTED" if accepted else "REFUSED",
+                   "why": why, "reason": (reason or "").strip(),
+                   "commit": ident["commit"], "short_sha": short,
+                   "tree": ident["tree"], "git_user": who,
+                   "bypassed_checks": bypassed if accepted else [],
+                   "failing_checks": [m for _, m in failures]})
+        return accepted, why
+
+    try:
+        tty = bool(stdin.isatty())
+    except Exception:  # noqa: BLE001 - a closed or odd stdin is not a TTY
+        tty = False
+    if not tty:
+        return done(False, "stdin is not an interactive terminal; the owner "
+                           "override is for the owner at a keyboard only, never "
+                           "agents, pipes or CI")
+    if not (reason or "").strip():
+        return done(False, "the owner override needs a non-empty reason")
+    if blocking:
+        return done(False, "the owner override only waives regression and "
+                           "click-through failures; these still block: "
+                           + "; ".join(blocking))
+    if not bypassed:
+        return done(False, "nothing to override: no failing gate checks")
+    print("!" * 72)
+    print("OWNER OVERRIDE REQUESTED. This deploys to ATP WITHOUT a clean "
+          "regression and click-through.")
+    print(f"  reason: {reason.strip()}")
+    print(f"  by:     {who}")
+    print("  checks that would be bypassed:")
+    for m in bypassed:
+        print(f"    - {m}")
+    print("!" * 72)
+    try:
+        typed = ask(f"Type the short SHA of the commit being promoted ({short}) "
+                    f"to confirm: ")
+    except EOFError:
+        typed = ""
+    typed = (typed or "").strip().lower()
+    if len(typed) < 7 or not ident["commit"].lower().startswith(typed):
+        return done(False, f"typed confirmation '{typed}' does not match commit "
+                           f"{short}")
+    return done(True, f"owner override accepted for commit {short}")
+
+
+def enforce(ident=None, stage="deploy-prod", owner_override=None,
+            stdin=None, ask=None, user=None):
+    """Print the gate decision, log it durably, and return True/False.
+
+    owner_override: the owner's reason string (deploy-prod only). It is only
+    consulted when the gate refuses; see authorize_owner_override."""
     ident = ident or code_identity()
-    ok, lines = check_gate(ident)
+    ok, lines, failures = check_gate_detail(ident)
     banner = "PASSED" if ok else "REFUSED"
     print("=" * 72)
     print(f"PROMOTION GATE {banner} ({stage})")
@@ -322,7 +443,22 @@ def enforce(ident=None, stage="deploy-prod"):
                "commit": ident["commit"], "tree": ident["tree"],
                "dirty": ident["dirty"],
                "reasons": [l.strip() for l in lines if "REFUSED" in l]})
-    return ok
+    if ok or owner_override is None:
+        if ok and owner_override is not None:
+            print("  (owner override not needed: the gate passed on its own, "
+                  "so nothing is logged as an override)")
+        return ok
+    accepted, why = authorize_owner_override(owner_override, ident, failures,
+                                             stdin=stdin, ask=ask, user=user)
+    print("!" * 72)
+    if accepted:
+        print(f"PROMOTION GATE OVERRIDDEN BY OWNER ({stage}): {why}")
+        print(f"  reason: {owner_override.strip()}")
+        print(f"  logged to {evidence_dir() / LOG_FILE}")
+    else:
+        print(f"OWNER OVERRIDE REFUSED ({stage}): {why}")
+    print("!" * 72)
+    return accepted
 
 
 if __name__ == "__main__":

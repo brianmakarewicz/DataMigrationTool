@@ -22,8 +22,16 @@ THE PROMOTION GATE (scripts/promotion_gate.py). Steps 1-3 each record evidence
 is appended to .ci_evidence/promotion_log.jsonl. deploy-prod refuses unless that
 evidence shows, for the exact code being promoted: a clean local deploy, a FULL
 local regression with verdict PASS (exit 0) that finished within the last 24h,
-and a PASS click-through for that same run id, run after the regression. There
-is no override flag. `python scripts/ci_promote.py gate` checks without deploying.
+and a PASS click-through for that same run id, run after the regression.
+`python scripts/ci_promote.py gate` checks without deploying.
+
+The only exception is the OWNER OVERRIDE, for the owner personally:
+  python scripts/ci_promote.py deploy-prod --yes --owner-override "<reason>"
+It waives only regression / click-through failures (local deploy evidence is still
+required), needs a non-empty reason, refuses unless stdin is an interactive TTY,
+and asks the person to type the commit's short SHA. Every attempt is printed
+loudly and logged to .ci_evidence/promotion_log.jsonl. AGENTS AND CI MUST NEVER
+USE IT: when the gate refuses, report the refusal to the owner.
 
 Prefix leapfrog (so local and prod never push duplicate records to the shared
 Fusion pod): ATP's DMT_RUN_PREFIX_SEQ is the single source of truth. For a local
@@ -369,14 +377,15 @@ def stage_merge(pr, wait_min=15):
           f"not merging (run again once pr-review.yml has approved).")
     return False
 
-def stage_deploy_prod(yes):
+def stage_deploy_prod(yes, owner_override=None):
     if not yes:
         print("[deploy-prod] refusing without --yes (prod-affecting)"); return False
     subprocess.run(["git", "checkout", "main"], cwd=REPO)
     subprocess.run(["git", "pull", "--ff-only"], cwd=REPO)
     # THE GATE: checked against the exact commit about to be deployed (main
-    # HEAD after the pull). No override flag exists.
-    if not gate.enforce(stage="deploy-prod"):
+    # HEAD after the pull). owner_override is the owner-only escape hatch (TTY +
+    # typed SHA + logged); it never waives missing local deploy evidence.
+    if not gate.enforce(stage="deploy-prod", owner_override=owner_override):
         print("[deploy-prod] NOT deploying to ATP: the promotion gate refused.")
         return False
     return deploy_db("atp") and deploy_apex("atp") and stage_runtime_config("atp")
@@ -408,8 +417,15 @@ def main():
     ap.add_argument("--run-id", type=int, help="run id for clickthrough-local / clickthrough-atp")
     ap.add_argument("--target", choices=["local", "atp"], default="local",
                     help="instance for runtime-config (default local)")
+    ap.add_argument("--owner-override", metavar="REASON",
+                    help="deploy-prod only. OWNER ONLY, never agents or CI: waive "
+                         "regression/click-through gate failures. Needs a reason, an "
+                         "interactive terminal and the typed commit short SHA; logged.")
     a = ap.parse_args()
     yes = a.yes or os.environ.get("PROMOTE_YES") == "1"
+    if a.owner_override is not None and a.stage != "deploy-prod":
+        print("[ci_promote] --owner-override is only accepted by deploy-prod")
+        sys.exit(1)
 
     if a.stage == "deploy-local":       sys.exit(0 if stage_deploy_local() else 1)
     if a.stage == "runtime-config":
@@ -421,7 +437,7 @@ def main():
     if a.stage == "test-local":         sys.exit(0 if stage_test_local(a.pipelines) else 1)
     if a.stage == "gate":               sys.exit(0 if gate.enforce(stage="gate (check only)") else 1)
     if a.stage == "merge":              sys.exit(0 if stage_merge(a.pr) else 1)
-    if a.stage == "deploy-prod":        sys.exit(0 if stage_deploy_prod(yes) else 1)
+    if a.stage == "deploy-prod":        sys.exit(0 if stage_deploy_prod(yes, a.owner_override) else 1)
     if a.stage == "test-prod":          sys.exit(0 if stage_test_prod(yes, a.pipelines) else 1)
     if a.stage == "clickthrough-atp":   sys.exit(0 if stage_clickthrough_atp(a.run_id) else 1)
 
