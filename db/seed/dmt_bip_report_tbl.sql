@@ -5,7 +5,7 @@
 -- stack's own BIP catalog under /Custom/DMT2/ (never /Custom/DMT/ -- the
 -- frozen stack's catalog).
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V2_DM.xdm','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V2_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_DM.xdm','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -1566,15 +1566,16 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'ARInvoices'                                             cemli_code,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V2_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V2_RPT.xdo'       report_catalog_path,
-           'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V2 (2026-10-07): '
-           || 'interface error aggregation scoped to the load (V1 hit ORA-01489); '
-           || 'deployed alongside V1, never overwriting it.' notes,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_RPT.xdo'       report_catalog_path,
+           'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V3 (2026-10-07): '
+           || 'line RECORD_KEY = ATTRIBUTE1/ATTRIBUTE2, unique per line, so keyset paging '
+           || 'never drops a row; V2 scoped interface errors to the load. Deployed alongside '
+           || 'V1 and V2, never overwriting them.' notes,
            1                                                        contract_version,
            'DMT_RA_LINES_TFM_TBL'                                  tfm_table,
            'FUSION_CUSTOMER_TRX_ID'                                fusion_id_column,
-           'multi-tier: lines=INTERFACE_LINE_ATTRIBUTE1 (prefixed TRX_NUMBER); dists=INTERFACE_LINE_ATTRIBUTE1||'':''||ACCOUNT_CLASS||'':''||ROW_NUMBER() OVER (PARTITION BY parent_line_key,account_class ORDER BY amount,acctd_amount,percent,dist_id) (parent line key + per-distribution ordinal discriminator, transitive)' recon_key_sql
+           'multi-tier: lines=INTERFACE_LINE_ATTRIBUTE1||''/''||INTERFACE_LINE_ATTRIBUTE2 (run-prefixed invoice key / line id, unique per line, report V3); dists=INTERFACE_LINE_ATTRIBUTE1||'':''||ACCOUNT_CLASS||'':''||ROW_NUMBER() OVER (PARTITION BY parent_line_key,account_class ORDER BY amount,acctd_amount,percent,dist_id) (parent line key + per-distribution ordinal discriminator, transitive)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)

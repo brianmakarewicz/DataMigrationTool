@@ -4,5 +4,28 @@
   "seed_sha256": "376d2bdf54a3267331e0bb7fcc8cb6b9b3ea6ceb9c88796ccc6b569a1f31ae02",
   "target": "local",
   "created": "2026-10-06 16:59",
-  "note": "Write-once scenario minted 2026-10-06 with deploy_scenario.py --force (seed unchanged, same 182 rows as RegressionTest2610051423 / id 181) to prove the scenario-scoping fix on clean data. RETIRED, do not run: ids 201/202/203 (RegressionTest2610061137/38/39) were contaminated by local run 236, which ran before the fix and flipped their STG rows FAILED and sent their MiscReceipts/Taxes rows to Fusion; id 221 (RegressionTest2610061658) is an empty scenario left by an insert that lost its DB connection (0 STG rows). Per the never-reseed/no-reset rules none of them were edited or cleaned; they are simply excluded."
+  "note": "Write-once scenario minted 2026-10-06 with deploy_scenario.py --force (seed unchanged, same 182 rows as RegressionTest2610051423 / id 181) to prove the scenario-scoping fix on clean data. RETIRED, do not run: ids 201/202/203 (RegressionTest2610061137/38/39) were contaminated by local run 236, which ran before the fix and flipped their STG rows FAILED and sent their MiscReceipts/Taxes rows to Fusion; id 221 (RegressionTest2610061658) is an empty scenario left by an insert that lost its DB connection (0 STG rows). Per the never-reseed/no-reset rules none of them were edited or cleaned; they are simply excluded.",
+  "expected_outcomes_note": "Per-scenario expected outcome of listed rows, read by scripts/dmt_regression_run.py. Key = DMT_RECORD_DETAIL_V.SUB_OBJECT; rows keyed by the STG SOURCE_ID. Outcomes: LOADED; FAILED (its own real Fusion error); FAILED_WITH_DOCUMENT (FAILED because Fusion rejected its whole document; ERROR_TEXT must contain 'Rejected with document:', design section 5). Rows not listed fall back to the BAD key-marker rule.",
+  "expected_outcomes": {
+    "RegressionTest2610071705": {
+      "AR Lines": {
+        "stg_table": "DMT_RA_LINES_STG_TBL",
+        "rows": {
+          "RT-AR-KG-G1": "LOADED",
+          "RT-AR-KG-G2": "LOADED",
+          "RT-AR-KG-BAD1": "FAILED",
+          "RT-AR-XG-A1": "FAILED_WITH_DOCUMENT",
+          "RT-AR-XG-A2-BAD": "FAILED",
+          "RT-AR-XG-B1": "LOADED"
+        }
+      },
+      "AR Distributions": {
+        "stg_table": "DMT_RA_DISTS_STG_TBL",
+        "rows": {
+          "RT-AR-XG-A1-REV": "FAILED_WITH_DOCUMENT",
+          "RT-AR-XG-A2-BAD-REV": "FAILED_WITH_DOCUMENT"
+        }
+      }
+    }
+  }
 }

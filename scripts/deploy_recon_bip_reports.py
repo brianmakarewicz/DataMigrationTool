@@ -45,6 +45,9 @@ REPORTS = [
     # ARInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
     # interface error aggregation scoped to the load (V1 hit ORA-01489).
     ("ARInvoices",              "DMT_AR_RECON_V2_DM", "DMT_AR_RECON_V2_RPT"),
+    # ARInvoices V3 (2026-10-07): alongside V1/V2; line RECORD_KEY attr1/attr2
+    # (unique per line) so keyset paging never drops a row.
+    ("ARInvoices",              "DMT_AR_RECON_V3_DM", "DMT_AR_RECON_V3_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
     # Items V2 (2026-10-06): deployed alongside the original DMT_ITEM_RECON_DM

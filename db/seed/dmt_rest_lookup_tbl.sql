@@ -26,7 +26,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('ARInvoices','/fscmRestApi/resources/11.13.18.05/receivablesInvoices','TransactionNumber={KEY}','TRX_NUMBER','CustomerTransactionId,TransactionNumber,TransactionDate,BillToCustomerName,TransactionAmount,TransactionStatus','Trx ID,Number,Date,Customer,Amount,Status','ERP','Y',NULL);
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('ARInvoices','/fscmRestApi/resources/11.13.18.05/receivablesInvoices','CustomerTransactionId={KEY}','FUSION_CUSTOMER_TRX_ID','CustomerTransactionId,TransactionNumber,TransactionDate,BillToCustomerName,TransactionAmount,TransactionStatus','Trx ID,Number,Date,Customer,Amount,Status','ERP','Y','AR invoice - queried by the Fusion CustomerTransactionId the reconciler stamped (auto-numbered sources send no TRX_NUMBER)');
 exception when dup_val_on_index then null;
 end;
 /
@@ -266,7 +266,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('AR Lines','/fscmRestApi/resources/11.13.18.05/receivablesInvoices','TransactionNumber={KEY}','TRX_NUMBER','CustomerTransactionId,TransactionNumber,TransactionDate,BillToCustomerName,TransactionAmount,TransactionStatus','Trx ID,Number,Date,Customer,Amount,Status','ERP','Y','AR invoice lines - queries parent transaction by TRX_NUMBER');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('AR Lines','/fscmRestApi/resources/11.13.18.05/receivablesInvoices','CustomerTransactionId={KEY}','FUSION_CUSTOMER_TRX_ID','CustomerTransactionId,TransactionNumber,TransactionDate,BillToCustomerName,TransactionAmount,TransactionStatus','Trx ID,Number,Date,Customer,Amount,Status','ERP','Y','AR invoice lines - queries the parent transaction by the Fusion CustomerTransactionId the reconciler stamped (auto-numbered sources send no TRX_NUMBER)');
 exception when dup_val_on_index then null;
 end;
 /

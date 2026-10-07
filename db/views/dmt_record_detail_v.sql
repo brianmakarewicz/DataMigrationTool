@@ -320,7 +320,10 @@ UNION ALL
 SELECT 'ARInvoices', 'AR Lines',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        TRX_NUMBER || ' - ' || DESCRIPTION,
-       TRX_NUMBER,
+       -- Verify-in-Fusion key: the Fusion CustomerTransactionId the reconciler
+       -- stamped (DMT_REST_LOOKUP_TBL 'AR Lines' filters on it). TRX_NUMBER is
+       -- empty for auto-numbering sources such as External Source.
+       TO_CHAR(FUSION_CUSTOMER_TRX_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
