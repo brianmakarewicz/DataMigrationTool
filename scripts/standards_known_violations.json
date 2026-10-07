@@ -1,0 +1,621 @@
+{
+  "_about": "Known standards violations that existed when a checker rule was introduced. A violation listed here is reported as KNOWN and does not fail its checker; any violation NOT listed here fails it. Every entry names the docs/backlog.html item that fixes it. When the fix lands the checker reports the entry as RESOLVED -- delete it then. Never add an entry to silence a new violation without a backlog item. See scripts/standards_known_violations.py.",
+  "violations": [
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-XDM-COMMENT|bip/BenDependent/DMT_BENDEPENDENT_RECON_DM.xdm|xml-comment",
+      "backlog": 214,
+      "found": "2026-10-07",
+      "detail": "bip/BenDependent/DMT_BENDEPENDENT_RECON_DM.xdm line 4: XML comment contains '--' (illegal in XML; BIP rejects the data model)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-XDM-COMMENT|bip/BenParticipant/DMT_BENPARTICIPANT_RECON_DM.xdm|xml-comment",
+      "backlog": 214,
+      "found": "2026-10-07",
+      "detail": "bip/BenParticipant/DMT_BENPARTICIPANT_RECON_DM.xdm line 4: XML comment contains '--' (illegal in XML; BIP rejects the data model)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|APInvoices|DMT_AP_RECON_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/APInvoices/query.sql does not match the SQL of the deployed DMT_AP_RECON_DM.xdm (query.sql names: AP_DM)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-ROW|APInvoices|APInvoices/INTERFACE",
+      "backlog": 166,
+      "found": "2026-10-07",
+      "detail": "DMT_AP_RECON_DM branch APInvoices/INTERFACE can return FUSION_STATUS='ERROR' with a message that has no Fusion error column behind it: {columns: ap_invoices_interface.status; literals: '; no rejection row written -- e.g. header rejected pre-validation).' 'Rejected by Payables Import (status=' '[HDR] '} ;; {columns: -; literals: '; no rejection row written -- e.g. header rejected pre-validation).' 'NULL' 'Rejected by Payables Import (status=' '[HDR] '}"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-ROW|APInvoices|APInvoices.Line/INTERFACE",
+      "backlog": 166,
+      "found": "2026-10-07",
+      "detail": "DMT_AP_RECON_DM branch APInvoices.Line/INTERFACE can return FUSION_STATUS='ERROR' with a message that has no Fusion error column behind it: {columns: ap_invoices_interface.status; literals: '; no rejection row written -- e.g. header rejected pre-validation).' 'Rejected by Payables Import (status=' '[LINE] Parent invoice rejected: '} ;; {columns: -; literals: '; no rejection row written -- e.g. header rejected pre-validation).' 'NULL' 'Rejected by Payables Import (status=' '[LINE] Parent invoice rejected: '}"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|APInvoices|column ap_invoices_interface.status",
+      "backlog": 166,
+      "found": "2026-10-07",
+      "detail": "DMT_AP_RECON_DM builds ERROR_MESSAGE from ap_invoices_interface.status, which is not an allow-listed Fusion error column for APInvoices"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|APInvoices|literal '; no rejection row written -- e.g. header rejected pre-valid'",
+      "backlog": 166,
+      "found": "2026-10-07",
+      "detail": "DMT_AP_RECON_DM concatenates the invented text '; no rejection row written -- e.g. header rejected pre-valid' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|APInvoices|literal 'Rejected by Payables Import (status='",
+      "backlog": 166,
+      "found": "2026-10-07",
+      "detail": "DMT_AP_RECON_DM concatenates the invented text 'Rejected by Payables Import (status=' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|APInvoices|literal '[LINE] Parent invoice rejected:'",
+      "backlog": 166,
+      "found": "2026-10-07",
+      "detail": "DMT_AP_RECON_DM concatenates the invented text '[LINE] Parent invoice rejected:' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|ARInvoices|DMT_AR_RECON_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/ARInvoices/query.sql does not match the SQL of the deployed DMT_AR_RECON_DM.xdm (query.sql names: DMT_AR_RECON_DM, DMT_GL_BAL_RECON_DM, DMT_REQ_RECON_DM)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|Assets|DMT_FA_ASSET_RECON_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/Assets/query.sql does not match the SQL of the deployed DMT_FA_ASSET_RECON_DM.xdm (query.sql names: DMT_FA_ASSET_RECON_DM)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|Assignments|DMT_ASSIGNMENTS_RECON_DM",
+      "backlog": 217,
+      "found": "2026-10-07",
+      "detail": "DMT_ASSIGNMENTS_RECON_DM returns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|BenBeneficiary|DMT_BENBENEFICIARY_RECON_DM",
+      "backlog": 216,
+      "found": "2026-10-07",
+      "detail": "registered data model bip/BenBeneficiary/DMT_BENBENEFICIARY_RECON_DM.xdm does not exist in the repo (registry/deploy name and file name disagree)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|BlanketPOs|DMT_BLANKET_PO_RECON_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/BlanketPOs/query.sql does not match the SQL of the deployed DMT_BLANKET_PO_RECON_DM.xdm (query.sql names: none)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|CashBanks|DMT_CEBANK_RECON_DM",
+      "backlog": 130,
+      "found": "2026-10-07",
+      "detail": "DMT_CEBANK_RECON_DM returns [record_key, import_status, source_type, fusion_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|Contracts|DMT_CONTRACT_RECON_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/Contracts/query.sql does not match the SQL of the deployed DMT_CONTRACT_RECON_DM.xdm (query.sql names: none)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-ROW|Customers|object_type/INTERFACE",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM branch object_type/INTERFACE can return FUSION_STATUS='ERROR' with a message that has no Fusion error column behind it: {columns: hz_imp_parties_t.import_status_code; literals: ' and recorded no error for it; ' 'Not created: Fusion left this row at import status ' 'none of its parent records failed.'} ;; {columns: hz_imp_locations_t.import_status_code; literals: ' and recorded no error for it; ' 'Not created: Fusion left this row at import status ' 'none of its parent records failed.'} ;; {columns: hz_imp_partysites_t.import_status_code; literals: ' and recorded no error for it; ' 'Not created: Fusion left this row at import status ' 'none of its parent records failed.'} ;; {columns: hz_imp_partysiteuses_t.import_status_code; literals: ' and recorded no error for it; ' 'Not created: Fusion left this row at import status ' 'none of its parent records failed.'}"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_accounts_t.import_status_code",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_accounts_t.import_status_code, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_accounts_t.party_orig_system_reference",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_accounts_t.party_orig_system_reference, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_acctsites_t.cust_orig_system_reference",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_acctsites_t.cust_orig_system_reference, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_acctsites_t.import_status_code",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_acctsites_t.import_status_code, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_acctsites_t.site_orig_system_reference",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_acctsites_t.site_orig_system_reference, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_acctsiteuses_t.cust_site_orig_sys_ref",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_acctsiteuses_t.cust_site_orig_sys_ref, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_acctsiteuses_t.import_status_code",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_acctsiteuses_t.import_status_code, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_locations_t.import_status_code",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_locations_t.import_status_code, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_parties_t.import_status_code",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_parties_t.import_status_code, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_partysites_t.import_status_code",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_partysites_t.import_status_code, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_partysites_t.location_orig_system_reference",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_partysites_t.location_orig_system_reference, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_partysites_t.party_orig_system_reference",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_partysites_t.party_orig_system_reference, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_partysiteuses_t.import_status_code",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_partysiteuses_t.import_status_code, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_partysiteuses_t.party_orig_system_reference",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_partysiteuses_t.party_orig_system_reference, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|column hz_imp_partysiteuses_t.site_orig_system_reference",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM builds ERROR_MESSAGE from hz_imp_partysiteuses_t.site_orig_system_reference, which is not an allow-listed Fusion error column for Customers"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'and recorded no error for it;'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'and recorded no error for it;' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'held (status W)'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'held (status W)' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'not created (status'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'not created (status' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'not found in this import or in Fusion'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'not found in this import or in Fusion' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'rejected (status E)'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'rejected (status E)' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'with no error of its own.'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'with no error of its own.' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal '(no message text found in FND_NEW_MESSAGES)'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text '(no message text found in FND_NEW_MESSAGES)' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'Not created: Fusion left this row at import status'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'Not created: Fusion left this row at import status' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'Parent records not created:'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'Parent records not created:' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'account site'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'account site' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'none of its parent records failed.'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'none of its parent records failed.' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|Customers|literal 'party site'",
+      "backlog": 168,
+      "found": "2026-10-07",
+      "detail": "DMT_CUST_RECON_V3_DM concatenates the invented text 'party site' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|GLBalances|DMT_GL_BAL_RECON_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/GLBalances/query.sql does not match the SQL of the deployed DMT_GL_BAL_RECON_DM.xdm (query.sql names: DMT_GL_BAL_RECON_DM)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-ROW|GLBalances|GLBalances/BASE",
+      "backlog": 173,
+      "found": "2026-10-07",
+      "detail": "DMT_GL_BAL_RECON_DM branch GLBalances/BASE can return FUSION_STATUS='ERROR' with a message that has no Fusion error column behind it: {columns: gl_je_headers.je_header_id,gl_je_headers.running_total_cr,gl_je_headers.running_total_dr; literals: ' CR=' ') but UNBALANCED: DR=' '. Will not post.' '[LINE] Journal imported (JE_HEADER_ID='}"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-ROW|GLBalances|GLBalances/INTERFACE",
+      "backlog": 173,
+      "found": "2026-10-07",
+      "detail": "DMT_GL_BAL_RECON_DM branch GLBalances/INTERFACE can return FUSION_STATUS='ERROR' with a message that has no Fusion error column behind it: {columns: gl_interface.reference10; literals: '[LINE] '}"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|GLBalances|column gl_interface.reference10",
+      "backlog": 173,
+      "found": "2026-10-07",
+      "detail": "DMT_GL_BAL_RECON_DM builds ERROR_MESSAGE from gl_interface.reference10, which is not an allow-listed Fusion error column for GLBalances"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|GLBalances|column gl_je_headers.je_header_id",
+      "backlog": 173,
+      "found": "2026-10-07",
+      "detail": "DMT_GL_BAL_RECON_DM builds ERROR_MESSAGE from gl_je_headers.je_header_id, which is not an allow-listed Fusion error column for GLBalances"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|GLBalances|column gl_je_headers.running_total_cr",
+      "backlog": 173,
+      "found": "2026-10-07",
+      "detail": "DMT_GL_BAL_RECON_DM builds ERROR_MESSAGE from gl_je_headers.running_total_cr, which is not an allow-listed Fusion error column for GLBalances"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|GLBalances|column gl_je_headers.running_total_dr",
+      "backlog": 173,
+      "found": "2026-10-07",
+      "detail": "DMT_GL_BAL_RECON_DM builds ERROR_MESSAGE from gl_je_headers.running_total_dr, which is not an allow-listed Fusion error column for GLBalances"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|GLBalances|literal ') but UNBALANCED: DR='",
+      "backlog": 173,
+      "found": "2026-10-07",
+      "detail": "DMT_GL_BAL_RECON_DM concatenates the invented text ') but UNBALANCED: DR=' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|GLBalances|literal '. Will not post.'",
+      "backlog": 173,
+      "found": "2026-10-07",
+      "detail": "DMT_GL_BAL_RECON_DM concatenates the invented text '. Will not post.' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-ERROR-SOURCE|GLBalances|literal '[LINE] Journal imported (JE_HEADER_ID='",
+      "backlog": 173,
+      "found": "2026-10-07",
+      "detail": "DMT_GL_BAL_RECON_DM concatenates the invented text '[LINE] Journal imported (JE_HEADER_ID=' into ERROR_MESSAGE"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|GLBudgets|GL_BUDGET_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/GLBudgets/query.sql does not match the SQL of the deployed GL_BUDGET_DM.xdm (query.sql names: GL_BUDGET_DM)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|ItemCategories|ITEM_CAT_DM",
+      "backlog": 217,
+      "found": "2026-10-07",
+      "detail": "ITEM_CAT_DM returns [item_number, organization_code, category_set_name, category_code, process_flag, item_category_id, status, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|MiscReceipts|DMT_INV_TRX_RECON_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/MiscReceipts/query.sql does not match the SQL of the deployed DMT_INV_TRX_RECON_DM.xdm (query.sql names: DMT_INV_TRX_RECON_DM)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|PayrollRelationships|DMT_PAYROLLRELATIONSHIPS_RECON_DM",
+      "backlog": 217,
+      "found": "2026-10-07",
+      "detail": "DMT_PAYROLLRELATIONSHIPS_RECON_DM returns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|PurchaseOrders|DMT_PO_RECON_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/PurchaseOrders/query.sql does not match the SQL of the deployed DMT_PO_RECON_DM.xdm (query.sql names: DMT_PO_RECON_DM)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|Salaries|DMT_SALARIES_RECON_DM",
+      "backlog": 216,
+      "found": "2026-10-07",
+      "detail": "registered data model bip/Salaries/DMT_SALARIES_RECON_DM.xdm does not exist in the repo (registry/deploy name and file name disagree)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|SupplierAddresses|SUP_ADDR_DM",
+      "backlog": 217,
+      "found": "2026-10-07",
+      "detail": "SUP_ADDR_DM returns [address_interface_id, party_site_id, vendor_name, party_site_name, status, load_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|SupplierContacts|SUP_CONT_DM",
+      "backlog": 217,
+      "found": "2026-10-07",
+      "detail": "SUP_CONT_DM returns [contact_interface_id, contact_id, vendor_name, first_name, last_name, status, load_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|SupplierSiteAssignments|SUP_SITE_ASSN_DM",
+      "backlog": 217,
+      "found": "2026-10-07",
+      "detail": "SUP_SITE_ASSN_DM returns [assignment_interface_id, assignment_id, vendor_name, vendor_site_code, business_unit_name, status, load_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|SupplierSites|SUP_SITE_DM",
+      "backlog": 217,
+      "found": "2026-10-07",
+      "detail": "SUP_SITE_DM returns [vendor_site_interface_id, vendor_site_id, vendor_name, vendor_site_code, status, load_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|Suppliers|SUP_DM",
+      "backlog": 217,
+      "found": "2026-10-07",
+      "detail": "SUP_DM returns [vendor_interface_id, vendor_id, vendor_name, segment1, status, load_request_id, import_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|TalentProfiles|DMT_TALENTPROFILES_RECON_DM",
+      "backlog": 216,
+      "found": "2026-10-07",
+      "detail": "registered data model bip/TalentProfiles/DMT_TALENTPROFILES_RECON_DM.xdm does not exist in the repo (registry/deploy name and file name disagree)"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|Taxes|DMT_ZX_RECON_DM",
+      "backlog": 130,
+      "found": "2026-10-07",
+      "detail": "DMT_ZX_RECON_DM returns [record_key, import_status, source_type, fusion_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NINE-COLUMNS|ValueSets|DMT_VS_RECON_DM",
+      "backlog": 130,
+      "found": "2026-10-07",
+      "detail": "DMT_VS_RECON_DM returns [record_key, import_status, source_type, fusion_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-MIRROR|Workers|DMT_WORKERS_RECON_DM",
+      "backlog": 215,
+      "found": "2026-10-07",
+      "detail": "bip/Workers/query.sql does not match the SQL of the deployed DMT_WORKERS_RECON_DM.xdm (query.sql names: DMT_WORKERS_RECON_DM)"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-FUSION-ERROR-FORM|dmt_ap_pay_term_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
+      "backlog": 161,
+      "found": "2026-10-07",
+      "detail": "line 245: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-TAG|dmt_ce_bank_results_pkg.pkb.sql|[PARENT_FAILED]",
+      "backlog": 178,
+      "found": "2026-10-07",
+      "detail": "line 359: writes the unsanctioned ERROR_TEXT tag [PARENT_FAILED] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-FUSION-ERROR-FORM|dmt_ce_bank_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
+      "backlog": 212,
+      "found": "2026-10-07",
+      "detail": "line 266: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-FUSION-ERROR-FORM|dmt_egp_item_cat_results_pkg.pkb.sql|composed '[FUSION_ERROR] SUBMIT_LOAD failed: '",
+      "backlog": 212,
+      "found": "2026-10-07",
+      "detail": "line 277: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] SUBMIT_LOAD failed: '"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-FUSION-ERROR-FORM|dmt_egp_item_results_pkg.pkb.sql|composed '[FUSION_ERROR] SUBMIT_LOAD failed: '",
+      "backlog": 212,
+      "found": "2026-10-07",
+      "detail": "line 686: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] SUBMIT_LOAD failed: '"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-TAG|dmt_fa_asset_results_pkg.pkb.sql|[BATCH_REJECTED]",
+      "backlog": 175,
+      "found": "2026-10-07",
+      "detail": "line 418: writes the unsanctioned ERROR_TEXT tag [BATCH_REJECTED] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-TAG|dmt_fnd_lookup_results_pkg.pkb.sql|[PARENT_FAILED]",
+      "backlog": 177,
+      "found": "2026-10-07",
+      "detail": "line 366: writes the unsanctioned ERROR_TEXT tag [PARENT_FAILED] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-FUSION-ERROR-FORM|dmt_fnd_lookup_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
+      "backlog": 161,
+      "found": "2026-10-07",
+      "detail": "line 258: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-TAG|dmt_fnd_vs_results_pkg.pkb.sql|[LOAD_ERROR]",
+      "backlog": 176,
+      "found": "2026-10-07",
+      "detail": "line 249: writes the unsanctioned ERROR_TEXT tag [LOAD_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-FUSION-ERROR-FORM|dmt_fnd_vs_results_pkg.pkb.sql|composed '[FUSION_ERROR] Value-set upload transport failed: '",
+      "backlog": 212,
+      "found": "2026-10-07",
+      "detail": "line 185: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] Value-set upload transport failed: '"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-EXPIRED|dmt_fnd_vs_results_pkg.pkb.sql|LOAD_VIA_FBDI",
+      "backlog": 176,
+      "found": "2026-10-07",
+      "detail": "LOAD_VIA_FBDI: the path taken when the ESS poll returns our own EXPIRED timeout writes ERROR_TEXT (APPEND_ERROR) -- a timeout must leave rows GENERATED (unaccounted) for reconciliation, never fail them"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-FUSION-ERROR-FORM|dmt_inv_uom_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
+      "backlog": 212,
+      "found": "2026-10-07",
+      "detail": "line 244: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-FUSION-ERROR-FORM|dmt_misc_receipt_results_pkg.pkb.sql|composed '[FUSION_ERROR] Lot not created; its inventory transaction was rejected",
+      "backlog": 212,
+      "found": "2026-10-07",
+      "detail": "line 312: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] Lot not created; its inventory transaction was rejected"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-TAG|dmt_poz_sup_addr_results_pkg.pkb.sql|[RECONCILE_ERROR]",
+      "backlog": 213,
+      "found": "2026-10-07",
+      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-TAG|dmt_poz_sup_cont_results_pkg.pkb.sql|[RECONCILE_ERROR]",
+      "backlog": 213,
+      "found": "2026-10-07",
+      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-TAG|dmt_poz_sup_results_pkg.pkb.sql|[RECONCILE_ERROR]",
+      "backlog": 213,
+      "found": "2026-10-07",
+      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-TAG|dmt_poz_sup_site_assn_results_pkg.pkb.sql|[RECONCILE_ERROR]",
+      "backlog": 213,
+      "found": "2026-10-07",
+      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-TAG|dmt_poz_sup_site_results_pkg.pkb.sql|[RECONCILE_ERROR]",
+      "backlog": 213,
+      "found": "2026-10-07",
+      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
+    },
+    {
+      "checker": "check_sweep_unaccounted",
+      "key": "SWEEP-FUSION-ERROR-FORM|dmt_zx_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
+      "backlog": 161,
+      "found": "2026-10-07",
+      "detail": "line 230: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
+    }
+  ]
+}
