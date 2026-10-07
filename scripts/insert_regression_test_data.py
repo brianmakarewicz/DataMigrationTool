@@ -2503,6 +2503,22 @@ def main():
     # 1099-invoice time Fusion holds it as "<prefix>RT-SUP-G1" and the unprefixed
     # reference fails as INVALID SUPPLIER. The 1099 nature is carried by the
     # line's TYPE_1099 field, not by the supplier, so the test intent is preserved.
+    #
+    # Corrected 2026-10-07 (backlog #308, docs/findings/ap_1099_g1_rejection.md).
+    # Every load up to run 254 rejected the line with INVALID DISTRIBUTION ACCT and
+    # INVALID TYPE 1099. Applies only to scenarios minted from this seed from now
+    # on; existing write-once scenarios keep their original rows.
+    #   * The account uses '.', the delimiter of this chart of accounts (id 21).
+    #     101.10.68010.120.000.000 is an enabled combination (CCID 701593). The old
+    #     dash form '101-10-68010-120-000-000' does not parse.
+    #   * TYPE_1099 is an income tax type code from AP_INCOME_TAX_TYPES. 'MISC7'
+    #     (non-employee compensation) is what the old '07' meant. JGA (1254) is
+    #     federally reportable (default MISC3), and Fusion already holds JGA lines
+    #     with an overriding type (MISC4), so a line-level override is accepted.
+    #   * INCOME_TAX_REGION 'CA' is a valid, active region. Kept.
+    #   * Dates are SYSDATE, like the GOOD rows above. The fixed 2025-06-15 sat in a
+    #     period that is already closed in GL and would also be rejected once
+    #     Payables closes it.
     run_sql(cur, """
         INSERT INTO DMT_AP_INVOICES_INT_STG_TBL (
             INVOICE_ID, OPERATING_UNIT, SOURCE,
@@ -2512,10 +2528,10 @@ def main():
             GL_DATE, CALC_TAX_DURING_IMPORT_FLAG, SOURCE_ID
         ) VALUES (
             800010, :bu, 'Manual Invoice Entry',
-            'RT-1099-G1', 5000.00, DATE '2025-06-15',
+            'RT-1099-G1', 5000.00, SYSDATE,
             :vname, :vnum, :vsite,
             'USD', 'STANDARD',
-            DATE '2025-06-15', 'Y', 'RT-1099-G1'
+            SYSDATE, 'Y', 'RT-1099-G1'
         )
     """, {"bu": BU, "vname": "JGA", "vnum": "1254",
           "vsite": "JGA US1"},
@@ -2530,8 +2546,8 @@ def main():
         ) VALUES (
             800010, 1, 'ITEM',
             5000.00, 'RT 1099 reportable payment',
-            '101-10-68010-120-000-000', DATE '2025-06-15',
-            '07', 'CA', 'RT-1099LN-G1'
+            '101.10.68010.120.000.000', SYSDATE,
+            'MISC7', 'CA', 'RT-1099LN-G1'
         )
     """, label="GOOD 1099 Invoice Line: 800010")
     tag_scenario(cur, "DMT_AP_INVOICES_INT_STG_TBL", scenario_id)
