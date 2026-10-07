@@ -77,6 +77,11 @@ REPORTS = [
     # on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, prefix-scoped. Deployed alongside
     # the original DMT_GRANT_RECON_DM (never overwritten).
     ("Grants",                   "DMT_GRANT_RECON_V2_DM",      "DMT_GRANT_RECON_V2_RPT"),
+    # Requisitions V2 (2026-10-07, owner decision): rows found only by the work
+    # item's Fusion job ids (import REQUEST_ID / load LOAD_REQUEST_ID), never by
+    # the run prefix or run id. Deployed alongside DMT_REQ_RECON_DM (never
+    # overwritten).
+    ("Requisitions",             "DMT_REQ_RECON_V2_DM",        "DMT_REQ_RECON_V2_RPT"),
     # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
     # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
     # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/

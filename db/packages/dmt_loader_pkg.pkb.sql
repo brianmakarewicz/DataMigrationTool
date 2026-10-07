@@ -971,11 +971,17 @@
     --     collapsed onto the single nearest requestid).
     --   * p_batch_id NULL (all other objects): legacy match -- prefer
     --     absparentid = load, else nearest requestid > load.
+    --   * p_batch_arg_pos names WHICH submitted argument carries the batch
+    --     id (NULL = 1, Items). Requisitions passes 2: RequisitionImportJob
+    --     argument 2 = BatchId. Its two batches load near-simultaneously, and
+    --     the proximity match gave the second batch the first batch's import
+    --     id (run 251: both work items recorded 10074973).
     --
     -- Uses the pre-deployed static BIP report (AD#16 — no ephemeral BIP):
-    --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo
-    -- Called via runReport with P_LOAD_ESS_ID, P_JOB_DEF and P_BATCH_ID
-    -- bound parameters.
+    --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_V2_RPT.xdo (V2 adds
+    --   P_BATCH_ARG_POS; deployed alongside V1, which is never overwritten).
+    -- Called via runReport with P_LOAD_ESS_ID, P_JOB_DEF, P_BATCH_ID and
+    -- P_BATCH_ARG_POS bound parameters.
     --
     -- Retries every 15 seconds for up to 15 minutes.
     -- Raises -20050 if no job found after timeout.
@@ -984,10 +990,11 @@
         p_run_id IN NUMBER,
         p_cemli_code     IN VARCHAR2,
         p_load_ess_id    IN VARCHAR2,
-        p_batch_id       IN VARCHAR2 DEFAULT NULL
+        p_batch_id       IN VARCHAR2 DEFAULT NULL,
+        p_batch_arg_pos  IN NUMBER   DEFAULT NULL
     ) RETURN VARCHAR2 IS
         C_PROC        CONSTANT VARCHAR2(50)  := 'GET_IMPORT_ESS_ID';
-        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo';
+        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V2_RPT.xdo';
         C_MAX_TRIES   CONSTANT INTEGER       := 60;
         C_SLEEP_SEC   CONSTANT NUMBER        := 15;
 
@@ -1038,7 +1045,8 @@
             'GET_IMPORT_ESS_ID start. Load ESS ID: ' || p_load_ess_id ||
             '. Job def filter: ' || l_job_def ||
             CASE WHEN p_batch_id IS NOT NULL
-                 THEN '. Batch id match: ' || p_batch_id
+                 THEN '. Batch id match: ' || p_batch_id || ' on submit.argument'
+                      || NVL(TO_CHAR(p_batch_arg_pos), '1')
                  ELSE '. No batch id (proximity/absparent match)' END ||
             '. Will poll up to ' || C_MAX_TRIES ||
             ' times (every ' || C_SLEEP_SEC || 's). CEMLI: ' || p_cemli_code,
@@ -1072,6 +1080,10 @@
                 '            <v2:item>' ||
                 '              <v2:name>P_BATCH_ID</v2:name>' ||
                 '              <v2:values><v2:item>' || p_batch_id || '</v2:item></v2:values>' ||
+                '            </v2:item>' ||
+                '            <v2:item>' ||
+                '              <v2:name>P_BATCH_ARG_POS</v2:name>' ||
+                '              <v2:values><v2:item>' || TO_CHAR(p_batch_arg_pos) || '</v2:item></v2:values>' ||
                 '            </v2:item>' ||
                 '          </v2:listOfParamNameValues>' ||
                 '        </v2:parameterNameValues>' ||
@@ -1513,7 +1525,8 @@
         x_load_ess_id     OUT VARCHAR2,
         x_import_ess_id   OUT VARCHAR2,
         x_success         OUT BOOLEAN,
-        p_import_batch_id IN VARCHAR2 DEFAULT NULL
+        p_import_batch_id IN VARCHAR2 DEFAULT NULL,
+        p_import_batch_arg_pos IN NUMBER DEFAULT NULL
     ) IS
         C_PROC            CONSTANT VARCHAR2(40) := 'PO_SUBMIT_AND_RECONCILE_ONE';
         l_load_status     VARCHAR2(50);
@@ -1562,9 +1575,12 @@
         -- Find the Import ESS job ID. For Items the caller passes this batch's
         -- id (p_import_batch_id) so the match keys on the import's own batch id
         -- (submit.argument1) rather than requestid-proximity -- see backlog #75.
+        -- Requisitions passes its batch id too, with p_import_batch_arg_pos = 2
+        -- (RequisitionImportJob argument 2 = BatchId).
         BEGIN
             x_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id,
-                                                 p_batch_id => p_import_batch_id);
+                                                 p_batch_id      => p_import_batch_id,
+                                                 p_batch_arg_pos => p_import_batch_arg_pos);
         EXCEPTION
             WHEN OTHERS THEN
                 DMT_UTIL_PKG.LOG(p_run_id,
@@ -3816,7 +3832,13 @@
                 p_password          => l_rq_pass,
                 x_load_ess_id       => l_rq_load_id,
                 x_import_ess_id     => l_rq_import_id,
-                x_success           => l_rq_ok);
+                x_success           => l_rq_ok,
+                -- Tie this load to its OWN import: RequisitionImportJob carries
+                -- the batch id as argument 2 (see l_rq_param above). Batches load
+                -- near-simultaneously, so the proximity match is not safe (run
+                -- 251 gave batch 7002 batch 7001's import id).
+                p_import_batch_id      => grp_rec.BATCH_ID,
+                p_import_batch_arg_pos => 2);
 
             -- Backlog #70: stamp THIS child's own distinct load + import ess ids on
             -- its own queue row (no-op outside a queue-driven partition child).

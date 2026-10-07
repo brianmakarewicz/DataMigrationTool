@@ -96,7 +96,44 @@ interface rows left by earlier runs do not hold back later loads (runs 236/238 b
 rows kept their own request ids; run 251's GOOD requisition in batch 7002 loaded), so no
 purge is needed.
 
+## Reconciliation by Fusion job id, one call per work item (2026-10-07)
+
+Owner decision: the reconciliation report finds rows only by the Fusion job ids, never by
+searching on the run prefix or run id. The prefix and keys are used only to match a row
+Fusion returned back to its TFM row.
+
+- **Report V2** `DMT_REQ_RECON_V2_DM` / `_RPT` (deployed alongside V1, which is never
+  overwritten): base headers and lines by `REQUEST_ID = :P_IMPORT_ESS_ID`; base
+  distributions through their loaded line; interface rows and `POR_REQ_IMPORT_ERRORS` by
+  `LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID AND REQUEST_ID = :P_IMPORT_ESS_ID`. No `LIKE`
+  anywhere. Keyset ordering and comparison pinned to BINARY. Registry repointed by the seed
+  and `db/migrations/2026-10-07_requisitions_recon_v2_registry.sql`.
+- **One call per work item.** One batch = one load = one Requisition Import, so
+  `RECONCILE_BATCH` passes the work item's own load id and import id to `FETCH_ROWS`.
+- **Import id bug fixed.** The two batches load near-simultaneously and the import lookup
+  matched the nearest later import, so in run 251 both work items recorded 10074973 (batch
+  7002's import was 10074977). `RequisitionImportJob` carries the batch id as argument 2, so
+  `RUN_REQUISITIONS` now passes its batch id with `p_import_batch_arg_pos => 2`, read through
+  the new `DMT_ESS_CHILD_JOB_V2` report (adds `P_BATCH_ARG_POS`; V1 kept).
+- The old run-id selector was also unsafe: Fusion still holds interface rows keyed
+  `255_RQHDR_...` from an earlier database's run 255 (load 9991534), which V1's
+  `LIKE '255\_RQHDR\_%'` would have picked up.
+
+Proof run 255 (prefix 93311, scenario RegressionTest2610071808, STANDALONE:Requisitions):
+work item 1612 (batch 7001) recorded load 10075184 / import 10075191 and work item 1611
+(batch 7002) load 10075186 / import 10075195, exactly what Fusion stamped on the interface
+rows and base lines. Outcomes match run 251: REQ-001 and REQ-002 LOADED (6 rows), BADHDR,
+BADLINE and BADDIST FAILED with their own errors, XG1 and the other siblings FAILED quoting
+the real error, 0 UNACCOUNTED. Line dollars staged 1,360 = loaded 490 + failed 870; Fusion
+base lines for the two imports total 490. A reconcile-only rerun of both work items left all
+20 TFM rows byte-identical. `dmt_regression_run.py` PASS; Playwright click-through PASS.
+
 ## Known Issues
+- **A reconcile-only rerun re-appends ERROR_TEXT onto the STG rows.** The STG echo in
+  `APPLY_CONTRACT_V1_REQUISITIONS` appends each FAILED TFM row's ERROR_TEXT to its STG row on
+  every reconcile call, and it is run-scoped, so each work item's call echoes the other work
+  item's rows too. TFM rows stay byte-identical; STG ERROR_TEXT grows. Not changed here (no
+  STG write-back changes in this PR); it belongs with the item below.
 - **The apply step echoes TFM outcomes onto the STG tables, including ERROR_TEXT**
   (`APPLY_CONTRACT_V1_REQUISITIONS`, pre-existing). This conflicts with the proposed
   "STG rows carry status only, never an error message" rule. The cross-grain quotes are

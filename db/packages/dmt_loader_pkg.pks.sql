@@ -69,11 +69,18 @@ AS
     -- keys on that batch id, uniquely tying one load to its OWN import even when
     -- two batch loads finish near-simultaneously. NULL (all other objects) keeps
     -- the legacy proximity/absparent match. See backlog #75.
+    --
+    -- p_batch_arg_pos: which submitted argument of the import job carries the
+    -- batch id (NULL = 1, Items). Requisitions passes 2 (RequisitionImportJob
+    -- argument 2 = BatchId): two Requisitions batches load near-simultaneously,
+    -- and the proximity match gave the second batch the first batch's import id
+    -- (run 251). Read through DMT_ESS_CHILD_JOB_V2_RPT.
     FUNCTION GET_IMPORT_ESS_ID (
         p_run_id IN NUMBER,
         p_cemli_code     IN VARCHAR2,
         p_load_ess_id    IN VARCHAR2,
-        p_batch_id       IN VARCHAR2 DEFAULT NULL
+        p_batch_id       IN VARCHAR2 DEFAULT NULL,
+        p_batch_arg_pos  IN NUMBER   DEFAULT NULL
     ) RETURN VARCHAR2;
 
     -- Poll an ESS job until terminal state or timeout.
