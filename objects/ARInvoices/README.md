@@ -98,6 +98,9 @@ models both with one STG + one TFM table each.
   invoice; line apply pinned by ATTRIBUTE2; INTERNAL_NOTES grouping stamp behind config
   `AR_GROUP_BY_DMT_INVOICE` (default Y); recon report V2 (`DMT_AR_RECON_V2_DM`) fixes ORA-01489
   when a line error carries INTERFACE_DISTRIBUTION_ID = 0; cross-grain regression rows RT-AR-XG-*.
+  Proof run 249 (prefix 93305, scenario RegressionTest2610071705): 3 lines LOADED (incl. XG-B,
+  same grouping values as XG-A but its own Fusion invoice), XG-A line 2 FAILED with its own
+  memo-line error, XG-A line 1 and both XG-A distributions FAILED quoting it, 0 UNACCOUNTED.
 - 2026-10-07 known-good fixes (branch `fix-ar-invoices-known-good`): INTERFACE_LINE_ATTRIBUTE1
   is always run-prefixed (lines and distributions); the hardcoded fallback context
   `DMT Migration` is gone and a line without a context is rejected at pre-validation; the extra
