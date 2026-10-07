@@ -54,7 +54,53 @@ carrying THREE CSVs; DMT models all three with one STG and one TFM table each.
 - **Generator spec header already accurate** — `dmt_req_fbdi_gen_pkg.pks.sql`
   documents the three real Oracle FBDI filenames correctly. No fix needed.
 
+## Cross-grain error propagation (whole-document rejection, 2026-10-07)
+
+Requisition Import is all-or-nothing per requisition. When the header, any line or any
+distribution has an error, Fusion sets every interface row of that requisition to
+`FAILED`/`ERROR`, but writes `POR_REQ_IMPORT_ERRORS` only for the row that actually failed.
+Before this change the other rows had no error of their own and were swept UNACCOUNTED
+(run 238: 6 rows; `docs/findings/run238_Reqs_POs_unaccounted.md`).
+
+`DMT_REQ_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` runs in `RECONCILE_BATCH` after the per-row
+apply and before the shared UNACCOUNTED sweep (design section 5, "Whole-document rejection
+carries the real error to every grain").
+
+- **The document** is the requisition: the header row and the lines carrying its
+  `INTERFACE_HEADER_KEY`; a distribution belongs to its line's requisition
+  (`INTERFACE_LINE_KEY`). DMT always sends the header, so the header key decides the
+  requisition. The import's Group By argument (`NONE`) and the line `GROUP_CODE` only group
+  lines sent without a header, so two DMT requisitions are never merged by Fusion. A
+  requisition never spans two work items (BATCH_ID is a header value).
+- **Sources** are rows FAILED with their own real `[FUSION_ERROR]` (no quote marker).
+- **Targets** are every other header, line and distribution of the same requisition that
+  Fusion received (`FBDI_CSV_ID` set) and that is not LOADED. Each gets
+  `[FUSION_ERROR] Rejected with document: <header|line|distribution> <RECON_KEY>: <real message>`
+  appended, and is set FAILED. LOADED rows are never touched; a requisition with no real
+  error is left to the sweep. A second reconcile adds nothing (exact-quote guard).
+
+Example (run 238): `93294RT-REQ-BADLINE` header ->
+`[FUSION_ERROR] Rejected with document: line 238_RQLN_100000196: [LINE] UOM_CODE=ZZZ: The UOM isn't valid. ...`
+
+Regression cross-grain scenario: `RT-REQ-XG1` (batch 7002) has a valid header and two lines,
+each with a valid distribution; the only defect is line 2's UOM (`ZZZ`). Expected outcomes are
+listed in `scripts/regression_scenario.json` under `RegressionTest2610071808`.
+
+Proof run 251 (prefix 93307, scenario RegressionTest2610071808, STANDALONE:Requisitions):
+REQ-001 and REQ-002 LOADED (6 rows); the XG1 valid sibling line was set FAILED by Fusion
+with no error of its own (interface `251_RQLN_100000233`, not in base) and lands FAILED
+quoting line 2's UOM error, as do the XG1 header and both distributions; 0 UNACCOUNTED;
+line dollars staged 1,360 = loaded 490 + failed 870; a reconcile-only rerun left every
+ERROR_TEXT byte-identical. Run 238 reconcile-only rerun: 6 UNACCOUNTED -> 0. Rejected
+interface rows left by earlier runs do not hold back later loads (runs 236/238 batch-7002
+rows kept their own request ids; run 251's GOOD requisition in batch 7002 loaded), so no
+purge is needed.
+
 ## Known Issues
+- **The apply step echoes TFM outcomes onto the STG tables, including ERROR_TEXT**
+  (`APPLY_CONTRACT_V1_REQUISITIONS`, pre-existing). This conflicts with the proposed
+  "STG rows carry status only, never an error message" rule. The cross-grain quotes are
+  added after the echo, so they are not written to STG.
 - **Requisitions must run as calvin.roth (PO_USERNAME).** Running as fin_impl (FUSION_USERNAME) causes `po_core_s.get_ledger_id` ORA-01403 and Import ESS returns "You must enter a valid ledger ID." Fixed 2026-04-07: added Requisitions to per-CEMLI credential override in `run_one_object_type`. Credentials also passed through to POLL_ESS_JOB (l_ess_user/l_ess_pass promoted to function scope).
 - **UOM_CODE is 'ECH' (not 'Ea').** Verified 2026-04-16: `ECH` exists in `inv_units_of_measure` and loads successfully. 'Ea' does NOT exist on this instance.
 - **Header errors ARE in por_req_import_errors (INTERFACE_TYPE='HEADER').** Verified 2026-04-16: errors join via `e.interface_id = h.req_header_interface_id`. BIP XDM Source 1 captures these with `[HDR]` prefix. Caveat: if the BU is completely invalid (NONEXISTENT_BU_99), the import rejects the row pre-validation with `process_flag=NULL` and writes NO error rows — these fall through to "Unrecognized interface status: NULL".
