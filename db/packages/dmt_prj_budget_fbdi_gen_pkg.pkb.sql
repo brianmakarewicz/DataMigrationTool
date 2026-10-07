@@ -4,6 +4,11 @@
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_PRJ_BUDGET_FBDI_GEN_PKG';
 
 -- ============================================================
+-- NAME:    DMT_PRJ_BUDGET_FBDI_GEN_PKG
+-- PURPOSE: ProjectBudgets FBDI generator (PjoPlanVersionsXface.csv -> zip)
+-- REVISIONS:
+--  1.1  2026-10-07  Column 29 = template marker -1318020000/-1318020001 (was empty, mislabelled REQUEST_ID)
+-- ============================================================
 -- ProjectBudgets FBDI generator.
 -- CSV: PjoPlanVersionsXface.csv (62 columns, position-based, no header)
 -- Column order verified against PjoPlanVersionsXface.ctl from Fusion 25C.

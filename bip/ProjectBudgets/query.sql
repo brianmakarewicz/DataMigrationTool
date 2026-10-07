@@ -1,7 +1,4 @@
 -- ============================================================
--- MIRRORS PRJ_BUDGET_V2_DM.xdm (the registered recon DM since 2026-10-07).
--- V1 (PRJ_BUDGET_DM.xdm) is kept in the catalog untouched.
--- ============================================================
 -- V2 (2026-10-07, known-good fix -- docs/findings/known_good_ProjectBudgets.md).
 -- Deployed ALONGSIDE PRJ_BUDGET_DM.xdm (BIP objects are never overwritten).
 -- What changed from V1:
@@ -26,65 +23,103 @@
 --     per-row Fusion message is in the BudgetsXfaceBIP report output
 --     (LIST_G_12/G_12: P = source budget line reference = RECON_KEY, Y = the
 --     message), which DMT_PRJ_BUDGET_RESULTS_PKG.apply_import_report harvests
---     per row. ERROR_MESSAGE here stays NULL rather than composed.
+--     per row. Per Contract v1 (ERROR_MESSAGE non-null on every ERROR row; a
+--     purging import returns the literal marker), an INTERFACE/ERROR row now
+--     carries '#IMPORT_REPORT#' instead of NULL. The reconciler never writes
+--     the marker as an error; it routes the row to the import-report harvest.
 -- ============================================================
 -- ============================================================
--- Project Budgets BIP reconciliation query -- BIP reconciliation
--- report contract v1 (nine columns, keyset pagination). Data source:
--- ApplicationDB_FSCM. This mirrors the SQL embedded in
--- PRJ_BUDGET_DM.xdm for review; the .xdm is authoritative.
+-- Project Budgets reconciliation data model -- BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination, the six
+-- standard parameters). Same shape as DMT_EXP_RECON_DM.xdm (the PJC
+-- sibling), DMT_GL_BAL_RECON_DM.xdm and DMT_REQ_RECON_DM.xdm.
 --
--- NINE columns, in contract order:
+-- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
 --   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
---   DMT_REFERENCE
+--   DMT_REFERENCE.
 --
--- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
---   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY. No P_OFFSET / P_LIMIT.
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT.
 --
--- Keyset: ORDER BY RECORD_KEY, only rows whose RECORD_KEY sorts
--- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
+-- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
+-- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
+-- with an empty cursor first, then passes the last RECORD_KEY it
+-- received on each next call, until a page returns fewer than
+-- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
+-- (every non-null RECORD_KEY sorts after the empty string).
 --
--- ONE object, two tiers. ProjectBudgets is a single FBDI zip
--- (PjoPlanVersionsXface.csv) loaded by "Import Budgets Interface
--- Data": interface table PJO_PLAN_VERSIONS_XFACE, base table
--- PJO_PLAN_VERSIONS_B. One budget FBDI resolves to one plan version
--- (PLAN_VERSION_ID); budget lines land in PJO_PLAN_LINE_DETAILS, which
--- carries no native source reference, so the reconcilable grain is the
--- plan version. FUSION_ID = PLAN_VERSION_ID.
+-- OBJECT MODEL. ProjectBudgets is ONE object -- one FBDI zip
+-- (PjoPlanVersionsXface.csv, delivered to prj/projectControl/import),
+-- one interface table (PJO_PLAN_VERSIONS_XFACE), one base table
+-- (PJO_PLAN_VERSIONS_B), loaded by the "Import Budgets Interface
+-- Data" ESS job. So this DM is two tiers (BASE + INTERFACE), not the
+-- six-tier Requisitions shape.
 --
--- RECON KEY = the native source budget line reference. On the base row
--- it is PM_BUDGET_REFERENCE (verified live: values like ENDOW001-01
--- survive verbatim on PJO_PLAN_VERSIONS_B); on the interface row it is
--- SRC_BUDGET_LINE_REFERENCE. The transform prefixes the budget
--- reference (V2), so the run-scoped selector is PM_BUDGET_REFERENCE
--- LIKE :P_PREFIX || '%', OR-ed with the prefixed PROJECT_NUMBER on
--- PJF_PROJECTS_ALL_B.SEGMENT1 for in-run projects. Load/import ESS
--- ids are not durably captured per row on this pod, so
--- :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID cannot select the run alone;
--- they are declared for contract symmetry and stamped for traceability.
+-- ---- Grain -------------------------------------------------------
+-- One migrated budget FBDI resolves to ONE plan version
+-- (PJO_PLAN_VERSIONS_B, PK PLAN_VERSION_ID). The budget's line rows
+-- land in PJO_PLAN_LINE_DETAILS, which carries NO native source
+-- reference (verified live: it keys only on PLAN_VERSION_ID /
+-- PLAN_LINE_DETAIL_ID), so the reconcilable grain here is the plan
+-- version, not the individual budget line. FUSION_ID = PLAN_VERSION_ID.
 --
--- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
---   BASE (present in PJO_PLAN_VERSIONS_B) => SUCCESS
---   INTERFACE (unprocessed: PROCESS_CODE/LOAD_STATUS not success) => ERROR
--- FUSION_ID non-null on every BASE row (PLAN_VERSION_ID).
+-- ---- RECON KEY and run scoping (verified live) -------------------
+-- RECORD_KEY / SOURCE_REF = the native source budget line reference.
+-- On the interface row it is SRC_BUDGET_LINE_REFERENCE; that value is
+-- persisted verbatim onto the base plan-version row as
+-- PJO_PLAN_VERSIONS_B.PM_BUDGET_REFERENCE (verified live: non-null
+-- PM_BUDGET_REFERENCE values such as ENDOW001-01, NSF006-01 survive on
+-- the base rows). This is the same role ORIG_TRANSACTION_REFERENCE
+-- plays for Expenditures.
 --
--- ERROR_MESSAGE limitation (verified live): PJO_PLAN_VERSIONS_XFACE has
--- NO error-text column and there is no queryable PJO*ERR* table on this
--- pod, so a rejected row cannot be joined to its real Fusion message
--- from a queryable table. The per-row rejection text lives in the
--- Import Budgets report XML, which the pipeline harvests into DMT
--- TFM.ERROR_TEXT. This query reports the interface status codes (the
--- only signal the interface carries).
+-- HOWEVER: the ProjectBudgets transform (DMT_PRJ_BUDGET_TRANSFORM_PKG)
+-- stamps the run PREFIX onto PROJECT_NUMBER and PROJECT_NAME only -- it
+-- does NOT prefix SRC_BUDGET_LINE_REFERENCE. So the recon key itself
+-- carries no run prefix and cannot be the run-scoped selector. The one
+-- prefix-bearing value that survives into the Fusion base tables is the
+-- prefixed PROJECT_NUMBER, which lands on PJF_PROJECTS_ALL_B.SEGMENT1
+-- (verified live: 9609RTPRJ001, 9444RTPRJ002, ... exist on the pod).
+-- The run-scoped selector is therefore
+--     PJF_PROJECTS_ALL_B.SEGMENT1 LIKE :P_PREFIX || '%'
+-- joined to the plan version by PROJECT_ID. :P_RUN_ID /
+-- :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID are declared for contract
+-- symmetry and stamped into LOAD_REQUEST_ID for traceability; the load
+-- and import ESS ids are not durably captured per row on this pod.
+--
+-- ---- FUSION_STATUS -----------------------------------------------
+-- Normalized in this DM to exactly SUCCESS/ERROR:
+--   BASE  (plan version present in PJO_PLAN_VERSIONS_B)  => SUCCESS
+--   INTERFACE (unprocessed row still in the interface)   => ERROR
+-- FUSION_ID is non-null on every BASE row (PLAN_VERSION_ID).
+--
+-- ---- ERROR_MESSAGE -- honest limitation of this object -----------
+-- PJO_PLAN_VERSIONS_XFACE has NO error-text column (verified live: no
+-- %ERR%/%MSG% column; only PROCESS_CODE / LOAD_STATUS status labels),
+-- and there is no queryable PJO*ERR* / PJO*MESSAGE* table on this pod.
+-- The per-row rejection text is only in the Import Budgets report XML,
+-- which the pipeline harvests into DMT's own TFM.ERROR_TEXT at import
+-- time (DMT_PRJ_BUDGET_RESULTS_PKG). This DM therefore reports the
+-- interface status this object DOES carry as the ERROR_MESSAGE, and the
+-- reconciler keeps the real Fusion text it already harvested.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    -- BASE tier -- SUCCESS. RECORD_KEY = PM_BUDGET_REFERENCE (source
-    -- budget line reference, persisted verbatim on the base row); when
-    -- null, a stable synthetic key from prefixed project number + plan
-    -- version name + plan version id. DMT_REFERENCE = PM_BUDGET_REFERENCE.
+    -- ========== BASE tier: positive proof (SUCCESS) ==========
+    -- One row per plan version whose project carries this run's prefix.
+    -- RECORD_KEY / SOURCE_REF = PM_BUDGET_REFERENCE (the source budget
+    -- line reference, persisted verbatim on the base plan-version row).
+    -- When PM_BUDGET_REFERENCE is null (budget carried no source ref),
+    -- fall back to a stable synthetic key built from the prefixed
+    -- project number, the plan version name and the plan version id so
+    -- the row still has a unique, sortable, non-null RECORD_KEY --
+    -- honest fallback, never fabricated data.
+    -- DMT_REFERENCE = PM_BUDGET_REFERENCE (the object's own reference;
+    -- ProjectBudgets FBDI carries no separate DFF DMT slot).
     SELECT
         'ProjectBudgets'                                        AS object_type,
         NVL(v.pm_budget_reference,
@@ -104,16 +139,27 @@ FROM (
     AND    vtl.language        = 'US'
     AND    p.project_id        = v.project_id
     AND    :P_PREFIX IS NOT NULL
+    -- V2: run scope by the prefixed source budget line reference (works for
+    -- budgets on EXISTING projects) OR by the prefixed project number (budgets
+    -- on projects DMT created in the same run).
     AND    (v.pm_budget_reference LIKE :P_PREFIX || '%'
             OR p.segment1 LIKE :P_PREFIX || '%')
 
     UNION ALL
 
-    -- INTERFACE tier -- rejections only (PROCESS_CODE / LOAD_STATUS not
-    -- success). SUCCESS rows are covered by the BASE tier, so nothing is
-    -- counted twice. Scoped to the run by the prefixed PROJECT_NUMBER.
-    -- ERROR_MESSAGE reports the interface status codes; the real per-row
-    -- Fusion text is retained by the reconciler from the report XML.
+    -- ========== INTERFACE tier: rejections only (ERROR) ==========
+    -- Interface rows for this prefix that did NOT process. PROCESS_CODE
+    -- and LOAD_STATUS are the only outcome signals this interface table
+    -- carries; a row is a rejection when neither indicates success.
+    -- SUCCESS rows are covered by the BASE tier, so excluding the
+    -- success statuses here means no row is counted twice. The interface
+    -- row is scoped to the run by its prefixed PROJECT_NUMBER (the same
+    -- prefixed value the transform stamped onto PROJECT_NUMBER).
+    -- RECORD_KEY / SOURCE_REF = SRC_BUDGET_LINE_REFERENCE.
+    -- ERROR_MESSAGE reports the interface status codes (the only
+    -- rejection signal this interface table carries -- see header note);
+    -- the reconciler retains the real per-row Fusion text it harvested
+    -- from the import report XML.
     SELECT
         'ProjectBudgets'                                        AS object_type,
         NVL(x.src_budget_line_reference,
@@ -123,12 +169,11 @@ FROM (
         CAST(NULL AS NUMBER)                                    AS fusion_id,
         -- No real per-row error is available from the interface here (the budget
         -- interface has no error-text column, and the process/load status codes
-        -- are non-committal, not Fusion errors). So this column returns NULL
-        -- rather than a composed sentence. The REAL per-row Fusion rejection
-        -- message is harvested separately from the Import Budgets report XML by
-        -- DMT_PRJ_BUDGET_RESULTS_PKG and stamped onto the TFM row; a row with no
-        -- real message is left UNACCOUNTED, never fabricated FAILED.
-        CAST(NULL AS VARCHAR2(4000))                            AS error_message,
+        -- are non-committal, not Fusion errors). Contract v1 marker: the REAL
+        -- per-row Fusion rejection message is in the BudgetsXfaceBIP import report,
+        -- harvested by DMT_PRJ_BUDGET_RESULTS_PKG.apply_import_report; a row with
+        -- no real message is left UNACCOUNTED, never fabricated FAILED.
+        '#IMPORT_REPORT#'                                       AS error_message,
         x.load_request_id                                       AS load_request_id,
         x.src_budget_line_reference                             AS source_ref,
         x.src_budget_line_reference                             AS dmt_reference
@@ -142,8 +187,10 @@ FROM (
                NOT IN ('COMPLETED','PROCESSED','SUCCESS','P')
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
--- BIP, so treat NULL as "from the start". On later pages it carries the
--- previous page's last RECORD_KEY; only greater keys are returned.
+-- BIP, so treat NULL as "from the start": return every row. On later
+-- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
+-- greater keys are returned. RECORD_KEY is compared as text (the recon
+-- key is a string); the reconciler feeds back the exact key it received.
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY

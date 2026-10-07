@@ -35,7 +35,10 @@
 --     per-row Fusion message is in the BudgetsXfaceBIP report output
 --     (LIST_G_12/G_12: P = source budget line reference = RECON_KEY, Y = the
 --     message), which DMT_PRJ_BUDGET_RESULTS_PKG.apply_import_report harvests
---     per row. ERROR_MESSAGE here stays NULL rather than composed.
+--     per row. Per Contract v1 (ERROR_MESSAGE non-null on every ERROR row; a
+--     purging import returns the literal marker), an INTERFACE/ERROR row now
+--     carries '#IMPORT_REPORT#' instead of NULL. The reconciler never writes
+--     the marker as an error; it routes the row to the import-report harvest.
 -- ============================================================
 -- ============================================================
 -- Project Budgets reconciliation data model -- BIP reconciliation
@@ -178,12 +181,11 @@ FROM (
         CAST(NULL AS NUMBER)                                    AS fusion_id,
         -- No real per-row error is available from the interface here (the budget
         -- interface has no error-text column, and the process/load status codes
-        -- are non-committal, not Fusion errors). So this column returns NULL
-        -- rather than a composed sentence. The REAL per-row Fusion rejection
-        -- message is harvested separately from the Import Budgets report XML by
-        -- DMT_PRJ_BUDGET_RESULTS_PKG and stamped onto the TFM row; a row with no
-        -- real message is left UNACCOUNTED, never fabricated FAILED.
-        CAST(NULL AS VARCHAR2(4000))                            AS error_message,
+        -- are non-committal, not Fusion errors). Contract v1 marker: the REAL
+        -- per-row Fusion rejection message is in the BudgetsXfaceBIP import report,
+        -- harvested by DMT_PRJ_BUDGET_RESULTS_PKG.apply_import_report; a row with
+        -- no real message is left UNACCOUNTED, never fabricated FAILED.
+        '#IMPORT_REPORT#'                                       AS error_message,
         x.load_request_id                                       AS load_request_id,
         x.src_budget_line_reference                             AS source_ref,
         x.src_budget_line_reference                             AS dmt_reference

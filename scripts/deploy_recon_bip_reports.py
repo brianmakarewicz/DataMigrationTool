@@ -16,7 +16,7 @@ seeded by db/seed/dmt_bip_report_tbl.sql (supplier MERGE block).
 
 Run as:  python scripts/deploy_recon_bip_reports.py [Filter ...]
          Each filter matches a CEMLI code OR a data model name (e.g.
-         PRJ_BUDGET_V2_DM), so a single new report version can be deployed
+         DMT_PRJ_BUDGET_RECON_V2_DM), so a single new report version can be deployed
          without redeploying that CEMLI's other reports.
 Env:     DMT2_CONN  user/password@host:port/service
          (default: the local Docker instance dmt2-local)
@@ -67,7 +67,7 @@ REPORTS = [
     # ProjectBudgets recon V2 (2026-10-07, known-good fix): deployed alongside the
     # original PRJ_BUDGET_DM (never overwritten). Run scoped by the prefixed
     # PM_BUDGET_REFERENCE so budgets on EXISTING projects reconcile.
-    ("ProjectBudgets",           "PRJ_BUDGET_V2_DM",           "PRJ_BUDGET_V2_RPT"),
+    ("ProjectBudgets",           "DMT_PRJ_BUDGET_RECON_V2_DM",           "DMT_PRJ_BUDGET_RECON_V2_RPT"),
     # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
     # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
     # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/

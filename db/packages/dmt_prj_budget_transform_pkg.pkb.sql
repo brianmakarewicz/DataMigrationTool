@@ -1,6 +1,12 @@
 -- PACKAGE BODY DMT_PRJ_BUDGET_TRANSFORM_PKG
 
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_PRJ_BUDGET_TRANSFORM_PKG" AS
+-- ============================================================
+-- NAME:    DMT_PRJ_BUDGET_TRANSFORM_PKG
+-- PURPOSE: STG->TFM transform for ProjectBudgets (PjoPlanVersionsXface.csv)
+-- REVISIONS:
+--  1.1  2026-10-07  Run prefix on SRC_BUDGET_LINE_REFERENCE + PLAN_VERSION_NAME; fit-guard fails, never truncates
+-- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_PRJ_BUDGET_TRANSFORM_PKG';
 
@@ -16,21 +22,6 @@
     C_VERSION_NAME_MAX CONSTANT PLS_INTEGER := 240;
     C_SUB_OBJECT       CONSTANT VARCHAR2(30) := 'Project Budgets';
 
-    -- Run prefix from the run row (same helper shape as the other transforms).
-    FUNCTION get_prefix (p_run_id IN NUMBER) RETURN VARCHAR2 IS
-        l_prefix VARCHAR2(30);
-    BEGIN
-        SELECT PREFIX
-        INTO   l_prefix
-        FROM   DMT_PIPELINE_RUN_TBL
-        WHERE  RUN_ID = p_run_id;
-        RETURN l_prefix;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20001,
-                'RUN_ID ' || p_run_id || ' not found in DMT_PIPELINE_RUN_TBL');
-    END get_prefix;
-
     PROCEDURE TRANSFORM (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
@@ -40,10 +31,18 @@
         l_ok         NUMBER := 0;
         l_fail       NUMBER := 0;
         l_prefix     VARCHAR2(30);
+        l_step       VARCHAR2(200);
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM start.', 'INFO', C_PKG, 'TRANSFORM');
+        DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                         p_message   => 'TRANSFORM start.',
+                         p_package   => C_PKG,
+                         p_procedure => 'TRANSFORM');
 
-        l_prefix := get_prefix(p_run_id);
+        l_step := 'reading the run prefix for run ' || p_run_id;
+        SELECT PREFIX
+        INTO   l_prefix
+        FROM   DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
 
         -- Prefix-fit guard: the run prefix goes onto SRC_BUDGET_LINE_REFERENCE
         -- (and therefore RECON_KEY / Fusion PM_BUDGET_REFERENCE) and onto
@@ -52,6 +51,7 @@
         -- carry the prefix for the run to be identifiable in Fusion. A value that
         -- does not fit with the prefix fails here with a clear error; it is never
         -- truncated.
+        l_step := 'recording prefix-fit [TRANSFORM_ERROR] rows';
         INSERT INTO DMT_STG_TFM_ERROR_TBL
                (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
         SELECT p_run_id, 'ProjectBudgets', C_SUB_OBJECT, s.STG_SEQUENCE_ID,
@@ -81,6 +81,7 @@
                         AND   e.SUB_OBJECT = C_SUB_OBJECT);
         l_fail := SQL%ROWCOUNT;
 
+        l_step := 'flagging prefix-fit failures FAILED on STG';
         UPDATE DMT_PRJ_BUDGET_STG_TBL
         SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
         WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
@@ -90,6 +91,7 @@
         AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
                 OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
+        l_step := 'inserting STAGED TFM rows';
         INSERT INTO DMT_PRJ_BUDGET_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,
             AWARD_NUMBER, FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
@@ -121,11 +123,15 @@
             -- Run prefix on the plan version name and the source budget line
             -- reference (always-use-prefix rule). Length already guarded above,
             -- so PREFIXED never truncates here.
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PLAN_VERSION_NAME, C_VERSION_NAME_MAX),
+            DMT_UTIL_PKG.PREFIXED(p_prefix  => l_prefix,
+                                  p_value   => s.PLAN_VERSION_NAME,
+                                  p_max_len => C_VERSION_NAME_MAX),
             s.PLAN_VERSION_DESCRIPTION, s.PLAN_VERSION_STATUS,
             s.RESOURCE_NAME, s.PERIOD_NAME, s.PLANNING_CURRENCY,
             s.TOTAL_QUANTITY, s.TOTAL_TC_RAW_COST, s.TOTAL_TC_REVENUE,
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.SRC_BUDGET_LINE_REFERENCE, C_BUDGET_REF_MAX),
+            DMT_UTIL_PKG.PREFIXED(p_prefix  => l_prefix,
+                                  p_value   => s.SRC_BUDGET_LINE_REFERENCE,
+                                  p_max_len => C_BUDGET_REF_MAX),
             s.FUNDING_SOURCE_NUMBER, s.FUNDING_SOURCE_NAME,
             s.PC_RAW_COST, s.PC_REVENUE, s.PFC_RAW_COST, s.PFC_REVENUE,
             s.TOTAL_TC_BRDND_COST, s.PC_BRDND_COST, s.PFC_BRDND_COST,
@@ -167,7 +173,7 @@
         -- Contract v1 RECON_KEY stamp (single-tier reader coupling).
         -- The shared reconciler matches each report row's RECORD_KEY to the TFM
         -- row's RECON_KEY. The ProjectBudgets recon data model
-        -- (bip/ProjectBudgets/PRJ_BUDGET_V2_DM.xdm) emits, on the BASE tier,
+        -- (bip/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V2_DM.xdm) emits, on the BASE tier,
         --   RECORD_KEY = NVL(PJO_PLAN_VERSIONS_B.PM_BUDGET_REFERENCE,
         --                    <synthetic project::version::plan_version_id>)
         -- and, on the INTERFACE tier,
@@ -215,8 +221,11 @@
                     OR e.ERROR_TEXT LIKE '[TRANSFORM_ERROR]%')
         );
 
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM complete. Rows: ' || l_ok
-                         || ' | prefix-fit failures: ' || l_fail, 'INFO', C_PKG, 'TRANSFORM');
+        DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                         p_message   => 'TRANSFORM complete. Rows: ' || l_ok
+                                        || ' | prefix-fit failures: ' || l_fail,
+                         p_package   => C_PKG,
+                         p_procedure => 'TRANSFORM');
     EXCEPTION
         WHEN OTHERS THEN
             -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
@@ -248,7 +257,11 @@
                         OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'TRANSFORM failed.', SQLERRM, C_PKG, 'TRANSFORM');
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
+                                   p_message   => 'TRANSFORM failed at step: ' || l_step,
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => 'TRANSFORM');
             RAISE;
     END TRANSFORM;
 
