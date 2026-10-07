@@ -1,5 +1,114 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-07 evening -- Cross-grain errors, job-id reconciliation, strict ATP gate, combined baseline (IN PROGRESS, nothing on ATP yet)
+
+**Bottom line.** Today the owner made a set of rules about how errors and reconciliation must work,
+and most of the work merged as PRs. Errors now spread to every row of a document Fusion rejects
+(AR Invoices, Requisitions, Purchase Orders, Blanket POs, AP Invoices). Reconciliation reports are
+moving to finding rows by Fusion job id; Requisitions and AP Invoices are done. The ATP gate is now
+code, not a remembered rule. A combined regression baseline exists. **Nothing has been promoted to
+ATP GOLD.** This entry was written mid-session for crash safety.
+
+**Merged today (PR number, then what it did):**
+- #583: APEX static images are reprovisioned automatically on a local rebuild (backlog #159).
+- #594: status log entry for the 2026-10-06/07 unaccounted investigation.
+- #595: findings on why run 238 Requisitions and Purchase Order rows were unaccounted.
+- #596: requirements: when Fusion rejects a whole document, every grain of it gets the real error.
+- #597: ProjectBudgets compared against the owner's known-good run (findings only).
+- #598: Grants compared against a known-good load; it must load as the PPM_IMPL user.
+- #599: AR Invoices known-good AutoInvoice analysis and a standalone proof.
+- #601: Grants loads as ppm_impl, reconciliation V2 on contract number; run 242 loaded end to end.
+- #602: ProjectBudgets fixes (template marker, run prefix, reconciliation V2); run 244 GOOD loaded, BAD failed.
+- #603: AR Invoices AutoInvoice fixes (flexfield context, prefixed key, one-job flow, argument 23); run 245.
+- #604: standards checkers now also read BIP reconciliation reports and the config reconcilers.
+- #605: hard ATP gate: promotion needs a clean local deploy, a full regression PASS and a click-through for that run.
+- #606: AR Invoices cross-grain error propagation plus the INTERNAL_NOTES grouping stamp; run 249.
+- #607: standards fixes for #589, #591 and #592: no made-up FAILED text, no writing results back to STG.
+  Customers moved to reconciliation report V5. #590 was closed instead of merged.
+- #608: AR Invoices reconciliation V3 (unique line key so paging cannot drop rows), and the regression
+  check accepts rows FAILED because their whole document was rejected; run 250.
+- #609: Requisitions cross-grain error propagation; run 251.
+- #610: Purchase Orders cross-grain error propagation; run 252.
+- #611: Blanket POs cross-grain error propagation from a rejected header to its lines; run 253.
+- #612: owner-only override for the ATP gate (interactive, typed commit id, logged).
+- #614: backlog items #218-#228 for in-flight work; closes the Requisitions, PO, Blanket PO and AR cross-grain items.
+- #615: backlog renumbering so #613's interface-key item becomes #218 (supersedes #613, which was closed).
+- #616: review of how every reconciliation report selects its rows; 37 of 44 do not use job ids,
+  logged as backlog #229-#264. Findings in docs/findings/bip_row_selection_review.md.
+- #617: backlog #228 (HCM shared reconcile procedure) raised to P1.
+- #619: new combined write-once regression baseline RegressionTest2610071920 (scenario id 342).
+- #620: findings on the HCM reconcile root cause (docs/findings/hcm_reconcile_root_cause.md).
+- #621: design document records the join-key rule and the job-id reconciliation rule; #218 narrowed.
+- #622: Grants seed renames the BAD awards RTGNT001/002 to RTGNT-BAD2/3 for future scenarios; backlog #265.
+- #623: review of which Fusion user each DMT call runs as (docs/findings/fusion_user_selection_review.md);
+  20 call paths do not use the central lookup, logged as backlog #266-#286.
+- #625: backlog for HCM: SourceSystemOwner per instance (#287), the shared reconcile rework (#288),
+  and one item per HCM object (#289-#302).
+- #626: backlog #303-#307 (credential pairing, Requisitions verify fields, ATP config cleanup,
+  queue-worker argument order, page 58 call).
+- #627: Requisitions reconciliation by Fusion job ids per work item, and the second batch now records
+  its own import job id; run 255.
+- #628: AP Invoices cross-grain error propagation and reconciliation V2 by Fusion job id; run 254.
+- #629: backlog #308 placeholder: AP Invoices row RT-1099-G1 is seeded GOOD but Fusion rejects it every run.
+
+**Closed without merging today:** #600 (the cross-grain conformance review; its backlog items #163-#211
+are on main) and #613 (superseded by #615).
+
+**Open PRs awaiting review:**
+- #624: "Verify in Fusion" reads Fusion as the object's load user, and Grants uses the awards resource (backlog #223).
+- #618: findings on how Value Sets really load (not FBDI); backlog #227 moved to P3.
+- #630: backlog item for one central Fusion user utility covering every call site; marks #266-#286
+  and #303 superseded. **Number clash:** it uses #308, which #629 already took for RT-1099-G1 on main.
+  It must be renumbered (next free number is #309) before it merges.
+
+**Owner decisions made today:**
+- DECIDED 2026-10-07: when Fusion rejects a whole document, the real error is carried to every grain
+  of that document (PR #596, applied in #606, #609, #610, #611, #628).
+- DECIDED 2026-10-07: AR stamps INTERNAL_NOTES with the run-prefixed invoice key, so each DMT invoice
+  becomes exactly one Fusion invoice. It is controlled by config AR_GROUP_BY_DMT_INVOICE = Y (PR #606).
+- DECIDED 2026-10-07: the ATP gate requires a strict clean PASS. Only the owner can override it,
+  and only interactively. Agents must never use the override (PRs #605, #612).
+- DECIDED 2026-10-07: reconciliation reports find rows by Fusion job id, never by prefix or run id.
+  Prefix searches are backlog priority P1; run-id searches are P3 (PRs #616, #617, #621).
+- DECIDED 2026-10-07: keys that join a parent to its children in a file use the TFM sequence id.
+  Customers keeps its legacy references as a deliberate exception (PR #621, backlog #218).
+- DECIDED 2026-10-07: HCM SourceSystemOwner is set per instance: DMT_LOCAL on Docker and DMT_ATP on ATP.
+  The owner added both lookup codes in Fusion (backlog #287).
+- DECIDED 2026-10-07: Projects use PM_PROJECT_REFERENCE = run:work-item:legacy-ref.
+  Not yet written into the design document or the backlog.
+- DECIDED 2026-10-07: Grants row selection stays in the backlog (#240). The award base tables have no
+  populated job-id column on this pod.
+- DECIDED 2026-10-07: one central utility decides which Fusion credential each call uses
+  (DMT_ERP_INTERFACE_OPTIONS_TBL, read through DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS; PR #623).
+- DECIDED 2026-10-07: every task that is started or researched gets a backlog item immediately (PR #614).
+- DECIDED 2026-10-07: Grants RTGNT001 and RTGNT002 are BAD rows and are renamed in the seed (PR #622, backlog #265).
+
+**Work in progress when this was written (backlog items from docs/backlog.html):**
+- Reconciliation by Fusion job id for AR Invoices (#230), Items (#241), Assets (#232), BillingEvents (#237),
+  Expenditures (#239), ProjectBudgets (#244) and Projects (#245). Requisitions (#219) merged in #627,
+  but its backlog item still reads IN PROGRESS.
+- The central Fusion credential utility. On main the work is covered by #266-#286 and #303. The umbrella
+  item that supersedes them is in open PR #630 (numbered #308 there, which clashes; see above).
+- A checker that stops code writing results back to STG tables. **No backlog item exists yet**; one
+  needs to be added under the every-task-gets-an-item rule.
+- HCM per-object fixes: #287 (SourceSystemOwner), #288 (shared reconcile rework), #289-#302 (one per object).
+- Customers fixes: #168 (cross-grain, marked IN PROGRESS), #193 (cross-grain regression scenario),
+  #238 (job-id selection).
+- GL Balances fixes: #173 (cross-grain), #198 (cross-grain regression scenario), #260 (job-id selection),
+  #272 (credentials). None of these is marked IN PROGRESS yet.
+- The RT-1099-G1 investigation (#308, placeholder from #629).
+
+**Remaining before ATP, in order:**
+1. Merge all of the above, including open PRs #624, #618 and #630.
+2. Do one clean deploy of main to local Docker.
+3. Run the full regression on the combined baseline RegressionTest2610071920 under a new prefix.
+4. Run the Playwright click-through against that run.
+5. Promote through `scripts/ci_promote.py deploy-prod` with the strict gate.
+6. Run the click-through against ATP.
+
+Note: the click-through has been flaky under heavy local load (blank pages read too early). Run the
+gate one job at a time.
+
 ## Session -- 2026-10-06/07 -- Unaccounted means "our reconciler can't see it": Customers, Items, config, scenario leakage (IN PROGRESS, nothing on ATP yet)
 
 **Bottom line.** We deployed yesterday's merged fixes (#584/#585/#586) to local and ran regression
