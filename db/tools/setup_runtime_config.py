@@ -27,6 +27,8 @@
 #
 # Usage:  python db/tools/setup_runtime_config.py
 # Env:    DMT2_CONN       DMT_OWNER connection (default dmt2-local)
+#         DMT2_WALLET     wallet dir, for ATP only (with DMT2_WALLET_PW)
+#         (or run it via: python scripts/ci_promote.py runtime-config --target atp)
 #         CONNECTIONS_JSON path to connections.json (default ~/workspace)
 # ============================================================
 import json
@@ -48,7 +50,12 @@ def db_connect():
     if not m:
         sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
     user, password, dsn = m.groups()
-    return oracledb.connect(user=user, password=password, dsn=dsn)
+    # ATP (GOLD) needs its wallet: same env convention as
+    # scripts/dmt_regression_run.py (DMT2_WALLET = wallet dir, DMT2_WALLET_PW).
+    wallet = os.environ.get("DMT2_WALLET")
+    kw = dict(config_dir=wallet, wallet_location=wallet,
+              wallet_password=os.environ.get("DMT2_WALLET_PW")) if wallet else {}
+    return oracledb.connect(user=user, password=password, dsn=dsn, **kw)
 
 
 def load_passwords():

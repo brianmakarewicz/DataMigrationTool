@@ -11,3 +11,6 @@ docs/.design_change_approved
 
 # Playwright MCP session artifacts
 .playwright-mcp/
+
+# ATP promotion-gate evidence (scripts/promotion_gate.py) - local, never committed
+.ci_evidence/
