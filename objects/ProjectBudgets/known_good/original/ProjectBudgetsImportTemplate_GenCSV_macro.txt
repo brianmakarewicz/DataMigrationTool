@@ -1,0 +1,505 @@
+Encoding for stdout is only cp1252, will auto-encode text with utf8 before output
+olevba 0.60.2 on Python 3.12.10 - http://decalage.info/python/oletools
+===============================================================================
+FILE: ProjectBudgetsImportTemplate.xlsm
+Type: OpenXML
+WARNING  For now, VBA stomping cannot be detected for files in memory
+-------------------------------------------------------------------------------
+VBA MACRO ThisWorkbook.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/ThisWorkbook'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet1.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet2.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet2'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Module1.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Module1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Public Sub GenCSV()
+Dim LstCell As Range, I As Long, j As Long, SHCOUNT As Long, Counter As Long, str As String, fileSaveName As Variant
+Dim FolderName As Variant
+Dim ZipNAme As String
+Dim newWks As Worksheet
+Dim wks As Worksheet
+Dim oapp As Object
+Dim myRange As Range
+Dim LastProjectRow As Long, LastSBLRRow As Long, LastStatusRow As Long
+Dim sstr As String, n As String, dstr As String
+Dim xValue As String
+Dim xCheck1 As String
+Dim xCheck2 As String
+
+Dim dffAttrCount  As Long
+Dim tempVersion As String
+Dim TheOS As String
+TheOS = Application.OperatingSystem
+'Dim iCntr
+'Dim rng As Range
+Dim Arr()
+'On Error GoTo Errorhandler
+Application.EnableCancelKey = xlErrorHandler
+Application.DisplayAlerts = False
+
+n = "PjoBudgetsXface"
+
+For Each ws In Worksheets
+    If n = ws.Name Then
+     Worksheets("PjoBudgetsXface").Delete
+      
+    End If
+  Next ws
+
+
+Application.DisplayAlerts = True
+
+' To Create a New Worksheets
+    SHCOUNT = Sheets.Count
+    
+    Sheets.Add After:=Sheets(Sheets.Count)
+    Sheets(SHCOUNT + 1).Select
+    Sheets(SHCOUNT + 1).Name = "PjoBudgetsXface"
+    Worksheets(SHCOUNT + 1).Activate
+    ActiveSheet.Range("A1").Select
+    
+  
+    'Select Data from each worksheet (starting with column headers) and paste it on the new worksheet created.
+    'Delete the header row after pasting
+    
+'    For Counter = 1 To SHCOUNT - 1
+'        Sheets(1 + Counter).Select
+'        ActiveSheet.Range("A1").Select
+'        ActiveCell.SpecialCells(xlLastCell).Select
+'        I = ActiveCell.Row
+'        ActiveSheet.Cells(I, 1).Select
+'
+'        'Select Data from Worksheet 4(or later) and paste it on the last row in the new worksheet created. Delete the header row for wrkst 3 after pasteing
+'
+'        'only continue if populated rows exist beneath the column headers
+'        ActiveSheet.Range("C5").Select
+'        'check if first row is blank instead of checking if the value in b5 is null: bug-16677978
+'        If Application.CountA(ActiveCell.EntireRow) > 0 Then
+'            ActiveSheet.Range("A4").Select
+'           Selection.End(xlDown).Select
+'           SheetLastRow = ActiveSheet.Cells(4, "C").End(xlDown).Row
+'
+'           ActiveSheet.Range("A4").Select
+'           Selection.End(xlToRight).Select
+'           SheetLastColumn = ActiveCell.Column
+'           'As part of bug-16677978: if any of the columns is left blank we still want to copy all the non-null rows
+'           'SheetLastRow gives incorrect result if column B is blank. Performing additional checks to avoid missing the rows.
+'           ' To avoid this, getting the max row out of project,status and sblr columns and making that as last row.
+'           'Following funstion will return the last non-null row in that column
+'           SheetLastRow = Columns(3).Find("*", , , , xlByColumns, xlPrevious).Row
+'           LastSBLRRow = Columns(18).Find("*", , , , xlByColumns, xlPrevious).Row
+'           LastStatusRow = Columns(9).Find("*", , , , xlByColumns, xlPrevious).Row
+'           If LastSBLRRow > LastStatusRow And SheetLastRow < LastSBLRRow Then
+'            SheetLastRow = LastSBLRRow
+'            Else
+'                If LastSBLRRow < LastStatusRow And SheetLastRow < LastStatusRow Then
+'                    SheetLastRow = LastStatusRow
+'                End If
+'                If LastSBLRRow = LastStatusRow And SheetLastRow < LastStatusRow Then
+'                    SheetLastRow = LastStatusRow
+'                End If
+'
+'            End If
+'          ActiveSheet.Cells.Copy
+'          Sheets(SHCOUNT + Counter).Select
+'           Cells.Select
+'           Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+'
+'           'bug-16467425 : qty, cost columns to be rounded up to 8 decimals
+'           ActiveSheet.Columns("O:Q").NumberFormat = "##0.00000000"
+'           'ActiveSheet.Columns("I").NumberFormat = "MM/DD/YYYY"
+'
+'           'Delete the first four additional rows
+'           Range(Cells(1, 1), Cells(4, 1)).EntireRow.Select
+'           Selection.Delete Shift:=xlUp
+'
+'           'end fill last column to avoid line feed issues between windows/unix
+'           Range(Cells(1, SheetLastColumn + 1), Cells(SheetLastRow - 4, SheetLastColumn + 1)).FormulaR1C1 = "END"
+'
+'           ActiveSheet.Range("A1").Select
+'         Else
+'           Sheets(SHCOUNT + Counter).Select
+'         End If
+'    Next Counter
+ActiveSheet.Columns("O:Q").NumberFormat = "##0.00000000"
+With Worksheets("PJO_BUDGETS_XFACE").UsedRange
+
+lr = .Rows.Count
+lc = .Columns.Count
+End With
+
+
+
+ReDim Arr(lr, lc)
+'For x = 1 To lr
+'    For y = 1 To lc
+'    Arr(x, y) = Worksheets("PJO_FORECASTS_XFACE").Cells(x, y).Value
+'    Next y
+'Next x
+'Set ws = ThisWorkbook.Worksheets("Instructions and CSV Generation")
+'
+'Set range1 = ws.Range("K20:K22")
+'Set Rng = ThisWorkbook.Worksheets("PJO_FORECASTS_XFACE").Range("H1:H"
+'
+'With Rng.Validation
+'    .Delete 'delete previous validation
+'    .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
+'        Formula1:="='" & ws.Name & "'!" & range1.Address
+'End With
+
+'
+''col = 26 + lc
+''
+For Row = 5 To lr
+    Worksheets("PJO_BUDGETS_XFACE").Cells(Row, 9) = Replace(Worksheets("PJO_BUDGETS_XFACE").Cells(Row, 9), vbLf, "\n")
+Next Row
+
+sstr = "B5:E" & lr
+dstr = "A1:D" & lr - 4
+
+Worksheets("PJO_BUDGETS_XFACE").Range(sstr).Copy Destination:=ActiveSheet.Range(dstr)
+Worksheets("PJO_BUDGETS_XFACE").Range("F5:F" & lr).Copy Destination:=ActiveSheet.Range("F1:F" & lr - 4)
+Worksheets("PJO_BUDGETS_XFACE").Range("G5:G" & lr).Copy Destination:=ActiveSheet.Range("E1:E" & lr - 4)
+
+Worksheets("PJO_BUDGETS_XFACE").Range("I5:I" & lr).Copy Destination:=ActiveSheet.Range("G1:G" & lr - 4)
+
+sstr = "J5:L" & lr
+dstr = "H1:J" & lr - 4
+
+Worksheets("PJO_BUDGETS_XFACE").Range(sstr).Copy Destination:=ActiveSheet.Range(dstr)
+
+'new code after adding the new columns
+
+
+
+sstr = "M5:N" & lr
+dstr = "Q1:R" & lr - 4
+
+Worksheets("PJO_BUDGETS_XFACE").Range(sstr).Copy Destination:=ActiveSheet.Range(dstr)
+
+Worksheets("PJO_BUDGETS_XFACE").Range("O5:O" & lr).Copy Destination:=ActiveSheet.Range("Z1:Z" & lr - 4)
+Worksheets("PJO_BUDGETS_XFACE").Range("P5:P" & lr).Copy Destination:=ActiveSheet.Range("K1:K" & lr - 4)
+
+
+sstr = "Q5:R" & lr
+dstr = "AA1:AB" & lr - 4
+
+Worksheets("PJO_BUDGETS_XFACE").Range(sstr).Copy Destination:=ActiveSheet.Range(dstr)
+
+
+sstr = "S5:U" & lr
+dstr = "L1:N" & lr - 4
+
+Worksheets("PJO_BUDGETS_XFACE").Range(sstr).Copy Destination:=ActiveSheet.Range(dstr)
+
+Worksheets("PJO_BUDGETS_XFACE").Range("V5:V" & lr).Copy Destination:=ActiveSheet.Range("W1:W" & lr - 4)
+Worksheets("PJO_BUDGETS_XFACE").Range("W5:W" & lr).Copy Destination:=ActiveSheet.Range("O1:O" & lr - 4)
+Worksheets("PJO_BUDGETS_XFACE").Range("X5:X" & lr).Copy Destination:=ActiveSheet.Range("S1:S" & lr - 4)
+Worksheets("PJO_BUDGETS_XFACE").Range("Y5:Y" & lr).Copy Destination:=ActiveSheet.Range("X1:X" & lr - 4)
+
+
+sstr = "Z5:AA" & lr
+dstr = "T1:U" & lr - 4
+
+Worksheets("PJO_BUDGETS_XFACE").Range(sstr).Copy Destination:=ActiveSheet.Range(dstr)
+
+
+Worksheets("PJO_BUDGETS_XFACE").Range("AB5:AB" & lr).Copy Destination:=ActiveSheet.Range("Y1:Y" & lr - 4)
+Worksheets("PJO_BUDGETS_XFACE").Range("AC5:AC" & lr).Copy Destination:=ActiveSheet.Range("V1:V" & lr - 4)
+Worksheets("PJO_BUDGETS_XFACE").Range("AD5:AD" & lr).Copy Destination:=ActiveSheet.Range("P1:P" & lr - 4)
+
+'copy dff columns
+sstr = "AE5:BI" & lr
+dstr = "AD1:BH" & lr - 4
+
+dffAttrCount = WorksheetFunction.CountA(Worksheets("PJO_BUDGETS_XFACE").Range(sstr))
+If dffAttrCount <> 0 Then
+tempVersion = "-1318020001"
+Worksheets("PJO_BUDGETS_XFACE").Range(sstr).Copy Destination:=ActiveSheet.Range(dstr)
+Else
+tempVersion = "-1318020000"
+End If
+
+
+For x = 1 To lr - 4
+    ActiveSheet.Cells(x, 29).Value = tempVersion
+    ActiveSheet.Cells(x, 61).Value = Worksheets("PJO_BUDGETS_XFACE").Cells(x + 4, 8)
+    ActiveSheet.Cells(x, 62).Value = Worksheets("PJO_BUDGETS_XFACE").Cells(x + 4, 1)
+    ActiveSheet.Cells(x, 63).Value = "END"
+    
+       ' If (ActiveSheet.Cells(x, 1).Value = "") Then
+        ' ActiveSheet.Cells(x, 1).Value = "START"
+       ' End If
+Next x
+    
+    For Row = 5 To lr
+    Worksheets("PJO_BUDGETS_XFACE").Cells(Row, 9) = Replace(Worksheets("PJO_BUDGETS_XFACE").Cells(Row, 9), "\n", vbLf)
+Next Row
+
+If InStr(TheOS, "Windows") Then
+    'Create a Empty Zip File
+    'Select Folder to ZIP the CSV File
+    FolderName = Application.GetSaveAsFilename("PjoBudgetsXface", "Zip Files (*.zip), *.zip", , "Please select a location and file name for ZIP File")
+    'Open a Empty ZIP
+    Open FolderName For Output As #1
+    Print #1, Chr$(80) & Chr$(75) & Chr$(5) & Chr$(6) & String(18, 0)
+    Close #1
+Else
+'Method ois called in the required place as below
+' Getting the Default path and setting a file name
+ DefPath = Application.DefaultFilePath
+            FileNameZip = DefPath & "PjoBudgetsXface.zip"
+            NewZip (FileNameZip)
+End If
+ '********************************************************
+    ReDim file_name_array(2 * (SHCOUNT + 1)) As String
+    Dim array_index As Long
+    array_index = 0
+    '********************************************************
+
+    For Counter = 1 To SHCOUNT - 1
+    
+         'Export as CSV to the root folder
+         Set wks = ActiveWorkbook.Worksheets(SHCOUNT + Counter)
+         wks.Copy 'to a new workbook
+         Set newWks = ActiveSheet
+         'copy the first column even if no values i.e edit the sheet after copying , here just changing color index is fine.
+    With newWks
+        If InStr(TheOS, "Windows") Then
+        
+            'Bug 37383756 removing START here  instead of in the below module
+            newWks.Activate
+            newWks.Select
+            For x = 1 To lr - 4
+            ' If (ActiveSheet.Cells(x, 1).Value = "START") Then
+            ' ActiveSheet.Cells(x, 1).Value = ""
+            ' End If
+            Next x
+            
+        
+            fileSaveName = Left(FolderName, InStrRev(FolderName, "\")) & newWks.Name & ".csv"
+            'fileSaveName = Application.GetSaveAsFilename(newWks.Name,
+            'fileFilter:="CSV Files (*.csv), *.csv")
+            'ActiveWorkbook.SaveAs (fileSaveName)
+            '.SaveAs Filename:=fileSaveName, FileFormat:=xlCSV
+            'Modifications for UTF8 Character Encoding
+            'saving first as unicode txt separated by tabs to fileSaveName_1
+            fileSaveName_1 = fileSaveName + "_1"
+            .SaveAs Filename:=fileSaveName_1, FileFormat:=xlUnicodeText
+            
+            
+                 
+            'the unicode text is populated to a byte array, which is then loaded to a string,tabs replaced with "," and then copied to the csv file fileSaveName
+            WriteBToSToBFile fileSaveName, fileSaveName_1
+            ZipNAme = newWks.Name
+            If fileSaveName <> False Then
+                'newWks.Delete
+                'MsgBox "Save as " & fileSaveName
+            End If
+            file_name_array(array_index) = fileSaveName & ""
+            array_index = array_index + 1
+            
+            file_name_array(array_index) = fileSaveName_1 & ""
+            array_index = array_index + 1
+        Else
+            newWks.Activate
+         newWks.Select
+         fileSaveName = Application.GetSaveAsFilename(newWks.Name)
+         Dim inputFilePath, inputFile, outputFilePath, outputFile
+         outputFilePath = fileSaveName
+         outputFile = FreeFile
+         Application.DisplayAlerts = False
+         Set newWb = Workbooks.Add
+         newWks.Copy After:=newWb.Worksheets(1)
+         Application.CutCopyMode = False
+         For x = 1 To lr - 4
+        ' If (ActiveSheet.Cells(x, 1).Value = "START") Then
+        ' ActiveSheet.Cells(x, 1).Value = ""
+         ' End If
+         Next x
+         newWb.SaveAs Filename:=outputFilePath, FileFormat:=xlCSVUTF8, CreateBackup:=True
+         newWb.Close
+        End If
+            .Parent.Close savechanges:=False
+        End With
+        
+        If InStr(TheOS, "Windows") Then
+        ''Add the created CSV file to the ZIP file
+        Set oapp = CreateObject("Shell.Application")
+        oapp.Namespace(FolderName).CopyHere fileSaveName
+        
+        'Wait 0.1 seconds to avoid race condition in which system tries to attach the next csv file to the zip file before the system has completed attaching the current csv file.
+        Dim t As Single
+        t = Timer
+        While Timer - t < 1
+        Wend
+        Else
+        'Copy csv files to zip file using MAC Commands
+             Dim shellCommand As String
+            shellCommand = "zip -u -j " & FileNameZip & " " & fileSaveName
+            'Shell (shellCommand)
+            Dim macScriptCommand As String
+            macScriptCommand = "do shell script " & """" & shellCommand & """"
+            MacScript (macScriptCommand)
+        End If
+    Next Counter
+
+' Code for deleting the tmp csv files
+For Counter = 0 To array_index - 1
+    Kill file_name_array(Counter)
+Next Counter
+ 
+For x = 1 To lr - 4
+  If (ActiveSheet.Cells(x, 1).Value = "START") Then
+        ActiveSheet.Cells(x, 1).Value = ""
+        End If
+
+    
+Next x
+
+MsgBox "CSV and ZIP file have been created."
+
+
+Errorhandler:
+If Err = 20 Then
+   Resume
+End If
+
+End Sub
+
+'Method to create zip file
+'sPath is the path where zip file is created
+Sub NewZip(sPath)
+'Create empty Zip File
+    If Len(Dir(sPath)) > 0 Then Kill sPath
+    Open sPath For Output As #1
+    Print #1, Chr$(80) & Chr$(75) & Chr$(5) & Chr$(6) & String(18, 0)
+    Close #1
+End Sub
+ 
+
+
+
+-------------------------------------------------------------------------------
+VBA MACRO Module2.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Module2'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Public Function GetFileBytes(ByVal path As Variant) As Byte()
+    Dim lngFileNum As Long
+    Dim bytRtnVal() As Byte
+    lngFileNum = FreeFile
+    If LenB(Dir(path)) Then ''// Does file exist?
+        Open path For Binary Access Read As lngFileNum
+        ReDim bytRtnVal(LOF(lngFileNum) - 1&) As Byte
+        Get lngFileNum, , bytRtnVal
+        Close lngFileNum
+    Else
+        Err.Raise 53
+    End If
+    GetFileBytes = bytRtnVal
+    Erase bytRtnVal
+End Function
+
+
+
+-------------------------------------------------------------------------------
+VBA MACRO Module3.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Module3'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Public Function WriteBToSToBFile(fileSaveName As Variant, readFrom As Variant)
+    Dim byteA() As Byte
+             
+    byteA = GetFileBytes(readFrom)
+     
+    Dim ds As String
+    Dim ts As String
+     
+    ds = byteA
+    ts = Left(ds, 2)
+    ds = Right(ds, Len(ds) - 1)
+         
+    ds = VBA.Replace(ds, ChrW(9), ChrW(44))
+ 
+     
+    ds = VBA.Replace(ds, ChrW(34) & ChrW(34) & ChrW(34), ChrW(34))
+    
+    'ds = Replace(ds, "START", "") Commented for Bug37383756
+    
+ 
+    Dim fsT
+    Set fsT = CreateObject("ADODB.Stream")
+    fsT.Type = 2
+    fsT.Charset = "UTF-8"
+    fsT.Open
+     
+    fsT.WriteText ds
+ 
+    'the fix starts here (Removal of BOM)
+ 
+    fsT.Position = 3 'skip BOM
+    Dim BinaryStream As Object
+    Set BinaryStream = CreateObject("ADODB.Stream")
+    BinaryStream.Type = 1
+    BinaryStream.Open
+    'Strips BOM (first 3 bytes)
+    fsT.CopyTo BinaryStream
+    'fsT.SaveToFile fileSaveName, 2
+    BinaryStream.SaveToFile fileSaveName, 2
+    BinaryStream.flush
+    BinaryStream.Close
+ 
+    'the fix ends here (Removal of BOM)
+     
+    fsT.flush
+    fsT.Close
+End Function
+
+
+
+-------------------------------------------------------------------------------
+VBA MACRO Module4.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Module4'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Sub Macro4()
+'
+' Macro4 Macro
+'
+
+'
+    ActiveWindow.ScrollColumn = 5
+    ActiveWindow.ScrollColumn = 4
+    ActiveWindow.ScrollColumn = 3
+    ActiveWindow.ScrollColumn = 2
+    ActiveWindow.ScrollColumn = 1
+    Cells.Select
+    ActiveWorkbook.Worksheets("Merged").Sort.SortFields.Clear
+    ActiveWorkbook.Worksheets("Merged").Sort.SortFields.Add Key:=Range("A1:A939") _
+        , SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+    With ActiveWorkbook.Worksheets("Merged").Sort
+        .SetRange Range("A1:S939")
+        .Header = xlGuess
+        .MatchCase = False
+        .Orientation = xlTopToBottom
+        .SortMethod = xlPinYin
+        .Apply
+    End With
+End Sub
+
+
+-------------------------------------------------------------------------------
+VBA MACRO Module5.bas 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Module5'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+
