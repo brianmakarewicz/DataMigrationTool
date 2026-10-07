@@ -30,7 +30,6 @@ AS
     -- SourceType on CalculationCard passes import but is not mapped to DIRCardDEO at load.
     -- BLOCKER: Need to identify correct child discriminator for SourceType.
 
-    C_SOURCE_SYSTEM CONSTANT VARCHAR2(30) := 'HRC_SQLLOADER';
 
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
@@ -90,7 +89,11 @@ AS
         l_now         DATE := SYSDATE;
         l_row_count   NUMBER := 0;
         l_vals        VARCHAR2(32767);
+        -- SourceSystemOwner for every .dat line: this DMT instance's owner from
+        -- DMT_CONFIG_TBL (backlog #287), read at run time, never a constant.
+        l_sso         VARCHAR2(240);
     BEGIN
+        l_sso := DMT_HDL_UTIL_PKG.GET_SOURCE_SYSTEM_OWNER;
         DMT_UTIL_PKG.LOG(p_run_id, 'GENERATE_HDL start.', 'INFO', C_PKG, 'GENERATE_HDL');
 
         x_filename := 'TaxCards_' || TO_CHAR(p_run_id) || '.zip';
@@ -106,7 +109,7 @@ AS
                 WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM || '|' ||
+                l_vals := l_sso           || '|' ||
                           pv(r.PERSON_NUMBER) || '_TAXCARD' || '|' ||
                           pv(r.EFFECTIVE_START_DATE) || '|' ||
                           pv(r.LEGISLATIVE_DATA_GROUP_NAME);
@@ -125,7 +128,7 @@ AS
                 WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM || '|' ||
+                l_vals := l_sso           || '|' ||
                           pv(r.PERSON_NUMBER) || '_TAXCOMP' || '|' ||
                           pv(r.PERSON_NUMBER) || '_TAXCARD' || '|' ||
                           pv(r.COMPONENT_NAME) || '|' ||

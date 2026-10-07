@@ -24,7 +24,6 @@ AS
     C_ABSENCEENTRY_COLS CONSTANT VARCHAR2(4000) :=
         'SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|Employer|AbsenceType|AbsenceStatus|StartDate|EndDate|StartTime|EndTime|Duration|AbsenceReason|Comments';
 
-    C_SOURCE_SYSTEM CONSTANT VARCHAR2(30) := 'HRC_SQLLOADER';
 
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
@@ -83,7 +82,11 @@ AS
         l_now         DATE := SYSDATE;
         l_row_count   NUMBER := 0;
         l_vals        VARCHAR2(32767);
+        -- SourceSystemOwner for every .dat line: this DMT instance's owner from
+        -- DMT_CONFIG_TBL (backlog #287), read at run time, never a constant.
+        l_sso         VARCHAR2(240);
     BEGIN
+        l_sso := DMT_HDL_UTIL_PKG.GET_SOURCE_SYSTEM_OWNER;
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'GENERATE_HDL start.',
@@ -105,7 +108,7 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                || '|' ||
+                l_vals := l_sso                          || '|' ||
                           pv(r.PERSON_NUMBER) || '_ABS'  || '|' ||  -- SourceSystemId
                           pv(r.PERSON_NUMBER)            || '|' ||  -- PersonId(SourceSystemId) FK
                           pv(r.EMPLOYER_NAME)            || '|' ||  -- Employer
