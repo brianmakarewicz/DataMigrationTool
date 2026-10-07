@@ -24,8 +24,11 @@
 -- GL two-tier semantics (FUSION_STATUS is normalized in the DM to
 -- SUCCESS/ERROR, so the APPLY is object-agnostic):
 --   BASE  + SUCCESS (balanced/postable)          => LOADED
---   BASE  + ERROR   (unbalanced, will not post)  => FAILED
---   INTERFACE + ERROR (Journal-Import rejection) => FAILED
+--   BASE  + ERROR   (unbalanced; report V2 returns NO message, since
+--                    Fusion records no error for it) => left GENERATED,
+--                    settled UNACCOUNTED by the shared sweep
+--   INTERFACE + ERROR + message (Journal Import rejection, the message
+--                    is GL_INTERFACE.STATUS: STATUS_DESCRIPTION) => FAILED
 --   INTERFACE with no error is corroborating only, never LOADED on its
 --   own (LOADED requires a BASE/FUSION_ID row).
 -- Rows with no match and no error STAY GENERATED (unaccounted) — the
@@ -176,8 +179,8 @@
 
             ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                   AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
-                -- A real, specific Fusion error (BASE unbalanced, or INTERFACE
-                -- rejection) -> FAILED on the exact message (never composed),
+                -- A real, specific Fusion error (a Journal Import rejection:
+                -- STATUS: STATUS_DESCRIPTION) -> FAILED on the exact message (never composed),
                 -- appended tagged [FUSION_ERROR]; never overwrite. Static UPDATE.
                 UPDATE DMT_GL_INTERFACE_TFM_TBL
                 SET    TFM_STATUS           = 'FAILED',
