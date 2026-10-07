@@ -40,6 +40,9 @@ REPORTS = [
     ("BlanketPOs",              "BLANKET_PO_DM",     "BLANKET_PO_RPT"),
     ("Contracts",               "CONTRACT_DM",       "CONTRACT_RPT"),
     ("APInvoices",              "DMT_AP_RECON_DM",   "DMT_AP_RECON_RPT"),
+    # APInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
+    # rows by Fusion job id only, real Payables rejection text only (#166).
+    ("APInvoices",              "DMT_AP_RECON_V2_DM", "DMT_AP_RECON_V2_RPT"),
     ("Customers",               "DMT_CUST_RECON_V5_DM", "DMT_CUST_RECON_V5_RPT"),
     ("ARInvoices",              "DMT_AR_RECON_DM",   "DMT_AR_RECON_RPT"),
     # ARInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
