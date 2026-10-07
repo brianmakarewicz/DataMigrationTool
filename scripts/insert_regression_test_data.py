@@ -1112,53 +1112,65 @@ def main():
 
     # ====================================================================
     # 19. AR INVOICES (DMT_RA_LINES_STG_TBL)
-    #     GOOD: 2 AR transactions against existing customer
-    #     BAD:  1 with invalid customer account [BAD-LKP]
+    #     Mirrors the owner's known-good AutoInvoice run (Fusion 10071776; see
+    #     docs/findings/known_good_ARInvoices.md and objects/ARInvoices/known_good/).
+    #     All three rows sit in ONE partition (same BU + batch source), so a single
+    #     AutoInvoice job judges them all per row:
+    #       * context EXTERNAL_SOURCE (a defined Line Transactions flexfield context;
+    #         the former 'LEGACY' crashed the whole job),
+    #       * NO transaction number (External Source auto-numbers; a supplied number
+    #         is rejected per row),
+    #       * bill-to site, quantity, unit price, memo line and taxation country as
+    #         in the known-good file.
+    #     INTERFACE_LINE_ATTRIBUTE1 is run-prefixed by the transformer, so the
+    #     scenario can be re-run under new prefixes without duplicate-key rejection.
+    #     GOOD: 2 lines against pre-existing Fusion customer accounts.
+    #     BAD:  1 line with a nonexistent bill-to account [BAD-LKP]. The defect is
+    #           deliberately NOT on the batch source or BU (those partition the job,
+    #           so a bad value there aborts the whole job instead of one row), and it
+    #           has a different bill-to account from every GOOD row, so AutoInvoice
+    #           never groups it into a GOOD row's invoice (an errored sibling on the
+    #           same invoice silently holds back valid lines).
+    #     Dates must fall in an open AR period of the Progress US ledger at run time.
+    #     (Replaces the former RT-AR-G1/G2 'LEGACY' rows and the Manual-Other BAD row,
+    #     which crashed their AutoInvoice jobs at job level; scenarios already
+    #     minted with those rows are untouched.)
     # ====================================================================
     print("\n=== 19. AR Invoices ===")
-    for trx_num, bill_acct, amount, desc in [
-        ("RT-AR-G1", CUST_ACCT_NO, 3200.00, "RT professional services"),
-        ("RT-AR-G2", CUST_ACCT_NO, 1800.00, "RT maintenance contract"),
+    AR_BU = "Progress US Business Unit"
+    for src, bill_acct, bill_site, amount, desc, memo, attr1, label in [
+        ("RT-AR-KG-G1",   "122133",    "1430587", 1000.00, "Sentinal Desktop",
+         "Venue Fee",        "86753101", "GOOD"),
+        ("RT-AR-KG-G2",   "70075",     "245921",   250.00, "Sentinal Desktop Monitor",
+         "Tuition and Fees", "86753102", "GOOD"),
+        ("RT-AR-KG-BAD1", "999999999", "1430587", 1000.00, "BAD: nonexistent bill-to account",
+         "Venue Fee",        "86753103", "BAD"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_RA_LINES_STG_TBL (
                 BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
                 TERM_NAME, TRX_DATE, GL_DATE,
-                TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER,
+                TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER, BILL_CUSTOMER_SITE_NUMBER,
                 LINE_TYPE, DESCRIPTION,
-                CURRENCY_CODE, AMOUNT,
+                CURRENCY_CODE, CONVERSION_TYPE, CONVERSION_RATE,
+                AMOUNT, QUANTITY, UNIT_SELLING_PRICE,
                 INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1,
-                INTERFACE_LINE_ATTRIBUTE2, SOURCE_ID
+                INTERFACE_LINE_ATTRIBUTE2, DEFAULT_TAXATION_COUNTRY,
+                MEMO_LINE_NAME, SOURCE_ID
             ) VALUES (
                 :bu, 'External Source', 'Invoice',
-                'Net 30', DATE '2025-06-15', DATE '2025-06-15',
-                :trx, :bill_acct,
+                '30 Net', DATE '2026-03-17', DATE '2026-03-17',
+                NULL, :bill_acct, :bill_site,
                 'LINE', :descr,
-                'USD', :amt,
-                'LEGACY', :trx, '1', :src
+                'USD', 'User', 1,
+                :amt, 1, :amt,
+                'EXTERNAL_SOURCE', :attr1,
+                '1', 'US',
+                :memo, :src
             )
-        """, {"bu": BU, "trx": trx_num, "bill_acct": bill_acct,
-              "amt": amount, "descr": desc, "src": f"RT-{trx_num}"},
-        label=f"GOOD AR Invoice: {trx_num}")
-
-    run_sql(cur, """
-        INSERT INTO DMT_RA_LINES_STG_TBL (
-            BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
-            TERM_NAME, TRX_DATE, GL_DATE,
-            TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER,
-            LINE_TYPE, DESCRIPTION,
-            CURRENCY_CODE, AMOUNT,
-            INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1,
-            INTERFACE_LINE_ATTRIBUTE2, SOURCE_ID
-        ) VALUES (
-            :bu, 'Manual-Other', 'Invoice',
-            'Net 30', DATE '2025-06-15', DATE '2025-06-15',
-            'RT-AR-BAD1', '99999',
-            'LINE', 'BAD: invalid customer account',
-            'USD', 500.00,
-            'LEGACY', 'RT-AR-BAD1', '1', 'RT-AR-BAD1'
-        )
-    """, {"bu": BU}, label="BAD AR Invoice: invalid customer acct [BAD-LKP]")
+        """, {"bu": AR_BU, "bill_acct": bill_acct, "bill_site": bill_site,
+              "amt": amount, "descr": desc, "attr1": attr1, "memo": memo, "src": src},
+        label=f"{label} AR Invoice: {src}")
     tag_scenario(cur, "DMT_RA_LINES_STG_TBL", scenario_id)
 
     # ====================================================================
