@@ -226,6 +226,30 @@ AS
         p_new_error IN VARCHAR2
     ) RETURN CLOB;
 
+    -- Cross-grain error propagation (design section 5, "Whole-document
+    -- rejection carries the real error to every grain", decided 2026-10-07).
+    -- C_DOC_ERROR_MARKER is the fixed text that marks a QUOTED error: the error
+    -- belongs to another row of the same Fusion document, and this row carries
+    -- it because Fusion rejected the whole document. A reconciler treats only
+    -- [FUSION_ERROR] text WITHOUT this marker as a row's own error, so quotes
+    -- never chain.
+    C_DOC_ERROR_MARKER CONSTANT VARCHAR2(30) := 'Rejected with document: ';
+
+    -- FORMAT_DOCUMENT_ERROR -- the ONE message format for a quoted document
+    -- error, shared by every object. Pure value converter (section 7 allow-list):
+    -- no I/O, no side effects, usable inside set-based SQL.
+    --   NULL message -> NULL (nothing to quote).
+    --   Otherwise    -> '[FUSION_ERROR] Rejected with document: <grain> <key>: <msg>'
+    --                   where <msg> is the source row's real Fusion error with any
+    --                   leading '[FUSION_ERROR] ' tag removed; truncated to 4000.
+    -- Example: FORMAT_DOCUMENT_ERROR('line', '93301INV-100/2', '[FUSION_ERROR] Bad UOM')
+    --   = '[FUSION_ERROR] Rejected with document: line 93301INV-100/2: Bad UOM'
+    FUNCTION FORMAT_DOCUMENT_ERROR (
+        p_source_grain IN VARCHAR2,
+        p_source_key   IN VARCHAR2,
+        p_source_msg   IN VARCHAR2
+    ) RETURN VARCHAR2 DETERMINISTIC;
+
     -- --------------------------------------------------------
     -- FBDI utilities
     -- --------------------------------------------------------

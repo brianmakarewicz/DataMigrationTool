@@ -703,6 +703,28 @@
     END APPEND_ERROR;
 
     -- --------------------------------------------------------
+    -- FORMAT_DOCUMENT_ERROR -- see spec. Pure value converter.
+    -- --------------------------------------------------------
+    FUNCTION FORMAT_DOCUMENT_ERROR (
+        p_source_grain IN VARCHAR2,
+        p_source_key   IN VARCHAR2,
+        p_source_msg   IN VARCHAR2
+    ) RETURN VARCHAR2 DETERMINISTIC IS
+        C_TAG CONSTANT VARCHAR2(20) := '[FUSION_ERROR] ';
+    BEGIN
+        IF p_source_msg IS NULL THEN
+            RETURN NULL;
+        END IF;
+        RETURN SUBSTR(C_TAG || C_DOC_ERROR_MARKER || p_source_grain || ' ' || p_source_key
+                      || ': '
+                      || CASE WHEN SUBSTR(p_source_msg, 1, LENGTH(C_TAG)) = C_TAG
+                              THEN SUBSTR(p_source_msg, LENGTH(C_TAG) + 1)
+                              ELSE p_source_msg
+                         END,
+                      1, 4000);
+    END FORMAT_DOCUMENT_ERROR;
+
+    -- --------------------------------------------------------
     -- CLOB_TO_BLOB
     -- Null-safe: returns an empty BLOB for NULL or zero-length input.
     -- --------------------------------------------------------
