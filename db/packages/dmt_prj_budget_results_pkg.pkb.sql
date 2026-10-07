@@ -8,6 +8,7 @@ AS
 --          (PJO_PLAN_VERSIONS_B) + BudgetsXfaceBIP import-report harvest.
 -- REVISIONS:
 --  1.1  2026-10-07  Drop legacy P_BATCH_ID RUN_BIP_REPORT/PARSE_AND_UPDATE path; skip #IMPORT_REPORT# marker
+--  1.2  2026-10-07  Report job resolved by exact REPORT_JOB_DEF match (no LIKE, no nested block)
 -- No absence=LOADED fallback. A row is LOADED only from a base-table hit
 -- with its PLAN_VERSION_ID, FAILED only with a real Fusion message, and is
 -- otherwise left for the shared unaccounted sweep.
@@ -56,20 +57,19 @@ AS
             RETURN NULL;
         END IF;
 
-        BEGIN
-            SELECT REQUEST_ID
-            INTO   l_report_id
-            FROM   DMT_ESS_JOB_TBL
-            WHERE  PARENT_REQUEST_ID = p_import_ess_id
-            AND    (RUN_ID = p_run_id OR RUN_ID IS NULL)
-            AND    UPPER(NVL(JOB_SHORT_NAME, JOB_DEFINITION)) LIKE '%BUDGETSXFACEBIP%'
-            AND    REQUEST_ID <> p_import_ess_id
-            ORDER  BY REQUEST_ID DESC
-            FETCH FIRST 1 ROW ONLY;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                l_report_id := NULL;
-        END;
+        -- Exact match on the report job short name registered for this CEMLI
+        -- (DMT_ERP_INTERFACE_OPTIONS_TBL.REPORT_JOB_DEF = 'BudgetsXfaceBIP'), the
+        -- same value CAPTURE_REPORT_ESS_JOB stamps into JOB_SHORT_NAME: no LIKE on a
+        -- known code, no literal. MAX() returns NULL when nothing was captured yet.
+        SELECT MAX(j.REQUEST_ID)
+        INTO   l_report_id
+        FROM   DMT_ESS_JOB_TBL j
+        WHERE  j.PARENT_REQUEST_ID = p_import_ess_id
+        AND    (j.RUN_ID = p_run_id OR j.RUN_ID IS NULL)
+        AND    j.REQUEST_ID <> p_import_ess_id
+        AND    j.JOB_SHORT_NAME IN (SELECT o.REPORT_JOB_DEF
+                                    FROM   DMT_ERP_INTERFACE_OPTIONS_TBL o
+                                    WHERE  o.CEMLI_CODE = C_CEMLI);
 
         IF l_report_id IS NULL THEN
             l_report_id := DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB(
