@@ -252,6 +252,29 @@
           "RT-PJB-BAD1": "FAILED"
         }
       }
+    },
+    "RegressionTest2610071919": {
+      "AP Invoice Headers": {
+        "stg_table": "DMT_AP_INVOICES_INT_STG_TBL",
+        "rows": {
+          "RT-RT-APINV-G1": "LOADED",
+          "RT-RT-APINV-G2": "LOADED",
+          "RT-APINV-BAD1": "FAILED",
+          "RT-APINV-XG1": "FAILED_WITH_DOCUMENT",
+          "RT-1099-G1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "AP Invoice Lines": {
+        "stg_table": "DMT_AP_INVOICE_LINES_INT_STG_TBL",
+        "rows": {
+          "RT-APLN-800001-1": "LOADED",
+          "RT-APLN-800002-1": "LOADED",
+          "RT-APLN-800099-1": "FAILED_WITH_DOCUMENT",
+          "RT-APLN-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-APLN-XG1-2-BAD": "FAILED",
+          "RT-1099LN-G1": "FAILED"
+        }
+      }
     }
   }
 }
