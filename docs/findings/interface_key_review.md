@@ -1,5 +1,16 @@
 # Interface key review: TFM sequence id as the only DMT linking key
 
+> **Scope narrowed by the owner, 2026-10-07 (read this first).** After this review was written, the owner narrowed the rule. It now covers **only the keys DMT makes up to join a parent to its children inside one FBDI or HDL file** (header to line, line to line location or schedule, line to distribution, lot to transaction line, an HDL child to its parent's SourceSystemId, and the like). Those keys must be the TFM row's own sequence id. The decision is recorded in `docs/DMT_DESIGN.html` section 6 ("Parent-child join keys are the TFM sequence id"), and the companion reconciliation rule (reports find rows by Fusion job id, never by prefix or run-id text, and keys only match a returned row to its TFM row) is in section 5.
+>
+> As a result, parts of the review below are **no longer violations**:
+>
+> - **The Slot C reference token** `DMT:<run>:<wq>:<tfm>` stays as designed on 2026-09-24. Cross-cutting finding 5 is closed with no change.
+> - **Reference fields that are not join keys** are out of scope: Expenditures ORIG_TRANSACTION_REFERENCE, BillingEvents SOURCEREF and ProjectBudgets SRC_BUDGET_LINE_REFERENCE (the whole PPM table), and by the same test the ARInvoices INTERNAL_NOTES grouping stamp and the MiscReceipts TRANSACTION_REFERENCE and SOURCE_HEADER_ID. Their reports still have to stop selecting rows by prefix or run-id text, but that is reconciliation work tracked in backlog #219 and #229 to #264.
+> - **Customers is an approved exception.** The TCA original system references join a customer's parts together, but Fusion keeps them permanently in HZ_ORIG_SYS_REFERENCES as the link back to the legacy system and later loads use them, so Customers keeps the prefixed legacy reference as its join key.
+> - **Business keys prefixed on purpose** were already out of scope and still are.
+>
+> What remains in backlog #218 is **48 join-key fields in 19 objects, in 6 entries**: Requisitions (5), the PurchaseOrders / BlanketPOs / Contracts family (7), PaymentTerms (1), ARInvoices (4), MiscReceipts SOURCE_LINE_ID (1) and the 12 HCM HDL objects (30). The **HDL SourceSystemOwner precondition** below remains an open item. For HCM, check each SourceSystemId against the narrowed scope when the fix is built, because a record id that no child in the file references is not a join key. The "Owner decisions needed" list in the summary is resolved by this note, except for the HDL precondition.
+
 Review date 2026-10-07. Read-only code review: no code changed and no database touched. Backlog item #218 tracks the fix.
 
 ## The rule under review
