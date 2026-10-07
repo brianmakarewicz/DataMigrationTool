@@ -1,24 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="cust_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
 -- ============================================================
--- Customers BIP reconciliation query -- MIRROR of the deployed
--- data model bip/Customers/DMT_CUST_RECON_V5_DM.xdm (deploy target
--- /Custom/DMT2/Customers/). The SQL below is the byte-exact CDATA
--- body of that .xdm; the .xdm is authoritative -- regenerate this
--- file from the .xdm whenever the data model changes so the mirror
--- never drifts. Contract v1: nine columns, six parameters, keyset
--- pagination.
--- ============================================================
--- ============================================================
--- Customers reconciliation data model V5 -- BIP reconciliation
+-- Customers reconciliation data model V4 -- BIP reconciliation
 -- report contract v1 (nine columns, keyset pagination, the six
--- standard parameters). Deployed ALONGSIDE V4/V3/V2 (never overwrite
--- a BIP object); DMT_BIP_REPORT_TBL row 100000012 points the
--- reconciler here.
---
--- V5 = V4 minus one composed string: when FND_NEW_MESSAGES has no
--- text for an error's MESSAGE_NAME and Fusion left ERROR_MSG_TEXT
--- empty, V4 appended '(no message text found in FND_NEW_MESSAGES)'.
--- V5 returns just the real MESSAGE_NAME in that case. Everything
--- else below is V4 unchanged.
+-- standard parameters). Deployed ALONGSIDE V3/V2 (never overwrite a
+-- BIP object); DMT_BIP_REPORT_TBL row 100000012 points the reconciler
+-- here.
 --
 -- WHY V4 (standards fix of PR #589 / V3): V3 gave every not-created
 -- interface row an ERROR outcome. For a row with no error of its own
@@ -74,7 +71,7 @@ WITH
 -- ld: every interface row of THIS load, all seven record types,
 -- normalized to one shape. REF is the identity other rows use to name
 -- this row as a parent; P1/P2 are this row's parent references,
--- carried for diagnosis only (V5 builds no message from them).
+-- carried for diagnosis only (V4 builds no message from them).
 ld AS (
     SELECT 'PARTY' tier, 'Customers.Parties' object_type,
            'Customers.Parties~' || t.party_orig_system_reference record_key,
@@ -143,27 +140,23 @@ ld AS (
 -- substituted into the {TOKEN} placeholders Fusion messages use.
 errline AS (
     SELECT e.error_id, e.batch_id, e.error_seq_id,
-           SUBSTR(e.message_name ||
-             CASE WHEN COALESCE(e.error_msg_text, m.message_text) IS NOT NULL
-                  THEN ': ' ||
-                    NVL(e.error_msg_text,
-                      REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(m.message_text,
-                        '{' || e.token1_name || '}', e.token1_value),
-                        '{' || e.token2_name || '}', e.token2_value),
-                        '{' || e.token3_name || '}', e.token3_value),
-                        '{' || e.token4_name || '}', e.token4_value),
-                        '{' || e.token5_name || '}', e.token5_value))
-             END,
+           SUBSTR(e.message_name || ': ' ||
+             NVL(e.error_msg_text,
+               REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                 NVL((SELECT MAX(m.message_text) FROM fnd_new_messages m
+                      WHERE m.message_name = e.message_name
+                      AND   m.language_code = 'US'),
+                     '(no message text found in FND_NEW_MESSAGES)'),
+                 '{' || e.token1_name || '}', e.token1_value),
+                 '{' || e.token2_name || '}', e.token2_value),
+                 '{' || e.token3_name || '}', e.token3_value),
+                 '{' || e.token4_name || '}', e.token4_value),
+                 '{' || e.token5_name || '}', e.token5_value)),
              1, 1800) AS line
     FROM   hz_imp_errors e
     JOIN   (SELECT DISTINCT error_id, batch_id FROM ld WHERE error_id IS NOT NULL) k
       ON   k.error_id = e.error_id
      AND   k.batch_id = e.batch_id
-    LEFT JOIN (SELECT message_name, MAX(message_text) AS message_text
-               FROM   fnd_new_messages
-               WHERE  language_code = 'US'
-               GROUP BY message_name) m
-      ON   m.message_name = e.message_name
 ),
 ownerr AS (
     SELECT error_id, batch_id,
@@ -347,4 +340,51 @@ FROM (
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
-      
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="cust_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

@@ -15,7 +15,7 @@ linkage references are correctly stamped by the transform — are rejected by Fu
 own value-compare validation. No tier is unwired or mis-generated, so no code change:
 per the mission, a real rejection is a correct outcome, not something to "fix" by
 editing data. The `DMT_BIP_REPORT_TBL` Customers row is already converged onto the
-DMT2 catalog (`/Custom/DMT2/Customers/DMT_CUST_RECON_V3_*` since 2026-10-06, CONTRACT_VERSION = 1,
+DMT2 catalog (`/Custom/DMT2/Customers/DMT_CUST_RECON_V5_*` since 2026-10-07, CONTRACT_VERSION = 1,
 FUSION_ID_COLUMN + RECON_KEY_SQL populated) and the V2 report is deployed additively
 at `/Custom/DMT2/Customers/` (the frozen `/Custom/DMT/` is left untouched); the seed
 is idempotent (re-run twice clean, 0 invalid objects).
@@ -74,16 +74,21 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 - Transformer: `db/packages/dmt_cust_transform_pkg.*` (7 TRANSFORM_* procedures)
 - FBDI Generator: `db/packages/dmt_cust_fbdi_gen_pkg.*` (one GENERATE_FBDI, builds the 7-CSV zip)
 - Results/Reconciliation: `db/packages/dmt_cust_results_pkg.*` (Contract v1, shared transport)
-- BIP Data Model/Report: `bip/Customers/DMT_CUST_RECON_V3_DM.xdm` + `DMT_CUST_RECON_V3_RPT.xdo`
+- BIP Data Model/Report: `bip/Customers/DMT_CUST_RECON_V5_DM.xdm` + `DMT_CUST_RECON_V5_RPT.xdo`
   (deploy target `/Custom/DMT2/Customers/`; deployed by `scripts/deploy_recon_bip_reports.py Customers`).
-  V3 is the live one the `DMT_BIP_REPORT_TBL` seed row points at (migration
-  `db/migrations/2026-10-06_customers_recon_v3_registry.sql`). Every INTERFACE row carries its
-  OWN outcome: its own `HZ_IMP_ERRORS` row joined on `error_id`+`batch_id` with the full
-  `FND_NEW_MESSAGES` text (tokens substituted), or, for a row Fusion held/rejected with no error of
-  its own, the not-created parent chain from the same load (each parent with its own status and
-  error). V2 built the message as a batch-wide LISTAGG of every error name for the interface table,
-  which left held Account Site Uses UNACCOUNTED and stamped G2/G3's error on G1/BAD1 (run 236
-  findings R1, `docs/findings/run236_Customers_Items_unaccounted.md`). V2 and the original
+  V5 is the live one the `DMT_BIP_REPORT_TBL` seed row points at (migration
+  `db/migrations/2026-10-07_customers_recon_v5_registry.sql`). An INTERFACE row is returned as
+  ERROR only when it has its OWN Fusion error: its own `HZ_IMP_ERRORS` rows joined on
+  `error_id`+`batch_id`, with the full `FND_NEW_MESSAGES` text (tokens substituted). A row Fusion
+  held or rejected with no error of its own is not returned, so the shared sweep marks it
+  UNACCOUNTED. V4 (deployed first on 2026-10-07, kept in the catalog) is the same query but still
+  appended the composed fallback `(no message text found in FND_NEW_MESSAGES)` when Fusion had no
+  text for an error's MESSAGE_NAME; V5 returns just the real MESSAGE_NAME then. V3 (2026-10-06) instead composed a sentence from import status codes for such rows
+  ("Not created: Fusion left this row at import status W ...") and listed parent rows Fusion had
+  only held as if they had errored; that text was stamped `[FUSION_ERROR]` with no real Fusion
+  error behind it, which the design document forbids. V2 built the message as a batch-wide
+  LISTAGG of every error name for the interface table (run 236 findings R1,
+  `docs/findings/run236_Customers_Items_unaccounted.md`). V3, V2 and the original
   `DMT_CUST_RECON_DM.xdm` / `DMT_CUST_RECON_RPT.xdo` stay deployed alongside (never overwritten).
 - Golden inputs: `test/golden/inputs/Customer*_input.csv`; golden zip `test/fbdi_zips/Customers_116.zip`
 - Unit test: `test/unit/test_customers.sql`; golden compare: `test/golden/test_customers_golden.sh`
@@ -237,6 +242,14 @@ branches is low-risk (same shape as the PartySiteUses branch) but was left out o
 focused fix; track as a follow-up.
 
 ## Known Issues
+- **OPEN 2026-10-07 — rows Fusion held with no error of their own end UNACCOUNTED.** With the
+  V5 report, a party / site / account row that Fusion held (import status W) or rejected without
+  an `HZ_IMP_ERRORS` row of its own gets no `[FUSION_ERROR]`; the shared sweep marks it
+  UNACCOUNTED. The design document's whole-document rejection rule wants such a row to quote the
+  real error of the row that did fail, in the shared format
+  `[FUSION_ERROR] Rejected with document: <grain> <key>: <real msg>`. That is pending the shared
+  formatter `DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR` (separate PR); once it is on main, the reconciler
+  can quote a failed ancestor's real error onto the held children of the same customer.
 - **RESOLVED 2026-07-11 — `batchId is null` is fixed; 20/20 customers reached the
   HZ base tables (`hz_cust_accounts`).** The customer bulk import needs an
   `HZ_IMP_BATCH_SUMMARY` batch to consume; the positional `NEW,N,<run_id>` form

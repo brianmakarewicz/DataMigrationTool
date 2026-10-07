@@ -25,23 +25,18 @@
 -- record types on both BASE and INTERFACE tiers, so each record is confirmed
 -- against its own base id or its own interface row.
 --
--- Per-row error attribution (V3 report, DMT_CUST_RECON_V3_DM, run 236 findings R1):
--- every INTERFACE/ERROR row now carries ITS OWN outcome, never a batch-wide list:
---   * the row's own HZ_IMP_ERRORS text (joined on error_id + batch_id, full text
---     resolved from FND_NEW_MESSAGES with tokens), e.g.
---     'HZ_IMP_INVAL_VALUE_COMPARE: The value in the SET_CODE column isn't valid...';
---   * or, for a row Fusion held/rejected with no error of its own (status W/E,
---     ERROR_ID NULL), the reason read from its own ancestor chain in the same load,
---     e.g. 'Not created: Fusion left this row at import status W with no error of
---     its own. Parent records not created: account site <ref> rejected (status E):
---     <that parent's own error text>';
---   * or, for a root record Fusion held with nothing failed above it, a statement
---     of exactly that (status W, no error recorded, no parent failed).
--- Both are real Fusion interface outcomes, so this APPLY marks the row FAILED with
--- '[FUSION_ERROR] ' || message. Only a record absent from BOTH the base and the
--- interface (no report row at all) is left GENERATED for the shared sweep. An
--- ERROR row that arrives with no message (a report defect, never expected from V3)
--- is logged as a WARN and left for the sweep -- never given a fabricated verdict.
+-- Per-row error attribution (V5 report, DMT_CUST_RECON_V5_DM): an INTERFACE/ERROR
+-- row is returned ONLY when the interface row has its OWN Fusion error -- its
+-- HZ_IMP_ERRORS rows joined on error_id + batch_id, full text resolved from
+-- FND_NEW_MESSAGES with tokens, e.g.
+-- 'HZ_IMP_INVAL_VALUE_COMPARE: The value in the SET_CODE column isn't valid...'.
+-- That is a real Fusion error for that record, so this APPLY marks the row FAILED
+-- with '[FUSION_ERROR] ' || message. A row Fusion held or rejected with no error of
+-- its own is not in the report at all, so it stays GENERATED and the shared sweep
+-- marks it UNACCOUNTED (V3 composed a status-code sentence for such rows and it was
+-- stamped [FUSION_ERROR] with no real error behind it -- removed). An ERROR row that
+-- arrives with no message (a report defect, never expected from V5) is logged as a
+-- WARN and left for the sweep -- never given a fabricated verdict.
 --
 -- Outcomes are written to the seven TFM tables only: nothing is written back to
 -- staging; the TFM row is the sole record of the Fusion outcome (design section 2).
@@ -205,9 +200,8 @@
                 l_rc   := 0;
                 l_tier := NULL;  -- backlog #65: reset per row (audit-log safety)
 
-                -- The V3 report guarantees a per-row message on every ERROR row
-                -- (its own error, its failed parent chain, or the root-hold
-                -- statement). If one ever arrives without a message, say so loudly
+                -- The V5 report returns an ERROR row only with the record's own
+                -- HZ_IMP_ERRORS text. If one ever arrives without a message, say so loudly
                 -- and leave the record for the sweep -- never invent a verdict.
                 IF l_rows(i).FUSION_STATUS = 'ERROR' AND l_rows(i).ERROR_MESSAGE IS NULL THEN
                     l_no_msg := l_no_msg + 1;

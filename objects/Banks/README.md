@@ -46,9 +46,13 @@ already existed: CE-660205).
 The base-table report is unchanged: it is driven by the TFM names, so it matches on the
 same prefixed values.
 
-## Parent-failed children (2026-10-06)
+## Children of a parent that was not created (revised 2026-10-07)
 A branch whose parent bank was not created (or an account whose parent branch was not
-created) is never sent to Fusion. Its outcome is known, so it is stamped
-`[PARENT_FAILED] ... parent bank "<name>" was not created in Fusion. Parent bank error:
-<the parent's real Fusion error>` and lands FAILED. Before this fix such rows were left
-GENERATED and swept UNACCOUNTED (run 236: branch `New York`, account `CA Chequing`).
+created) is never sent to Fusion. Fusion therefore returns no error for it, so no error text
+is written: the row stays GENERATED and the shared sweep marks it UNACCOUNTED.
+PR #592 (2026-10-06) briefly stamped such rows `[PARENT_FAILED] ... parent bank "<name>" was
+not created in Fusion ...` and marked them FAILED. That is a composed sentence, not a Fusion
+error for the row, which the design document forbids, so it was removed. The design
+document's whole-document rule allows a child to quote its parent's real Fusion error in the
+shared format `[FUSION_ERROR] Rejected with document: <grain> <key>: <real msg>`; that waits
+for the shared formatter `DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR` (separate PR).

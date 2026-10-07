@@ -31,11 +31,12 @@
 --   HIERARCHY: branches are children of a confirmed bank; accounts are children
 --         of a confirmed branch. A tier's LOAD step only POSTs rows whose parent
 --         was base-table-confirmed in the prior tier. A row under a parent that
---         was NOT created is never sent; its outcome is known (not created
---         because its parent failed), so it is stamped with a [PARENT_FAILED]
---         error naming the parent (and quoting the parent's Fusion error) and
---         the sweep lands it FAILED. UNACCOUNTED is reserved for a row whose
---         outcome we genuinely could not find (Customers precedent, run 236).
+--         was NOT created is never sent and gets no error text: Fusion returned
+--         no error for it, so it stays GENERATED and the shared unaccounted
+--         sweep marks it UNACCOUNTED (design section 5: a generic "parent
+--         failed" sentence is never a Fusion error). Quoting the parent's real
+--         Fusion error onto the child in the shared cross-grain format waits for
+--         DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR.
 --         Keys carry the run prefix (DMT_CE_BANK_TRANSFORM_PKG), so each run
 --         creates its own bank/branch/account and the base-table report matches
 --         on the same prefixed names.
@@ -311,8 +312,8 @@
     -- The LOAD step for branches: POST each GENERATED branch whose parent bank
     -- was base-table-confirmed LOADED. Same policy as LOAD_BANKS: never terminal,
     -- non-2xx / exception stashed, row left GENERATED for the branch report to
-    -- confirm. A branch whose parent bank is not LOADED is not sent and is
-    -- stamped [PARENT_FAILED] naming that bank, so the sweep lands it FAILED.
+    -- confirm. A branch whose parent bank is not LOADED is not sent and gets
+    -- no error text (left GENERATED; the shared sweep marks it UNACCOUNTED).
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
     -- ============================================================
     PROCEDURE LOAD_BRANCHES (
@@ -335,10 +336,7 @@
                    br.BIC_CODE, br.DESCRIPTION, br.EFT_SWIFT_CODE, br.COUNTRY_CODE,
                    (SELECT MAX(bk.TFM_STATUS) FROM DMT_CE_BANK_TFM_TBL bk
                     WHERE  bk.RUN_ID = p_run_id
-                    AND    bk.SOURCE_GROUP_ID = br.SOURCE_GROUP_ID) AS parent_status,
-                   (SELECT MAX(DBMS_LOB.SUBSTR(bk.ERROR_TEXT, 1500, 1)) FROM DMT_CE_BANK_TFM_TBL bk
-                    WHERE  bk.RUN_ID = p_run_id
-                    AND    bk.SOURCE_GROUP_ID = br.SOURCE_GROUP_ID) AS parent_error
+                    AND    bk.SOURCE_GROUP_ID = br.SOURCE_GROUP_ID) AS parent_status
             FROM   DMT_CE_BRANCH_TFM_TBL br
             WHERE  br.RUN_ID = p_run_id
             AND    br.TFM_STATUS = 'GENERATED'
@@ -346,26 +344,11 @@
         ) LOOP
             BEGIN
                 -- Only POST children under a base-table-confirmed parent bank.
-                -- A branch whose parent bank was not created is never sent to
-                -- Fusion, so its outcome is KNOWN: it was not created because its
-                -- parent failed. Record that as a real per-row error naming the
-                -- failed parent (Customers precedent, run 236) so the post-
-                -- reconcile sweep lands it FAILED -- never UNACCOUNTED, which is
-                -- reserved for "outcome genuinely not found". LOAD_CALL_STATUS
-                -- stays NULL (never attempted), so it can never be promoted.
+                -- A branch whose parent bank was not created is never sent, and
+                -- Fusion returned no error for it, so no error text is written:
+                -- it stays GENERATED and the shared sweep marks it UNACCOUNTED.
+                -- LOAD_CALL_STATUS stays NULL (never attempted).
                 IF r.parent_status IS NULL OR r.parent_status != 'LOADED' THEN
-                    UPDATE DMT_CE_BRANCH_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[PARENT_FAILED] Branch not sent to Fusion: parent bank "'
-                               || r.BANK_NAME || '" was not created in Fusion'
-                               || CASE WHEN r.parent_status IS NULL
-                                       THEN ' (no parent bank row in this run).'
-                                       WHEN r.parent_error IS NOT NULL
-                                       THEN '. Parent bank error: ' || r.parent_error
-                                       ELSE ' (parent bank status ' || r.parent_status
-                                            || ', no Fusion error captured).' END),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_skipped := l_skipped + 1;
                     CONTINUE;
                 END IF;
@@ -450,8 +433,8 @@
     -- The LOAD step for bank accounts: POST each GENERATED account whose parent
     -- branch was base-table-confirmed LOADED. Same policy: never terminal,
     -- non-2xx / exception stashed, row left GENERATED for the account report to
-    -- confirm. An account whose parent branch is not LOADED is not sent and is
-    -- stamped [PARENT_FAILED] naming that branch, so the sweep lands it FAILED.
+    -- confirm. An account whose parent branch is not LOADED is not sent and
+    -- gets no error text (left GENERATED; the shared sweep marks it UNACCOUNTED).
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
     -- ============================================================
     PROCEDURE LOAD_ACCOUNTS (
@@ -475,10 +458,7 @@
                    acct.DESCRIPTION, acct.IBAN, acct.CHECK_DIGITS, acct.ACCOUNT_SUFFIX,
                    (SELECT MAX(br.TFM_STATUS) FROM DMT_CE_BRANCH_TFM_TBL br
                     WHERE  br.RUN_ID = p_run_id
-                    AND    br.SOURCE_LINE_ID = acct.SOURCE_LINE_ID) AS parent_status,
-                   (SELECT MAX(DBMS_LOB.SUBSTR(br.ERROR_TEXT, 1500, 1)) FROM DMT_CE_BRANCH_TFM_TBL br
-                    WHERE  br.RUN_ID = p_run_id
-                    AND    br.SOURCE_LINE_ID = acct.SOURCE_LINE_ID) AS parent_error
+                    AND    br.SOURCE_LINE_ID = acct.SOURCE_LINE_ID) AS parent_status
             FROM   DMT_CE_BANK_ACCT_TFM_TBL acct
             WHERE  acct.RUN_ID = p_run_id
             AND    acct.TFM_STATUS = 'GENERATED'
@@ -486,24 +466,10 @@
         ) LOOP
             BEGIN
                 -- Only POST children under a base-table-confirmed parent branch.
-                -- An account whose parent branch was not created is never sent,
-                -- so it is recorded with a real per-row error naming the failed
-                -- parent and lands FAILED in the sweep -- never UNACCOUNTED (same
-                -- rule as LOAD_BRANCHES). LOAD_CALL_STATUS stays NULL.
+                -- An account whose parent branch was not created is never sent and
+                -- gets no error text (same rule as LOAD_BRANCHES): it stays
+                -- GENERATED and the shared sweep marks it UNACCOUNTED.
                 IF r.parent_status IS NULL OR r.parent_status != 'LOADED' THEN
-                    UPDATE DMT_CE_BANK_ACCT_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[PARENT_FAILED] Account not sent to Fusion: parent branch "'
-                               || r.BRANCH_NAME || '" of bank "' || r.BANK_NAME
-                               || '" was not created in Fusion'
-                               || CASE WHEN r.parent_status IS NULL
-                                       THEN ' (no parent branch row in this run).'
-                                       WHEN r.parent_error IS NOT NULL
-                                       THEN '. Parent branch error: ' || r.parent_error
-                                       ELSE ' (parent branch status ' || r.parent_status
-                                            || ', no Fusion error captured).' END),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_skipped := l_skipped + 1;
                     CONTINUE;
                 END IF;
@@ -894,42 +860,6 @@
         RETURN l_list;
     END acct_names;
 
-    -- --------------------------------------------------------
-    -- Private: mirror a tier's terminal TFM outcome onto its STG row.
-    -- --------------------------------------------------------
-    PROCEDURE mirror_bank_stg(p_run_id IN NUMBER) IS
-    BEGIN
-        UPDATE DMT_CE_BANK_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS FROM DMT_CE_BANK_TFM_TBL t
-                               WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_CE_BANK_TFM_TBL t
-                       WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id
-                       AND   t.TFM_STATUS IN ('LOADED','FAILED'));
-    END mirror_bank_stg;
-
-    PROCEDURE mirror_branch_stg(p_run_id IN NUMBER) IS
-    BEGIN
-        UPDATE DMT_CE_BRANCH_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS FROM DMT_CE_BRANCH_TFM_TBL t
-                               WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_CE_BRANCH_TFM_TBL t
-                       WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id
-                       AND   t.TFM_STATUS IN ('LOADED','FAILED'));
-    END mirror_branch_stg;
-
-    PROCEDURE mirror_acct_stg(p_run_id IN NUMBER) IS
-    BEGIN
-        UPDATE DMT_CE_BANK_ACCT_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS FROM DMT_CE_BANK_ACCT_TFM_TBL t
-                               WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_CE_BANK_ACCT_TFM_TBL t
-                       WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id
-                       AND   t.TFM_STATUS IN ('LOADED','FAILED'));
-    END mirror_acct_stg;
-
     -- ============================================================
     -- LOAD_AND_RECONCILE
     -- Main entry point. For each of the three tiers in hierarchy order:
@@ -940,9 +870,9 @@
     -- After all three tiers, a single post-reconcile sweep marks any row still
     -- GENERATED that carries a stashed real error FAILED; rows with no stashed
     -- error and no base-table hit are left GENERATED (the accounting gate surfaces
-    -- them as UNACCOUNTED) -- never a fabricated verdict. STG mirrors the terminal
-    -- TFM outcome. The reconcile transport failing raises loudly so the queue work
-    -- item fails, never a silent zero-row "success".
+    -- them as UNACCOUNTED) -- never a fabricated verdict. Nothing is written back
+    -- to the staging tables (design section 5). The reconcile transport failing
+    -- raises loudly so the queue work item fails, never a silent zero-row "success".
     -- ============================================================
     PROCEDURE LOAD_AND_RECONCILE (
         p_run_id IN NUMBER
@@ -1002,11 +932,6 @@
         UPDATE DMT_CE_BANK_ACCT_TFM_TBL
         SET    TFM_STATUS = 'FAILED', RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED' AND ERROR_TEXT IS NOT NULL;
-
-        -- Mirror terminal outcomes onto STG for all three tiers.
-        mirror_bank_stg(p_run_id);
-        mirror_branch_stg(p_run_id);
-        mirror_acct_stg(p_run_id);
 
         COMMIT;
 
