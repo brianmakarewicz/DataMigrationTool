@@ -47,7 +47,7 @@ Stages (each runnable alone):
 
 Scope a run with `--pipelines HCM` (default: all five — P2P, O2C, FINANCIALS, PROJECTS, HCM).
 
-## The promotion gate (hard, no override)
+## The promotion gate (strict; owner-only override)
 
 Owner's rule: nothing is promoted to ATP unless the exact code being promoted passed a
 **full local regression** AND the **Playwright console click-through for that same run**
@@ -68,7 +68,14 @@ click-through runs against ATP. The step-by-step runbook is the project skill
   that same run id after the regression finished. The working tree must be clean.
 - Evidence matches when the commit SHA matches, or when the git tree SHA matches (identical
   files, e.g. after the reviewer's squash merge). Any file difference refuses.
-- There is no override flag. `python scripts/ci_promote.py gate` shows the decision
+- The only exception is `deploy-prod --yes --owner-override "<reason>"`, for the owner
+  personally. It waives only regression and click-through failures (clean local deploy
+  evidence and a clean tree are still required), needs a non-empty reason, refuses unless
+  stdin is an interactive terminal, and asks for the commit's short SHA to be typed. Every
+  attempt is printed loudly and logged to `promotion_log.jsonl` (reason, SHA, git user,
+  time, bypassed checks). Agents and CI must never use it; they report a refusal to the
+  owner.
+- `python scripts/ci_promote.py gate` shows the decision
   without deploying. `python test/unit/test_promotion_gate.py` proves the refusals offline
   with fake evidence in a temp directory.
 - `test-prod` now runs the ATP regression and then the click-through against the ATP

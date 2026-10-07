@@ -11,9 +11,14 @@ same run.** After promotion, the same click-through runs against ATP.
 
 This used to be a remembered rule, and it was skipped once. It is now enforced by
 `scripts/ci_promote.py`: the ATP deploy step refuses to run unless it finds recent,
-passing evidence for the current commit. There is no override flag. If the gate
-refuses, do the missing step; never edit the evidence file by hand and never deploy
-to ATP some other way.
+passing evidence for the current commit. If the gate refuses, do the missing step;
+never edit the evidence file by hand and never deploy to ATP some other way.
+
+**Agents must never use the owner override.** `deploy-prod` has an
+`--owner-override "<reason>"` option, but it exists only for the owner personally,
+typing at a real terminal (see "Owner override" below). An agent that hits a gate
+refusal stops and reports the refusal to the owner, with the exact REFUSED lines
+the gate printed, and does nothing else to get the code onto ATP.
 
 Run every command from the canonical working directory
 `C:\Users\Monroe\workspace\DMT2` (not a worktree), in this order. Do not skip or
@@ -101,6 +106,27 @@ to deploy, and only then deploys `db/` (including `db/migrations/`) and the APEX
 to ATP as `DMT2_OWNER`. If the gate refuses, it prints why and deploys nothing. Every
 gate decision, refused or passed, is appended to `.ci_evidence/promotion_log.jsonl`.
 
+If you are an agent and the gate refuses here, stop and report it to the owner.
+
+### Owner override (the owner personally, never an agent or CI)
+
+The gate stays strict: it needs a clean regression PASS (exit 0) and a passing
+click-through for the same run on the same code. The one exception is an explicit
+override by the owner:
+
+```bash
+python scripts/ci_promote.py deploy-prod --yes --owner-override "<why this is acceptable>"
+```
+
+- It waives only regression and click-through failures. It still needs clean local
+  deploy evidence for this commit and a clean working tree.
+- The reason must not be empty.
+- stdin must be an interactive terminal, and the owner must type the short SHA of the
+  commit being promoted. Run from an agent, a pipe or CI, it is refused.
+- It prints loud banners, and every attempt (accepted or refused) is appended to
+  `.ci_evidence/promotion_log.jsonl` as an `owner_override` event with the reason,
+  the SHA, the git user, the time and the failing checks it bypassed.
+
 ## 7. Per-object Fusion credentials on ATP
 
 `deploy-prod` runs this automatically after a successful deploy. Run it again by hand
@@ -145,4 +171,5 @@ to the owner rather than re-running until it goes green.
 When done, report the commit SHA promoted, the local regression run id and verdict,
 the local click-through result (steps passed out of total), the ATP run id and
 verdict, and the ATP click-through result. If anything was refused or failed, say
-which check and why, in plain words.
+which check and why, in plain words. A gate refusal is always reported to the owner;
+it is never worked around.

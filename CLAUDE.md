@@ -55,6 +55,13 @@ The deliverable is **honest accounting, not clean data.** Concretely:
   a timer.** It reviews as brianmakarewicz and approves+merges clean PRs with an AUTOMATED
   APPROVAL banner (usually within minutes of opening or pushing), or requests changes with
   file/line findings. Never merge without its review; never wait for an "hourly" cycle.
+- **ATP promotion gate (strict, owner decision 2026-10-07):** promote to ATP only via
+  `scripts/ci_promote.py deploy-prod --yes` (skill `.claude/skills/deploy-dmt2-atp/`). It
+  refuses unless the exact code has a clean local deploy, a full local regression PASS
+  (exit 0) and a passing click-through for that same run. `--owner-override "<reason>"`
+  exists for the owner personally (interactive TTY + typed commit short SHA, logged to
+  `.ci_evidence/promotion_log.jsonl`). **Agents must NEVER use the override**, never edit
+  the evidence, and never deploy to ATP another way: report a gate refusal to the owner.
 - **Fusion BIP folder for this stack:** `/Custom/DMT2/` (never `/Custom/DMT/` — that belongs to the frozen stack).
 - **FBL file delivery:** decision deferred (blocks the 6 FBL config objects only — Phase 4).
 - **Frozen stack:** bugs may still be fixed on the old ATP; every such fix must be ported here.

@@ -9,6 +9,10 @@ database, no browser and no network: only git, for the current commit's SHAs.
 
     python test/unit/test_promotion_gate.py
 
+Also proves the owner override (ci_promote.py deploy-prod --owner-override):
+refused with no TTY, with an empty reason, with a wrong typed SHA, and when the
+local deploy evidence is missing; accepted, and logged, only when all are right.
+
 Exit 0 when every scenario got the expected decision, 1 otherwise.
 """
 import datetime as dt
@@ -48,6 +52,97 @@ def good_evidence(commit, tree, run_id=412):
                                "steps_total": 41, "steps_passed": 41,
                                "failed_steps": [], "at": iso(1.0)},
     }
+
+
+class FakeStdin:
+    def __init__(self, tty):
+        self.tty = tty
+
+    def isatty(self):
+        return self.tty
+
+
+OWNER = "Test Owner <owner@example.com>"
+
+
+def override_scenarios(ident, tmp):
+    """Each scenario: name, evidence, stdin TTY?, reason, typed SHA, expect.
+    The evidence has a FAILED regression (waivable) unless stated otherwise."""
+    short = ident["commit"][:7]
+    wrong = "0" * 7 if ident["commit"].startswith("f") else "f" * 7
+
+    def failed_regression():
+        ev = good_evidence(ident["commit"], ident["tree"])
+        ev["regression"].update(verdict="FAIL", exit_code=1)
+        return ev
+
+    def failed_regression_no_deploy():
+        ev = failed_regression()
+        del ev["deploy_local"]
+        return ev
+
+    reason = "Fusion demo pod down for patching; owner accepts the risk"
+    cases = [
+        ("override refused: stdin is not a TTY (agent / CI / pipe)",
+         failed_regression(), False, reason, short, False),
+        ("override refused: empty reason", failed_regression(), True, "", short, False),
+        ("override refused: whitespace-only reason",
+         failed_regression(), True, "   ", short, False),
+        ("override refused: wrong typed SHA", failed_regression(), True, reason, wrong, False),
+        ("override refused: local deploy evidence missing (not waivable)",
+         failed_regression_no_deploy(), True, reason, short, False),
+        ("override ACCEPTED: TTY + reason + correct SHA",
+         failed_regression(), True, reason, short, True),
+    ]
+    failures = 0
+    log = Path(tmp) / gate.LOG_FILE
+    for name, ev, tty, why, typed, expect in cases:
+        (Path(tmp) / gate.EVIDENCE_FILE).write_text(json.dumps(ev), encoding="utf-8")
+        if log.exists():
+            log.unlink()
+        asked = []
+
+        def ask(prompt, _typed=typed):
+            asked.append(prompt)
+            return _typed
+
+        ok, _, fails = gate.check_gate_detail(ident=ident, now=NOW)
+        accepted, msg = gate.authorize_owner_override(
+            why, ident, fails, stdin=FakeStdin(tty), ask=ask, user=OWNER)
+        events = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()
+                  if x.strip()] if log.exists() else []
+        ov = [e for e in events if e.get("event") == "owner_override"]
+        right = (not ok) and accepted == expect and len(ov) == 1
+        if not tty and asked:
+            right = False          # must refuse before even prompting
+        if expect and right:
+            e = ov[0]
+            right = bool(e["decision"] == "ACCEPTED" and e["reason"] == why
+                         and e["commit"] == ident["commit"] and e["short_sha"] == short
+                         and e["git_user"] == OWNER and e.get("at")
+                         and e["bypassed_checks"]
+                         and all("regression" in c for c in e["bypassed_checks"]))
+        elif ov and right:
+            right = ov[0]["decision"] == "REFUSED" and not ov[0]["bypassed_checks"]
+        failures += 0 if right else 1
+        print(f"[{'PASS' if right else 'WRONG'}] {name}: "
+              f"{'ACCEPTED' if accepted else 'REFUSED'} ({msg})")
+        if expect and ov:
+            e = ov[0]
+            print(f"      logged: decision={e['decision']} sha={e['short_sha']} "
+                  f"user={e['git_user']} at={e['at']} "
+                  f"bypassed={len(e['bypassed_checks'])} check(s)")
+
+    # End to end through enforce(), the deploy-prod entry point.
+    (Path(tmp) / gate.EVIDENCE_FILE).write_text(json.dumps(failed_regression()),
+                                                encoding="utf-8")
+    ok = gate.enforce(ident=ident, stage="deploy-prod (test)", owner_override=reason,
+                      stdin=FakeStdin(True), ask=lambda _p: short, user=OWNER)
+    right = ok is True
+    failures += 0 if right else 1
+    print(f"[{'PASS' if right else 'WRONG'}] enforce() with a valid owner override "
+          f"returns {ok}")
+    return len(cases) + 1, failures
 
 
 def main():
@@ -120,9 +215,13 @@ def main():
             for ln in lines:
                 if "REFUSED" in ln or ok:
                     print("      " + ln.strip())
+        print("\n--- owner override ---")
+        n_ov, f_ov = override_scenarios(ident, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    print(f"\n{len(scenarios) - failures}/{len(scenarios)} scenarios decided correctly")
+    total = len(scenarios) + n_ov
+    failures += f_ov
+    print(f"\n{total - failures}/{total} scenarios decided correctly")
     return 0 if failures == 0 else 1
 
 
