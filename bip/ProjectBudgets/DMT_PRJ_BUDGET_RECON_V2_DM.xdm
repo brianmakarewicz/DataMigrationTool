@@ -26,9 +26,8 @@
 --     :P_PREFIX || '%' OR x.project_number LIKE :P_PREFIX || '%'.
 --   * Null-prefix guard. Both tiers require :P_PREFIX IS NOT NULL. V1 with an
 --     empty prefix evaluated LIKE '%' and returned every plan version on the
---     pod (the legacy RUN_BIP_REPORT call in RECONCILE_BATCH passes no
---     P_PREFIX). An unscoped call now returns zero rows instead of unrelated
---     data; the Contract v1 fetch always passes the run prefix.
+--     pod. An unscoped call now returns zero rows instead of unrelated data;
+--     the Contract v1 fetch always passes the run prefix.
 --   * Real per-row error. Fusion purges PJO_PLAN_VERSIONS_XFACE after import
 --     (BudgetImportReport runs with PURGE), and the interface carries no
 --     error-text column, so no queryable table holds the rejection. The real
@@ -87,16 +86,13 @@
 -- the base rows). This is the same role ORIG_TRANSACTION_REFERENCE
 -- plays for Expenditures.
 --
--- HOWEVER: the ProjectBudgets transform (DMT_PRJ_BUDGET_TRANSFORM_PKG)
--- stamps the run PREFIX onto PROJECT_NUMBER and PROJECT_NAME only -- it
--- does NOT prefix SRC_BUDGET_LINE_REFERENCE. So the recon key itself
--- carries no run prefix and cannot be the run-scoped selector. The one
--- prefix-bearing value that survives into the Fusion base tables is the
--- prefixed PROJECT_NUMBER, which lands on PJF_PROJECTS_ALL_B.SEGMENT1
--- (verified live: 9609RTPRJ001, 9444RTPRJ002, ... exist on the pod).
--- The run-scoped selector is therefore
---     PJF_PROJECTS_ALL_B.SEGMENT1 LIKE :P_PREFIX || '%'
--- joined to the plan version by PROJECT_ID. :P_RUN_ID /
+-- The ProjectBudgets transform (DMT_PRJ_BUDGET_TRANSFORM_PKG) stamps the
+-- run PREFIX onto SRC_BUDGET_LINE_REFERENCE (since 2026-10-07), so the
+-- recon key itself is run-scoped and lands verbatim on
+-- PJO_PLAN_VERSIONS_B.PM_BUDGET_REFERENCE. The run-scoped selector is
+--     PM_BUDGET_REFERENCE LIKE :P_PREFIX || '%'
+-- OR-ed with the prefixed project number on PJF_PROJECTS_ALL_B.SEGMENT1
+-- (for budgets on projects DMT created in the same run). :P_RUN_ID /
 -- :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID are declared for contract
 -- symmetry and stamped into LOAD_REQUEST_ID for traceability; the load
 -- and import ESS ids are not durably captured per row on this pod.
@@ -113,16 +109,18 @@
 -- and there is no queryable PJO*ERR* / PJO*MESSAGE* table on this pod.
 -- The per-row rejection text is only in the Import Budgets report XML,
 -- which the pipeline harvests into DMT's own TFM.ERROR_TEXT at import
--- time (DMT_PRJ_BUDGET_RESULTS_PKG). This DM therefore reports the
--- interface status this object DOES carry as the ERROR_MESSAGE, and the
--- reconciler keeps the real Fusion text it already harvested.
+-- time (DMT_PRJ_BUDGET_RESULTS_PKG). This DM therefore returns the
+-- Contract v1 marker #IMPORT_REPORT# as the ERROR_MESSAGE of an
+-- INTERFACE/ERROR row, and the reconciler takes the real Fusion text from
+-- the import report.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
     -- ========== BASE tier: positive proof (SUCCESS) ==========
-    -- One row per plan version whose project carries this run's prefix.
+    -- One row per plan version whose budget reference (or project number)
+    -- carries this run's prefix.
     -- RECORD_KEY / SOURCE_REF = PM_BUDGET_REFERENCE (the source budget
     -- line reference, persisted verbatim on the base plan-version row).
     -- When PM_BUDGET_REFERENCE is null (budget carried no source ref),
@@ -165,13 +163,10 @@ FROM (
     -- carries; a row is a rejection when neither indicates success.
     -- SUCCESS rows are covered by the BASE tier, so excluding the
     -- success statuses here means no row is counted twice. The interface
-    -- row is scoped to the run by its prefixed PROJECT_NUMBER (the same
-    -- prefixed value the transform stamped onto PROJECT_NUMBER).
-    -- RECORD_KEY / SOURCE_REF = SRC_BUDGET_LINE_REFERENCE.
-    -- ERROR_MESSAGE reports the interface status codes (the only
-    -- rejection signal this interface table carries -- see header note);
-    -- the reconciler retains the real per-row Fusion text it harvested
-    -- from the import report XML.
+    -- row is scoped to the run by its prefixed SRC_BUDGET_LINE_REFERENCE
+    -- (or prefixed PROJECT_NUMBER). RECORD_KEY / SOURCE_REF =
+    -- SRC_BUDGET_LINE_REFERENCE. ERROR_MESSAGE is the #IMPORT_REPORT#
+    -- marker (see header note).
     SELECT
         'ProjectBudgets'                                        AS object_type,
         NVL(x.src_budget_line_reference,
