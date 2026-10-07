@@ -2551,7 +2551,56 @@ def main():
         )
     """, {"bu": BU},
     label="BAD Blanket PO: nonexistent supplier [BAD-UPS]")
+
+    # Cross-grain failure scenarios (design section 5, "Whole-document rejection
+    # carries the real error to every grain", decided 2026-10-07).
+    # (a) RT-BPAL-BAD1: a VALID line under the bad-supplier header RT-BPA-BAD1.
+    #     Import Blanket Agreements rejects the lines of a rejected header, so it
+    #     must land FAILED quoting the header's real supplier error.
+    # (b) RT-BPA-XG2: a valid agreement (same supplier/site as RT-BPA-G1) with a
+    #     valid line 1 and a line 2 whose ONLY defect is its UOM. Fusion accepts a
+    #     blanket header when only a line fails, so the header and line 1 must
+    #     LOAD and only line 2 FAILS with its own error (no upward propagation).
+    run_sql(cur, """
+        INSERT INTO DMT_PO_HEADERS_INT_STG_TBL (
+            INTERFACE_HEADER_KEY, ACTION, DOCUMENT_TYPE_CODE,
+            STYLE_DISPLAY_NAME, PRC_BU_NAME, REQ_BU_NAME,
+            SOLDTO_LE_NAME, BILLTO_BU_NAME,
+            AGENT_NAME, CURRENCY_CODE,
+            VENDOR_NAME, VENDOR_NUM, VENDOR_SITE_CODE,
+            DOCUMENT_NUM, SOURCE_ID
+        ) VALUES (
+            'RT-BPA-XG2', 'ORIGINAL', 'BLANKET',
+            'Blanket Purchase Agreement', :bu, :bu,
+            'US1 Legal Entity', :bu,
+            'Roth, Calvin', 'USD',
+            'RT Supplier Good-1', 'RT-SUP-G1', 'RT-SITE-G1',
+            'RT-BPA-XG2', 'RT-BPA-XG2'
+        )
+    """, {"bu": BU},
+    label="Cross-grain Blanket PO: RT-BPA-XG2 (line 2 bad UOM only)")
     tag_scenario(cur, "DMT_PO_HEADERS_INT_STG_TBL", scenario_id)
+
+    for lkey, hkey, line_num, uom, desc in [
+        ("RT-BPAL-BAD1",       "RT-BPA-BAD1", 1, "Each", "RT blanket line under rejected header"),
+        ("RT-BPAL-XG2-1",      "RT-BPA-XG2",  1, "Each", "RT blanket XG2 valid line"),
+        ("RT-BPAL-XG2-2-BAD",  "RT-BPA-XG2",  2, "ZZZ",  "RT blanket XG2 bad UOM line"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_PO_LINES_INT_STG_TBL (
+                INTERFACE_LINE_KEY, INTERFACE_HEADER_KEY,
+                ACTION, LINE_NUM, LINE_TYPE,
+                ITEM_DESCRIPTION, AMOUNT, UNIT_OF_MEASURE, UNIT_PRICE,
+                CATEGORY, SOURCE_ID
+            ) VALUES (
+                :lkey, :hkey,
+                'ADD', :lnum, 'Goods',
+                :descr, 1000.00, :uom, 10,
+                'Miscellaneous', :lkey
+            )
+        """, {"lkey": lkey, "hkey": hkey, "lnum": line_num, "uom": uom, "descr": desc},
+        label=f"Cross-grain Blanket PO Line: {lkey}")
+    tag_scenario(cur, "DMT_PO_LINES_INT_STG_TBL", scenario_id)
 
     # ====================================================================
     # 40. CONTRACTS (reuse PO headers with DOCUMENT_TYPE_CODE='CONTRACT')

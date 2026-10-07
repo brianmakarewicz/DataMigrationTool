@@ -104,6 +104,25 @@
           "RT-RT-POD-XG1-2": "FAILED_WITH_DOCUMENT"
         }
       }
+    },
+    "RegressionTest2610071840": {
+      "Blanket PO Headers": {
+        "stg_table": "DMT_PO_HEADERS_INT_STG_TBL",
+        "rows": {
+          "RT-BPA-G1": "LOADED",
+          "RT-BPA-BAD1": "FAILED",
+          "RT-BPA-XG2": "LOADED"
+        }
+      },
+      "Blanket PO Lines": {
+        "stg_table": "DMT_PO_LINES_INT_STG_TBL",
+        "rows": {
+          "RT-BPAL-G1": "LOADED",
+          "RT-BPAL-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-BPAL-XG2-1": "LOADED",
+          "RT-BPAL-XG2-2-BAD": "FAILED"
+        }
+      }
     }
   }
 }
