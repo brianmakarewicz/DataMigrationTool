@@ -24,7 +24,6 @@ FOLDER = "/Custom/DMT2/common"
 DM_NAME = "DMT_ESS_CHILD_JOB_V2_DM"
 RPT_NAME = "DMT_ESS_CHILD_JOB_V2_RPT"
 RPT_PATH = "/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V2_RPT.xdo"
-JOB_DEF = "ItemImportJobDef"
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"
 
 
@@ -34,53 +33,17 @@ def connect():
     return oracledb.connect(user=u, password=p, dsn=dsn)
 
 
-def run_report(cur, load_ess, batch_id, job_def=JOB_DEF, arg_pos=""):
-    """Call runReport exactly as get_import_ess_id does, via the DB SOAP helper."""
-    plsql = r"""
-DECLARE
-  l_base VARCHAR2(500) := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'),'/');
-  l_u VARCHAR2(100) := DMT_UTIL_PKG.GET_CONFIG('BIP_USERNAME');
-  l_p VARCHAR2(100) := DMT_UTIL_PKG.GET_CONFIG('BIP_PASSWORD');
-  l_url VARCHAR2(500); l_env CLOB; l_r CLOB; l_bb VARCHAR2(32767);
-  l_x VARCHAR2(4000);
-BEGIN
-  l_url := l_base || '/xmlpserver/services/v2/ReportService';
-  DBMS_LOB.CREATETEMPORARY(l_env, TRUE);
-  DBMS_LOB.APPEND(l_env, TO_CLOB(
-    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">'
-    ||'<soapenv:Header/><soapenv:Body><v2:runReport><v2:reportRequest>'
-    ||'<v2:reportAbsolutePath>'||:rpt||'</v2:reportAbsolutePath>'
-    ||'<v2:attributeFormat>xml</v2:attributeFormat>'
-    ||'<v2:parameterNameValues><v2:listOfParamNameValues>'
-    ||'<v2:item><v2:name>P_LOAD_ESS_ID</v2:name><v2:values><v2:item>'||:load||'</v2:item></v2:values></v2:item>'
-    ||'<v2:item><v2:name>P_JOB_DEF</v2:name><v2:values><v2:item>'||:jdef||'</v2:item></v2:values></v2:item>'
-    ||'<v2:item><v2:name>P_BATCH_ID</v2:name><v2:values><v2:item>'||:batch||'</v2:item></v2:values></v2:item>'
-    ||'<v2:item><v2:name>P_BATCH_ARG_POS</v2:name><v2:values><v2:item>'||:pos||'</v2:item></v2:values></v2:item>'
-    ||'</v2:listOfParamNameValues></v2:parameterNameValues>'
-    ||'<v2:sizeOfDataChunkDownload>-1</v2:sizeOfDataChunkDownload></v2:reportRequest>'
-    ||'<v2:userID>'||l_u||'</v2:userID><v2:password>'||l_p||'</v2:password>'
-    ||'</v2:runReport></soapenv:Body></soapenv:Envelope>'));
-  l_r := DMT_BIP_DEPLOY_PKG.SOAP_POST(l_url,
-           'http://xmlns.oracle.com/oxp/service/v2/ReportService/runReportRequest', l_env);
-  IF INSTR(l_r,'Fault') > 0 THEN :out := 'FAULT: '||SUBSTR(l_r,1,400); RETURN; END IF;
-  DECLARE
-    s INTEGER := DBMS_LOB.INSTR(l_r,'<reportBytes>');
-    e INTEGER;
-  BEGIN
-    IF s = 0 THEN :out := 'NO_BYTES: '||SUBSTR(l_r,1,300); RETURN; END IF;
-    s := s + LENGTH('<reportBytes>');
-    e := DBMS_LOB.INSTR(l_r,'</reportBytes>',s);
-    l_bb := DBMS_LOB.SUBSTR(l_r, e - s, s);
-  END;
-  l_x := UTL_RAW.CAST_TO_VARCHAR2(UTL_ENCODE.BASE64_DECODE(UTL_RAW.CAST_TO_RAW(l_bb)));
-  :out := NVL(REGEXP_SUBSTR(l_x,'<REQUESTID>(\d+)</REQUESTID>',1,1,NULL,1),
-              '(none) raw='||SUBSTR(l_x,1,200));
-END;
-"""
-    out = cur.var(oracledb.STRING)
-    cur.execute(plsql, {"rpt": RPT_PATH, "load": str(load_ess), "jdef": job_def,
-                        "batch": str(batch_id), "pos": str(arg_pos), "out": out})
-    return out.getvalue()
+def run_report(cur, load_ess, batch_id, cemli="Items", arg_pos=None):
+    """Resolve the import id through the real code path,
+    DMT_LOADER_PKG.GET_IMPORT_ESS_ID, which calls this report. (The earlier
+    hand-built SOAP self-test used DMT_BIP_DEPLOY_PKG.SOAP_POST, which no longer
+    exists.) Only call it for loads whose import already exists -- the function
+    polls for up to 15 minutes when nothing matches."""
+    return cur.callfunc("DMT_LOADER_PKG.GET_IMPORT_ESS_ID", str,
+                        keyword_parameters={"p_run_id": None, "p_cemli_code": cemli,
+                                            "p_load_ess_id": str(load_ess),
+                                            "p_batch_id": (str(batch_id) or None),
+                                            "p_batch_arg_pos": arg_pos})
 
 
 def main():
@@ -98,13 +61,13 @@ def main():
     print(f"Deployed {FOLDER}/{DM_NAME}.xdm + {RPT_NAME}.xdo ({len(xdm)} bytes).")
 
     if do_test:
-        print("\n=== Parametrized runReport self-test (run 351 loads) ===")
+        print("\n=== Items: batch id is argument 1 (run 351 loads) ===")
         for batch, load in (("8101", "10010820"), ("8102", "10010821")):
             rid = run_report(cur, load, batch)
             print(f"  batch {batch}  load {load}  -> import REQUESTID = {rid}")
         print("=== Requisitions: batch id is argument 2 (run 251 loads; expect 10074973 / 10074977) ===")
         for batch, load in (("7001", "10074966"), ("7002", "10074968")):
-            rid = run_report(cur, load, batch, job_def="RequisitionImportJob", arg_pos="2")
+            rid = run_report(cur, load, batch, cemli="Requisitions", arg_pos=2)
             print(f"  batch {batch}  load {load}  -> import REQUESTID = {rid}")
         print("=== Backward-compat test (no batch id -> proximity/absparent fallback) ===")
         rid = run_report(cur, "10010820", "")
