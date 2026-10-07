@@ -1,0 +1,36 @@
+{
+  "prefix": "77102",
+  "role": "fin_impl",
+  "user": "fin_impl",
+  "parameter_list": "#NULL,#NULL,true",
+  "load_request_id": "10073661",
+  "load_status": "SUCCEEDED",
+  "import_request_id": "10073674",
+  "report_request_id": "10073679",
+  "import_status": "SUCCEEDED",
+  "import_props": {
+    "ERROR_RECORDS": "1",
+    "SUCCESS_RECORDS": "0",
+    "TOTAL_RECORDS": "1",
+    "submit.argument1": null,
+    "submit.argument2": null,
+    "submit.argument3": "true"
+  },
+  "report_status": "SUCCEEDED",
+  "report_files": [
+    "ESS_O_10073679_BIP.xml"
+  ],
+  "TOTAL_COUNT": "1",
+  "SUCCESS_COUNT": "0",
+  "FAILURE_COUNT": "1",
+  "BATCH_STATUS": "COMPLETED W/ERRORS",
+  "report_rows": [
+    {
+      "award": "77102AWDTST03B",
+      "status": null,
+      "code": null,
+      "message": "The award contract can&apos;t be created because requisite setup steps haven&apos;t been completed."
+    }
+  ],
+  "base": []
+}
