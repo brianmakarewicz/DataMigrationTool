@@ -128,10 +128,10 @@ using (
            'POZ_SUPPLIERS_INT' interface_table,
            'Supplier header import reconciliation' notes from dual
     union all select 100000012, 'Customers', 'Customer',
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm',
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_DM.xdm',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_RPT.xdo',
            'HZ_IMP_PARTIES_T',
-           'Customer party import reconciliation (Contract v1). V3: every interface row carries its OWN outcome (own HZ_IMP_ERRORS row joined on error_id+batch_id, full FND_NEW_MESSAGES text with tokens; or, for a held/cascaded row with no error of its own, the failed parent chain from the same load). Replaces V2''s batch-wide message LISTAGG (run 236 findings R1). Deployed alongside V2 and v1, never overwriting them.' from dual
+           'Customer party import reconciliation (Contract v1). V4: an interface row is returned as ERROR only with its OWN HZ_IMP_ERRORS text (joined on error_id+batch_id, full FND_NEW_MESSAGES text with tokens); a row with no error of its own is not returned and falls to the unaccounted sweep. Replaces V3''s composed status-code sentences. Deployed alongside V3, V2 and v1, never overwriting them.' from dual
     union all select 100000014, 'SupplierAddresses', 'Supplier Address',
            '/Custom/DMT2/SupplierAddresses/SUP_ADDR_DM.xdm',
            '/Custom/DMT2/SupplierAddresses/SUP_ADDR_RPT.xdo',
@@ -289,15 +289,15 @@ using (
     select 100000012                                                    bip_report_id,
            'Customers'                                                  cemli_code,
            'Customer'                                                   object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'            dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'          report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_DM.xdm'            dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_RPT.xdo'          report_catalog_path,
            'HZ_IMP_PARTIES_T'                                           interface_table,
-           'Customer party import reconciliation (Contract v1). V3: every interface '
-              || 'row carries its OWN outcome (own HZ_IMP_ERRORS row joined on '
-              || 'error_id+batch_id, full FND_NEW_MESSAGES text with tokens; or, for a '
-              || 'held/cascaded row with no error of its own, the failed parent chain '
-              || 'from the same load). Replaces V2''s batch-wide message LISTAGG (run 236 '
-              || 'findings R1). Deployed alongside V2 and v1, never overwriting them.' notes,
+           'Customer party import reconciliation (Contract v1). V4: an interface '
+              || 'row is returned as ERROR only with its OWN HZ_IMP_ERRORS text (joined '
+              || 'on error_id+batch_id, full FND_NEW_MESSAGES text with tokens); a row '
+              || 'with no error of its own is not returned and falls to the unaccounted '
+              || 'sweep. Replaces V3''s composed status-code sentences. Deployed alongside '
+              || 'V3, V2 and v1, never overwriting them.' notes,
            1                                                            contract_version,
            'DMT_HZ_PARTIES_TFM_TBL (+ 6 sibling TFM tables -- seven record types, dispatched by OBJECT_TYPE in DMT_CUST_RESULTS_PKG)' tfm_table,
            'FUSION_PARTY_ID (+ per-record-type Fusion id columns)'      fusion_id_column,
@@ -2492,8 +2492,8 @@ using (
     select 100000053                                            bip_report_id,
            'Customers.Parties'                                        cemli_code,
            'Customer Party'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_RPT.xdo'         report_catalog_path,
            'HZ_IMP_PARTIES_T'                                        interface_table,
            'Customers customer party tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2542,8 +2542,8 @@ using (
     select 100000054                                            bip_report_id,
            'Customers.Locations'                                        cemli_code,
            'Customer Location'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_RPT.xdo'         report_catalog_path,
            'HZ_IMP_LOCATIONS_T'                                        interface_table,
            'Customers customer location tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2592,8 +2592,8 @@ using (
     select 100000055                                            bip_report_id,
            'Customers.PartySites'                                        cemli_code,
            'Customer Party Site'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_RPT.xdo'         report_catalog_path,
            'HZ_IMP_PARTYSITES_T'                                        interface_table,
            'Customers customer party site tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2642,8 +2642,8 @@ using (
     select 100000056                                            bip_report_id,
            'Customers.PartySiteUses'                                        cemli_code,
            'Customer Party Site Use'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_RPT.xdo'         report_catalog_path,
            'HZ_IMP_PARTYSITEUSES_T'                                        interface_table,
            'Customers customer party site use tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2692,8 +2692,8 @@ using (
     select 100000057                                            bip_report_id,
            'Customers.Accounts'                                        cemli_code,
            'Customer Account'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_RPT.xdo'         report_catalog_path,
            'HZ_IMP_ACCOUNTS_T'                                        interface_table,
            'Customers customer account tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2742,8 +2742,8 @@ using (
     select 100000058                                            bip_report_id,
            'Customers.AccountSites'                                        cemli_code,
            'Customer Account Site'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_RPT.xdo'         report_catalog_path,
            'HZ_IMP_ACCT_SITES_T'                                        interface_table,
            'Customers customer account site tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2792,8 +2792,8 @@ using (
     select 100000059                                            bip_report_id,
            'Customers.AccountSiteUses'                                        cemli_code,
            'Customer Account Site Use'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V3_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V4_RPT.xdo'         report_catalog_path,
            'HZ_IMP_ACCTSITE_USES_T'                                        interface_table,
            'Customers customer account site use tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '

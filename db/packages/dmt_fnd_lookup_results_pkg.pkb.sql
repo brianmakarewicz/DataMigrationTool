@@ -341,36 +341,24 @@
                    (SELECT MAX(t.LOAD_CALL_STATUS) FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
                     WHERE  t.RUN_ID = p_run_id
                     AND    t.LOOKUP_TYPE = v.LOOKUP_TYPE
-                    AND    t.LOAD_CALL_STATUS = 'CREATED') AS parent_created,
-                   (SELECT MAX(DBMS_LOB.SUBSTR(t.ERROR_TEXT, 1500, 1)) FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
-                    WHERE  t.RUN_ID = p_run_id
-                    AND    t.LOOKUP_TYPE = v.LOOKUP_TYPE) AS parent_error
+                    AND    t.LOAD_CALL_STATUS = 'CREATED') AS parent_created
             FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL v
             WHERE  v.RUN_ID = p_run_id
             AND    v.TFM_STATUS = 'GENERATED'
             ORDER BY v.LOOKUP_TYPE, v.DISPLAY_SEQUENCE, v.TFM_SEQUENCE_ID
         ) LOOP
             BEGIN
-                -- Parent-failed cascade (run 236 BADVAL): when this run also sent
-                -- the value's parent lookup TYPE and Fusion did NOT create it, the
-                -- value cannot be created either. Posting it anyway only draws a
-                -- blank-bodied HTTP 404 from the missing child collection, which
-                -- (#161) carries no per-record message and left the row
-                -- UNACCOUNTED although its outcome is known. So the value is not
-                -- sent; it is stamped [PARENT_FAILED] naming the failed type and
-                -- quoting the type's real Fusion error, and the sweep lands it
-                -- FAILED. LOAD_CALL_STATUS stays NULL (never attempted).
+                -- Parent not created (run 236 BADVAL): when this run also sent the
+                -- value's parent lookup TYPE and Fusion did NOT create it, the value
+                -- is not sent -- posting it only draws a blank-bodied HTTP 404 from
+                -- the missing child collection, which (#161) carries no per-record
+                -- message. Fusion returned no error for the value itself, so no
+                -- error text is written: it stays GENERATED and the shared sweep
+                -- marks it UNACCOUNTED (a generic "parent failed" sentence is never
+                -- a Fusion error). Quoting the parent's real error in the shared
+                -- cross-grain format waits for DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR.
+                -- LOAD_CALL_STATUS stays NULL (never attempted).
                 IF r.parent_rows > 0 AND r.parent_created IS NULL THEN
-                    UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
-                    SET    ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                               '[PARENT_FAILED] Lookup code not sent to Fusion: parent lookup type "'
-                               || r.LOOKUP_TYPE || '" was not created in Fusion'
-                               || CASE WHEN r.parent_error IS NOT NULL
-                                       THEN '. Parent lookup type error: ' || r.parent_error
-                                       ELSE ' (no Fusion error captured for the parent).' END),
-                           LAST_UPDATED_DATE = SYSDATE
-                    WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
-                    l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG(p_run_id,
                         'Value not sent (parent lookup type not created): '
                         || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE,
@@ -749,30 +737,8 @@
         AND    TFM_STATUS = 'GENERATED'
         AND    ERROR_TEXT IS NOT NULL;
 
-        -- Mirror the terminal TFM outcome onto STG for both tiers (STG_STATUS is
-        -- terminal from staging's point of view; the TFM row is the record of the
-        -- Fusion outcome).
-        UPDATE DMT_FND_LOOKUP_TYPE_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
-                               FROM   DMT_FND_LOOKUP_TYPE_TFM_TBL t
-                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                               AND    t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_FND_LOOKUP_TYPE_TFM_TBL t
-                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                       AND    t.RUN_ID = p_run_id
-                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
-
-        UPDATE DMT_FND_LOOKUP_VALUE_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
-                               FROM   DMT_FND_LOOKUP_VALUE_TFM_TBL t
-                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                               AND    t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_FND_LOOKUP_VALUE_TFM_TBL t
-                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                       AND    t.RUN_ID = p_run_id
-                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
+        -- Outcomes live on the TFM rows only; nothing is written back to the
+        -- staging tables (design section 5).
 
         COMMIT;
 
