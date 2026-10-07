@@ -57,9 +57,9 @@ are UNACCOUNTED in run 238, writing docs/findings/run238_Reqs_POs_unaccounted.md
 1. Merge #590, then do one clean deploy of main to local. Several agents deployed branches over each
    other on the shared local DB this session, so local must be re-synced to main before the gate.
 2. Fix the Requisitions / Purchase Orders unaccounted rows once the review lands.
-3. AR Invoices is a known Fusion block (AutoInvoice crashes at job level, "consolidated billing is
-   enabled"), but per docs/findings/run234_ARInvoices.md the honest verdict is FAILED with that job
-   error, not UNACCOUNTED. Small honesty fix still owed.
+3. AR Invoices: no change needed. It is a known Fusion block (AutoInvoice crashes at job level,
+   "consolidated billing is enabled"), and per the mission rules in CLAUDE.md a job-level crash
+   gives no per-row verdict, so UNACCOUNTED (dark red) is the correct, honest result.
 4. Harden the click-through: it waits a fixed 25 seconds, so under load it reads blank pages (several
    false failures this session that passed on rerun, plus HTTP 572 when ORDS was overloaded) and can
    also pass pages that rendered almost nothing.
