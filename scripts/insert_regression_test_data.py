@@ -30,8 +30,9 @@ Proven runs (source of truth for GOOD data):
   Requisitions:   int=100000024, prefix=9169 —  6 LOADED (objects/Requisitions/README.md)
 
   GLBudgets: run 112, prefix 9623 — 4 LOADED / 1 FAILED (objects/GLBudget/README.md)
-  ProjectBudgets:  int=100000027, prefix=9123 — 3 LOADED (objects/ProjectBudgets/README.md;
-                   regression rows target the RT projects, prefixed at transform)
+  ProjectBudgets:  the 2026-04-01 "3 LOADED" (prefix 9123) was a recon false positive.
+                   Rows now mirror the owner's known-good CFIT022 record
+                   (docs/findings/known_good_ProjectBudgets.md).
 
 Not yet E2E tested (data is speculative):
   PlanningBudgets  — missing DMT_ERP_INTERFACE_OPTIONS_TBL config
@@ -1645,47 +1646,49 @@ def main():
 
     # ====================================================================
     # 28a. PROJECT BUDGETS (DMT_PRJ_BUDGET_STG_TBL)
-    #     GOOD: 2 budget lines against the RT projects loaded earlier in
-    #           the same run. Plan type / period format / currency proven
-    #           E2E LOADED 2026-04-01 (int=100000027, prefix=9123,
-    #           objects/ProjectBudgets/README.md). Transform applies the
-    #           run prefix to PROJECT_NUMBER/NAME to match the migrated
-    #           Fusion projects.
-    #     BAD:  1 for non-existent project [BAD-UPS] — fails
-    #           pre-validation (PROJECT_NAME not LOADED in projects STG).
+    #     Mirrors the owner's known-good Fusion UI run (Import Project Budgets
+    #     request 10071416, docs/findings/known_good_ProjectBudgets.md): the
+    #     CFIT022 record that landed clean as a Baseline plan version.
+    #     GOOD: 1 LINE budget on the EXISTING Fusion project CFIT022 ("Data
+    #           Load 6"), plan type 'Cost and Revenue Budget', project-level
+    #           task CFIT022, resource 'Financial Resources', 2026/01/01 to
+    #           2028/01/01, raw cost 70000 + revenue 80000, Baseline, Create.
+    #           No DMT xref match for CFIT022, so the project passes through
+    #           raw; the transform prefixes SRC_BUDGET_LINE_REFERENCE and
+    #           PLAN_VERSION_NAME, so each run creates one new baselined
+    #           version that the V2 recon DM finds by PM_BUDGET_REFERENCE.
+    #     BAD:  same record on project/task NOPROJ999 [BAD-LKP] -> Fusion
+    #           rejects with PJO_XFACE_INVALID_PROJ_NUM, harvested per row from
+    #           the BudgetsXfaceBIP import report.
+    #     Replaces (going forward) the old 'Approved Cost Budget' rows on the
+    #     in-run RT projects: their sponsored project type made Fusion refuse
+    #     them (PJO_FPT_CANT_BUD_SPON_PRJ), so a GOOD row could never load.
+    #     Earlier write-once scenarios keep their old rows untouched.
     # ====================================================================
     print("\n=== 28a. Project Budgets ===")
-    for pnum, pname, period, amount in [
-        ("RTPRJ001", "RT Project Good-1", "01-25", 50000.00),
-        ("RTPRJ002", "RT Project Good-2", "02-25", 75000.00),
+    for label, pnum, pname, ref in [
+        ("GOOD Project Budget: CFIT022 Cost and Revenue Budget (LINE)",
+         "CFIT022", "Data Load 6", "RT-PJB-GOOD1"),
+        ("BAD Project Budget: non-existent project NOPROJ999 [BAD-LKP]",
+         "NOPROJ999", "RT NoSuch Project", "RT-PJB-BAD1"),
     ]:
-        # PLAN_VERSION_STATUS is mandatory on the refreshed instance
-        # (PJO_XFACE_NO_VER_STATUS rejection in run 115, import job 9697704).
         run_sql(cur, """
             INSERT INTO DMT_PRJ_BUDGET_STG_TBL (
                 FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
-                PLAN_VERSION_NAME, PLAN_VERSION_STATUS, PERIOD_NAME, PLANNING_CURRENCY,
-                TOTAL_TC_RAW_COST, SRC_BUDGET_LINE_REFERENCE, SOURCE_ID
+                TASK_NUMBER, PLAN_VERSION_NAME, PLAN_VERSION_STATUS,
+                RESOURCE_NAME, LINE_TYPE,
+                PLANNING_START_DATE, PLANNING_END_DATE, PLANNING_CURRENCY,
+                TOTAL_TC_RAW_COST, TOTAL_TC_REVENUE,
+                SRC_BUDGET_LINE_REFERENCE, PROCESSING_MODE, SOURCE_ID
             ) VALUES (
-                'Approved Cost Budget', :pnum, :pname,
-                'Version 1', 'Working', :period, 'USD',
-                :amt, :ref, :src
+                'Cost and Revenue Budget', :pnum, :pname,
+                :pnum, 'RT Budget Version', 'Baseline',
+                'Financial Resources', 'LINE',
+                DATE '2026-01-01', DATE '2028-01-01', 'USD',
+                70000, 80000,
+                :ref, 'Create', :ref
             )
-        """, {"pnum": pnum, "pname": pname, "period": period,
-              "amt": amount, "ref": f"RT-PJB-{pnum}", "src": f"RT-PJB-{pnum}"},
-        label=f"GOOD Project Budget: {pnum}/{period}")
-
-    run_sql(cur, """
-        INSERT INTO DMT_PRJ_BUDGET_STG_TBL (
-            FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
-            PLAN_VERSION_NAME, PLAN_VERSION_STATUS, PERIOD_NAME, PLANNING_CURRENCY,
-            TOTAL_TC_RAW_COST, SRC_BUDGET_LINE_REFERENCE, SOURCE_ID
-        ) VALUES (
-            'Approved Cost Budget', 'NOPROJ999', 'RT NoSuch Project',
-            'Version 1', 'Working', '01-25', 'USD',
-            999.99, 'RT-PJB-BAD1', 'RT-PJB-BAD1'
-        )
-    """, label="BAD Project Budget: non-existent project [BAD-UPS]")
+        """, {"pnum": pnum, "pname": pname, "ref": ref}, label=label)
     tag_scenario(cur, "DMT_PRJ_BUDGET_STG_TBL", scenario_id)
 
     # ====================================================================

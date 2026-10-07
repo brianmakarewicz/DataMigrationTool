@@ -63,6 +63,10 @@ REPORTS = [
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
     ("PerfEvaluations",          "DMT_PERFEVALUATIONS_RECON_DM", "DMT_PERFEVALUATIONS_RECON_RPT"),
     ("Projects",                 "DMT_PROJECT_RECON_DM",       "DMT_PROJECT_RECON_RPT"),
+    # ProjectBudgets recon V2 (2026-10-07, known-good fix): deployed alongside the
+    # original PRJ_BUDGET_DM (never overwritten). Run scoped by the prefixed
+    # PM_BUDGET_REFERENCE so budgets on EXISTING projects reconcile.
+    ("ProjectBudgets",           "DMT_PRJ_BUDGET_RECON_V2_DM",           "DMT_PRJ_BUDGET_RECON_V2_RPT"),
     # Grants V2 (2026-10-07, docs/findings/known_good_Grants.md): BASE tier keyed
     # on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, prefix-scoped. Deployed alongside
     # the original DMT_GRANT_RECON_DM (never overwritten).

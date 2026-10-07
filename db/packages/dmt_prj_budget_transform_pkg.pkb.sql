@@ -1,8 +1,27 @@
 -- PACKAGE BODY DMT_PRJ_BUDGET_TRANSFORM_PKG
 
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_PRJ_BUDGET_TRANSFORM_PKG" AS
+-- ============================================================
+-- NAME:    DMT_PRJ_BUDGET_TRANSFORM_PKG
+-- PURPOSE: STG->TFM transform for ProjectBudgets (PjoPlanVersionsXface.csv)
+-- REVISIONS:
+--  1.1  2026-10-07  Run prefix on SRC_BUDGET_LINE_REFERENCE + PLAN_VERSION_NAME; fit-guard fails, never truncates
+--  1.2  2026-10-07  Pre-TFM exclusion matched on run + sub-object, not LIKE on the tag text
+-- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_PRJ_BUDGET_TRANSFORM_PKG';
+
+    -- Prefix-fit limits for the two per-run keys this transform prefixes.
+    -- SRC_BUDGET_LINE_REFERENCE: PJO_PLAN_VERSIONS_XFACE.SRC_BUDGET_LINE_REFERENCE
+    --   and PJO_PLAN_VERSIONS_B.PM_BUDGET_REFERENCE are both VARCHAR2(100)
+    --   (verified live in Fusion all_tab_columns, 2026-10-07).
+    -- PLAN_VERSION_NAME: PJO_PLAN_VERSIONS_XFACE.PLAN_VERSION_NAME is 900 bytes in
+    --   Fusion; the binding limit is our own TFM column, VARCHAR2(240).
+    -- A value that cannot carry the prefix within its limit FAILS the row with a
+    -- [TRANSFORM_ERROR]; it is never truncated (truncation would collide keys).
+    C_BUDGET_REF_MAX   CONSTANT PLS_INTEGER := 100;
+    C_VERSION_NAME_MAX CONSTANT PLS_INTEGER := 240;
+    C_SUB_OBJECT       CONSTANT VARCHAR2(30) := 'Project Budgets';
 
     PROCEDURE TRANSFORM (
         p_run_id   IN NUMBER,
@@ -11,9 +30,68 @@
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_ok         NUMBER := 0;
+        l_fail       NUMBER := 0;
+        l_prefix     VARCHAR2(30);
+        l_step       VARCHAR2(200);
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM start.', 'INFO', C_PKG, 'TRANSFORM');
+        DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                         p_message   => 'TRANSFORM start.',
+                         p_package   => C_PKG,
+                         p_procedure => 'TRANSFORM');
 
+        l_step := 'reading the run prefix for run ' || p_run_id;
+        SELECT PREFIX
+        INTO   l_prefix
+        FROM   DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id;
+
+        -- Prefix-fit guard: the run prefix goes onto SRC_BUDGET_LINE_REFERENCE
+        -- (and therefore RECON_KEY / Fusion PM_BUDGET_REFERENCE) and onto
+        -- PLAN_VERSION_NAME. These are the only per-run unique keys when a budget
+        -- is loaded onto an EXISTING Fusion project (e.g. CFIT022), so they must
+        -- carry the prefix for the run to be identifiable in Fusion. A value that
+        -- does not fit with the prefix fails here with a clear error; it is never
+        -- truncated.
+        l_step := 'recording prefix-fit [TRANSFORM_ERROR] rows';
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'ProjectBudgets', C_SUB_OBJECT, s.STG_SEQUENCE_ID,
+               '[TRANSFORM_ERROR] '
+               || CASE WHEN LENGTH(l_prefix || s.SRC_BUDGET_LINE_REFERENCE) > C_BUDGET_REF_MAX
+                       THEN 'SRC_BUDGET_LINE_REFERENCE "' || s.SRC_BUDGET_LINE_REFERENCE
+                            || '" cannot carry run prefix ' || l_prefix || ': '
+                            || LENGTH(l_prefix || s.SRC_BUDGET_LINE_REFERENCE)
+                            || ' chars exceeds the Fusion limit of ' || C_BUDGET_REF_MAX || '. '
+                  END
+               || CASE WHEN LENGTH(l_prefix || s.PLAN_VERSION_NAME) > C_VERSION_NAME_MAX
+                       THEN 'PLAN_VERSION_NAME "' || s.PLAN_VERSION_NAME
+                            || '" cannot carry run prefix ' || l_prefix || ': '
+                            || LENGTH(l_prefix || s.PLAN_VERSION_NAME)
+                            || ' chars exceeds the limit of ' || C_VERSION_NAME_MAX || '. '
+                  END
+               || '(Not truncated, to avoid a key collision.)'
+        FROM   DMT_PRJ_BUDGET_STG_TBL s
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+        AND    (p_scenario_id IS NULL
+                OR s.SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND    (LENGTH(l_prefix || s.SRC_BUDGET_LINE_REFERENCE) > C_BUDGET_REF_MAX
+                OR LENGTH(l_prefix || s.PLAN_VERSION_NAME) > C_VERSION_NAME_MAX)
+        AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                        WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                        AND   e.SUB_OBJECT = C_SUB_OBJECT);
+        l_fail := SQL%ROWCOUNT;
+
+        l_step := 'flagging prefix-fit failures FAILED on STG';
+        UPDATE DMT_PRJ_BUDGET_STG_TBL
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id AND SUB_OBJECT = C_SUB_OBJECT)
+        AND    STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
+
+        l_step := 'inserting STAGED TFM rows';
         INSERT INTO DMT_PRJ_BUDGET_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,
             AWARD_NUMBER, FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
@@ -42,10 +120,18 @@
             DMT_XREF_PKG.PROJECT_NUMBER(s.PROJECT_NUMBER),
             DMT_XREF_PKG.PROJECT_NAME(s.PROJECT_NAME),
             s.TASK_NAME, DMT_XREF_PKG.TASK_NUMBER(s.TASK_NUMBER),
-            s.PLAN_VERSION_NAME, s.PLAN_VERSION_DESCRIPTION, s.PLAN_VERSION_STATUS,
+            -- Run prefix on the plan version name and the source budget line
+            -- reference (always-use-prefix rule). Length already guarded above,
+            -- so PREFIXED never truncates here.
+            DMT_UTIL_PKG.PREFIXED(p_prefix  => l_prefix,
+                                  p_value   => s.PLAN_VERSION_NAME,
+                                  p_max_len => C_VERSION_NAME_MAX),
+            s.PLAN_VERSION_DESCRIPTION, s.PLAN_VERSION_STATUS,
             s.RESOURCE_NAME, s.PERIOD_NAME, s.PLANNING_CURRENCY,
             s.TOTAL_QUANTITY, s.TOTAL_TC_RAW_COST, s.TOTAL_TC_REVENUE,
-            s.SRC_BUDGET_LINE_REFERENCE,
+            DMT_UTIL_PKG.PREFIXED(p_prefix  => l_prefix,
+                                  p_value   => s.SRC_BUDGET_LINE_REFERENCE,
+                                  p_max_len => C_BUDGET_REF_MAX),
             s.FUNDING_SOURCE_NUMBER, s.FUNDING_SOURCE_NAME,
             s.PC_RAW_COST, s.PC_REVENUE, s.PFC_RAW_COST, s.PFC_REVENUE,
             s.TOTAL_TC_BRDND_COST, s.PC_BRDND_COST, s.PFC_BRDND_COST,
@@ -67,17 +153,17 @@
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
-        -- Honor pre-validation rejections in EVERY run mode (ALL-mode-bypass backlog
-        -- item). FAILED mode selects STG_STATUS='FAILED', which is exactly the status a
-        -- validator-rejected row carries, so without this a rejected budget (project not
-        -- loaded) would be transformed. Scope to this object's SUB_OBJECT since
-        -- STG_SEQUENCE_ID restarts per STG table.
+        -- Honor pre-TFM rejections in EVERY run mode (ALL-mode-bypass backlog item):
+        -- any DMT_STG_TFM_ERROR_TBL row for this run + this object's SUB_OBJECT
+        -- ([PRE_VALIDATION] from the validator, [TRANSFORM_ERROR] from the prefix-fit
+        -- guard above) keeps the row out of TFM. Matched on run + sub-object, not on
+        -- the tag text (no LIKE on known codes). Scope to this object's SUB_OBJECT
+        -- since STG_SEQUENCE_ID restarts per STG table.
         AND NOT EXISTS (
             SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
             WHERE  e.RUN_ID          = p_run_id
             AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-            AND    e.SUB_OBJECT      = 'Project Budgets'
-            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+            AND    e.SUB_OBJECT      = C_SUB_OBJECT
         );
 
         l_ok := SQL%ROWCOUNT;
@@ -86,7 +172,7 @@
         -- Contract v1 RECON_KEY stamp (single-tier reader coupling).
         -- The shared reconciler matches each report row's RECORD_KEY to the TFM
         -- row's RECON_KEY. The ProjectBudgets recon data model
-        -- (bip/ProjectBudgets/PRJ_BUDGET_DM.xdm) emits, on the BASE tier,
+        -- (bip/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V2_DM.xdm) emits, on the BASE tier,
         --   RECORD_KEY = NVL(PJO_PLAN_VERSIONS_B.PM_BUDGET_REFERENCE,
         --                    <synthetic project::version::plan_version_id>)
         -- and, on the INTERFACE tier,
@@ -94,11 +180,11 @@
         --                    <synthetic project_number::plan_version_name>).
         -- The native source budget line reference (SRC_BUDGET_LINE_REFERENCE)
         -- survives verbatim onto the base plan-version row as PM_BUDGET_REFERENCE
-        -- (verified live: values like ENDOW001-01 persist unchanged). The
-        -- transform prefixes PROJECT_NUMBER / PROJECT_NAME only and copies
-        -- SRC_BUDGET_LINE_REFERENCE through unchanged, so the value this TFM row
-        -- carries in SRC_BUDGET_LINE_REFERENCE is byte-for-byte the DM's
-        -- RECORD_KEY whenever the source ref is present. RECON_KEY is therefore
+        -- (verified live: 97101_KTM_PRJBUDGET01 persisted unchanged in the
+        -- known-good replay). The transform PREFIXES SRC_BUDGET_LINE_REFERENCE
+        -- with the run prefix (2026-10-07, known-good fix), so the value this TFM
+        -- row carries is byte-for-byte the DM's RECORD_KEY and is unique per run
+        -- even when the budget lands on an existing Fusion project. RECON_KEY is therefore
         -- set equal to SRC_BUDGET_LINE_REFERENCE here. When the source ref is
         -- null the DM falls back to a Fusion-side synthetic key (built from the
         -- Fusion-assigned PLAN_VERSION_ID, which we cannot know pre-load), so
@@ -122,18 +208,21 @@
              OR SCENARIO_ID = p_scenario_id
              OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL))
         -- This TRANSFORMED-marking UPDATE is NOT guarded by an EXISTS(TFM row) check
-        -- (unlike the other 8 objects), so it needs the same pre-validation exclusion:
-        -- otherwise a rejected FAILED row that never entered TFM would still be marked
+        -- (unlike the other 8 objects), so it needs the same pre-TFM exclusion:
+        -- otherwise a rejected row that never entered TFM would still be marked
         -- TRANSFORMED. (ALL-mode-bypass backlog item.)
         AND NOT EXISTS (
             SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
             WHERE  e.RUN_ID          = p_run_id
             AND    e.STG_SEQUENCE_ID = DMT_PRJ_BUDGET_STG_TBL.STG_SEQUENCE_ID
-            AND    e.SUB_OBJECT      = 'Project Budgets'
-            AND    e.ERROR_TEXT LIKE '[PRE_VALIDATION]%'
+            AND    e.SUB_OBJECT      = C_SUB_OBJECT
         );
 
-        DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM complete. Rows: ' || l_ok, 'INFO', C_PKG, 'TRANSFORM');
+        DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                         p_message   => 'TRANSFORM complete. Rows: ' || l_ok
+                                        || ' | prefix-fit failures: ' || l_fail,
+                         p_package   => C_PKG,
+                         p_procedure => 'TRANSFORM');
     EXCEPTION
         WHEN OTHERS THEN
             -- Record [TRANSFORM_ERROR] for this proc's in-scope STG rows so the
@@ -165,7 +254,11 @@
                         OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'TRANSFORM failed.', SQLERRM, C_PKG, 'TRANSFORM');
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
+                                   p_message   => 'TRANSFORM failed at step: ' || l_step,
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => 'TRANSFORM');
             RAISE;
     END TRANSFORM;
 

@@ -336,27 +336,35 @@ commit;
 -- (PjoPlanVersionsXface.csv via prj/projectControl/import), interface table
 -- PJO_PLAN_VERSIONS_XFACE, base table PJO_PLAN_VERSIONS_B; FUSION_ID =
 -- PLAN_VERSION_ID stamped into FUSION_BUDGET_VERSION_ID. RECON_KEY =
--- SRC_BUDGET_LINE_REFERENCE, the native source budget line reference the
--- transform copies through unchanged; it survives verbatim onto the base row as
--- PM_BUDGET_REFERENCE, which is the DM's BASE-tier RECORD_KEY (the transform
--- prefixes PROJECT_NUMBER / PROJECT_NAME only, never the budget reference). Kept
--- in its own MERGE so this block also converges the Contract v1 columns on the
+-- SRC_BUDGET_LINE_REFERENCE, the native source budget line reference, which the
+-- transform PREFIXES with the run prefix (2026-10-07); it survives verbatim onto
+-- the base row as PM_BUDGET_REFERENCE, the DM's BASE-tier RECORD_KEY. Kept in its
+-- own MERGE so this block also converges the Contract v1 columns on the
 -- ProjectBudgets row seeded earlier in this file.
+-- 2026-10-07: re-pointed to DMT_PRJ_BUDGET_RECON_V2_DM / _V2_RPT, deployed alongside the
+-- original (BIP objects are never overwritten). V2 scopes the run by
+-- PM_BUDGET_REFERENCE LIKE prefix (OR the prefixed project number), so a budget
+-- loaded onto an EXISTING project (e.g. CFIT022) is matched; V1 only matched
+-- budgets on projects created in the same run (docs/findings/
+-- known_good_ProjectBudgets.md). Existing DBs converge via
+-- db/migrations/2026-10-07_project_budgets_recon_v2_registry.sql.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 100000019                                                    bip_report_id,
            'ProjectBudgets'                                             cemli_code,
            'Project Budget'                                             object_type,
-           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_DM.xdm'              dm_catalog_path,
-           '/Custom/DMT2/ProjectBudgets/PRJ_BUDGET_RPT.xdo'            report_catalog_path,
+           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V2_DM.xdm'           dm_catalog_path,
+           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V2_RPT.xdo'         report_catalog_path,
            'PJO_PLAN_VERSIONS_XFACE'                                    interface_table,
            'Project budget import reconciliation (Contract v1) - '
-              || 'PjoPlanVersionsXface.csv via prj/projectControl/import'  notes,
+              || 'PjoPlanVersionsXface.csv via prj/projectControl/import. V2 '
+              || '(2026-10-07): run scoped by PM_BUDGET_REFERENCE LIKE prefix OR '
+              || 'prefixed project number; deployed alongside V1, never overwriting it.'  notes,
            1                                                            contract_version,
            'DMT_PRJ_BUDGET_TFM_TBL'                                     tfm_table,
            'FUSION_BUDGET_VERSION_ID'                                   fusion_id_column,
-           'SRC_BUDGET_LINE_REFERENCE -- source budget line ref, survives as PM_BUDGET_REFERENCE on the base row' recon_key_sql
+           'SRC_BUDGET_LINE_REFERENCE -- run-prefixed source budget line ref, survives as PM_BUDGET_REFERENCE on the base row' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
