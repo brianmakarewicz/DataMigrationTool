@@ -1,5 +1,84 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-06/07 -- Unaccounted means "our reconciler can't see it": Customers, Items, config, scenario leakage (IN PROGRESS, nothing on ATP yet)
+
+**Bottom line.** We deployed yesterday's merged fixes (#584/#585/#586) to local and ran regression
+run 236. The owner's question was why rows were UNACCOUNTED, and the answer for every object we dug
+into was the same: the rows were in Fusion, but our reconciliation code could not see them. We fixed
+that for Customers, Items and the configuration objects, found and fixed a serious scenario-leakage
+defect along the way, and merged six PRs. Everything is on local Docker only; **nothing has been
+promoted to ATP GOLD**, and it must not be until the gate below passes.
+
+**New rule from the owner (also in memory as feedback_playwright_before_atp).** No ATP promotion
+unless local proof includes BOTH a full regression AND the Playwright click-through
+(`python test/playwright/dmt_console_verify.py --run-id <run>`) against that run. The click-through
+was missed in the original plan this session; the owner caught it.
+
+**What we fixed (all merged to main, deployed to local):**
+- **Items (#588, plus #590 open).** Item Category rows were UNACCOUNTED because the reconciler passed
+  the import ESS id where category rows carry the load ESS id, and the legacy ITEM_CAT_DM hard-coded a
+  NULL error. New DMT_ITEM_RECON_V2_DM; the legacy category reconcile calls are removed. Run 236 rows
+  now read FAILED with the real Fusion errors (EGP_ITEM_NON_LEAF_CATEGORY, EGP_ITEM_NOT_EXIST), and
+  LOADED rows carry real Fusion ids. #590 (open, deployed locally) echoes category outcomes to STG.
+- **Customers (#589).** The V2 report attached a batch-wide list of message names instead of each
+  row's own error, so held child rows got nothing (UNACCOUNTED) and rows with no error of their own
+  borrowed a sibling's error (false FAILED). New DMT_CUST_RECON_V3_DM joins each interface row to its
+  own error with full FND_NEW_MESSAGES text, and a row held because of a parent comes back FAILED
+  naming that parent. Rows that were already FAILED in run 236 keep their old text, because the
+  re-reconcile never overwrites FAILED rows; the next new-prefix run proves the new text end to end.
+  The "page 52 Customers blank" click-through failure was not reproducible and was not caused by this
+  PR (see the flakiness item below).
+- **Configuration objects (#592).** Keys are now run-prefixed like every other object (UoM codes,
+  limited to 3 characters, use a derived prefix code, e.g. DZ8 became 9Y4). Child rows whose parent
+  failed land FAILED with a [PARENT_FAILED] message instead of UNACCOUNTED (Cash Banks branch and
+  account, Lookups bad value). Proven in config run 239: GOOD rows for UoM, Lookups and the bank
+  load; the click-through passed.
+- **Value Sets (#591).** The owner asked whether EXPIRED would ever become success with retry. No:
+  every Value Sets upload we have ever submitted ends in Fusion ERROR ("erpFamily is null") after
+  about 38 minutes in WAIT, so FAILED is correct. The row message now gives Fusion's real state
+  instead of a bare EXPIRED.
+- **Scenario scoping (#593).** A blind reviewer confirmed that runs were pulling staged rows from
+  every scenario: the Taxes runner dropped the scenario, the MiscReceipts and GL Calendar transforms
+  ignored it, and about 40 validators had no scenario filter at all (they also flagged other
+  scenarios' STG rows FAILED, and MiscReceipts actually sent other scenarios' lots and serials to
+  Fusion). Every runner, transform and validator is now scenario-scoped and fails closed. Proven in
+  full run 238: Taxes went from 27 to 3 records, MiscReceipts transactions from 37 to 4, and no other
+  scenario's rows changed. Scenarios 201-203 and 221 are retired (contaminated or empty); the new
+  regression baseline is scenario 222 (RegressionTest2610061659). Run 229 was itself contaminated, so
+  it is not a clean baseline.
+
+**Open PRs:** #590 (Items category STG echo, deployed locally) and #583 (APEX images on rebuild,
+unreviewed since 10-06).
+
+**In flight when this was written:** a read-only review of why Requisitions and Purchase Orders rows
+are UNACCOUNTED in run 238, writing docs/findings/run238_Reqs_POs_unaccounted.md.
+
+**Outstanding, in recommended order:**
+1. Merge #590, then do one clean deploy of main to local. Several agents deployed branches over each
+   other on the shared local DB this session, so local must be re-synced to main before the gate.
+2. Fix the Requisitions / Purchase Orders unaccounted rows once the review lands.
+3. AR Invoices: no change needed. It is a known Fusion block (AutoInvoice crashes at job level,
+   "consolidated billing is enabled"), and per the mission rules in CLAUDE.md a job-level crash
+   gives no per-row verdict, so UNACCOUNTED (dark red) is the correct, honest result.
+4. Harden the click-through: it waits a fixed 25 seconds, so under load it reads blank pages (several
+   false failures this session that passed on rerun, plus HTTP 572 when ORDS was overloaded) and can
+   also pass pages that rendered almost nothing.
+5. Build the ATP gate: `ci_promote.py test-local` runs the click-through and writes a pass record tied
+   to the git commit; `deploy-prod` refuses without it; `test-prod` runs the click-through on ATP. Plus
+   a deploy-to-ATP skill. Proposed to the owner, not yet approved.
+6. Run the full regression plus click-through on scenario 222 under a new prefix, then promote to ATP
+   and run the click-through against ATP.
+
+**Known defects and backlog, not yet started:** Value Sets has never loaded (the interface id 302 we
+send looks invented, our bug to fix, not a functional-owner item); the Cash Banks GOOD branch and
+account need a branch number, account number and legal entity in the seed, plus the account payload
+must send bank, branch and legal entity names; a passing network error (ORA-29273) on a REST load is
+recorded as a Fusion error; Payment Terms and Taxes need FBDI (#162); runs 230-235 are stale QUEUED
+entries on local.
+
+**Environment note.** Running five agents at once against local Docker caused dropped DB connections,
+ORDS overload and a low-memory kill on this machine. Run the final gate one job at a time.
+
 ## Session -- 2026-10-06 -- Five-item goal: config objects, REST honesty, log-list speed, rebuild images
 
 **Bottom line.** Worked a five-item goal. Four are fixed and merged; one (local image
