@@ -1,4 +1,34 @@
 -- ============================================================
+-- MIRRORS PRJ_BUDGET_V2_DM.xdm (the registered recon DM since 2026-10-07).
+-- V1 (PRJ_BUDGET_DM.xdm) is kept in the catalog untouched.
+-- ============================================================
+-- V2 (2026-10-07, known-good fix -- docs/findings/known_good_ProjectBudgets.md).
+-- Deployed ALONGSIDE PRJ_BUDGET_DM.xdm (BIP objects are never overwritten).
+-- What changed from V1:
+--   * Run scoping. The transform now prefixes SRC_BUDGET_LINE_REFERENCE (and
+--     PLAN_VERSION_NAME) with the run prefix, and Fusion persists the source
+--     budget line reference verbatim as PJO_PLAN_VERSIONS_B.PM_BUDGET_REFERENCE
+--     (verified live: 97101_KTM_PRJBUDGET01). So the BASE tier now selects
+--         v.pm_budget_reference LIKE :P_PREFIX || '%'
+--     OR-ed with the old p.segment1 LIKE :P_PREFIX || '%'. V1 only matched
+--     budgets on projects DMT created in the same run; a budget loaded onto an
+--     EXISTING project (e.g. CFIT022) was never matched and stayed unaccounted.
+--     The INTERFACE tier likewise selects x.src_budget_line_reference LIKE
+--     :P_PREFIX || '%' OR x.project_number LIKE :P_PREFIX || '%'.
+--   * Null-prefix guard. Both tiers require :P_PREFIX IS NOT NULL. V1 with an
+--     empty prefix evaluated LIKE '%' and returned every plan version on the
+--     pod (the legacy RUN_BIP_REPORT call in RECONCILE_BATCH passes no
+--     P_PREFIX). An unscoped call now returns zero rows instead of unrelated
+--     data; the Contract v1 fetch always passes the run prefix.
+--   * Real per-row error. Fusion purges PJO_PLAN_VERSIONS_XFACE after import
+--     (BudgetImportReport runs with PURGE), and the interface carries no
+--     error-text column, so no queryable table holds the rejection. The real
+--     per-row Fusion message is in the BudgetsXfaceBIP report output
+--     (LIST_G_12/G_12: P = source budget line reference = RECON_KEY, Y = the
+--     message), which DMT_PRJ_BUDGET_RESULTS_PKG.apply_import_report harvests
+--     per row. ERROR_MESSAGE here stays NULL rather than composed.
+-- ============================================================
+-- ============================================================
 -- Project Budgets BIP reconciliation query -- BIP reconciliation
 -- report contract v1 (nine columns, keyset pagination). Data source:
 -- ApplicationDB_FSCM. This mirrors the SQL embedded in
@@ -26,10 +56,10 @@
 -- RECON KEY = the native source budget line reference. On the base row
 -- it is PM_BUDGET_REFERENCE (verified live: values like ENDOW001-01
 -- survive verbatim on PJO_PLAN_VERSIONS_B); on the interface row it is
--- SRC_BUDGET_LINE_REFERENCE. The transform prefixes PROJECT_NUMBER /
--- PROJECT_NAME only (NOT the budget reference), so the run-scoped
--- selector is the prefixed PROJECT_NUMBER, which lands on
--- PJF_PROJECTS_ALL_B.SEGMENT1 (LIKE :P_PREFIX || '%'). Load/import ESS
+-- SRC_BUDGET_LINE_REFERENCE. The transform prefixes the budget
+-- reference (V2), so the run-scoped selector is PM_BUDGET_REFERENCE
+-- LIKE :P_PREFIX || '%', OR-ed with the prefixed PROJECT_NUMBER on
+-- PJF_PROJECTS_ALL_B.SEGMENT1 for in-run projects. Load/import ESS
 -- ids are not durably captured per row on this pod, so
 -- :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID cannot select the run alone;
 -- they are declared for contract symmetry and stamped for traceability.
@@ -73,7 +103,9 @@ FROM (
     WHERE  vtl.plan_version_id = v.plan_version_id
     AND    vtl.language        = 'US'
     AND    p.project_id        = v.project_id
-    AND    p.segment1 LIKE :P_PREFIX || '%'
+    AND    :P_PREFIX IS NOT NULL
+    AND    (v.pm_budget_reference LIKE :P_PREFIX || '%'
+            OR p.segment1 LIKE :P_PREFIX || '%')
 
     UNION ALL
 
@@ -101,7 +133,9 @@ FROM (
         x.src_budget_line_reference                             AS source_ref,
         x.src_budget_line_reference                             AS dmt_reference
     FROM   pjo_plan_versions_xface x
-    WHERE  x.project_number LIKE :P_PREFIX || '%'
+    WHERE  :P_PREFIX IS NOT NULL
+    AND    (x.src_budget_line_reference LIKE :P_PREFIX || '%'
+            OR x.project_number LIKE :P_PREFIX || '%')
     AND    NVL(UPPER(x.process_code),'X')
                NOT IN ('COMPLETED','PROCESSED','SUCCESS','P')
     AND    NVL(UPPER(x.load_status),'X')

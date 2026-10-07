@@ -14,7 +14,10 @@ generated XML-output .xdo wrapper linked to it. The package enforces the
 The registry rows in DMT_BIP_REPORT_TBL are NOT touched here -- they are
 seeded by db/seed/dmt_bip_report_tbl.sql (supplier MERGE block).
 
-Run as:  python scripts/deploy_recon_bip_reports.py [CemliFilter ...]
+Run as:  python scripts/deploy_recon_bip_reports.py [Filter ...]
+         Each filter matches a CEMLI code OR a data model name (e.g.
+         PRJ_BUDGET_V2_DM), so a single new report version can be deployed
+         without redeploying that CEMLI's other reports.
 Env:     DMT2_CONN  user/password@host:port/service
          (default: the local Docker instance dmt2-local)
 """
@@ -61,6 +64,10 @@ REPORTS = [
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
     ("PerfEvaluations",          "DMT_PERFEVALUATIONS_RECON_DM", "DMT_PERFEVALUATIONS_RECON_RPT"),
     ("Projects",                 "DMT_PROJECT_RECON_DM",       "DMT_PROJECT_RECON_RPT"),
+    # ProjectBudgets recon V2 (2026-10-07, known-good fix): deployed alongside the
+    # original PRJ_BUDGET_DM (never overwritten). Run scoped by the prefixed
+    # PM_BUDGET_REFERENCE so budgets on EXISTING projects reconcile.
+    ("ProjectBudgets",           "PRJ_BUDGET_V2_DM",           "PRJ_BUDGET_V2_RPT"),
     # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
     # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
     # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/
@@ -136,7 +143,9 @@ def get_dbms_output(cur):
 def main():
     cemli_filter = [a.lower() for a in sys.argv[1:]]
     reports = [r for r in REPORTS
-               if not cemli_filter or r[0].lower() in cemli_filter]
+               if not cemli_filter
+               or r[0].lower() in cemli_filter
+               or r[1].lower() in cemli_filter]
 
     conn = connect()
     cur = conn.cursor()

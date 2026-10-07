@@ -440,7 +440,10 @@ AS
     -- line reference, persisted verbatim on PJO_PLAN_VERSIONS_B) and
     -- SRC_BUDGET_LINE_REFERENCE on the interface tier; the transform stamps
     -- RECON_KEY = SRC_BUDGET_LINE_REFERENCE, which is the same string (the source
-    -- ref is copied through, not prefixed). Rows already terminal (LOADED/FAILED)
+    -- ref carries the run prefix since 2026-10-07, and the V2 DM scopes the run
+    -- by that prefix, so a budget on an EXISTING project is matched too). The
+    -- import-report harvest below keys LIST_G_12 column P (the same prefixed
+    -- reference, echoed from the CSV) to RECON_KEY. Rows already terminal (LOADED/FAILED)
     -- are never touched, so this runs safely alongside the existing
     -- PARSE_AND_UPDATE path without double-counting.
     -- --------------------------------------------------------
