@@ -924,6 +924,15 @@ def main():
     for hkey, po_num, vname, vnum, vsite in [
         ("RT-PO-G1", "RT-PO-001", "RT Supplier Good-1", "RT-SUP-G1", "RT-SITE-G1"),
         ("RT-PO-G2", "RT-PO-002", "RT Supplier Good-2", "RT-SUP-G2", "RT-SITE-G2"),
+        # Cross-grain failure scenario (design section 5, "Whole-document
+        # rejection carries the real error to every grain", decided 2026-10-07):
+        # a valid header (same supplier/site as RT-PO-G1) with TWO lines, each
+        # with a valid location and distribution; the ONLY defect is line 2's
+        # unit of measure. Import Orders rejects the whole PO, so line 2 must land
+        # FAILED with its own error and the header, line 1, both locations and
+        # both distributions FAILED quoting it ("Rejected with document: line
+        # <key>: ..."). RT-PO-001/002 in the same load must still load.
+        ("RT-PO-XG1", "RT-PO-XG1", "RT Supplier Good-1", "RT-SUP-G1", "RT-SITE-G1"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_PO_HEADERS_INT_STG_TBL (
@@ -971,10 +980,12 @@ def main():
     # 14. PO LINES (DMT_PO_LINES_INT_STG_TBL)
     # ====================================================================
     print("\n=== 14. PO Lines ===")
-    for lkey, hkey, line_num, qty, price, desc in [
-        ("RT-POL-G1", "RT-PO-G1", 1, 10, 100.00, "RT Test Item Line 1"),
-        ("RT-POL-G2", "RT-PO-G2", 1, 5,  250.00, "RT Test Item Line 2"),
-        ("RT-POL-BAD1", "RT-PO-BAD1", 1, 1, 50.00, "BAD: orphan line"),
+    for lkey, hkey, line_num, qty, price, desc, uom in [
+        ("RT-POL-G1", "RT-PO-G1", 1, 10, 100.00, "RT Test Item Line 1", "Each"),
+        ("RT-POL-G2", "RT-PO-G2", 1, 5,  250.00, "RT Test Item Line 2", "Each"),
+        ("RT-POL-BAD1", "RT-PO-BAD1", 1, 1, 50.00, "BAD: orphan line", "Each"),
+        ("RT-POL-XG1-1", "RT-PO-XG1", 1, 3, 40.00, "XG valid sibling line", "Each"),
+        ("RT-POL-XG1-2-BAD", "RT-PO-XG1", 2, 2, 60.00, "XG bad UOM line", "ZZZ"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_PO_LINES_INT_STG_TBL (
@@ -985,11 +996,11 @@ def main():
             ) VALUES (
                 :lkey, :hkey,
                 'ADD', :lnum, 'Goods',
-                :descr, :qty, 'Each', :price,
+                :descr, :qty, :uom, :price,
                 'Miscellaneous', :src
             )
         """, {"lkey": lkey, "hkey": hkey, "lnum": line_num,
-              "descr": desc, "qty": qty, "price": price,
+              "descr": desc, "qty": qty, "uom": uom, "price": price,
               "src": f"RT-{lkey}"},
         label=f"{'GOOD' if 'BAD' not in lkey else 'BAD'} PO Line: {lkey}")
     tag_scenario(cur, "DMT_PO_LINES_INT_STG_TBL", scenario_id)
@@ -1006,6 +1017,8 @@ def main():
         ("RT-POLL-G1", "RT-POL-G1", 1, 10, "Seattle"),
         ("RT-POLL-G2", "RT-POL-G2", 1, 5, "Seattle"),
         ("RT-POLL-BAD1", "RT-POL-BAD1", 1, 1, None),
+        ("RT-POLL-XG1-1", "RT-POL-XG1-1", 1, 3, "Seattle"),
+        ("RT-POLL-XG1-2", "RT-POL-XG1-2-BAD", 1, 2, "Seattle"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_PO_LINE_LOCS_INT_STG_TBL (
@@ -1032,6 +1045,8 @@ def main():
         ("RT-POD-G1", "RT-POLL-G1", 1, 10),
         ("RT-POD-G2", "RT-POLL-G2", 1, 5),
         ("RT-POD-BAD1", "RT-POLL-BAD1", 1, 1),
+        ("RT-POD-XG1-1", "RT-POLL-XG1-1", 1, 3),
+        ("RT-POD-XG1-2", "RT-POLL-XG1-2", 1, 2),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_PO_DISTS_INT_STG_TBL (

@@ -65,6 +65,46 @@ TFM table each.
 - **Generator spec header already accurate** — `dmt_po_fbdi_gen_pkg.pks.sql`
   documents the four real Oracle FBDI filenames correctly. No fix needed.
 
+## Cross-grain error propagation (whole-document rejection, 2026-10-07)
+
+Import Orders is all-or-nothing per purchase order. When the header, a line, a line location
+(schedule) or a distribution has an error, Fusion sets every interface row of that PO to
+`REJECTED`, but writes `PO_INTERFACE_ERRORS` only for the row that actually failed. Before this
+change the other rows had no error of their own and were swept UNACCOUNTED (run 238: the
+RT-PO-BAD1 line, location and distribution; `docs/findings/run238_Reqs_POs_unaccounted.md`).
+
+`DMT_PO_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` runs in `RECONCILE_BATCH` after the per-row
+apply and before the shared UNACCOUNTED sweep (design section 5, "Whole-document rejection
+carries the real error to every grain"). It follows the AR (#606) and Requisitions (#609) shape.
+
+- **The document** is the purchase order: the header row (`INTERFACE_HEADER_KEY`), its lines,
+  each line's locations (`INTERFACE_LINE_KEY`) and each location's distributions
+  (`INTERFACE_LINE_LOCATION_KEY`). Import Orders never merges two header rows, so two DMT POs
+  are never one Fusion document.
+- **Only Standard-PO rows** (`STYLE_DISPLAY_NAME = 'Purchase Order'`, the catalog row filter)
+  and their children are read or written. The four PO TFM tables are shared with BlanketPOs
+  and Contracts, and their documents are never touched.
+- **Sources** are rows FAILED with their own real `[FUSION_ERROR]` (no quote marker).
+  **Targets** are every other row of the same PO that Fusion received (`FBDI_CSV_ID` set) and
+  that is not LOADED. Each gets
+  `[FUSION_ERROR] Rejected with document: <header|line|line location|distribution> <RECON_KEY>: <real message>`
+  appended, and is set FAILED. A second reconcile adds nothing (exact-quote guard).
+
+Regression cross-grain scenario: `RT-PO-XG1` (same supplier and site as RT-PO-G1) has a valid
+header and two lines, each with a valid location (Seattle) and distribution; the only defect is
+line 2's unit of measure (`ZZZ`). Expected outcomes are listed in
+`scripts/regression_scenario.json` under `RegressionTest2610071825`.
+
+Proof run 252 (prefix 93308, scenario RegressionTest2610071825, STANDALONE:PurchaseOrders;
+suppliers resolve through DMT_XREF_PKG to the last LOADED RT suppliers): PO-001 and PO-002
+LOADED (8 rows); Fusion set the XG1 header and its valid line 1 to REJECTED with no error of
+their own (`252_HDR_100000269`, `252_LN_100001007`), and they land FAILED quoting line 2's real
+UOM error, as do both XG1 locations and distributions; the BAD1 line, location and distribution
+quote the header's supplier error; 0 UNACCOUNTED; line dollars staged 2,540 = loaded 2,250 +
+failed 290; a reconcile-only rerun left every ERROR_TEXT byte-identical. Rejected interface rows
+left by earlier runs do not hold back later loads (run 252's GOOD POs loaded beside them), so no
+purge is needed.
+
 ## Known Issues
 None currently. Multi-BU grouping working correctly.
 

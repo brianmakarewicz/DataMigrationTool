@@ -63,6 +63,47 @@
           "RT-RT-REQD-XG1-2": "FAILED_WITH_DOCUMENT"
         }
       }
+    },
+    "RegressionTest2610071825": {
+      "PO Headers": {
+        "stg_table": "DMT_PO_HEADERS_INT_STG_TBL",
+        "rows": {
+          "RT-RT-PO-G1": "LOADED",
+          "RT-RT-PO-G2": "LOADED",
+          "RT-PO-BAD1": "FAILED",
+          "RT-RT-PO-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "PO Lines": {
+        "stg_table": "DMT_PO_LINES_INT_STG_TBL",
+        "rows": {
+          "RT-RT-POL-G1": "LOADED",
+          "RT-RT-POL-G2": "LOADED",
+          "RT-RT-POL-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POL-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POL-XG1-2-BAD": "FAILED"
+        }
+      },
+      "PO Line Locations": {
+        "stg_table": "DMT_PO_LINE_LOCS_INT_STG_TBL",
+        "rows": {
+          "RT-RT-POLL-G1": "LOADED",
+          "RT-RT-POLL-G2": "LOADED",
+          "RT-RT-POLL-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POLL-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POLL-XG1-2": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "PO Distributions": {
+        "stg_table": "DMT_PO_DISTS_INT_STG_TBL",
+        "rows": {
+          "RT-RT-POD-G1": "LOADED",
+          "RT-RT-POD-G2": "LOADED",
+          "RT-RT-POD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POD-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POD-XG1-2": "FAILED_WITH_DOCUMENT"
+        }
+      }
     }
   }
 }
