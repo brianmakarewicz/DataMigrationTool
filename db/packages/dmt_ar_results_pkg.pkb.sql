@@ -371,8 +371,23 @@ AS
     --   reconcile pass adds nothing.
     -- One collection of (target line, source, quote) pairs is built by ONE static
     -- SELECT (the only place the grouping attributes are listed), then ONE static
-    -- MERGE per target table. NO dynamic SQL; NO COMMIT (caller owns the txn).
+    -- bulk UPDATE (FORALL) per target table. NO dynamic SQL; NO COMMIT (caller owns the txn).
     -- --------------------------------------------------------
+    -- Working set: "line TARGET_LINE_SEQ is on the same Fusion invoice as the
+    -- source row SOURCE_SEQ (an AR line or distribution with its own real Fusion
+    -- error) and must carry QUOTED_ERROR". The target line's flexfield key rides
+    -- along so its distributions can be found without a second grouping pass.
+    TYPE T_DOC_PAIR IS RECORD (
+        TARGET_LINE_SEQ   NUMBER,          -- DMT_RA_LINES_TFM_TBL.TFM_SEQUENCE_ID
+        TARGET_CONTEXT    VARCHAR2(150),
+        TARGET_ATTRIBUTE1 VARCHAR2(150),
+        TARGET_ATTRIBUTE2 VARCHAR2(150),
+        SOURCE_KIND       VARCHAR2(4),     -- 'LINE' | 'DIST'
+        SOURCE_SEQ        NUMBER,          -- TFM_SEQUENCE_ID in the source's own table
+        QUOTED_ERROR      VARCHAR2(4000)   -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
+
     PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
         p_run_id        IN NUMBER,
         p_work_queue_id IN NUMBER
@@ -433,7 +448,8 @@ AS
             AND    DBMS_LOB.INSTR(d.ERROR_TEXT, C_TAG) > 0
             AND    DBMS_LOB.INSTR(d.ERROR_TEXT, l_marker) = 0
         )
-        SELECT tgt.TFM_SEQUENCE_ID, s.SOURCE_KIND, s.SOURCE_SEQ, s.QUOTED_ERROR
+        SELECT tgt.TFM_SEQUENCE_ID, tgt.INTERFACE_LINE_CONTEXT, tgt.INTERFACE_LINE_ATTRIBUTE1,
+               tgt.INTERFACE_LINE_ATTRIBUTE2, s.SOURCE_KIND, s.SOURCE_SEQ, s.QUOTED_ERROR
         BULK COLLECT INTO l_pairs
         FROM   sources s
         JOIN   scoped_lines src ON src.TFM_SEQUENCE_ID = s.SOURCE_LINE_SEQ
@@ -521,57 +537,43 @@ AS
                AND NVL(tgt.SALES_ORDER, C_NULL)                    = NVL(src.SALES_ORDER, C_NULL)  -- pod rule
         WHERE  s.QUOTED_ERROR IS NOT NULL;
 
+        -- One bulk UPDATE per target table (FORALL over the pairs). A PL/SQL
+        -- collection of records cannot be read by a MERGE through TABLE()
+        -- (ORA-00902 at runtime, run 248), so the bulk statement is a FORALL.
+        -- Each pair appends its quote only when the row does not already carry
+        -- it, so a target quoted by several sources gets each quote once and a
+        -- second reconcile pass adds nothing.
         l_step := 'appending quoted document errors to AR lines';
-        MERGE INTO DMT_RA_LINES_TFM_TBL t
-        USING (
-            SELECT p.TARGET_LINE_SEQ,
-                   LISTAGG(DISTINCT p.QUOTED_ERROR, ' | ' ON OVERFLOW TRUNCATE '...' WITHOUT COUNT)
-                       WITHIN GROUP (ORDER BY p.QUOTED_ERROR) AS NEW_ERRORS
-            FROM   TABLE(l_pairs) p
-            JOIN   DMT_RA_LINES_TFM_TBL tl ON tl.TFM_SEQUENCE_ID = p.TARGET_LINE_SEQ
-            WHERE  NOT (p.SOURCE_KIND = 'LINE' AND p.SOURCE_SEQ = p.TARGET_LINE_SEQ)
-            AND    tl.TFM_STATUS NOT IN ('LOADED', 'STAGED')
-            AND    NVL(DBMS_LOB.INSTR(tl.ERROR_TEXT, p.QUOTED_ERROR), 0) = 0
-            GROUP BY p.TARGET_LINE_SEQ
-        ) s
-        ON (t.TFM_SEQUENCE_ID = s.TARGET_LINE_SEQ)
-        WHEN MATCHED THEN UPDATE
-        SET    t.TFM_STATUS           = 'FAILED',
-               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, s.NEW_ERRORS),
-               t.RESULTS_UPDATED_DATE = SYSDATE,
-               t.LAST_UPDATED_DATE    = SYSDATE
-        WHERE  t.TFM_STATUS NOT IN ('LOADED', 'STAGED');
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_RA_LINES_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.TFM_SEQUENCE_ID = l_pairs(i).TARGET_LINE_SEQ
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'LINE' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
         l_lines := SQL%ROWCOUNT;
 
         l_step := 'appending quoted document errors to AR distributions';
-        MERGE INTO DMT_RA_DISTS_TFM_TBL t
-        USING (
-            SELECT d.TFM_SEQUENCE_ID,
-                   LISTAGG(DISTINCT p.QUOTED_ERROR, ' | ' ON OVERFLOW TRUNCATE '...' WITHOUT COUNT)
-                       WITHIN GROUP (ORDER BY p.QUOTED_ERROR) AS NEW_ERRORS
-            FROM   DMT_RA_DISTS_TFM_TBL d
-            -- The distribution's document comes through its line.
-            JOIN   DMT_RA_LINES_TFM_TBL l
-                   ON  l.RUN_ID = d.RUN_ID
-                   AND NVL(l.INTERFACE_LINE_CONTEXT, C_NULL)    = NVL(d.INTERFACE_LINE_CONTEXT, C_NULL)
-                   AND NVL(l.INTERFACE_LINE_ATTRIBUTE1, C_NULL) = NVL(d.INTERFACE_LINE_ATTRIBUTE1, C_NULL)
-                   AND NVL(l.INTERFACE_LINE_ATTRIBUTE2, C_NULL) = NVL(d.INTERFACE_LINE_ATTRIBUTE2, C_NULL)
-            JOIN   TABLE(l_pairs) p ON p.TARGET_LINE_SEQ = l.TFM_SEQUENCE_ID
-            WHERE  d.RUN_ID = p_run_id
-            AND    (p_work_queue_id IS NULL OR d.WORK_QUEUE_ID IS NULL
-                    OR d.WORK_QUEUE_ID = p_work_queue_id)
-            AND    NOT (p.SOURCE_KIND = 'DIST' AND p.SOURCE_SEQ = d.TFM_SEQUENCE_ID)
-            AND    d.TFM_STATUS NOT IN ('LOADED', 'STAGED')
-            AND    NVL(DBMS_LOB.INSTR(d.ERROR_TEXT, p.QUOTED_ERROR), 0) = 0
-            GROUP BY d.TFM_SEQUENCE_ID
-        ) s
-        ON (t.TFM_SEQUENCE_ID = s.TFM_SEQUENCE_ID)
-        WHEN MATCHED THEN UPDATE
-        SET    t.TFM_STATUS           = 'FAILED',
-               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, s.NEW_ERRORS),
-               t.RESULTS_UPDATED_DATE = SYSDATE,
-               t.LAST_UPDATED_DATE    = SYSDATE
-        WHERE  t.TFM_STATUS NOT IN ('LOADED', 'STAGED');
+        -- The distribution's document comes through its line: every distribution
+        -- of a target line (same run, context, ATTRIBUTE1, ATTRIBUTE2).
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_RA_DISTS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    NVL(t.INTERFACE_LINE_CONTEXT, C_NULL)    = NVL(l_pairs(i).TARGET_CONTEXT, C_NULL)
+            AND    NVL(t.INTERFACE_LINE_ATTRIBUTE1, C_NULL) = NVL(l_pairs(i).TARGET_ATTRIBUTE1, C_NULL)
+            AND    NVL(t.INTERFACE_LINE_ATTRIBUTE2, C_NULL) = NVL(l_pairs(i).TARGET_ATTRIBUTE2, C_NULL)
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'DIST' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
         l_dists := SQL%ROWCOUNT;
 
         DMT_UTIL_PKG.LOG(

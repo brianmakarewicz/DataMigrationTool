@@ -57,19 +57,5 @@ AS
     PROCEDURE RESET_UNACCOUNTED (p_run_id IN NUMBER, p_load_ess_id IN NUMBER DEFAULT NULL,
         p_import_ess_id IN NUMBER DEFAULT NULL, p_work_queue_id IN NUMBER DEFAULT NULL);
 
-    -- Cross-grain propagation working set (private PROPAGATE_DOCUMENT_ERRORS).
-    -- Declared in the spec ONLY so the procedure's static MERGEs can read the
-    -- collection through TABLE(); it is not an API. One element = "the line
-    -- TARGET_LINE_SEQ belongs to the same Fusion invoice (AutoInvoice grouping) as
-    -- the source row SOURCE_SEQ (an AR line or distribution with its own real
-    -- Fusion error), and must carry QUOTED_ERROR".
-    TYPE T_DOC_PAIR IS RECORD (
-        TARGET_LINE_SEQ NUMBER,          -- DMT_RA_LINES_TFM_TBL.TFM_SEQUENCE_ID
-        SOURCE_KIND     VARCHAR2(4),     -- 'LINE' | 'DIST'
-        SOURCE_SEQ      NUMBER,          -- TFM_SEQUENCE_ID in the source's own table
-        QUOTED_ERROR    VARCHAR2(4000)   -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
-    );
-    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
-
 END DMT_AR_RESULTS_PKG;
 /
