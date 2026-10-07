@@ -1141,6 +1141,49 @@ def main():
         label=f"{'GOOD' if inv_id < 800099 else 'BAD'} AP Line: Inv {inv_id}")
     tag_scenario(cur, "DMT_AP_INVOICE_LINES_INT_STG_TBL", scenario_id)
 
+    # Cross-grain failure scenario (design section 5, "Whole-document rejection
+    # carries the real error to every grain", decided 2026-10-07; backlog #191).
+    # RT-APINV-XG1: a valid invoice (same supplier/site/terms as the GOOD rows,
+    # amount 300) whose ONLY defect is line 2's distribution account. Payables
+    # Import rejects the whole invoice, so the header and line 1 must land FAILED
+    # quoting line 2's real rejection, and line 2 FAILED with its own.
+    run_sql(cur, """
+        INSERT INTO DMT_AP_INVOICES_INT_STG_TBL (
+            INVOICE_ID, OPERATING_UNIT, SOURCE,
+            INVOICE_NUM, INVOICE_AMOUNT, INVOICE_DATE,
+            VENDOR_NAME, VENDOR_NUM, VENDOR_SITE_CODE,
+            INVOICE_CURRENCY_CODE, INVOICE_TYPE_LOOKUP_CODE,
+            TERMS_NAME, GL_DATE, CALC_TAX_DURING_IMPORT_FLAG, SOURCE_ID
+        ) VALUES (
+            800020, :bu, 'Manual Invoice Entry',
+            'RT-APINV-XG1', 300.00, SYSDATE,
+            'JGA', '1254', 'JGA US1',
+            'USD', 'STANDARD',
+            'Immediate', SYSDATE, 'Y', 'RT-APINV-XG1'
+        )
+    """, {"bu": BU},
+    label="Cross-grain AP Invoice: RT-APINV-XG1 (line 2 bad distribution only)")
+    tag_scenario(cur, "DMT_AP_INVOICES_INT_STG_TBL", scenario_id)
+
+    for line_num, amount, desc, dist_acct, src in [
+        (1, 100.00, "RT XG1 valid line",            "101.10.65110.110.000.000", "RT-APLN-XG1-1"),
+        (2, 200.00, "RT XG1 bad distribution line", "999.99.99999.999.999.999", "RT-APLN-XG1-2-BAD"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_AP_INVOICE_LINES_INT_STG_TBL (
+                INVOICE_ID, LINE_NUMBER, LINE_TYPE_LOOKUP_CODE,
+                AMOUNT, DESCRIPTION,
+                DIST_CODE_CONCATENATED, ACCOUNTING_DATE, SOURCE_ID
+            ) VALUES (
+                800020, :lnum, 'ITEM',
+                :amt, :descr,
+                :dist, SYSDATE, :src
+            )
+        """, {"lnum": line_num, "amt": amount, "descr": desc,
+              "dist": dist_acct, "src": src},
+        label=f"Cross-grain AP Line: {src}")
+    tag_scenario(cur, "DMT_AP_INVOICE_LINES_INT_STG_TBL", scenario_id)
+
     # ====================================================================
     # 19. AR INVOICES (DMT_RA_LINES_STG_TBL)
     #     Mirrors the owner's known-good AutoInvoice run (Fusion 10071776; see

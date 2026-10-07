@@ -42,10 +42,29 @@ AS
 -- makes the join hit.
 --
 -- After both tiers settle, outcomes are echoed back to the two STG tables.
+-- Then PROPAGATE_DOCUMENT_ERRORS quotes the real Fusion error of a rejected
+-- header or line onto every other row of the same invoice that Payables Import
+-- rejected with it (design section 5, whole-document rejection).
+--
+-- REVISIONS:
+--   2026-10-07  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS) and the
+--                   V2 recon report (rows by Fusion job id, real rejection text
+--                   only; backlog #166).
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_AP_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'APInvoices';
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
+    -- Working set: "invoice DOC_KEY has a SOURCE_KIND row SOURCE_SEQ with its own
+    -- real Fusion error, so every other row of that invoice must carry QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        DOC_KEY      DMT_AP_INVOICES_INT_TFM_TBL.INVOICE_ID%TYPE,  -- the invoice
+        SOURCE_KIND  VARCHAR2(4),      -- 'HDR' or 'LINE'
+        SOURCE_SEQ   NUMBER,           -- the source row's TFM_SEQUENCE_ID
+        QUOTED_ERROR VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_APINVOICES (private)
@@ -328,12 +347,153 @@ AS
     END APPLY_CONTRACT_V1_APINVOICES;
 
     -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private)
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain" (decided 2026-10-07). Payables Import rejects the whole invoice when
+    -- the header or any line fails, but writes AP_INTERFACE_REJECTIONS only for
+    -- the row that failed (live, run 238: header 93294RT-APINV-BAD1 rejected with
+    -- INVALID SUPPLIER and its line REJECTED with no rejection of its own; header
+    -- 93294RT-1099-G1 REJECTED with no rejection of its own in that load while
+    -- its only line carried INVALID DISTRIBUTION ACCT | INVALID TYPE 1099; no base
+    -- row was created for either invoice). The AP FBDI has no distributions file
+    -- (Payables builds distributions from the line), so the grains are header and
+    -- line, and every direction applies: header -> lines, line -> header, line ->
+    -- sibling lines.
+    --
+    -- The document is the invoice: one header TFM row and the lines carrying its
+    -- INVOICE_ID (the join the transform and generator use). An invoice never
+    -- spans two work items, so the key is RUN_ID + INVOICE_ID, and every row is
+    -- scoped to the work item the way the shared sweep scopes it.
+    --
+    -- Sources: headers and lines of this run and work item with TFM_STATUS =
+    --   'FAILED' carrying their OWN real Fusion error ('[FUSION_ERROR]', no
+    --   C_DOC_ERROR_MARKER: a quote is never re-quoted, so quotes never chain).
+    -- Targets: every OTHER header / line row of the same invoice that Fusion
+    --   received (FBDI_CSV_ID set, not STAGED) and that is not LOADED (LOADED rows
+    --   are never touched), and that does not already carry the exact quote. The
+    --   quote is appended (APPEND_ERROR, never overwrite) and the row set FAILED.
+    --   An invoice with no source error is untouched; its rows fall to the shared
+    --   UNACCOUNTED sweep.
+    -- Idempotent: the "already carries the exact quote" guard means a second
+    --   reconcile pass adds nothing.
+    -- One collection of (invoice, source, quote) pairs by ONE static SELECT, then
+    -- ONE static bulk UPDATE (FORALL) per target table: a MERGE cannot read a
+    -- PL/SQL record collection through TABLE() (ORA-00902, AR run 248). NO
+    -- dynamic SQL; NO STG write; NO COMMIT (caller owns the txn).
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_hdrs   NUMBER := 0;
+        l_lines  NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting same-invoice (source, quote) pairs for run ' || p_run_id;
+        -- A header with its own real Fusion error rejects its invoice.
+        SELECT h.INVOICE_ID,
+               'HDR',
+               h.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'header', h.RECON_KEY,
+                   DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG)))
+        BULK COLLECT INTO l_pairs
+        FROM   DMT_AP_INVOICES_INT_TFM_TBL h
+        WHERE  h.RUN_ID = p_run_id
+        -- Work-item scope, as the shared sweep scopes it: rows stamped with
+        -- another work item are excluded; unstamped rows are run-scoped.
+        AND    (p_work_queue_id IS NULL OR h.WORK_QUEUE_ID IS NULL
+                OR h.WORK_QUEUE_ID = p_work_queue_id)
+        AND    h.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, l_marker) = 0
+        AND    h.INVOICE_ID IS NOT NULL
+        UNION ALL
+        -- A line with its own real Fusion error rejects its invoice.
+        SELECT l.INVOICE_ID,
+               'LINE',
+               l.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'line', l.RECON_KEY,
+                   DBMS_LOB.SUBSTR(l.ERROR_TEXT, 3800, DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG)))
+        FROM   DMT_AP_INVOICE_LINES_INT_TFM_TBL l
+        WHERE  l.RUN_ID = p_run_id
+        AND    (p_work_queue_id IS NULL OR l.WORK_QUEUE_ID IS NULL
+                OR l.WORK_QUEUE_ID = p_work_queue_id)
+        AND    l.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, l_marker) = 0
+        AND    l.INVOICE_ID IS NOT NULL;
+
+        -- One bulk UPDATE per target table (FORALL over the pairs). Each pair
+        -- appends its quote only when the row does not already carry it, so a row
+        -- quoted by several sources gets each quote once and a second reconcile
+        -- pass adds nothing. The source row itself is never quoted onto itself.
+        l_step := 'appending quoted document errors to invoice headers';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_AP_INVOICES_INT_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INVOICE_ID = l_pairs(i).DOC_KEY
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'HDR' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_hdrs := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to invoice lines';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INVOICE_ID = l_pairs(i).DOC_KEY
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'LINE' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_lines := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rejected invoice sources: ' || l_pairs.COUNT
+                           || ' | rows given a quoted document error: headers ' || l_hdrs
+                           || ', lines ' || l_lines || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
     -- Contract v1 apply. The APInvoices load ESS id is the Contract v1
-    -- P_LOAD_REQUEST_ID; the import ESS id is P_IMPORT_ESS_ID (stamped into the
-    -- BASE rows' LOAD_REQUEST_ID for traceability). The report's run-scoped
-    -- selectors (P_RUN_ID, P_PREFIX) pick up the whole run regardless of how
-    -- many batches it submitted.
+    -- P_LOAD_REQUEST_ID; the import ESS id is P_IMPORT_ESS_ID. The V2 report
+    -- finds base rows by the import REQUEST_ID and interface rows and their
+    -- rejections by LOAD_REQUEST_ID (never by the run prefix), so each work
+    -- item reconciles exactly the rows its own Fusion jobs processed.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
@@ -353,6 +513,12 @@ AS
             p_run_id     => p_run_id,
             p_request_id => TO_CHAR(p_load_ess_id),
             p_import_id  => TO_CHAR(NVL(p_import_ess_id, p_load_ess_id)));
+
+        -- Whole-document rejection (design section 5): rows Payables Import
+        -- rejected with their invoice carry the real error of the row that
+        -- caused it. Runs after the per-row apply and BEFORE the shared
+        -- unaccounted sweep (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);
 
         -- Unresolved records are intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object not-DONE

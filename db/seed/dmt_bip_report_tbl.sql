@@ -2067,13 +2067,21 @@ commit;
 -- per tier (stamped by DMT_AP_TRANSFORM_PKG, = each tier's report RECORD_KEY):
 -- headers = INVOICE_NUM (prefixed);
 -- lines = INVOICE_NUM (prefixed parent) || ':LINE:' || LINE_NUMBER.
+-- 2026-10-07: re-pointed to DMT_AP_RECON_V2_DM / _V2_RPT, deployed alongside
+-- V1 (BIP objects are never overwritten). V2 finds rows by Fusion job id only
+-- and returns only real Payables rejection text (backlog #166); rows rejected
+-- with their invoice get the quoted error from
+-- DMT_AP_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'APInvoices'                                            cemli_code,
-           '/Custom/DMT2/APInvoices/DMT_AP_RECON_DM.xdm'           dm_catalog_path,
-           '/Custom/DMT2/APInvoices/DMT_AP_RECON_RPT.xdo'          report_catalog_path,
-           'AP invoice import reconciliation (Contract v1, multi-tier)' notes,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V2_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V2_RPT.xdo'       report_catalog_path,
+           'AP invoice import reconciliation (Contract v1, multi-tier). V2 (2026-10-07): '
+           || 'rows found by Fusion job id only (base by import REQUEST_ID, interface and '
+           || 'rejections by LOAD_REQUEST_ID); only real AP_INTERFACE_REJECTIONS text; '
+           || 'deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_AP_INVOICES_INT_TFM_TBL'                           tfm_table,
            'FUSION_INVOICE_ID'                                     fusion_id_column,
@@ -2180,8 +2188,8 @@ using (
     select 100000047                                            bip_report_id,
            'APInvoices.Line'                                    cemli_code,
            'AP Invoice Line'                                    object_type,
-           '/Custom/DMT2/APInvoices/DMT_AP_RECON_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/APInvoices/DMT_AP_RECON_RPT.xdo'       report_catalog_path,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V2_DM.xdm'     dm_catalog_path,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V2_RPT.xdo'    report_catalog_path,
            'AP_INVOICE_LINES_INTERFACE'                         interface_table,
            'AP invoice LINE tier -- AUDITOR registration only (backlog #91, '
              || 'Option A first slice). Not a pipeline/reconcile object; the '
