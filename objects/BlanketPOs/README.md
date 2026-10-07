@@ -42,6 +42,38 @@ Confirmed from Fusion UI — Request 9419765 (2026-04-06, calvin.roth).
 ## Reference Files
 None in this folder.
 
+## Cross-grain error propagation (whole-document rejection, 2026-10-07)
+
+Import Blanket Agreements rejects every line of an agreement whose header is rejected, but
+writes `PO_INTERFACE_ERRORS` only on the header. It does not reject the header when only a line
+fails: it accepts the agreement and rejects that line alone. So the only whole-document case
+for blanket agreements is header -> lines.
+
+`DMT_BLANKET_PO_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` runs in `RECONCILE_BATCH` after the
+per-row apply and before the shared UNACCOUNTED sweep (design section 5, "Whole-document
+rejection carries the real error to every grain").
+
+- **Sources** are blanket headers (`STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'`, the
+  catalog row filter) that are FAILED with their own real `[FUSION_ERROR]`.
+- **Targets** are that agreement's lines (same `INTERFACE_HEADER_KEY`) that Fusion received
+  and that are not LOADED. Each gets
+  `[FUSION_ERROR] Rejected with document: header <RECON_KEY>: <real message>` appended, and is
+  set FAILED. Standard POs and Contracts in the shared PO tables are never touched. A second
+  reconcile adds nothing (exact-quote guard).
+
+Regression cross-grain scenarios (scenario `RegressionTest2610071840`, expected outcomes in
+`scripts/regression_scenario.json`):
+- `RT-BPAL-BAD1` is a valid line under the bad-supplier header `RT-BPA-BAD1`. It must land
+  FAILED quoting the header's supplier error.
+- `RT-BPA-XG2` is a valid agreement with a valid line 1 and a line 2 whose only defect is its UOM.
+  The header and line 1 must LOAD and only line 2 FAILS. This proves no upward propagation.
+
+Proof run 253 (prefix 93309, STANDALONE:BlanketPOs): BPA-001 and BPA-XG2 LOADED
+(`po_header_id` 687871 / 687872) with their good lines. Fusion set `253_LN_100001016` (the BAD1
+line) to REJECTED with no error of its own, and it lands FAILED quoting the header. XG2 line 2
+FAILED with its own UOM error. 0 UNACCOUNTED. Line amounts tie out: staged 53,000 = loaded
+51,000 + failed 2,000. A reconcile-only rerun left every ERROR_TEXT byte-identical.
+
 ## Known Issues
 - **Root cause found (2026-04-06):** ESS WAIT was caused by wrong ESS job (ImportSPOJob instead of ImportBPAJob) and wrong UCM account. Seed script `schema/seed/05_dmt_erp_options_extra_seed.sql` was copying from row 21 (PO) instead of row 23 (BPA). Seed script fixed. ATP UPDATE + ParameterList code fix pending.
 - ParameterList code at `dmt_loader_pkg.pkb` line 1777 builds 9-arg ImportSPOJob format — needs rewrite to 8-arg ImportBPAJob format (see status.md [DB] task).
