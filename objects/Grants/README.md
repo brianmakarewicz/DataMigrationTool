@@ -104,6 +104,9 @@ report returns zero rows and the per-award rejection messages survive ONLY in Fu
     the package carries private `UTL_HTTP` copies (`soap_http`, `soap_http_blob`) instead of the single shared
     transport; `CAPTURE_REPORT_ESS_JOB` parses the status response with `INSTR`/`SUBSTR` (structured-parsing rule).
   - No NAME/PURPOSE/REVISIONS header on the Grants packages.
+  - The Grants transform does not stamp `WORK_QUEUE_ID` on its 15 TFM tables (NULL on runs 229-238), so the
+    reconciler cannot scope its UPDATEs by work-queue item ("work queue item is the unit of processing" rule);
+    they are scoped by `RUN_ID`. Grants runs as one work item per run, so this is not a cross-batch hazard today.
   - `db/seed/dmt_erp_interface_options_tbl.sql` is insert-and-skip, not MERGE (registry-seed-converge rule);
     the 2026-10-07 per-object user change converges existing databases through
     `db/migrations/2026-10-07_grants_ppm_impl_and_recon_v2.sql`.
