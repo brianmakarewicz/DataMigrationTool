@@ -59,3 +59,36 @@ work on both. Upgrade notes (for the next time / other environments):
   Docker restart changes container IPs and the pool loses its target, reset it:
   `ords --config /etc/ords/config config --db-pool default set db.hostname host.docker.internal`
   (and `db.port 1523`, `db.servicename FREEPDB1`), then restart the ORDS container.
+
+## APEX static images (`/i/`) are re-provisioned automatically (backlog #159)
+
+The `dmt2-ords` container serves the APEX static files (`/i/`) from the host
+bind-mount `apex/installer/apex` → `/opt/oracle/apex` (read-only); `/i/` is the
+`images/` subfolder. Those ~29k 26.1 image files (~500 MB of JS/CSS) are **not
+committed to git**, so a fresh clone or a `build_local_db.sh --fresh` leaves the
+folder empty — then `/i/` 404s, the console renders unstyled, and the Sign In
+button does nothing.
+
+**This is now handled for you.** `build_local_db.sh` runs
+`db/tools/provision_apex_images.sh` on every build. That step is idempotent and
+version-checked, and it never touches the database:
+
+- **Destination.** It writes to the host folder that the `dmt2-ords` container
+  actually bind-mounts at `/opt/oracle/apex` (read from `docker inspect`), plus
+  `/images`. If that container does not exist it falls back to
+  `<repo>/apex/installer/apex/images`. `APEX_IMAGES_DEST` overrides both.
+- **Source.** Set `APEX_IMAGES_SRC` to a populated APEX 26.1 `images/` folder. If
+  it is unset, the script uses the sibling-workspace folder
+  `../APEXResourceTracker/cicd/docker/downloads/apex/images` when it exists. No
+  machine-specific path is committed.
+- **Behaviour.** If the destination already holds APEX 26.1, it copies nothing.
+  Otherwise it copies the source in additively (it never deletes files from the
+  destination) and verifies `images/apex_version.txt` says 26.1. If no source is
+  configured, it prints a warning and exits successfully, so the DB build still
+  works on machines and CI runners without the image set.
+- **Live check.** When `dmt2-ords` is running, it requires
+  `http://localhost:8182/i/apex_version.txt` to return HTTP 200 with version 26.1,
+  and fails the step otherwise.
+
+You can also run it on its own: `sh db/tools/provision_apex_images.sh`. The
+expected version can be changed with `APEX_VERSION`.
