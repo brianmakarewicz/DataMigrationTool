@@ -549,6 +549,23 @@
     <li><strong>Accumulate, never overwrite.</strong> <code>ERROR_TEXT</code> is a CLOB appended via <code>DMT_UTIL_PKG.APPEND_ERROR</code> at every step.</li>
     <li><strong>Per-row attribution.</strong> Errors attach to the specific header/line/distribution row that failed — no rolling everything up to the header with a generic "parent failed" cascade.</li>
     <li><strong>Cascade to children.</strong> A FAILED parent (e.g. PO header) cascades to its children (lines/locs/dists), each row carrying why.</li>
+    <li><strong>Whole-document rejection carries the real error to every grain.</strong> <span class="b b-impl">DECIDED 2026-10-07 (owner)</span>
+      Some Fusion imports reject a whole document when any one row of it fails, but write the error only on the row that actually failed.
+      Requisitions and Purchase Orders behave this way, and so can AP Invoices, AR Invoices, Customers (party / site / account tiers) and any other
+      object whose header, line and distribution records stand or fall together. For these objects:
+      <ul>
+        <li>When a <strong>line</strong> errors, its real Fusion error is added to the <strong>header</strong> and to that line's <strong>distributions</strong>.</li>
+        <li>When a <strong>distribution</strong> errors, its real Fusion error is added to its <strong>line</strong> and to the <strong>header</strong>.</li>
+        <li>When a <strong>header</strong> errors, its real Fusion error is added to every <strong>line</strong> and <strong>distribution</strong> of that document.</li>
+        <li>The same applies to any other grain that can fail the whole document (for example schedules / line locations, or a customer party failing its sites and accounts).</li>
+      </ul>
+      Every rejected row lands <code>FAILED</code> carrying the <em>actual</em> Fusion message text, and the message names the grain and key it came from,
+      e.g. <code>[FUSION_ERROR] Rejected with document: line 2 (UOM_CODE=ZZZ): The unit of measure is not valid.</code>
+      The row whose own error it is keeps it as its own error. Copying the real message is required; a generic "parent failed" or "rejected by import"
+      string is not acceptable, and leaving a rejected row <code>UNACCOUNTED</code> because its own grain carries no error is a defect.
+      This refines <em>Per-row attribution</em> above: the error still belongs to the row that failed, and the other rows of the same document quote it.
+      Every object that can reject a whole document must have a regression <strong>cross-grain failure scenario</strong> (a distinct type of BAD record):
+      one document whose only defect is on a single grain, proving every other grain of that document lands FAILED with the quoted real error.</li>
     <li><strong>absence ≠ LOADED.</strong> 0 BIP rows is never treated as success — it is investigated. A row that comes back with neither positive Fusion id nor an error is <em>UNRECONCILED</em> — a derived classification (<code>FAILED</code> + no <code>ERROR_TEXT</code>), not a stored status; see the status vocabulary in the Overview.</li>
     <li><strong>Object-status accounting.</strong> An object is DONE iff every record is accounted for (base-loaded OR interface-errored); FAILED only if any record is unaccounted. A Load ESS ERROR marks all GENERATED rows FAILED and routes to reconcile — it never short-circuits.</li>
   </ul>
