@@ -918,9 +918,10 @@ def main():
     #     BAD:  1 invalid SITE_USE_CODE [BAD-LKP]
     # ====================================================================
     print("\n=== 12. Customer Account Site Uses ===")
-    # GOOD rows send no SET_CODE: every account site use that ever loaded on
-    # this pod had none, and every one sent with 'US1 Business Unit' was
-    # rejected or held (HZ_IMP_ACCTSITEUSES_T, read 2026-10-07).
+    # GOOD rows send the reference-data set code CUSTSITE, like their account
+    # sites. Neither the business-unit name nor an empty SET_CODE is valid: run
+    # 256 (scenario RegressionTest2610071932) sent NULL and Fusion rejected the
+    # G2/G3 uses with HZ_IMP_INVAL_VALUE_COMPARE on SET_CODE.
     for use_ref, asite_ref, use_code in [
         ("RT-SITEUSE-G1", "RT-ASITE-G1", "BILL_TO"),
         ("RT-SITEUSE-G2", "RT-ASITE-G2", "BILL_TO"),
@@ -941,7 +942,7 @@ def main():
                 :use_code, 'Y', 'I', :bu, :src
             )
         """, {"asite_ref": asite_ref, "use_ref": use_ref,
-              "use_code": use_code, "bu": None,
+              "use_code": use_code, "bu": "CUSTSITE",
               "src": f"RT-SUSE-{use_ref}"},
         label=f"GOOD Account Site Use: {use_ref}")
 
