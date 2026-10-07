@@ -32,9 +32,9 @@ AS
 --
 -- The RECON_KEY on each tier's TFM row is stamped by DMT_AR_TRANSFORM_PKG to
 -- equal that tier's report RECORD_KEY:
---   * LINES stamp RECON_KEY = INTERFACE_LINE_ATTRIBUTE1 (the prefixed TRX_NUMBER).
---     AutoInvoice persists INTERFACE_LINE_ATTRIBUTE1 onto the base line, so the
---     base line is keyed directly on the stamped key.
+--   * LINES stamp RECON_KEY = INTERFACE_LINE_ATTRIBUTE1 || '/' ||
+--     INTERFACE_LINE_ATTRIBUTE2 (report V3; unique per line). AutoInvoice persists
+--     both attributes onto the base line, so the base line is keyed directly on it.
 --   * DISTRIBUTIONS stamp RECON_KEY = INTERFACE_LINE_ATTRIBUTE1 || ':' ||
 --     ACCOUNT_CLASS. The base distribution carries no interface key of its own,
 --     so it is confirmed TRANSITIVELY through its parent line; the data model
@@ -64,6 +64,8 @@ AS
 -- REVISIONS:
 --   2026-10-07  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS); line
 --                   tier pinned by INTERFACE_LINE_ATTRIBUTE2 (report DMT_REFERENCE).
+--   2026-10-07  BM  Recon V3: line key ATTRIBUTE1/ATTRIBUTE2 (unique, safe paging);
+--                   page cap sized for report rows DMT did not send.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_AR_RESULTS_PKG';
@@ -73,6 +75,14 @@ AS
     -- placeholder for the separate import-report harvest, not a real Fusion error.
     -- Guard against it so a marker never produces a FAILED with fake text.
     C_IMPORT_MARKER CONSTANT VARCHAR2(30) := '#IMPORT_REPORT#';
+
+    -- Page-cap headroom for the shared keyset fetch. The report returns more rows
+    -- than DMT sent: every LOADED line also brings the BASE distributions
+    -- AutoAccounting created (DMT usually sends none). The shared fetch stops at
+    -- CEIL(p_row_cap / chunk) + 2 pages, so passing the bare TFM count would cut a
+    -- large run short. 5 report rows per TFM row covers a line plus its generated
+    -- distributions with margin. A sizing factor, not a business value.
+    C_REPORT_ROWS_PER_TFM_ROW CONSTANT PLS_INTEGER := 5;
 
     -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
     -- Working set: "line TARGET_LINE_SEQ is on the same Fusion invoice as the
@@ -122,7 +132,7 @@ AS
             p_cemli_code  => C_CEMLI,
             p_run_id      => p_run_id,
             p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
+            p_row_cap     => l_gen_count * C_REPORT_ROWS_PER_TFM_ROW,
             x_rows        => l_rows,
             x_error_code  => l_err_code);
 
@@ -168,20 +178,20 @@ AS
                         -- different value and is NOT what the report returns). Every tier-1 hit
                         -- short-circuits, so loaded outcomes are identical to before. Static
                         -- UPDATEs.
-                        -- Line grain: RECON_KEY (ATTRIBUTE1) is shared by every line
-                        -- of one DMT source invoice, so the line is pinned by its
-                        -- ATTRIBUTE2 too -- the report returns it as DMT_REFERENCE
-                        -- (DFF_KEY) on both BASE and INTERFACE line rows. Without it a
-                        -- multi-line invoice stamps one line's outcome on its siblings.
+                        -- Line grain (recon report V3): RECORD_KEY = ATTRIBUTE1 || '/' ||
+                        -- ATTRIBUTE2, unique per line (ATTRIBUTE1 alone is shared by every
+                        -- line of one DMT invoice). The match is on that expression of the
+                        -- TFM row's own columns -- equal to RECON_KEY for rows transformed
+                        -- since V3, and still correct for rows stamped earlier (RECON_KEY =
+                        -- ATTRIBUTE1), so a re-reconcile of an older run keeps working.
                         UPDATE DMT_RA_LINES_TFM_TBL
                         SET    TFM_STATUS             = 'LOADED',
                                FUSION_CUSTOMER_TRX_ID = l_rows(i).FUSION_ID,
                                RESULTS_UPDATED_DATE   = SYSDATE,
                                LAST_UPDATED_DATE      = SYSDATE
                         WHERE  RUN_ID    = p_run_id
-                        AND    RECON_KEY = l_rows(i).RECORD_KEY
-                        AND    (l_rows(i).DFF_KEY IS NULL
-                                OR INTERFACE_LINE_ATTRIBUTE2 = l_rows(i).DFF_KEY)
+                        AND    INTERFACE_LINE_ATTRIBUTE1 || '/' || INTERFACE_LINE_ATTRIBUTE2
+                                   = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_rc := SQL%ROWCOUNT;
                         l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
@@ -221,9 +231,8 @@ AS
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
-                        AND    RECON_KEY = l_rows(i).RECORD_KEY
-                        AND    (l_rows(i).DFF_KEY IS NULL
-                                OR INTERFACE_LINE_ATTRIBUTE2 = l_rows(i).DFF_KEY)
+                        AND    INTERFACE_LINE_ATTRIBUTE1 || '/' || INTERFACE_LINE_ATTRIBUTE2
+                                   = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_line_failed := l_line_failed + SQL%ROWCOUNT;
                     END IF;

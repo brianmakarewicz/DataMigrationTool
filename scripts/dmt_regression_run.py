@@ -16,6 +16,12 @@ Checks performed after the run:
          BAD-row outcomes -> must be FAILED (never counted good-failed)
        - all other rows                                   -> must be LOADED
        - every FAILED row must have non-empty ERROR_TEXT
+       - rows the scenario lists in scripts/regression_scenario.json
+         "expected_outcomes" are judged against that list instead of the
+         key markers: LOADED, FAILED (own error), or FAILED_WITH_DOCUMENT
+         (FAILED because Fusion rejected its whole document; ERROR_TEXT must
+         contain "Rejected with document:" -- design section 5, whole-document
+         rejection). LOADED / UNACCOUNTED / missing marker for such a row fails.
        - every DONE queue object must have >= 1 record (no DONE-with-zero)
   3. DMT_LOG_TBL sweep for the run: ERROR rows, WARN rows, malformed
      LOG_TYPE values (log calls with swapped arguments), plus ERROR rows
@@ -78,6 +84,61 @@ def _current_scenario():
 
 
 SCENARIO = _current_scenario()
+
+# Expected outcome vocabulary for rows listed in regression_scenario.json
+# "expected_outcomes" (per scenario -> sub-object -> STG SOURCE_ID).
+EXPECT_LOADED = 'LOADED'
+EXPECT_FAILED = 'FAILED'
+EXPECT_DOC = 'FAILED_WITH_DOCUMENT'
+EXPECTED_VALUES = (EXPECT_LOADED, EXPECT_FAILED, EXPECT_DOC)
+# The fixed text DMT_UTIL_PKG.C_DOC_ERROR_MARKER puts in a quoted document error.
+DOC_ERROR_MARKER = 'Rejected with document:'
+_STG_IDENT = re.compile(r'^DMT_[A-Z0-9_]+_STG_TBL$')
+
+
+def load_expected_outcomes(scenario):
+    """{sub_object: {'stg_table': ..., 'rows': {SOURCE_ID: outcome}}} for the
+    scenario, from scripts/regression_scenario.json "expected_outcomes". Empty
+    when the scenario lists none (then the key-marker heuristic decides)."""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'regression_scenario.json')
+    try:
+        with open(p, encoding='utf-8') as f:
+            spec = (json.load(f).get('expected_outcomes') or {}).get(scenario) or {}
+    except (OSError, ValueError):
+        return {}
+    for sub, d in spec.items():
+        if not _STG_IDENT.match(d.get('stg_table', '')):
+            sys.exit(f"regression_scenario.json: bad stg_table for {sub!r}: {d.get('stg_table')!r}")
+        for src, outcome in d.get('rows', {}).items():
+            if outcome not in EXPECTED_VALUES:
+                sys.exit(f"regression_scenario.json: {sub}/{src}: outcome {outcome!r} "
+                         f"not one of {EXPECTED_VALUES}")
+    return spec
+
+
+def resolve_expectations(cur, spec, records):
+    """Map (SUB_OBJECT, STG_SEQUENCE_ID) -> (SOURCE_ID, expected outcome) for the
+    run's records (tuples: cemli, sub_object, ..., stg_sequence_id at index 5),
+    reading SOURCE_ID from each listed STG table. Also returns the listed rows
+    of sub-objects present in the run that have no record in it."""
+    exp, missing = {}, []
+    present_subs = {r[1] for r in records}
+    for sub, d in spec.items():
+        if sub not in present_subs:
+            continue
+        seqs = [r[5] for r in records if r[1] == sub and r[5] is not None]
+        found = set()
+        for i in range(0, len(seqs), 500):
+            chunk = seqs[i:i + 500]
+            binds = ','.join(f':{n + 1}' for n in range(len(chunk)))
+            cur.execute(f"SELECT STG_SEQUENCE_ID, SOURCE_ID FROM {d['stg_table']} "
+                        f"WHERE STG_SEQUENCE_ID IN ({binds})", chunk)
+            for seq, src in cur.fetchall():
+                if src in d['rows']:
+                    exp[(sub, seq)] = (src, d['rows'][src])
+                    found.add(src)
+        missing += [f"{sub} / {src}" for src in d['rows'] if src not in found]
+    return exp, missing
 # CANCELLED removed 2026-07-08 (A8): no cancellation — Overview run-status table.
 TERMINAL_RUN_STATUSES = {'COMPLETED', 'COMPLETED_ERRORS', 'FAILED', 'NO_ROWS_PROCESSED'}
 TERMINAL_QUEUE_STATUSES = {'DONE', 'FAILED', 'SKIPPED'}
@@ -464,18 +525,45 @@ def evaluate(run_id, baseline_arg):
 
     # ---- 2. record-level verdicts ---------------------------------------
     cur.execute("""SELECT CEMLI_CODE, SUB_OBJECT, DISPLAY_KEY, TFM_STATUS,
-                          DBMS_LOB.SUBSTR(ERROR_TEXT, 300, 1)
-                   FROM DMT_RECORD_DETAIL_V WHERE RUN_ID = :1""", [run_id])
+                          DBMS_LOB.SUBSTR(ERROR_TEXT, 300, 1), STG_SEQUENCE_ID,
+                          NVL(DBMS_LOB.INSTR(ERROR_TEXT, :marker), 0)
+                   FROM DMT_RECORD_DETAIL_V WHERE RUN_ID = :run_id""", {"run_id": run_id, "marker": DOC_ERROR_MARKER})
     records = cur.fetchall()
+    spec = load_expected_outcomes(scenario)
+    expected, missing = resolve_expectations(cur, spec, records)
+    if spec:
+        print(f"\n[2a] Expected outcomes (scripts/regression_scenario.json, {scenario}): "
+              f"{len(expected)} listed row(s) found in this run")
+    for m in missing:
+        result['failures'].append(f"expected row not in run: {m}")
+    expect_fail = {}
     per_obj = {}
-    for cemli, sub, key, status, err in records:
+    for cemli, sub, key, status, err, stg_seq, doc_pos in records:
         s = per_obj.setdefault(sub, {'cemli': cemli, 'LOADED': 0, 'FAILED': 0, 'OTHER': 0,
                                      'good_loaded': 0, 'good_failed': 0,
                                      'bad_loaded': 0, 'bad_failed': 0,
                                      'bad_loaded_keys': {}, 'good_failed_keys': {},
                                      'no_error_keys': {}, 'other_keys': {}})
         err_txt = ' '.join(str(err or '').split())  # collapse newlines
-        bad = is_bad_row(key, err_txt)
+        exp = expected.get((sub, stg_seq))
+        if exp:
+            # A listed row: the scenario's expected outcome replaces the key-marker
+            # heuristic, and its own check runs here.
+            src, outcome = exp
+            bad = outcome != EXPECT_LOADED
+            problem = None
+            if outcome == EXPECT_LOADED and status != 'LOADED':
+                problem = f"expected LOADED, got {status}"
+            elif outcome == EXPECT_FAILED and status != 'FAILED':
+                problem = f"expected FAILED (own Fusion error), got {status}"
+            elif outcome == EXPECT_DOC and status != 'FAILED':
+                problem = f"expected FAILED with its document, got {status}"
+            elif outcome == EXPECT_DOC and not doc_pos:
+                problem = f"expected '{DOC_ERROR_MARKER}' in ERROR_TEXT, not found"
+            if problem:
+                expect_fail.setdefault(sub, []).append(f"{src}: {problem}")
+        else:
+            bad = is_bad_row(key, err_txt)
         if status == 'LOADED':
             s['LOADED'] += 1
             s['bad_loaded' if bad else 'good_loaded'] += 1
@@ -515,6 +603,12 @@ def evaluate(run_id, baseline_arg):
         more = f" (+{len(d) - n} more keys)" if len(d) > n else ''
         return '; '.join(f"{k} x{v[0]} — {v[1]}" if isinstance(v, tuple) else f"{k} x{v}"
                          for k, v in items) + more
+
+    for sub in sorted(expect_fail):
+        result['failures'].append(f"EXPECTED OUTCOME not met: {sub}: " + '; '.join(expect_fail[sub]))
+        print(f"    FAIL  expected outcome not met: {sub}: " + '; '.join(expect_fail[sub]))
+    if spec and not expect_fail and not missing:
+        print(f"    OK    all {len(expected)} listed row(s) met their expected outcome")
 
     for sub in sorted(per_obj):
         s = per_obj[sub]
@@ -606,15 +700,18 @@ def evaluate(run_id, baseline_arg):
     if baseline_id:
         print(f"\n[5] Baseline diff vs RUN_ID={baseline_id} (GOOD/BAD-aware: a regression is "
               f"fewer good rows loading, more good rows failing, or more bad rows loading)")
-        cur.execute("""SELECT SUB_OBJECT, DISPLAY_KEY, TFM_STATUS,
-                              DBMS_LOB.SUBSTR(ERROR_TEXT, 300, 1)
+        cur.execute("""SELECT CEMLI_CODE, SUB_OBJECT, DISPLAY_KEY, TFM_STATUS,
+                              DBMS_LOB.SUBSTR(ERROR_TEXT, 300, 1), STG_SEQUENCE_ID
                        FROM DMT_RECORD_DETAIL_V WHERE RUN_ID = :1""", [baseline_id])
+        base_rows = cur.fetchall()
+        base_expected, _ = resolve_expectations(cur, spec, base_rows)
         base = {}
-        for sub, key, status, err in cur.fetchall():
+        for _cemli, sub, key, status, err, stg_seq in base_rows:
             b = base.setdefault(sub, {'good_loaded': 0, 'good_failed': 0,
                                       'bad_loaded': 0, 'bad_failed': 0, 'total': 0})
             b['total'] += 1
-            bad = is_bad_row(key, err)
+            bexp = base_expected.get((sub, stg_seq))
+            bad = (bexp[1] != EXPECT_LOADED) if bexp else is_bad_row(key, err)
             if status == 'LOADED':
                 b['bad_loaded' if bad else 'good_loaded'] += 1
             elif status == 'FAILED':

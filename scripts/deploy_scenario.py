@@ -132,10 +132,15 @@ def main():
     print(f"\nVerified: 0 duplicate rows across all staging tables in {new_name} (id {sid}).")
 
     # 3) advance the git-tracked pointer (no DB record is updated)
-    STATE.write_text(json.dumps(
-        {"current_scenario": new_name, "scenario_id": sid, "seed_sha256": sha,
-         "target": a.target, "created": datetime.now().strftime("%Y-%m-%d %H:%M")}, indent=2),
-        encoding="utf-8")
+    # Keep the per-scenario expected outcomes (read by dmt_regression_run.py):
+    # they describe scenarios, not the pointer, so advancing the pointer must not
+    # drop them.
+    new_state = {"current_scenario": new_name, "scenario_id": sid, "seed_sha256": sha,
+                 "target": a.target, "created": datetime.now().strftime("%Y-%m-%d %H:%M")}
+    for k in ("expected_outcomes_note", "expected_outcomes"):
+        if k in state:
+            new_state[k] = state[k]
+    STATE.write_text(json.dumps(new_state, indent=2), encoding="utf-8")
     print(f"Pointer updated: current_scenario = {new_name}. "
           f"Run the regression with --scenario {new_name}.")
     return 0

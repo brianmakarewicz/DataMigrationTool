@@ -20,7 +20,9 @@ AS
 --   distributions  'ARInvoices.Distribution'    DMT_RA_DISTS_TFM_TBL     FUSION_CUST_TRX_LINE_GL_DIST_ID
 --
 -- RECON_KEY per tier (stamped by DMT_AR_TRANSFORM_PKG, = each tier's report
--- RECORD_KEY): BOTH tiers = INTERFACE_LINE_ATTRIBUTE1 (the prefixed TRX_NUMBER).
+-- RECORD_KEY): lines = INTERFACE_LINE_ATTRIBUTE1 || '/' || INTERFACE_LINE_ATTRIBUTE2
+-- (report V3, unique per line); distributions = parent ATTRIBUTE1 || ':' ||
+-- ACCOUNT_CLASS || ':' || per-line ordinal.
 -- The AR base distribution carries no interface key of its own, so a distribution
 -- is confirmed TRANSITIVELY through its parent line: the data model emits the
 -- parent line's stamped key as the distribution RECORD_KEY, and a BASE

@@ -44,9 +44,8 @@ Live standard violations / gaps still present in this object's code (section 5 /
    the values DMT sent, compared literally; AutoInvoice compares the ids it derives from them
    (customer, site, type, terms), so two different spellings that resolve to the same id would
    group in Fusion but not here; (b) the pod's grouping rule is hard-coded (Oracle mandatory set
-   plus SALES_ORDER), not read at runtime; (c) keyset paging of the
-   recon report orders by RECORD_KEY = ATTRIBUTE1, which every line of one DMT invoice shares,
-   so a page boundary inside such a run of rows can drop one (only above 5,000 rows).
+   plus SALES_ORDER), not read at runtime. (Paging fixed 2026-10-07 by recon report V3: the line
+   RECORD_KEY is ATTRIBUTE1/ATTRIBUTE2, unique per line.)
 2. **Null transaction-flexfield key is not synthesized.** A line with neither
    `INTERFACE_LINE_ATTRIBUTE1` nor `TRX_NUMBER` in STG reaches the FBDI with a NULL key (the
    section 7 rule "Null FBDI source references are synthesized deterministically" is not applied).
@@ -56,11 +55,6 @@ Live standard violations / gaps still present in this object's code (section 5 /
    check.
 4. The reconciliation report matches base lines on `INTERFACE_LINE_ATTRIBUTE1 LIKE :P_PREFIX||'%'`
    (prefix as a search value) rather than on base `REQUEST_ID = :P_IMPORT_ESS_ID`.
-5. The Record Detail "Verify in Fusion" REST lookup (`DMT_REST_LOOKUP_TBL` rows `ARInvoices` /
-   `AR Lines`) queries `receivablesInvoices` by `TransactionNumber = TFM.TRX_NUMBER`. For an
-   auto-numbering source (External Source) DMT sends no transaction number, so the key is empty
-   and the button returns NOT_FOUND even for a LOADED invoice (seen on proof run 245). It should key
-   on `FUSION_CUSTOMER_TRX_ID` (CustomerTransactionId) instead.
 
 ## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
 
@@ -93,6 +87,11 @@ models both with one STG + one TFM table each.
    fix was required.
 
 ## History
+- 2026-10-07 recon report V3 (`DMT_AR_RECON_V3_DM`, alongside V1/V2): line RECORD_KEY =
+  ATTRIBUTE1/ATTRIBUTE2 so keyset paging never drops a line of a multi-line invoice; transform
+  stamps the same RECON_KEY; page cap sized for AutoAccounting rows DMT did not send. Verify in
+  Fusion now queries by CustomerTransactionId. Regression harness learns the expected outcome
+  FAILED_WITH_DOCUMENT (scripts/regression_scenario.json).
 - 2026-10-07 cross-grain propagation (branch `fix-ar-cross-grain-propagation`):
   `PROPAGATE_DOCUMENT_ERRORS` quotes a rejected row's real error onto the rest of its Fusion
   invoice; line apply pinned by ATTRIBUTE2; INTERNAL_NOTES grouping stamp behind config
