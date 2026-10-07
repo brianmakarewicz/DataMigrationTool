@@ -37,13 +37,31 @@ AS
 -- 0 LOADED.
 --
 -- After the three tiers settle, outcomes are echoed back to all three STG tables
--- (unchanged from the prior reader). No composed parent/child roll-up is needed:
--- each tier has its own BASE and INTERFACE rows in the report, so each tier
--- accounts for itself directly.
+-- (unchanged from the prior reader). Each tier has its own BASE and INTERFACE
+-- rows in the report, so each tier accounts for itself directly. Then
+-- PROPAGATE_DOCUMENT_ERRORS quotes each rejected row's real Fusion error onto the
+-- other rows of the same requisition, which Requisition Import rejects with it
+-- but writes no error for (design section 5, whole-document rejection).
+--
+-- REVISIONS:
+--   2026-10-07  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS): the
+--                   requisition (INTERFACE_HEADER_KEY) is the document.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_REQ_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'Requisitions';
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
+    -- Working set: "the requisition DOC_KEY carries the source row SOURCE_SEQ (a
+    -- header, line or distribution with its own real Fusion error), so every other
+    -- row of that requisition must carry QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        DOC_KEY      DMT_POR_REQ_HEADERS_TFM_TBL.INTERFACE_HEADER_KEY%TYPE,  -- the requisition
+        SOURCE_KIND  VARCHAR2(4),      -- 'HDR' | 'LINE' | 'DIST'
+        SOURCE_SEQ   NUMBER,           -- TFM_SEQUENCE_ID in the source's own table
+        QUOTED_ERROR VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- --------------------------------------------------------
     -- GET_PARTITION_KEYS — distinct BATCH_ID tokens for one run, STATIC SQL
@@ -431,6 +449,205 @@ AS
     END APPLY_CONTRACT_V1_REQUISITIONS;
 
     -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private)
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain" (decided 2026-10-07). Requisition Import is all-or-nothing per
+    -- requisition: when the header, any line or any distribution of a requisition
+    -- has an error, Fusion sets EVERY interface row of that requisition to
+    -- FAILED/ERROR but writes POR_REQ_IMPORT_ERRORS only for the row that failed
+    -- (run 238: BADLINE / BADDIST headers, BADHDR line + dist, BADLINE dist;
+    -- docs/findings/run238_Reqs_POs_unaccounted.md).
+    --
+    -- The document is the requisition as Fusion builds it: one header interface
+    -- row and the lines that carry its INTERFACE_HEADER_KEY, each line's
+    -- distributions by INTERFACE_LINE_KEY. DMT always sends the header, so the
+    -- header key decides the requisition; the import's Group By argument (NONE)
+    -- and the line GROUP_CODE only group lines that arrive WITHOUT a header, so
+    -- two DMT requisitions are never merged. A requisition never spans two work
+    -- items (the BATCH_ID partition is a header value), so the key is
+    -- RUN_ID + INTERFACE_HEADER_KEY, and every row is scoped to the work item the
+    -- way the shared sweep scopes it.
+    --
+    -- Sources: headers, lines and distributions of this run and work item with
+    --   TFM_STATUS = 'FAILED' carrying their OWN real Fusion error -- ERROR_TEXT
+    --   contains '[FUSION_ERROR]' and does NOT contain C_DOC_ERROR_MARKER (a quote
+    --   is never re-quoted, so quotes never chain). A distribution's requisition
+    --   comes through its line.
+    -- Targets: every OTHER header / line / distribution row of the same
+    --   requisition that Fusion received (FBDI_CSV_ID stamped at generation, not
+    --   STAGED) and that is not LOADED (LOADED rows are never touched), and that
+    --   does not already carry the exact quote. The quote is appended
+    --   (APPEND_ERROR, never overwrite) and the row set FAILED. A requisition with
+    --   no source error is untouched -- its rows fall to the shared UNACCOUNTED
+    --   sweep.
+    -- Idempotent: the "already carries the exact quote" guard means a second
+    --   reconcile pass adds nothing.
+    -- One collection of (requisition, source, quote) pairs is built by ONE static
+    -- SELECT, then ONE static bulk UPDATE (FORALL) per target table: a MERGE
+    -- cannot read a PL/SQL record collection through TABLE() (ORA-00902, AR run
+    -- 248). NO dynamic SQL; NO COMMIT (caller owns the txn).
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_hdrs   NUMBER := 0;
+        l_lines  NUMBER := 0;
+        l_dists  NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting same-requisition (source, quote) pairs for run ' || p_run_id;
+        WITH scoped_hdrs AS (
+            SELECT h.*
+            FROM   DMT_POR_REQ_HEADERS_TFM_TBL h
+            WHERE  h.RUN_ID = p_run_id
+            -- Work-item scope, as the shared sweep scopes it: rows stamped with
+            -- another work item are excluded; unstamped rows are run-scoped.
+            AND    (p_work_queue_id IS NULL OR h.WORK_QUEUE_ID IS NULL
+                    OR h.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        scoped_lines AS (
+            SELECT l.*
+            FROM   DMT_POR_REQ_LINES_TFM_TBL l
+            WHERE  l.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR l.WORK_QUEUE_ID IS NULL
+                    OR l.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        scoped_dists AS (
+            SELECT d.*
+            FROM   DMT_POR_REQ_DISTS_TFM_TBL d
+            WHERE  d.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR d.WORK_QUEUE_ID IS NULL
+                    OR d.WORK_QUEUE_ID = p_work_queue_id)
+        )
+        -- A header with its own real Fusion error.
+        SELECT h.INTERFACE_HEADER_KEY,
+               'HDR',
+               h.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'header', h.RECON_KEY,
+                   DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG)))
+        BULK COLLECT INTO l_pairs
+        FROM   scoped_hdrs h
+        WHERE  h.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, l_marker) = 0
+        AND    h.INTERFACE_HEADER_KEY IS NOT NULL
+        UNION ALL
+        -- A line with its own real Fusion error rejects its requisition.
+        SELECT l.INTERFACE_HEADER_KEY,
+               'LINE',
+               l.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'line', l.RECON_KEY,
+                   DBMS_LOB.SUBSTR(l.ERROR_TEXT, 3800, DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG)))
+        FROM   scoped_lines l
+        WHERE  l.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, l_marker) = 0
+        AND    l.INTERFACE_HEADER_KEY IS NOT NULL
+        UNION ALL
+        -- A distribution with its own real Fusion error rejects its line, and
+        -- therefore that line's requisition: the requisition comes through the line.
+        SELECT l.INTERFACE_HEADER_KEY,
+               'DIST',
+               d.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'distribution', d.RECON_KEY,
+                   DBMS_LOB.SUBSTR(d.ERROR_TEXT, 3800, DBMS_LOB.INSTR(d.ERROR_TEXT, C_TAG)))
+        FROM   scoped_dists d
+        JOIN   scoped_lines l ON l.INTERFACE_LINE_KEY = d.INTERFACE_LINE_KEY
+        WHERE  d.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(d.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(d.ERROR_TEXT, l_marker) = 0
+        AND    l.INTERFACE_HEADER_KEY IS NOT NULL;
+
+        -- One bulk UPDATE per target table (FORALL over the pairs). Each pair
+        -- appends its quote only when the row does not already carry it, so a row
+        -- quoted by several sources gets each quote once and a second reconcile
+        -- pass adds nothing. The source row itself is never quoted onto itself.
+        l_step := 'appending quoted document errors to requisition headers';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_POR_REQ_HEADERS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INTERFACE_HEADER_KEY = l_pairs(i).DOC_KEY
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'HDR' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_hdrs := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to requisition lines';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_POR_REQ_LINES_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INTERFACE_HEADER_KEY = l_pairs(i).DOC_KEY
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'LINE' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_lines := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to requisition distributions';
+        -- A distribution belongs to the requisition of its line (same run).
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_POR_REQ_DISTS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INTERFACE_LINE_KEY IN (
+                       SELECT l.INTERFACE_LINE_KEY
+                       FROM   DMT_POR_REQ_LINES_TFM_TBL l
+                       WHERE  l.RUN_ID = p_run_id
+                       AND    l.INTERFACE_HEADER_KEY = l_pairs(i).DOC_KEY)
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'DIST' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_dists := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rejected requisition sources: ' || l_pairs.COUNT
+                           || ' | rows given a quoted document error: headers ' || l_hdrs
+                           || ', lines ' || l_lines || ', distributions ' || l_dists || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
     -- Contract v1 apply. The Requisitions load ESS id is the Contract v1
     -- P_LOAD_REQUEST_ID; the report's run-scoped selectors (P_RUN_ID, P_PREFIX)
@@ -452,6 +669,12 @@ AS
             p_procedure      => C_PROC);
 
         APPLY_CONTRACT_V1_REQUISITIONS(p_run_id, TO_CHAR(p_load_ess_id));
+
+        -- Whole-document rejection (design section 5): rows Requisition Import
+        -- rejected with their requisition carry the real error of the row that
+        -- caused it. Runs after the per-row apply and BEFORE the shared
+        -- unaccounted sweep (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);
 
         -- Unresolved records are intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object not-DONE
