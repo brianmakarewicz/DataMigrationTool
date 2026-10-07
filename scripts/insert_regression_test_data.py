@@ -617,6 +617,21 @@ def main():
         ("Blorptech Widgets", "RT-CUST-G1"),
         ("Fnargle Systems", "RT-CUST-G2"),
         ("Zorptell Dynamics", "RT-CUST-G3"),
+        # Cross-grain failure scenarios (design section 5, "Whole-document
+        # rejection carries the real error to every grain"; backlog #193). Each
+        # is one customer whose ONLY defect is on one grain:
+        #   RT-CUST-XG: the account site SET_CODE is a business-unit name
+        #               (rejected, HZ_IMP_INVAL_VALUE_COMPARE) -> only its account
+        #               site use is held; party, location, party site, party site
+        #               use and account load.
+        #   RT-CUST-XU: one party site use has an invalid SITE_USE_TYPE -> Fusion
+        #               holds the WHOLE party (party, party site, the valid use,
+        #               account, account site, account site use); location loads.
+        #   RT-CUST-XP: the party itself is invalid (inserted below) -> its party
+        #               site, use, account, account site and site use are not
+        #               created; location loads.
+        ("Vexmora Trading", "RT-CUST-XG"),
+        ("Plindex Holdings", "RT-CUST-XU"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_HZ_PARTIES_STG_TBL (
@@ -640,6 +655,19 @@ def main():
             'RT Customer Bad-1', 'RT-PTY-BAD1'
         )
     """, label="BAD Party: invalid PARTY_TYPE [BAD-LKP]")
+
+    # Cross-grain document XP: the party is the only bad grain (same defect as
+    # BAD1), but this party HAS a full customer tree under it.
+    run_sql(cur, """
+        INSERT INTO DMT_HZ_PARTIES_STG_TBL (
+            PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
+            INSERT_UPDATE_FLAG, PARTY_TYPE,
+            ORGANIZATION_NAME, SOURCE_ID
+        ) VALUES (
+            'LEG1', 'RT-CUST-XP', 'I', 'INVALID_TYPE',
+            'Quillfrond Ledgers', 'RT-PTY-RT-CUST-XP'
+        )
+    """, label="XG Party: invalid PARTY_TYPE, full tree under it [XG-PARTY]")
     tag_scenario(cur, "DMT_HZ_PARTIES_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -650,6 +678,9 @@ def main():
         ("RT-LOC-G1", "100 Good Blvd",  "New York",    "NY", "10001"),
         ("RT-LOC-G2", "200 Good Lane",  "Los Angeles", "CA", "90001"),
         ("RT-LOC-G3", "300 Good Street","Chicago",     "IL", "60601"),
+        ("RT-LOC-XG", "410 Vexmora Way", "Boston",     "MA", "02108"),
+        ("RT-LOC-XU", "420 Plindex Road", "Denver",    "CO", "80202"),
+        ("RT-LOC-XP", "430 Quillfrond Ct", "Seattle",  "WA", "98101"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_HZ_LOCATIONS_STG_TBL (
@@ -687,6 +718,9 @@ def main():
         ("RT-CUST-G1", "RT-PSITE-G1", "RT-LOC-G1", "RT Good-1 Office"),
         ("RT-CUST-G2", "RT-PSITE-G2", "RT-LOC-G2", "RT Good-2 Office"),
         ("RT-CUST-G3", "RT-PSITE-G3", "RT-LOC-G3", "RT Good-3 Office"),
+        ("RT-CUST-XG", "RT-PSITE-XG", "RT-LOC-XG", "RT XG Office"),
+        ("RT-CUST-XU", "RT-PSITE-XU", "RT-LOC-XU", "RT XU Office"),
+        ("RT-CUST-XP", "RT-PSITE-XP", "RT-LOC-XP", "RT XP Office"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_HZ_PARTY_SITES_STG_TBL (
@@ -730,6 +764,9 @@ def main():
         ("RT-CUST-G1", "RT-PSITE-G1", "BILL_TO"),
         ("RT-CUST-G2", "RT-PSITE-G2", "BILL_TO"),
         ("RT-CUST-G3", "RT-PSITE-G3", "BILL_TO"),
+        ("RT-CUST-XG", "RT-PSITE-XG", "BILL_TO"),
+        ("RT-CUST-XU", "RT-PSITE-XU", "BILL_TO"),
+        ("RT-CUST-XP", "RT-PSITE-XP", "BILL_TO"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_HZ_PARTY_SITE_USES_STG_TBL (
@@ -759,6 +796,21 @@ def main():
             'INVALID_USE', 'Y', 'I', 'RT-PSUSE-BAD1'
         )
     """, label="BAD Party Site Use: invalid SITE_USE_TYPE [BAD-LKP]")
+
+    # Cross-grain document XU: this invalid use is the ONLY bad grain of
+    # customer RT-CUST-XU.
+    run_sql(cur, """
+        INSERT INTO DMT_HZ_PARTY_SITE_USES_STG_TBL (
+            PARTY_ORIG_SYSTEM, PARTY_ORIG_SYSTEM_REFERENCE,
+            SITE_ORIG_SYSTEM, SITE_ORIG_SYSTEM_REFERENCE,
+            SITE_USE_TYPE, PRIMARY_FLAG,
+            INSERT_UPDATE_FLAG, SOURCE_ID
+        ) VALUES (
+            'LEG1', 'RT-CUST-XU',
+            'LEG1', 'RT-PSITE-XU',
+            'INVALID_USE', 'Y', 'I', 'RT-PSUSE-XU-BAD'
+        )
+    """, label="XG Party Site Use: invalid SITE_USE_TYPE, only defect of XU [XG-PSU]")
     tag_scenario(cur, "DMT_HZ_PARTY_SITE_USES_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -771,6 +823,9 @@ def main():
         ("RT-ACCT-G1", "RT-CUST-G1", "RTG001", "RT Customer Good-1"),
         ("RT-ACCT-G2", "RT-CUST-G2", "RTG002", "RT Customer Good-2"),
         ("RT-ACCT-G3", "RT-CUST-G3", "RTG003", "RT Customer Good-3"),
+        ("RT-ACCT-XG", "RT-CUST-XG", "RTXG01", "RT Customer XG"),
+        ("RT-ACCT-XU", "RT-CUST-XU", "RTXU01", "RT Customer XU"),
+        ("RT-ACCT-XP", "RT-CUST-XP", "RTXP01", "RT Customer XP"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_HZ_ACCOUNTS_STG_TBL (
@@ -809,10 +864,20 @@ def main():
     #     BAD:  1 referencing non-existent account [BAD-UPS]
     # ====================================================================
     print("\n=== 11. Customer Account Sites ===")
-    for asite_ref, acct_ref, site_ref in [
-        ("RT-ASITE-G1", "RT-ACCT-G1", "RT-PSITE-G1"),
-        ("RT-ASITE-G2", "RT-ACCT-G2", "RT-PSITE-G2"),
-        ("RT-ASITE-G3", "RT-ACCT-G3", "RT-PSITE-G3"),
+    # SET_CODE is a reference-data SET code, not a business-unit name: US1
+    # Business Unit maps to set CUSTSITE for reference group
+    # HZ_CUSTOMER_ACCOUNT_SITE (FND_SETID_ASSIGNMENTS). Every account site ever
+    # sent with 'US1 Business Unit' was rejected or held; the ones sent with
+    # CUSTSITE loaded (docs/findings/run236_Customers_Items_unaccounted.md,
+    # secondary item A). GOOD rows therefore send CUSTSITE; the cross-grain row
+    # RT-ASITE-XG keeps the business-unit name on purpose (its only defect).
+    for asite_ref, acct_ref, site_ref, set_code in [
+        ("RT-ASITE-G1", "RT-ACCT-G1", "RT-PSITE-G1", "CUSTSITE"),
+        ("RT-ASITE-G2", "RT-ACCT-G2", "RT-PSITE-G2", "CUSTSITE"),
+        ("RT-ASITE-G3", "RT-ACCT-G3", "RT-PSITE-G3", "CUSTSITE"),
+        ("RT-ASITE-XG", "RT-ACCT-XG", "RT-PSITE-XG", BU),
+        ("RT-ASITE-XU", "RT-ACCT-XU", "RT-PSITE-XU", "CUSTSITE"),
+        ("RT-ASITE-XP", "RT-ACCT-XP", "RT-PSITE-XP", "CUSTSITE"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_HZ_ACCT_SITES_STG_TBL (
@@ -827,7 +892,7 @@ def main():
                 'I', :bu, :src
             )
         """, {"acct_ref": acct_ref, "asite_ref": asite_ref,
-              "site_ref": site_ref, "bu": BU,
+              "site_ref": site_ref, "bu": set_code,
               "src": f"RT-ASITE-{asite_ref}"},
         label=f"GOOD Account Site: {asite_ref}")
 
@@ -853,10 +918,16 @@ def main():
     #     BAD:  1 invalid SITE_USE_CODE [BAD-LKP]
     # ====================================================================
     print("\n=== 12. Customer Account Site Uses ===")
+    # GOOD rows send no SET_CODE: every account site use that ever loaded on
+    # this pod had none, and every one sent with 'US1 Business Unit' was
+    # rejected or held (HZ_IMP_ACCTSITEUSES_T, read 2026-10-07).
     for use_ref, asite_ref, use_code in [
         ("RT-SITEUSE-G1", "RT-ASITE-G1", "BILL_TO"),
         ("RT-SITEUSE-G2", "RT-ASITE-G2", "BILL_TO"),
         ("RT-SITEUSE-G3", "RT-ASITE-G3", "BILL_TO"),
+        ("RT-SITEUSE-XG", "RT-ASITE-XG", "BILL_TO"),
+        ("RT-SITEUSE-XU", "RT-ASITE-XU", "BILL_TO"),
+        ("RT-SITEUSE-XP", "RT-ASITE-XP", "BILL_TO"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_HZ_ACCT_SITE_USES_STG_TBL (
@@ -870,7 +941,7 @@ def main():
                 :use_code, 'Y', 'I', :bu, :src
             )
         """, {"asite_ref": asite_ref, "use_ref": use_ref,
-              "use_code": use_code, "bu": BU,
+              "use_code": use_code, "bu": None,
               "src": f"RT-SUSE-{use_ref}"},
         label=f"GOOD Account Site Use: {use_ref}")
 
