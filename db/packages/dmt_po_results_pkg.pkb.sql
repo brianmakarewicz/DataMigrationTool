@@ -41,12 +41,35 @@ AS
 -- coupling is what makes the join hit.
 --
 -- No STG echo (removed 2026-07-13, design section 5: STG carries a forward-only
--- status; LOADED is a TFM-only status). No parent/child cascade: each tier has
--- its own BASE and INTERFACE rows in the report, so each tier accounts for itself.
+-- status; LOADED is a TFM-only status). Each tier has its own BASE and INTERFACE
+-- rows in the report, so each tier accounts for itself. Then
+-- PROPAGATE_DOCUMENT_ERRORS quotes each rejected row's real Fusion error onto the
+-- other rows of the same purchase order, which Import Orders rejects with it but
+-- writes no error for (design section 5, whole-document rejection).
+--
+-- REVISIONS:
+--   2026-10-07  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS): the
+--                   purchase order (INTERFACE_HEADER_KEY) is the document.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_PO_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'PurchaseOrders';
+
+    -- This object's rows in the four shared PO TFM tables (the catalog ROW_FILTER
+    -- for PurchaseOrders): headers whose STYLE_DISPLAY_NAME is the Standard-PO style.
+    C_STYLE CONSTANT VARCHAR2(30) := 'Purchase Order';
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
+    -- Working set: "the purchase order DOC_KEY carries the source row SOURCE_SEQ
+    -- (a header, line, line location or distribution with its own real Fusion
+    -- error), so every other row of that purchase order must carry QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        DOC_KEY      DMT_PO_HEADERS_INT_TFM_TBL.INTERFACE_HEADER_KEY%TYPE,  -- the purchase order
+        SOURCE_KIND  VARCHAR2(4),      -- 'HDR' | 'LINE' | 'LLOC' | 'DIST'
+        SOURCE_SEQ   NUMBER,           -- TFM_SEQUENCE_ID in the source's own table
+        QUOTED_ERROR VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_PURCHASE_ORDERS (private)
@@ -448,6 +471,255 @@ AS
     END APPLY_CONTRACT_V1_PURCHASE_ORDERS;
 
     -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private)
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain" (decided 2026-10-07). Import Orders is all-or-nothing per purchase
+    -- order: when the header, a line, a line location (schedule) or a distribution
+    -- has an error, Fusion sets EVERY interface row of that PO to REJECTED but
+    -- writes PO_INTERFACE_ERRORS only for the row that failed (run 238: the
+    -- RT-PO-BAD1 line, location and distribution; live, STANDARD headers REJECTED
+    -- with no error of their own where a line carried it;
+    -- docs/findings/run238_Reqs_POs_unaccounted.md).
+    --
+    -- The document is the purchase order as Fusion builds it: one header
+    -- interface row (INTERFACE_HEADER_KEY), the lines carrying that key, each
+    -- line's locations (INTERFACE_LINE_KEY) and each location's distributions
+    -- (INTERFACE_LINE_LOCATION_KEY). Import Orders never merges two header rows,
+    -- so two DMT purchase orders are never one Fusion document. Keys are
+    -- run-prefixed, so the key is RUN_ID + INTERFACE_HEADER_KEY. Only this
+    -- object's rows are read or written: headers of the Standard-PO style
+    -- (C_STYLE, the catalog ROW_FILTER) and their children, so a Blanket or
+    -- Contract document in the same shared tables is never touched. Every row is
+    -- scoped to the work item the way the shared sweep scopes it.
+    --
+    -- Sources: rows of this run, work item and style with TFM_STATUS = 'FAILED'
+    --   carrying their OWN real Fusion error -- ERROR_TEXT contains '[FUSION_ERROR]'
+    --   and does NOT contain C_DOC_ERROR_MARKER (quotes never chain). A child's
+    --   purchase order comes through its parents.
+    -- Targets: every OTHER header / line / location / distribution of the same
+    --   purchase order that Fusion received (FBDI_CSV_ID stamped at generation, not
+    --   STAGED) and that is not LOADED (LOADED rows are never touched), and that
+    --   does not already carry the exact quote. The quote is appended
+    --   (APPEND_ERROR, never overwrite) and the row set FAILED. A purchase order
+    --   with no source error is untouched -- its rows fall to the shared
+    --   UNACCOUNTED sweep.
+    -- Idempotent: the "already carries the exact quote" guard means a second
+    --   reconcile pass adds nothing.
+    -- One collection of (purchase order, source, quote) pairs is built by ONE
+    -- static SELECT, then ONE static bulk UPDATE (FORALL) per target table: a
+    -- MERGE cannot read a PL/SQL record collection through TABLE() (ORA-00902, AR
+    -- run 248). NO dynamic SQL; NO COMMIT (caller owns the txn).
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_hdrs   NUMBER := 0;
+        l_lines  NUMBER := 0;
+        l_locs   NUMBER := 0;
+        l_dists  NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting same-purchase-order (source, quote) pairs for run ' || p_run_id;
+        WITH po_hdrs AS (
+            SELECT h.*
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL h
+            WHERE  h.RUN_ID = p_run_id
+            AND    h.STYLE_DISPLAY_NAME = C_STYLE
+            -- Work-item scope, as the shared sweep scopes it: rows stamped with
+            -- another work item are excluded; unstamped rows are run-scoped.
+            AND    (p_work_queue_id IS NULL OR h.WORK_QUEUE_ID IS NULL
+                    OR h.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        po_lines AS (
+            SELECT l.*, h.INTERFACE_HEADER_KEY AS DOC_KEY
+            FROM   DMT_PO_LINES_INT_TFM_TBL l
+            JOIN   po_hdrs h ON h.INTERFACE_HEADER_KEY = l.INTERFACE_HEADER_KEY
+            WHERE  l.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR l.WORK_QUEUE_ID IS NULL
+                    OR l.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        po_locs AS (
+            SELECT ll.*, l.DOC_KEY
+            FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL ll
+            JOIN   po_lines l ON l.INTERFACE_LINE_KEY = ll.INTERFACE_LINE_KEY
+            WHERE  ll.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR ll.WORK_QUEUE_ID IS NULL
+                    OR ll.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        po_dists AS (
+            SELECT d.*, ll.DOC_KEY
+            FROM   DMT_PO_DISTS_INT_TFM_TBL d
+            JOIN   po_locs ll ON ll.INTERFACE_LINE_LOCATION_KEY = d.INTERFACE_LINE_LOCATION_KEY
+            WHERE  d.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR d.WORK_QUEUE_ID IS NULL
+                    OR d.WORK_QUEUE_ID = p_work_queue_id)
+        )
+        -- A header with its own real Fusion error.
+        SELECT h.INTERFACE_HEADER_KEY,
+               'HDR',
+               h.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'header', h.RECON_KEY,
+                   DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG)))
+        BULK COLLECT INTO l_pairs
+        FROM   po_hdrs h
+        WHERE  h.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, l_marker) = 0
+        UNION ALL
+        -- A line with its own real Fusion error rejects its purchase order.
+        SELECT l.DOC_KEY,
+               'LINE',
+               l.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'line', l.RECON_KEY,
+                   DBMS_LOB.SUBSTR(l.ERROR_TEXT, 3800, DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG)))
+        FROM   po_lines l
+        WHERE  l.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, l_marker) = 0
+        UNION ALL
+        -- A line location (schedule) with its own real Fusion error.
+        SELECT ll.DOC_KEY,
+               'LLOC',
+               ll.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'line location', ll.RECON_KEY,
+                   DBMS_LOB.SUBSTR(ll.ERROR_TEXT, 3800, DBMS_LOB.INSTR(ll.ERROR_TEXT, C_TAG)))
+        FROM   po_locs ll
+        WHERE  ll.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(ll.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(ll.ERROR_TEXT, l_marker) = 0
+        UNION ALL
+        -- A distribution with its own real Fusion error.
+        SELECT d.DOC_KEY,
+               'DIST',
+               d.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'distribution', d.RECON_KEY,
+                   DBMS_LOB.SUBSTR(d.ERROR_TEXT, 3800, DBMS_LOB.INSTR(d.ERROR_TEXT, C_TAG)))
+        FROM   po_dists d
+        WHERE  d.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(d.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(d.ERROR_TEXT, l_marker) = 0;
+
+        -- One bulk UPDATE per target table (FORALL over the pairs). Each pair
+        -- appends its quote only when the row does not already carry it, so a row
+        -- quoted by several sources gets each quote once and a second reconcile
+        -- pass adds nothing. The source row itself is never quoted onto itself.
+        -- DOC_KEY is always a Standard-PO header key (see the collection above),
+        -- so these updates never reach a Blanket or Contract document.
+        l_step := 'appending quoted document errors to PO headers';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PO_HEADERS_INT_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.STYLE_DISPLAY_NAME = C_STYLE
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INTERFACE_HEADER_KEY = l_pairs(i).DOC_KEY
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'HDR' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_hdrs := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to PO lines';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PO_LINES_INT_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INTERFACE_HEADER_KEY = l_pairs(i).DOC_KEY
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'LINE' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_lines := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to PO line locations';
+        -- A location belongs to the purchase order of its line (same run).
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INTERFACE_LINE_KEY IN (
+                       SELECT l.INTERFACE_LINE_KEY
+                       FROM   DMT_PO_LINES_INT_TFM_TBL l
+                       WHERE  l.RUN_ID = p_run_id
+                       AND    l.INTERFACE_HEADER_KEY = l_pairs(i).DOC_KEY)
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'LLOC' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_locs := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to PO distributions';
+        -- A distribution belongs to the purchase order of its location's line.
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PO_DISTS_INT_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.INTERFACE_LINE_LOCATION_KEY IN (
+                       SELECT ll.INTERFACE_LINE_LOCATION_KEY
+                       FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL ll
+                       JOIN   DMT_PO_LINES_INT_TFM_TBL l
+                              ON  l.RUN_ID = ll.RUN_ID
+                              AND l.INTERFACE_LINE_KEY = ll.INTERFACE_LINE_KEY
+                       WHERE  ll.RUN_ID = p_run_id
+                       AND    l.INTERFACE_HEADER_KEY = l_pairs(i).DOC_KEY)
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'DIST' AND l_pairs(i).SOURCE_SEQ = t.TFM_SEQUENCE_ID)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_dists := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rejected purchase-order sources: ' || l_pairs.COUNT
+                           || ' | rows given a quoted document error: headers ' || l_hdrs
+                           || ', lines ' || l_lines || ', line locations ' || l_locs
+                           || ', distributions ' || l_dists || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
     -- Contract v1 apply. p_load_ess_id is the Contract v1 P_LOAD_REQUEST_ID;
     -- p_import_ess_id is P_IMPORT_ESS_ID (the Import Orders ESS id that stamped
@@ -469,6 +741,12 @@ AS
             p_procedure      => C_PROC);
 
         APPLY_CONTRACT_V1_PURCHASE_ORDERS(p_run_id, p_load_ess_id, p_import_ess_id);
+
+        -- Whole-document rejection (design section 5): rows Import Orders rejected
+        -- with their purchase order carry the real error of the row that caused it.
+        -- Runs after the per-row apply and BEFORE the shared unaccounted sweep
+        -- (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);
 
         -- Unresolved records are intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object not-DONE
