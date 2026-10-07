@@ -2326,6 +2326,16 @@ def main():
          "BAD LINE: valid hdr, bad UOM on line", "BAD Requisition: [LINE] error batch 7002"),
         ("RT-REQ-BADDIST", REQ_BATCH_B, "RT-REQ-BADDIST", REQ_PREPARER,
          "BAD DIST: valid hdr+line, bad charge acct", "BAD Requisition: [DIST] error batch 7002"),
+        # Cross-grain failure scenario (design section 5, "Whole-document
+        # rejection carries the real error to every grain", decided 2026-10-07):
+        # a valid header with TWO lines, each with a valid distribution; the ONLY
+        # defect is line 2's UOM. Requisition Import rejects the whole
+        # requisition, so line 2 must land FAILED with its own UOM error and the
+        # header, line 1 and both distributions FAILED quoting it ("Rejected with
+        # document: line <key>: ..."). Same batch as the GOOD RT-REQ-G2, which
+        # must still load.
+        ("RT-REQ-XG1",     REQ_BATCH_B, "RT-REQ-XG1", REQ_PREPARER,
+         "XG: valid hdr, line 2 bad UOM only", "Cross-grain Requisition: [LINE] error batch 7002"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_POR_REQ_HEADERS_STG_TBL (
@@ -2359,6 +2369,8 @@ def main():
         ("RT-REQL-G2",      "RT-REQ-G2",       8, 30.00,  "Office supplies",    "ECH"),
         ("RT-REQL-BADLINE", "RT-REQ-BADLINE",   3, 100.00, "Bad UOM item",       "ZZZ"),
         ("RT-REQL-BADDIST", "RT-REQ-BADDIST",   2, 75.00,  "Good line bad dist", "ECH"),
+        ("RT-REQL-XG1-1",   "RT-REQ-XG1",       4, 20.00,  "XG valid sibling line", "ECH"),
+        ("RT-REQL-XG1-2-BAD", "RT-REQ-XG1",     6, 15.00,  "XG bad UOM line",    "ZZZ"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_POR_REQ_LINES_STG_TBL (
@@ -2396,6 +2408,8 @@ def main():
         ("RT-REQD-G2",      "RT-REQL-G2",      "101", "10", "68010", "120", "000", "000"),
         ("RT-REQD-BADLINE", "RT-REQL-BADLINE", "101", "10", "68010", "120", "000", "000"),
         ("RT-REQD-BADDIST", "RT-REQL-BADDIST", "999", "99", "99999", "999", "999", "999"),
+        ("RT-REQD-XG1-1",   "RT-REQL-XG1-1",   "101", "10", "68010", "120", "000", "000"),
+        ("RT-REQD-XG1-2",   "RT-REQL-XG1-2-BAD", "101", "10", "68010", "120", "000", "000"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_POR_REQ_DISTS_STG_TBL (

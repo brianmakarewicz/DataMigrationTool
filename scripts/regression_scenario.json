@@ -26,6 +26,43 @@
           "RT-AR-XG-A2-BAD-REV": "FAILED_WITH_DOCUMENT"
         }
       }
+    },
+    "RegressionTest2610071808": {
+      "Req Headers": {
+        "stg_table": "DMT_POR_REQ_HEADERS_STG_TBL",
+        "rows": {
+          "RT-RT-REQ-G1": "LOADED",
+          "RT-RT-REQ-BADHDR": "FAILED",
+          "RT-RT-REQ-G2": "LOADED",
+          "RT-RT-REQ-BADLINE": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQ-BADDIST": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQ-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Req Lines": {
+        "stg_table": "DMT_POR_REQ_LINES_STG_TBL",
+        "rows": {
+          "RT-RT-REQL-G1": "LOADED",
+          "RT-RT-REQL-BADHDR": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQL-G2": "LOADED",
+          "RT-RT-REQL-BADLINE": "FAILED",
+          "RT-RT-REQL-BADDIST": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQL-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQL-XG1-2-BAD": "FAILED"
+        }
+      },
+      "Req Distributions": {
+        "stg_table": "DMT_POR_REQ_DISTS_STG_TBL",
+        "rows": {
+          "RT-RT-REQD-G1": "LOADED",
+          "RT-RT-REQD-BADHDR": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQD-G2": "LOADED",
+          "RT-RT-REQD-BADLINE": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQD-BADDIST": "FAILED",
+          "RT-RT-REQD-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQD-XG1-2": "FAILED_WITH_DOCUMENT"
+        }
+      }
     }
   }
 }
