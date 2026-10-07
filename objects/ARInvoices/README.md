@@ -54,6 +54,11 @@ Live standard violations / gaps still present in this object's code (section 5 /
    check.
 4. The reconciliation report matches base lines on `INTERFACE_LINE_ATTRIBUTE1 LIKE :P_PREFIX||'%'`
    (prefix as a search value) rather than on base `REQUEST_ID = :P_IMPORT_ESS_ID`.
+5. The Record Detail "Verify in Fusion" REST lookup (`DMT_REST_LOOKUP_TBL` rows `ARInvoices` /
+   `AR Lines`) queries `receivablesInvoices` by `TransactionNumber = TFM.TRX_NUMBER`. For an
+   auto-numbering source (External Source) DMT sends no transaction number, so the key is empty
+   and the button returns NOT_FOUND even for a LOADED invoice (seen on proof run 245). It should key
+   on `FUSION_CUSTOMER_TRX_ID` (CustomerTransactionId) instead.
 
 ## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
 
