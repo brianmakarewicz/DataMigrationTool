@@ -93,6 +93,10 @@ REPORTS = [
     # the run prefix or run id. Deployed alongside DMT_REQ_RECON_DM (never
     # overwritten).
     ("Requisitions",             "DMT_REQ_RECON_V2_DM",        "DMT_REQ_RECON_V2_RPT"),
+    # Assets V2 (2026-10-07, owner decision): base assets found through their
+    # POSTED FA_MASS_ADDITIONS row by the load job's LOAD_REQUEST_ID (FA_ADDITIONS_B
+    # has no request id), never by the run prefix. Alongside DMT_FA_ASSET_RECON_DM.
+    ("Assets",                   "DMT_FA_ASSET_RECON_V2_DM",   "DMT_FA_ASSET_RECON_V2_RPT"),
     # PurchaseOrders V2 (2026-10-07, backlog #264): rows found only by the work
     # item's Fusion job ids and the Standard document style; the run-id LIKE on
     # the interface keys is gone. Deployed alongside DMT_PO_RECON_DM (never
