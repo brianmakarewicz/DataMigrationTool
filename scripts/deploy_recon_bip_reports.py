@@ -108,6 +108,10 @@ REPORTS = [
     ("Assignments",              "DMT_ASSIGNMENTS_RECON_V2_DM", "DMT_ASSIGNMENTS_RECON_V2_RPT"),
     ("BenParticipant",           "DMT_BENPARTICIPANT_RECON_DM", "DMT_BENPARTICIPANT_RECON_RPT"),
     ("BenDependent",            "DMT_BENDEPENDENT_RECON_DM", "DMT_BENDEPENDENT_RECON_RPT"),
+    # BenParticipant / BenDependent V2 (2026-10-08, backlog #214): V1 header comments
+    # held an illegal double hyphen (runReport HTTP 500). Deployed alongside V1.
+    ("BenParticipant",           "DMT_BENPARTICIPANT_RECON_V2_DM", "DMT_BENPARTICIPANT_RECON_V2_RPT"),
+    ("BenDependent",            "DMT_BENDEPENDENT_RECON_V2_DM", "DMT_BENDEPENDENT_RECON_V2_RPT"),
     ("BenBeneficiary",           "DMT_BENBENEFICIARY_RECON_DM", "DMT_BENBENEFICIARY_RECON_RPT"),
     ("W2Balances",              "DMT_W2_BAL_RECON_DM", "DMT_W2_BAL_RECON_RPT"),
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),

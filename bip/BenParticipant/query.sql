@@ -1,5 +1,5 @@
--- DMT_BENPARTICIPANT_RECON_DM query (Contract v1, nine-column, design section 5).
--- Mirror of the CDATA SQL in DMT_BENPARTICIPANT_RECON_DM.xdm, kept here for review and
+-- DMT_BENPARTICIPANT_RECON_V2_DM query (Contract v1, nine-column, design section 5).
+-- Mirror of the CDATA SQL in DMT_BENPARTICIPANT_RECON_V2_DM.xdm, kept here for review and
 -- for running the query standalone against live Fusion (bind the six parameters).
 --
 -- RE-POINTED 2026-09-22 to the CORRECT Fusion object. BenParticipant loads through the

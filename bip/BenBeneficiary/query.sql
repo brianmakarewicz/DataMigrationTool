@@ -1,5 +1,5 @@
--- DMT_BEN_BENFY_RECON_DM query (BIP reconciliation report contract v1).
--- Mirror of the CDATA SQL in DMT_BEN_BENFY_RECON_DM.xdm, kept here for review and
+-- DMT_BENBENEFICIARY_RECON_DM query (BIP reconciliation report contract v1).
+-- Mirror of the CDATA SQL in DMT_BENBENEFICIARY_RECON_DM.xdm, kept here for review and
 -- for running the query standalone against live Fusion (bind the six Contract v1
 -- parameters).
 --
