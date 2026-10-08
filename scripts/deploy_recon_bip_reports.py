@@ -101,6 +101,10 @@ REPORTS = [
     # the run prefix or run id. Deployed alongside DMT_REQ_RECON_DM (never
     # overwritten).
     ("Requisitions",             "DMT_REQ_RECON_V2_DM",        "DMT_REQ_RECON_V2_RPT"),
+    # BillingEvents V2 (2026-10-07, owner decision): base events by the import
+    # job's REQUEST_ID, interface rows by LOAD_REQUEST_ID, never by the run prefix.
+    # Alongside BILLING_EVENT_DM (never overwritten).
+    ("BillingEvents",            "DMT_BILLING_EVENT_RECON_V2_DM", "DMT_BILLING_EVENT_RECON_V2_RPT"),
     # Assets V2 (2026-10-07, owner decision): base assets found through their
     # POSTED FA_MASS_ADDITIONS row by the load job's LOAD_REQUEST_ID (FA_ADDITIONS_B
     # has no request id), never by the run prefix. Alongside DMT_FA_ASSET_RECON_DM.
