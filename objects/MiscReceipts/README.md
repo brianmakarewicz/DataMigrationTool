@@ -78,6 +78,21 @@ failed (the rows carry no cost). A reconcile-only rerun left every TFM row byte-
 regression harness 0 failures (its only review items are the pre-existing "no REST lookup
 configured" notes for this object); Playwright click-through PASS.
 
+## Rejected transaction carries its error to its lots and serials (2026-10-08, backlog #167)
+
+A transaction and its lot/serial detail stand or fall together. When Fusion rejects a
+transaction (PROCESS_FLAG 3, real error inline on the interface row, a lot/serial defect
+included), `DMT_MISC_RECEIPT_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` marks every not-LOADED
+lot and serial of that transaction FAILED quoting it:
+`[FUSION_ERROR] Rejected with document: transaction <SOURCE_LINE_ID>: <real error>`.
+Children link to the parent by child STG `SOURCE_ID` = parent `STG_SEQUENCE_ID` (the same
+join the generator uses). Serials of a rejected transaction used to end UNACCOUNTED.
+Regression cross-grain rows (scenario RegressionTest2610081756): `RT-MR-XG-SER-BAD`
+(AS88000 + serial DMT-SER-XG-001..002) and `RT-MR-XG-LOT-BAD` (RA-100-4935-LOT + lot
+DMT-REG-LOT-XG), both on the nonexistent subinventory `XGNOSUB`. Proof run 315 (prefix
+93370): both transactions FAILED with `INV_INSTP_CNTXT_SYS_DEFINED ... SUBINVENTORY_CODE`,
+the lot and serial FAILED quoting it, GOOD rows LOADED, 0 UNACCOUNTED.
+
 ## Status
 WIRED INTO PIPELINE. Code built. Now in P2P scheduler sequence (last position).
 Needs first E2E test with real data.

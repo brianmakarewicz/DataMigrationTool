@@ -96,6 +96,14 @@ EXPECTED_VALUES = (EXPECT_LOADED, EXPECT_FAILED, EXPECT_DOC)
 # The fixed text DMT_UTIL_PKG.C_DOC_ERROR_MARKER puts in a quoted document error.
 DOC_ERROR_MARKER = 'Rejected with document:'
 _STG_IDENT = re.compile(r'^DMT_[A-Z0-9_]+_STG_TBL$')
+_COL_IDENT = re.compile(r'^[A-Z][A-Z0-9_]{0,29}$')
+
+
+def _key_col(d):
+    """The STG column a listed sub-object's rows are keyed by: 'key_col' when the
+    spec gives one (a child whose SOURCE_ID is its parent link, e.g. MiscReceipts
+    lots/serials), else SOURCE_ID."""
+    return d.get('key_col') or 'SOURCE_ID'
 
 
 def load_expected_outcomes(scenario):
@@ -111,6 +119,8 @@ def load_expected_outcomes(scenario):
     for sub, d in spec.items():
         if not _STG_IDENT.match(d.get('stg_table', '')):
             sys.exit(f"regression_scenario.json: bad stg_table for {sub!r}: {d.get('stg_table')!r}")
+        if not _COL_IDENT.match(_key_col(d)):
+            sys.exit(f"regression_scenario.json: bad key_col for {sub!r}: {d.get('key_col')!r}")
         for src, outcome in d.get('rows', {}).items():
             if outcome not in EXPECTED_VALUES:
                 sys.exit(f"regression_scenario.json: {sub}/{src}: outcome {outcome!r} "
@@ -121,7 +131,7 @@ def load_expected_outcomes(scenario):
 def resolve_expectations(cur, spec, records):
     """Map (SUB_OBJECT, STG_SEQUENCE_ID) -> (SOURCE_ID, expected outcome) for the
     run's records (tuples: cemli, sub_object, ..., stg_sequence_id at index 5),
-    reading SOURCE_ID from each listed STG table. Also returns the listed rows
+    reading SOURCE_ID (or the spec's key_col) from each listed STG table. Also returns the listed rows
     of sub-objects present in the run that have no record in it."""
     exp, missing = {}, []
     present_subs = {r[1] for r in records}
@@ -133,7 +143,7 @@ def resolve_expectations(cur, spec, records):
         for i in range(0, len(seqs), 500):
             chunk = seqs[i:i + 500]
             binds = ','.join(f':{n + 1}' for n in range(len(chunk)))
-            cur.execute(f"SELECT STG_SEQUENCE_ID, SOURCE_ID FROM {d['stg_table']} "
+            cur.execute(f"SELECT STG_SEQUENCE_ID, {_key_col(d)} FROM {d['stg_table']} "
                         f"WHERE STG_SEQUENCE_ID IN ({binds})", chunk)
             for seq, src in cur.fetchall():
                 if src in d['rows']:
@@ -795,7 +805,7 @@ def check_failed_mode_selection(cur, run_id, scenario, spec, records, missing, r
         if sub not in present_subs and not any(m.startswith(sub + ' / ') for m in missing):
             continue
         tbl = d['stg_table']
-        cur.execute(f"SELECT STG_SEQUENCE_ID, SOURCE_ID, "
+        cur.execute(f"SELECT STG_SEQUENCE_ID, {_key_col(d)}, "
                     f"DMT_UTIL_PKG.FAILED_RETRY_SELECTED(:r, :t, STG_SEQUENCE_ID) "
                     f"FROM {tbl} WHERE SCENARIO_ID = :s", {"r": run_id, "t": tbl, "s": scen_id})
         rows = cur.fetchall()
