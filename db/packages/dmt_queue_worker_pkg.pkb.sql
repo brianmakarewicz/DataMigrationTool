@@ -1599,7 +1599,12 @@ AS
             ' | ParamList: ' || NVL(l_param, '(default)'),
             'INFO', C_PKG, 'submit_postrun_job');
 
-        RETURN DMT_LOADER_PKG.SUBMIT_IMPORT_JOB(p_run_id, l_job, l_param);
+        -- Submitted as the object's central Fusion user, the same user
+        -- POLL_ONE later polls it as (backlog #309).
+        RETURN DMT_LOADER_PKG.SUBMIT_IMPORT_JOB(p_run_id     => p_run_id,
+                                                p_job_name   => l_job,
+                                                p_param_list => l_param,
+                                                p_cemli_code => p_cemli_code);
     END submit_postrun_job;
 
     -- ============================================================
@@ -1761,10 +1766,20 @@ AS
                     WHERE QUEUE_ID = p_queue_id;
                 END IF;
             ELSIF l_rec.WORK_STATUS = 'AWAITING_IMPORT' THEN
+                -- Named parameters (backlog #306): the positional call passed the
+                -- CEMLI code as the request id and the error was swallowed, so the
+                -- capture never ran. A failure is now logged, not hidden; the
+                -- hierarchy is diagnostic, so it still does not stop the run.
                 BEGIN
                     DMT_ESS_UTIL_PKG.CAPTURE_ESS_HIERARCHY(
-                        l_rec.RUN_ID, l_rec.CEMLI_CODE, l_rec.LOAD_ESS_JOB_ID);
-                EXCEPTION WHEN OTHERS THEN NULL;
+                        p_run_id            => l_rec.RUN_ID,
+                        p_parent_request_id => TO_NUMBER(l_rec.LOAD_ESS_JOB_ID),
+                        p_cemli_code        => l_rec.CEMLI_CODE);
+                EXCEPTION WHEN OTHERS THEN
+                    DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                        'ESS hierarchy capture failed for ' || l_rec.CEMLI_CODE ||
+                        ' load ESS ' || l_rec.LOAD_ESS_JOB_ID || ': ' || SQLERRM,
+                        DMT_UTIL_PKG.C_LOG_WARN, C_PKG, 'POLL_ONE');
                 END;
 
                 -- Phase-2 staged load: if this CEMLI has a post-run job in

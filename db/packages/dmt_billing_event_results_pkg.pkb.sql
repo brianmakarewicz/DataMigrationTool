@@ -403,7 +403,7 @@ AS
                 IF l_report_ess_id IS NOT NULL THEN
                     -- Download Import Report XML from the Report child job
                     BEGIN
-                        l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(l_report_ess_id);
+                        l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id => l_report_ess_id, p_cemli_code => C_CEMLI);
                     EXCEPTION
                         WHEN OTHERS THEN
                             DMT_UTIL_PKG.LOG(

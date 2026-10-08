@@ -53,7 +53,8 @@ AS
             p_stg_table      => 'DMT_TAX_CARD_STG_TBL',
             p_key_column     => 'PERSON_NUMBER',
             p_dataset_status => p_dataset_status,
-            p_log_context    => C_CEMLI || ' > CalculationCard');
+            p_log_context    => C_CEMLI || ' > CalculationCard',
+            p_cemli_code     => C_CEMLI);
 
 
         -- 2. CardComponent
@@ -64,14 +65,16 @@ AS
             p_stg_table      => 'DMT_TAX_CARD_COMP_STG_TBL',
             p_key_column     => 'PERSON_NUMBER',
             p_dataset_status => p_dataset_status,
-            p_log_context    => C_CEMLI || ' > CardComponent');
+            p_log_context    => C_CEMLI || ' > CardComponent',
+            p_cemli_code     => C_CEMLI);
 
         -- Post-reconciliation: capture the Fusion DIR card id on each LOADED
         -- row (design section 7 rule). Blocked object today.
         DMT_HDL_UTIL_PKG.LOOKUP_FUSION_IDS(
             p_run_id => p_run_id,
             p_object_type    => 'TaxCards',
-            p_log_context    => C_CEMLI || ' > CalculationCard');
+            p_log_context    => C_CEMLI || ' > CalculationCard',
+            p_cemli_code     => C_CEMLI);
 
         -- Standard per-package LOADED-promotion hook. For TaxCards it is a stub:
         -- promotion + id capture are done inside DMT_HDL_UTIL_PKG above.

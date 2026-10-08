@@ -51,16 +51,6 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('BIP_PASSWORD','***MASKED-SET-ME***',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
-exception when dup_val_on_index then null;
-end;
-/
-begin
-  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('BIP_USERNAME','fin_impl',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
-exception when dup_val_on_index then null;
-end;
-/
-begin
   insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('CUST_IMPORT_JOB_NAME','/oracle/apps/ess/cdm/foundation/bulkImport,CDMAutoBulkImportJob',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
 exception when dup_val_on_index then null;
 end;

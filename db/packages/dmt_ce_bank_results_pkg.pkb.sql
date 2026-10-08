@@ -56,9 +56,6 @@
     C_BRANCHES_PATH CONSTANT VARCHAR2(200) := '/fscmRestApi/resources/11.13.18.05/cashBankBranches';
     C_ACCOUNTS_PATH CONSTANT VARCHAR2(200) := '/fscmRestApi/resources/11.13.18.05/cashBankAccounts';
 
-    -- Cash Management requires the fin_impl role -- override default user.
-    C_CE_USERNAME CONSTANT VARCHAR2(30) := 'fin_impl';
-
     -- --------------------------------------------------------
     -- Private: make a REST call and return status|body
     -- (unchanged transport; the "STATUS|body" convention is kept).
@@ -82,8 +79,10 @@
         l_status       NUMBER;
     BEGIN
         l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_username := C_CE_USERNAME;
-        l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
+        -- Central Fusion user for this object (backlog #309).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => C_CEMLI,
+                                           x_username   => l_username,
+                                           x_password   => l_password);
         l_url      := l_base_url || p_path;
 
         -- Attach a wallet only when a real one is configured; otherwise use the DB
