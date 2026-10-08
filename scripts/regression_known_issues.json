@@ -10,7 +10,6 @@
     {"kind": "REVIEW", "category": "ZERO_RECORDS", "object": "Absences",        "backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"},
     {"kind": "REVIEW", "category": "ZERO_RECORDS", "object": "PerfEvaluations", "backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"},
     {"kind": "REVIEW", "category": "ZERO_RECORDS", "object": "WorkSchedules",   "backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"},
-    {"kind": "REVIEW", "category": "REST_VERIFY", "object": "BillingEvents", "sub": "Billing Events", "backlog": "#462", "reason": "Verify-in-Fusion REST lookup never worked (fin_impl gets HTTP 403), fix in progress; owner decision 2026-10-08"},
     {"kind": "REVIEW", "category": "REST_VERIFY", "object": "Customers",     "sub": "Locations",      "backlog": "#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"}
   ]
 }
