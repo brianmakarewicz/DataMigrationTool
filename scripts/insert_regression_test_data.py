@@ -3165,18 +3165,21 @@ def main():
     #      transform resolves its run-prefixed person number). The absence
     #      SourceSystemId is the absence's own TFM id, so one person can carry
     #      several absences in one load.
-    #      Values confirmed live 2026-10-08 (read-only): 'Bereavement' and
-    #      'Vacation' are US absence types used for US1 Legal Entity workers, and
-    #      every absence on the pod is AbsenceStatus SUBMITTED with
-    #      ApprovalStatus APPROVED. The BAD row names an absence type that does
-    #      not exist, so Fusion rejects it with its own error.
+    #      Values confirmed live 2026-10-08 (read-only): 'Bereavement' is a US
+    #      absence type used for US1 Legal Entity workers, and every absence on
+    #      the pod is AbsenceStatus SUBMITTED with ApprovalStatus APPROVED.
+    #      Both GOOD rows are Bereavement: run 311 proved it loads for a worker
+    #      DMT just hired, while 'Vacation' is rejected for that worker ("isn't
+    #      enrolled in or eligible for any absence plan": the accrual plan needs
+    #      an enrollment DMT does not create). The BAD row names an absence type
+    #      that does not exist, so Fusion rejects it with its own error.
     # ====================================================================
     print("\n=== 45b. Absences (HCM) ===")
     for atype, sdate, edate, src, label in [
         ("Bereavement", "2026/03/02", "2026/03/02", "RT-ABS-G1",
          "GOOD Absence: RT-WKR-G1 Bereavement"),
-        ("Vacation", "2026/04/06", "2026/04/07", "RT-ABS-G2",
-         "GOOD Absence: RT-WKR-G1 Vacation (second absence, same person)"),
+        ("Bereavement", "2026/04/06", "2026/04/07", "RT-ABS-G2",
+         "GOOD Absence: RT-WKR-G1 Bereavement (second absence, same person)"),
         ("BAD NONEXISTENT ABSENCE TYPE", "2026/05/04", "2026/05/04", "RT-ABS-BAD1",
          "BAD Absence: absence type does not exist [BAD-LKP]"),
     ]:

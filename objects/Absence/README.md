@@ -1,115 +1,69 @@
 # Absence
 
 ## Status
-BLOCKED (2026-04-04)
+WORKING (2026-10-08, backlog #293). Proof run 312 (prefix 93366, scenario
+RegressionTest2610081509): two GOOD absences LOADED with their own entry ids
+(300000334959046, 300000334959089), the BAD absence FAILED with Fusion's own
+error, 0 UNACCOUNTED, regression PASS.
 
 ## Pipeline
-- Module: HCM
-- HDL File: PersonAbsenceEntry.dat (NOT AbsenceEntry.dat — the V1 filename)
+- Module: HCM (pipeline HCM, depends on Workers)
+- HDL File: PersonAbsenceEntry.dat (NOT AbsenceEntry.dat, the old filename)
 - Loader Type: HDL (REST upload/submit/poll)
 - UCM Account: hcm$/dataloader$/import$
-- Auth User: hcm_impl (password: m?CDa6^6)
-- **V1 format** — this object uses V1 HDL format, not V2
+- Fusion user: from DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS (hcm_impl); never put a password here
+- **V1 format**: this object uses the V1 HDL attribute names, not V2
 
 ## Critical Notes
-- **DAT filename**: `PersonAbsenceEntry.dat` (not `AbsenceEntry.dat`)
-- **Discriminator**: `PersonAbsenceEntry`
-- **Attribute name**: `Employer` (V1 attribute name, not `EmployerName`)
-- **STG column name**: `EMPLOYER_NAME` (the STG table column is EMPLOYER_NAME)
+- **DAT filename**: `PersonAbsenceEntry.dat`; discriminator `PersonAbsenceEntry`
+- **METADATA**: `SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|Employer|AbsenceType|AbsenceStatus|ApprovalStatus|StartDate|EndDate|StartTime|EndTime|AbsenceReason|Comments`
+- **SourceSystemOwner**: this DMT instance's owner (DMT_CONFIG_TBL HDL_SOURCE_SYSTEM_OWNER: DMT_LOCAL / DMT_ATP)
+- **SourceSystemId**: the absence's own TFM sequence id (also stored in RECON_KEY). A person can carry several absences in one load.
+- **PersonId(SourceSystemId)**: the person number of the Worker loaded by the Workers object (cross-object link, keeps the Workers key)
+- **Employer** (V1 name, not `EmployerName`) comes from STG column `EMPLOYER_NAME`
+- **ApprovalStatus** comes from STG column `APPROVAL_STATUS_CODE`. Every absence on the pod is AbsenceStatus `SUBMITTED` + ApprovalStatus `APPROVED`.
+- PersonAbsenceEntry has no `Duration` attribute (only StartDateDuration / EndDateDuration); Fusion derives the duration. The attribute list is in the pod's `HRC_DL_BUS_OBJECT_ATTRS_VL`.
 
-## BLOCKER: AbsenceStatus
-**ALL AbsenceStatus values fail** with error: "conflicting processing and approval statuses"
+## Former blocker (resolved 2026-10-08): "conflicting processing and approval statuses"
+In April every AbsenceStatus value failed with this error and the object was marked
+instance-blocked. It was our file, not the pod: the generator sent AbsenceStatus without
+ApprovalStatus. Sending `SUBMITTED` with ApprovalStatus `APPROVED` loads.
 
-Values tested (all fail):
-- SUBMITTED
-- APPROVED
-- COMPLETED
-- CONFIRMED
-- ORA_SUBMITTED
-- ORA_APPROVED
-- ORA_COMPLETED
-- ORA_CONFIRMED
-- NULL
+## Absence types
+- `Bereavement` (US) loads for a worker DMT hires in the same run.
+- `Vacation` (an accrual-plan type) is rejected for such a worker: "You can't add an absence
+  because this person's assignment ... isn't enrolled in or eligible for any absence plan."
+  DMT creates no plan enrollments (backlog #510).
 
-This is a Fusion configuration issue on the demo instance. The absence approval workflow configuration conflicts with every status value attempted.
-
-## US Absence Plans (available on demo instance)
-- Vacation
-- Sick
-- Compensatory Time
-- Jury Duty
-- Bereavement
-- FMLA
+## Reconciliation
+- Report: `/Custom/DMT2/Absences/DMT_ABSENCES_RECON_V2_DM.xdm` (V1 stays deployed, never overwritten).
+  Rows are selected by the HDL request id only, joined to HRC_INTEGRATION_KEY_MAP on each row's own
+  owner and id (object PersonAbsenceEntry), and returned only when the line finished LOADED_SUCCESS
+  and the entry exists in `ANC_PER_ABS_ENTRIES`. FUSION_ID = PER_ABSENCE_ENTRY_ID.
+- Per-record HDL errors are matched on the exact SourceSystemId (the TFM id) and stored as
+  `[FUSION_ERROR] <tfm id> (PersonAbsenceEntry.dat line n): <Fusion message>`.
+- Verify in Fusion: `absences?q=personAbsenceEntryId=<FUSION_ABSENCE_ENTRY_ID>` (the resource only
+  accepts camelCase attribute names).
 
 ## Code References
-- STG Table DDL: `schema/tables/118_dmt_absence_stg_tbl.sql`
-- TFM Table DDL: `schema/tables/119_dmt_absence_tfm_tbl.sql`
-- Validator: `packages/validators/dmt_absence_validator_pkg.*`
-- Transformer: `packages/transformers/dmt_absence_transform_pkg.*`
-- HDL Generator: `packages/generators/hdl/dmt_absence_hdl_gen_pkg.*`
-- Results/Reconciliation: `packages/reconciliation/dmt_absence_results_pkg.*`
+- STG / TFM tables: `db/tables/dmt_absence_stg_tbl.sql`, `db/tables/dmt_absence_tfm_tbl.sql`
+- Validator: `db/packages/dmt_absence_validator_pkg.*` (no rules yet, backlog #511)
+- Transformer: `db/packages/dmt_absence_transform_pkg.*`
+- HDL Generator: `db/packages/dmt_absence_hdl_gen_pkg.*`
+- Reconciliation: `db/packages/dmt_absence_results_pkg.*`, `bip/Absences/`
 
-## Known Good Test Data
-None — all records fail due to AbsenceStatus blocker.
-
-## Known Bad Test Data
-None verified — cannot distinguish data quality failures from the status blocker.
+## Regression data
+Scenario RegressionTest2610081509 (write-once, `scripts/insert_regression_test_data.py` section 45b),
+all for worker RT-WKR-G1 hired in the same run:
+- RT-ABS-G1: Bereavement 2026/03/02, expected LOADED
+- RT-ABS-G2: Bereavement 2026/04/06 to 2026/04/07, expected LOADED
+- RT-ABS-BAD1: absence type `BAD NONEXISTENT ABSENCE TYPE`, expected FAILED ("You need to enter a valid value for the AbsenceTypeId attribute")
 
 ## Lessons Learned
 - This is a V1 format object. The HDL template version matters — V1 and V2 have different filenames, discriminators, and attribute names.
 - The DAT filename `PersonAbsenceEntry.dat` is critical. Using `AbsenceEntry.dat` will cause the load to silently fail (0 rows processed).
 - The STG table column is `EMPLOYER_NAME`, but the V1 DAT attribute is `Employer` (no "Name" suffix). The HDL generator must map EMPLOYER_NAME -> Employer in the DAT output.
-- Until the Fusion instance absence approval workflow is reconfigured, this object cannot be tested E2E.
 
 ## History
 - 2026-04-04: All AbsenceStatus values tested. Every combination produces "conflicting processing and approval statuses" error. Object marked BLOCKED pending Fusion configuration investigation.
-
-## Minimal test-data plan (2026-07-15)
-
-Goal: add an absence entry to the existing proven worker `RT-WKR-G1` so it loads to the
-absence base table (`ANC_PER_ABS_ENTRIES`). NOTE: this object is still BLOCKED — see
-prerequisites below. The plan is written so it is ready the moment the blocker clears.
-
-### STG table and required columns
-Single table — `DMT_ABSENCE_STG_TBL`. Generator emits (V1 PersonAbsenceEntry discriminator):
-SourceSystemOwner (constant HRC_SQLLOADER), SourceSystemId (`PERSON_NUMBER || '_ABS'`),
-PersonId(SourceSystemId) (= PERSON_NUMBER), Employer (from EMPLOYER_NAME), AbsenceType,
-AbsenceStatus, StartDate, EndDate, StartTime, EndTime, Duration, AbsenceReason, Comments.
-Required columns to seed:
-- PERSON_NUMBER (FK to the worker) — `RT-WKR-G1`
-- EMPLOYER_NAME — `US1 Legal Entity` (the worker's legal employer)
-- ABSENCE_TYPE — a real US absence type name (see below)
-- ABSENCE_STATUS — see BLOCKER; every value tried fails on this instance
-- START_DATE, END_DATE (YYYY/MM/DD strings)
-- SOURCE_ID, STG_STATUS='NEW'
-- DURATION optional; START_TIME/END_TIME optional for a day-level absence
-
-### Real reference values (confirmed live 2026-07-15, hcm_impl)
-- US absence types (`anc_absence_types_vl` WHERE legislation_code='US'): `Vacation`, `Sick`,
-  `Bereavement`, `Short Term Disability`, `Long Term Disability`, and more.
-- Query: `SELECT name, legislation_code FROM anc_absence_types_vl WHERE legislation_code='US'`.
-- Legal employer `US1 Legal Entity` and BU `US1 Business Unit` are the worker's confirmed-live
-  references (carried from Workers/Salaries).
-
-### Proposed seed rows (dates as YYYY/MM/DD strings)
-GOOD — one absence entry keyed to RT-WKR-G1:
-- `DMT_ABSENCE_STG_TBL`: PERSON_NUMBER='RT-WKR-G1', EMPLOYER_NAME='US1 Legal Entity',
-  ABSENCE_TYPE='Vacation', ABSENCE_STATUS=(pending blocker resolution — see below),
-  START_DATE='2026/03/02', END_DATE='2026/03/03', SOURCE_ID='RT-ABS-G1', STG_STATUS='NEW'.
-
-BAD — distinct record; fails on an invalid absence type. The SourceSystemId is
-`PERSON_NUMBER || '_ABS'`, NOT the date range, so the bad row must use a distinct
-PERSON_NUMBER to be a separate record (a different date range alone would still collide):
-- `DMT_ABSENCE_STG_TBL`: PERSON_NUMBER='RT-WKR-BABS', EMPLOYER_NAME='US1 Legal Entity',
-  ABSENCE_TYPE='NONEXISTENT ABSENCE TYPE', ABSENCE_STATUS=(same as GOOD),
-  START_DATE='2026/04/06', END_DATE='2026/04/07', SOURCE_ID='RT-ABS-B1', STG_STATUS='NEW'.
-
-### Prerequisites / blockers
-BLOCKED — this is a Fusion instance configuration blocker, not a data blocker. Every
-AbsenceStatus value (SUBMITTED, APPROVED, COMPLETED, CONFIRMED, their ORA_ variants, and NULL)
-returns "conflicting processing and approval statuses". Until the demo instance's absence
-approval workflow is reconfigured, GOOD rows cannot reach the base table, so Rule #1 cannot be
-met. Do NOT seed/run this object for a live pass yet. The worker itself has no absence-plan
-prerequisite for a plain absence-type entry; the blocker is purely the approval-status config.
-Recommendation: keep BLOCKED; revisit only after the instance absence workflow is fixed, or
-table this object behind TalentProfiles and TaxCards.
+- 2026-10-08 (backlog #293): blocker traced to the missing ApprovalStatus attribute; recon report V2 by HDL request id; SourceSystemId = TFM id; Verify in Fusion fixed. Run 311 showed Vacation needs a plan enrollment; proof run 312 PASS.
