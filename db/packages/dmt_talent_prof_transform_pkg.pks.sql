@@ -9,6 +9,13 @@ AS
 -- Called by DMT_LOADER_PKG before HDL generation.
 -- ============================================================
 
+    -- Profile type of every profile this object loads: worker talent profiles are
+    -- person profiles (the TalentProfile line carries PersonId). With the section
+    -- name it forms the PROFILE_SECTION_NAME_TO_SECTION_ID lookup key
+    -- (<profile type code>~<section name>, backlog #451). Read by the validator
+    -- (reject a missing or ambiguous section) and the transform (resolve the id).
+    C_PROFILE_TYPE_CODE CONSTANT VARCHAR2(30) := 'PERSON';
+
     PROCEDURE TRANSFORM_TALENTPROFILES (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
