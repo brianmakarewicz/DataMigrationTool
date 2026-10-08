@@ -9,6 +9,9 @@
 -- group. p_txn_source / p_document scope the CSV + the GENERATED update to that
 -- partition when set (a spawned child); both null = the whole run (parent /
 -- standalone), mirroring the p_batch_id filter on DMT_EGP_ITEM_FBDI_GEN_PKG.
+-- p_batch_name (backlog #412) further scopes them to the one Expenditure Batch
+-- the loader stamped for this child (run prefix + source BATCH_NAME, or + the
+-- work-queue id); null = no batch filter.
 -- ============================================================
     PROCEDURE GENERATE_FBDI (
         p_run_id  IN  NUMBER,
@@ -16,7 +19,8 @@
         x_filename        OUT VARCHAR2,
         x_fbdi_csv_id     OUT NUMBER,
         p_txn_source      IN  VARCHAR2 DEFAULT NULL,
-        p_document        IN  VARCHAR2 DEFAULT NULL
+        p_document        IN  VARCHAR2 DEFAULT NULL,
+        p_batch_name      IN  VARCHAR2 DEFAULT NULL
     );
 END DMT_EXPENDITURE_FBDI_GEN_PKG;
 /

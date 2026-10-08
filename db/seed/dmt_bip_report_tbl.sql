@@ -95,7 +95,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000025,'Items','EGP_ITEM','/Custom/DMT2/Items/ITEM_DM.xdm','/Custom/DMT2/Items/ITEM_RPT.xdo','EGP_SYSTEM_ITEMS_INTERFACE',to_date('2026-05-23 23:44:58','YYYY-MM-DD HH24:MI:SS'),'Item Import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000025,'Items','EGP_ITEM','/Custom/DMT2/Items/DMT_ITEM_RECON_V3_DM.xdm','/Custom/DMT2/Items/DMT_ITEM_RECON_V3_RPT.xdo','EGP_SYSTEM_ITEMS_INTERFACE',to_date('2026-05-23 23:44:58','YYYY-MM-DD HH24:MI:SS'),'Item Import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -926,24 +926,27 @@ commit;
 
 -- ---------------------------------------------------------------------------
 -- W2Balances (100000035) — Contract v1 registration (design section 5).
--- Loads via HDL as PayrollBalanceInitialization; base tier PAY_BAL_BATCH_HEADERS
--- (BATCH_ID) matched through HRC_INTEGRATION_KEY_MAP (object InitializeBalanceBatch-
--- Header, SOURCE_SYSTEM_OWNER='HRC_SQLLOADER', SURROGATE_ID=BATCH_ID).
--- RECON_KEY = prefixed PERSON_NUMBER || '_BAL' (the .dat SourceSystemId).
+-- Loads via HDL as Balance Initialization; base tier PAY_BAL_BATCH_HEADERS
+-- (BATCH_ID) found by the exact BatchName. V2 (backlog #413): RECON_KEY =
+-- BatchName = run prefix || work-queue id, sent as P_FUSION_BATCH_ID; V1 matched
+-- the prefix with LIKE and stays deployed, never overwritten.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 100000035                                                    bip_report_id,
            'W2Balances'                                                 cemli_code,
            'Balance Initialization'                                     object_type,
-           '/Custom/DMT2/W2Balances/DMT_W2_BAL_RECON_DM.xdm'            dm_catalog_path,
-           '/Custom/DMT2/W2Balances/DMT_W2_BAL_RECON_RPT.xdo'           report_catalog_path,
+           '/Custom/DMT2/W2Balances/DMT_W2_BAL_RECON_V2_DM.xdm'         dm_catalog_path,
+           '/Custom/DMT2/W2Balances/DMT_W2_BAL_RECON_V2_RPT.xdo'        report_catalog_path,
            'N/A (HDL)'                                                  interface_table,
-           'W2Balances HDL base-table reconciliation (Contract v1)'     notes,
+           'W2Balances HDL base-table reconciliation (Contract v1). V2: the batch is '
+              || 'selected by the exact BatchName the run wrote (P_FUSION_BATCH_ID: run '
+              || 'prefix followed by the work-queue id), never by a prefix match. '
+              || 'Deployed alongside V1, never overwriting it.'          notes,
            1                                                            contract_version,
            'DMT_W2_BAL_TFM_TBL'                                         tfm_table,
            'FUSION_BALANCE_ID'                                          fusion_id_column,
-           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_BAL''' recon_key_sql
+           'run_prefix || work_queue_id  (the HDL BatchName)'          recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
@@ -2218,8 +2221,9 @@ commit;
 -- carry the primary Item tier (the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
 -- reads only CONTRACT_VERSION + the run PREFIX; the static APPLY in
 -- DMT_EGP_ITEM_RESULTS_PKG.APPLY_CONTRACT_V1_ITEMS handles both TFM tables). This
--- MERGE converges the Contract v1 columns and re-points the DM/report paths (the
--- Items row above still names the retired ITEM_DM.xdm) to the one recon report.
+-- MERGE converges the Contract v1 columns and re-points the DM/report paths to the
+-- one recon report (the Items insert above names the same V3 paths since
+-- 2026-10-08; it used to name the retired ITEM_DM.xdm, backlog #470).
 -- 2026-10-06: re-pointed to DMT_ITEM_RECON_V2_DM / _V2_RPT, deployed alongside
 -- the original (BIP objects are never overwritten). V2 fixes the Item Category
 -- tiers (run 236: rejected categories were left UNACCOUNTED).

@@ -114,6 +114,9 @@ REPORTS = [
     ("BenDependent",            "DMT_BENDEPENDENT_RECON_V2_DM", "DMT_BENDEPENDENT_RECON_V2_RPT"),
     ("BenBeneficiary",           "DMT_BENBENEFICIARY_RECON_DM", "DMT_BENBENEFICIARY_RECON_RPT"),
     ("W2Balances",              "DMT_W2_BAL_RECON_DM", "DMT_W2_BAL_RECON_RPT"),
+    # W2Balances V2 (2026-10-08, backlog #413): alongside V1 (never overwritten);
+    # the batch found by the exact BatchName (P_FUSION_BATCH_ID), never by prefix.
+    ("W2Balances",              "DMT_W2_BAL_RECON_V2_DM", "DMT_W2_BAL_RECON_V2_RPT"),
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
     # TalentProfiles V2 (2026-10-08, backlog #451): alongside V1; request-id selection.
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_V3_DM", "DMT_TALENTPROFILES_RECON_V3_RPT"),

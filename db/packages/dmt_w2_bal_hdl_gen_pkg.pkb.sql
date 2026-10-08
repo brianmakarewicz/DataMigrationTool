@@ -19,7 +19,9 @@ AS
 --       TaxUnitName|BalanceName|DimensionName|Value|ContextOneName|
 --       ContextOneValue|AreaOne
 --
---   One run = ONE batch. BatchName = <run prefix> || '_W2BAL'. The line
+--   One run = ONE batch. BatchName = the W2Balances TFM RECON_KEY: the run
+--   prefix followed by the work-queue id (backlog #413; the work-queue id
+--   alone with USE_PREFIX = N), read back from the TFM rows. The line
 --   references the header purely by BatchName -- no worker record is repeated
 --   and no SourceSystemId person-FK chain is emitted (batch objects are keyed
 --   by BatchName, a user key, not by SourceSystemId).
@@ -46,8 +48,6 @@ AS
     C_HEADER_FILE CONSTANT VARCHAR2(60) := 'InitializeBalanceBatchHeader.dat';
     C_LINE_FILE   CONSTANT VARCHAR2(60) := 'InitializeBalanceBatchLine.dat';
 
-    -- BatchName suffix -- one batch per run.
-    C_BATCH_SUFFIX CONSTANT VARCHAR2(10) := '_W2BAL';
 
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
@@ -75,7 +75,7 @@ AS
         RETURN NVL(p_val, '');
     END pv;
 
-    -- Run prefix (drives the BatchName) -- one batch name per run.
+    -- Run prefix (part of the BatchName fallback) -- one batch name per run.
     FUNCTION get_prefix(p_run_id IN NUMBER) RETURN VARCHAR2 IS
         l_prefix VARCHAR2(30);
     BEGIN
@@ -140,7 +140,15 @@ AS
         x_filename := 'W2Balances_' || TO_CHAR(p_run_id) || '.zip';
 
         l_prefix      := get_prefix(p_run_id);
-        l_batch_name  := l_prefix || C_BATCH_SUFFIX;      -- reconciliation key
+        -- BatchName = the reconciliation key the transform stamped (one value per
+        -- run: run prefix || work-queue id, backlog #413). Read back so the .dat and
+        -- the TFM RECON_KEY can never differ; the same expression stands in only if
+        -- no header row is STAGED (lines-only file).
+        SELECT MAX(RECON_KEY) INTO l_batch_name
+        FROM   DMT_W2_BAL_TFM_TBL
+        WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+        l_batch_name  := NVL(l_batch_name,
+                             l_prefix || TO_CHAR(NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)));
         l_upload_date := TO_CHAR(l_now, 'YYYY/MM/DD');
 
         DBMS_LOB.CREATETEMPORARY(l_hdr_dat, TRUE);

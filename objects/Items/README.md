@@ -60,6 +60,18 @@ This job bundles two CSVs in one ZIP:
 
 Both are submitted under `ItemImportJobDef` in a single ESS call.
 
+## Fusion batch id (backlog #411, 2026-10-08)
+Owner decision 2026-10-07 (the Customers rule, PR #657): the Item Import batch id DMT sends is
+the run prefix followed by the source `BATCH_ID` (prefix 93460 + source 8101 = 934608101), the
+prefix followed by the work-queue id when the source has none, and the source value unchanged
+when USE_PREFIX = N. Both transforms (items and categories) use the same expression, so a
+batch's items and categories stay together. Before this the seed's 8101 / 8102 went to Fusion
+unchanged every run, and EGP_SYSTEM_ITEMS_INTERFACE held hundreds of leftover rows under those
+two numbers from earlier loads; a new run's Item Import (argument 1 = the batch) could pick
+them up. The source batch still partitions the loads (one child work item per batch), and the
+chained Item Import is still found by this batch's id. The report needs no change: it already
+selects by the Item Import REQUEST_ID and the load LOAD_REQUEST_ID (V3).
+
 ## Reconciliation
 Contract v1 report `/Custom/DMT2/Items/DMT_ITEM_RECON_V3_DM.xdm` (since 2026-10-07; V1 and V2
 stay deployed). One report returns both record types (`Item`, `ItemCategory`). It is called once
