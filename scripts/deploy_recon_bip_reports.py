@@ -69,6 +69,10 @@ REPORTS = [
     ("WorkSchedules",            "DMT_WORKSCHEDULES_RECON_DM", "DMT_WORKSCHEDULES_RECON_RPT"),
     ("PayrollRelationships",     "DMT_PAYROLLRELATIONSHIPS_RECON_DM", "DMT_PAYROLLRELATIONSHIPS_RECON_RPT"),
     ("Assignments",              "DMT_ASSIGNMENTS_RECON_DM", "DMT_ASSIGNMENTS_RECON_RPT"),
+    # Assignments V2 (2026-10-07, backlog #287/#290): alongside V1 (never
+    # overwritten). Rows selected by the HDL request id; key map joined on each
+    # row's own SourceSystemOwner (V1 filtered on 'HRC_SQLLOADER').
+    ("Assignments",              "DMT_ASSIGNMENTS_RECON_V2_DM", "DMT_ASSIGNMENTS_RECON_V2_RPT"),
     ("BenParticipant",           "DMT_BENPARTICIPANT_RECON_DM", "DMT_BENPARTICIPANT_RECON_RPT"),
     ("BenDependent",            "DMT_BENDEPENDENT_RECON_DM", "DMT_BENDEPENDENT_RECON_RPT"),
     ("BenBeneficiary",           "DMT_BENBENEFICIARY_RECON_DM", "DMT_BENBENEFICIARY_RECON_RPT"),

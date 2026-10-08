@@ -70,7 +70,6 @@ AS
     C_SCHEDASSIGN_COLS CONSTANT VARCHAR2(4000) :=
         'SourceSystemOwner|SourceSystemId|ScheduleName|AssignmentNumber|ResourceType|PrimaryFlag|StartDate|EndDate';
 
-    C_SOURCE_SYSTEM CONSTANT VARCHAR2(30) := 'HRC_SQLLOADER';
 
     -- Default repeat span for a migrated pattern: one weekly (7-day) cycle.
     C_REPEAT_NUMBER CONSTANT VARCHAR2(10) := '1';
@@ -137,7 +136,11 @@ AS
         l_now         DATE := SYSDATE;
         l_row_count   NUMBER := 0;
         l_vals        VARCHAR2(32767);
+        -- SourceSystemOwner for every .dat line: this DMT instance's owner from
+        -- DMT_CONFIG_TBL (backlog #287), read at run time, never a constant.
+        l_sso         VARCHAR2(240);
     BEGIN
+        l_sso := DMT_HDL_UTIL_PKG.GET_SOURCE_SYSTEM_OWNER;
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'GENERATE_HDL start.',
@@ -170,7 +173,7 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                                   || '|' ||
+                l_vals := l_sso                                             || '|' ||
                           pv(r.WORK_SCHEDULE_NAME) || '_WPAT'              || '|' ||  -- SourceSystemId
                           NVL(pv(r.WORK_SCHEDULE_TYPE), '9A - 5P General Shift') || '|' ||  -- WorkPatternTypeName
                           C_REPEAT_NUMBER                                  || '|' ||  -- RepeatNumber
@@ -195,7 +198,7 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                                   || '|' ||
+                l_vals := l_sso                                             || '|' ||
                           pv(r.WORK_SCHEDULE_NAME) || '_WSHIFT_' || TO_CHAR(r.TFM_SEQUENCE_ID) || '|' || -- SourceSystemId (unique)
                           pv(r.WORK_SCHEDULE_NAME)                         || '|' ||  -- WorkPatternAltCode (FK to parent)
                           pv(r.SHIFT_DATE)                                 || '|' ||  -- DayOfWorkPattern (1..7)
@@ -229,7 +232,7 @@ AS
                 AND    t.PERSON_NUMBER IS NOT NULL
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                                   || '|' ||
+                l_vals := l_sso                                             || '|' ||
                           pv(r.PERSON_NUMBER) || '_WSASG'                  || '|' ||  -- SourceSystemId (worker-traceable)
                           pv(r.WORK_SCHEDULE_NAME)                         || '|' ||  -- ScheduleName (the work schedule)
                           pv(r.PERSON_NUMBER)                              || '|' ||  -- AssignmentNumber (= prefixed person number)
