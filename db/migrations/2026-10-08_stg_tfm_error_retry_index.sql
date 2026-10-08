@@ -1,6 +1,6 @@
 -- FAILED-mode selection from the run-stamped attempt record (backlog #310).
 --
--- Adds DMT_STG_TFM_ERROR_N3 (SUB_OBJECT, STG_SEQUENCE_ID) so the per-row lookup
+-- Creates DMT_STG_TFM_ERROR_N3 (SUB_OBJECT, STG_SEQUENCE_ID) so the per-row lookup
 -- DMT_UTIL_PKG.FAILED_RETRY_SELECTED -> DMT_STG_ATTEMPT_V does not scan the
 -- whole error table. Mirrors the committed block in
 -- db/tables/dmt_stg_tfm_error_tbl.sql. Idempotent: ORA-00955 / ORA-01408 are
