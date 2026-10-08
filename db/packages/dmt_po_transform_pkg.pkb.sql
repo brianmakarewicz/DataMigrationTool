@@ -65,6 +65,7 @@
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_PO_HEADERS_INT_TFM_TBL (
+                    TFM_SEQUENCE_ID,
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -131,10 +132,14 @@
                     LAST_UPDATED_DATE
         )
         SELECT
+                    -- Backlog #218 (owner rule 2026-10-07): header join key = the header's own TFM id.
+                    -- Every NEXTVAL reference in one row of one statement returns the
+                    -- same value, so TFM_SEQUENCE_ID and the join key are equal.
+                    DMT_PO_HEADERS_INT_TFM_SEQ.NEXTVAL,
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    TO_CHAR(p_run_id) || '_HDR_' || TO_CHAR(s.STG_SEQUENCE_ID),
+                    TO_CHAR(DMT_PO_HEADERS_INT_TFM_SEQ.NEXTVAL),
                     s.ACTION,
                     NVL(TO_CHAR(s.BATCH_ID), TO_CHAR(p_run_id)),  -- carry the user's BATCH_ID through; run_id only as isolation fallback
                     s.INTERFACE_SOURCE_CODE,
@@ -348,6 +353,7 @@
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_PO_LINES_INT_TFM_TBL (
+                    TFM_SEQUENCE_ID,
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -401,11 +407,15 @@
                     LAST_UPDATED_DATE
         )
         SELECT
+                    -- Backlog #218 (owner rule 2026-10-07): line join key = the line's own TFM id; its header key = the parent header's TFM id.
+                    -- Every NEXTVAL reference in one row of one statement returns the
+                    -- same value, so TFM_SEQUENCE_ID and the join key are equal.
+                    DMT_PO_LINES_INT_TFM_SEQ.NEXTVAL,
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    TO_CHAR(p_run_id) || '_LN_' || TO_CHAR(s.STG_SEQUENCE_ID),
-                    (SELECT ht.INTERFACE_HEADER_KEY
+                    TO_CHAR(DMT_PO_LINES_INT_TFM_SEQ.NEXTVAL),
+                    (SELECT TO_CHAR(ht.TFM_SEQUENCE_ID)
                      FROM   DMT_PO_HEADERS_INT_TFM_TBL ht
                      JOIN   DMT_PO_HEADERS_INT_STG_TBL hs
                        ON   hs.STG_SEQUENCE_ID = ht.STG_SEQUENCE_ID
@@ -615,6 +625,7 @@
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_PO_LINE_LOCS_INT_TFM_TBL (
+                    TFM_SEQUENCE_ID,
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -675,11 +686,15 @@
                     LAST_UPDATED_DATE
         )
         SELECT
+                    -- Backlog #218 (owner rule 2026-10-07): schedule join key = its own TFM id; its line key = the parent line's TFM id.
+                    -- Every NEXTVAL reference in one row of one statement returns the
+                    -- same value, so TFM_SEQUENCE_ID and the join key are equal.
+                    DMT_PO_LINE_LOCS_INT_TFM_SEQ.NEXTVAL,
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    TO_CHAR(p_run_id) || '_LOC_' || TO_CHAR(s.STG_SEQUENCE_ID),
-                    (SELECT lt.INTERFACE_LINE_KEY
+                    TO_CHAR(DMT_PO_LINE_LOCS_INT_TFM_SEQ.NEXTVAL),
+                    (SELECT TO_CHAR(lt.TFM_SEQUENCE_ID)
                      FROM   DMT_PO_LINES_INT_TFM_TBL lt
                      JOIN   DMT_PO_LINES_INT_STG_TBL ls
                        ON   ls.STG_SEQUENCE_ID = lt.STG_SEQUENCE_ID
@@ -887,6 +902,7 @@
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_PO_DISTS_INT_TFM_TBL (
+                    TFM_SEQUENCE_ID,
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -946,11 +962,15 @@
                     LAST_UPDATED_DATE
         )
         SELECT
+                    -- Backlog #218 (owner rule 2026-10-07): distribution join key = its own TFM id; its schedule key = the parent schedule's TFM id.
+                    -- Every NEXTVAL reference in one row of one statement returns the
+                    -- same value, so TFM_SEQUENCE_ID and the join key are equal.
+                    DMT_PO_DISTS_INT_TFM_SEQ.NEXTVAL,
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    TO_CHAR(p_run_id) || '_DIST_' || TO_CHAR(s.STG_SEQUENCE_ID),
-                    (SELECT llt.INTERFACE_LINE_LOCATION_KEY
+                    TO_CHAR(DMT_PO_DISTS_INT_TFM_SEQ.NEXTVAL),
+                    (SELECT TO_CHAR(llt.TFM_SEQUENCE_ID)
                      FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL llt
                      JOIN   DMT_PO_LINE_LOCS_INT_STG_TBL lls
                        ON   lls.STG_SEQUENCE_ID = llt.STG_SEQUENCE_ID

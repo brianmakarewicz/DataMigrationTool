@@ -50,6 +50,7 @@
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_POR_REQ_HEADERS_TFM_TBL (
+                    TFM_SEQUENCE_ID,
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -86,10 +87,15 @@
                     LAST_UPDATED_DATE
         )
         SELECT
+                    -- Backlog #218 (owner rule 2026-10-07): the parent-child join
+                    -- key is the TFM row's own sequence id. Every NEXTVAL reference
+                    -- in one row of one statement returns the same value, so the
+                    -- row's TFM_SEQUENCE_ID and its INTERFACE_HEADER_KEY are equal.
+                    DMT_POR_REQ_HEADERS_TFM_SEQ.NEXTVAL,
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    TO_CHAR(p_run_id) || '_RQHDR_' || TO_CHAR(s.STG_SEQUENCE_ID),
+                    TO_CHAR(DMT_POR_REQ_HEADERS_TFM_SEQ.NEXTVAL),
                     'DMT',
                     s.REQ_BU_NAME,
                     -- Carry the user's batch id through (partition key + ESS
@@ -249,6 +255,7 @@
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_POR_REQ_LINES_TFM_TBL (
+                    TFM_SEQUENCE_ID,
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -332,11 +339,14 @@
                     LAST_UPDATED_DATE
         )
         SELECT
+                    -- Backlog #218: line join key = the line's own TFM id; its
+                    -- header key = the parent header's TFM id (same NEXTVAL rule).
+                    DMT_POR_REQ_LINES_TFM_SEQ.NEXTVAL,
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    TO_CHAR(p_run_id) || '_RQLN_' || TO_CHAR(s.STG_SEQUENCE_ID),
-                    (SELECT ht.INTERFACE_HEADER_KEY
+                    TO_CHAR(DMT_POR_REQ_LINES_TFM_SEQ.NEXTVAL),
+                    (SELECT TO_CHAR(ht.TFM_SEQUENCE_ID)
                      FROM   DMT_POR_REQ_HEADERS_TFM_TBL ht
                      JOIN   DMT_POR_REQ_HEADERS_STG_TBL hs
                        ON   hs.STG_SEQUENCE_ID = ht.STG_SEQUENCE_ID
@@ -439,7 +449,7 @@
         -- Contract v1 coupling (multi-tier template): stamp the line tier's
         -- RECON_KEY so it equals the line RECORD_KEY the recon report emits.
         -- The Contract v1 data model emits the BASE line RECORD_KEY as
-        -- INTERFACE_LINE_KEY (= <run_id>_RQLN_<seq>), which is persisted on the
+        -- INTERFACE_LINE_KEY (= the line's TFM_SEQUENCE_ID), which is persisted on the
         -- Fusion base line as INTERFACE_LINE_KEY and returns unchanged. The
         -- reconciler joins report rows to this table on RECON_KEY = RECORD_KEY, so
         -- this stamp must match exactly. Only NULL keys are set; post-INSERT.
@@ -539,6 +549,7 @@
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_POR_REQ_DISTS_TFM_TBL (
+                    TFM_SEQUENCE_ID,
                     STG_SEQUENCE_ID,
                     RUN_ID,
                     FBDI_CSV_ID,
@@ -590,11 +601,14 @@
                     LAST_UPDATED_DATE
         )
         SELECT
+                    -- Backlog #218: distribution join key = its own TFM id; its
+                    -- line key = the parent line's TFM id.
+                    DMT_POR_REQ_DISTS_TFM_SEQ.NEXTVAL,
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    TO_CHAR(p_run_id) || '_RQDIST_' || TO_CHAR(s.STG_SEQUENCE_ID),
-                    (SELECT lt.INTERFACE_LINE_KEY
+                    TO_CHAR(DMT_POR_REQ_DISTS_TFM_SEQ.NEXTVAL),
+                    (SELECT TO_CHAR(lt.TFM_SEQUENCE_ID)
                      FROM   DMT_POR_REQ_LINES_TFM_TBL lt
                      JOIN   DMT_POR_REQ_LINES_STG_TBL ls
                        ON   ls.STG_SEQUENCE_ID = lt.STG_SEQUENCE_ID
