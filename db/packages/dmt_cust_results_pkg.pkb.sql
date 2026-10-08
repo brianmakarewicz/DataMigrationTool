@@ -21,9 +21,10 @@
 -- '[FUSION_ERROR] ' || message (never composed). Everything else (INTERFACE tier,
 -- non-terminal) is left for the shared unaccounted sweep -- never fabricated.
 --
--- There is NO parent->child cascade in this package: the report covers all seven
--- record types on both BASE and INTERFACE tiers, so each record is confirmed
--- against its own base id or its own interface row.
+-- The APPLY has NO parent->child cascade: the report covers all seven record
+-- types on both BASE and INTERFACE tiers, so each record is confirmed against its
+-- own base id or its own interface row. Held rows are handled afterwards by
+-- PROPAGATE_DOCUMENT_ERRORS, which only ever quotes a real error.
 --
 -- Per-row error attribution (V5 report, DMT_CUST_RECON_V5_DM): an INTERFACE/ERROR
 -- row is returned ONLY when the interface row has its OWN Fusion error -- its
@@ -32,8 +33,9 @@
 -- 'HZ_IMP_INVAL_VALUE_COMPARE: The value in the SET_CODE column isn't valid...'.
 -- That is a real Fusion error for that record, so this APPLY marks the row FAILED
 -- with '[FUSION_ERROR] ' || message. A row Fusion held or rejected with no error of
--- its own is not in the report at all, so it stays GENERATED and the shared sweep
--- marks it UNACCOUNTED (V3 composed a status-code sentence for such rows and it was
+-- its own is not in the report at all, so it stays GENERATED; PROPAGATE_DOCUMENT_ERRORS
+-- quotes the real error of the row that held it back, and if there is none the shared
+-- sweep marks it UNACCOUNTED (V3 composed a status-code sentence for such rows and it was
 -- stamped [FUSION_ERROR] with no real error behind it -- removed). An ERROR row that
 -- arrives with no message (a report defect, never expected from V5) is logged as a
 -- WARN and left for the sweep -- never given a fabricated verdict.
@@ -41,10 +43,30 @@
 -- Outcomes are written to the seven TFM tables only: nothing is written back to
 -- staging; the TFM row is the sole record of the Fusion outcome (design section 2).
 -- NO COMMIT -- the orchestrator controls transaction boundaries.
+--
+-- After the per-row apply, PROPAGATE_DOCUMENT_ERRORS quotes each rejected row's
+-- real Fusion error onto the rows Fusion held back with it but wrote no error for
+-- (design section 5, whole-document rejection). The hold directions are the ones
+-- Fusion's own HZ_IMP_*_T statuses show; see that procedure.
+--
+-- REVISIONS:
+--   2026-10-07  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_CUST_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'Customers';
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
+    -- Working set: "the row TARGET_SEQ of record type TARGET_KIND was held back
+    -- with a row that has its own real Fusion error, so it must carry
+    -- QUOTED_ERROR". TARGET_KIND is one of PARTY, PSITE, PSU, ACCT, ASITE, ASU
+    -- (locations are never part of a customer document).
+    TYPE T_DOC_PAIR IS RECORD (
+        TARGET_KIND  VARCHAR2(10),
+        TARGET_SEQ   NUMBER,           -- TFM_SEQUENCE_ID in the target's own table
+        QUOTED_ERROR VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- --------------------------------------------------------
     -- CONFIRM_REFERENCE_ROUNDTRIP (private)
@@ -515,6 +537,331 @@
     END APPLY_CONTRACT_V1_CUSTOMERS;
 
     -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private)
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain" (decided 2026-10-07). The customer bulk import (BulkImportJob) does
+    -- not reject a customer as one flat document: it HOLDS rows at import status
+    -- W, with no HZ_IMP_ERRORS row of their own, when a related row fails. Which
+    -- rows it holds was read from Fusion, not assumed: every HZ_IMP_*_T row of the
+    -- 44 DMT loads in import batch 5001 (load request ids 9971978 .. 10070462,
+    -- runs 236 / 238 included), comparing each row's status with the status of
+    -- the rows it references (objects/Customers/README.md, "Cross-grain error
+    -- propagation"):
+    --   * A party site use with its own error holds its WHOLE party: the party,
+    --     every party site, party site use, account, account site and account
+    --     site use of that party went to W (43 of 43 parties that had a failed
+    --     party site use and no error of their own; no party was ever held
+    --     without one). The location is not held (it loads).
+    --   * A party with its own error: none of its rows were created (2 of 2).
+    --   * A party site with its own error: its party site uses and the account
+    --     sites on it were not created (4 of 4).
+    --   * An account with its own error: its account sites were not created
+    --     (86 of 86; 2 held at W with no error of their own).
+    --   * An account site with its own error: its account site uses were held
+    --     at W (86 of 86).
+    --   * Nothing else propagates. A failed account never held its party (84
+    --     parties S beside a failed account); a failed account site never held
+    --     its party site (86 S) or its account (2 S); a location is never part
+    --     of a customer's document.
+    -- So the document of a failed row is:
+    --   party / party site use  -> its whole party tree (scope PARTY);
+    --   party site              -> its party site uses and account sites (PSITE);
+    --   account                 -> its account sites (ACCT);
+    --   account site            -> its account site uses (ASITE);
+    -- where an account site belongs to a party through its account OR through its
+    -- party site, and an account site use belongs wherever its account site does.
+    --
+    -- Sources: rows of this run and work item with TFM_STATUS = 'FAILED' carrying
+    --   their OWN real Fusion error -- ERROR_TEXT contains '[FUSION_ERROR]' and
+    --   does NOT contain C_DOC_ERROR_MARKER (a quote is never re-quoted).
+    -- Targets: every OTHER row in the source's scope that Fusion received
+    --   (FBDI_CSV_ID stamped at generation, not STAGED), that is not LOADED (LOADED
+    --   rows are never touched) and that does not already carry the exact quote.
+    --   The quote is appended (APPEND_ERROR, never overwrite) and the row set
+    --   FAILED. A held row with no failed row in its scope is untouched -- it falls
+    --   to the shared UNACCOUNTED sweep.
+    -- Idempotent: the "already carries the exact quote" guard means a second
+    --   reconcile pass adds nothing.
+    -- One collection of (target, quote) pairs is built by ONE static SELECT, then
+    -- ONE static bulk UPDATE (FORALL) per target table: a MERGE cannot read a
+    -- PL/SQL record collection through TABLE() (ORA-00902, AR run 248). NO
+    -- dynamic SQL; NO COMMIT (caller owns the txn).
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_pty    NUMBER := 0;
+        l_psite  NUMBER := 0;
+        l_psu    NUMBER := 0;
+        l_acct   NUMBER := 0;
+        l_asite  NUMBER := 0;
+        l_asu    NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting held rows and the real errors that held them for run ' || p_run_id;
+        -- Work-item scope on every table, as the shared sweep scopes it: rows
+        -- stamped with another work item are excluded; unstamped rows are
+        -- run-scoped.
+        WITH pty AS (
+            SELECT t.TFM_SEQUENCE_ID seq, t.RECON_KEY rkey, t.TFM_STATUS st, t.ERROR_TEXT et,
+                   t.PARTY_ORIG_SYSTEM_REFERENCE party_ref
+            FROM   DMT_HZ_PARTIES_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        psite AS (
+            SELECT t.TFM_SEQUENCE_ID seq, t.RECON_KEY rkey, t.TFM_STATUS st, t.ERROR_TEXT et,
+                   t.PARTY_ORIG_SYSTEM_REFERENCE party_ref, t.SITE_ORIG_SYSTEM_REFERENCE psite_ref
+            FROM   DMT_HZ_PARTY_SITES_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        psu AS (
+            SELECT t.TFM_SEQUENCE_ID seq, t.RECON_KEY rkey, t.TFM_STATUS st, t.ERROR_TEXT et,
+                   -- The site use names its party; when it does not, its party
+                   -- site does.
+                   COALESCE(t.PARTY_ORIG_SYSTEM_REFERENCE,
+                            (SELECT MAX(s.party_ref) FROM psite s
+                             WHERE  s.psite_ref = t.SITE_ORIG_SYSTEM_REFERENCE)) party_ref,
+                   t.SITE_ORIG_SYSTEM_REFERENCE psite_ref
+            FROM   DMT_HZ_PARTY_SITE_USES_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        acct AS (
+            SELECT t.TFM_SEQUENCE_ID seq, t.RECON_KEY rkey, t.TFM_STATUS st, t.ERROR_TEXT et,
+                   t.PARTY_ORIG_SYSTEM_REFERENCE party_ref, t.CUST_ORIG_SYSTEM_REFERENCE acct_ref
+            FROM   DMT_HZ_ACCOUNTS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        asite AS (
+            -- An account site belongs to the party of its account (party_ref)
+            -- and to the party of its party site (party_ref_s); they differ only
+            -- when the source data does.
+            SELECT t.TFM_SEQUENCE_ID seq, t.RECON_KEY rkey, t.TFM_STATUS st, t.ERROR_TEXT et,
+                   (SELECT MAX(a.party_ref) FROM acct a
+                    WHERE  a.acct_ref = t.CUST_ORIG_SYSTEM_REFERENCE) party_ref,
+                   (SELECT MAX(s.party_ref) FROM psite s
+                    WHERE  s.psite_ref = t.SITE_ORIG_SYSTEM_REFERENCE) party_ref_s,
+                   t.SITE_ORIG_SYSTEM_REFERENCE psite_ref,
+                   t.CUST_ORIG_SYSTEM_REFERENCE acct_ref,
+                   t.CUST_SITE_ORIG_SYS_REF     asite_ref
+            FROM   DMT_HZ_ACCT_SITES_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        asite_dim AS (
+            SELECT asite_ref, MAX(party_ref) party_ref, MAX(party_ref_s) party_ref_s,
+                   MAX(psite_ref) psite_ref, MAX(acct_ref) acct_ref
+            FROM   asite
+            GROUP BY asite_ref
+        ),
+        asu AS (
+            -- An account site use belongs wherever its account site belongs.
+            SELECT t.TFM_SEQUENCE_ID seq, t.RECON_KEY rkey, t.TFM_STATUS st, t.ERROR_TEXT et,
+                   d.party_ref, d.party_ref_s, d.psite_ref, d.acct_ref,
+                   t.CUST_SITE_ORIG_SYS_REF asite_ref
+            FROM   DMT_HZ_ACCT_SITE_USES_TFM_TBL t
+            LEFT JOIN asite_dim d ON d.asite_ref = t.CUST_SITE_ORIG_SYS_REF
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+        ),
+        -- Every customer row of the work item in one shape: its kind, its own
+        -- outcome, and the references that place it in a document.
+        node AS (
+            SELECT 'PARTY' kind, 'party' grain, seq, rkey, st, et,
+                   party_ref, CAST(NULL AS VARCHAR2(255)) party_ref_s,
+                   CAST(NULL AS VARCHAR2(255)) psite_ref, CAST(NULL AS VARCHAR2(255)) acct_ref,
+                   CAST(NULL AS VARCHAR2(255)) asite_ref
+            FROM   pty
+            UNION ALL
+            SELECT 'PSITE', 'party site', seq, rkey, st, et,
+                   party_ref, NULL, psite_ref, NULL, NULL
+            FROM   psite
+            UNION ALL
+            SELECT 'PSU', 'party site use', seq, rkey, st, et,
+                   party_ref, NULL, psite_ref, NULL, NULL
+            FROM   psu
+            UNION ALL
+            SELECT 'ACCT', 'account', seq, rkey, st, et,
+                   party_ref, NULL, NULL, acct_ref, NULL
+            FROM   acct
+            UNION ALL
+            SELECT 'ASITE', 'account site', seq, rkey, st, et,
+                   party_ref, party_ref_s, psite_ref, acct_ref, asite_ref
+            FROM   asite
+            UNION ALL
+            SELECT 'ASU', 'account site use', seq, rkey, st, et,
+                   party_ref, party_ref_s, psite_ref, acct_ref, asite_ref
+            FROM   asu
+        ),
+        -- A row with its own real Fusion error, the scope of rows Fusion holds
+        -- back with it (see the header), and its error in the shared quote format.
+        src AS (
+            SELECT n.kind, n.seq,
+                   CASE n.kind
+                       WHEN 'PARTY' THEN 'PARTY'
+                       WHEN 'PSU'   THEN 'PARTY'
+                       WHEN 'PSITE' THEN 'PSITE'
+                       WHEN 'ACCT'  THEN 'ACCT'
+                       WHEN 'ASITE' THEN 'ASITE'
+                   END scope_kind,
+                   CASE n.kind
+                       WHEN 'PARTY' THEN n.party_ref
+                       WHEN 'PSU'   THEN n.party_ref
+                       WHEN 'PSITE' THEN n.psite_ref
+                       WHEN 'ACCT'  THEN n.acct_ref
+                       WHEN 'ASITE' THEN n.asite_ref
+                   END scope_ref,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                       n.grain, n.rkey,
+                       DBMS_LOB.SUBSTR(n.et, 3800, DBMS_LOB.INSTR(n.et, C_TAG))) quote
+            FROM   node n
+            WHERE  n.kind IN ('PARTY', 'PSU', 'PSITE', 'ACCT', 'ASITE')
+            AND    n.st = 'FAILED'
+            AND    DBMS_LOB.INSTR(n.et, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(n.et, l_marker) = 0
+        )
+        SELECT DISTINCT n.kind, n.seq, s.quote
+        BULK COLLECT INTO l_pairs
+        FROM   src s
+        JOIN   node n
+          ON   (s.scope_kind = 'PARTY' AND (n.party_ref = s.scope_ref OR n.party_ref_s = s.scope_ref))
+           OR  (s.scope_kind = 'PSITE' AND n.psite_ref = s.scope_ref)
+           OR  (s.scope_kind = 'ACCT'  AND n.acct_ref  = s.scope_ref)
+           OR  (s.scope_kind = 'ASITE' AND n.asite_ref = s.scope_ref)
+        WHERE  NOT (n.kind = s.kind AND n.seq = s.seq)
+        AND    s.scope_ref IS NOT NULL
+        AND    s.quote IS NOT NULL
+        AND    n.st NOT IN ('LOADED', 'STAGED');
+
+        -- One bulk UPDATE per target table (FORALL over the pairs; a pair only
+        -- matches the table of its TARGET_KIND). Each pair appends its quote only
+        -- when the row does not already carry it, so a row held by several failed
+        -- rows gets each quote once and a second reconcile pass adds nothing.
+        l_step := 'appending quoted document errors to parties';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_HZ_PARTIES_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  l_pairs(i).TARGET_KIND = 'PARTY'
+            AND    t.RUN_ID = p_run_id
+            AND    t.TFM_SEQUENCE_ID = l_pairs(i).TARGET_SEQ
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_pty := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to party sites';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_HZ_PARTY_SITES_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  l_pairs(i).TARGET_KIND = 'PSITE'
+            AND    t.RUN_ID = p_run_id
+            AND    t.TFM_SEQUENCE_ID = l_pairs(i).TARGET_SEQ
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_psite := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to party site uses';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  l_pairs(i).TARGET_KIND = 'PSU'
+            AND    t.RUN_ID = p_run_id
+            AND    t.TFM_SEQUENCE_ID = l_pairs(i).TARGET_SEQ
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_psu := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to accounts';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_HZ_ACCOUNTS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  l_pairs(i).TARGET_KIND = 'ACCT'
+            AND    t.RUN_ID = p_run_id
+            AND    t.TFM_SEQUENCE_ID = l_pairs(i).TARGET_SEQ
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_acct := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to account sites';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_HZ_ACCT_SITES_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  l_pairs(i).TARGET_KIND = 'ASITE'
+            AND    t.RUN_ID = p_run_id
+            AND    t.TFM_SEQUENCE_ID = l_pairs(i).TARGET_SEQ
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_asite := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted document errors to account site uses';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  l_pairs(i).TARGET_KIND = 'ASU'
+            AND    t.RUN_ID = p_run_id
+            AND    t.TFM_SEQUENCE_ID = l_pairs(i).TARGET_SEQ
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_asu := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Held-row quote pairs: ' || l_pairs.COUNT
+                           || ' | rows given a quoted document error: parties ' || l_pty
+                           || ', party sites ' || l_psite || ', party site uses ' || l_psu
+                           || ', accounts ' || l_acct || ', account sites ' || l_asite
+                           || ', account site uses ' || l_asu || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH - Contract v1 recon for Customers.
     -- Public 4-arg signature unchanged (pipeline def calls
     -- DMT_CUST_RESULTS_PKG.RECONCILE_BATCH). Delegates to the shared fetch +
@@ -545,6 +892,12 @@
             p_run_id        => p_run_id,
             p_load_ess_id   => p_load_ess_id,
             p_import_ess_id => p_import_ess_id);
+
+        -- Whole-document rejection (design section 5): rows the customer bulk
+        -- import held back with a failed row carry that row's real error. Runs
+        -- after the per-row apply and BEFORE the shared unaccounted sweep
+        -- (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object
