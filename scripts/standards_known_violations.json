@@ -248,20 +248,6 @@
     },
     {
       "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-FUSION-ERROR-FORM|dmt_egp_item_cat_results_pkg.pkb.sql|composed '[FUSION_ERROR] SUBMIT_LOAD failed: '",
-      "backlog": 212,
-      "found": "2026-10-07",
-      "detail": "line 277: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] SUBMIT_LOAD failed: '"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-FUSION-ERROR-FORM|dmt_egp_item_results_pkg.pkb.sql|composed '[FUSION_ERROR] SUBMIT_LOAD failed: '",
-      "backlog": 212,
-      "found": "2026-10-07",
-      "detail": "line 686: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] SUBMIT_LOAD failed: '"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
       "key": "SWEEP-TAG|dmt_fa_asset_results_pkg.pkb.sql|[BATCH_REJECTED]",
       "backlog": 175,
       "found": "2026-10-07",
