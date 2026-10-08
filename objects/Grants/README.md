@@ -88,6 +88,33 @@ report returns zero rows and the per-award rejection messages survive ONLY in Fu
   `RECON_KEY` = the prefixed `AWARD_NUMBER` to match. The report child is downloaded as `ppm_impl`.
 - Report request for the run-234 evidence chain: ESS 9773862 (child of import ESS 9773857).
 
+## Cross-grain error attribution (backlog #171, #196, 2026-10-08)
+Import Awards rejects a whole award when the award or any one of its children fails, and
+the Award Batch Import Report names the row it blamed. Fusion's data model
+(`/Projects/Grants Management/Award/Data Models/AwardBatchImportReportDm.xdm`) nests a
+rejected award's child failures inside its `G_4` row, one group per record type, each with
+the child's own `PROCESSED_MESSAGE` and the keys Fusion read from the CSV:
+G_33 personnel, G_2 funding, G_41 funding allocation, G_30 budget period, G_28 org credit,
+G_24 project, G_21 CFDA, G_18 term, G_7 certification, G_13 reference, G_14 task burden
+schedule, G_19 project funding source, G_25 funding source, G_8 keyword.
+
+- `APPLY_CHILD_REPORT_FAILURES` matches each child failure to its TFM row (award number plus
+  the child's business keys; a key the report leaves empty is not compared) and sets it FAILED
+  with its own `[FUSION_ERROR] <message>`.
+- The award header keeps the `G_4` message as its own error only when the report lists no failed
+  child for that award. Otherwise the child caused the rejection, and the `G_4` text is only a
+  pointer to it (live: "The award isn't imported because errors exist in the personnel data.").
+- `PROPAGATE_DOCUMENT_ERRORS` (after the apply, before the shared unaccounted sweep) quotes the
+  blamed row's error onto every other row of the award that has no error of its own:
+  `[FUSION_ERROR] Rejected with document: award <AWARD_NUMBER> (<grain> <key>): <message>`
+  (no `(<grain> <key>)` part when the award header itself was blamed). FORALL UPDATE,
+  APPEND_ERROR, idempotent, never touches LOADED rows. The old header-to-children FAILED
+  cascade is retired; children of a LOADED award are still LOADED with it.
+- Regression: `RTAWD-XG1` (Good-1's shape, personnel PI `PERSON_NUMBER 99999999`, no email)
+  in scenario RegressionTest2610081853. Only the award header lane is in
+  `DMT_RECORD_DETAIL_V`, so the regression script asserts the header
+  (`FAILED_WITH_DOCUMENT`); the child rows were checked directly on the TFM tables.
+
 ## Known Issues
 - ~~BIP reconciliation uses "absence=LOADED" pattern: Fusion purges interface table rows after successful import.~~ **RESOLVED 2026-04-02:** Switched to two-tier BIP (interface + base table). No more absence=LOADED.
 - ~~Per-award rejection errors were unreadable after import (interface purged) — object left UNACCOUNTED.~~ **RESOLVED (run-234 fix):** reconciler now reads the Award Batch Import Report child (see above).

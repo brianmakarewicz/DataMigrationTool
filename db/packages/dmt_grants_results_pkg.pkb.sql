@@ -30,15 +30,19 @@ AS
 -- The Grants report emits real Fusion PROCESSED_MESSAGE text (no '#IMPORT_REPORT#'
 -- marker), so the ERROR rows carry real messages.
 --
--- CHILD ACCOUNTING (unchanged behaviour): the 14 award children (funding,
--- projects, personnel, terms, ...) have NO independent Fusion base/interface
--- proof on this pod. Their ONLY honest verdict is their parent award's verdict,
--- keyed by AWARD_NUMBER:
+-- CHILD ACCOUNTING: the 14 award children (funding, projects, personnel,
+-- terms, ...) have NO independent Fusion base/interface proof on this pod.
+-- Keyed by AWARD_NUMBER:
 --   * award LOADED -> children LOADED (they loaded with the award; the parent
 --     was confirmed in the base table, so this is accounting, not fabrication).
---   * award FAILED -> children FAILED, carrying the real parent Fusion error in
---     the prescribed linked-record form (a child could not load without its
---     award).
+--   * award rejected -> Fusion's Award Batch Import Report names the row it
+--     blamed: the award itself (G_4) or a child (the failure groups nested in
+--     G_4). That row keeps its own [FUSION_ERROR] (APPLY_CHILD_REPORT_FAILURES /
+--     apply_award_import_report), and PROPAGATE_DOCUMENT_ERRORS (backlog #171)
+--     quotes it onto every other row of the award (header, siblings, other
+--     children): '[FUSION_ERROR] Rejected with document: award <AWARD_NUMBER>
+--     (<grain> <key>): <real msg>' (design section 5, "Whole-document rejection
+--     carries the real error to every grain").
 -- Never fabricate a child base id. This mirrors the Worker person-component
 -- cascade (DMT_WORKER_RESULTS_PKG lines 178-309).
 --
@@ -55,10 +59,60 @@ AS
 -- carries only our own NEW / TRANSFORMED / FAILED lifecycle; the outcome lives
 -- on the run-stamped TFM row (section 5, "Showing final outcomes next to staging
 -- data").
+--
+-- REVISIONS:
+--   2026-10-08  BM  Backlog #171: the child that Fusion blamed for an award
+--                   rejection gets its own [FUSION_ERROR] from the report's
+--                   nested child failure groups (APPLY_CHILD_REPORT_FAILURES);
+--                   PROPAGATE_DOCUMENT_ERRORS quotes it (or the award's own
+--                   error) onto every other row of the award, naming the award
+--                   and the blamed row. The old header-to-children FAILED
+--                   cascade is retired.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_GRANTS_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'Grants';
+
+    -- One child-grain rejection read from the Award Batch Import Report (backlog
+    -- #171). Fusion nests a rejected award's child failures inside its G_4 row,
+    -- one group per child record type (G_33 personnel, G_2 funding, ...), each
+    -- row carrying the child's own PROCESSED_MESSAGE and the business keys
+    -- Fusion received in the CSV. K1..K4 are those keys, per GRAIN:
+    --   personnel  : PERSON_NUMBER, PERSON_EMAIL, PERSON_NAME, PROJECT_NUMBER
+    --   funding    : BUDGET_PERIOD_NAME, ISSUE_NUMBER, FUNDING_SOURCE_NAME
+    --   fund alloc : ISSUE_NUMBER, PROJECT_NUMBER
+    --   budget period : BUDGET_PERIOD
+    --   org credit : PROJECT_NUMBER, ORGANIZATION_NAME
+    --   project    : PROJECT_NUMBER
+    --   cfda       : CFDA_NAME
+    --   term       : TERM_NAME, TERM_CATEGORY_NAME
+    --   certification : CERTIFICATION_NAME, PROJECT_NUMBER
+    --   reference  : REFERENCE_TYPE, PROJECT_NUMBER
+    --   task burden: PROJECT_NUMBER, BURDEN_SCHEDULE
+    --   project funding source : PROJECT_NUMBER, FUNDING_SOURCE_NAME
+    --   funding source : FUNDING_SOURCE_NAME
+    --   keyword    : KEYWORD_NAME, PROJECT_NUMBER
+    -- A NULL key is not compared (Fusion echoes only what the CSV carried).
+    TYPE T_CHILD_FAIL IS RECORD (
+        GRAIN        VARCHAR2(30),
+        AWARD_NUMBER VARCHAR2(300),
+        K1           VARCHAR2(500),
+        K2           VARCHAR2(500),
+        K3           VARCHAR2(500),
+        K4           VARCHAR2(500),
+        MSG          VARCHAR2(4000)
+    );
+    TYPE T_CHILD_FAIL_TBL IS TABLE OF T_CHILD_FAIL;
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog #171).
+    -- Working set: "award AWARD_NUMBER was rejected and one of its rows carries
+    -- its own real Fusion error, so every other row of that award still waiting
+    -- for a verdict must carry QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        AWARD_NUMBER VARCHAR2(300),
+        QUOTED_ERROR VARCHAR2(4000)      -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- --------------------------------------------------------
     -- find_report_ess_id
@@ -125,6 +179,349 @@ AS
     END find_report_ess_id;
 
     -- --------------------------------------------------------
+    -- APPLY_CHILD_REPORT_FAILURES (private, backlog #171)
+    -- Give each award child that Fusion itself rejected its OWN real error.
+    -- The Award Batch Import Report nests a rejected award's child failures
+    -- inside its G_4 row: one group per child record type, each row carrying
+    -- the child's own PROCESSED_MESSAGE and the keys Fusion read from the CSV
+    -- (Fusion's data model AwardBatchImportReportDm, groups G_2 .. G_41).
+    -- Each one is matched to its child TFM row of this run by AWARD_NUMBER plus
+    -- the child's business keys (a key the report leaves NULL is not compared)
+    -- and that row is set FAILED with '[FUSION_ERROR] <message>'. Only rows
+    -- still awaiting a verdict are touched (never LOADED, never already
+    -- FAILED), so a second pass changes nothing. Returns the parsed failures
+    -- in x_fails so the caller can tell a child-caused award rejection from a
+    -- header one. Static SQL; NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_CHILD_REPORT_FAILURES (
+        p_run_id IN  NUMBER,
+        p_xml    IN  XMLTYPE,
+        x_fails  OUT T_CHILD_FAIL_TBL,
+        x_rows   OUT NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'APPLY_CHILD_REPORT_FAILURES';
+        l_step VARCHAR2(200);
+    BEGIN
+        x_rows := 0;
+        l_step := 'reading child failure groups from the award report';
+        SELECT grain, award_number, k1, k2, k3, k4, msg
+        BULK COLLECT INTO x_fails
+        FROM (
+            SELECT 'personnel' grain, x.award_number, x.k1, x.k2, x.k3, x.k4, x.msg
+            FROM   XMLTABLE('//G_33' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'PERSON_NUMBER',
+                       k2 VARCHAR2(500) PATH 'PERSON_EMAIL',
+                       k3 VARCHAR2(500) PATH 'PERSON_NAME',
+                       k4 VARCHAR2(500) PATH 'PROJECT_NUMBER',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'funding', x.award_number, x.k1, x.k2, x.k3, NULL, x.msg
+            FROM   XMLTABLE('//G_2' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'BUDGET_PERIOD_NAME',
+                       k2 VARCHAR2(500) PATH 'ISSUE_NUMBER',
+                       k3 VARCHAR2(500) PATH 'FUNDING_SOURCE_NAME',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'fund allocation', x.award_number, x.k1, x.k2, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_41' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'ISSUE_NUMBER',
+                       k2 VARCHAR2(500) PATH 'PROJECT_NUMBER',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'budget period', x.award_number, x.k1, NULL, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_30' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'BUDGET_PERIOD',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'org credit', x.award_number, x.k1, x.k2, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_28' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'PROJECT_NUMBER',
+                       k2 VARCHAR2(500) PATH 'ORGANIZATION_NAME',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'project', x.award_number, x.k1, NULL, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_24' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'PROJECT_NUMBER',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'cfda', x.award_number, x.k1, NULL, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_21' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'CFDA_NAME',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'term', x.award_number, x.k1, x.k2, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_18' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'TERM_NAME',
+                       k2 VARCHAR2(500) PATH 'TERM_CATEGORY_NAME',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'certification', x.award_number, x.k1, x.k2, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_7' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'CERTIFICATION_NAME',
+                       k2 VARCHAR2(500) PATH 'PROJECT_NUMBER',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'reference', x.award_number, x.k1, x.k2, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_13' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'REFERENCE_TYPE',
+                       k2 VARCHAR2(500) PATH 'PROJECT_NUMBER',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'task burden schedule', x.award_number, x.k1, x.k2, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_14' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'PROJECT_NUMBER',
+                       k2 VARCHAR2(500) PATH 'BURDEN_SCHEDULE',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'project funding source', x.award_number, x.k1, x.k2, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_19' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'PROJECT_NUMBER',
+                       k2 VARCHAR2(500) PATH 'FUNDING_SOURCE_NAME',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'funding source', x.award_number, x.k1, NULL, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_25' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'FUNDING_SOURCE_NAME',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+            UNION ALL
+            SELECT 'keyword', x.award_number, x.k1, x.k2, NULL, NULL, x.msg
+            FROM   XMLTABLE('//G_8' PASSING p_xml COLUMNS
+                       award_number VARCHAR2(300)  PATH 'AWARD_NUMBER',
+                       k1 VARCHAR2(500) PATH 'KEYWORD_NAME',
+                       k2 VARCHAR2(500) PATH 'PROJECT_NUMBER',
+                       msg VARCHAR2(4000) PATH 'PROCESSED_MESSAGE') x
+        )
+        WHERE award_number IS NOT NULL
+        AND   msg IS NOT NULL;
+
+        -- One static bulk UPDATE per child table. Each FORALL walks every parsed
+        -- failure; the GRAIN predicate picks the ones for that table.
+        l_step := 'marking rejected personnel rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_PERSONNEL_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'personnel'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.PERSON_NUMBER = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR UPPER(t.PERSON_EMAIL) = UPPER(x_fails(i).K2))
+            AND    (x_fails(i).K3 IS NULL OR t.PERSON_NAME = x_fails(i).K3)
+            AND    (x_fails(i).K4 IS NULL OR t.PROJECT_NUMBER = x_fails(i).K4)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected funding rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_FUNDING_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'funding'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.BUDGET_PERIOD_NAME = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR t.ISSUE_NUMBER = x_fails(i).K2)
+            AND    (x_fails(i).K3 IS NULL OR t.FUNDING_SOURCE_NAME = x_fails(i).K3)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected funding allocation rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'fund allocation'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.ISSUE_NUMBER = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR t.PROJECT_NUMBER = x_fails(i).K2)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected budget period rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'budget period'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.BUDGET_PERIOD = x_fails(i).K1)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected org credit rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'org credit'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.PROJECT_NUMBER = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR t.ORGANIZATION = x_fails(i).K2)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected project rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_PROJECTS_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'project'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.PROJECT_NUMBER = x_fails(i).K1)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected cfda rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_CFDAS_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'cfda'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.CFDA = x_fails(i).K1)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected term rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_TERMS_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'term'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.TERM_NAME = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR t.TERM_CATEGORY_NAME = x_fails(i).K2)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected certification rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_CERTS_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'certification'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.CERTIFICATION_NAME = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR t.PROJECT_NUMBER = x_fails(i).K2)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected reference rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_REFERENCES_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'reference'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.REFERENCE_TYPE = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR t.PROJECT_NUMBER = x_fails(i).K2)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected task burden schedule rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'task burden schedule'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.PROJECT_NUMBER = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR t.BURDEN_SCHEDULE = x_fails(i).K2)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected project funding source rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'project funding source'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.PROJECT_NUMBER = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR t.FUNDING_SOURCE_NAME = x_fails(i).K2)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected funding source rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_FUND_SRC_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'funding source'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.FUNDING_SOURCE_NAME = x_fails(i).K1)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        l_step := 'marking rejected keyword rows';
+        FORALL i IN 1 .. x_fails.COUNT
+            UPDATE DMT_GMS_AWD_KEYWORDS_TFM_TBL t
+            SET    t.TFM_STATUS = 'FAILED',
+                   t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, '[FUSION_ERROR] ' || x_fails(i).MSG),
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    x_fails(i).GRAIN = 'keyword'
+            AND    t.AWARD_NUMBER = x_fails(i).AWARD_NUMBER
+            AND    (x_fails(i).K1 IS NULL OR t.KEYWORD_NAME = x_fails(i).K1)
+            AND    (x_fails(i).K2 IS NULL OR t.PROJECT_NUMBER = x_fails(i).K2)
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'FAILED');
+        x_rows := x_rows + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ': ' || x_fails.COUNT || ' child failure(s) in the award report; '
+                           || x_rows || ' child row(s) marked FAILED with their own Fusion error.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END APPLY_CHILD_REPORT_FAILURES;
+
+    -- --------------------------------------------------------
     -- apply_award_import_report
     -- Read the Award Batch Import Report XML and mark each rejected
     -- award FAILED with its REAL Fusion message.
@@ -154,6 +551,9 @@ AS
         l_matched       NUMBER := 0;
         l_ess_user      VARCHAR2(100);
         l_ess_pass      VARCHAR2(100);
+        l_child_fails   T_CHILD_FAIL_TBL := T_CHILD_FAIL_TBL();
+        l_child_rows    NUMBER := 0;
+        l_child_caused  BOOLEAN;
     BEGIN
         IF p_import_ess_id IS NULL THEN
             RETURN 0;
@@ -211,7 +611,17 @@ AS
                 RETURN 0;
         END;
 
+        -- Backlog #171: first give every child that Fusion rejected its OWN real
+        -- error (the failure groups nested in each G_4 row).
+        APPLY_CHILD_REPORT_FAILURES(p_run_id, l_xml, l_child_fails, l_child_rows);
+
         -- Attribute each rejected award to its TFM row with the real message.
+        -- When the report also lists a failed CHILD of the award, the child
+        -- caused the rejection and the award's G_4 text is only Fusion's pointer
+        -- to it (live run 320: "The award isn't imported because errors exist
+        -- in the personnel data."). The header is then left for
+        -- PROPAGATE_DOCUMENT_ERRORS, which quotes the child's real error onto it
+        -- ("the row whose own error it is keeps it", design section 5).
         FOR r IN (
             SELECT x.award_number,
                    x.processed_message
@@ -223,15 +633,24 @@ AS
             WHERE  x.award_number IS NOT NULL
             AND    x.processed_message IS NOT NULL
         ) LOOP
-            UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL
-            SET    TFM_STATUS = 'FAILED',
-                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                       '[FUSION_ERROR] ' || r.processed_message),
-                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-            WHERE  RUN_ID = p_run_id AND AWARD_NUMBER = r.award_number
-            AND    TFM_STATUS NOT IN ('LOADED','FAILED');
-            l_matched := l_matched + SQL%ROWCOUNT;
+            l_child_caused := FALSE;
+            FOR j IN 1 .. l_child_fails.COUNT LOOP
+                IF l_child_fails(j).AWARD_NUMBER = r.award_number THEN
+                    l_child_caused := TRUE;
+                END IF;
+            END LOOP;
+            IF NOT l_child_caused THEN
+                UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL
+                SET    TFM_STATUS = 'FAILED',
+                       ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                           '[FUSION_ERROR] ' || r.processed_message),
+                       RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+                WHERE  RUN_ID = p_run_id AND AWARD_NUMBER = r.award_number
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                l_matched := l_matched + SQL%ROWCOUNT;
+            END IF;
         END LOOP;
+        l_matched := l_matched + l_child_rows;
 
         IF DBMS_LOB.ISTEMPORARY(l_xml_clob) = 1 THEN
             DBMS_LOB.FREETEMPORARY(l_xml_clob);
@@ -264,12 +683,12 @@ AS
 
     -- --------------------------------------------------------
     -- cascade_children (private)
-    -- Account the 14 award children by the parent award's verdict (keyed by
-    -- AWARD_NUMBER):
-    --   * award LOADED -> child LOADED
-    --   * award FAILED -> child FAILED, carrying the real parent Fusion error.
-    -- Never fabricates a child base id. Straight set-based UPDATEs; the award
-    -- header TFM row's terminal status is the compile-time-known driver.
+    -- Account the 14 award children of a LOADED award (keyed by AWARD_NUMBER):
+    -- a child of a base-confirmed award is LOADED with it. A child already
+    -- FAILED (its own error) is never flipped. Children of a FAILED award are
+    -- settled by PROPAGATE_DOCUMENT_ERRORS (backlog #171). Never fabricates a
+    -- child base id. Straight set-based UPDATEs; the award header TFM row's
+    -- terminal status is the compile-time-known driver.
     -- --------------------------------------------------------
     PROCEDURE cascade_children (
         p_run_id IN NUMBER
@@ -279,105 +698,521 @@ AS
         -- Cascade LOADED to all 14 child TFM tables via AWARD_NUMBER
         UPDATE DMT_GMS_AWD_FUNDING_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_PROJECTS_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_PERSONNEL_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_FUND_SRC_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_KEYWORDS_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_BDGT_PRDS_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_CERTS_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_CFDAS_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_FUND_ALLOC_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_ORG_CREDITS_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_REFERENCES_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
         UPDATE DMT_GMS_AWD_TERMS_TFM_TBL c
         SET c.TFM_STATUS='LOADED', c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE
-        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='LOADED'
+        WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='LOADED');
 
-        -- Cascade FAILED to all 14 child TFM tables (section 5, "Whole-document
-        -- rejection carries the real error to every grain", decided 2026-10-07).
-        -- Fusion rejects the whole award when its header fails and writes the
-        -- error only against the award, so every child of that award quotes the
-        -- header's REAL Fusion message, naming the grain and key it came from:
-        --   [FUSION_ERROR] Rejected with document: award (<AWARD_NUMBER>): <Fusion message>
-        -- The quoted text is the header's own message with its tag removed (no
-        -- double tag). Only a header that carries a real [FUSION_ERROR] is
-        -- cascaded; a child of a header with no Fusion error stays unaccounted
-        -- (record-accounting rule 2(b): nothing real to propagate).
-        UPDATE DMT_GMS_AWD_FUNDING_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_PROJECTS_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_PERSONNEL_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_FUND_SRC_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_KEYWORDS_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_BDGT_PRDS_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_CERTS_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_CFDAS_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_FUND_ALLOC_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_ORG_CREDITS_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_REFERENCES_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
-        UPDATE DMT_GMS_AWD_TERMS_TFM_TBL c SET c.TFM_STATUS='FAILED', c.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,'[FUSION_ERROR] Rejected with document: award ('||c.AWARD_NUMBER||'): '||(SELECT REGEXP_SUBSTR(h2.ERROR_TEXT,'\[FUSION_ERROR\] ?(.*)$',1,1,'n',1) FROM DMT_GMS_AWD_HEADERS_TFM_TBL h2 WHERE h2.RUN_ID=p_run_id AND h2.AWARD_NUMBER=c.AWARD_NUMBER AND h2.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h2.ERROR_TEXT,'[FUSION_ERROR]')>0 AND ROWNUM=1)), c.RESULTS_UPDATED_DATE=SYSDATE, c.LAST_UPDATED_DATE=SYSDATE WHERE c.RUN_ID=p_run_id AND c.TFM_STATUS!='FAILED' AND EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h WHERE h.RUN_ID=p_run_id AND h.AWARD_NUMBER=c.AWARD_NUMBER AND h.TFM_STATUS='FAILED' AND DBMS_LOB.INSTR(h.ERROR_TEXT,'[FUSION_ERROR]')>0);
+        -- A FAILED award's children are no longer settled here: since backlog
+        -- #171 PROPAGATE_DOCUMENT_ERRORS quotes the real error of whichever row
+        -- Fusion blamed (header or child) onto every other row of the award.
 
         -- NO COMMIT — orchestrator controls transaction boundaries
         DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete. 14 children accounted by parent-award verdict.',
+            C_PROC || ' complete. Children of LOADED awards marked LOADED.',
             'INFO',
             C_PKG, C_PROC);
     END cascade_children;
+
+    -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private, backlog #171)
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain" (decided 2026-10-07). The Fusion document is the award: Import
+    -- Awards rejects the whole award when the award itself or any one of its
+    -- child rows fails, and writes the error only against the row it blamed (the
+    -- award in G_4, or the child in the failure group nested under it).
+    --
+    -- Sources: every row of this run, header or child, with TFM_STATUS = 'FAILED'
+    --   carrying its OWN real Fusion error -- ERROR_TEXT contains '[FUSION_ERROR]'
+    --   and does NOT contain C_DOC_ERROR_MARKER (a quote is never re-quoted).
+    -- Quote: '[FUSION_ERROR] Rejected with document: award <AWARD_NUMBER>: <msg>'
+    --   for a header source, and
+    --   '[FUSION_ERROR] Rejected with document: award <AWARD_NUMBER> (<grain> <key>): <msg>'
+    --   for a child source, so the reader sees the award and the row Fusion blamed.
+    -- Targets: every row of the same award (header and all 14 child tables) that
+    --   Fusion received (FBDI_CSV_ID stamped at generation), is not LOADED and not
+    --   STAGED, and has no real error of its own: either still awaiting a verdict,
+    --   or FAILED carrying only quotes. The row Fusion blamed keeps its own error
+    --   and is never given a quote. The quote is appended (APPEND_ERROR, never
+    --   overwrite) and the row set FAILED.
+    -- Idempotent: a row already carrying the exact quote is skipped, so a second
+    --   reconcile pass adds nothing. LOADED rows are never touched.
+    -- One static SELECT builds the (award, quote) pairs, then ONE static bulk
+    -- UPDATE (FORALL) per table. Scoped by RUN_ID: the Grants transform does not
+    -- stamp WORK_QUEUE_ID (README known issue) and Grants runs as one work item.
+    -- NO dynamic SQL; NO COMMIT (caller owns the txn).
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id IN NUMBER
+    ) IS
+        C_PROC     CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG      CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        C_TAG_RX   CONSTANT VARCHAR2(40) := '\[FUSION_ERROR\]';
+        C_QUOTE_RX CONSTANT VARCHAR2(80) := '\[FUSION_ERROR\] ' || DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_marker   VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs    T_DOC_PAIR_TBL;
+        l_rows     NUMBER := 0;
+        l_step     VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting (award, quoted error) pairs for run ' || p_run_id;
+        SELECT AWARD_NUMBER, QUOTED_ERROR
+        BULK COLLECT INTO l_pairs
+        FROM (
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER,
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_HEADERS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (funding ' || t.ISSUE_NUMBER || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_FUNDING_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (project ' || t.PROJECT_NUMBER || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_PROJECTS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (personnel ' || COALESCE(t.PERSON_NUMBER, t.PERSON_EMAIL, t.PERSON_NAME) || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_PERSONNEL_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (funding source ' || t.FUNDING_SOURCE_NAME || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_FUND_SRC_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (project funding source ' || t.PROJECT_NUMBER || '/' || t.FUNDING_SOURCE_NAME || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (keyword ' || t.KEYWORD_NAME || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_KEYWORDS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (budget period ' || t.BUDGET_PERIOD || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (certification ' || t.CERTIFICATION_NAME || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_CERTS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (cfda ' || t.CFDA || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_CFDAS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (fund allocation ' || t.ISSUE_NUMBER || '/' || t.PROJECT_NUMBER || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (org credit ' || t.ORGANIZATION || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (task burden schedule ' || t.PROJECT_NUMBER || '/' || t.TASK_NUMBER || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (reference ' || t.REFERENCE_TYPE || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_REFERENCES_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT t.AWARD_NUMBER,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('award', t.AWARD_NUMBER || ' (term ' || t.TERM_NAME || ')',
+                       DBMS_LOB.SUBSTR(t.ERROR_TEXT, 3800, DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG))) QUOTED_ERROR
+            FROM   DMT_GMS_AWD_TERMS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED' AND t.AWARD_NUMBER IS NOT NULL
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+        );
+
+        l_step := 'quoting award errors onto award headers';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto funding';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_FUNDING_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto projects';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_PROJECTS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto personnel';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_PERSONNEL_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto funding sources';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_FUND_SRC_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto project funding sources';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto keywords';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_KEYWORDS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto budget periods';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto certifications';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_CERTS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto cfdas';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_CFDAS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto funding allocations';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto org credits';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto task burden schedules';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto references';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_REFERENCES_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        l_step := 'quoting award errors onto terms';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GMS_AWD_TERMS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.AWARD_NUMBER = l_pairs(i).AWARD_NUMBER
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR REGEXP_COUNT(t.ERROR_TEXT, C_TAG_RX) = REGEXP_COUNT(t.ERROR_TEXT, C_QUOTE_RX))
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_rows := l_rows + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rejected-row sources: ' || l_pairs.COUNT
+                           || ' | award rows given a quoted error: ' || l_rows || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_GRANTS (private)
@@ -543,8 +1378,13 @@ AS
         l_rpt_failed := apply_award_import_report(p_run_id, p_import_ess_id);
         l_failed := l_failed + l_rpt_failed;
 
-        -- Settle the 14 children by the parent award's verdict.
+        -- Children of a LOADED award are LOADED with it.
         cascade_children(p_run_id);
+
+        -- Backlog #171: quote the real error of the row Fusion blamed (award or
+        -- child) onto every other row of that award. Runs after the per-row
+        -- apply and before the shared SWEEP_UNACCOUNTED.
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,
@@ -552,7 +1392,7 @@ AS
                            || ' | award headers LOADED: ' || l_loaded
                            || ' | FAILED: ' || l_failed
                            || ' (of which ' || l_rpt_failed || ' from the Award Batch Import Report)'
-                           || ' | 14 children accounted by parent verdict.',
+                           || ' | children of LOADED awards LOADED; rejected awards propagated.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
 

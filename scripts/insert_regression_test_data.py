@@ -2158,6 +2158,8 @@ def main():
     #           rejects them ("No project is associated to this award...", replay
     #           C) [BAD-FUSION].
     #     BAD:  RTGNT-BAD1 -- missing BUSINESS_UNIT [BAD-REQ].
+    #     XG:   RTAWD-XG1 -- cross-grain CHILD failure (backlog #196): Good-1's
+    #           shape with a personnel row naming a nonexistent person.
     # ====================================================================
     print("\n=== 29. Grants ===")
     GRANTS_BU = "Progress US Business Unit"
@@ -2241,12 +2243,21 @@ def main():
          "2031-09-01", "CAP10001", 750000, "GOOD"),
         ("RTAWD-BAD1", "RT Award Bad-1 Sponsor", "1 Year Award", "No Such Sponsor DMT",
          "2027-09-01", "PRG10008", 500000, "BAD-FUSION"),
+        # Cross-grain CHILD failure (backlog #171 / #196, 2026-10-08): an award
+        # identical to Good-1 whose ONLY defect is its personnel (PI) row naming
+        # a person that does not exist (PERSON_NUMBER 99999999, no email). Fusion
+        # rejects the whole award and blames the personnel row in the Award Batch
+        # Import Report. Expected: the personnel row FAILED with its own Fusion
+        # error; the award header and every other child FAILED_WITH_DOCUMENT
+        # quoting it ("Rejected with document: award <n> (personnel 99999999): ...").
+        ("RTAWD-XG1",  "RT Award XG-1 Bad PI",   "1 Year Award", "State Government",
+         "2027-09-01", "PRG10008", 500000, "XG-CHILD"),
     ]
     for anum, aname, tmpl, sponsor, end_dt, proj, amt, kind in gnt_awards:
         # Funding source used by every child row: the award's own sponsor for the
         # GOOD rows; the BAD row keeps a valid funding source so its ONLY defect
         # is the header's primary sponsor.
-        fsrc = sponsor if kind == "GOOD" else "State Government"
+        fsrc = sponsor if kind in ("GOOD", "XG-CHILD") else "State Government"
         b = {"anum": anum, "sid": scenario_id, "end": end_dt}
         run_sql(cur, """
             INSERT INTO DMT_GMS_AWD_HEADERS_STG_TBL (
@@ -2300,13 +2311,17 @@ def main():
         """, {"anum": anum, "proj": proj, "org": GNT_ORG, "src": f"RT-GNT-ORGCR-{anum}",
               "sid": scenario_id},
         label=f"{kind} Award organization credit: {anum}")
+        # The XG-CHILD award's PI names a person that does not exist; every other
+        # award keeps the known-good PI email.
         run_sql(cur, """
             INSERT INTO DMT_GMS_AWD_PERSONNEL_STG_TBL (
-                AWARD_NUMBER, PROJECT_NUMBER, INTERNAL, PERSON_EMAIL, ROLE,
-                START_DATE, END_DATE, CREDIT_PERCENTAGE, SOURCE_ID, SCENARIO_ID
-            ) VALUES (:anum, NULL, 'Y', :em, 'Principal Investigator',
+                AWARD_NUMBER, PROJECT_NUMBER, INTERNAL, PERSON_EMAIL, PERSON_NUMBER,
+                ROLE, START_DATE, END_DATE, CREDIT_PERCENTAGE, SOURCE_ID, SCENARIO_ID
+            ) VALUES (:anum, NULL, 'Y', :em, :pnum, 'Principal Investigator',
                       DATE '2026-09-01', TO_DATE(:end, 'YYYY-MM-DD'), 100, :src, :sid)
-        """, dict(b, em=GNT_PI_EMAIL, src=f"RT-GNT-PERS2-{anum}"),
+        """, dict(b, em=None if kind == "XG-CHILD" else GNT_PI_EMAIL,
+                  pnum="99999999" if kind == "XG-CHILD" else None,
+                  src=f"RT-GNT-PERS2-{anum}"),
         label=f"{kind} Award personnel (PI): {anum}")
         run_sql(cur, """
             INSERT INTO DMT_GMS_AWD_FUNDING_STG_TBL (
