@@ -37,6 +37,22 @@
     END get_url;
 
     -- --------------------------------------------------------
+    -- GET_SOURCE_SYSTEM_OWNER (backlog #287) -- see spec.
+    -- --------------------------------------------------------
+    FUNCTION GET_SOURCE_SYSTEM_OWNER RETURN VARCHAR2 IS
+        l_owner DMT_CONFIG_TBL.CONFIG_VALUE%TYPE;
+    BEGIN
+        l_owner := TRIM(DMT_UTIL_PKG.GET_CONFIG(C_SSO_CONFIG_KEY));
+        IF l_owner IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20130,
+                'DMT_CONFIG_TBL key ' || C_SSO_CONFIG_KEY || ' is not set. It must hold this '
+                || 'DMT instance''s HDL SourceSystemOwner (an enabled HRC_SOURCE_SYSTEM_OWNER '
+                || 'lookup code, e.g. DMT_LOCAL or DMT_ATP).');
+        END IF;
+        RETURN l_owner;
+    END GET_SOURCE_SYSTEM_OWNER;
+
+    -- --------------------------------------------------------
     -- REST_HTTP
     -- --------------------------------------------------------
     FUNCTION REST_HTTP (

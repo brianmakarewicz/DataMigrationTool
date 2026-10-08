@@ -17,62 +17,6 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|APInvoices|DMT_AP_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/APInvoices/query.sql does not match the SQL of the deployed DMT_AP_RECON_DM.xdm (query.sql names: AP_DM)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-ERROR-ROW|APInvoices|APInvoices/INTERFACE",
-      "backlog": 166,
-      "found": "2026-10-07",
-      "detail": "DMT_AP_RECON_DM branch APInvoices/INTERFACE can return FUSION_STATUS='ERROR' with a message that has no Fusion error column behind it: {columns: ap_invoices_interface.status; literals: '; no rejection row written -- e.g. header rejected pre-validation).' 'Rejected by Payables Import (status=' '[HDR] '} ;; {columns: -; literals: '; no rejection row written -- e.g. header rejected pre-validation).' 'NULL' 'Rejected by Payables Import (status=' '[HDR] '}"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-ERROR-ROW|APInvoices|APInvoices.Line/INTERFACE",
-      "backlog": 166,
-      "found": "2026-10-07",
-      "detail": "DMT_AP_RECON_DM branch APInvoices.Line/INTERFACE can return FUSION_STATUS='ERROR' with a message that has no Fusion error column behind it: {columns: ap_invoices_interface.status; literals: '; no rejection row written -- e.g. header rejected pre-validation).' 'Rejected by Payables Import (status=' '[LINE] Parent invoice rejected: '} ;; {columns: -; literals: '; no rejection row written -- e.g. header rejected pre-validation).' 'NULL' 'Rejected by Payables Import (status=' '[LINE] Parent invoice rejected: '}"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-ERROR-SOURCE|APInvoices|column ap_invoices_interface.status",
-      "backlog": 166,
-      "found": "2026-10-07",
-      "detail": "DMT_AP_RECON_DM builds ERROR_MESSAGE from ap_invoices_interface.status, which is not an allow-listed Fusion error column for APInvoices"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-ERROR-SOURCE|APInvoices|literal '; no rejection row written -- e.g. header rejected pre-valid'",
-      "backlog": 166,
-      "found": "2026-10-07",
-      "detail": "DMT_AP_RECON_DM concatenates the invented text '; no rejection row written -- e.g. header rejected pre-valid' into ERROR_MESSAGE"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-ERROR-SOURCE|APInvoices|literal 'Rejected by Payables Import (status='",
-      "backlog": 166,
-      "found": "2026-10-07",
-      "detail": "DMT_AP_RECON_DM concatenates the invented text 'Rejected by Payables Import (status=' into ERROR_MESSAGE"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-ERROR-SOURCE|APInvoices|literal '[LINE] Parent invoice rejected:'",
-      "backlog": 166,
-      "found": "2026-10-07",
-      "detail": "DMT_AP_RECON_DM concatenates the invented text '[LINE] Parent invoice rejected:' into ERROR_MESSAGE"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-NINE-COLUMNS|Assignments|DMT_ASSIGNMENTS_RECON_DM",
-      "backlog": 217,
-      "found": "2026-10-07",
-      "detail": "DMT_ASSIGNMENTS_RECON_DM returns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-MIRROR|BenBeneficiary|DMT_BENBENEFICIARY_RECON_DM",
       "backlog": 216,
       "found": "2026-10-07",
@@ -196,13 +140,6 @@
       "backlog": 217,
       "found": "2026-10-07",
       "detail": "DMT_PAYROLLRELATIONSHIPS_RECON_DM returns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|PurchaseOrders|DMT_PO_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/PurchaseOrders/query.sql does not match the SQL of the deployed DMT_PO_RECON_DM.xdm (query.sql names: DMT_PO_RECON_DM)"
     },
     {
       "checker": "check_bip_recon_reports",

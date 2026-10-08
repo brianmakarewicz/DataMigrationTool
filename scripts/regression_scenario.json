@@ -251,6 +251,237 @@
           "RT-PJB-GOOD1": "LOADED",
           "RT-PJB-BAD1": "FAILED"
         }
+      },
+      "Workers": {
+        "stg_table": "DMT_WORKER_STG_TBL",
+        "rows": {
+          "RT-RT-WKR-G1": "LOADED",
+          "RT-RT-WKR-B1": "FAILED"
+        }
+      },
+      "Person Names": {
+        "stg_table": "DMT_PERSON_NAME_STG_TBL",
+        "rows": {
+          "RT-WKR-G1-NME": "LOADED"
+        }
+      },
+      "Work Relationships": {
+        "stg_table": "DMT_WORK_REL_STG_TBL",
+        "rows": {
+          "RT-WKR-G1-WR": "LOADED"
+        }
+      },
+      "Assignments": {
+        "stg_table": "DMT_ASSIGNMENT_STG_TBL",
+        "rows": {
+          "RT-ET-RT-WKR-G1": "LOADED",
+          "RT-ET-RT-WKR-G1B": "LOADED",
+          "RT-ET-RT-WKR-BASG": "FAILED"
+        }
+      },
+      "Salaries": {
+        "stg_table": "DMT_SALARY_STG_TBL",
+        "rows": {
+          "RT-SAL-RT-WKR-G1": "LOADED",
+          "RT-SAL-RT-WKR-BSAL": "FAILED"
+        }
+      }
+    },
+    "RegressionTest2610071919": {
+      "AP Invoice Headers": {
+        "stg_table": "DMT_AP_INVOICES_INT_STG_TBL",
+        "rows": {
+          "RT-RT-APINV-G1": "LOADED",
+          "RT-RT-APINV-G2": "LOADED",
+          "RT-APINV-BAD1": "FAILED",
+          "RT-APINV-XG1": "FAILED_WITH_DOCUMENT",
+          "RT-1099-G1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "AP Invoice Lines": {
+        "stg_table": "DMT_AP_INVOICE_LINES_INT_STG_TBL",
+        "rows": {
+          "RT-APLN-800001-1": "LOADED",
+          "RT-APLN-800002-1": "LOADED",
+          "RT-APLN-800099-1": "FAILED_WITH_DOCUMENT",
+          "RT-APLN-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-APLN-XG1-2-BAD": "FAILED",
+          "RT-1099LN-G1": "FAILED"
+        }
+      }
+    },
+    "RegressionTest2610071932": {
+      "Parties": {
+        "stg_table": "DMT_HZ_PARTIES_STG_TBL",
+        "rows": {
+          "RT-PTY-RT-CUST-G1": "FAILED_WITH_DOCUMENT",
+          "RT-PTY-RT-CUST-G2": "LOADED",
+          "RT-PTY-RT-CUST-G3": "LOADED",
+          "RT-PTY-BAD1": "FAILED",
+          "RT-PTY-RT-CUST-XG": "LOADED",
+          "RT-PTY-RT-CUST-XU": "FAILED_WITH_DOCUMENT",
+          "RT-PTY-RT-CUST-XP": "FAILED"
+        }
+      },
+      "Locations": {
+        "stg_table": "DMT_HZ_LOCATIONS_STG_TBL",
+        "rows": {
+          "RT-LOC-RT-LOC-G1": "LOADED",
+          "RT-LOC-RT-LOC-G2": "LOADED",
+          "RT-LOC-RT-LOC-G3": "LOADED",
+          "RT-LOC-BAD1": "FAILED",
+          "RT-LOC-RT-LOC-XG": "LOADED",
+          "RT-LOC-RT-LOC-XU": "LOADED",
+          "RT-LOC-RT-LOC-XP": "LOADED"
+        }
+      },
+      "Party Sites": {
+        "stg_table": "DMT_HZ_PARTY_SITES_STG_TBL",
+        "rows": {
+          "RT-PSITE-RT-PSITE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-PSITE-RT-PSITE-G2": "LOADED",
+          "RT-PSITE-RT-PSITE-G3": "LOADED",
+          "RT-PSITE-BAD1": "FAILED",
+          "RT-PSITE-RT-PSITE-XG": "LOADED",
+          "RT-PSITE-RT-PSITE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-PSITE-RT-PSITE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Party Site Uses": {
+        "stg_table": "DMT_HZ_PARTY_SITE_USES_STG_TBL",
+        "rows": {
+          "RT-PSUSE-RT-PSITE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-PSUSE-RT-PSITE-G2": "LOADED",
+          "RT-PSUSE-RT-PSITE-G3": "LOADED",
+          "RT-PSUSE-BAD1": "FAILED",
+          "RT-PSUSE-RT-PSITE-XG": "LOADED",
+          "RT-PSUSE-RT-PSITE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-PSUSE-XU-BAD": "FAILED",
+          "RT-PSUSE-RT-PSITE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Accounts": {
+        "stg_table": "DMT_HZ_ACCOUNTS_STG_TBL",
+        "rows": {
+          "RT-ACCT-RT-ACCT-G1": "FAILED_WITH_DOCUMENT",
+          "RT-ACCT-RT-ACCT-G2": "LOADED",
+          "RT-ACCT-RT-ACCT-G3": "LOADED",
+          "RT-ACCT-BAD1": "FAILED",
+          "RT-ACCT-RT-ACCT-XG": "LOADED",
+          "RT-ACCT-RT-ACCT-XU": "FAILED_WITH_DOCUMENT",
+          "RT-ACCT-RT-ACCT-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Account Sites": {
+        "stg_table": "DMT_HZ_ACCT_SITES_STG_TBL",
+        "rows": {
+          "RT-ASITE-RT-ASITE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-ASITE-RT-ASITE-G2": "LOADED",
+          "RT-ASITE-RT-ASITE-G3": "LOADED",
+          "RT-ASITE-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-ASITE-RT-ASITE-XG": "FAILED",
+          "RT-ASITE-RT-ASITE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-ASITE-RT-ASITE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Account Site Uses": {
+        "stg_table": "DMT_HZ_ACCT_SITE_USES_STG_TBL",
+        "rows": {
+          "RT-SUSE-RT-SITEUSE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-G2": "FAILED",
+          "RT-SUSE-RT-SITEUSE-G3": "FAILED",
+          "RT-SUSE-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-XG": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      }
+    },
+    "RegressionTest2610071942": {
+      "Parties": {
+        "stg_table": "DMT_HZ_PARTIES_STG_TBL",
+        "rows": {
+          "RT-PTY-RT-CUST-G1": "FAILED_WITH_DOCUMENT",
+          "RT-PTY-RT-CUST-G2": "LOADED",
+          "RT-PTY-RT-CUST-G3": "LOADED",
+          "RT-PTY-BAD1": "FAILED",
+          "RT-PTY-RT-CUST-XG": "LOADED",
+          "RT-PTY-RT-CUST-XU": "FAILED_WITH_DOCUMENT",
+          "RT-PTY-RT-CUST-XP": "FAILED"
+        }
+      },
+      "Locations": {
+        "stg_table": "DMT_HZ_LOCATIONS_STG_TBL",
+        "rows": {
+          "RT-LOC-RT-LOC-G1": "LOADED",
+          "RT-LOC-RT-LOC-G2": "LOADED",
+          "RT-LOC-RT-LOC-G3": "LOADED",
+          "RT-LOC-BAD1": "FAILED",
+          "RT-LOC-RT-LOC-XG": "LOADED",
+          "RT-LOC-RT-LOC-XU": "LOADED",
+          "RT-LOC-RT-LOC-XP": "LOADED"
+        }
+      },
+      "Party Sites": {
+        "stg_table": "DMT_HZ_PARTY_SITES_STG_TBL",
+        "rows": {
+          "RT-PSITE-RT-PSITE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-PSITE-RT-PSITE-G2": "LOADED",
+          "RT-PSITE-RT-PSITE-G3": "LOADED",
+          "RT-PSITE-BAD1": "FAILED",
+          "RT-PSITE-RT-PSITE-XG": "LOADED",
+          "RT-PSITE-RT-PSITE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-PSITE-RT-PSITE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Party Site Uses": {
+        "stg_table": "DMT_HZ_PARTY_SITE_USES_STG_TBL",
+        "rows": {
+          "RT-PSUSE-RT-PSITE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-PSUSE-RT-PSITE-G2": "LOADED",
+          "RT-PSUSE-RT-PSITE-G3": "LOADED",
+          "RT-PSUSE-BAD1": "FAILED",
+          "RT-PSUSE-RT-PSITE-XG": "LOADED",
+          "RT-PSUSE-RT-PSITE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-PSUSE-XU-BAD": "FAILED",
+          "RT-PSUSE-RT-PSITE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Accounts": {
+        "stg_table": "DMT_HZ_ACCOUNTS_STG_TBL",
+        "rows": {
+          "RT-ACCT-RT-ACCT-G1": "FAILED_WITH_DOCUMENT",
+          "RT-ACCT-RT-ACCT-G2": "LOADED",
+          "RT-ACCT-RT-ACCT-G3": "LOADED",
+          "RT-ACCT-BAD1": "FAILED",
+          "RT-ACCT-RT-ACCT-XG": "LOADED",
+          "RT-ACCT-RT-ACCT-XU": "FAILED_WITH_DOCUMENT",
+          "RT-ACCT-RT-ACCT-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Account Sites": {
+        "stg_table": "DMT_HZ_ACCT_SITES_STG_TBL",
+        "rows": {
+          "RT-ASITE-RT-ASITE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-ASITE-RT-ASITE-G2": "LOADED",
+          "RT-ASITE-RT-ASITE-G3": "LOADED",
+          "RT-ASITE-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-ASITE-RT-ASITE-XG": "FAILED",
+          "RT-ASITE-RT-ASITE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-ASITE-RT-ASITE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Account Site Uses": {
+        "stg_table": "DMT_HZ_ACCT_SITE_USES_STG_TBL",
+        "rows": {
+          "RT-SUSE-RT-SITEUSE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-G2": "LOADED",
+          "RT-SUSE-RT-SITEUSE-G3": "LOADED",
+          "RT-SUSE-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-XG": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-XP": "FAILED_WITH_DOCUMENT"
+        }
       }
     }
   }
