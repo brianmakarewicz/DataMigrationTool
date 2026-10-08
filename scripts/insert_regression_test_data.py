@@ -1608,6 +1608,36 @@ def main():
             500, 'US Primary Ledger', 'RT-BUD-BAD1'
         )
     """, label="BAD GL Budget: invalid budget name [BAD-LKP]")
+
+    # Cross-grain failure scenario (design section 5; backlog #174/#199). Validate
+    # and Load Budgets loads a RUN_NAME all or nothing. Budget run 'Budget_EO_XG'
+    # holds one valid cell (78630/120, a distinct cell from Budget_EO_1 so the two
+    # never share a reconciliation key) and one cell on 77001, a parent (summary)
+    # account value, which Fusion rejects with "The account has parent values...".
+    # Expected: the parent-account cell FAILED with its own error; the valid cell
+    # FAILED quoting it ("Rejected with document: budget run Budget_EO_XG cell
+    # ..."), never UNACCOUNTED.
+    for seg3, amount, src, label in [
+        ("78630", 120.00, "RT-BUD-XG-78630",
+         "XG GL Budget: valid cell 78630, rejected with its budget run"),
+        ("77001", 120.00, "RT-BUD-XG-77001-BAD",
+         "BAD XG GL Budget: parent account value 77001"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_GL_BUDGET_INT_STG_TBL (
+                RUN_NAME, LEDGER_ID, BUDGET_NAME, PERIOD_NAME,
+                CURRENCY_CODE, JOURNAL_STATUS,
+                SEGMENT1, SEGMENT2, SEGMENT3,
+                SEGMENT4, SEGMENT5, SEGMENT6,
+                BUDGET_AMOUNT, LEDGER_NAME, SOURCE_ID
+            ) VALUES (
+                'Budget_EO_XG', 300000046975971, 'Budget', '06-26',
+                'USD', 'NEW',
+                '101', '10', :seg3,
+                '120', '000', '000',
+                :amt, 'US Primary Ledger', :src
+            )
+        """, {"seg3": seg3, "amt": amount, "src": src}, label=label)
     tag_scenario(cur, "DMT_GL_BUDGET_INT_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -2633,6 +2663,69 @@ def main():
         )
     """, {"fm_ser": ser_fm, "to_ser": ser_to, "pseq": ser_parent_seq},
     label=f"  -> Serial child: {ser_fm} to {ser_to} (scenario-unique)")
+
+    # Cross-grain failure scenario (design section 5, "Whole-document rejection
+    # carries the real error to every grain"; backlog #167/#192). Two BAD
+    # transactions that carry lot/serial detail. Each is a valid item and quantity
+    # on subinventory 'XGNOSUB', which does not exist in Seattle, so Fusion rejects
+    # the transaction (INV_TRANSACTIONS_INTERFACE PROCESS_FLAG 3, its own real
+    # error) and its lot/serial children never post. Expected: the transaction
+    # FAILED with its own error; its lot / serial FAILED quoting it
+    # ("Rejected with document: transaction <SOURCE_LINE_ID>: ..."), never
+    # UNACCOUNTED. The transaction STG SOURCE_ID is the regression key only (the
+    # transform and generator never read it); the child SOURCE_ID is the link to
+    # the parent's STG_SEQUENCE_ID, as for the GOOD rows above.
+    for xg_item, xg_qty, xg_src, xg_label in [
+        ("AS88000", 2, "RT-MR-XG-SER-BAD",
+         "BAD XG: 2 Each of AS88000 (serial) on nonexistent subinventory XGNOSUB"),
+        ("RA-100-4935-LOT", 3, "RT-MR-XG-LOT-BAD",
+         "BAD XG: 3 Each of RA-100-4935-LOT (lot) on nonexistent subinventory XGNOSUB"),
+    ]:
+        xg_var = cur.var(oracledb.NUMBER)
+        cur.execute("""
+            INSERT INTO DMT_INV_TRX_STG_TBL (
+                ORGANIZATION_NAME, ITEM_NUMBER, SUBINVENTORY_CODE,
+                TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
+                TRANSACTION_DATE, SOURCE_ID,
+                STAGE_DATE, STG_STATUS
+            ) VALUES (
+                'Seattle', :item, 'XGNOSUB',
+                :qty, 'Each',
+                SYSDATE, :src,
+                SYSDATE, 'NEW'
+            )
+            RETURNING STG_SEQUENCE_ID INTO :seq
+        """, {"item": xg_item, "qty": xg_qty, "src": xg_src, "seq": xg_var})
+        xg_seq = xg_var.getvalue()[0]
+        run_sql(cur, """
+            UPDATE DMT_INV_TRX_STG_TBL
+               SET INV_LOTSERIAL_INTERFACE_NUM = TO_CHAR(:seq)
+             WHERE STG_SEQUENCE_ID = :seq
+        """, {"seq": xg_seq}, label=xg_label)
+        if xg_item == "AS88000":
+            run_sql(cur, """
+                INSERT INTO DMT_INV_TRX_SERIALS_STG_TBL (
+                    FM_SERIAL_NUMBER, TO_SERIAL_NUMBER,
+                    SOURCE_ID, STAGE_DATE, STG_STATUS
+                ) VALUES (
+                    'DMT-SER-XG-001', 'DMT-SER-XG-002',
+                    TO_CHAR(:pseq), SYSDATE, 'NEW'
+                )
+            """, {"pseq": xg_seq},
+            label="  -> Serial child: DMT-SER-XG-001 to DMT-SER-XG-002 (rejected with its transaction)")
+        else:
+            run_sql(cur, """
+                INSERT INTO DMT_INV_TRX_LOTS_STG_TBL (
+                    INVENTORY_LOT_INTERFACE_NUMBER, SOURCE_CODE, SOURCE_LINE_ID,
+                    LOT_NUMBER, TRANSACTION_QUANTITY,
+                    SOURCE_ID, STAGE_DATE, STG_STATUS
+                ) VALUES (
+                    TO_CHAR(:pseq), 'DMT', :pseq,
+                    'DMT-REG-LOT-XG', 3,
+                    TO_CHAR(:pseq), SYSDATE, 'NEW'
+                )
+            """, {"pseq": xg_seq},
+            label="  -> Lot child: DMT-REG-LOT-XG, qty 3 (rejected with its transaction)")
 
     tag_scenario(cur, "DMT_INV_TRX_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_INV_TRX_LOTS_STG_TBL", scenario_id)

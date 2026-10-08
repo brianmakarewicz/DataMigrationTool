@@ -4,6 +4,12 @@
 -- ============================================================
 -- GL Budget Balances reconciliation (cell-grain, run-start window).
 -- See package spec for the reconciliation model.
+--
+-- Change history:
+--   2026-10-08  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog
+--                   #174): cells left VALIDATED because another cell of the same
+--                   budget run FAILED now end FAILED quoting that cell's real
+--                   error instead of UNACCOUNTED.
 -- ============================================================
     C_PKG        CONSTANT VARCHAR2(50) := 'DMT_GL_BUDGET_RESULTS_PKG';
     C_CEMLI      CONSTANT VARCHAR2(30) := 'GLBudgets';
@@ -12,6 +18,17 @@
     -- data is months old, so a few hours is safe.
     C_SKEW_HOURS CONSTANT NUMBER := 4;
     C_AMT_TOL    CONSTANT NUMBER := 0.01;   -- DR/CR match tolerance
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog #174).
+    -- Working set: "budget run DOC_KEY (RUN_NAME) has cell SOURCE_SEQ with its own
+    -- real Fusion error, so every other cell of that budget run must carry
+    -- QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        DOC_KEY      VARCHAR2(240),     -- RUN_NAME
+        SOURCE_SEQ   NUMBER,            -- the source cell's TFM_SEQUENCE_ID
+        QUOTED_ERROR VARCHAR2(4000)     -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- (bip_soap_post + FETCH_BIP_RESULTS + PARSE_AND_UPDATE removed — together
     --  with their cell-key helper and cell-keyed map types. These implemented the
@@ -251,6 +268,97 @@
             RAISE;
     END APPLY_CONTRACT_V1_GLBUDGETS;
 
+    -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private, backlog #174). Validate and Load Budgets
+    -- loads a budget run (RUN_NAME) all or nothing: when any cell fails
+    -- validation, that cell is left in GL_BUDGET_INTERFACE as FAILED with its real
+    -- error and every other cell of the run is left VALIDATED and never loaded
+    -- (live evidence: one FAILED cell "The account has parent values..." beside
+    -- 592 VALIDATED cells of the same run). The recon report returns only the
+    -- FAILED cell, so the other cells would otherwise end UNACCOUNTED. This quotes
+    -- the failed cell's real Fusion error onto every other not-LOADED cell DMT sent
+    -- with the same RUN_NAME in this run and work item (design section 5,
+    -- "Whole-document rejection carries the real error to every grain"), in the
+    -- shared format
+    -- '[FUSION_ERROR] Rejected with document: budget run <RUN_NAME> cell <account>: <msg>'.
+    -- Only a cell whose own error is a real [FUSION_ERROR] (not itself a quote) is
+    -- a source. Idempotent: a cell already carrying the quote is skipped. LOADED
+    -- cells are never touched. Static SQL; NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_cells  NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting rejected cells for run ' || p_run_id;
+        SELECT c.RUN_NAME,
+               c.TFM_SEQUENCE_ID,
+               -- Names the budget run and the cell (its account combination) that
+               -- actually failed: 'budget run <RUN_NAME> cell <account>: <msg>'.
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'budget run',
+                   c.RUN_NAME || ' cell ' || c.SEGMENT1
+                   || NVL2(c.SEGMENT2, '-' || c.SEGMENT2, NULL)
+                   || NVL2(c.SEGMENT3, '-' || c.SEGMENT3, NULL)
+                   || NVL2(c.SEGMENT4, '-' || c.SEGMENT4, NULL)
+                   || NVL2(c.SEGMENT5, '-' || c.SEGMENT5, NULL)
+                   || NVL2(c.SEGMENT6, '-' || c.SEGMENT6, NULL)
+                   || NVL2(c.SEGMENT7, '-' || c.SEGMENT7, NULL)
+                   || NVL2(c.SEGMENT8, '-' || c.SEGMENT8, NULL)
+                   || ' ' || c.PERIOD_NAME,
+                   DBMS_LOB.SUBSTR(c.ERROR_TEXT, 3800, DBMS_LOB.INSTR(c.ERROR_TEXT, C_TAG)))
+        BULK COLLECT INTO l_pairs
+        FROM   DMT_GL_BUDGET_INT_TFM_TBL c
+        WHERE  c.RUN_ID = p_run_id
+        AND    (p_work_queue_id IS NULL OR c.WORK_QUEUE_ID IS NULL
+                OR c.WORK_QUEUE_ID = p_work_queue_id)
+        AND    c.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(c.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(c.ERROR_TEXT, l_marker) = 0
+        AND    c.RUN_NAME IS NOT NULL;
+
+        l_step := 'appending quoted cell errors to the other cells of the budget run';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GL_BUDGET_INT_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.RUN_NAME = l_pairs(i).DOC_KEY
+            AND    t.TFM_SEQUENCE_ID <> l_pairs(i).SOURCE_SEQ
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_cells := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rejected cells: ' || l_pairs.COUNT
+                           || ' | other cells of their budget run given a quoted error: '
+                           || l_cells || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
     -- ============================================================
     PROCEDURE RECONCILE_BATCH (
         p_run_id        IN NUMBER,
@@ -284,6 +392,11 @@
             p_run_id        => p_run_id,
             p_request_id    => TO_CHAR(p_load_ess_id),
             p_import_ess_id => p_import_ess_id);
+        -- Cells rejected with their budget run (Validate and Load Budgets loads a
+        -- RUN_NAME all or nothing) carry the real error of the cell that caused it.
+        -- Runs after the per-row apply and BEFORE the shared unaccounted sweep
+        -- (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object
         -- not-DONE and the funnel surfaces these as UNRECONCILED.

@@ -428,10 +428,14 @@ const PAGES = [
         res = await fetchList();
         res.body = 'retried once after HTTP 572; ' + res.body;
       }
-      // A healthy response is HTTP 200 JSON. An "error" key means the process
-      // itself threw; absence of a hard error is the pass condition here (the
-      // request id may legitimately have no cached files).
-      const healthy = res.status === 200 && !/"error"\s*:/.test(res.body);
+      // A healthy response is HTTP 200 JSON carrying a "files" array (it may be
+      // empty: the request id may legitimately have no cached files). An
+      // "error" key means the process itself threw. An EMPTY 200 body is a
+      // failure: it is what APEX returns when the process block does not
+      // compile (backlog #307: a call to a procedure that did not exist made
+      // every action of the page-58 process return an empty 200).
+      const healthy = res.status === 200 && /^\s*\{\s*"files"\s*:\s*\[/.test(res.body)
+        && !/"error"\s*:/.test(res.body);
       step('verify link: ESS file-list read-back (page 58 LIST action)', healthy,
         `HTTP ${res.status} ${res.body.slice(0, 120)}`);
     }
