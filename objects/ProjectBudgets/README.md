@@ -72,6 +72,30 @@ review item that is not about reconciliation (no REST lookup is configured for P
 Lines); Playwright click-through PASS. (Run 267 showed the same outcomes before this branch was
 rebased onto main.)
 
+## Whole plan version rejection (2026-10-08, backlog #172 / #197)
+
+The Fusion document is the plan version (project + financial plan type + plan version name /
+number). `DMT_PRJ_BUDGET_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` runs after the Contract v1 apply
+and the BudgetsXfaceBIP harvest and before the shared unaccounted sweep. For every line FAILED with
+its own `[FUSION_ERROR]`, it appends
+`[FUSION_ERROR] Rejected with document: line <reference>: <real message>` to every other line of the
+same plan version that Fusion received and that is not LOADED, and sets it FAILED. It never touches
+LOADED rows and a second pass adds nothing.
+
+Live proof, run 314 (prefix 93369, scenario `RegressionTest2610081757`, PROJECTS): plan version
+`RT XG Budget Version` on CFIT022 with lines RT-PJB-XG-A (valid) and RT-PJB-XG-B (resource that does
+not exist). Fusion rejected the whole version and named **both** lines in LIST_G_12 with
+"A different source plan line reference is being used on another line in this plan version.", so
+each line is FAILED with its own real error plus the quote of its sibling. GOOD1 LOADED, BAD1 FAILED,
+0 UNACCOUNTED, `dmt_regression_run.py` PASS.
+
+What the run showed: **the source budget line reference is a plan-version attribute in Fusion**
+(it becomes `PJO_PLAN_VERSIONS_B.PM_BUDGET_REFERENCE`), so every line of one version must carry the
+same reference. A multi-line version therefore cannot have a distinct `RECON_KEY` per line, and a
+version whose lines share a reference is matched as a whole by the harvest. The silent-sibling case
+backlog #172 describes cannot arise with today's keying; the propagation is defensive. Line identity
+inside a multi-line version is backlog #546.
+
 ## Pipeline
 - Module: Projects
 - FBDI Template: PjoBudgetInterface.xlsm

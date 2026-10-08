@@ -56,6 +56,9 @@ AS
 -- the orchestrator owns the transaction boundary.
 --
 -- REVISIONS:
+--   2026-10-08  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog
+--                   #170): a rejected project's real error is quoted onto its
+--                   tasks, team members and transaction controls.
 --   2026-10-07  BM  Report V2 (DMT_PROJECT_RECON_V2_DM), owner-approved exception
 --                   (design section 5): called once per work item with its own
 --                   load id, import id and work-queue id. Base projects are found
@@ -69,6 +72,17 @@ AS
     C_PKG    CONSTANT VARCHAR2(50) := 'DMT_PROJECT_RESULTS_PKG';
     C_CEMLI  CONSTANT VARCHAR2(30) := 'Projects';
     C_MARKER CONSTANT VARCHAR2(20) := '#IMPORT_REPORT#';
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
+    -- Working set: "the project DOC_NUMBER / DOC_NAME was rejected with its own
+    -- real Fusion error, so every task, team member and transaction control of
+    -- that project must carry QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        DOC_NUMBER   DMT_PJF_PROJECTS_TFM_TBL.PROJECT_NUMBER%TYPE,  -- the project
+        DOC_NAME     DMT_PJF_PROJECTS_TFM_TBL.PROJECT_NAME%TYPE,    -- team members key on it
+        QUOTED_ERROR VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- Per-tier base-table evidence, confirmed live against the demo pod 2026-09-21
     -- for run 325 / prefix 10265 (two loaded projects, ids 300000333828672 and
@@ -674,6 +688,152 @@ AS
     END APPLY_CONTRACT_V1_PROJECTS;
 
     -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private)
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain" (decided 2026-10-07). The Fusion document is the project: when
+    -- Import Projects rejects a project, its tasks, team members and transaction
+    -- controls are rejected with it, but the import report writes the error only
+    -- under the project (backlog #170, docs/findings/cross_grain_conformance_review.md).
+    -- The children come back from the recon report only as INTERFACE rows carrying
+    -- the '#IMPORT_REPORT#' marker, which the apply skips, so without this step
+    -- they stay GENERATED and the shared sweep marks them UNACCOUNTED.
+    --
+    -- Direction: header to children only. A child's own error is not proven to
+    -- reject its project (Import Projects can load a project and reject a task),
+    -- so child errors are not spread upward or to siblings until a live run shows
+    -- Fusion's behavior (backlog #545).
+    --
+    -- Sources: project rows of this run and work item with TFM_STATUS = 'FAILED'
+    --   carrying their OWN real Fusion error -- ERROR_TEXT contains '[FUSION_ERROR] '
+    --   (Contract v1 apply) or '[IMPORT_REPORT] ' (the import-report harvest) and
+    --   does NOT contain C_DOC_ERROR_MARKER (a quote is never re-quoted).
+    -- Targets: every task / transaction control of the same project (PROJECT_NUMBER;
+    --   PROJECT_NAME when the child carries no number) and every team member of the
+    --   same project (PROJECT_NAME -- team members carry no project number) that
+    --   Fusion received (FBDI_CSV_ID stamped at generation, not STAGED), is not
+    --   LOADED (LOADED rows are never touched) and does not already carry the exact
+    --   quote. The quote is appended (APPEND_ERROR, never overwrite) and the row
+    --   set FAILED. A project with no own error is untouched -- its children fall
+    --   to the shared UNACCOUNTED sweep.
+    -- Idempotent: the "already carries the exact quote" guard means a second
+    --   reconcile pass adds nothing.
+    -- One collection of (project, quote) pairs is built by ONE static SELECT, then
+    -- ONE static bulk UPDATE (FORALL) per target table: a MERGE cannot read a
+    -- PL/SQL record collection through TABLE() (ORA-00902, AR run 248). NO dynamic
+    -- SQL; NO COMMIT (caller owns the txn).
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC     CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        -- The two tags a project's own real Fusion error is written with.
+        C_TAG_RX   CONSTANT VARCHAR2(40) := '\[(FUSION_ERROR|IMPORT_REPORT)\] ';
+        l_marker   VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs    T_DOC_PAIR_TBL;
+        l_tasks    NUMBER := 0;
+        l_members  NUMBER := 0;
+        l_controls NUMBER := 0;
+        l_step     VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting rejected-project (source, quote) pairs for run ' || p_run_id;
+        -- The quoted message is the source's own error from its first real tag on,
+        -- with that leading tag removed (FORMAT_DOCUMENT_ERROR adds its own).
+        SELECT p.PROJECT_NUMBER,
+               p.PROJECT_NAME,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'project', p.PROJECT_NUMBER,
+                   REGEXP_REPLACE(
+                       DBMS_LOB.SUBSTR(p.ERROR_TEXT, 3800, REGEXP_INSTR(p.ERROR_TEXT, C_TAG_RX)),
+                       '^' || C_TAG_RX))
+        BULK COLLECT INTO l_pairs
+        FROM   DMT_PJF_PROJECTS_TFM_TBL p
+        WHERE  p.RUN_ID = p_run_id
+        -- Work-item scope, as the shared sweep scopes it: rows stamped with
+        -- another work item are excluded; unstamped rows are run-scoped.
+        AND    (p_work_queue_id IS NULL OR p.WORK_QUEUE_ID IS NULL
+                OR p.WORK_QUEUE_ID = p_work_queue_id)
+        AND    p.TFM_STATUS = 'FAILED'
+        AND    REGEXP_INSTR(p.ERROR_TEXT, C_TAG_RX) > 0
+        AND    DBMS_LOB.INSTR(p.ERROR_TEXT, l_marker) = 0
+        AND    p.PROJECT_NUMBER IS NOT NULL;
+
+        -- One bulk UPDATE per child table (FORALL over the pairs). Each pair
+        -- appends its quote only when the row does not already carry it, so a
+        -- second reconcile pass adds nothing.
+        l_step := 'appending quoted project errors to tasks';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PJF_TASKS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    (t.PROJECT_NUMBER = l_pairs(i).DOC_NUMBER
+                    OR (t.PROJECT_NUMBER IS NULL AND t.PROJECT_NAME = l_pairs(i).DOC_NAME))
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_tasks := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted project errors to team members';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PJF_TEAM_MEMBERS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.PROJECT_NAME = l_pairs(i).DOC_NAME
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_members := SQL%ROWCOUNT;
+
+        l_step := 'appending quoted project errors to transaction controls';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PJC_TXN_CONTROLS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    (t.PROJECT_NUMBER = l_pairs(i).DOC_NUMBER
+                    OR (t.PROJECT_NUMBER IS NULL AND t.PROJECT_NAME = l_pairs(i).DOC_NAME))
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_controls := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rejected projects: ' || l_pairs.COUNT
+                           || ' | rows given a quoted document error: tasks ' || l_tasks
+                           || ', team members ' || l_members
+                           || ', transaction controls ' || l_controls || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
     -- Contract v1 apply, then runs the Projects import-report harvest to overlay
     -- the real per-row Fusion error text onto the '#IMPORT_REPORT#' marker rows
@@ -739,6 +899,13 @@ AS
                 p_procedure => C_PROC);
             apply_import_report(p_run_id, p_import_ess_id, l_ir_matched);
         END IF;
+
+        -- Whole-document rejection (design section 5): the tasks, team members
+        -- and transaction controls of a project Import Projects rejected carry the
+        -- project's real error. Runs after the per-row apply and the import-report
+        -- harvest and BEFORE the shared unaccounted sweep
+        -- (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE). Backlog #170.
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, l_wq_id);
 
         -- TxnControls now reconcile through the shared Contract v1 apply above: the
         -- recon data model emits a real BASE/SUCCESS row over PJC_TRANSACTION_CONTROLS
