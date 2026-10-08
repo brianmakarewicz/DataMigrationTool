@@ -35,10 +35,25 @@
 -- REVISIONS:
 --   2026-10-07  BM  Report V2: called per work item with its own load + import
 --                   ids; rows found by the load job id, never by the prefix.
+--   2026-10-08  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog
+--                   #175): assets rolled back with a rejected book batch now
+--                   quote the rejected asset's real error ('Rejected with
+--                   document: book batch <book> asset <num>: <error>') instead
+--                   of the generic batch-rejected text.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_FA_ASSET_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'Assets';
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog #175).
+    -- Working set: "asset SOURCE_ASSET of this book batch has its own real
+    -- Fusion / SQL*Loader error, so every other asset of the batch that did not
+    -- load must carry QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        SOURCE_ASSET VARCHAR2(30),      -- the rejected asset's ASSET_NUMBER
+        QUOTED_ERROR VARCHAR2(4000)     -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- --------------------------------------------------------
     -- GET_PARTITION_KEYS — distinct BOOK_TYPE_CODE tokens for one run,
@@ -373,6 +388,99 @@
     END APPLY_CONTRACT_V1_ASSETS;
 
     -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private, backlog #175). The Fixed Assets
+    -- SQL*Loader load is all or nothing per book batch: when one asset row is
+    -- rejected, SQL*Loader commits nothing for the book, so the other assets of
+    -- the batch never reach FA_MASS_ADDITIONS. ACCOUNT_ALL_OR_NOTHING has already
+    -- given the rejected asset(s) their own real error (parsed from the
+    -- SQL*Loader log, or from the report at the post stage). This quotes that
+    -- real error onto every other asset header of the same book batch that did
+    -- not load (design section 5, "Whole-document rejection carries the real
+    -- error to every grain"), in the shared format
+    -- '[FUSION_ERROR] Rejected with document: book batch <book> asset <num>: <msg>'.
+    -- The book and assignment rows of those assets then inherit it through the
+    -- cascade in ACCOUNT_ALL_OR_NOTHING.
+    -- Only a header whose own error is a real [FUSION_ERROR] (not itself a quote)
+    -- is a source. A target is a header of the same book that is neither LOADED
+    -- nor STAGED and does not carry its own real error (it is unaccounted, or
+    -- FAILED only with quotes, so a second rejected asset in the batch is quoted
+    -- too). Idempotent: a header already carrying a quote is skipped. LOADED rows
+    -- are never touched. If no asset of the batch carries a real error (for
+    -- example the rejection was in the distributions file), nothing is quoted and
+    -- the assets stay unaccounted for the shared sweep. Static SQL; NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id IN NUMBER,
+        p_book   IN VARCHAR2
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_quoted NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting rejected assets of book ' || NVL(p_book, '(all)');
+        SELECT h.ASSET_NUMBER,
+               -- Names the book batch and the asset that was actually rejected.
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'book batch',
+                   NVL(p_book, '(all books)') || ' asset ' || h.ASSET_NUMBER,
+                   DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG)))
+        BULK COLLECT INTO l_pairs
+        FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+        WHERE  h.RUN_ID = p_run_id
+        AND    h.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, l_marker) = 0
+        AND    (p_book IS NULL OR EXISTS (
+                   SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
+                   WHERE  b.RUN_ID = h.RUN_ID AND b.ASSET_NUMBER = h.ASSET_NUMBER
+                   AND    b.BOOK_TYPE_CODE = p_book))
+        ORDER BY h.TFM_SEQUENCE_ID;
+
+        l_step := 'appending quoted asset errors to the other assets of the book batch';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_FA_ASSET_HDR_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.ASSET_NUMBER <> l_pairs(i).SOURCE_ASSET
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    (t.TFM_STATUS <> 'FAILED'
+                    OR NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker), 0) > 0)
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0
+            AND    (p_book IS NULL OR EXISTS (
+                       SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
+                       WHERE  b.RUN_ID = t.RUN_ID AND b.ASSET_NUMBER = t.ASSET_NUMBER
+                       AND    b.BOOK_TYPE_CODE = p_book));
+        l_quoted := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' book=' || NVL(p_book, '(all)')
+                           || ' complete. Rejected assets: ' || l_pairs.COUNT
+                           || ' | other assets of the book batch given a quoted error: '
+                           || l_quoted || '.',
+            p_log_type  => CASE WHEN l_pairs.COUNT = 0 THEN DMT_UTIL_PKG.C_LOG_WARN
+                                ELSE 'INFO' END,
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
+    -- --------------------------------------------------------
     -- ACCOUNT_ALL_OR_NOTHING — Assets-ONLY exception (DMT_DESIGN section 5,
     -- "Fixed Assets load-stage batch-failure accounting").
     --
@@ -385,7 +493,8 @@
     -- interface table, the BIP reconcile confirms nothing, and every asset in the
     -- book would be left UNACCOUNTED. This routine gives those a real verdict: the
     -- genuinely-rejected assets carry their actual Fusion error, and any remaining
-    -- assets in the SAME book carry a generic "batch rejected" FAILED. It is
+    -- assets in the SAME book quote that real error through
+    -- PROPAGATE_DOCUMENT_ERRORS (backlog #175; no generic text). It is
     -- scoped to ONE book partition (p_work_queue_id) and fires ONLY when no asset
     -- in that book loaded AND the load process genuinely failed.
     --
@@ -403,7 +512,7 @@
     --   (b) POST stage: rows loaded to the interface but Post Mass Additions
     --       rejected the batch; the real error came back in the report and
     --       APPLY_CONTRACT_V1_ASSETS already marked the bad asset(s) FAILED. Here
-    --       we add only the generic verdict to the good assets left unposted.
+    --       the assets left unposted only quote that real error.
     -- --------------------------------------------------------
     PROCEDURE ACCOUNT_ALL_OR_NOTHING (
         p_run_id        IN NUMBER,
@@ -411,10 +520,6 @@
         p_work_queue_id IN NUMBER
     ) IS
         C_PROC     CONSTANT VARCHAR2(30) := 'ACCOUNT_ALL_OR_NOTHING';
-        C_GENERIC  CONSTANT VARCHAR2(400) :=
-            '[BATCH_REJECTED] Not loaded: another asset in this book batch was '
-            || 'rejected by Fusion. The Fixed Assets interface load/post is '
-            || 'all-or-nothing per book, so no assets in this book were committed.';
         l_book       VARCHAR2(240);
         l_remaining  NUMBER := 0;
         l_loaded     NUMBER := 0;
@@ -428,6 +533,7 @@
         l_err        VARCHAR2(2000);
         l_asset      VARCHAR2(100);
         l_marked     NUMBER := 0;
+        l_left       NUMBER := 0;
     BEGIN
         -- Book partition for this work item (NULL if somehow unpartitioned).
         IF p_work_queue_id IS NOT NULL THEN
@@ -499,7 +605,7 @@
         -- when a row was individually FAILED at the POST stage (l_failed_bip > 0):
         -- Post Mass Additions is PER-ROW (proven run 258), so good rows load and
         -- any remainder stays UNACCOUNTED via the normal path. Post-stage / lag /
-        -- indeterminate cases are never fabricated into a [BATCH_REJECTED] verdict.
+        -- indeterminate cases are never fabricated into a batch-rejected verdict.
         IF l_proc_failed = 0 THEN
             DMT_UTIL_PKG.LOG(
                 p_run_id => p_run_id,
@@ -522,8 +628,9 @@
         -- log ALONE (never concatenated -- that would let a distributions/rates
         -- Record N misattribute to the wrong asset) and attribute ONLY rejections
         -- on table FA_MASS_ADDITIONS. A distributions/rates rejection has no
-        -- header CSV position, so its asset falls into the generic [BATCH_REJECTED]
-        -- pass (b) below rather than being mapped to a wrong header row.
+        -- header CSV position, so it is never mapped to a wrong header row; with
+        -- no source asset, pass (b) below quotes nothing and the batch stays
+        -- unaccounted for the shared sweep (backlog #571).
         IF l_failed_bip = 0 THEN
             FOR c IN (
                 SELECT REQUEST_ID FROM DMT_ESS_JOB_TBL
@@ -589,20 +696,22 @@
             END LOOP;
         END IF;
 
-        -- (b) both stages: every remaining un-accounted asset in this book was
-        -- not individually rejected but still did not load, because the batch is
-        -- all-or-nothing. Mark it FAILED with the generic batch message.
-        UPDATE DMT_FA_ASSET_HDR_TFM_TBL h
-        SET    h.TFM_STATUS = 'FAILED',
-               h.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(h.ERROR_TEXT, C_GENERIC),
-               h.RESULTS_UPDATED_DATE = SYSDATE, h.LAST_UPDATED_DATE = SYSDATE
+        -- (b) both stages: every remaining asset in this book was not itself
+        -- rejected but still did not load, because the batch is all or nothing.
+        -- It quotes the real error of the asset(s) that were rejected (design
+        -- section 5, whole-document rejection; backlog #175).
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, l_book);
+
+        SELECT COUNT(CASE WHEN DBMS_LOB.INSTR(h.ERROR_TEXT, DMT_UTIL_PKG.C_DOC_ERROR_MARKER) > 0
+                          THEN 1 END),
+               COUNT(CASE WHEN h.TFM_STATUS NOT IN ('LOADED','FAILED') THEN 1 END)
+        INTO   l_marked, l_left
+        FROM   DMT_FA_ASSET_HDR_TFM_TBL h
         WHERE  h.RUN_ID = p_run_id
-        AND    h.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND    (l_book IS NULL OR EXISTS (
                    SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
                    WHERE b.RUN_ID = h.RUN_ID AND b.ASSET_NUMBER = h.ASSET_NUMBER
                    AND   b.BOOK_TYPE_CODE = l_book));
-        l_marked := SQL%ROWCOUNT;
 
         -- Cascade the new header FAILEDs to book + assignment, using
         -- the same linked-record wording as APPLY_CONTRACT_V1_ASSETS.
@@ -636,8 +745,9 @@
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message => C_PROC || ' book=' || NVL(l_book,'(all)') ||
-                         ' all-or-nothing: ' || l_remaining || ' unaccounted, ' ||
-                         l_marked || ' marked generic FAILED.',
+                         ' all-or-nothing: ' || l_remaining || ' unaccounted before, ' ||
+                         l_marked || ' quoting a rejected asset, ' || l_left ||
+                         ' still unaccounted (no rejected asset to quote).',
             p_package => C_PKG, p_procedure => C_PROC);
     EXCEPTION
         WHEN OTHERS THEN
@@ -674,7 +784,8 @@
         -- Assets-ONLY exception: Fixed Assets loads/posts a book atomically, so
         -- a single rejected asset leaves the whole book unposted and the BIP
         -- reconcile above confirms nothing. Give those rows a real verdict
-        -- (real Fusion error on the rejected asset(s), generic on the rest)
+        -- (real Fusion error on the rejected asset(s); the rest of the book
+        -- batch quote it via PROPAGATE_DOCUMENT_ERRORS, backlog #175)
         -- instead of leaving the book UNACCOUNTED. Fires only on a genuinely
         -- failed load process; a still-lagging load leaves rows UNACCOUNTED.
         -- See DMT_DESIGN section 5 (Fixed Assets all-or-nothing accounting).

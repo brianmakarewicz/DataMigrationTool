@@ -80,13 +80,6 @@
     },
     {
       "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-TAG|dmt_fa_asset_results_pkg.pkb.sql|[BATCH_REJECTED]",
-      "backlog": 175,
-      "found": "2026-10-07",
-      "detail": "line 418: writes the unsanctioned ERROR_TEXT tag [BATCH_REJECTED] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
       "key": "SWEEP-FUSION-ERROR-FORM|dmt_fnd_lookup_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
       "backlog": 161,
       "found": "2026-10-07",
