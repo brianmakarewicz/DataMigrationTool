@@ -443,6 +443,11 @@ def rest_spot_check(cur, run_id, result):
                 doc = {}
             if doc.get('status') == 'ok' and doc.get('rows'):
                 status, detail = 'FOUND', f"{len(doc['rows'])} field(s) from Fusion"
+            elif doc.get('status') == 'not_applicable':
+                # The registry records (with the proof in its reason) that Fusion
+                # exposes no REST read resource for this object; BIP reconciliation
+                # is the record-level proof. Reported, never a review item.
+                status, detail = 'NOT_APPLICABLE', str(doc.get('message') or '')[:180]
             elif doc.get('status') == 'ok':
                 status, detail = 'NO_DATA', 'Fusion returned no matching record'
             else:
@@ -460,18 +465,23 @@ def rest_spot_check(cur, run_id, result):
         spot.append({'cemli_code': cemli, 'sub_object': sub_object, 'tfm_table': tfm_table,
                      'key': x04, 'tfm_seq_id': int(tfm_seq) if tfm_seq is not None else None,
                      'status': status, 'detail': detail})
-        flag = 'ok  ' if status == 'FOUND' else 'MISS'
+        flag = 'ok  ' if status == 'FOUND' else ('n/a ' if status == 'NOT_APPLICABLE' else 'MISS')
         print(f"    {flag} {cemli:<16} {sub_object:<22} {status:<14} key={x04}"
               + (f"  - {detail}" if detail else ''))
-        if status != 'FOUND':
+        if status not in ('FOUND', 'NOT_APPLICABLE'):
             result['review'].append(
                 f"REST verify {cemli}/{sub_object}: {status}"
                 + (f" ({detail})" if detail else ''))
     n_found = sum(1 for s in spot if s['status'] == 'FOUND')
-    print(f"    {n_found}/{len(spot)} object/TFM table(s) read back from Fusion via the button's REST call")
+    n_na = sum(1 for s in spot if s['status'] == 'NOT_APPLICABLE')
+    print(f"    {n_found}/{len(spot) - n_na} object/TFM table(s) read back from Fusion via the button's REST call"
+          + (f" ({n_na} not applicable: no Fusion REST read resource)" if n_na else ""))
     # Per-object roll-up: an object is "verified" if any of its sub-objects read back.
+    # NOT_APPLICABLE sub-objects (no Fusion REST read resource) are left out of it.
     objs = {}
     for s in spot:
+        if s['status'] == 'NOT_APPLICABLE':
+            continue
         objs.setdefault(s['cemli_code'], False)
         if s['status'] == 'FOUND':
             objs[s['cemli_code']] = True

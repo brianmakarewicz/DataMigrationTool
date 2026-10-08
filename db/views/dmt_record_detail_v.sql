@@ -244,7 +244,8 @@ UNION ALL
 SELECT 'Customers', 'Locations',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        LOCATION_ORIG_SYSTEM_REFERENCE,
-       LOCATION_ORIG_SYSTEM_REFERENCE,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_LOCATION_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -257,7 +258,8 @@ UNION ALL
 SELECT 'Customers', 'Party Sites',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PARTY_SITE_NAME,
-       PARTY_ORIG_SYSTEM_REFERENCE,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_PARTY_SITE_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -270,7 +272,8 @@ UNION ALL
 SELECT 'Customers', 'Party Site Uses',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        SITE_USE_TYPE,
-       PARTY_ORIG_SYSTEM_REFERENCE,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_PARTY_SITE_USE_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -283,7 +286,8 @@ UNION ALL
 SELECT 'Customers', 'Accounts',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        ACCOUNT_NUMBER,
-       ACCOUNT_NAME,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_CUST_ACCOUNT_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -294,22 +298,31 @@ SELECT 'Customers', 'Accounts',
 FROM DMT_HZ_ACCOUNTS_TFM_TBL
 UNION ALL
 SELECT 'Customers', 'Account Sites',
-       TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
-       CUST_SITE_ORIG_SYS_REF,
-       ACCOUNT_NUMBER,
-       TFM_STATUS, ERROR_TEXT,
-       REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
-       RESULTS_UPDATED_DATE,
-       CASE WHEN TFM_STATUS = 'LOADED' THEN 'CONFIRMED' WHEN TFM_STATUS = 'UNACCOUNTED' THEN 'UNACCOUNTED' WHEN TFM_STATUS = 'FAILED' AND ERROR_TEXT IS NOT NULL THEN 'CONFIRMED' WHEN TFM_STATUS = 'FAILED' THEN 'UNRECONCILED' ELSE 'IN_PROGRESS' END,
+       s.TFM_SEQUENCE_ID, s.STG_SEQUENCE_ID, s.RUN_ID,
+       s.CUST_SITE_ORIG_SYS_REF,
+       -- LOOKUP_KEY: Fusion exposes customer account sites over REST only through
+       -- their bill-to use (receivablesCustomerAccountSiteActivities, keyed by
+       -- BillToSiteUseId), so the key is the Fusion id reconciliation stamped on this
+       -- site's own BILL_TO use row in the same run. A use cannot exist without its site.
+       (SELECT TO_CHAR(MAX(u.FUSION_SITE_USE_ID))
+        FROM   DMT_HZ_ACCT_SITE_USES_TFM_TBL u
+        WHERE  u.RUN_ID = s.RUN_ID
+        AND    u.CUST_SITE_ORIG_SYS_REF = s.CUST_SITE_ORIG_SYS_REF
+        AND    u.SITE_USE_CODE = 'BILL_TO'),
+       s.TFM_STATUS, s.ERROR_TEXT,
+       REGEXP_SUBSTR(s.ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
+       s.RESULTS_UPDATED_DATE,
+       CASE WHEN s.TFM_STATUS = 'LOADED' THEN 'CONFIRMED' WHEN s.TFM_STATUS = 'UNACCOUNTED' THEN 'UNACCOUNTED' WHEN s.TFM_STATUS = 'FAILED' AND s.ERROR_TEXT IS NOT NULL THEN 'CONFIRMED' WHEN s.TFM_STATUS = 'FAILED' THEN 'UNRECONCILED' ELSE 'IN_PROGRESS' END,
        CAST(NULL AS VARCHAR2(400)),
        CAST(NULL AS VARCHAR2(400)),
-       TO_CHAR(FUSION_CUST_ACCT_SITE_ID)
-FROM DMT_HZ_ACCT_SITES_TFM_TBL
+       TO_CHAR(s.FUSION_CUST_ACCT_SITE_ID)
+FROM DMT_HZ_ACCT_SITES_TFM_TBL s
 UNION ALL
 SELECT 'Customers', 'Account Site Uses',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        SITE_USE_CODE,
-       CUST_SITE_ORIG_SYS_REF,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_SITE_USE_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -371,7 +384,14 @@ UNION ALL
 SELECT 'GLBudgets', 'GL Budget Balances',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        BUDGET_NAME || ' - ' || SEGMENT1 || '.' || SEGMENT2 || '.' || SEGMENT3,
-       BUDGET_NAME,
+       -- LOOKUP_KEY: the ledgerBalances AccountBalanceFinder parameters for this
+       -- budget balance (ledger, account combination in the ledger's '-' delimited
+       -- form, period, currency, scenario = budget name); the Verify lookup reads the
+       -- budget balance back by them.
+       'ledgerName=' || LEDGER_NAME
+       || ',accountCombination=' || SEGMENT1 || NVL2(SEGMENT2, '-' || SEGMENT2, NULL) || NVL2(SEGMENT3, '-' || SEGMENT3, NULL) || NVL2(SEGMENT4, '-' || SEGMENT4, NULL) || NVL2(SEGMENT5, '-' || SEGMENT5, NULL) || NVL2(SEGMENT6, '-' || SEGMENT6, NULL) || NVL2(SEGMENT7, '-' || SEGMENT7, NULL) || NVL2(SEGMENT8, '-' || SEGMENT8, NULL) || NVL2(SEGMENT9, '-' || SEGMENT9, NULL) || NVL2(SEGMENT10, '-' || SEGMENT10, NULL) || NVL2(SEGMENT11, '-' || SEGMENT11, NULL) || NVL2(SEGMENT12, '-' || SEGMENT12, NULL) || NVL2(SEGMENT13, '-' || SEGMENT13, NULL) || NVL2(SEGMENT14, '-' || SEGMENT14, NULL) || NVL2(SEGMENT15, '-' || SEGMENT15, NULL) || NVL2(SEGMENT16, '-' || SEGMENT16, NULL) || NVL2(SEGMENT17, '-' || SEGMENT17, NULL) || NVL2(SEGMENT18, '-' || SEGMENT18, NULL) || NVL2(SEGMENT19, '-' || SEGMENT19, NULL) || NVL2(SEGMENT20, '-' || SEGMENT20, NULL) || NVL2(SEGMENT21, '-' || SEGMENT21, NULL) || NVL2(SEGMENT22, '-' || SEGMENT22, NULL) || NVL2(SEGMENT23, '-' || SEGMENT23, NULL) || NVL2(SEGMENT24, '-' || SEGMENT24, NULL) || NVL2(SEGMENT25, '-' || SEGMENT25, NULL) || NVL2(SEGMENT26, '-' || SEGMENT26, NULL) || NVL2(SEGMENT27, '-' || SEGMENT27, NULL) || NVL2(SEGMENT28, '-' || SEGMENT28, NULL) || NVL2(SEGMENT29, '-' || SEGMENT29, NULL) || NVL2(SEGMENT30, '-' || SEGMENT30, NULL)
+       || ',accountingPeriod=' || PERIOD_NAME || ',currency=' || CURRENCY_CODE
+       || ',scenario=' || BUDGET_NAME,
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -464,7 +484,8 @@ UNION ALL
 SELECT 'Projects', 'Team Members',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PROJECT_NAME || ' - ' || TEAM_MEMBER_NAME,
-       PROJECT_NAME,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_PROJECT_PARTY_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -490,7 +511,8 @@ UNION ALL
 SELECT 'ProjectBudgets', 'Project Budget Lines',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PROJECT_NUMBER || ' - ' || TASK_NAME,
-       PROJECT_NUMBER,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_BUDGET_VERSION_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -504,7 +526,8 @@ UNION ALL
 SELECT 'Expenditures', 'Project Expenditures',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        ORIG_TRANSACTION_REFERENCE,
-       ORIG_TRANSACTION_REFERENCE,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_EXPENDITURE_ITEM_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -518,7 +541,8 @@ UNION ALL
 SELECT 'BillingEvents', 'Billing Events',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        SOURCENAME || ' - ' || EVENT_DESC,
-       SOURCENAME || ' - ' || EVENT_DESC,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_EVENT_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -592,12 +616,14 @@ LEFT JOIN DMT_POR_REQ_HEADERS_TFM_TBL h
 -- Inventory-Transactions pipeline tables the generator actually writes
 -- (backlog #25). Three sub-objects per the CEMLI catalog: the transaction,
 -- plus lot and serial child detail. INV_TRX FUSION_ID is already VARCHAR2 so
--- no TO_CHAR; the lot/serial children carry no Fusion id of their own.
+-- no TO_CHAR. The lot child carries the Fusion transaction id it was received
+-- under (FUSION_TRANSACTION_ID); the serial child is verified by its serial number.
 UNION ALL
 SELECT 'MiscReceipts', 'Inventory Transactions',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        ITEM_NUMBER || ' @ ' || ORGANIZATION_NAME,
-       ITEM_NUMBER,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       FUSION_ID,
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -610,7 +636,9 @@ UNION ALL
 SELECT 'MiscReceipts', 'Transaction Lots',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        'Lot ' || LOT_NUMBER,
-       LOT_NUMBER,
+       -- LOOKUP_KEY: the Fusion transaction id reconciliation stamped on the lot row;
+       -- the Verify lookup reads that transaction (which carries the lot) back by it
+       TO_CHAR(FUSION_TRANSACTION_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -892,7 +920,8 @@ UNION ALL
 SELECT 'TalentProfiles', 'Talent Profiles',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PERSON_NUMBER || ' - ' || PROFILE_CODE,
-       PERSON_NUMBER,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_PROFILE_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -905,7 +934,8 @@ UNION ALL
 SELECT 'TalentProfiles', 'Profile Items',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PERSON_NUMBER || ' - ' || CONTENT_TYPE_NAME,
-       PERSON_NUMBER,
+       -- LOOKUP_KEY: the Fusion id reconciliation stamped; the Verify-in-Fusion lookup (DMT_REST_LOOKUP_TBL) queries by it
+       TO_CHAR(FUSION_PROFILE_ITEM_ID),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,

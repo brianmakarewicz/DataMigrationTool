@@ -132,7 +132,8 @@ AS
         p_accept         IN  VARCHAR2    DEFAULT 'application/json',
         p_send_auth      IN  BOOLEAN     DEFAULT TRUE,
         p_raise_on_error IN  BOOLEAN     DEFAULT TRUE,
-        p_auth_header    IN  VARCHAR2    DEFAULT NULL   -- Basic header built from GET_CEMLI_CREDENTIALS by the caller; NULL => default user
+        p_auth_header    IN  VARCHAR2    DEFAULT NULL,  -- Basic header built from GET_CEMLI_CREDENTIALS by the caller; NULL => default user
+        p_rest_framework_version IN VARCHAR2 DEFAULT NULL -- Fusion REST-Framework-Version header (e.g. '4' for child-attribute q filters); NULL => not sent
     );
 
     -- --------------------------------------------------------

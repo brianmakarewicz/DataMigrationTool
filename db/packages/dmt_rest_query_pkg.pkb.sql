@@ -38,6 +38,7 @@ AS
         l_result       CLOB;
         l_error_msg    VARCHAR2(4000);
         l_primary_key  VARCHAR2(400);
+        l_na_reason    VARCHAR2(4000);
     BEGIN
         -- Log the request (includes TFM seq for traceability)
         DMT_UTIL_PKG.LOG(
@@ -61,6 +62,24 @@ AS
         );
         l_error_msg := JSON_VALUE(l_lookup_json, '$.error');
 
+        -- No REST read resource exists for this object (registry
+        -- NOT_APPLICABLE_REASON): pass the reason through as its own status, with
+        -- the reason as the single displayed row so the page-57 modal shows it.
+        l_na_reason := JSON_VALUE(l_lookup_json, '$.not_applicable');
+        IF l_na_reason IS NOT NULL THEN
+            SELECT JSON_OBJECT(
+                       'status'  VALUE 'not_applicable',
+                       'message' VALUE l_na_reason,
+                       'rows'    VALUE JSON_ARRAY(
+                                     JSON_OBJECT('label' VALUE 'Verify in Fusion (REST)',
+                                                 'value' VALUE 'Not applicable: ' || l_na_reason)),
+                       'object'  VALUE p_sub_object,
+                       'key'     VALUE l_primary_key)
+            INTO   l_result
+            FROM   DUAL;
+            RETURN l_result;
+        END IF;
+
         -- The retry is a second chance, never a replacement verdict: if it does
         -- not find the record either (or errors, e.g. HTTP 500 because an id-keyed
         -- filter such as RequisitionHeaderId= was handed the display number), the
@@ -73,8 +92,11 @@ AS
                 p_object_type => p_sub_object,
                 p_key_value   => p_display_key
             );
+            -- Accept the retry only when it actually returned fields: an error
+            -- reply that is not valid JSON must never read as a success.
             IF l_retry_json IS NOT NULL
-               AND JSON_VALUE(l_retry_json, '$.error') IS NULL THEN
+               AND JSON_VALUE(l_retry_json, '$.error') IS NULL
+               AND JSON_QUERY(l_retry_json, '$.fields') IS NOT NULL THEN
                 l_lookup_json := l_retry_json;
                 l_error_msg   := NULL;
             END IF;
