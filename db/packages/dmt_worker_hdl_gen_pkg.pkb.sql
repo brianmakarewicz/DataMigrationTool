@@ -50,10 +50,6 @@ AS
     C_PERSON_LEGISL_COLS CONSTANT VARCHAR2(500) :=
         'SourceSystemOwner|SourceSystemId|EffectiveStartDate|PersonId(SourceSystemId)|LegislationCode|Sex|MaritalStatus|HighestEducationLevel';
 
-    -- Source system owner constant for HDL SourceSystemOwner/SourceSystemId
-    -- SourceSystemOwner must be a registered source system in Fusion.
-    -- HRC_SQLLOADER is pre-seeded in all Fusion instances.
-    C_SOURCE_SYSTEM CONSTANT VARCHAR2(30) := 'HRC_SQLLOADER';
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
         l_blob         BLOB;
@@ -139,7 +135,11 @@ AS
         -- is a config change rather than a code edit. Defaults to 'US1 Business Unit'
         -- if the key is absent.
         l_bu_short    VARCHAR2(240);
+        -- SourceSystemOwner for every .dat line: this DMT instance's owner from
+        -- DMT_CONFIG_TBL (backlog #287), read at run time, never a constant.
+        l_sso         VARCHAR2(240);
     BEGIN
+        l_sso := DMT_HDL_UTIL_PKG.GET_SOURCE_SYSTEM_OWNER;
         l_bu_short := NVL(DMT_UTIL_PKG.GET_CONFIG('WORKER_DEFAULT_BU_NAME'), 'US1 Business Unit');
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -180,7 +180,7 @@ AS
         DBMS_LOB.CREATETEMPORARY(l_dat, TRUE);
 
         -- Source key naming convention:
-        --   Worker:           SSO=HRC_SQLLOADER, SSID=<PersonNumber>
+        --   Worker:           SSO=<HDL_SOURCE_SYSTEM_OWNER config>, SSID=<PersonNumber>
         --   PersonName:       SSID=<PersonNumber>_NME, PersonId(SSID)=<PersonNumber>
         --   WorkRelationship: SSID=<PersonNumber>_POS, PersonId(SSID)=<PersonNumber>
         --   WorkTerms:        SSID=<AssignmentNumber>_TRM, PeriodOfServiceId(SSID)=<PersonNumber>_POS
@@ -201,7 +201,7 @@ AS
             AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
-            l_vals := C_SOURCE_SYSTEM              || '|' ||
+            l_vals := l_sso                        || '|' ||
                       pv(r.PERSON_NUMBER)          || '|' ||  -- SourceSystemId
                       pv(NVL(r.EFFECTIVE_START_DATE, r.START_DATE)) || '|' ||
                       pv(r.PERSON_NUMBER)          || '|' ||  -- PersonNumber
@@ -230,7 +230,7 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                || '|' ||
+                l_vals := l_sso                          || '|' ||
                           pv(r.PERSON_NUMBER) || '_NME'  || '|' ||  -- SourceSystemId
                           pv(NVL(r.EFFECTIVE_START_DATE, r.WORKER_START_DATE)) || '|' ||
                           pv(r.PERSON_NUMBER)            || '|' ||  -- PersonId(SourceSystemId)
@@ -258,7 +258,7 @@ AS
             AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
-            l_vals := C_SOURCE_SYSTEM                || '|' ||
+            l_vals := l_sso                          || '|' ||
                       pv(r.PERSON_NUMBER) || '_POS'  || '|' ||  -- SourceSystemId
                       pv(r.PERSON_NUMBER)            || '|' ||  -- PersonId(SourceSystemId)
                       pv(r.LEGAL_ENTITY_NAME)        || '|' ||
@@ -313,7 +313,7 @@ AS
             AND    a.TFM_STATUS = 'STAGED'
             ORDER BY a.TFM_SEQUENCE_ID
         ) LOOP
-            l_vals := C_SOURCE_SYSTEM                        || '|' ||
+            l_vals := l_sso                                  || '|' ||
                       pv(r.ASSIGNMENT_NUMBER) || '_TRM'      || '|' ||  -- SourceSystemId (per assignment)
                       pv(r.PERSON_NUMBER) || '_POS'          || '|' ||  -- PeriodOfServiceId(SourceSystemId)
                       pv(NVL(r.ACTION_CODE, 'HIRE'))         || '|' ||
@@ -361,7 +361,7 @@ AS
             AND    t.TFM_STATUS = 'STAGED'
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
-            l_vals := C_SOURCE_SYSTEM                        || '|' ||
+            l_vals := l_sso                                  || '|' ||
                       pv(r.ASSIGNMENT_NUMBER) || '_ASG'      || '|' ||  -- SourceSystemId (per assignment)
                       pv(NVL(r.ACTION_CODE, 'HIRE'))         || '|' ||
                       pv(r.EFFECTIVE_START_DATE)             || '|' ||  -- EffectiveStartDate
@@ -407,7 +407,7 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                  || '|' ||
+                l_vals := l_sso                            || '|' ||
                           pv(r.PERSON_NUMBER) || '_EML'    || '|' ||
                           pv(r.PERSON_NUMBER)              || '|' ||  -- PersonId(SourceSystemId)
                           pv(r.WORKER_START_DATE)          || '|' ||  -- DateFrom (worker start date)
@@ -441,7 +441,7 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                  || '|' ||
+                l_vals := l_sso                            || '|' ||
                           pv(r.PERSON_NUMBER) || '_PHN'    || '|' ||
                           pv(r.PERSON_NUMBER)              || '|' ||  -- PersonId(SourceSystemId)
                           NVL(pv(r.PHONE_LEGIS_CODE), 'US') || '|' || -- LegislationCode (from NID or default US)
@@ -470,7 +470,7 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                  || '|' ||
+                l_vals := l_sso                            || '|' ||
                           pv(r.PERSON_NUMBER) || '_ADR'    || '|' ||
                           pv(r.EFFECTIVE_START_DATE)      || '|' ||
                           pv(r.PERSON_NUMBER)              || '|' ||  -- PersonId(SourceSystemId)
@@ -504,7 +504,7 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                  || '|' ||
+                l_vals := l_sso                            || '|' ||
                           pv(r.PERSON_NUMBER) || '_NID'    || '|' ||
                           pv(r.PERSON_NUMBER)              || '|' ||  -- PersonId(SourceSystemId)
                           pv(r.LEGISLATION_CODE)           || '|' ||
@@ -530,7 +530,7 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                  || '|' ||
+                l_vals := l_sso                            || '|' ||
                           pv(r.PERSON_NUMBER) || '_LEG'    || '|' ||
                           pv(r.EFFECTIVE_START_DATE)      || '|' ||
                           pv(r.PERSON_NUMBER)               || '|' ||  -- PersonId(SourceSystemId)

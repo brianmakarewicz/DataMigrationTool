@@ -55,6 +55,10 @@ REPORTS = [
     # ARInvoices V3 (2026-10-07): alongside V1/V2; line RECORD_KEY attr1/attr2
     # (unique per line) so keyset paging never drops a row.
     ("ARInvoices",              "DMT_AR_RECON_V3_DM", "DMT_AR_RECON_V3_RPT"),
+    # ARInvoices V4 (2026-10-07, owner decision): alongside V1-V3; rows found
+    # only by the load's Fusion job ids (base lines by the AutoInvoice import
+    # REQUEST_ID, interface rows by LOAD_REQUEST_ID), never by the run prefix.
+    ("ARInvoices",              "DMT_AR_RECON_V4_DM", "DMT_AR_RECON_V4_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
     # Items V2 (2026-10-06): deployed alongside the original DMT_ITEM_RECON_DM
@@ -69,6 +73,10 @@ REPORTS = [
     ("WorkSchedules",            "DMT_WORKSCHEDULES_RECON_DM", "DMT_WORKSCHEDULES_RECON_RPT"),
     ("PayrollRelationships",     "DMT_PAYROLLRELATIONSHIPS_RECON_DM", "DMT_PAYROLLRELATIONSHIPS_RECON_RPT"),
     ("Assignments",              "DMT_ASSIGNMENTS_RECON_DM", "DMT_ASSIGNMENTS_RECON_RPT"),
+    # Assignments V2 (2026-10-07, backlog #287/#290): alongside V1 (never
+    # overwritten). Rows selected by the HDL request id; key map joined on each
+    # row's own SourceSystemOwner (V1 filtered on 'HRC_SQLLOADER').
+    ("Assignments",              "DMT_ASSIGNMENTS_RECON_V2_DM", "DMT_ASSIGNMENTS_RECON_V2_RPT"),
     ("BenParticipant",           "DMT_BENPARTICIPANT_RECON_DM", "DMT_BENPARTICIPANT_RECON_RPT"),
     ("BenDependent",            "DMT_BENDEPENDENT_RECON_DM", "DMT_BENDEPENDENT_RECON_RPT"),
     ("BenBeneficiary",           "DMT_BENBENEFICIARY_RECON_DM", "DMT_BENBENEFICIARY_RECON_RPT"),
@@ -89,6 +97,15 @@ REPORTS = [
     # the run prefix or run id. Deployed alongside DMT_REQ_RECON_DM (never
     # overwritten).
     ("Requisitions",             "DMT_REQ_RECON_V2_DM",        "DMT_REQ_RECON_V2_RPT"),
+    # Assets V2 (2026-10-07, owner decision): base assets found through their
+    # POSTED FA_MASS_ADDITIONS row by the load job's LOAD_REQUEST_ID (FA_ADDITIONS_B
+    # has no request id), never by the run prefix. Alongside DMT_FA_ASSET_RECON_DM.
+    ("Assets",                   "DMT_FA_ASSET_RECON_V2_DM",   "DMT_FA_ASSET_RECON_V2_RPT"),
+    # PurchaseOrders V2 (2026-10-07, backlog #264): rows found only by the work
+    # item's Fusion job ids and the Standard document style; the run-id LIKE on
+    # the interface keys is gone. Deployed alongside DMT_PO_RECON_DM (never
+    # overwritten).
+    ("PurchaseOrders",           "DMT_PO_RECON_V2_DM",         "DMT_PO_RECON_V2_RPT"),
     # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
     # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
     # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/
