@@ -2343,6 +2343,17 @@ def main():
         ("RT-ASSET-G1", "RT Test Equipment 1"),
         ("RT-ASSET-G2", "RT Test Equipment 2"),
         ("RT-ASSET-BAD1", "BAD: invalid expense account"),
+        # Cross-grain book batch (backlog #175 / #200), book SUPREMO US CORP
+        # (same chart of accounts as US CORP; category EQUIPMENT/MANUFACTURING is
+        # set up for it). XG-BAD's prorate convention is 14 characters, longer
+        # than FA_MASS_ADDITIONS.PRORATE_CONVENTION_CODE (10), which the
+        # validator does not check: SQL*Loader rejects that row (ORA-12899) and
+        # commits nothing for the book, so XG-G1 and XG-G2 (valid data) are
+        # rolled back with it and must quote XG-BAD's real error. US CORP above
+        # is the separate good batch.
+        ("RT-ASSET-XG-G1", "RT XG Equipment 1"),
+        ("RT-ASSET-XG-BAD", "BAD: prorate code too long for interface"),
+        ("RT-ASSET-XG-G2", "RT XG Equipment 2"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FA_ASSET_HDR_STG_TBL (
@@ -2371,6 +2382,9 @@ def main():
         ("RT-ASSET-G1", "US CORP", 120000.00, 120),
         ("RT-ASSET-G2", "US CORP", 35000.00, 60),
         ("RT-ASSET-BAD1", "US CORP", 1000.00, 36),
+        ("RT-ASSET-XG-G1", "SUPREMO US CORP", 22000.00, 60),
+        ("RT-ASSET-XG-BAD", "SUPREMO US CORP", 9000.00, 36),
+        ("RT-ASSET-XG-G2", "SUPREMO US CORP", 14000.00, 60),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FA_ASSET_BOOK_STG_TBL (
@@ -2383,11 +2397,13 @@ def main():
                 :anum, :book,
                 :cost, :cost, 0,
                 :life, 'STL',
-                DATE '2025-06-01', 'CAL MONTH',
+                DATE '2025-06-01', :prorate,
                 1, :src
             )
         """, {"anum": asset_num, "book": book, "cost": cost,
-              "life": life, "src": f"RT-FABK-{asset_num}"},
+              "life": life, "src": f"RT-FABK-{asset_num}",
+              # 14 characters: SQL*Loader rejects it (interface column is 10).
+              "prorate": "CAL MONTH LONG" if asset_num == "RT-ASSET-XG-BAD" else "CAL MONTH"},
         label=f"Asset Book: {asset_num}/{book}")
     tag_scenario(cur, "DMT_FA_ASSET_BOOK_STG_TBL", scenario_id)
 
@@ -2401,6 +2417,9 @@ def main():
         ("RT-ASSET-G1", "68130", "USA", "NEW YORK", "NEW YORK"),
         ("RT-ASSET-G2", "68130", "USA", "NEW YORK", "NEW YORK"),
         ("RT-ASSET-BAD1", "15160", "USA", "NEW YORK", "NEW YORK"),
+        ("RT-ASSET-XG-G1", "68130", "USA", "NEW YORK", "NEW YORK"),
+        ("RT-ASSET-XG-BAD", "68130", "USA", "NEW YORK", "NEW YORK"),
+        ("RT-ASSET-XG-G2", "68130", "USA", "NEW YORK", "NEW YORK"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FA_ASSET_ASSIGN_STG_TBL (

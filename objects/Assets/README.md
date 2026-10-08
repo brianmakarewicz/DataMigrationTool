@@ -128,6 +128,32 @@ Fusion's "You must enter a valid expense account ID" and its book and assignment
 `dmt_regression_run.py` PASS (review items only: the pre-existing fixedAssets REST verify 404,
 also seen on run 238); Playwright click-through PASS.
 
+## A rejected asset carries its error to the rest of its book batch (2026-10-08, backlog #175 / #200)
+
+When SQL*Loader rejects one asset row, the book's whole load commits nothing, so the other
+assets of that book never reach FA_MASS_ADDITIONS. `ACCOUNT_ALL_OR_NOTHING` still gives the
+rejected asset its own real error from the SQL*Loader log. The other assets of the book used
+to get a generic `[BATCH_REJECTED]` sentence; now the new private
+`PROPAGATE_DOCUMENT_ERRORS` quotes the rejected asset's real error onto every other header
+of the book that did not load, and the existing cascade carries it to their book and
+assignment rows:
+`[FUSION_ERROR] Rejected with document: book batch <book> asset <asset number>: <real error>`.
+It is idempotent, never touches LOADED rows, and only runs inside the existing
+all-or-nothing gate (load process genuinely failed, nothing in the book loaded). If no asset
+of the book carries a real error (for example the rejection was in the distributions file),
+nothing is quoted and the assets stay unaccounted for the shared sweep (backlog #571).
+
+Regression cross-grain rows (scenario RegressionTest2610081851): book SUPREMO US CORP with
+`RT-ASSET-XG-G1`, `RT-ASSET-XG-BAD` (prorate convention `CAL MONTH LONG`, 14 characters,
+longer than FA_MASS_ADDITIONS.PRORATE_CONVENTION_CODE's 10) and `RT-ASSET-XG-G2`; US CORP
+(G1, G2, BAD1) is the separate good batch. Proof run 323 (prefix 93378, STANDALONE:Assets):
+US CORP G1/G2 LOADED on header, book and assignment, BAD1 FAILED with "You must enter a
+valid expense account ID"; SUPREMO load 10081966 rejected XG-BAD with "Error on table
+FA_MASS_ADDITIONS, column PRORATE_CONVENTION_CODE. ORA-12899: value too large for column
+??? (actual: 14, maximum: 10)" and XG-G1/XG-G2 (header, book, assignment) FAILED quoting it;
+0 UNACCOUNTED; `dmt_regression_run.py` PASS with all 18 listed rows matching. A
+reconcile-only rerun of work item 2010 (rolled back) left every TFM row identical.
+
 ## Known Issues
 - ~~**APPROVAL_TYPE_CODE missing from FBDI generator.**~~ **FIXED 2026-04-03.** APPROVAL_TYPE_CODE is a CTL expression column (`nvl2(:BATCH_NAME, 'ORA_FA_MASS', NULL)`) — it doesn't consume a CSV field. Fix: populate BATCH_NAME (CSV pos 419) with 'DMT' so the expression evaluates to 'ORA_FA_MASS'.
 - ~~**PRORATE_CONVENTION_CODE may be invalid.**~~ **FIXED 2026-04-03.** Valid value is `MID-MONTH` (hyphen), not `MID MONTH` (space). All test scripts updated. Valid values from FA_CONVENTION_TYPES: CAL MONTH, CAL DAILY, CAL NMB, FOL-MTH, HALF YEAR, MID-MONTH, plus others.
