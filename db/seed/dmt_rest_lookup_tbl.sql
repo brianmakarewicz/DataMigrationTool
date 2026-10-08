@@ -375,13 +375,13 @@ when matched then update set
   t."DISPLAY_LABELS" = 'Event ID,Event #,Source Ref,Contract,Project,Date,Amount,Currency',
   t."AUTH_TYPE" = 'ERP',
   t."ENABLED" = 'Y',
-  t."NOTES" = 'projectBillingEvents queried by EventId = the Fusion event id reconciliation stamped (FUSION_EVENT_ID). The resource needs a Projects billing role: fin_impl (the BillingEvents load user via GET_CEMLI_CREDENTIALS) gets HTTP 403, ppm_impl reads it. Verified live on the demo pod 2026-10-08.',
+  t."NOTES" = 'projectBillingEvents queried by EventId = the Fusion event id reconciliation stamped (FUSION_EVENT_ID). The resource needs a Projects billing role: fin_impl gets HTTP 403, ppm_impl reads it, so BillingEvents runs as ppm_impl (its DMT_ERP_INTERFACE_OPTIONS_TBL row, resolved by GET_CEMLI_CREDENTIALS; backlog #462). Verified live on the demo pod 2026-10-08.',
   t."REST_FRAMEWORK_VERSION" = NULL,
   t."ABSENT_FIELD" = NULL,
   t."ABSENT_VALUE" = NULL,
   t."NOT_APPLICABLE_REASON" = NULL
 when not matched then insert ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES","REST_FRAMEWORK_VERSION","ABSENT_FIELD","ABSENT_VALUE","NOT_APPLICABLE_REASON")
-  values ('BillingEvents', '/fscmRestApi/resources/11.13.18.05/projectBillingEvents', 'EventId={KEY}', 'FUSION_BILLING_EVENT_ID', 'EventId,EventNumber,SourceReference,ContractNumber,ProjectNumber,CompletionDate,BillTrnsAmount,BillTrnsCurrencyCode', 'Event ID,Event #,Source Ref,Contract,Project,Date,Amount,Currency', 'ERP', 'Y', 'projectBillingEvents queried by EventId = the Fusion event id reconciliation stamped (FUSION_EVENT_ID). The resource needs a Projects billing role: fin_impl (the BillingEvents load user via GET_CEMLI_CREDENTIALS) gets HTTP 403, ppm_impl reads it. Verified live on the demo pod 2026-10-08.', NULL, NULL, NULL, NULL);
+  values ('BillingEvents', '/fscmRestApi/resources/11.13.18.05/projectBillingEvents', 'EventId={KEY}', 'FUSION_BILLING_EVENT_ID', 'EventId,EventNumber,SourceReference,ContractNumber,ProjectNumber,CompletionDate,BillTrnsAmount,BillTrnsCurrencyCode', 'Event ID,Event #,Source Ref,Contract,Project,Date,Amount,Currency', 'ERP', 'Y', 'projectBillingEvents queried by EventId = the Fusion event id reconciliation stamped (FUSION_EVENT_ID). The resource needs a Projects billing role: fin_impl gets HTTP 403, ppm_impl reads it, so BillingEvents runs as ppm_impl (its DMT_ERP_INTERFACE_OPTIONS_TBL row, resolved by GET_CEMLI_CREDENTIALS; backlog #462). Verified live on the demo pod 2026-10-08.', NULL, NULL, NULL, NULL);
 merge into "DMT_REST_LOOKUP_TBL" t
 using (select 'Billing Events' as "OBJECT_TYPE" from dual) s
 on (t."OBJECT_TYPE" = s."OBJECT_TYPE")

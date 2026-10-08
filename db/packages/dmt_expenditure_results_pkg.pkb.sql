@@ -20,8 +20,8 @@ AS
     C_CEMLI CONSTANT VARCHAR2(30) := 'Expenditures';
 
     -- --------------------------------------------------------
-    -- GET_PARTITION_KEYS — distinct (USER_TRANSACTION_SOURCE, DOCUMENT_NAME)
-    -- tokens for one run, STATIC SQL over the expenditures transform table (this
+    -- GET_PARTITION_KEYS — distinct (USER_TRANSACTION_SOURCE, DOCUMENT_NAME,
+    -- source BATCH_NAME) tokens for one run, STATIC SQL over the expenditures transform table (this
     -- object's own table). Spawn-per-partition (work-queue-ID core): one child work
     -- item per source/document group, because Import and Process Cost Transactions
     -- takes exactly one transaction-source id (ParameterList position 6) and one
@@ -39,8 +39,13 @@ AS
         -- One JSON object per distinct (source, document), keyed by the two
         -- partition column names. Only STAGED rows with both columns non-null are
         -- eligible (a null source/document cannot build the import filter).
+        -- Backlog #412: the SOURCE Expenditure Batch name is the third key part, so
+        -- rows of different source batches load as separate children (each child
+        -- submits exactly one Expenditure Batch, ParameterList position 8). NULL
+        -- when the source carries none (JSON null; decoded back to NULL).
         SELECT DISTINCT JSON_OBJECT('USER_TRANSACTION_SOURCE' VALUE USER_TRANSACTION_SOURCE,
-                                    'DOCUMENT_NAME'            VALUE DOCUMENT_NAME)
+                                    'DOCUMENT_NAME'            VALUE DOCUMENT_NAME,
+                                    'BATCH_NAME'               VALUE BATCH_NAME)
         BULK COLLECT INTO l_keys
         FROM   DMT_PJC_EXPENDITURES_TFM_TBL
         WHERE  RUN_ID = p_run_id

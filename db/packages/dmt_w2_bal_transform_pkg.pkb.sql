@@ -69,14 +69,17 @@ AS
             s.CONSOLIDATION_GROUP_NAME,
             s.EFFECTIVE_DATE,
             s.LEGISLATIVE_DATA_GROUP_NAME,
-            -- RECON_KEY (Contract v1, design section 5): the balance batch's user
-            -- key BatchName = <run prefix> || '_W2BAL' (see DMT_W2_BAL_HDL_GEN_PKG:
-            -- one run = one InitializeBalanceBatchHeader whose BatchName is this
-            -- value). After load the batch lands in PAY_BAL_BATCH_HEADERS with
-            -- BATCH_NAME = this BatchName and BATCH_ID as the base id. All header
-            -- rows of a run share the one BatchName (one batch per run). One key
-            -- definition per object.
-            l_prefix || '_W2BAL',
+            -- RECON_KEY (Contract v1, design section 5) = the HDL BatchName, the one
+            -- key definition for this object. Owner decision 2026-10-07 (backlog
+            -- #413, same rule as GL GROUP_ID PR #662): the run prefix followed by
+            -- the work-queue id (the STG tables carry no source batch), e.g. prefix
+            -- 93460 + work item 1700 = 934601700; the work-queue id alone with
+            -- USE_PREFIX = N, so the name is never a constant at cutover. The run id
+            -- stands in only outside the queue. DMT_W2_BAL_HDL_GEN_PKG reads this
+            -- value back as the BatchName of the one InitializeBalanceBatchHeader;
+            -- after load the batch lands in PAY_BAL_BATCH_HEADERS with BATCH_NAME =
+            -- this value, and the recon report selects it there by exact match.
+            l_prefix || TO_CHAR(NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)),
             'STAGED',
             SYSDATE
         FROM DMT_W2_BAL_STG_TBL s

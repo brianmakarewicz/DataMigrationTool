@@ -39,16 +39,29 @@ AS
 -- ============================================================
 
     -- Main entry point: call after POLL_ESS_JOB completes. Runs the shared
-    -- Contract v1 fetch + per-tier apply. p_load_ess_id is the Contract v1
-    -- P_LOAD_REQUEST_ID; the report's run-scoped selectors (P_PREFIX) pick up the
-    -- whole run. p_import_ess_id / p_work_queue_id retained for the
-    -- registered-signature contract.
+    -- Contract v1 fetch + per-tier apply for ONE (BU, batch source) group's
+    -- load: p_load_ess_id is the Contract v1 P_LOAD_REQUEST_ID and
+    -- p_import_ess_id the AutoInvoice import id; the report finds rows only by
+    -- these two job ids. p_work_queue_id is the group's child work item: the
+    -- cross-grain propagation and the shared sweep stay inside it. With no load
+    -- id (a split parent work item) there is nothing to fetch and it returns.
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
         p_load_ess_id     IN NUMBER,
         p_import_ess_id   IN NUMBER DEFAULT NULL,
         p_work_queue_id IN NUMBER DEFAULT NULL
     );
+
+    -- GET_PARTITION_KEYS -- spawn-per-partition keys (backlog #313). One JSON
+    -- token per distinct (BU_NAME, BATCH_SOURCE_NAME) group of this run's STAGED
+    -- AR lines, e.g. {"BU_NAME":"Progress US Business Unit","BATCH_SOURCE_NAME":
+    -- "External Source"}. AutoInvoice takes exactly one business unit and one
+    -- transaction source per submission (ParameterList arguments 1 and 2), so one
+    -- group = one FBDI zip = one load + import = one child work item, and each
+    -- child records its OWN load and import ids. STATIC SQL over this object's own
+    -- transform table; called by the queue worker through invoke_registered
+    -- (style KEYS, registry DMT_PIPELINE_DEF_TBL.PARTITION_KEYS_PROC).
+    FUNCTION GET_PARTITION_KEYS (p_run_id IN NUMBER) RETURN DMT_PARTITION_KEY_TBL;
 
     -- RESET_UNACCOUNTED -- re-run-reconcile recovery (backlog #95). Static UPDATE
     -- over this object's OWN literally-named TFM table(s): flip this run's

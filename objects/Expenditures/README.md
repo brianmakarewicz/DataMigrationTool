@@ -55,7 +55,28 @@ Before/after generated ParameterList (offline-proven on dmt2-local):
 - BEFORE: `US1 Business Unit,300000046987012,IMPORT_AND_PROCESS,PREV_NOT_IMPORTED,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,#NULL,{SYSDATE},#NULL,ORA_PJC_DETAIL`
 - AFTER:  `IMPORT_AND_PROCESS~300000046987012~ALL~#NULL~#NULL~300000049907116~300000049907117~#NULL~#NULL~#NULL`
 
-## Unique BATCH_NAME rule (the second blocker)
+## Expenditure Batch name sent to Fusion (backlog #412, 2026-10-08)
+
+Owner decision 2026-10-07 (the Customers rule, PR #657; GL GROUP_ID, PR #662): the
+Expenditure Batch DMT sends is the run prefix followed by the SOURCE `BATCH_NAME`, or the
+run prefix followed by the work-queue id when the source has none; the source name is sent
+unchanged when USE_PREFIX = N. Before this the loader overwrote every batch name with the
+work-queue id alone, so a source batch name never reached Fusion, and work-queue ids restart
+after a database rebuild, so a repeat (which Fusion rejects as `PJC_UNIQUE_BATCH_NAME`) was
+possible.
+
+- The transform carries the source `BATCH_NAME` unchanged (the old per-row prefixed
+  reference fallback never reached Fusion and is removed).
+- The source `BATCH_NAME` is the third part of the spawn partition key
+  (`DMT_EXPENDITURE_RESULTS_PKG.GET_PARTITION_KEYS`), so rows of different source batches
+  load as separate work items: each Import Costs submission names exactly one batch
+  (ParameterList argument 8).
+- `DMT_LOADER_PKG.RUN_EXPENDITURES` stamps the final value on the work item's rows just
+  before generation; the generator, the row count and the load-failure update are scoped to
+  that value, so one work item never touches another's rows.
+- Reconciliation is unchanged: report V2 finds rows by the Fusion job ids.
+
+## Unique BATCH_NAME rule (the second blocker) -- superseded by the section above
 Import Costs validates each transaction's batch name is unique
 (MESSAGE_NAME=PJC_UNIQUE_BATCH_NAME). If interface rows carry an empty/duplicate
 BATCH_NAME the GOOD rows collide with each other and across prefixes and are ALL

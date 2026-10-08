@@ -1378,6 +1378,51 @@ def main():
         """, {"bu": AR_BU, "dt": XG_DATE, "amt": amount, "descr": desc,
               "attr1": attr1, "attr2": attr2, "memo": memo, "src": src},
         label=f"{label} AR Invoice (cross-grain): {src}")
+
+    # 19c. AR SECOND GROUP (backlog #313). AutoInvoice runs one load + import per
+    #      (BU, transaction source) group, and DMT gives each group its own child work
+    #      item that records that group's own load and import ids. These rows sit in a
+    #      SECOND group -- same BU, transaction source 'Receivables Import' (a common-
+    #      set imported source, auto-numbered like External Source; a standalone probe
+    #      on 2026-10-08, load 10079329, created customer_trx_id 1585969 from the
+    #      known-good GOOD line under this source) -- so every run exercises more than
+    #      one group: both groups' ids must be recorded and reconciled.
+    #      GOOD: one valid line (bill-to 122133 / site 1430587, as RT-AR-KG-G1).
+    #      BAD:  one line with a nonexistent bill-to account (per-row AutoInvoice
+    #            reject, as RT-AR-KG-BAD1; not on the BU or source, which would abort
+    #            the whole group's job). Different bill-to, so never the GOOD row's invoice.
+    RI_DATE = "2026-03-19"
+    for src, bill_acct, amount, desc, attr1, label in [
+        ("RT-AR-RI-G1",   "122133",    400.00, "Second-group line (Receivables Import)",
+         "86753301", "GOOD"),
+        ("RT-AR-RI-BAD1", "999999998", 410.00, "BAD second-group line: nonexistent bill-to account",
+         "86753302", "BAD"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_RA_LINES_STG_TBL (
+                BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
+                TERM_NAME, TRX_DATE, GL_DATE,
+                TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER, BILL_CUSTOMER_SITE_NUMBER,
+                LINE_TYPE, DESCRIPTION,
+                CURRENCY_CODE, CONVERSION_TYPE, CONVERSION_RATE,
+                AMOUNT, QUANTITY, UNIT_SELLING_PRICE,
+                INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1,
+                INTERFACE_LINE_ATTRIBUTE2, DEFAULT_TAXATION_COUNTRY,
+                MEMO_LINE_NAME, SOURCE_ID
+            ) VALUES (
+                :bu, 'Receivables Import', 'Invoice',
+                '30 Net', TO_DATE(:dt, 'YYYY-MM-DD'), TO_DATE(:dt, 'YYYY-MM-DD'),
+                NULL, :bill_acct, '1430587',
+                'LINE', :descr,
+                'USD', 'User', 1,
+                :amt, 1, :amt,
+                'EXTERNAL_SOURCE', :attr1,
+                '1', 'US',
+                'Venue Fee', :src
+            )
+        """, {"bu": AR_BU, "dt": RI_DATE, "bill_acct": bill_acct, "amt": amount,
+              "descr": desc, "attr1": attr1, "src": src},
+        label=f"{label} AR Invoice (second group): {src}")
     tag_scenario(cur, "DMT_RA_LINES_STG_TBL", scenario_id)
 
     for src, amount, attr1, attr2 in [

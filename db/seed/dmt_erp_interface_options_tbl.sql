@@ -731,7 +731,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_ERP_INTERFACE_OPTIONS_TBL" ("ERP_INTERFACE_OPTIONS_ID","ERP_FAMILY","BUSINESS_OBJECT","UCM_ACCOUNT","LOAD_JOB_NAME","IMPORT_JOB_NAME","POST_LOAD_JOB_NAME","LOAD_INTERFACE_FLAG","LOADER_TYPE","SERVICE_NAME","CEMLI_CODE","SOURCE_ERP_OPTIONS_ID","REPORT_JOB_DEF","FUSION_USERNAME","FUSION_PASSWORD") values ('68','PRJ','Project Billing Event','prj/projectBilling/import',NULL,'/oracle/apps/ess/projects/billing/transactions;ImportBillingEventJob',NULL,'Y','SQLLOADER',NULL,'BillingEvents','68','ImportBillingEventReportJob',NULL,NULL);
+  insert into "DMT_ERP_INTERFACE_OPTIONS_TBL" ("ERP_INTERFACE_OPTIONS_ID","ERP_FAMILY","BUSINESS_OBJECT","UCM_ACCOUNT","LOAD_JOB_NAME","IMPORT_JOB_NAME","POST_LOAD_JOB_NAME","LOAD_INTERFACE_FLAG","LOADER_TYPE","SERVICE_NAME","CEMLI_CODE","SOURCE_ERP_OPTIONS_ID","REPORT_JOB_DEF","FUSION_USERNAME","FUSION_PASSWORD") values ('68','PRJ','Project Billing Event','prj/projectBilling/import',NULL,'/oracle/apps/ess/projects/billing/transactions;ImportBillingEventJob',NULL,'Y','SQLLOADER',NULL,'BillingEvents','68','ImportBillingEventReportJob','ppm_impl','***MASKED-SET-ME***');
 exception when dup_val_on_index then null;
 end;
 /

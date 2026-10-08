@@ -21,7 +21,6 @@
 merge into "DMT_CEMLI_SPLIT_CFG" t
 using (
     select 'APInvoices' cemli_code, 'DMT_AP_INVOICES_INT_TFM_TBL' tfm_table, 'ORG_ID' partition_columns, 'ORG_ID' label_expression, 'ORG_ID = :partition_key' where_template, 'TFM_STATUS' status_column, CAST(NULL AS VARCHAR2(30)) child_partition_column from dual
-    union all select 'ARInvoices', 'DMT_RA_LINES_TFM_TBL', 'BU_NAME', 'BU_NAME', 'BU_NAME = :partition_key', 'TFM_STATUS', NULL from dual
     union all select 'BlanketPOs', 'DMT_PO_HEADERS_INT_TFM_TBL', 'PROCUREMENT_BU', 'PROCUREMENT_BU', 'PROCUREMENT_BU = :partition_key', 'TFM_STATUS', NULL from dual
     union all select 'Contracts', 'DMT_PO_HEADERS_INT_TFM_TBL', 'PROCUREMENT_BU', 'PROCUREMENT_BU', 'PROCUREMENT_BU = :partition_key', 'TFM_STATUS', NULL from dual
     union all select 'GLBalances', 'DMT_GL_INTERFACE_TFM_TBL', 'LEDGER_NAME', 'LEDGER_NAME', 'LEDGER_NAME = :partition_key', 'TFM_STATUS', NULL from dual
@@ -39,6 +38,16 @@ using (
     -- columns are decoded (DECODE_PARTITION_KEY) at generate + load time. The label
     -- shows the transaction source; the document rides in the opaque key.
     union all select 'Expenditures', 'DMT_PJC_EXPENDITURES_TFM_TBL', 'USER_TRANSACTION_SOURCE', 'USER_TRANSACTION_SOURCE', 'USER_TRANSACTION_SOURCE = :partition_key', 'TFM_STATUS', 'USER_TRANSACTION_SOURCE' from dual
+    -- ARInvoices (backlog #313, 2026-10-08) is the second COMPOSITE-key spawn object:
+    -- AutoInvoice takes exactly one business unit and one transaction source per
+    -- submission (ParameterList arguments 1 and 2), so it spawns one child work item
+    -- per (BU_NAME, BATCH_SOURCE_NAME) group and each child records its own load and
+    -- import ids. Before this it loaded every group inside ONE work item, which kept
+    -- only the last group's ids. As for Expenditures, CHILD_PARTITION_COLUMN only
+    -- names the JSON key used for the child's human-readable PARTITION_LABEL (the
+    -- batch source); the full composite key rides in the token GET_PARTITION_KEYS
+    -- returns and both columns are decoded by DECODE_PARTITION_KEY at load time.
+    union all select 'ARInvoices', 'DMT_RA_LINES_TFM_TBL', 'BU_NAME,BATCH_SOURCE_NAME', 'BATCH_SOURCE_NAME', 'BU_NAME = :bu_name AND BATCH_SOURCE_NAME = :batch_source_name', 'TFM_STATUS', 'BATCH_SOURCE_NAME' from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set

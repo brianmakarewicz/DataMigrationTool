@@ -72,7 +72,12 @@
                     p_run_id,
 
                     s.TRANSACTION_TYPE,
-                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: user's BATCH_ID (same fallback as items so a batch's items+categories group together); run id fallback (always non-null at transform time — g_work_queue_id is NULL during the parent transform-only pass), never the prefix
+                    -- Fusion batch id: the SAME expression as DMT_EGP_ITEM_TRANSFORM_PKG
+                    -- (backlog #411) so a batch's items and categories stay together:
+                    -- run prefix followed by the source BATCH_ID, else by the work-queue
+                    -- id (run id outside the queue); source value unchanged when
+                    -- USE_PREFIX = N.
+                    TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.BATCH_NUMBER,
                     s.ORGANIZATION_CODE,
                     DMT_XREF_PKG.ITEM_NUMBER(s.ITEM_NUMBER),

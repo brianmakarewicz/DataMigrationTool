@@ -736,15 +736,23 @@ AS
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'ARInvoices', x_filename, l_zip, l_bytes);
 
         -- Update lines TFM rows to GENERATED and stamp the LINES file's FBDI_CSV_ID.
+        -- Stamp WORK_QUEUE_ID = the generating child work item's id
+        -- (DMT_LOADER_PKG.g_work_queue_id; backlog #313) so the accounting gate, the
+        -- unaccounted sweep and the cross-grain propagation scope to ONLY this
+        -- (BU, batch source) group's rows -- mirrors DMT_EXPENDITURE_FBDI_GEN_PKG.
+        -- NULL on a direct call with no queue context (whole-run scope, as before).
         UPDATE DMT_RA_LINES_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_bu_name IS NULL OR BU_NAME = p_bu_name)
         AND    (p_batch_source_name IS NULL OR BATCH_SOURCE_NAME = p_batch_source_name);
 
-        -- Update dists TFM rows to GENERATED and stamp the DISTS file's FBDI_CSV_ID.
+        -- Update dists TFM rows to GENERATED and stamp the DISTS file's FBDI_CSV_ID
+        -- and the same WORK_QUEUE_ID as their lines.
         UPDATE DMT_RA_DISTS_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_bu_name IS NULL OR BU_NAME = p_bu_name)
         AND    (p_batch_source_name IS NULL OR EXISTS (

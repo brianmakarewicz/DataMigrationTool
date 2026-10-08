@@ -53,13 +53,16 @@ Live standard violations / gaps still present in this object's code (section 5 /
    header, procedures signal failure by re-raising rather than an `x_error_code` OUT parameter,
    no `l_step` breadcrumbs, and the validator keeps one nested DECLARE block for the upstream
    check.
-4. **One work item, several loads.** ARInvoices is one work item that loops over its
-   (BU, batch source) groups, one load and one AutoInvoice import per group, and reconciles
-   each group inline with that group's own ids. The work item can record only one pair of
-   ids (the last group's), so a later reconcile-only rerun of a multi-group run re-reads only
-   the last group by job id. Rows already LOADED or FAILED are never touched by a rerun, so
-   this matters only for rows left UNACCOUNTED in an earlier group. Fix if it bites: make
-   ARInvoices spawn one child work item per group (as Requisitions and Items do).
+4. **One child work item per load group — fixed 2026-10-08 (backlog #313).** ARInvoices
+   used to be one work item that looped over its (BU, batch source) groups and kept only the
+   last group's load and import ids. It is now spawn-per-partition: the parent work item
+   validates and transforms once, then one child work item per group generates, loads,
+   reconciles and records that group's own ids (see History). Remaining limits, logged as
+   backlog #500-#504: a line with no BU or batch source gets no group and stays STAGED; the
+   import-id lookup matches the group by transaction source only, not by BU; the child label
+   shows only the batch source; the reconcile apply is scoped by run and key rather than by
+   the child work item; and the reconcile-only rerun across several children has not yet
+   been exercised live with UNACCOUNTED rows.
 
 ## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
 
@@ -92,6 +95,21 @@ models both with one STG + one TFM table each.
    fix was required.
 
 ## History
+- 2026-10-08 one child work item per (BU, batch source) group (backlog #313). Registry:
+  `DMT_CEMLI_SPLIT_CFG.CHILD_PARTITION_COLUMN = BATCH_SOURCE_NAME` (label only) and
+  `DMT_PIPELINE_DEF_TBL.PARTITION_KEYS_PROC = DMT_AR_RESULTS_PKG.GET_PARTITION_KEYS`, which returns
+  a composite JSON key per group (migration `2026-10-08_ar_invoices_spawn_per_group.sql`). The
+  parent validates and transforms once; each child generates, loads and reconciles only its
+  group, records its load id at submit and its AutoInvoice import id once found, and stamps its
+  WORK_QUEUE_ID on the lines and distributions it sent (sweep, accounting gate and cross-grain
+  propagation stay inside the group). `RERUN_RUN` no longer re-opens a split parent. A load
+  failure now fails only that group's distributions, not every distribution in the BU.
+  New write-once scenario RegressionTest2610081244 adds a second group (source Receivables
+  Import: RT-AR-RI-G1 GOOD, RT-AR-RI-BAD1 BAD). Proof run 307 (prefix 93361): parent 1840 split
+  into child 1841 (External Source, load 10079447, import 10079451) and child 1842 (Receivables
+  Import, load 10079438, import 10079443); 4 lines LOADED (customer_trx_id 1586962-1586965),
+  4 lines and 2 distributions FAILED with real errors or the cross-grain quote, 0 UNACCOUNTED,
+  regression verdict PASS with all 10 listed rows at their expected outcome.
 - 2026-10-07 recon report V4 (`DMT_AR_RECON_V4_DM`, alongside V1-V3; backlog #230): rows are
   found only by the load's own Fusion job ids. Base lines by
   `RA_CUSTOMER_TRX_LINES_ALL.REQUEST_ID` = the AutoInvoiceImportEss id, base distributions
