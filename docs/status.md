@@ -1,5 +1,35 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-08 -- Regression cycle complete, main ab5c3cc promoted to ATP
+
+**Bottom line.** Main at commit ab5c3cc passed the full gate on local and on ATP and is now promoted to ATP.
+
+**Local.** Regression run 313 passed with no new failures; the 10 failures it reported are all known pre-existing issues. The local click-through passed 61 of 61 pages.
+
+**ATP.** The deploy was clean, with 0 invalid objects. ATP regression run 179 (prefix 93368) passed with no new failures and the same 10 known issues. The ATP click-through passed 61 of 61 pages.
+
+**Why the earlier ATP runs failed.** ATP runs 177 and 178 failed for two reasons. First, ATP reused prefixes that local had already sent to the shared Fusion pod, so Fusion saw duplicate keys. PRs #682, #684 and #686 fixed this with an owner rule: before any run, set that instance's prefix sequence to exactly the highest prefix used on local or ATP, plus one, and never waste prefixes. Second, ATP lacked the ProjectBudgets REPORT_JOB_DEF row, which PR #681 added. Run 179 confirmed both fixes, so backlog items #520 (AR Lines duplicate flexfield key), #521 (Customers unaccounted rows) and #522 (ProjectBudgets BAD row unaccounted) are now RESOLVED.
+
+**Gate rule.** The ATP gate now blocks only on new failures. Known pre-existing issues are listed in `scripts/regression_known_issues.json` (PR #670).
+
+**Merged today since the promotion work:**
+- PR #687: ESS output download on console page 58.
+- PR #688: cross-grain error handling for MiscReceipts and GLBudgets.
+- PR #689: cross-grain error handling for Projects and ProjectBudgets.
+- PR #690: backlog entries deferring the config objects.
+- PRs #684 and #686: prefix sequence fixes.
+- PR #685: moved backlog item #510 to future.
+
+**Combined baseline.** The current combined baseline scenario is RegressionTest2610081244, so backlog item #221 (combined regression baseline) is RESOLVED. Newer per-object scenarios still need folding into the next baseline; that is tracked in backlog item #505.
+
+**Owner priorities (2026-10-08).** ERP transactional objects come first, then config objects, then HCM. All config objects and all HCM items are DEFERRED. PaymentTerms is parked. Row selection in the Grants report is parked. The retry-resend item (#401) is DEFERRED, because a retry reloads the full document under the next prefix. TaxCards rule: a TaxCards row is LOADED only when DMT's own dated-update detail rows exist in Fusion, found by the HDL request id.
+
+**In flight now.** Cross-grain error handling for Grants and for Assets, and cross-grain regression scenarios for GLBalances, Purchase Orders, Blanket POs and AR Invoices.
+
+**Next.** Run a full regression and promote that batch to ATP. After that: make error text consistent, fix drift in the reconciliation reports, fix the bad AP Invoices and Items test rows, and tidy up the AR work items. Then change the join key to the TFM id.
+
+**Local database note.** The deferred #160 branch's five config packages and a Lookups column migration are currently deployed on local. The next deploy-local restores the packages from main.
+
 - **2026-10-08 -- ATP gate now blocks only on NEW failures (PR #670).** Owner decision, verbatim: "change the gate - so that there are no NEW failures". `scripts/regression_known_issues.json` lists accepted pre-existing failures and review items; today it holds 11 review items (9 HCM objects with zero records, Verify-in-Fusion for BillingEvents #462 and Customers/Locations #468) and no failures. Anything not on the list, or any sub-object that did worse than in the baseline run, still blocks. Verdict `PASS (no new failures; N known)` gives exit 0, which the gate accepts. The list's sha256 and the known/new counts go into the promotion evidence and log. No bypass flag; owner override unchanged.
 
 ## Session -- 2026-10-07 evening -- Cross-grain errors, job-id reconciliation, strict ATP gate, combined baseline (IN PROGRESS, nothing on ATP yet)
