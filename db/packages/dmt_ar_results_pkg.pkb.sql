@@ -74,6 +74,8 @@ AS
 --                   load and import ids are recorded on its own work item and a
 --                   reconcile-only rerun re-reads every group. RECONCILE_BATCH
 --                   skips the fetch when it has no load id (split parent row).
+--   2026-10-08  BM  Backlog #503: the Contract v1 apply UPDATEs are scoped to the
+--                   child work item (WORK_QUEUE_ID) when one is given.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_AR_RESULTS_PKG';
@@ -113,9 +115,11 @@ AS
     -- (BU_NAME, BATCH_SOURCE_NAME) of this run's STAGED AR lines, keyed by the two
     -- column names; the loader decodes both with DMT_LOADER_PKG.DECODE_PARTITION_KEY.
     -- A line with a NULL BU or batch source cannot form an AutoInvoice submission
-    -- (both are ParameterList arguments), so it is not given a group; it stays
-    -- STAGED and the parent's accounting shows it unprocessed rather than being
-    -- sent under a wrong parameter. STATIC SQL; no COMMIT.
+    -- (both are ParameterList arguments), so it is never given a group: the
+    -- parent pass has already failed it, with the rest of its DMT invoice, in
+    -- DMT_AR_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM (backlog #500), so it is no
+    -- longer STAGED here. The NOT NULL filters stay as a guard so a NULL is never
+    -- sent as a parameter. STATIC SQL; no COMMIT.
     -- --------------------------------------------------------
     FUNCTION GET_PARTITION_KEYS (
         p_run_id IN NUMBER
@@ -140,12 +144,16 @@ AS
     -- The Contract v1 apply for both ARInvoices tiers, Option A shape. One shared
     -- FETCH_ROWS call returns every tier's rows; the apply is STATIC SQL, one pair
     -- of UPDATEs per tier, discriminated by OBJECT_TYPE and joined on
-    -- RECON_KEY = RECORD_KEY.
+    -- RECON_KEY = RECORD_KEY. Every UPDATE is scoped to the child work item
+    -- p_work_queue_id when one is given (backlog #503: the work queue item is
+    -- the unit of processing); NULL (a direct call, or a non-split item whose
+    -- rows carry no WORK_QUEUE_ID) keeps the run scope.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_ARINVOICES (
         p_run_id        IN NUMBER,
         p_request_id    IN VARCHAR2,
-        p_import_ess_id IN NUMBER
+        p_import_ess_id IN NUMBER,
+        p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_ARINVOICES';
         l_gen_count NUMBER := 0;
@@ -234,7 +242,8 @@ AS
                         WHERE  RUN_ID    = p_run_id
                         AND    INTERFACE_LINE_ATTRIBUTE1 || '/' || INTERFACE_LINE_ATTRIBUTE2
                                    = l_rows(i).RECORD_KEY
-                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED')
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
                         l_rc := SQL%ROWCOUNT;
                         l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
 
@@ -249,7 +258,8 @@ AS
                                        LAST_UPDATED_DATE      = SYSDATE
                                 WHERE  RUN_ID    = p_run_id
                                 AND    TFM_SEQUENCE_ID = l_dff_seq
-                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED')
+                                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
                                 l_rc := SQL%ROWCOUNT;
                                 IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
                             END IF;
@@ -275,7 +285,8 @@ AS
                         WHERE  RUN_ID    = p_run_id
                         AND    INTERFACE_LINE_ATTRIBUTE1 || '/' || INTERFACE_LINE_ATTRIBUTE2
                                    = l_rows(i).RECORD_KEY
-                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED')
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
                         l_line_failed := l_line_failed + SQL%ROWCOUNT;
                     END IF;
 
@@ -301,7 +312,8 @@ AS
                                LAST_UPDATED_DATE              = SYSDATE
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
-                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED')
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
                         l_rc := SQL%ROWCOUNT;
                         l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
 
@@ -316,7 +328,8 @@ AS
                                        LAST_UPDATED_DATE              = SYSDATE
                                 WHERE  RUN_ID    = p_run_id
                                 AND    TFM_SEQUENCE_ID = l_dff_seq
-                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED')
+                                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
                                 l_rc := SQL%ROWCOUNT;
                                 IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
                             END IF;
@@ -342,7 +355,8 @@ AS
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
-                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED')
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
                         l_dist_failed := l_dist_failed + SQL%ROWCOUNT;
                     END IF;
                 END IF;
@@ -653,7 +667,8 @@ AS
             RETURN;
         END IF;
 
-        APPLY_CONTRACT_V1_ARINVOICES(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id);
+        APPLY_CONTRACT_V1_ARINVOICES(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id,
+                                     p_work_queue_id);
 
         -- Whole-document rejection (design section 5): rows AutoInvoice held back
         -- or rejected with their Fusion invoice carry the real error of the row

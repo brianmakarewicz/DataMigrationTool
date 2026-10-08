@@ -58,11 +58,11 @@ Live standard violations / gaps still present in this object's code (section 5 /
    last group's load and import ids. It is now spawn-per-partition: the parent work item
    validates and transforms once, then one child work item per group generates, loads,
    reconciles and records that group's own ids (see History). Remaining limits, logged as
-   backlog #500-#504: a line with no BU or batch source gets no group and stays STAGED; the
-   import-id lookup matches the group by transaction source only, not by BU; the child label
-   shows only the batch source; the reconcile apply is scoped by run and key rather than by
-   the child work item; and the reconcile-only rerun across several children has not yet
-   been exercised live with UNACCOUNTED rows.
+   backlog #501, #502 and #504: the import-id lookup matches the group by transaction source
+   only, not by BU; the child label shows only the batch source; and the reconcile-only rerun
+   across several children has not yet been exercised live with UNACCOUNTED rows. (#500, a
+   line with no BU or batch source left STAGED, and #503, the reconcile apply not scoped to
+   the child work item, are fixed; see History.)
 
 ## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
 

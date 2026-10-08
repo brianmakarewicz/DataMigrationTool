@@ -1427,11 +1427,55 @@ def main():
         """, {"bu": AR_BU, "dt": RI_DATE, "bill_acct": bill_acct, "amt": amount,
               "descr": desc, "attr1": attr1, "src": src},
         label=f"{label} AR Invoice (second group): {src}")
+
+    # 19d. AR LINE WITH NO BUSINESS UNIT (backlog #500). AutoInvoice takes the business
+    #      unit and the transaction source as ParameterList arguments 1 and 2, so a
+    #      line without a BU belongs to no load group and can never be sent. One DMT
+    #      invoice (ATTRIBUTE1 86753401), two lines, one REV distribution each:
+    #      line 1 fully valid (as RT-AR-XG-A1); line 2's ONLY defect is BU_NAME NULL.
+    #      Expected: line 2 FAILED with its own [POST_VALIDATION] error naming
+    #      BU_NAME; line 1 and both distributions FAILED quoting it ("Rejected with
+    #      document: line <attr1>/2: ..."); none of the invoice is sent; nothing is
+    #      left UNACCOUNTED. TRX_DATE/GL_DATE 2026-03-20 keep it apart from XG-A/B.
+    NB_DATE = "2026-03-20"
+    for src, bu, amount, desc, attr2, label in [
+        ("RT-AR-NB-A1",     AR_BU, 120.00, "NB line 1: valid line on an invoice with a no-BU line",
+         "1", "NB-GOOD-SIBLING"),
+        ("RT-AR-NB-A2-BAD", None,  130.00, "BAD NB line 2: no business unit (BU_NAME NULL)",
+         "2", "BAD"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_RA_LINES_STG_TBL (
+                BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
+                TERM_NAME, TRX_DATE, GL_DATE,
+                TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER, BILL_CUSTOMER_SITE_NUMBER,
+                LINE_TYPE, DESCRIPTION,
+                CURRENCY_CODE, CONVERSION_TYPE, CONVERSION_RATE,
+                AMOUNT, QUANTITY, UNIT_SELLING_PRICE,
+                INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1,
+                INTERFACE_LINE_ATTRIBUTE2, DEFAULT_TAXATION_COUNTRY,
+                MEMO_LINE_NAME, SOURCE_ID
+            ) VALUES (
+                :bu, 'External Source', 'Invoice',
+                '30 Net', TO_DATE(:dt, 'YYYY-MM-DD'), TO_DATE(:dt, 'YYYY-MM-DD'),
+                NULL, '70075', '245921',
+                'LINE', :descr,
+                'USD', 'User', 1,
+                :amt, 1, :amt,
+                'EXTERNAL_SOURCE', '86753401',
+                :attr2, 'US',
+                'Tuition and Fees', :src
+            )
+        """, {"bu": bu, "dt": NB_DATE, "amt": amount, "descr": desc,
+              "attr2": attr2, "src": src},
+        label=f"{label} AR Invoice (no business unit): {src}")
     tag_scenario(cur, "DMT_RA_LINES_STG_TBL", scenario_id)
 
     for src, amount, attr1, attr2 in [
         ("RT-AR-XG-A1-REV", 300.00, "86753201", "1"),
         ("RT-AR-XG-A2-BAD-REV", 200.00, "86753201", "2"),
+        ("RT-AR-NB-A1-REV", 120.00, "86753401", "1"),
+        ("RT-AR-NB-A2-BAD-REV", 130.00, "86753401", "2"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_RA_DISTS_STG_TBL (
