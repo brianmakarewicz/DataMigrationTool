@@ -50,7 +50,6 @@ AS
         'SourceSystemOwner|SourceSystemId|DependentEnrollmentId(SourceSystemId)|'
         || 'PersonNumber|Plan|Program|Option|DependentPersonNumber|LineNumber';
 
-    C_SOURCE_SYSTEM CONSTANT VARCHAR2(30) := 'HRC_SQLLOADER';
 
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
@@ -106,7 +105,11 @@ AS
         l_line_no     NUMBER;
         l_parent_ssid VARCHAR2(240);
         l_vals        VARCHAR2(32767);
+        -- SourceSystemOwner for every .dat line: this DMT instance's owner from
+        -- DMT_CONFIG_TBL (backlog #287), read at run time, never a constant.
+        l_sso         VARCHAR2(240);
     BEGIN
+        l_sso := DMT_HDL_UTIL_PKG.GET_SOURCE_SYSTEM_OWNER;
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'GENERATE_HDL start.',
@@ -141,7 +144,7 @@ AS
                 ORDER BY PERSON_NUMBER
             ) LOOP
                 l_parent_ssid := pv(p.PERSON_NUMBER) || '_BENDEP';
-                l_vals := C_SOURCE_SYSTEM             || '|' ||
+                l_vals := l_sso                       || '|' ||
                           l_parent_ssid               || '|' ||
                           pv(p.PERSON_NUMBER)         || '|' ||
                           pv(p.BENEFIT_RELATIONSHIP_NAME) || '|' ||
@@ -174,7 +177,7 @@ AS
             ) LOOP
                 l_parent_ssid := pv(r.PERSON_NUMBER) || '_BENDEP';
                 l_line_no     := r.LINE_NO;
-                l_vals := C_SOURCE_SYSTEM                     || '|' ||
+                l_vals := l_sso                               || '|' ||
                           -- child SourceSystemId = participant + dependent + line
                           pv(r.PERSON_NUMBER) || '_' ||
                               pv(r.DEPENDENT_PERSON_NUMBER) || '_' ||

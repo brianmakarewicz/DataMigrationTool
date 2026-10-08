@@ -20,6 +20,21 @@
     -- HCM REST API version path (may change with Fusion updates)
     C_HCM_REST_PATH CONSTANT VARCHAR2(100) := 'hcmRestApi/resources/11.13.18.05/dataLoadDataSets';
 
+    -- DMT_CONFIG_TBL key holding this DMT instance's HDL SourceSystemOwner
+    -- (backlog #287). Seeded DMT_LOCAL on the Docker instance and DMT_ATP on ATP.
+    C_SSO_CONFIG_KEY CONSTANT VARCHAR2(30) := 'HDL_SOURCE_SYSTEM_OWNER';
+
+    -- --------------------------------------------------------
+    -- GET_SOURCE_SYSTEM_OWNER: the SourceSystemOwner every HDL generator writes
+    -- on every .dat line, read at run time from DMT_CONFIG_TBL
+    -- (HDL_SOURCE_SYSTEM_OWNER). One owner per DMT instance, so SourceSystemIds
+    -- written by different DMT databases (Docker, ATP, a --fresh rebuild) never
+    -- collide in Fusion's HRC_INTEGRATION_KEY_MAP. The value must be an enabled
+    -- code of Fusion's HRC_SOURCE_SYSTEM_OWNER lookup. Raises -20130 when the key
+    -- is missing or blank (a generator must never write an empty owner).
+    -- --------------------------------------------------------
+    FUNCTION GET_SOURCE_SYSTEM_OWNER RETURN VARCHAR2;
+
     -- --------------------------------------------------------
     -- REST HTTP: execute a REST call (GET or POST with JSON body).
     -- Returns the response CLOB. Raises on non-2xx status.

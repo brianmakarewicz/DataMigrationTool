@@ -701,13 +701,16 @@ using (
     select 100000032                                                    bip_report_id,
            'Assignments'                                                cemli_code,
            'Assignment'                                                 object_type,
-           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_DM.xdm'      dm_catalog_path,
-           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_RPT.xdo'     report_catalog_path,
+           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_V2_DM.xdm'   dm_catalog_path,
+           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_V2_RPT.xdo'  report_catalog_path,
            'N/A (HDL)'                                                  interface_table,
            'Assignment HDL base-table reconciliation (Contract v1). ONE report, '
              || 'two base tiers via OBJECT_TYPE: WorkRelationship '
              || '(DMT_WORK_REL_TFM_TBL <- PER_PERIODS_OF_SERVICE) and Assignment '
-             || '(DMT_ASSIGNMENT_TFM_TBL <- PER_ALL_ASSIGNMENTS_M).'    notes,
+             || '(DMT_ASSIGNMENT_TFM_TBL <- PER_ALL_ASSIGNMENTS_M). V2 (2026-10-07, '
+             || 'backlog #287/#290): rows selected by the HDL request id, key map joined '
+             || 'on each row''s own SourceSystemOwner (no HRC_SQLLOADER literal). '
+             || 'Deployed alongside V1, never overwriting it.'          notes,
            1                                                            contract_version,
            'DMT_ASSIGNMENT_TFM_TBL'                                     tfm_table,
            'FUSION_ASSIGNMENT_ID'                                       fusion_id_column,

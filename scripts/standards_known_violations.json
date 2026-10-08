@@ -24,13 +24,6 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-NINE-COLUMNS|Assignments|DMT_ASSIGNMENTS_RECON_DM",
-      "backlog": 217,
-      "found": "2026-10-07",
-      "detail": "DMT_ASSIGNMENTS_RECON_DM returns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-MIRROR|BenBeneficiary|DMT_BENBENEFICIARY_RECON_DM",
       "backlog": 216,
       "found": "2026-10-07",

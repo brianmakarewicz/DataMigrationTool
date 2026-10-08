@@ -47,7 +47,6 @@ AS
     C_DESIGNATEBENEFICIARY_COLS CONSTANT VARCHAR2(4000) :=
         'SourceSystemOwner|SourceSystemId|Plan|Program|Option|BeneficiaryPercentage|BeneficiaryPersonNumber|BeneficiaryType|LineNumber|PersonNumber';
 
-    C_SOURCE_SYSTEM CONSTANT VARCHAR2(30) := 'HRC_SQLLOADER';
 
     -- Distinct SourceSystemId suffixes — never the collided '_BENBNFY' of the old
     -- PersonBenefitBalance model.
@@ -117,7 +116,11 @@ AS
         l_vals        VARCHAR2(32767);
         l_prev_person VARCHAR2(240);
         l_line_no     NUMBER := 0;
+        -- SourceSystemOwner for every .dat line: this DMT instance's owner from
+        -- DMT_CONFIG_TBL (backlog #287), read at run time, never a constant.
+        l_sso         VARCHAR2(240);
     BEGIN
+        l_sso := DMT_HDL_UTIL_PKG.GET_SOURCE_SYSTEM_OWNER;
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'GENERATE_HDL start.',
@@ -154,7 +157,7 @@ AS
                 GROUP BY t.PERSON_NUMBER
                 ORDER BY t.PERSON_NUMBER
             ) LOOP
-                l_vals := C_SOURCE_SYSTEM                            || '|' ||  -- SourceSystemOwner
+                l_vals := l_sso                                      || '|' ||  -- SourceSystemOwner
                           pv(r.PERSON_NUMBER) || C_ENRL_SUFFIX       || '|' ||  -- SourceSystemId
                           pv(r.PERSON_NUMBER)                        || '|' ||  -- PersonNumber
                           pv(r.BENEFIT_RELATIONSHIP_NAME)            || '|' ||  -- BenefitRelationship
@@ -192,7 +195,7 @@ AS
                 END IF;
                 l_prev_person := r.PERSON_NUMBER;
 
-                l_vals := C_SOURCE_SYSTEM                                       || '|' ||  -- SourceSystemOwner
+                l_vals := l_sso                                                 || '|' ||  -- SourceSystemOwner
                           pv(r.PERSON_NUMBER) || C_DSGN_SUFFIX || TO_CHAR(l_line_no) || '|' ||  -- SourceSystemId
                           pv(r.PLAN_NAME)                    || '|' ||  -- Plan
                           pv(r.PROGRAM_NAME)                 || '|' ||  -- Program
