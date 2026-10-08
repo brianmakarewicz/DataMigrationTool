@@ -198,8 +198,102 @@ AS
     END APPLY_CONTRACT_V1_PERFEVALUATIONS;
 
     -- --------------------------------------------------------
+    -- APPLY_HDL_ERRORS (private, backlog #288)
+    -- Per-record HDL errors, static SQL. This object's generator writes NO
+    -- SourceSystemId, so no message can be tied to one record exactly (and a
+    -- prefix guess is never made). Its messages reach the rows only through
+    -- APPLY_FILE_ERRORS (messages that name no record). Kept so every HCM
+    -- results package has the same shape; the per-object backlog item gives the
+    -- generator a SourceSystemId.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_HDL_ERRORS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'APPLY_HDL_ERRORS';
+    BEGIN
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. No SourceSystemId is written for this object; nothing to match.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END APPLY_HDL_ERRORS;
+
+    -- --------------------------------------------------------
+    -- APPLY_FILE_ERRORS (private, backlog #288)
+    -- Whole-file rejections, static SQL. Messages that name no record (no
+    -- SourceSystemId: an invalid METADATA line, an unknown file, a data-set
+    -- message) reject every record of their .dat file. They are applied LAST,
+    -- after the per-record errors and the base-table proof, and only to rows
+    -- still GENERATED, so a row proven LOADED or already FAILED on its own error
+    -- is never touched. The text is Fusion's own, named with the file and line.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_FILE_ERRORS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'APPLY_FILE_ERRORS';
+        l_text   VARCHAR2(4000);
+        l_failed NUMBER := 0;
+    BEGIN
+        -- DMT_PERF_EVAL_TFM_TBL: whole-file messages of PerfDocComplete.dat
+        l_text := DMT_HDL_UTIL_PKG.FILE_LEVEL_ERRORS(p_request_id, 'PerfDocComplete.dat');
+        IF l_text IS NOT NULL THEN
+            UPDATE DMT_PERF_EVAL_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_text),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID     = p_run_id
+            AND    t.TFM_STATUS = 'GENERATED';
+            l_failed := l_failed + SQL%ROWCOUNT;
+        END IF;
+
+        -- DMT_PERF_EVAL_RATING_TFM_TBL: whole-file messages of PerfDocComplete.dat
+        l_text := DMT_HDL_UTIL_PKG.FILE_LEVEL_ERRORS(p_request_id, 'PerfDocComplete.dat');
+        IF l_text IS NOT NULL THEN
+            UPDATE DMT_PERF_EVAL_RATING_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_text),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID     = p_run_id
+            AND    t.TFM_STATUS = 'GENERATED';
+            l_failed := l_failed + SQL%ROWCOUNT;
+        END IF;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rows FAILED by a whole-file HDL error: ' || l_failed || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END APPLY_FILE_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH
-    -- Calls RECONCILE_HDL for each of the 2 PerfEvaluations TFM tables, then applies
+    -- Stages the data set's HDL error messages (all pages), applies each one
+    -- to the row whose SourceSystemId it names exactly, applies the base-table
+    -- proof (the only path to LOADED), then the whole-file rejections.
     -- the Contract v1 base-table positive proof for the parent evaluation record.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
@@ -208,6 +302,7 @@ AS
         p_dataset_status IN VARCHAR2 DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
+        l_msg_count NUMBER;  -- HDL error messages staged for this data set
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -215,34 +310,17 @@ AS
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        -- 1. PerformanceDocument — Contract v1 base-table proof (design section 5).
-        -- The per-record HDL error path still runs (real [FUSION_ERROR] rows are
-        -- marked FAILED here), but LOADED promotion is DEFERRED to the shared
-        -- Contract v1 parser below: a PerfEvaluations row reaches LOADED only when
-        -- the performance document is positively confirmed in the Fusion base table
-        -- (HRA_EVALUATIONS) with a real EVALUATION_ID, which the parser stamps into
-        -- FUSION_EVALUATION_ID.
-        DMT_HDL_UTIL_PKG.RECONCILE_HDL(
-            p_run_id => p_run_id,
-            p_request_id       => p_request_id,
-            p_tfm_table        => 'DMT_PERF_EVAL_TFM_TBL',
-            p_stg_table        => 'DMT_PERF_EVAL_STG_TBL',
-            p_key_column       => 'PERSON_NUMBER',
-            p_dataset_status   => p_dataset_status,
-            p_log_context      => C_CEMLI || ' > PerformanceDocument',
-            p_defer_base_proof => TRUE,
+        -- Per-record HDL errors (backlog #288): stage every page of this data
+        -- set's error messages, then mark FAILED only the rows a message names
+        -- exactly. LOADED comes only from base-table proof; there is no
+        -- data-set-status promotion and no write-back to the STG table.
+        DMT_HDL_UTIL_PKG.STAGE_HDL_MESSAGES(
+            p_run_id        => p_run_id,
+            p_request_id    => p_request_id,
+            p_log_context   => C_CEMLI,
+            x_message_count => l_msg_count,
             p_cemli_code     => C_CEMLI);
-
-        -- 2. PerformanceRating
-        DMT_HDL_UTIL_PKG.RECONCILE_HDL(
-            p_run_id => p_run_id,
-            p_request_id     => p_request_id,
-            p_tfm_table      => 'DMT_PERF_EVAL_RATING_TFM_TBL',
-            p_stg_table      => 'DMT_PERF_EVAL_RATING_STG_TBL',
-            p_key_column     => 'PERSON_NUMBER',
-            p_dataset_status => p_dataset_status,
-            p_log_context    => C_CEMLI || ' > PerformanceRating',
-            p_cemli_code     => C_CEMLI);
+        APPLY_HDL_ERRORS(p_run_id, p_request_id);
 
         -- Contract v1 base-tier positive proof (design section 5), Option A shape:
         -- the shared package fetches the parsed report rows (no dynamic SQL, no TFM
@@ -251,6 +329,9 @@ AS
         -- private procedure (one BEGIN/END per procedure). This REPLACES the former
         -- LOOKUP_FUSION_IDS positive path.
         APPLY_CONTRACT_V1_PERFEVALUATIONS(p_run_id, p_request_id);
+
+        -- Whole-file HDL rejections last, only on rows still open (backlog #288).
+        APPLY_FILE_ERRORS(p_run_id, p_request_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

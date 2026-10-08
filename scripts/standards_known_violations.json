@@ -122,13 +122,6 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|MiscReceipts|DMT_INV_TRX_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/MiscReceipts/query.sql does not match the SQL of the deployed DMT_INV_TRX_RECON_DM.xdm (query.sql names: DMT_INV_TRX_RECON_DM)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-NINE-COLUMNS|PayrollRelationships|DMT_PAYROLLRELATIONSHIPS_RECON_DM",
       "backlog": 217,
       "found": "2026-10-07",

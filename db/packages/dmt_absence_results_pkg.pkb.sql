@@ -196,12 +196,110 @@ AS
             RAISE;
     END APPLY_CONTRACT_V1_ABSENCES;
 
+    -- --------------------------------------------------------
+    -- APPLY_HDL_ERRORS (private, backlog #288)
+    -- Per-record HDL errors, static SQL. DMT_HDL_UTIL_PKG.STAGE_HDL_MESSAGES has
+    -- already staged every page of this data set's error messages in
+    -- DMT_HDL_MESSAGE_GTT. A GENERATED row is marked FAILED only when a message
+    -- names EXACTLY the SourceSystemId its generator wrote for it (never LIKE,
+    -- never a prefix), and it gets that message, named:
+    --   [FUSION_ERROR] <SourceSystemId> (<file> line <n>): <Fusion message>
+    -- Replaces the dynamic-SQL DMT_HDL_UTIL_PKG.RECONCILE_HDL.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_HDL_ERRORS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
+    ) IS
+        C_PROC    CONSTANT VARCHAR2(30) := 'APPLY_HDL_ERRORS';
+        l_request NUMBER := TO_NUMBER(p_request_id);
+        l_failed  NUMBER := 0;
+    BEGIN
+        -- DMT_ABSENCE_TFM_TBL: SourceSystemId = PERSON_NUMBER || '_ABS'
+        UPDATE DMT_ABSENCE_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            DMT_HDL_UTIL_PKG.ROW_ERRORS(p_request_id, t.PERSON_NUMBER || '_ABS')),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_HDL_MESSAGE_GTT m
+                       WHERE  m.REQUEST_ID       = l_request
+                       AND    m.SOURCE_SYSTEM_ID IN (t.PERSON_NUMBER || '_ABS'));
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rows FAILED on their own named HDL error: ' || l_failed || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END APPLY_HDL_ERRORS;
+
+    -- --------------------------------------------------------
+    -- APPLY_FILE_ERRORS (private, backlog #288)
+    -- Whole-file rejections, static SQL. Messages that name no record (no
+    -- SourceSystemId: an invalid METADATA line, an unknown file, a data-set
+    -- message) reject every record of their .dat file. They are applied LAST,
+    -- after the per-record errors and the base-table proof, and only to rows
+    -- still GENERATED, so a row proven LOADED or already FAILED on its own error
+    -- is never touched. The text is Fusion's own, named with the file and line.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_FILE_ERRORS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'APPLY_FILE_ERRORS';
+        l_text   VARCHAR2(4000);
+        l_failed NUMBER := 0;
+    BEGIN
+        -- DMT_ABSENCE_TFM_TBL: whole-file messages of PersonAbsenceEntry.dat
+        l_text := DMT_HDL_UTIL_PKG.FILE_LEVEL_ERRORS(p_request_id, 'PersonAbsenceEntry.dat');
+        IF l_text IS NOT NULL THEN
+            UPDATE DMT_ABSENCE_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_text),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID     = p_run_id
+            AND    t.TFM_STATUS = 'GENERATED';
+            l_failed := l_failed + SQL%ROWCOUNT;
+        END IF;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rows FAILED by a whole-file HDL error: ' || l_failed || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END APPLY_FILE_ERRORS;
+
     PROCEDURE RECONCILE_BATCH (
         p_run_id IN NUMBER,
         p_request_id     IN VARCHAR2,
         p_dataset_status IN VARCHAR2 DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
+        l_msg_count NUMBER;  -- HDL error messages staged for this data set
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -210,23 +308,17 @@ AS
             p_procedure      => C_PROC);
 
 
-        -- 1. AbsenceEntry — Contract v1 base-table proof (design section 5).
-        -- The per-record HDL error path still runs (real [FUSION_ERROR] rows are
-        -- marked FAILED here), but LOADED promotion is DEFERRED to the shared
-        -- Contract v1 parser below: an Absence row reaches LOADED only when the
-        -- absence entry is positively confirmed in the Fusion base table
-        -- (ANC_PER_ABS_ENTRIES) with a real id, which the parser stamps into
-        -- FUSION_ABSENCE_ENTRY_ID.
-        DMT_HDL_UTIL_PKG.RECONCILE_HDL(
-            p_run_id => p_run_id,
-            p_request_id       => p_request_id,
-            p_tfm_table        => 'DMT_ABSENCE_TFM_TBL',
-            p_stg_table        => 'DMT_ABSENCE_STG_TBL',
-            p_key_column       => 'PERSON_NUMBER',
-            p_dataset_status   => p_dataset_status,
-            p_log_context      => C_CEMLI || ' > AbsenceEntry',
-            p_defer_base_proof => TRUE,
+        -- Per-record HDL errors (backlog #288): stage every page of this data
+        -- set's error messages, then mark FAILED only the rows a message names
+        -- exactly. LOADED comes only from base-table proof; there is no
+        -- data-set-status promotion and no write-back to the STG table.
+        DMT_HDL_UTIL_PKG.STAGE_HDL_MESSAGES(
+            p_run_id        => p_run_id,
+            p_request_id    => p_request_id,
+            p_log_context   => C_CEMLI,
+            x_message_count => l_msg_count,
             p_cemli_code     => C_CEMLI);
+        APPLY_HDL_ERRORS(p_run_id, p_request_id);
 
         -- Contract v1 base-tier positive proof (design section 5), Option A shape
         -- (owner decision on PR #248): the shared package fetches the parsed report
@@ -236,6 +328,9 @@ AS
         -- template, which carries no bulk lookup).
         APPLY_CONTRACT_V1_ABSENCES(p_run_id, p_request_id);
 
+
+        -- Whole-file HDL rejections last, only on rows still open (backlog #288).
+        APPLY_FILE_ERRORS(p_run_id, p_request_id);
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

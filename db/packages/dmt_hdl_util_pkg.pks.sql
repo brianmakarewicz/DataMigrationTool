@@ -100,55 +100,67 @@
     );
 
     -- --------------------------------------------------------
-    -- GET_HDL_ERRORS: retrieve error messages from HCM Data Loader.
-    -- Returns JSON CLOB of messages.
+    -- STAGE_HDL_MESSAGES (backlog #288): read EVERY page of the data set's
+    -- messages (GET .../dataLoadDataSets/{RequestId}/child/messages, following
+    -- hasMore until Fusion says there are no more) and stage each ERROR message
+    -- (MessageTypeCode ERROR, or no type) in the session table
+    -- DMT_HDL_MESSAGE_GTT, keyed by the request id, with its SourceSystemId,
+    -- .dat file, file line and the named error text from FORMAT_HDL_ERROR.
+    -- Replaces the request's earlier rows, so it is safe to call again (the base
+    -- lag retry). Touches no TFM or STG table: each object's results package
+    -- applies the staged rows to its own TFM tables with static SQL, matching the
+    -- exact SourceSystemId its generator wrote. Static SQL only.
+    -- x_message_count = the number of error messages staged.
     -- --------------------------------------------------------
-    FUNCTION GET_HDL_ERRORS (
-        p_run_id IN NUMBER,
-        p_request_id     IN VARCHAR2,
-        p_log_context    IN VARCHAR2 DEFAULT NULL,
-        p_cemli_code       IN VARCHAR2 DEFAULT NULL   -- the object's CEMLI: picks its central Fusion user (backlog #309); required
-    ) RETURN CLOB;
-
-    -- --------------------------------------------------------
-    -- RECONCILE_HDL: parse HDL error messages and update TFM/STG.
-    -- Called by each HCM object's results package.
-    -- p_stg_table / p_tfm_table: names of the staging/TFM tables.
-    -- p_key_column: column in TFM that matches the HDL SourceSystemId.
-    -- p_key_suffixes: OPTIONAL comma-separated list of SourceSystemId suffixes
-    --   that the generator appends to p_key_column (e.g. '_TRM,_ASG' for the
-    --   Assignment load, where each row's employment-terms and assignment records
-    --   are keyed '<ASSIGNMENT_NUMBER>_TRM' / '<ASSIGNMENT_NUMBER>_ASG').
-    --   When set, a message ties to a row by EXACT equality against
-    --   p_key_column||<suffix> for each suffix — a true per-record match that
-    --   cannot collide when one key is a prefix of another (e.g. G1 vs G1B).
-    --   When NULL (default, all person-keyed loads), the legacy prefix match
-    --   'SourceSystemId LIKE p_key_column||''%''' is used (needed for the Worker
-    --   family, whose SourceSystemIds are PERSON_NUMBER plus a record suffix).
-    -- --------------------------------------------------------
-    --   p_defer_base_proof: Contract v1 base-table proof (design section 5). When
-    --     TRUE, RECONCILE_HDL still applies the per-record HDL error messages
-    --     (marking real [FUSION_ERROR] rows FAILED) and echoes STG, but SKIPS the
-    --     data-set-status LOADED promotion — a row is promoted to LOADED only by the
-    --     object's Contract v1 reconciler (which fetches the report via
-    --     DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies it statically) once the
-    --     record is positively confirmed in the Fusion base table (with its Fusion
-    --     id). This
-    --     replaces the interface-only status guess for Contract-v1 objects. When
-    --     FALSE (default, all other HDL tables), the legacy status-based promotion
-    --     is retained so non-Contract-v1 sub-tables keep working unchanged.
-    PROCEDURE RECONCILE_HDL (
-        p_run_id  IN NUMBER,
-        p_request_id      IN VARCHAR2,
-        p_tfm_table       IN VARCHAR2,
-        p_stg_table       IN VARCHAR2,
-        p_key_column      IN VARCHAR2 DEFAULT 'SOURCE_REF',
-        p_dataset_status  IN VARCHAR2 DEFAULT NULL,  -- ORA_COMPLETED / ORA_IN_ERROR from POLL_HDL
-        p_log_context     IN VARCHAR2 DEFAULT NULL,
-        p_key_suffixes    IN VARCHAR2 DEFAULT NULL,
-        p_defer_base_proof IN BOOLEAN DEFAULT FALSE,
+    PROCEDURE STAGE_HDL_MESSAGES (
+        p_run_id         IN  NUMBER,
+        p_request_id     IN  VARCHAR2,
+        p_log_context    IN  VARCHAR2 DEFAULT NULL,
+        x_message_count  OUT NUMBER,
         p_cemli_code       IN VARCHAR2 DEFAULT NULL   -- the object's CEMLI: picks its central Fusion user (backlog #309); required
     );
+
+    -- --------------------------------------------------------
+    -- FORMAT_HDL_ERROR (backlog #288): name the record a Fusion HDL message is
+    -- about. Returns
+    --   [FUSION_ERROR] <SourceSystemId> (<file> line <n>): <message>
+    -- dropping ' line <n>' when there is no file line, the parenthesis when there
+    -- is no file, and the id when there is no SourceSystemId (file-level
+    -- messages read '<file> line <n>: <message>' or '<file>: <message>'). The
+    -- message text is Fusion's own, verbatim. NULL message -> NULL. Pure.
+    -- --------------------------------------------------------
+    FUNCTION FORMAT_HDL_ERROR (
+        p_source_system_id IN VARCHAR2,
+        p_dat_file_name    IN VARCHAR2,
+        p_file_line        IN NUMBER,
+        p_message_text     IN VARCHAR2
+    ) RETURN VARCHAR2 DETERMINISTIC;
+
+    -- --------------------------------------------------------
+    -- ROW_ERRORS (backlog #288): the staged, named error text of every message
+    -- whose SourceSystemId EQUALS p_source_system_id (or p_source_system_id_2,
+    -- for a TFM row that carries two HDL records, e.g. WorkTerms + Assignment),
+    -- joined with ' | ' in file-line order. NULL when there is none. Exact
+    -- equality only: never LIKE, never a prefix. Read-only on the session table.
+    -- --------------------------------------------------------
+    FUNCTION ROW_ERRORS (
+        p_request_id         IN VARCHAR2,
+        p_source_system_id   IN VARCHAR2,
+        p_source_system_id_2 IN VARCHAR2 DEFAULT NULL
+    ) RETURN VARCHAR2;
+
+    -- --------------------------------------------------------
+    -- FILE_LEVEL_ERRORS (backlog #288): the staged, named error text of every
+    -- message that names no record (no SourceSystemId) and is about the given
+    -- .dat file or about the whole data set (no file), joined with ' | '. These
+    -- are whole-file rejections (an invalid METADATA line, an unknown file name):
+    -- the results package applies them to the rows of that file still open after
+    -- the per-record messages and the base-table proof. NULL when there is none.
+    -- --------------------------------------------------------
+    FUNCTION FILE_LEVEL_ERRORS (
+        p_request_id    IN VARCHAR2,
+        p_dat_file_name IN VARCHAR2
+    ) RETURN VARCHAR2;
 
     -- --------------------------------------------------------
     -- BUILD_DAT_HEADER: build a METADATA| header line for a DAT file.
