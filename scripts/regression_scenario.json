@@ -285,6 +285,19 @@
           "RT-SAL-RT-WKR-G1": "LOADED",
           "RT-SAL-RT-WKR-BSAL": "FAILED"
         }
+      },
+      "Project Expenditures": {
+        "stg_table": "DMT_PJC_EXPENDITURES_STG_TBL",
+        "rows": {
+          "RT-EXP-PCS10080-2025-04-17": "LOADED",
+          "RT-EXP-PCS10080-2025-04-18": "LOADED",
+          "RT-EXP-BAD1": "FAILED",
+          "RT-EXP-E2DATE": "FAILED",
+          "RT-EXP-E3RATE": "FAILED",
+          "RT-EXP-E4DOC": "FAILED",
+          "RT-EXP-E5ORG": "FAILED",
+          "RT-EXP-E6AWARD": "FAILED"
+        }
       }
     },
     "RegressionTest2610071919": {
