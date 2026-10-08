@@ -8,6 +8,18 @@ AS
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_REST_LOOKUP_PKG';
 
+    -- Private: {"error": <message>} built with SQL JSON_OBJECT so any character in
+    -- the message (quotes, newlines, bytes of a compressed HTTP error body quoted by
+    -- HTTP_REQUEST) is escaped. A hand-concatenated string could be invalid JSON,
+    -- which callers read as "no error" (JSON_VALUE of invalid JSON is NULL).
+    FUNCTION error_json (p_message IN VARCHAR2) RETURN CLOB
+    IS
+        l_out CLOB;
+    BEGIN
+        SELECT JSON_OBJECT('error' VALUE p_message) INTO l_out FROM DUAL;
+        RETURN l_out;
+    END error_json;
+
 
     FUNCTION LOOKUP_RECORD (
         p_object_type  IN VARCHAR2,
@@ -19,6 +31,11 @@ AS
         l_cfg_fields       DMT_REST_LOOKUP_TBL.DISPLAY_FIELDS%TYPE;
         l_cfg_labels       DMT_REST_LOOKUP_TBL.DISPLAY_LABELS%TYPE;
         l_cfg_auth         DMT_REST_LOOKUP_TBL.AUTH_TYPE%TYPE;
+        l_cfg_fw_version   DMT_REST_LOOKUP_TBL.REST_FRAMEWORK_VERSION%TYPE;
+        l_cfg_absent_field DMT_REST_LOOKUP_TBL.ABSENT_FIELD%TYPE;
+        l_cfg_absent_value DMT_REST_LOOKUP_TBL.ABSENT_VALUE%TYPE;
+        l_cfg_na_reason    DMT_REST_LOOKUP_TBL.NOT_APPLICABLE_REASON%TYPE;
+        l_query_param      VARCHAR2(4000);
 
         l_base_url         VARCHAR2(500);
         l_username         VARCHAR2(200);
@@ -78,11 +95,23 @@ AS
                 END;
         END;
 
-        SELECT REST_ENDPOINT, QUERY_FILTER, DISPLAY_FIELDS, DISPLAY_LABELS, AUTH_TYPE
-        INTO   l_cfg_endpoint, l_cfg_filter, l_cfg_fields, l_cfg_labels, l_cfg_auth
+        SELECT REST_ENDPOINT, QUERY_FILTER, DISPLAY_FIELDS, DISPLAY_LABELS, AUTH_TYPE,
+               REST_FRAMEWORK_VERSION, ABSENT_FIELD, ABSENT_VALUE, NOT_APPLICABLE_REASON
+        INTO   l_cfg_endpoint, l_cfg_filter, l_cfg_fields, l_cfg_labels, l_cfg_auth,
+               l_cfg_fw_version, l_cfg_absent_field, l_cfg_absent_value, l_cfg_na_reason
         FROM   DMT_REST_LOOKUP_TBL
         WHERE  OBJECT_TYPE = l_resolved_type
         AND    ENABLED = 'Y';
+
+        -- Fusion exposes no REST read resource for this object (proven on the pod and
+        -- recorded on the registry row): answer NOT_APPLICABLE with the recorded reason
+        -- instead of calling a resource that does not exist. Reconciliation (BIP) is
+        -- the record-level proof for such objects.
+        IF l_cfg_na_reason IS NOT NULL THEN
+            SELECT JSON_OBJECT('not_applicable' VALUE l_cfg_na_reason)
+            INTO   l_result FROM DUAL;
+            RETURN l_result;
+        END IF;
 
         -- Get Fusion URL and credentials
         l_base_url := DMT_UTIL_PKG.GET_CONFIG('FUSION_URL');
@@ -136,9 +165,21 @@ AS
         l_full_url := RTRIM(l_base_url, '/') || l_cfg_endpoint ||
                       '?onlyData=true&limit=1';
 
-        l_full_url := l_full_url ||
-                      '&q=' || REPLACE(l_cfg_filter, '{KEY}',
-                                       UTL_URL.ESCAPE(p_key_value, TRUE, 'UTF-8'));
+        -- QUERY_FILTER is either a q expression ('Attr={KEY}', or with
+        -- REST_FRAMEWORK_VERSION 4 a child path such as 'Address.AddressId={KEY}')
+        -- or a finder ('finder=<Name>;<param>=<value>,...{KEY}...') for resources
+        -- that only answer through a finder (ledgerBalances). The key is substituted
+        -- first and the whole parameter value is URL-escaped once, so spaces, quotes
+        -- and the finder's ; , = separators travel encoded.
+        IF l_cfg_filter LIKE 'finder=%' THEN
+            l_query_param := '&finder=' || UTL_URL.ESCAPE(
+                REPLACE(SUBSTR(l_cfg_filter, LENGTH('finder=') + 1), '{KEY}', p_key_value),
+                TRUE, 'UTF-8');
+        ELSE
+            l_query_param := '&q=' || UTL_URL.ESCAPE(
+                REPLACE(l_cfg_filter, '{KEY}', p_key_value), TRUE, 'UTF-8');
+        END IF;
+        l_full_url := l_full_url || l_query_param;
 
         -- Call Fusion REST API
         BEGIN
@@ -148,12 +189,12 @@ AS
                 p_content_type => 'application/json',
                 p_auth_header  => l_auth_header,
                 x_response     => l_response,
-                x_status_code  => l_status
+                x_status_code  => l_status,
+                p_rest_framework_version => l_cfg_fw_version
             );
         EXCEPTION
             WHEN OTHERS THEN
-                RETURN '{"error":"REST call failed: ' ||
-                       REPLACE(REPLACE(SQLERRM, '"', '\"'), CHR(10), ' ') || '"}';
+                RETURN error_json('REST call failed: ' || SQLERRM);
         END;
 
         IF l_response IS NULL OR DBMS_LOB.GETLENGTH(l_response) = 0 THEN
@@ -197,6 +238,18 @@ AS
             WHEN OTHERS THEN
                 l_item0_obj := NULL;
         END;
+
+        -- No item, or the registry's "absent" marker on the one item a
+        -- fixed-shape resource always returns (ledgerBalances answers '#Missing'
+        -- for a balance that does not exist): the record is not in Fusion.
+        IF l_item0_obj IS NULL
+           OR (l_cfg_absent_field IS NOT NULL
+               AND l_item0_obj.has(l_cfg_absent_field)
+               AND l_item0_obj.get_String(l_cfg_absent_field) = l_cfg_absent_value) THEN
+            RETURN '{"error":"Record not found in Fusion for ' ||
+                   REPLACE(p_object_type, '"', '\"') || ' = ' ||
+                   REPLACE(p_key_value, '"', '\"') || '"}';
+        END IF;
 
         -- Build result JSON by extracting each configured field from items[0]
         DBMS_LOB.CREATETEMPORARY(l_result, TRUE);
@@ -279,7 +332,7 @@ AS
 
         -- Close JSON
         DECLARE
-            l_footer VARCHAR2(200);
+            l_footer VARCHAR2(4000);  -- holds the key, which can be a long finder parameter list
         BEGIN
             l_footer := '],"source":"Fusion REST API","object":"' ||
                         REPLACE(p_object_type, '"', '\"') ||
@@ -298,7 +351,7 @@ AS
                 p_sqlerrm => SQLERRM,
                 p_package => C_PKG,
                 p_procedure => 'LOOKUP_RECORD');
-            RETURN '{"error":"' || REPLACE(REPLACE(SQLERRM, '"', '\"'), CHR(10), ' ') || '"}';
+            RETURN error_json(SQLERRM);
     END LOOKUP_RECORD;
 
 END DMT_REST_LOOKUP_PKG;

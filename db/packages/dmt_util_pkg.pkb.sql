@@ -354,7 +354,8 @@
         p_accept         IN  VARCHAR2    DEFAULT 'application/json',
         p_send_auth      IN  BOOLEAN     DEFAULT TRUE,
         p_raise_on_error IN  BOOLEAN     DEFAULT TRUE,
-        p_auth_header    IN  VARCHAR2    DEFAULT NULL
+        p_auth_header    IN  VARCHAR2    DEFAULT NULL,
+        p_rest_framework_version IN VARCHAR2 DEFAULT NULL
     ) IS
         l_req       UTL_HTTP.REQ;
         l_resp      UTL_HTTP.RESP;
@@ -384,6 +385,11 @@
         UTL_HTTP.SET_HEADER(l_req, 'Accept',         p_accept);
         IF p_soap_action IS NOT NULL THEN
             UTL_HTTP.SET_HEADER(l_req, 'SOAPAction', p_soap_action);
+        END IF;
+        -- Fusion ADF REST framework version: '4' (and above) accepts child-attribute
+        -- filters such as q=Address.AddressId=<id>; NULL keeps the resource default.
+        IF p_rest_framework_version IS NOT NULL THEN
+            UTL_HTTP.SET_HEADER(l_req, 'REST-Framework-Version', p_rest_framework_version);
         END IF;
 
         -- Write request body in 8000-byte chunks
