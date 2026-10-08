@@ -20,8 +20,9 @@ Requires FA Additions approval **disabled** on the US CORP book (instance config
   PostMassAdditions posts only the good ones; reconcile marks each LOADED/FAILED individually.
 - Loader Type: SQLLOADER
 - Auth User: fin_impl
-- **Reconcile anchor: ASSET_NUMBER** — Fusion honors a supplied (prefixed) asset_number,
-  so it survives to `fa_additions_b` and the prefix-LIKE Tier-2 match works.
+- **Reconcile key: ASSET_NUMBER** — Fusion honors a supplied (prefixed) asset_number, so it
+  survives to `fa_additions_b`. It is used only to match a returned row to its TFM row; rows
+  are found by the load job id (see "Reconciliation by Fusion job id" below).
 
 ## Code References
 - STG Table DDL (Headers): `schema/tables/154_dmt_fa_asset_hdr_stg_tbl.sql`
@@ -96,10 +97,41 @@ is the **inbound DMT upload-template** filename, NOT the Fusion FBDI tab name --
 different concept (what a user uploads into STG, documented in that seed's header). It
 is correctly following its own convention and is out of scope for FBDI-tab alignment.
 
+## Reconciliation by Fusion job id, one call per work item (2026-10-07)
+
+Owner decision: the reconciliation report finds rows only by Fusion job ids, never by searching
+on the run prefix. The asset number is used only to match a row Fusion returned to its TFM row.
+
+- **Report V2** `DMT_FA_ASSET_RECON_V2_DM` / `_RPT` (deployed alongside V1, which is never
+  overwritten). `FA_ADDITIONS_B`, `FA_BOOKS` and `FA_DISTRIBUTION_HISTORY` have no request id,
+  but `FA_MASS_ADDITIONS` keeps each row after Post Mass Additions with the load job's
+  `LOAD_REQUEST_ID`, `POSTING_STATUS = 'POSTED'` and the created `ASSET_ID` (its `REQUEST_ID`
+  is the Post Mass Additions job). So base assets and their active distributions are found
+  through the POSTED mass additions of the load, and interface rejections by
+  `LOAD_REQUEST_ID`. No `LIKE` anywhere. Keyset ordering and comparison pinned to BINARY.
+  Registry (Assets plus the Assets.Book / Assets.Assignment auditor rows) repointed by the seed
+  and `db/migrations/2026-10-07_assets_recon_v2_registry.sql`. `query.sql` now mirrors V2.
+- **One call per work item.** One book = one load, so `RECONCILE_BATCH` passes the work item's
+  own load id (and import id, for symmetry) to `FETCH_ROWS`. Per-row accounting at the Post
+  step and the all-or-nothing SQL*Loader path (`ACCOUNT_ALL_OR_NOTHING`) are unchanged.
+- **Recorded ids checked.** The import id comes from the load's own PrepareMassAdditions
+  child, so it cannot be taken from another book's load.
+
+Proof run 259 (prefix 93315, scenario RegressionTest2610071920, STANDALONE:Assets): work item
+1619 (US CORP) recorded load 10075373, import 10075390 (PrepareMassAdditions, child of
+10075373) and post 10075433; Fusion stamped `LOAD_REQUEST_ID` 10075373 and `REQUEST_ID`
+10075433 on the three mass additions. Outcomes match run 238: G1 and G2 LOADED on header, book
+and assignment (asset ids 581152 / 581153, distributions 399477 / 399478), BAD1 FAILED with
+Fusion's "You must enter a valid expense account ID" and its book and assignment quoting it,
+0 UNACCOUNTED. Cost staged 156,000 = loaded 155,000 (FA_BOOKS cost 120,000 + 35,000) + failed
+1,000. A reconcile-only rerun of work item 1619 left all 9 TFM rows byte-identical.
+`dmt_regression_run.py` PASS (review items only: the pre-existing fixedAssets REST verify 404,
+also seen on run 238); Playwright click-through PASS.
+
 ## Known Issues
 - ~~**APPROVAL_TYPE_CODE missing from FBDI generator.**~~ **FIXED 2026-04-03.** APPROVAL_TYPE_CODE is a CTL expression column (`nvl2(:BATCH_NAME, 'ORA_FA_MASS', NULL)`) — it doesn't consume a CSV field. Fix: populate BATCH_NAME (CSV pos 419) with 'DMT' so the expression evaluates to 'ORA_FA_MASS'.
 - ~~**PRORATE_CONVENTION_CODE may be invalid.**~~ **FIXED 2026-04-03.** Valid value is `MID-MONTH` (hyphen), not `MID MONTH` (space). All test scripts updated. Valid values from FA_CONVENTION_TYPES: CAL MONTH, CAL DAILY, CAL NMB, FOL-MTH, HALF YEAR, MID-MONTH, plus others.
-- **PostMassAdditions purges FA_MASS_ADDITIONS after posting.** Both BIP tiers originally depended on the interface table. Tier 2 now uses prefix-based matching on FA_ADDITIONS_B (same as Projects fix).
+- ~~**PostMassAdditions purges FA_MASS_ADDITIONS after posting.**~~ **Disproven 2026-10-07:** posted rows stay in FA_MASS_ADDITIONS with LOAD_REQUEST_ID and ASSET_ID, so report V2 finds base assets through them by job id instead of by asset-number prefix.
 - ~~**Demo instance requires FA approval workflow.**~~ **RESOLVED 2026-06-30.** FA Additions
   approval on the US CORP book was intercepting PostMassAdditions ("submitted for approval…").
   User disabled Additions approval on the book → Post now posts directly to FA_ADDITIONS_B.

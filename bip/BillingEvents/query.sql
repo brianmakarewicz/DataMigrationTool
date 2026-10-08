@@ -1,55 +1,60 @@
 -- ============================================================
--- BillingEvents (project billing) BIP reconciliation query --
+-- BillingEvents (project billing) reconciliation data model V2 --
 -- BIP reconciliation report contract v1 (nine columns, keyset
--- pagination). Data source: ApplicationDB_FSCM. This mirrors the
--- SQL embedded in BILLING_EVENT_DM.xdm for review; the .xdm is
--- authoritative.
+-- pagination, the six standard parameters). V2 (2026-10-07) is
+-- deployed ALONGSIDE BILLING_EVENT_DM (V1); BIP objects are never
+-- overwritten.
 --
--- NINE columns, in contract order:
+-- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
 --   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
---   DMT_REFERENCE
+--   DMT_REFERENCE.
 --
--- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
---   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY. (P_BATCH_ID retired.)
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
 --   No P_OFFSET / P_LIMIT.
 --
--- Keyset: ORDER BY RECORD_KEY, only rows whose RECORD_KEY sorts
--- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
+-- OBJECT MODEL. BillingEvents is ONE object: one FBDI zip
+-- (PjbBillEventsInterface), one interface table
+-- (PJB_BILLING_EVENTS_INT), one base table (PJB_BILLING_EVENTS),
+-- loaded by the ImportBillingEventJob ESS job. OBJECT_TYPE is the
+-- constant 'BillingEvents'.
 --
--- ONE object, two tiers. BillingEvents is a single FBDI zip loaded by
--- ImportBillingEventJob: interface table PJB_BILLING_EVENTS_INT, base
--- table PJB_BILLING_EVENTS. OBJECT_TYPE = constant 'BillingEvents'.
---
--- RECON KEY = SOURCEREF (Slot A native reference). The transform stamps
--- the run prefix onto it and that prefixed value survives verbatim on
--- the base row, so it is both the read-back key and the run-scoped
--- selector (LIKE :P_PREFIX || '%'). REQUEST_ID is present on the base
--- row on this pod but the prefix is the durable selector; the base
--- REQUEST_ID is returned as LOAD_REQUEST_ID for audit.
+-- Row selection (owner decision 2026-10-07): rows are FOUND only by
+-- the Fusion job ids of ONE work item (one load = one Import Billing
+-- Events job). The reconciler calls this report once per work item
+-- with that item's own ids.
+--   BASE rows: PJB_BILLING_EVENTS.REQUEST_ID = :P_IMPORT_ESS_ID
+--     (Fusion stamps the ImportBillingEventJob id on every event it
+--     creates; verified live: run prefix 93294 events -> 10070690).
+--   INTERFACE rows: PJB_BILLING_EVENTS_INT.LOAD_REQUEST_ID =
+--     :P_LOAD_REQUEST_ID that did not process. This table is purged
+--     after import (MOS 2534525.1), so the tier normally returns zero
+--     rows; it is kept for a pre-purge reconciliation.
+-- The run prefix and run id are never used to select rows (no LIKE
+-- anywhere). P_RUN_ID and P_PREFIX are declared for contract symmetry
+-- only. SOURCEREF is used only as RECORD_KEY, to match a row Fusion
+-- returned back to its TFM row.
 --
 -- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
---   BASE (present in PJB_BILLING_EVENTS)                    => SUCCESS
+--   BASE (row present in PJB_BILLING_EVENTS)               => SUCCESS
 --   INTERFACE (unpurged, unprocessed row still in interface) => ERROR
--- FUSION_ID non-null on every BASE row (EVENT_ID).
---
--- SPECIAL / no-carrier case (verified live): PJB_BILLING_EVENTS_INT is
--- ALWAYS purged after import (MOS 2534525.1) and has no error-text
--- column, so the INTERFACE tier normally returns zero rows and cannot
--- carry a Fusion message. Per Contract v1 an INTERFACE/ERROR row
--- returns the literal marker #IMPORT_REPORT#, telling the reconciler to
--- harvest the real per-row message from the ImportBillingEventReportJob
--- output XML rather than fabricating one here.
--- DMT_REFERENCE = base-row ATTRIBUTE1 (DFF slot; NULL until the segment
--- is deployed -- verified NULL live, honest, not fabricated).
+-- FUSION_ID is non-null on every BASE row (EVENT_ID).
+-- ERROR_MESSAGE: PJB_BILLING_EVENTS_INT has no error-text column, so
+-- an INTERFACE/ERROR row returns the literal marker #IMPORT_REPORT#,
+-- telling the reconciler to take the real Fusion message from the
+-- ImportBillingEventReportJob output.
+-- Keyset: ORDER BY RECORD_KEY (pinned to BINARY so the ordering and
+-- the > comparison agree), only rows whose RECORD_KEY sorts after
+-- :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    -- BASE tier -- SUCCESS. RECORD_KEY / SOURCE_REF = prefixed SOURCEREF,
-    -- persisted verbatim on the base row. FUSION_ID = EVENT_ID.
-    -- DMT_REFERENCE = ATTRIBUTE1.
+    -- BASE tier: events the work item's Import Billing Events job
+    -- created, found by the job's REQUEST_ID. DMT_REFERENCE =
+    -- ATTRIBUTE1 (the DFF slot; NULL until the segment is deployed).
     SELECT
         'BillingEvents'                      AS object_type,
         be.sourceref                         AS record_key,
@@ -61,16 +66,13 @@ FROM (
         be.sourceref                         AS source_ref,
         be.attribute1                        AS dmt_reference
     FROM   pjb_billing_events be
-    WHERE  :P_PREFIX IS NOT NULL
-    AND    be.sourceref LIKE :P_PREFIX || '%'
+    WHERE  be.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
 
     UNION ALL
 
-    -- INTERFACE tier -- rejections only (IMPORT_STATUS not a success value).
-    -- Normally empty (interface purged after import). SUCCESS rows are
-    -- covered by the BASE tier, so nothing is counted twice.
-    -- ERROR_MESSAGE = #IMPORT_REPORT# marker; the real per-row Fusion text
-    -- is harvested by the reconciler from the import report XML.
+    -- INTERFACE tier: rejections of this load only (IMPORT_STATUS not
+    -- a success value). SUCCESS is proven by the BASE tier, so nothing
+    -- is counted twice.
     SELECT
         'BillingEvents'                      AS object_type,
         b.sourceref                          AS record_key,
@@ -88,7 +90,9 @@ FROM (
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
 -- BIP, so treat NULL as "from the start". On later pages it carries the
--- previous page's last RECORD_KEY; only greater keys are returned.
-WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
-ORDER BY record_key
+-- previous page's last RECORD_KEY; only greater keys are returned. The
+-- ordering and the comparison are both pinned to BINARY so they agree.
+WHERE  (:P_AFTER_KEY IS NULL
+        OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
+ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY

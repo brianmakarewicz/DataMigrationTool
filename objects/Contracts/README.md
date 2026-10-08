@@ -42,6 +42,24 @@ Confirmed from Fusion UI — Request 9419807 (2026-04-06, calvin.roth).
 ## Reference Files
 None in this folder.
 
+## Reconciliation by Fusion job id (recon V2, 2026-10-07, backlog #259)
+
+`bip/Contracts/DMT_CONTRACT_RECON_V2_DM.xdm` (deployed alongside V1, which is never
+overwritten) finds rows only by the work item's own Fusion job ids and the Contract style,
+because Contracts shares the PO interface and base tables with PurchaseOrders and BlanketPOs:
+base headers by `REQUEST_ID` = the import job (ImportCPAJob) and `TYPE_LOOKUP_CODE =
+'CONTRACT'`; interface headers by `LOAD_REQUEST_ID` = the load job AND `REQUEST_ID` = the
+import job AND `DOCUMENT_TYPE_CODE = 'CONTRACT'`; `PO_INTERFACE_ERRORS` by `REQUEST_ID` = the
+import job. V1's `LIKE :P_RUN_ID || '_HDR_%'` is gone; the document number is only the
+`RECORD_KEY`.
+
+Proof run 269 (prefix 93325, scenario RegressionTest2610071920, STANDALONE:Contracts): load
+10075565 and import 10075572 (ImportCPAJob) are the ids Fusion stamped on the interface and
+base rows. Same result as earlier runs: CPA-001 LOADED (`po_header_id` 687878), CPA-BAD1 FAILED
+on its own supplier error, 0 UNACCOUNTED (count tie-out 2 = 1 + 1; the Contract header carries
+no amount column). A reconcile-only rerun left the TFM rows byte-identical; regression harness
+PASS; Playwright click-through PASS.
+
 ## Known Issues
 - **Root cause found (2026-04-06):** ESS WAIT was caused by wrong ESS job (ImportSPOJob instead of ImportCPAJob) and wrong UCM account. Seed script already correct (row 22). Live ATP data may need UPDATE if deployed before seed was fixed.
 - ParameterList code in `dmt_loader_pkg.pkb` (Contracts block) builds 9-arg ImportSPOJob format — needs rewrite to 7-arg ImportCPAJob format.
