@@ -38,8 +38,10 @@ Usage:
   python scripts/dmt_regression_run.py --status-only 113        # evaluate an existing run
   python scripts/dmt_regression_run.py --json out.json          # machine-readable summary
 
-Exit codes: 0 = pass, 1 = hard failures, 2 = structurally passed but has
-review items (log errors / warnings needing triage).
+Exit codes: 0 = pass (verdict PASS, or 'PASS (known review items only)' when every
+review item is a known pre-existing one listed in scripts/regression_known_review.json),
+1 = hard failures, 2 = structurally passed but has NEW review items (log errors /
+warnings needing triage).
 
 SUBMIT_PIPELINE hang workaround: the package call is attempted first with a
 90s call timeout; on timeout the run+queue rows are created inline as one
@@ -829,6 +831,49 @@ def resolve_baseline(cur, run_id, baseline_arg, scenario, pipeline_codes):
 
 
 # ---------------------------------------------------------------------------
+# Known pre-existing review items (owner decision 2026-10-08: "if something never
+# passed before, I don't want to hold everything up"). scripts/regression_known_review.json
+# lists them by category + object (+ sub) only, never by volatile text (prefixes,
+# keys, HTTP details). A review item that cannot be keyed, or is not listed, is NEW.
+
+KNOWN_REVIEW_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 'regression_known_review.json')
+
+
+def review_key(item):
+    """(category, object, sub) for a review string, or None if it has no stable key."""
+    m = re.match(r'DONE with zero records: (\S+)', item)
+    if m:
+        return ('ZERO_RECORDS', m.group(1), None)
+    m = re.match(r'REST verify ([^/:]+)/(.+?): [A-Z_]+\b', item)
+    if m:
+        return ('REST_VERIFY', m.group(1), m.group(2))
+    return None
+
+
+def classify_review(review):
+    """Split review items into (known, new, cleared). cleared = listed known items
+    that did not appear in this run. An unreadable file makes every item NEW."""
+    try:
+        with open(KNOWN_REVIEW_FILE, encoding='utf-8') as f:
+            entries = json.load(f).get('known_review') or []
+    except (OSError, ValueError) as e:
+        print(f"WARNING: cannot read {KNOWN_REVIEW_FILE} ({e}); every review item counts as NEW")
+        entries = []
+
+    def matches(e, k):
+        return (k is not None and e.get('category') == k[0] and e.get('object') == k[1]
+                and (e.get('sub') is None or e.get('sub') == k[2]))
+
+    known, new, hit = [], [], set()
+    for r in review:
+        k = review_key(r)
+        idx = [i for i, e in enumerate(entries) if matches(e, k)]
+        (known if idx else new).append(r)
+        hit.update(idx)
+    cleared = [e for i, e in enumerate(entries) if i not in hit]
+    return known, new, cleared
+
 
 def main():
     ap = argparse.ArgumentParser(description='DMT full-regression runner')
@@ -872,22 +917,36 @@ def main():
 
     print(f"\n{'=' * 70}")
     n_fail, n_rev = len(result['failures']), len(result['review'])
-    verdict = 'PASS' if n_fail == 0 and n_rev == 0 else \
-              ('PASS (with review items)' if n_fail == 0 else 'FAIL')
-    print(f"VERDICT: {verdict} — RUN_ID={run_id}: {n_fail} failure(s), {n_rev} review item(s)")
+    known, new, cleared = classify_review(result['review'])
+    verdict = 'FAIL' if n_fail else ('PASS' if n_rev == 0 else
+              ('PASS (known review items only)' if not new else 'PASS (with review items)'))
+    print(f"VERDICT: {verdict} — RUN_ID={run_id}: {n_fail} failure(s), {n_rev} review item(s) "
+          f"({len(known)} known pre-existing, {len(new)} new)")
     print('=' * 70)
     for f in result['failures']:
         print(f"  FAIL    {f}")
-    for r in result['review']:
+    if new:
+        print(f"  NEW review items ({len(new)}) - these block promotion:")
+    for r in new:
         print(f"  REVIEW  {r}")
+    if known:
+        print(f"  KNOWN pre-existing review items ({len(known)}) - listed in "
+              f"scripts/regression_known_review.json, non-blocking:")
+    for r in known:
+        print(f"  KNOWN   {r}")
+    for e in cleared:
+        what = f"{e.get('category')} {e.get('object')}" + (f"/{e['sub']}" if e.get('sub') else '')
+        print(f"  KNOWN item cleared: {what} — remove it from regression_known_review.json")
     result['verdict'] = verdict
+    result['known_review'], result['new_review'] = known, new
+    result['known_review_cleared'] = cleared
 
     if args.json:
         with open(args.json, 'w', encoding='utf-8') as fh:
             json.dump(result, fh, indent=2, default=str)
         print(f"\nJSON summary written to {args.json}")
 
-    sys.exit(0 if n_fail == 0 and n_rev == 0 else (2 if n_fail == 0 else 1))
+    sys.exit(0 if n_fail == 0 and not new else (2 if n_fail == 0 else 1))
 
 
 if __name__ == '__main__':

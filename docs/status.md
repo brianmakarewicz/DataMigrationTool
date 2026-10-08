@@ -1,5 +1,7 @@
 # DMT2 -- Session Status Log
 
+- **2026-10-08 -- ATP gate: known never-passed review items no longer block.** Owner decision: "if something never passed before, I don't want to hold everything up." `scripts/regression_known_review.json` lists the 28 review items from full regression run 300 (9 HCM objects with zero records, 19 Verify-in-Fusion REST lookups). The harness now reports KNOWN vs NEW review items; zero failures plus only KNOWN items gives verdict `PASS (known review items only)`, exit 0, which the gate accepts. Any failure or NEW item still blocks; no bypass flag added; owner override unchanged. Re-evaluating run 300 on current main gives that verdict with 12 known / 0 new; the other 16 entries print "KNOWN item cleared" because the REST lookup fix already landed, and should be pruned.
+
 ## Session -- 2026-10-07 evening -- Cross-grain errors, job-id reconciliation, strict ATP gate, combined baseline (IN PROGRESS, nothing on ATP yet)
 
 **Bottom line.** Today the owner made a set of rules about how errors and reconciliation must work,

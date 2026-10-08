@@ -88,7 +88,14 @@ This prints exactly what the ATP deploy step will decide, one line per check, wi
 deploying anything. It needs all of these, for the current commit:
 
 - a clean local deploy of this code, made before the regression started;
-- a full local regression with verdict PASS, finished within the last 24 hours;
+- a full local regression with exit code 0, finished within the last 24 hours, whose
+  verdict is PASS or `PASS (known review items only)`. The second verdict means zero
+  failures and every review item is a never-passed item listed in
+  `scripts/regression_known_review.json` (owner decision 2026-10-08: "if something
+  never passed before, I don't want to hold everything up"). Any NEW review item or
+  any failure still blocks. Never add an item to that file to get past the gate; an
+  item belongs there only if it has never passed, and the owner decides. When the
+  harness prints "KNOWN item cleared", delete that entry;
 - a PASS click-through of the local console for that same run id, run after the
   regression finished.
 
@@ -110,7 +117,8 @@ If you are an agent and the gate refuses here, stop and report it to the owner.
 
 ### Owner override (the owner personally, never an agent or CI)
 
-The gate stays strict: it needs a clean regression PASS (exit 0) and a passing
+The gate stays strict: it needs a clean regression PASS or `PASS (known review
+items only)` (exit 0) and a passing
 click-through for the same run on the same code. The one exception is an explicit
 override by the owner:
 
