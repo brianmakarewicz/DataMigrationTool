@@ -10,9 +10,6 @@
 --   against EGP_SYSTEM_ITEMS_INTERFACE status, then updates
 --   TFM/STG rows to LOADED or FAILED.
 --
--- LOAD_AND_RECONCILE: standalone runner path (ESS-only, no BIP).
---   Retained for dev/test but not used by the production pipeline.
---
 -- BIP report path read from DMT_BIP_REPORT_TBL at runtime.
 -- CEMLI_CODE: 'Items'
 -- ============================================================
@@ -43,13 +40,6 @@
     PROCEDURE PARSE_AND_UPDATE (
         p_run_id IN NUMBER,
         p_xml            IN XMLTYPE
-    );
-
-    -- Standalone runner path (ESS-only, retained for dev/test).
-    PROCEDURE LOAD_AND_RECONCILE (
-        p_run_id IN NUMBER,
-        p_fbdi_zip       IN BLOB,
-        p_filename       IN VARCHAR2
     );
 
     -- RESET_UNACCOUNTED -- re-run-reconcile recovery (backlog #95). Static UPDATE

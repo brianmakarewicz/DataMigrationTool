@@ -283,6 +283,7 @@ prompt == Tables ==
 @@tables/dmt_gms_awd_references_tfm_tbl.sql
 @@tables/dmt_gms_awd_terms_stg_tbl.sql
 @@tables/dmt_gms_awd_terms_tfm_tbl.sql
+@@tables/dmt_hdl_message_gtt.sql
 @@tables/dmt_hz_accounts_stg_tbl.sql
 @@tables/dmt_hz_accounts_tfm_tbl.sql
 @@tables/dmt_hz_acct_sites_stg_tbl.sql
@@ -619,7 +620,6 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_billing_event_transform_pkg.pks.sql
 @@packages/dmt_billing_event_validator_pkg.pks.sql
 @@packages/dmt_bip_deploy_pkg.pks.sql
-@@packages/dmt_bip_setup_pkg.pks.sql
 @@packages/dmt_blanket_po_fbdi_gen_pkg.pks.sql
 @@packages/dmt_blanket_po_results_pkg.pks.sql
 @@packages/dmt_ce_bank_results_pkg.pks.sql
@@ -757,7 +757,6 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_req_results_pkg.pks.sql
 @@packages/dmt_req_transform_pkg.pks.sql
 @@packages/dmt_req_validator_pkg.pks.sql
-@@packages/dmt_rest_loader_pkg.pks.sql
 @@packages/dmt_rest_lookup_pkg.pks.sql
 @@packages/dmt_rest_query_pkg.pks.sql
 @@packages/dmt_salary_hdl_gen_pkg.pks.sql
@@ -852,7 +851,6 @@ prompt == Package bodies ==
 @@packages/dmt_billing_event_transform_pkg.pkb.sql
 @@packages/dmt_billing_event_validator_pkg.pkb.sql
 @@packages/dmt_bip_deploy_pkg.pkb.sql
-@@packages/dmt_bip_setup_pkg.pkb.sql
 @@packages/dmt_blanket_po_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_blanket_po_results_pkg.pkb.sql
 @@packages/dmt_ce_bank_results_pkg.pkb.sql
@@ -988,7 +986,6 @@ prompt == Package bodies ==
 @@packages/dmt_req_results_pkg.pkb.sql
 @@packages/dmt_req_transform_pkg.pkb.sql
 @@packages/dmt_req_validator_pkg.pkb.sql
-@@packages/dmt_rest_loader_pkg.pkb.sql
 @@packages/dmt_rest_lookup_pkg.pkb.sql
 @@packages/dmt_rest_query_pkg.pkb.sql
 @@packages/dmt_salary_hdl_gen_pkg.pkb.sql

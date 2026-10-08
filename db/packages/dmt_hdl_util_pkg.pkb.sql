@@ -375,383 +375,169 @@
     END POLL_HDL;
 
     -- --------------------------------------------------------
-    -- GET_HDL_ERRORS
-    -- Retrieves error messages from HCM Data Loader via REST.
-    -- Returns JSON CLOB of messages.
+    -- FORMAT_HDL_ERROR (backlog #288) -- see spec. Pure value converter.
     -- --------------------------------------------------------
-    FUNCTION GET_HDL_ERRORS (
-        p_run_id IN NUMBER,
-        p_request_id     IN VARCHAR2,
-        p_log_context    IN VARCHAR2 DEFAULT NULL
-    ) RETURN CLOB IS
-        l_url      VARCHAR2(500);
-        l_response CLOB;
-        l_proc     VARCHAR2(100) := NVL(p_log_context, '') || ' > GET_HDL_ERRORS';
+    FUNCTION FORMAT_HDL_ERROR (
+        p_source_system_id IN VARCHAR2,
+        p_dat_file_name    IN VARCHAR2,
+        p_file_line        IN NUMBER,
+        p_message_text     IN VARCHAR2
+    ) RETURN VARCHAR2 DETERMINISTIC IS
+        C_TAG CONSTANT VARCHAR2(20) := '[FUSION_ERROR] ';
+        l_where VARCHAR2(4000);
     BEGIN
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'GET_HDL_ERRORS start. RequestId: ' || p_request_id,
-            'INFO', C_PKG, l_proc);
-
-        l_url := get_url() || C_HCM_REST_PATH || '/' || p_request_id ||
-                 '/child/messages?onlyData=true&orderBy=DatFileName,FileLine&limit=500';
-
-        l_response := REST_HTTP(
-            p_url            => l_url,
-            p_method         => 'GET',
-            p_run_id => p_run_id);
-
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'GET_HDL_ERRORS complete. Response length: ' || DBMS_LOB.GETLENGTH(l_response),
-            'INFO', C_PKG, l_proc);
-
-        RETURN l_response;
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                'GET_HDL_ERRORS failed. RequestId: ' || p_request_id,
-                SQLERRM, C_PKG, l_proc);
-            RAISE;
-    END GET_HDL_ERRORS;
+        IF p_message_text IS NULL THEN
+            RETURN NULL;
+        END IF;
+        -- "<file> line <n>", "<file>", or nothing.
+        l_where := CASE
+                       WHEN p_dat_file_name IS NOT NULL AND p_file_line IS NOT NULL
+                           THEN p_dat_file_name || ' line ' || TO_CHAR(p_file_line)
+                       WHEN p_dat_file_name IS NOT NULL
+                           THEN p_dat_file_name
+                   END;
+        RETURN SUBSTR(
+            C_TAG ||
+            CASE
+                WHEN p_source_system_id IS NOT NULL AND l_where IS NOT NULL
+                    THEN p_source_system_id || ' (' || l_where || '): '
+                WHEN p_source_system_id IS NOT NULL
+                    THEN p_source_system_id || ': '
+                WHEN l_where IS NOT NULL
+                    THEN l_where || ': '
+            END ||
+            p_message_text, 1, 4000);
+    END FORMAT_HDL_ERROR;
 
     -- --------------------------------------------------------
-    -- RECONCILE_HDL
-    -- Parses HDL error messages (JSON) and updates TFM/STG tables.
-    -- Marks rows as LOADED (no errors) or FAILED (with error text).
+    -- STAGE_HDL_MESSAGES (backlog #288) -- see spec.
+    -- Replaces GET_HDL_ERRORS (one 500-message page, never followed hasMore) and
+    -- the dynamic-SQL RECONCILE_HDL. Every statement here is static.
     -- --------------------------------------------------------
-    PROCEDURE RECONCILE_HDL (
-        p_run_id  IN NUMBER,
-        p_request_id      IN VARCHAR2,
-        p_tfm_table       IN VARCHAR2,
-        p_stg_table       IN VARCHAR2,
-        p_key_column      IN VARCHAR2 DEFAULT 'SOURCE_REF',
-        p_dataset_status  IN VARCHAR2 DEFAULT NULL,
-        p_log_context     IN VARCHAR2 DEFAULT NULL,
-        p_key_suffixes    IN VARCHAR2 DEFAULT NULL,
-        p_defer_base_proof IN BOOLEAN DEFAULT FALSE
+    PROCEDURE STAGE_HDL_MESSAGES (
+        p_run_id         IN  NUMBER,
+        p_request_id     IN  VARCHAR2,
+        p_log_context    IN  VARCHAR2 DEFAULT NULL,
+        x_message_count  OUT NUMBER
     ) IS
-        l_json      CLOB;
-        l_proc      VARCHAR2(100) := NVL(p_log_context, '') || ' > RECONCILE_HDL';
-        l_err_count NUMBER := 0;
-        l_ok_count  NUMBER := 0;
-        l_gen_count NUMBER := 0;
-        l_file_count NUMBER := 0;    -- rows FAILED by a file/dataset-level (null-key) message
-        l_match     VARCHAR2(4000);
-        l_sfx       VARCHAR2(200);
-        l_rest      VARCHAR2(4000);
-        l_pos       PLS_INTEGER;
-        l_ds_resp   CLOB;
-        l_load_succ NUMBER;         -- data set ObjectSuccessCount; NULL if unreadable
-        l_zero_load BOOLEAN;        -- TRUE only when Fusion loaded ZERO objects
+        C_PAGE_SIZE CONSTANT PLS_INTEGER := 500;
+        -- A data set never has this many pages of messages; reaching it means the
+        -- paging is not advancing, so stop loudly rather than loop forever.
+        C_MAX_PAGES CONSTANT PLS_INTEGER := 2000;
+        l_proc      VARCHAR2(200) := NVL(p_log_context, '') || ' > STAGE_HDL_MESSAGES';
+        l_request   NUMBER := TO_NUMBER(p_request_id);
+        l_resp      CLOB;
+        l_offset    PLS_INTEGER := 0;
+        l_page      PLS_INTEGER := 0;
+        l_items     NUMBER;
+        l_has_more  VARCHAR2(10);
+        l_step      VARCHAR2(400);
     BEGIN
-        -- Build the row<->message match predicate against jt.src_ref (the HDL
-        -- SourceSystemId) and t.<p_key_column>.
-        --   * No suffixes (person-keyed loads): legacy prefix match. A worker's
-        --     name/position/etc. SourceSystemIds all begin with PERSON_NUMBER.
-        --   * With suffixes (e.g. '_TRM,_ASG'): EXACT equality against
-        --     p_key_column||<suffix>. This is what the Assignment generator emits
-        --     ('<ASSIGNMENT_NUMBER>_TRM' / '<ASSIGNMENT_NUMBER>_ASG'), so each
-        --     real error lands on its own row and 'G1' never absorbs 'G1B'.
-        IF p_key_suffixes IS NULL THEN
-            l_match := 'jt.src_ref LIKE t.' || p_key_column || ' || ''%''';
-        ELSE
-            l_match := '(';
-            l_rest  := p_key_suffixes;
-            l_pos   := 0;
-            LOOP
-                l_pos := INSTR(l_rest, ',');
-                IF l_pos > 0 THEN
-                    l_sfx  := TRIM(SUBSTR(l_rest, 1, l_pos - 1));
-                    l_rest := SUBSTR(l_rest, l_pos + 1);
-                ELSE
-                    l_sfx  := TRIM(l_rest);
-                    l_rest := NULL;
-                END IF;
-                l_match := l_match || 'jt.src_ref = t.' || p_key_column ||
-                           ' || ''' || l_sfx || '''';
-                EXIT WHEN l_rest IS NULL;
-                l_match := l_match || ' OR ';
-            END LOOP;
-            l_match := l_match || ')';
-        END IF;
+        x_message_count := 0;
 
-        DMT_UTIL_PKG.LOG(p_run_id,
-            'RECONCILE_HDL start. RequestId: ' || p_request_id ||
-            ' | TFM: ' || p_tfm_table || ' | Key: ' || p_key_column ||
-            CASE WHEN p_key_suffixes IS NULL THEN ''
-                 ELSE ' | Suffixes: ' || p_key_suffixes END ||
-            ' | DataSetStatus: ' || NVL(p_dataset_status, '(unknown)'),
-            'INFO', C_PKG, l_proc);
+        l_step := 'clearing the staged messages of request ' || p_request_id;
+        DELETE FROM DMT_HDL_MESSAGE_GTT WHERE REQUEST_ID = l_request;
 
-        -- Count GENERATED rows before reconciliation
-        EXECUTE IMMEDIATE
-            'SELECT COUNT(*) FROM ' || p_tfm_table ||
-            ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
-            INTO l_gen_count USING p_run_id;
-
-        IF l_gen_count = 0 THEN
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'No GENERATED rows to reconcile in ' || p_tfm_table,
-                'INFO', C_PKG, l_proc);
-            RETURN;
-        END IF;
-
-        -- Step 1: Get error messages and mark failed rows
-        l_json := GET_HDL_ERRORS(p_run_id, p_request_id, p_log_context);
-
-        BEGIN
-            EXECUTE IMMEDIATE
-                'UPDATE ' || p_tfm_table || ' t ' ||
-                'SET t.TFM_STATUS = ''FAILED'', ' ||
-                '    t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, ' ||
-                '        ''[FUSION_ERROR] '' || (' ||
-                '        SELECT LISTAGG(jt.msg, ''; '') WITHIN GROUP (ORDER BY jt.msg) ' ||
-                '        FROM JSON_TABLE(:json, ''$.items[*]'' ' ||
-                '            COLUMNS (src_ref VARCHAR2(200) PATH ''$.SourceSystemId'', ' ||
-                '                     msg VARCHAR2(4000) PATH ''$.MessageText'')) jt ' ||
-                '        WHERE ' || l_match || ')), ' ||
-                '    t.LAST_UPDATED_DATE = SYSDATE ' ||
-                'WHERE t.RUN_ID = :iid ' ||
-                'AND   t.TFM_STATUS = ''GENERATED'' ' ||
-                'AND   EXISTS ( ' ||
-                '    SELECT 1 FROM JSON_TABLE(:json2, ''$.items[*]'' ' ||
-                '        COLUMNS (src_ref VARCHAR2(200) PATH ''$.SourceSystemId'')) jt ' ||
-                '    WHERE ' || l_match || ')'
-                USING l_json, p_run_id, l_json;
-            l_err_count := SQL%ROWCOUNT;
-        EXCEPTION
-            WHEN OTHERS THEN
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'JSON_TABLE error parse failed: ' || SQLERRM,
-                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
-        END;
-
-        -- Step 1b: Broadcast FILE / DATASET-LEVEL errors to every still-GENERATED row.
-        -- Some HDL failures are reported at file or metadata scope, not against a single
-        -- record: the whole .dat is rejected before any row is read (bad file/object name,
-        -- an invalid METADATA line). Those messages carry SourceSystemId = null, so the
-        -- per-row match in Step 1 never touches a row and the rows would otherwise stay
-        -- GENERATED with empty ERROR_TEXT — a real Fusion failure left un-transcribed.
-        -- A whole-file rejection means every generated row of the object failed, so we
-        -- attribute the real null-keyed message(s) to each row that Step 1 did not already
-        -- fail. This is honest: the message text is Fusion's own, and the whole file
-        -- bounced. We only touch rows still GENERATED, so row-level matches from Step 1 are
-        -- preserved and never double-appended. (If a data set carries BOTH row-level and
-        -- file-level messages, the row-level ones already landed on their rows in Step 1;
-        -- the file-level ones fill in any row still without an error.)
-        -- Guarded by msg IS NOT NULL so we never stamp an empty [FUSION_ERROR].
-        BEGIN
-            EXECUTE IMMEDIATE
-                'UPDATE ' || p_tfm_table || ' t ' ||
-                'SET t.TFM_STATUS = ''FAILED'', ' ||
-                '    t.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, ' ||
-                '        ''[FUSION_ERROR] '' || (' ||
-                '        SELECT LISTAGG(jt.msg, ''; '') WITHIN GROUP (ORDER BY jt.msg) ' ||
-                '        FROM JSON_TABLE(:json, ''$.items[*]'' ' ||
-                '            COLUMNS (src_ref VARCHAR2(200) PATH ''$.SourceSystemId'', ' ||
-                '                     msg VARCHAR2(4000) PATH ''$.MessageText'')) jt ' ||
-                '        WHERE jt.src_ref IS NULL AND jt.msg IS NOT NULL)), ' ||
-                '    t.LAST_UPDATED_DATE = SYSDATE ' ||
-                'WHERE t.RUN_ID = :iid ' ||
-                'AND   t.TFM_STATUS = ''GENERATED'' ' ||
-                'AND   EXISTS ( ' ||
-                '    SELECT 1 FROM JSON_TABLE(:json2, ''$.items[*]'' ' ||
-                '        COLUMNS (src_ref VARCHAR2(200) PATH ''$.SourceSystemId'', ' ||
-                '                 msg VARCHAR2(4000) PATH ''$.MessageText'')) jt ' ||
-                '    WHERE jt.src_ref IS NULL AND jt.msg IS NOT NULL)'
-                USING l_json, p_run_id, l_json;
-            l_file_count := SQL%ROWCOUNT;
-        EXCEPTION
-            WHEN OTHERS THEN
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'File-level error broadcast failed: ' || SQLERRM,
-                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
-        END;
-
-        IF l_file_count > 0 THEN
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'Broadcast file/dataset-level HDL error(s) to ' || l_file_count ||
-                ' GENERATED row(s) in ' || p_tfm_table ||
-                ' (whole-file rejection, SourceSystemId=null messages).',
-                'INFO', C_PKG, l_proc);
-        END IF;
-
-        -- Read the data set's actual object-load success count. A remaining row may
-        -- be promoted to LOADED only when Fusion loaded at least one object. If the
-        -- data set loaded ZERO objects, nothing succeeded this run, so NO row may be
-        -- marked LOADED — even the un-errored remainder. (This is the fabrication that
-        -- stamped a Worker/Assignment LOADED when the whole file was rejected and only
-        -- some errors matched a row.) If the count can't be read, we leave it unknown
-        -- and preserve the status-based behaviour rather than mass-fail good loads.
-        BEGIN
-            l_ds_resp := REST_HTTP(
-                p_url    => get_url() || C_HCM_REST_PATH || '/' || p_request_id,
+        LOOP
+            l_page := l_page + 1;
+            l_step := 'reading HDL messages page ' || l_page || ' (offset ' || l_offset
+                      || ') of request ' || p_request_id;
+            l_resp := REST_HTTP(
+                p_url    => get_url() || C_HCM_REST_PATH || '/' || p_request_id ||
+                            '/child/messages?onlyData=true&orderBy=DatFileName,FileLine' ||
+                            '&limit=' || C_PAGE_SIZE || '&offset=' || l_offset,
                 p_method => 'GET',
                 p_run_id => p_run_id);
-            l_load_succ := TO_NUMBER(
-                REGEXP_SUBSTR(l_ds_resp, '"ObjectSuccessCount"\s*:\s*([0-9]+)', 1, 1, NULL, 1));
-        EXCEPTION
-            WHEN OTHERS THEN
-                l_load_succ := NULL;
-        END;
-        l_zero_load := (l_load_succ IS NOT NULL AND l_load_succ = 0);
 
-        -- Contract v1 base-table proof (design section 5). When the caller defers
-        -- base proof (p_defer_base_proof = TRUE, e.g. the Worker record), the
-        -- interface-only status guess below is SKIPPED entirely: no row is promoted
-        -- to LOADED and no data-set-level FAILED is broadcast from here. The
-        -- per-record HDL errors from Step 1/1b already landed on their rows; the
-        -- remaining GENERATED rows are settled by the object's Contract v1 reconciler
-        -- (which fetches the report via DMT_RECON_CONTRACT_PKG.FETCH_ROWS and applies
-        -- it statically), which marks a row LOADED only once the record is positively
-        -- confirmed in the Fusion base table (with its Fusion id), and leaves anything
-        -- it cannot confirm for the honest [UNACCOUNTED] sweep. This is the "positive
-        -- success + Fusion IDs" rule made structural.
-        IF p_defer_base_proof THEN
-            DMT_UTIL_PKG.LOG(p_run_id,
-                'RECONCILE_HDL: deferring LOADED promotion to Contract v1 base-table '
-                || 'proof for ' || p_tfm_table || ' (per-record HDL errors already '
-                || 'applied; base tier confirms LOADED + Fusion id).',
-                'INFO', C_PKG, l_proc);
-            NULL;  -- Step 2 promotion skipped; base parser owns LOADED for this table.
+            -- Error messages only: a WARNING does not reject the record.
+            l_step := 'staging HDL messages page ' || l_page || ' of request ' || p_request_id;
+            INSERT INTO DMT_HDL_MESSAGE_GTT (
+                REQUEST_ID, MESSAGE_LINE_ID, SOURCE_SYSTEM_ID, DAT_FILE_NAME,
+                FILE_LINE, BUSINESS_OBJECT, MESSAGE_TEXT, ERROR_TEXT)
+            SELECT l_request,
+                   jt.message_line_id,
+                   jt.source_system_id,
+                   jt.dat_file_name,
+                   jt.file_line,
+                   jt.business_object,
+                   jt.message_text,
+                   FORMAT_HDL_ERROR(jt.source_system_id, jt.dat_file_name,
+                                    jt.file_line, jt.message_text)
+            FROM   JSON_TABLE(l_resp, '$.items[*]'
+                       COLUMNS (
+                           message_line_id  NUMBER                  PATH '$.MessageLineId',
+                           source_system_id VARCHAR2(4000) TRUNCATE PATH '$.SourceSystemId',
+                           dat_file_name    VARCHAR2(240)  TRUNCATE PATH '$.DatFileName',
+                           file_line        NUMBER                  PATH '$.FileLine',
+                           business_object  VARCHAR2(240)  TRUNCATE PATH '$.BusinessObjectDiscriminator',
+                           message_type     VARCHAR2(30)   TRUNCATE PATH '$.MessageTypeCode',
+                           message_text     VARCHAR2(4000) TRUNCATE PATH '$.MessageText')) jt
+            WHERE  jt.message_text IS NOT NULL
+            AND    (jt.message_type IS NULL OR jt.message_type = 'ERROR');
+            x_message_count := x_message_count + SQL%ROWCOUNT;
 
-        -- Step 2: Handle remaining GENERATED rows based on data set status
-        -- Only mark LOADED if we have positive evidence of success.
-        -- If the data set loaded ZERO objects, mark nothing LOADED.
-        -- If data set was ORA_COMPLETED, remaining rows are successes.
-        -- If data set was ORA_IN_ERROR and we found specific error rows,
-        --   remaining rows MAY be successes (partial success) — mark LOADED.
-        -- If data set was ORA_IN_ERROR and we found NO error rows, we have no
-        --   per-record evidence either way — LEAVE the rows GENERATED (unaccounted).
-        --   We never fabricate a FAILED for an outcome we did not observe.
-        ELSIF l_zero_load THEN
-            -- Fusion loaded 0 objects: every remaining GENERATED row of this table
-            -- verifiably did NOT load. That is positive non-load evidence (from the
-            -- data set's own ObjectSuccessCount=0), not an unknown outcome. When the
-            -- data set also carries real Fusion error message(s), mark those rows
-            -- FAILED and attach the data set's OWN messages as the reason. This is
-            -- honest: the non-load is verified and the message text is Fusion's own
-            -- (framed as the data set's message, so no specific per-row error is
-            -- invented). If the data set reported NO message at all, we have no error
-            -- string to cite, so those rows are left GENERATED for the honest sweep.
-            DECLARE
-                l_ds_msgs  VARCHAR2(3000);
-                l_fail_msg VARCHAR2(4000);
-                l_n        NUMBER := 0;
-            BEGIN
-                BEGIN
-                    SELECT SUBSTR(LISTAGG(msg, ' | ') WITHIN GROUP (ORDER BY msg), 1, 1800)
-                    INTO   l_ds_msgs
-                    FROM  (SELECT DISTINCT jt.msg
-                           FROM JSON_TABLE(l_json, '$.items[*]'
-                                COLUMNS (msg VARCHAR2(4000) PATH '$.MessageText')) jt
-                           WHERE jt.msg IS NOT NULL);
-                EXCEPTION WHEN OTHERS THEN l_ds_msgs := NULL;
-                END;
+            l_items    := JSON_VALUE(l_resp, '$.count' RETURNING NUMBER);
+            l_has_more := JSON_VALUE(l_resp, '$.hasMore');
+            EXIT WHEN NVL(l_has_more, 'false') <> 'true' OR NVL(l_items, 0) = 0;
 
-                IF l_ds_msgs IS NOT NULL THEN
-                    -- Attach ONLY the data set's own real Fusion message(s). The
-                    -- non-load is verified (ObjectSuccessCount=0), so FAILED is honest,
-                    -- but the ERROR_TEXT carries no composed per-record verdict -- just
-                    -- the [FUSION_ERROR] tag and Fusion's own message text. (Previously
-                    -- this wrapped the real message in an invented "... loaded 0 objects;
-                    -- this record was not loaded." sentence -- a fabricated per-record
-                    -- assertion the honest-accounting rule bans.)
-                    l_fail_msg := '[FUSION_ERROR] ' || l_ds_msgs;
-                    EXECUTE IMMEDIATE
-                        'UPDATE ' || p_tfm_table ||
-                        ' SET TFM_STATUS = ''FAILED'','
-                        || ' ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, :m),'
-                        || ' LAST_UPDATED_DATE = SYSDATE'
-                        || ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
-                        USING l_fail_msg, p_run_id;
-                    l_n := SQL%ROWCOUNT;
-                    l_file_count := l_file_count + l_n;
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Data set ' || p_request_id || ' ObjectSuccessCount=0; marked '
-                        || l_n || ' remaining GENERATED row(s) FAILED with the data '
-                        || 'set''s real Fusion message(s) (verified not loaded).',
-                        'INFO', C_PKG, l_proc);
-                ELSE
-                    DMT_UTIL_PKG.LOG(p_run_id,
-                        'Data set ' || p_request_id || ' reports ObjectSuccessCount=0 '
-                        || 'with no message text; leaving remaining GENERATED rows for '
-                        || 'the honest UNACCOUNTED sweep.', 'INFO', C_PKG, l_proc);
-                END IF;
-            END;
-        ELSIF p_dataset_status IN ('ORA_COMPLETED', 'ORA_SUCCESS', 'SUCCESS') THEN
-            -- All remaining are confirmed successes
-            EXECUTE IMMEDIATE
-                'UPDATE ' || p_tfm_table ||
-                ' SET TFM_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
-                USING p_run_id;
-            l_ok_count := SQL%ROWCOUNT;
-        ELSIF p_dataset_status IN ('ORA_IN_ERROR', 'ERROR', 'WARNING') AND l_err_count > 0 THEN
-            -- Partial success: specific rows failed, rest are OK (and the data set
-            -- reported at least one successful object load, so l_zero_load is FALSE)
-            EXECUTE IMMEDIATE
-                'UPDATE ' || p_tfm_table ||
-                ' SET TFM_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''GENERATED'''
-                USING p_run_id;
-            l_ok_count := SQL%ROWCOUNT;
-        ELSIF p_dataset_status IN ('ORA_IN_ERROR', 'ERROR') AND l_err_count = 0 THEN
-            -- Error status but NO row-level error matched this run's rows. We have
-            -- no per-record evidence either way, so we must NOT fabricate a FAILED:
-            -- the remaining GENERATED rows are LEFT GENERATED (unaccounted). The
-            -- accounting gate then reports the object not-DONE and the funnel
-            -- surfaces these as UNRECONCILED. (Previously these were stamped
-            -- '[FUSION_ERROR] ... no row-level error matched' — a fabricated
-            -- fallback that asserted a failure we never observed.)
-            NULL;
-        ELSE
-            -- Unknown / non-terminal status (EXPIRED, etc.). No positive success
-            -- and no per-record error observed — LEAVE remaining GENERATED rows
-            -- GENERATED (unaccounted) rather than fabricate a FAILED from a bare
-            -- status code. The accounting gate + funnel surface them honestly.
-            NULL;
-        END IF;
-
-        -- Step 3: Echo to STG tables
-        BEGIN
-            EXECUTE IMMEDIATE
-                'UPDATE ' || p_stg_table ||
-                ' SET STG_STATUS = ''LOADED'', LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE STG_STATUS = ''TRANSFORMED'' AND STG_SEQUENCE_ID IN ' ||
-                '(SELECT STG_SEQUENCE_ID FROM ' || p_tfm_table ||
-                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''LOADED'')'
-                USING p_run_id;
-
-            EXECUTE IMMEDIATE
-                'UPDATE ' || p_stg_table ||
-                ' SET STG_STATUS = ''FAILED'', LAST_UPDATED_DATE = SYSDATE ' ||
-                ' WHERE STG_STATUS = ''TRANSFORMED'' AND STG_SEQUENCE_ID IN ' ||
-                '(SELECT STG_SEQUENCE_ID FROM ' || p_tfm_table ||
-                ' WHERE RUN_ID = :iid AND TFM_STATUS = ''FAILED'')'
-                USING p_run_id;
-        EXCEPTION
-            WHEN OTHERS THEN
-                DMT_UTIL_PKG.LOG(p_run_id,
-                    'STG echo failed: ' || SQLERRM,
-                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_proc);
-        END;
-
-        COMMIT;
+            IF l_page >= C_MAX_PAGES THEN
+                RAISE_APPLICATION_ERROR(-20131,
+                    'STAGE_HDL_MESSAGES: request ' || p_request_id || ' still reports more '
+                    || 'messages after ' || C_MAX_PAGES || ' pages; stopping.');
+            END IF;
+            l_offset := l_offset + l_items;
+        END LOOP;
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            'RECONCILE_HDL complete. LOADED: ' || l_ok_count ||
-            ' | FAILED (row-level): ' || l_err_count ||
-            ' | FAILED (file-level): ' || l_file_count,
+            'STAGE_HDL_MESSAGES complete. RequestId: ' || p_request_id ||
+            ' | pages read: ' || l_page || ' | error messages staged: ' || x_message_count,
             'INFO', C_PKG, l_proc);
 
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                'RECONCILE_HDL failed.',
+                'STAGE_HDL_MESSAGES failed while ' || l_step || '.',
                 SQLERRM, C_PKG, l_proc);
             RAISE;
-    END RECONCILE_HDL;
+    END STAGE_HDL_MESSAGES;
+
+    -- --------------------------------------------------------
+    -- ROW_ERRORS (backlog #288) -- see spec. Exact SourceSystemId equality.
+    -- --------------------------------------------------------
+    FUNCTION ROW_ERRORS (
+        p_request_id         IN VARCHAR2,
+        p_source_system_id   IN VARCHAR2,
+        p_source_system_id_2 IN VARCHAR2 DEFAULT NULL
+    ) RETURN VARCHAR2 IS
+        l_text VARCHAR2(4000);
+    BEGIN
+        SELECT LISTAGG(m.ERROR_TEXT, ' | ' ON OVERFLOW TRUNCATE)
+                   WITHIN GROUP (ORDER BY m.DAT_FILE_NAME, m.FILE_LINE, m.MESSAGE_LINE_ID)
+        INTO   l_text
+        FROM   DMT_HDL_MESSAGE_GTT m
+        WHERE  m.REQUEST_ID = TO_NUMBER(p_request_id)
+        AND    m.SOURCE_SYSTEM_ID IN (p_source_system_id, p_source_system_id_2);
+        RETURN l_text;
+    END ROW_ERRORS;
+
+    -- --------------------------------------------------------
+    -- FILE_LEVEL_ERRORS (backlog #288) -- see spec.
+    -- --------------------------------------------------------
+    FUNCTION FILE_LEVEL_ERRORS (
+        p_request_id    IN VARCHAR2,
+        p_dat_file_name IN VARCHAR2
+    ) RETURN VARCHAR2 IS
+        l_text VARCHAR2(4000);
+    BEGIN
+        SELECT LISTAGG(m.ERROR_TEXT, ' | ' ON OVERFLOW TRUNCATE)
+                   WITHIN GROUP (ORDER BY m.DAT_FILE_NAME, m.FILE_LINE, m.MESSAGE_LINE_ID)
+        INTO   l_text
+        FROM   DMT_HDL_MESSAGE_GTT m
+        WHERE  m.REQUEST_ID = TO_NUMBER(p_request_id)
+        AND    m.SOURCE_SYSTEM_ID IS NULL
+        AND    (m.DAT_FILE_NAME = p_dat_file_name OR m.DAT_FILE_NAME IS NULL);
+        RETURN l_text;
+    END FILE_LEVEL_ERRORS;
 
     -- --------------------------------------------------------
     -- BUILD_DAT_HEADER

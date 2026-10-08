@@ -548,7 +548,7 @@
                 ORDER BY REQUEST_ID
             ) LOOP
                 BEGIN
-                    l_one := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_TEXT(c.REQUEST_ID);
+                    l_one := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_TEXT(p_request_id => c.REQUEST_ID, p_cemli_code => C_CEMLI);
                 EXCEPTION WHEN OTHERS THEN l_one := NULL;  -- a missing child log is not fatal
                 END;
                 -- Skip children that did not load FA_MASS_ADDITIONS: their record

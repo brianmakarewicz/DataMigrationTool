@@ -196,7 +196,10 @@ AS
                 l_prev_person := r.PERSON_NUMBER;
 
                 l_vals := l_sso                                                 || '|' ||  -- SourceSystemOwner
-                          pv(r.PERSON_NUMBER) || C_DSGN_SUFFIX || TO_CHAR(l_line_no) || '|' ||  -- SourceSystemId
+                          -- SourceSystemId carries the row's own TFM id (not the
+                          -- generated line number) so reconciliation can match a
+                          -- message to this exact TFM row (backlog #288).
+                          pv(r.PERSON_NUMBER) || C_DSGN_SUFFIX || TO_CHAR(r.TFM_SEQUENCE_ID) || '|' ||  -- SourceSystemId
                           pv(r.PLAN_NAME)                    || '|' ||  -- Plan
                           pv(r.PROGRAM_NAME)                 || '|' ||  -- Program
                           ''                                 || '|' ||  -- Option (optional)
