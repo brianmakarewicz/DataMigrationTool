@@ -1,10 +1,10 @@
--- DMT_BENDEPENDENT_RECON_DM query (Contract v1, nine-column, design section 5).
--- Mirror of the CDATA SQL in DMT_BENDEPENDENT_RECON_DM.xdm, kept here for review and for
+-- DMT_BENDEPENDENT_RECON_V2_DM query (Contract v1, nine-column, design section 5).
+-- Mirror of the CDATA SQL in DMT_BENDEPENDENT_RECON_V2_DM.xdm, kept here for review and for
 -- running the query standalone against live Fusion (bind the six parameters).
 --
 -- RE-POINTED 2026-09-22 to the CORRECT Fusion object. BenDependent loads through the HCM
 -- Data Loader as the DependentEnrollment business object with its child component
--- DesignateDependent (DependentEnrollment.dat -- see
+-- DesignateDependent (DependentEnrollment.dat; see
 -- db/packages/dmt_ben_depend_hdl_gen_pkg.pkb.sql). The prior model loaded/reconciled as
 -- PersonBenefitBalance against BEN_PER_BNFTS_BAL_F (benefit BALANCES, not dependent
 -- designations) and collided on the file name PersonBenefitBalance.dat with the

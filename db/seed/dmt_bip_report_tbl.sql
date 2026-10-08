@@ -775,10 +775,12 @@ using (
     select 100000038                                                        bip_report_id,
            'BenParticipant'                                                 cemli_code,
            'Participant Enrollment'                                         object_type,
-           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_V2_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_V2_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                                      interface_table,
-           'BenParticipant HDL base-table reconciliation (Contract v1)'     notes,
+           'BenParticipant HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #214): '
+             || 'V1 header comment held an illegal double hyphen (runReport HTTP 500); SQL unchanged. '
+             || 'Deployed alongside V1, never overwriting it.' notes,
            1                                                                contract_version,
            'DMT_BEN_PARTIC_TFM_TBL'                                         tfm_table,
            'FUSION_PARTICIPANT_ID'                                          fusion_id_column,
@@ -833,10 +835,12 @@ using (
     select 100000039                                                       bip_report_id,
            'BenDependent'                                                  cemli_code,
            'Dependent Enrollment'                                          object_type,
-           '/Custom/DMT2/BenDependent/DMT_BENDEPENDENT_RECON_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/BenDependent/DMT_BENDEPENDENT_RECON_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/BenDependent/DMT_BENDEPENDENT_RECON_V2_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/BenDependent/DMT_BENDEPENDENT_RECON_V2_RPT.xdo'   report_catalog_path,
            'N/A (HDL)'                                                     interface_table,
-           'BenDependent HDL base-table reconciliation (Contract v1)'      notes,
+           'BenDependent HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #214): '
+             || 'V1 header comment held an illegal double hyphen (runReport HTTP 500); SQL unchanged. '
+             || 'Deployed alongside V1, never overwriting it.' notes,
            1                                                               contract_version,
            'DMT_BEN_DEPEND_TFM_TBL'                                        tfm_table,
            'FUSION_DEPENDENT_ID'                                           fusion_id_column,
