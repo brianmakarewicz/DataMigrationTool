@@ -7,8 +7,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
     -- Money = ENTERED_DR (headline) with ENTERED_CR tracked alongside per
     -- discovery; ACCOUNTED amounts are NULL on the DMT side for this run
     -- (single-currency test data) so they are never used here.
-    -- Key = STAMPED_REF: GL_JE_BATCHES.GROUP_ID carries the GLBalances work
-    -- queue id (stamped at generation, backlog #173) and survives Journal
+    -- Key = STAMPED_REF: GL_JE_BATCHES.GROUP_ID carries prefix || the GLBalances
+    -- work queue id (stamped at generation, backlog #173) and survives Journal
     -- Import -- the live Fusion query filters on jb.group_id = that id
     -- (passed as :P_BATCH_ID), never a prefix and never a timestamp window.
     -- A Fusion "success" is a journal LINE whose HEADER balances
@@ -50,7 +50,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
          WHERE RUN_ID = p_run_id
            AND TFM_STATUS = 'FAILED';
 
-        -- (c) batch = the run's GL work queue id, stamped into GROUP_ID
+        -- (c) batch = the run's GL group (prefix || work queue id), stamped into GROUP_ID
         --     at generation. Only meaningful once this run actually
         --     staged GL rows; otherwise there is nothing to key Fusion on.
         IF l_stg_cnt = 0 AND l_err_cnt = 0 THEN
@@ -59,7 +59,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
                 'No GL interface rows staged for this run yet (in flight)', NULL, NULL, NULL);
         END IF;
-        -- GROUP_ID is the GLBalances work queue id (backlog #173), stamped on
+        -- GROUP_ID is prefix || the GLBalances work queue id (backlog #173), stamped on
         -- every line at generation; the run's GL batches carry that group.
         SELECT TO_CHAR(MAX(GROUP_ID)) INTO l_batch
           FROM DMT_GL_INTERFACE_TFM_TBL
