@@ -1,50 +1,63 @@
--- DMT_SALARYBASES_RECON_DM query (Contract v1, design section 5; nine-column response).
--- Mirror of the CDATA SQL in DMT_SALARYBASES_RECON_DM.xdm, kept here for review and for
--- running the query standalone against live Fusion (bind the six parameters).
+-- DMT_SALARYBASES_RECON_V2_DM query (Contract v1, design section 5).
+-- Mirror of the CDATA SQL in DMT_SALARYBASES_RECON_V2_DM.xdm (the registered
+-- version), kept here for review and for running the query standalone against
+-- live Fusion (bind the six parameters). The original data model
+-- (DMT_SALARYBASES_RECON_DM.xdm in the repo) stays deployed; BIP objects are
+-- never overwritten. Backlog #292.
 --
--- BASE-TIER-ONLY HDL recipe (mirrors Salaries/Assignments/BenParticipant): driven off
--- the HDL integration key map HRC_INTEGRATION_KEY_MAP, scoped to OUR loader by
--- SOURCE_SYSTEM_OWNER='HRC_SQLLOADER', to this object by OBJECT_NAME='SalaryBasis', and
--- to this run by SOURCE_SYSTEM_ID LIKE :P_PREFIX||'%'. The owner scope is essential:
--- OBJECT_NAME='SalaryBasis' has 155 rows on the pod but only 8 are ours (owner
--- HRC_SQLLOADER); the other 147 are FUSION-seeded and their numeric SOURCE_SYSTEM_ID
--- (e.g. 300000047957113) could otherwise match a numeric run prefix and be misreported
--- as a fabricated BASE/SUCCESS row. OBJECT_TYPE is the literal
--- DMT object code 'SalaryBases' (the CEMLI_CODE, per the Contract v1 rule that
--- single-record-type objects return the object-code constant); SURROGATE_ID is the
--- real Fusion base-table PK. HDL per-record failures
--- are captured separately (RECONCILE_HDL tags [FUSION_ERROR] before this report runs),
--- so this report returns BASE/SUCCESS rows only; the shared parser marks a SalaryBases
--- row LOADED only from a BASE / SUCCESS / FUSION_ID-not-null row.
+-- SalaryBases HDL load. Rows are selected by the HDL request id
+-- (P_LOAD_REQUEST_ID = the data set RequestId), never by the run prefix:
+-- HRC_DL_DATA_SET_BUS_OBJS -> HRC_DL_FILE_LINES -> HRC_DL_FILE_ROWS gives each
+-- SourceSystemOwner + SourceSystemId this load sent; each is joined to
+-- HRC_INTEGRATION_KEY_MAP on its own owner and id (key-map object SalaryBasis)
+-- and returned only when this load's physical line finished LOADED_SUCCESS and
+-- the surrogate exists in CMP_SALARY_BASES.
 --
--- RECORD_KEY = SOURCE_SYSTEM_ID = the prefixed SalaryBasisName = the SourceSystemId
--- written into SalaryBasis.dat = the SalaryBases TFM row's RECON_KEY. SOURCE_REF echoes
--- the same SOURCE_SYSTEM_ID; DMT_REFERENCE is NULL (no DFF reference carried for HDL).
--- Verified live 2026-09-20:
---   HRC_INTEGRATION_KEY_MAP.OBJECT_NAME       = 'SalaryBasis'
---   HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID == the prefixed SalaryBasisName we wrote
---   HRC_INTEGRATION_KEY_MAP.SURROGATE_ID     == CMP_SALARY_BASES.SALARY_BASIS_ID
---                                               (round-tripped for all 8 loaded keys)
--- Base-tier matching is by run prefix (P_PREFIX); keyset pagination by RECORD_KEY.
+-- RECORD_KEY = the SourceSystemId the generator wrote = the SalaryBases TFM
+-- row's TFM_SEQUENCE_ID (backlog #292; the SalaryBasisName stays the business
+-- key). FUSION_ID = CMP_SALARY_BASES.SALARY_BASIS_ID.
+--
+-- Proven read-only on 2026-10-08 against request 10080103 (run 309, prefix
+-- 93363): returns 100000099 (SALARY_BASIS_ID 300000334948432) and 100000100
+-- (300000334948430), owner DMT_LOCAL; the rejected line 100000101 (element does
+-- not exist) is not returned.
 
-SELECT object_type, record_key, source_type, fusion_status,
-       fusion_id, error_message, load_request_id, source_ref, dmt_reference
+SELECT object_type,
+       record_key,
+       source_type,
+       fusion_status,
+       fusion_id,
+       error_message,
+       load_request_id,
+       source_ref,
+       dmt_reference
 FROM (
-    SELECT 'SalaryBases'                   AS object_type,
-           m.source_system_id              AS record_key,
-           'BASE'                          AS source_type,
-           'SUCCESS'                       AS fusion_status,
-           MAX(m.surrogate_id)             AS fusion_id,
-           CAST(NULL AS VARCHAR2(4000))    AS error_message,
-           :P_LOAD_REQUEST_ID              AS load_request_id,
-           m.source_system_id              AS source_ref,
-           CAST(NULL AS VARCHAR2(4000))    AS dmt_reference
-    FROM   hrc_integration_key_map m
-    WHERE  m.object_name = 'SalaryBasis'
-    AND    m.source_system_owner = 'HRC_SQLLOADER'
-    AND    m.source_system_id LIKE :P_PREFIX || '%'
-    AND    (:P_AFTER_KEY IS NULL OR m.source_system_id > :P_AFTER_KEY)
-    GROUP BY m.source_system_id
-    ORDER BY m.source_system_id
+    SELECT 'SalaryBases'                     AS object_type,
+           r.key_source_id                   AS record_key,
+           'BASE'                            AS source_type,
+           'SUCCESS'                         AS fusion_status,
+           MAX(m.surrogate_id)               AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))      AS error_message,
+           :P_LOAD_REQUEST_ID                AS load_request_id,
+           r.key_source_id                   AS source_ref,
+           CAST(NULL AS VARCHAR2(240))       AS dmt_reference
+    FROM   hrc_dl_data_set_bus_objs b
+    JOIN   hrc_dl_file_lines        l ON l.data_set_bus_obj_id = b.data_set_bus_obj_id
+    JOIN   hrc_dl_file_rows         r ON r.line_id = l.line_id
+    JOIN   hrc_integration_key_map  m ON m.source_system_owner = r.key_source_owner
+                                     AND m.source_system_id    = r.key_source_id
+    WHERE  b.request_id = :P_LOAD_REQUEST_ID
+    AND    m.object_name = 'SalaryBasis'
+    AND    EXISTS (SELECT 1
+                   FROM   hrc_dl_physical_lines p
+                   WHERE  p.row_id = r.row_id
+                   AND    p.validated_loaded_status = 'LOADED_SUCCESS')
+    AND    EXISTS (SELECT 1
+                   FROM   cmp_salary_bases s
+                   WHERE  s.salary_basis_id = m.surrogate_id)
+    GROUP BY r.key_source_id
 )
-WHERE ROWNUM <= :P_CHUNK_SIZE;
+WHERE  (:P_AFTER_KEY IS NULL
+        OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
+ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
