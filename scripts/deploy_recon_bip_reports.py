@@ -51,6 +51,10 @@ REPORTS = [
     # ARInvoices V3 (2026-10-07): alongside V1/V2; line RECORD_KEY attr1/attr2
     # (unique per line) so keyset paging never drops a row.
     ("ARInvoices",              "DMT_AR_RECON_V3_DM", "DMT_AR_RECON_V3_RPT"),
+    # ARInvoices V4 (2026-10-07, owner decision): alongside V1-V3; rows found
+    # only by the load's Fusion job ids (base lines by the AutoInvoice import
+    # REQUEST_ID, interface rows by LOAD_REQUEST_ID), never by the run prefix.
+    ("ARInvoices",              "DMT_AR_RECON_V4_DM", "DMT_AR_RECON_V4_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
     # Items V2 (2026-10-06): deployed alongside the original DMT_ITEM_RECON_DM
