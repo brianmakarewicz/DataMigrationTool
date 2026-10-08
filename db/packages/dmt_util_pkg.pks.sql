@@ -175,6 +175,49 @@ AS
     ) RETURN VARCHAR2 DETERMINISTIC;
 
     -- --------------------------------------------------------
+    -- STG_ROW_SELECTED  (row-identity form, backlog #310)
+    -- The run-mode predicate every validator/transformer selection uses.
+    -- NEW and ALL behave exactly as the two-argument form (NEW = STG_STATUS
+    -- 'NEW', ALL = the whole scenario). FAILED never reads STG_STATUS: it asks
+    -- FAILED_RETRY_SELECTED, which reads the run-stamped attempt record (TFM
+    -- rows + DMT_STG_TFM_ERROR_TBL), because a reconcile outcome is never
+    -- written back to STG (DMT_DESIGN.html sections 2 and 5).
+    -- p_stg_table is the STG table the row lives in (STG_SEQUENCE_ID is an
+    -- identity per table, so the table name is part of the row's key).
+    -- Usage:
+    --   WHERE DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id,
+    --             'DMT_POR_REQ_HEADERS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+    -- --------------------------------------------------------
+    FUNCTION STG_ROW_SELECTED (
+        p_run_mode        IN VARCHAR2,
+        p_stg_status      IN VARCHAR2,
+        p_run_id          IN NUMBER,
+        p_stg_table       IN VARCHAR2,
+        p_stg_sequence_id IN NUMBER
+    ) RETURN VARCHAR2;
+
+    -- --------------------------------------------------------
+    -- FAILED_RETRY_SELECTED  (backlog #310) -- THE answer to "which STG rows
+    -- does FAILED mode retry". Returns 'Y' when the staging row's MOST RECENT
+    -- attempt in a run before p_run_id (DMT_STG_ATTEMPT_V, ordered by RUN_ID,
+    -- then a TFM row after a pre-TFM error of the same run) is:
+    --   * a TFM row that ended FAILED or UNACCOUNTED, or
+    --   * a stage-to-transform error (DMT_STG_TFM_ERROR_TBL) with no later
+    --     TFM row (a later TFM row is itself the most recent attempt).
+    -- A row whose latest attempt is LOADED, or still in flight (STAGED /
+    -- GENERATED), or that has never been attempted, is 'N'. A row already
+    -- rejected before TFM in THIS run (p_run_id) is 'N', so a FAILED-mode
+    -- pre-validation rejection keeps the row out of this run's transform.
+    -- Attempts of the current run are otherwise ignored, so the answer does
+    -- not change while this run inserts its own TFM rows. Static SQL only.
+    -- --------------------------------------------------------
+    FUNCTION FAILED_RETRY_SELECTED (
+        p_run_id          IN NUMBER,
+        p_stg_table       IN VARCHAR2,
+        p_stg_sequence_id IN NUMBER
+    ) RETURN VARCHAR2;
+
+    -- --------------------------------------------------------
     -- Credential resolution â€” per-CEMLI overrides
     -- --------------------------------------------------------
 

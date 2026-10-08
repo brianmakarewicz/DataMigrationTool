@@ -54,7 +54,7 @@ AS
 --     agreement across all three sides. That coupling is what makes the per-tier
 --     join hit exactly one TFM row.
 --
--- After the two tiers settle, outcomes are echoed back to both STG tables. Each
+-- Outcomes stay on the TFM rows; nothing is copied back to STG (backlog #310). Each
 -- tier has its own BASE and INTERFACE rows in the report, so each tier accounts
 -- for itself directly (a distribution transitively via its parent line's key).
 -- Then PROPAGATE_DOCUMENT_ERRORS quotes each rejected row's real Fusion error onto
@@ -317,40 +317,8 @@ AS
             END LOOP;
         END IF;
 
-        -- ============================================================
-        -- Echo tier outcomes back to the two STG tables.
-        -- ============================================================
-        -- Lines
-        UPDATE DMT_RA_LINES_STG_TBL stg
-        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_RA_LINES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_RA_LINES_STG_TBL stg
-        SET    stg.STG_STATUS = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_RA_LINES_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_RA_LINES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-
-        -- Distributions
-        UPDATE DMT_RA_DISTS_STG_TBL stg
-        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_RA_DISTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_RA_DISTS_STG_TBL stg
-        SET    stg.STG_STATUS = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_RA_DISTS_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_RA_DISTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         -- NO COMMIT — orchestrator controls transaction boundaries.
 

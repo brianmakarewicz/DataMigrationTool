@@ -131,9 +131,8 @@
                     SYSDATE
         FROM DMT_HZ_PARTIES_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_PARTIES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -168,9 +167,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_PARTIES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -211,8 +209,7 @@
                 SELECT p_run_id, 'Customers', 'Parties', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_HZ_PARTIES_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_PARTIES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_HZ_PARTIES_TFM_TBL t
@@ -361,9 +358,8 @@
                     SYSDATE
         FROM DMT_HZ_LOCATIONS_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_LOCATIONS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -396,9 +392,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_LOCATIONS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -437,8 +432,7 @@
                 SELECT p_run_id, 'Customers', 'Locations', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_HZ_LOCATIONS_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_LOCATIONS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_HZ_LOCATIONS_TFM_TBL t
@@ -561,9 +555,8 @@
                     SYSDATE
         FROM DMT_HZ_PARTY_SITES_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -596,9 +589,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -637,8 +629,7 @@
                 SELECT p_run_id, 'Customers', 'Party Sites', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_HZ_PARTY_SITES_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_HZ_PARTY_SITES_TFM_TBL t
@@ -744,9 +735,8 @@
                     SYSDATE
         FROM DMT_HZ_PARTY_SITE_USES_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITE_USES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -779,9 +769,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITE_USES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -822,8 +811,7 @@
                 SELECT p_run_id, 'Customers', 'Party Site Uses', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_HZ_PARTY_SITE_USES_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITE_USES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_HZ_PARTY_SITE_USES_TFM_TBL t
@@ -935,9 +923,8 @@
                     SYSDATE
         FROM DMT_HZ_ACCOUNTS_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_ACCOUNTS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -970,9 +957,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_ACCOUNTS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -1011,8 +997,7 @@
                 SELECT p_run_id, 'Customers', 'Accounts', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_HZ_ACCOUNTS_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_ACCOUNTS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_HZ_ACCOUNTS_TFM_TBL t
@@ -1128,9 +1113,8 @@
                     SYSDATE
         FROM DMT_HZ_ACCT_SITES_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -1163,9 +1147,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -1204,8 +1187,7 @@
                 SELECT p_run_id, 'Customers', 'Account Sites', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_HZ_ACCT_SITES_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_HZ_ACCT_SITES_TFM_TBL t
@@ -1315,9 +1297,8 @@
                     SYSDATE
         FROM DMT_HZ_ACCT_SITE_USES_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITE_USES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -1350,9 +1331,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITE_USES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -1391,8 +1371,7 @@
                 SELECT p_run_id, 'Customers', 'Account Site Uses', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_HZ_ACCT_SITE_USES_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITE_USES_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_HZ_ACCT_SITE_USES_TFM_TBL t

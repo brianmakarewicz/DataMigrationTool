@@ -486,6 +486,55 @@
     END STG_ROW_SELECTED;
 
     -- --------------------------------------------------------
+    -- STG_ROW_SELECTED (row-identity form, backlog #310). See the spec.
+    -- NEW / ALL delegate to the status form; FAILED reads the attempt record.
+    -- --------------------------------------------------------
+    FUNCTION STG_ROW_SELECTED (
+        p_run_mode        IN VARCHAR2,
+        p_stg_status      IN VARCHAR2,
+        p_run_id          IN NUMBER,
+        p_stg_table       IN VARCHAR2,
+        p_stg_sequence_id IN NUMBER
+    ) RETURN VARCHAR2 IS
+    BEGIN
+        IF p_run_mode = 'FAILED' THEN
+            RETURN FAILED_RETRY_SELECTED(p_run_id, p_stg_table, p_stg_sequence_id);
+        END IF;
+        RETURN CASE
+                   WHEN p_run_mode = 'NEW' AND p_stg_status = 'NEW' THEN 'Y'
+                   WHEN p_run_mode = 'ALL'                          THEN 'Y'
+                   ELSE 'N'
+               END;
+    END STG_ROW_SELECTED;
+
+    -- --------------------------------------------------------
+    -- FAILED_RETRY_SELECTED (backlog #310). See the spec.
+    -- One static query over DMT_STG_ATTEMPT_V: the row's attempts in earlier
+    -- runs, plus any pre-TFM error it already got in this run (relabelled so it
+    -- can never qualify). KEEP (DENSE_RANK LAST) takes the most recent one.
+    -- --------------------------------------------------------
+    FUNCTION FAILED_RETRY_SELECTED (
+        p_run_id          IN NUMBER,
+        p_stg_table       IN VARCHAR2,
+        p_stg_sequence_id IN NUMBER
+    ) RETURN VARCHAR2 IS
+        l_outcome VARCHAR2(30);
+    BEGIN
+        SELECT MAX(CASE WHEN a.RUN_ID = p_run_id THEN 'THIS_RUN_STG_TFM_ERROR'
+                        ELSE a.OUTCOME END)
+                   KEEP (DENSE_RANK LAST ORDER BY a.RUN_ID, a.ATTEMPT_RANK, a.ATTEMPT_ID)
+        INTO   l_outcome
+        FROM   DMT_STG_ATTEMPT_V a
+        WHERE  a.STG_TABLE       = p_stg_table
+        AND    a.STG_SEQUENCE_ID = p_stg_sequence_id
+        AND    (   a.RUN_ID < p_run_id
+                OR (a.RUN_ID = p_run_id AND a.OUTCOME = 'STG_TFM_ERROR'));
+
+        RETURN CASE WHEN l_outcome IN ('FAILED', 'UNACCOUNTED', 'STG_TFM_ERROR')
+                    THEN 'Y' ELSE 'N' END;
+    END FAILED_RETRY_SELECTED;
+
+    -- --------------------------------------------------------
     -- GET_CEMLI_CREDENTIALS -- THE central Fusion user resolver (backlog #309).
     -- Every Fusion call DMT makes for an object (upload, ESS submit/poll/
     -- download, BIP, REST, HDL) gets its user here. The username and password

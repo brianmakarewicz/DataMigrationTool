@@ -41,7 +41,7 @@ AS
 -- prefixed parent INVOICE_NUM || ':LINE:' || LINE_NUMBER). That coupling is what
 -- makes the join hit.
 --
--- After both tiers settle, outcomes are echoed back to the two STG tables.
+-- Outcomes stay on the TFM rows; nothing is copied back to STG (backlog #310).
 -- Then PROPAGATE_DOCUMENT_ERRORS quotes the real Fusion error of a rejected
 -- header or line onto every other row of the same invoice that Payables Import
 -- rejected with it (design section 5, whole-document rejection).
@@ -289,40 +289,8 @@ AS
             END LOOP;
         END IF;
 
-        -- ============================================================
-        -- Echo tier outcomes back to the two STG tables.
-        -- ============================================================
-        -- Headers
-        UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
-        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_AP_INVOICES_INT_STG_TBL stg
-        SET    stg.STG_STATUS = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICES_INT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-
-        -- Lines
-        UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
-        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL stg
-        SET    stg.STG_STATUS = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_AP_INVOICE_LINES_INT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         -- NO COMMIT — orchestrator controls transaction boundaries.
 

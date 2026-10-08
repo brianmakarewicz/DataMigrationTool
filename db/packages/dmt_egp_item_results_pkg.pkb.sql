@@ -56,8 +56,8 @@
     -- --------------------------------------------------------
     -- PARSE_AND_UPDATE
     -- Receives the already-decoded BIP report XMLTYPE (NULL on zero rows) from
-    -- the shared transport DMT_UTIL_PKG.RUN_BIP_REPORT, updates TFM rows, then
-    -- echoes back to the STG table.
+    -- the shared transport DMT_UTIL_PKG.RUN_BIP_REPORT and updates TFM rows
+    -- (nothing is copied back to STG, backlog #310).
     --
     -- The report's STATUS element is derived from positive presence in the base
     -- table EGP_SYSTEM_ITEMS_B ('PROCESSED' = present, 'REJECTED' = absent), not
@@ -159,34 +159,8 @@
             END IF;
         END LOOP;
 
-        -- Echo outcomes back to STG table
-        -- LOADED
-        UPDATE DMT_EGP_ITEM_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_EGP_ITEM_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        -- FAILED
-        UPDATE DMT_EGP_ITEM_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   -- An item can transform into several TFM rows for one staging row
-                   -- (per-org / bundled category rows), so this correlated lookup must
-                   -- return a single value or it raises ORA-01427. Take the first FAILED
-                   -- TFM row's error deterministically (by TFM_SEQUENCE_ID).
-                   (SELECT ie.ERROR_TEXT
-                    FROM  (SELECT t.ERROR_TEXT,
-                                  ROW_NUMBER() OVER (ORDER BY t.TFM_SEQUENCE_ID) rn
-                           FROM   DMT_EGP_ITEM_TFM_TBL t
-                           WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                           AND    t.RUN_ID     = p_run_id
-                           AND    t.TFM_STATUS = 'FAILED') ie
-                    WHERE ie.rn = 1)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_EGP_ITEM_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
