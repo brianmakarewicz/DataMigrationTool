@@ -106,6 +106,13 @@
     --   p_load_ess_id   the load job's request id (P_LOAD_REQUEST_ID). For HDL
     --                   objects this is the HDL data set request id.
     --   p_import_ess_id the import job's request id (P_IMPORT_ESS_ID, nullable).
+    --   p_work_queue_id the work item's queue id, sent as P_WQ_ID ONLY when not
+    --                   NULL. Used solely by the Projects report (owner-approved
+    --                   exception 2026-10-07, design section 5): Fusion stamps no
+    --                   job id on the project base tables, so that report selects
+    --                   the work item's projects by the reference DMT stamps,
+    --                   '<run_id>:<work_queue_id>:<legacy reference>'. Every other
+    --                   caller leaves it NULL and its report never sees P_WQ_ID.
     --   p_row_cap       expected upper bound on rows (usually the run's generated-
     --                   row count) used only to derive the keyset page-count cap.
     --                   NULL/0 falls back to a floor of 2 pages of slack.
@@ -120,7 +127,8 @@
         p_import_ess_id IN  NUMBER   DEFAULT NULL,
         p_row_cap       IN  NUMBER   DEFAULT NULL,
         x_rows          OUT T_RECON_TBL,
-        x_error_code    OUT NUMBER
+        x_error_code    OUT NUMBER,
+        p_work_queue_id IN  NUMBER   DEFAULT NULL
     );
 
 END DMT_RECON_CONTRACT_PKG;

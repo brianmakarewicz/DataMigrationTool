@@ -102,6 +102,11 @@ REPORTS = [
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
     ("PerfEvaluations",          "DMT_PERFEVALUATIONS_RECON_DM", "DMT_PERFEVALUATIONS_RECON_RPT"),
     ("Projects",                 "DMT_PROJECT_RECON_DM",       "DMT_PROJECT_RECON_RPT"),
+    # Projects V2 (2026-10-07, owner-approved exception): base projects found by
+    # PM_PROJECT_REFERENCE LIKE '<run_id>:<work_queue_id>:%' (no job id on the
+    # project base tables), interface rows by LOAD_REQUEST_ID. Deployed alongside
+    # DMT_PROJECT_RECON_DM (never overwritten).
+    ("Projects",                 "DMT_PROJECT_RECON_V2_DM",    "DMT_PROJECT_RECON_V2_RPT"),
     # ProjectBudgets recon V2 (2026-10-07, known-good fix): deployed alongside the
     # original PRJ_BUDGET_DM (never overwritten). Run scoped by the prefixed
     # PM_BUDGET_REFERENCE so budgets on EXISTING projects reconcile.

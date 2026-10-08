@@ -4,6 +4,13 @@
 -- ============================================================
 -- DMT_PROJECT_TRANSFORM_PKG Body
 -- Projects transformation: STG -> TFM with prefix application.
+-- REVISIONS:
+--   2026-10-07  BM  SOURCE_PROJECT_REFERENCE stamped '<run_id>:<work_queue_id>:
+--                   <legacy ref, else legacy project number>' when prefixing is on
+--                   (plain legacy value when off). Fusion stores it as
+--                   PJF_PROJECTS_ALL_B.PM_PROJECT_REFERENCE; the Projects recon
+--                   report V2 selects the work item's projects by it
+--                   (owner-approved exception, design section 5).
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_PROJECT_TRANSFORM_PKG';
@@ -44,6 +51,9 @@
         l_prefix     VARCHAR2(30);
         l_ok_count   NUMBER := 0;
         l_fail_count NUMBER := 0;
+        -- The work item this transform runs in (set by the queue worker for every
+        -- object). It is the middle segment of the stamped source reference.
+        l_wq_id      NUMBER := DMT_LOADER_PKG.g_gen_queue_id;
 
     BEGIN
         DMT_UTIL_PKG.LOG(
@@ -179,7 +189,18 @@
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PROJECT_NUMBER, 25),
                     s.SOURCE_TEMPLATE_NUMBER,
                     s.SOURCE_APPLICATION_CODE,
-                    s.SOURCE_PROJECT_REFERENCE,
+                    -- Owner-approved exception (2026-10-07, design section 5):
+                    -- Fusion stamps no job id on the project base tables, so the
+                    -- recon report finds this work item's projects by the source
+                    -- reference (PM_PROJECT_REFERENCE). Prefixing on:
+                    -- <run_id>:<work_queue_id>:<legacy ref, else legacy project
+                    -- number>. Prefixing off (USE_PREFIX = N at cutover): the
+                    -- plain legacy value. Fusion's column is VARCHAR2(100).
+                    CASE WHEN l_prefix IS NOT NULL
+                         THEN SUBSTR(p_run_id || ':' || l_wq_id || ':'
+                                     || NVL(s.SOURCE_PROJECT_REFERENCE, s.PROJECT_NUMBER), 1, 100)
+                         ELSE NVL(s.SOURCE_PROJECT_REFERENCE, s.PROJECT_NUMBER)
+                    END,
                     s.ORGANIZATION_NAME,
                     s.LEGAL_ENTITY_NAME,
                     s.DESCRIPTION,
