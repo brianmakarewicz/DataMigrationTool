@@ -112,6 +112,13 @@
     --   x_rows          OUT the parsed rows (empty when the report returns zero rows).
     --   x_error_code    OUT DMT_UTIL_PKG.C_SUCCESS or C_ERROR. On C_ERROR the failure
     --                   detail is in DMT_LOG_TBL and x_rows is empty.
+    --   p_work_queue_id the work item's queue id, sent as P_WQ_ID ONLY when not
+    --                   NULL. Used solely by the Projects report (owner-approved
+    --                   exception 2026-10-07, design section 5): Fusion stamps no
+    --                   job id on the project base tables, so that report selects
+    --                   the work item's projects by the reference DMT stamps,
+    --                   '<run_id>:<work_queue_id>:<legacy reference>'. Every other
+    --                   caller leaves it NULL and its report never sees P_WQ_ID.
     --   p_fusion_batch_id  optional: the Fusion import batch id this load sent, for an
     --                   object whose base tables carry that batch rather than the
     --                   import job id (Customers: HZ_* base REQUEST_ID = the bulk
@@ -127,6 +134,7 @@
         p_row_cap       IN  NUMBER   DEFAULT NULL,
         x_rows          OUT T_RECON_TBL,
         x_error_code    OUT NUMBER,
+        p_work_queue_id IN  NUMBER   DEFAULT NULL,
         p_fusion_batch_id IN NUMBER  DEFAULT NULL
     );
 

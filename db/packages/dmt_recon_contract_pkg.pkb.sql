@@ -20,6 +20,7 @@
         p_row_cap       IN  NUMBER   DEFAULT NULL,
         x_rows          OUT T_RECON_TBL,
         x_error_code    OUT NUMBER,
+        p_work_queue_id IN  NUMBER   DEFAULT NULL,
         p_fusion_batch_id IN NUMBER  DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'FETCH_ROWS';
@@ -109,7 +110,12 @@
                                 '~P_PREFIX|'          || l_prefix ||
                                 l_batch_param ||
                                 '~P_CHUNK_SIZE|'      || TO_CHAR(l_chunk_size) ||
-                                '~P_AFTER_KEY|'       || l_after_key,
+                                '~P_AFTER_KEY|'       || l_after_key ||
+                                -- P_WQ_ID only when given (the Projects report,
+                                -- owner-approved exception 2026-10-07); no other
+                                -- report receives a parameter it does not declare.
+                                CASE WHEN p_work_queue_id IS NOT NULL
+                                     THEN '~P_WQ_ID|' || TO_CHAR(p_work_queue_id) END,
                 x_report_xml => l_xml,
                 x_error_code => l_err);
 
