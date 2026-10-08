@@ -65,7 +65,9 @@ class FakeCursor:
         s = " ".join(sql.split()).lower()
         db = self.db
         if "from dmt_pipeline_run_tbl" in s:
-            self._row = (max(db.max_prefix, db.max_dependent),)
+            # Emulate the real SQL: DEPENDENT_PREFIX only counts if the query reads it.
+            self._row = (max(db.max_prefix, db.max_dependent) if "dependent_prefix" in s
+                         else db.max_prefix,)
         elif "from user_sequences" in s:
             self._row = (db.last_number, 0, db.increment)
         elif ".nextval" in s:
@@ -154,11 +156,19 @@ def main():
     scenario("target ATP, RESTART rejected -> INCREMENT BY fallback", "atp", restart=False)
     scenario("target local, RESTART rejected -> INCREMENT BY fallback", "local", restart=False)
 
-    print("\nDEPENDENT_PREFIX counts as used")
-    local = FakeDB("local", 93300, 93301, max_dependent=93370)
+    print("\nDEPENDENT_PREFIX is a reference, not an issued prefix: ignored")
+    # Local runs 178/182 carry DEPENDENT_PREFIX='99999' (a placeholder override);
+    # before the fix this made N = 100000 and test-prod aborted past MAXVALUE.
+    local = FakeDB("local", 93367, 93368, max_dependent=99999)
     atp = FakeDB("atp", 93364, 93365)
     install(local, atp)
-    check(cp.sync_prefix_for("atp") == 93371, "N = 93371 when a dependent prefix 93370 is recorded")
+    try:
+        n = cp.sync_prefix_for("atp")
+        check(n == 93368, f"DEPENDENT_PREFIX 99999 does not affect N (N = 93368, got {n})")
+        check(atp.last_number == 93368 and atp.nextval_draws == [],
+              "ATP issues 93368 next with nothing drawn (no-waste rule intact)")
+    except SystemExit as e:
+        check(False, f"DEPENDENT_PREFIX 99999 must not abort the sync ({e})")
 
     print("\nabove MAXVALUE refuses")
     install(FakeDB("local", 99999, 99999), FakeDB("atp", 10, 11))

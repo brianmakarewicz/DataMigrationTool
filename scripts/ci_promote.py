@@ -41,8 +41,10 @@ pod). Owner rule 2026-10-08: "make sure you update the prefix WITHOUT WASTING TH
 don't 'grab a few extra'. Grab the next one. If you need to move back to local or
 run another test on ATP, you can always re-update." Immediately before every
 regression submission, sync_prefix_for(target) computes N = max(highest prefix
-ever used on local, highest ever used on ATP) + 1 ("used" = numeric PREFIX /
-DEPENDENT_PREFIX in DMT_PIPELINE_RUN_TBL) and sets ONLY that target's
+ever used on local, highest ever used on ATP) + 1 ("used" = numeric PREFIX
+in DMT_PIPELINE_RUN_TBL, the values DMT_RUN_PREFIX_SEQ actually issued; the
+user-set DEPENDENT_PREFIX override is a reference, not an issued prefix, and is
+ignored) and sets ONLY that target's
 DMT_RUN_PREFIX_SEQ so its very next NEXTVAL is exactly N (ALTER SEQUENCE ...
 RESTART START WITH N as the schema owner; no probe draws, nothing skipped). The
 other instance is not touched: when work moves back there, its next run re-syncs.
@@ -184,13 +186,15 @@ def max_used_prefix(target):
     """Highest numeric prefix ever used on `target`. DMT_PIPELINE_RUN_TBL is the
     permanent registry of issued prefixes: every NEXTVAL of DMT_RUN_PREFIX_SEQ in
     the packages (DMT_PIPELINE_INIT_PKG and the six DMT_LOADER_PKG entry points)
-    is inserted there as PREFIX in the same block. DEPENDENT_PREFIX only names a
-    prefix an earlier run already used; it is included so the result can never be
-    below a referenced prefix. Non-numeric values are ignored. Reads only."""
+    is inserted there as PREFIX in the same block. DEPENDENT_PREFIX is NOT read:
+    it is the optional page-84 Dependent-Run override (backlog #142), a free-text
+    reference a user types to point validators at an earlier run's prefix
+    (DMT_UTIL_PKG.GET_DEPENDENT_PREFIX returns NVL(DEPENDENT_PREFIX, PREFIX)). It
+    is never drawn from DMT_RUN_PREFIX_SEQ, so it can hold placeholders such as
+    '99999' (local runs 178/182) that would push N past MAXVALUE. Non-numeric
+    PREFIX values are ignored. Reads only."""
     con = _oracle(target); cur = con.cursor()
-    cur.execute("select greatest("
-                "nvl(max(to_number(prefix default null on conversion error)), 0), "
-                "nvl(max(to_number(dependent_prefix default null on conversion error)), 0)) "
+    cur.execute("select nvl(max(to_number(prefix default null on conversion error)), 0) "
                 "from DMT_PIPELINE_RUN_TBL")
     v = int(cur.fetchone()[0]); con.close()
     return v
