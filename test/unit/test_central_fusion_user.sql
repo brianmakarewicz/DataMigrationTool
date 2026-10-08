@@ -10,7 +10,8 @@
 -- What it proves (owner rule 2026-10-07: the user and password are taken
 -- TOGETHER from one place):
 --   * an object with its own user gets that user AND that row's password
---     (Requisitions = calvin.roth, Grants = ppm_impl, Workers = hcm_impl);
+--     (Requisitions = calvin.roth, Grants = ppm_impl, BillingEvents = ppm_impl,
+--     Workers = hcm_impl);
 --   * an object whose options row has a password but NO username
 --     (ARInvoices) gets the default user AND the default user's own
 --     password -- never the row's password (#303). To make that observable
@@ -81,6 +82,13 @@ begin
     dmt_util_pkg.get_cemli_credentials(p_cemli_code => 'Grants', x_username => l_user, x_password => l_pass);
     assert(l_user = 'ppm_impl' and l_pass = row_pass('Grants'),
            2, 'Grants -> ppm_impl with the Grants row''s password');
+
+    -- 2b. BillingEvents: ppm_impl with its own row's password (backlog #462;
+    --     fin_impl gets HTTP 403 on /projectBillingEvents)
+    dmt_util_pkg.get_cemli_credentials(p_cemli_code => 'BillingEvents', x_username => l_user, x_password => l_pass);
+    assert(l_user = 'ppm_impl' and l_pass = row_pass('BillingEvents')
+           and l_pass <> '***MASKED-SET-ME***',
+           12, 'BillingEvents -> ppm_impl with the BillingEvents row''s (filled) password');
 
     -- 3. ARInvoices: password-only row -> default user + default user's own password.
     select count(*) into l_raised
