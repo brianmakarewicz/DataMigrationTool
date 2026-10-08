@@ -5,7 +5,7 @@
 -- stack's own BIP catalog under /Custom/DMT2/ (never /Custom/DMT/ -- the
 -- frozen stack's catalog).
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_DM.xdm','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_DM.xdm','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -1547,6 +1547,11 @@ commit;
 
 -- ---------------------------------------------------------------------------
 -- ARInvoices — Contract v1 registration (design section 5), MULTI-TIER.
+-- V4 (2026-10-07, owner decision): DMT_AR_RECON_V4_DM finds rows only by the
+-- load's Fusion job ids -- base lines by REQUEST_ID = the AutoInvoiceImportEss
+-- request id, base distributions through their loaded line, interface rows and
+-- errors by LOAD_REQUEST_ID = the load request id; the run prefix is never a
+-- search value. V1-V3 stay deployed; BIP objects are never overwritten.
 -- Points the ARInvoices CEMLI at the nine-column Contract v1 report and sets
 -- CONTRACT_VERSION = 1 so the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
 -- runs it (a NULL/absent CONTRACT_VERSION makes the shared fetch bail with
@@ -1576,12 +1581,13 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'ARInvoices'                                             cemli_code,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_RPT.xdo'       report_catalog_path,
-           'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V3 (2026-10-07): '
-           || 'line RECORD_KEY = ATTRIBUTE1/ATTRIBUTE2, unique per line, so keyset paging '
-           || 'never drops a row; V2 scoped interface errors to the load. Deployed alongside '
-           || 'V1 and V2, never overwriting them.' notes,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_RPT.xdo'       report_catalog_path,
+           'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V4 (2026-10-07): '
+           || 'rows found only by the work item''s Fusion job ids (base lines by the '
+           || 'AutoInvoice import REQUEST_ID, interface rows and errors by LOAD_REQUEST_ID), '
+           || 'never by the run prefix; called with each load''s own ids. V3 made the line '
+           || 'RECORD_KEY ATTRIBUTE1/ATTRIBUTE2. Deployed alongside V1-V3, never overwriting them.' notes,
            1                                                        contract_version,
            'DMT_RA_LINES_TFM_TBL'                                  tfm_table,
            'FUSION_CUSTOMER_TRX_ID'                                fusion_id_column,
@@ -1805,12 +1811,21 @@ commit;
 -- block can revert either. CMP_FUNCTION is the PKG.FUNC returning
 -- DMT_CMP_ROW_OBJ; read by the comparison framework (Task 5) and the per-object
 -- function's report-path lookup (Task 4). Every other object's CMP_* stays NULL.
+-- V2 (2026-10-07, owner decision, backlog #264): DMT_PO_RECON_V2_DM finds rows
+-- only by the work item's Fusion job ids and the Standard document style (base
+-- rows by REQUEST_ID = import id, interface headers by LOAD_REQUEST_ID = load id
+-- AND REQUEST_ID = import id, interface children by LOAD_REQUEST_ID under such a
+-- header, errors by REQUEST_ID = import id); the run id is never a search value.
+-- V1 (DMT_PO_RECON_DM) stays deployed; BIP objects are never overwritten.
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'PurchaseOrders'                                        cemli_code,
-           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_RPT.xdo'      report_catalog_path,
-           'Purchase order import reconciliation (Contract v1, multi-tier: headers/lines/line-locations/distributions)' notes,
+           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_V2_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_V2_RPT.xdo'   report_catalog_path,
+           'Purchase order import reconciliation (Contract v1, multi-tier: headers/lines/line-locations/distributions). '
+           || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import '
+           || 'REQUEST_ID, interface by LOAD_REQUEST_ID + the import REQUEST_ID on the header) and the '
+           || 'Standard document style, never by the run id. Deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
            'FUSION_PO_HEADER_ID'                                   fusion_id_column,
