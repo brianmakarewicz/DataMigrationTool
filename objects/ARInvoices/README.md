@@ -95,6 +95,14 @@ models both with one STG + one TFM table each.
    fix was required.
 
 ## History
+- 2026-10-08 a line with no BU or batch source is failed, with the rest of its DMT invoice
+  (backlog #500), and the reconcile apply is scoped to the child work item (backlog #503).
+  `DMT_AR_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM` runs after transform and before the split: the
+  line gets `[POST_VALIDATION] BU_NAME (business unit) is required...`, every other line and
+  distribution of its invoice gets `[POST_VALIDATION] Rejected with document: line <attr1>/<attr2>: ...`,
+  and none of the invoice is sent. Scenario RegressionTest2610081442 adds invoice 86753401 (line 2
+  with no BU). Proof run 310 (prefix 93364): 4 lines LOADED, 6 lines and 4 distributions FAILED,
+  0 UNACCOUNTED, all 64 listed rows at their expected outcome, verdict PASS.
 - 2026-10-08 one child work item per (BU, batch source) group (backlog #313). Registry:
   `DMT_CEMLI_SPLIT_CFG.CHILD_PARTITION_COLUMN = BATCH_SOURCE_NAME` (label only) and
   `DMT_PIPELINE_DEF_TBL.PARTITION_KEYS_PROC = DMT_AR_RESULTS_PKG.GET_PARTITION_KEYS`, which returns
