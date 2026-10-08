@@ -65,6 +65,10 @@ REPORTS = [
     # (never overwritten). Category tiers also match request_id = import ESS
     # id and carry MESSAGE_NAME + text from both EGP interface tables.
     ("Items",                   "DMT_ITEM_RECON_V2_DM", "DMT_ITEM_RECON_V2_RPT"),
+    # Items V3 (2026-10-07, owner decision): alongside V1/V2; rows found only by
+    # the work item's Fusion job ids (base by the Item Import REQUEST_ID,
+    # interface and errors by LOAD_REQUEST_ID / REQUEST_ID), never by the prefix.
+    ("Items",                   "DMT_ITEM_RECON_V3_DM", "DMT_ITEM_RECON_V3_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
     ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),
