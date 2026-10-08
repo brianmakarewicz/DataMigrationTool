@@ -38,6 +38,10 @@ REPORTS = [
     ("SupplierContacts",        "SUP_CONT_DM",      "SUP_CONT_RPT"),
     ("PurchaseOrders",          "PO_DM",             "PO_RPT"),
     ("BlanketPOs",              "BLANKET_PO_DM",     "BLANKET_PO_RPT"),
+    # BlanketPOs V2 (2026-10-07, backlog #258): rows found only by the work
+    # item's Fusion job ids and the Blanket document style. Deployed alongside
+    # DMT_BLANKET_PO_RECON_DM (never overwritten).
+    ("BlanketPOs",              "DMT_BLANKET_PO_RECON_V2_DM", "DMT_BLANKET_PO_RECON_V2_RPT"),
     ("Contracts",               "CONTRACT_DM",       "CONTRACT_RPT"),
     ("APInvoices",              "DMT_AP_RECON_DM",   "DMT_AP_RECON_RPT"),
     # APInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
@@ -61,6 +65,10 @@ REPORTS = [
     # (never overwritten). Category tiers also match request_id = import ESS
     # id and carry MESSAGE_NAME + text from both EGP interface tables.
     ("Items",                   "DMT_ITEM_RECON_V2_DM", "DMT_ITEM_RECON_V2_RPT"),
+    # Items V3 (2026-10-07, owner decision): alongside V1/V2; rows found only by
+    # the work item's Fusion job ids (base by the Item Import REQUEST_ID,
+    # interface and errors by LOAD_REQUEST_ID / REQUEST_ID), never by the prefix.
+    ("Items",                   "DMT_ITEM_RECON_V3_DM", "DMT_ITEM_RECON_V3_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
     ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),
@@ -97,6 +105,10 @@ REPORTS = [
     # job's REQUEST_ID, interface rows by LOAD_REQUEST_ID, never by the run prefix.
     # Alongside BILLING_EVENT_DM (never overwritten).
     ("BillingEvents",            "DMT_BILLING_EVENT_RECON_V2_DM", "DMT_BILLING_EVENT_RECON_V2_RPT"),
+    # Assets V2 (2026-10-07, owner decision): base assets found through their
+    # POSTED FA_MASS_ADDITIONS row by the load job's LOAD_REQUEST_ID (FA_ADDITIONS_B
+    # has no request id), never by the run prefix. Alongside DMT_FA_ASSET_RECON_DM.
+    ("Assets",                   "DMT_FA_ASSET_RECON_V2_DM",   "DMT_FA_ASSET_RECON_V2_RPT"),
     # PurchaseOrders V2 (2026-10-07, backlog #264): rows found only by the work
     # item's Fusion job ids and the Standard document style; the run-id LIKE on
     # the interface keys is gone. Deployed alongside DMT_PO_RECON_DM (never
