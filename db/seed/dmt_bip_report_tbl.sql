@@ -1988,12 +1988,21 @@ commit;
 -- ---------------------------------------------------------------------------
 -- PO family (continued): BlanketPOs (BPA) and Contracts (CPA) registry rows.
 -- ---------------------------------------------------------------------------
+-- BlanketPOs V2 (2026-10-07, owner decision, backlog #258):
+-- DMT_BLANKET_PO_RECON_V2_DM finds rows only by the work item's Fusion job ids
+-- and the Blanket style (base by REQUEST_ID = import id, interface headers by
+-- LOAD_REQUEST_ID = load id AND REQUEST_ID = import id, interface lines by
+-- LOAD_REQUEST_ID under such a header, errors by REQUEST_ID = import id); the
+-- run id is never a search value. V1 stays deployed (never overwritten).
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'BlanketPOs'                                            cemli_code,
-           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_DM.xdm'   dm_catalog_path,
-           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_RPT.xdo'  report_catalog_path,
-           'Blanket purchase agreement import reconciliation (Contract v1, multi-tier: headers/lines)' notes,
+           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_V2_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_V2_RPT.xdo' report_catalog_path,
+           'Blanket purchase agreement import reconciliation (Contract v1, multi-tier: headers/lines). '
+           || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import '
+           || 'REQUEST_ID, interface by LOAD_REQUEST_ID + the import REQUEST_ID on the header) and the '
+           || 'Blanket document style, never by the run id. Deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
            'FUSION_PO_HEADER_ID'                                   fusion_id_column,
@@ -2158,19 +2167,24 @@ commit;
 -- 2026-10-06: re-pointed to DMT_ITEM_RECON_V2_DM / _V2_RPT, deployed alongside
 -- the original (BIP objects are never overwritten). V2 fixes the Item Category
 -- tiers (run 236: rejected categories were left UNACCOUNTED).
+-- 2026-10-07 (owner decision): re-pointed to DMT_ITEM_RECON_V3_DM / _V3_RPT,
+-- deployed alongside V1/V2. V3 finds rows only by the work item's Fusion job ids:
+-- base items and base categories by REQUEST_ID = the Item Import id, interface
+-- rows and EGP_IMPORT_ERRORS by LOAD_REQUEST_ID = the load id or REQUEST_ID = the
+-- import id. Every LIKE on the run prefix is gone.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Items'                                             cemli_code,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_V2_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_V2_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V3_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V3_RPT.xdo'      report_catalog_path,
            'Item Import base-table reconciliation (Contract v1 -- nine columns, '
              || 'keyset). ONE report, two record types via OBJECT_TYPE: Item '
              || '(DMT_EGP_ITEM_TFM_TBL <- EGP_SYSTEM_ITEMS_B) and ItemCategory '
-             || '(DMT_EGP_ITEM_CAT_TFM_TBL <- EGP_ITEM_CATEGORIES). V2 (2026-10-06): '
-             || 'category tiers also match request_id = P_IMPORT_ESS_ID and report '
-             || 'MESSAGE_NAME + text from both EGP interface tables; deployed alongside '
-             || 'the original DMT_ITEM_RECON_DM.'                               notes,
+             || '(DMT_EGP_ITEM_CAT_TFM_TBL <- EGP_ITEM_CATEGORIES). V3 (2026-10-07): '
+             || 'rows found only by the work item''s Fusion job ids (base by the Item '
+             || 'Import REQUEST_ID, interface and errors by LOAD_REQUEST_ID or REQUEST_ID), '
+             || 'never by the run prefix; deployed alongside V1 and V2.'        notes,
            1                                                    contract_version,
            'DMT_EGP_ITEM_TFM_TBL'                              tfm_table,
            'FUSION_INVENTORY_ITEM_ID'                          fusion_id_column,

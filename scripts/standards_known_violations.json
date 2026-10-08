@@ -24,13 +24,6 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|BlanketPOs|DMT_BLANKET_PO_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/BlanketPOs/query.sql does not match the SQL of the deployed DMT_BLANKET_PO_RECON_DM.xdm (query.sql names: none)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-NINE-COLUMNS|CashBanks|DMT_CEBANK_RECON_DM",
       "backlog": 130,
       "found": "2026-10-07",
