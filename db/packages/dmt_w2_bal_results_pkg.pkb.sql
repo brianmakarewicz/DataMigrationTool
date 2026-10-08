@@ -230,8 +230,7 @@ AS
             p_key_column       => 'PERSON_NUMBER',
             p_dataset_status   => p_dataset_status,
             p_log_context      => C_CEMLI || ' > BalanceInitialization',
-            p_defer_base_proof => TRUE,
-            p_cemli_code     => C_CEMLI);
+            p_defer_base_proof => TRUE);
 
 
         -- 2. InitializeBalanceBatchLine
@@ -242,8 +241,7 @@ AS
             p_stg_table      => 'DMT_W2_BAL_DTL_STG_TBL',
             p_key_column     => 'PERSON_NUMBER',
             p_dataset_status => p_dataset_status,
-            p_log_context    => C_CEMLI || ' > BalInitializationDetails',
-            p_cemli_code     => C_CEMLI);
+            p_log_context    => C_CEMLI || ' > BalInitializationDetails');
 
         -- Contract v1 base-tier positive proof (design section 5), Option A shape
         -- (owner decision on PR #248): the shared package fetches the parsed report

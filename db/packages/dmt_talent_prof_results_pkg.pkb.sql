@@ -226,8 +226,7 @@ AS
             p_key_column       => 'PERSON_NUMBER',
             p_dataset_status   => p_dataset_status,
             p_log_context      => C_CEMLI || ' > TalentProfile',
-            p_defer_base_proof => TRUE,
-            p_cemli_code     => C_CEMLI);
+            p_defer_base_proof => TRUE);
 
 
         -- 2. ProfileItem (per-record HDL error path only; base-tier proof is a
@@ -239,8 +238,7 @@ AS
             p_stg_table      => 'DMT_TALENT_PROF_ITEM_STG_TBL',
             p_key_column     => 'PERSON_NUMBER',
             p_dataset_status => p_dataset_status,
-            p_log_context    => C_CEMLI || ' > ProfileItem',
-            p_cemli_code     => C_CEMLI);
+            p_log_context    => C_CEMLI || ' > ProfileItem');
 
         -- Contract v1 base-tier positive proof (design section 5), Option A shape:
         -- the shared package fetches the parsed report rows (no dynamic SQL, no TFM

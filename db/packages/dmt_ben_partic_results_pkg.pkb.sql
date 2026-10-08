@@ -234,8 +234,7 @@ AS
             p_key_column       => 'PERSON_NUMBER',
             p_dataset_status   => p_dataset_status,
             p_log_context      => C_CEMLI || ' > ParticipantEnrollment',
-            p_defer_base_proof => TRUE,
-            p_cemli_code     => C_CEMLI);
+            p_defer_base_proof => TRUE);
 
         -- Contract v1 base-tier positive proof (design section 5), Option A shape
         -- (owner decision on PR #248): the shared package fetches the parsed report

@@ -308,8 +308,7 @@ AS
             p_key_column       => 'PERSON_NUMBER',
             p_dataset_status   => p_dataset_status,
             p_log_context      => C_CEMLI || ' > WorkRelationship',
-            p_defer_base_proof => TRUE,
-            p_cemli_code     => C_CEMLI);
+            p_defer_base_proof => TRUE);
 
         -- 2. Assignment — Contract v1 base-table proof (design section 5).
         --    Both the employment-terms and assignment records this run loads are
@@ -330,8 +329,7 @@ AS
             p_dataset_status   => p_dataset_status,
             p_log_context      => C_CEMLI || ' > Assignment',
             p_key_suffixes     => '_TRM,_ASG',
-            p_defer_base_proof => TRUE,
-            p_cemli_code     => C_CEMLI);
+            p_defer_base_proof => TRUE);
 
         -- Contract v1 base-tier positive proof (design section 5), Option A shape:
         -- the shared package fetches the parsed report rows (no dynamic SQL, no TFM

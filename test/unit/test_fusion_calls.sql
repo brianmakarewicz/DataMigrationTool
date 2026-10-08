@@ -233,8 +233,7 @@ begin
         p_run_id      => c_run_id,
         p_hdl_zip     => l_zip,
         p_filename    => 'DMT2_SMOKE_' || to_char(sysdate, 'YYYYMMDDHH24MISS') || '.zip',
-        p_log_context => 'FUSION_SMOKE',
-        p_cemli_code  => 'Workers');  -- an HCM object: its central Fusion user (hcm_impl) uploads
+        p_log_context => 'FUSION_SMOKE');
     dbms_lob.freetemporary(l_zip);
 
     assert(l_doc_id is not null,
