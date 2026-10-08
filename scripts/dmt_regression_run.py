@@ -534,6 +534,12 @@ def evaluate(run_id, baseline_arg):
     if spec:
         print(f"\n[2a] Expected outcomes (scripts/regression_scenario.json, {scenario}): "
               f"{len(expected)} listed row(s) found in this run")
+    if run_mode == 'FAILED':
+        # FAILED mode retries only the rows whose latest earlier attempt ended
+        # FAILED / UNACCOUNTED or died before TFM (backlog #310). A listed row that
+        # is absent is correct when its latest earlier attempt LOADED; check the
+        # selection itself against DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
+        missing = check_failed_mode_selection(cur, run_id, scenario, spec, records, missing, result)
     for m in missing:
         result['failures'].append(f"expected row not in run: {m}")
     expect_fail = {}
@@ -697,6 +703,12 @@ def evaluate(run_id, baseline_arg):
 
     # ---- 5. baseline diff ---------------------------------------------------
     baseline_id = resolve_baseline(cur, run_id, baseline_arg, scenario, pipeline_codes)
+    if baseline_id and run_mode == 'FAILED':
+        # A FAILED-mode run retries only the earlier failures, so its LOADED count
+        # is not comparable with a full run; [2b] checked the selection instead.
+        print(f"\n[5] Baseline diff skipped (FAILED-mode run: only earlier failures are "
+              f"retried; selection checked in [2b])")
+        baseline_id = None
     if baseline_id:
         print(f"\n[5] Baseline diff vs RUN_ID={baseline_id} (GOOD/BAD-aware: a regression is "
               f"fewer good rows loading, more good rows failing, or more bad rows loading)")
@@ -738,7 +750,7 @@ def evaluate(run_id, baseline_arg):
         if not regressions:
             print(f"    OK    no sub-object regressed vs run {baseline_id}")
         result['baseline_regressions'] = regressions
-    else:
+    elif run_mode != 'FAILED':
         print("\n[5] Baseline diff skipped (no comparable prior run)")
 
     # ---- 6. REST spot-check: one live Fusion lookup per object type -------
@@ -750,6 +762,47 @@ def evaluate(run_id, baseline_arg):
 
     conn.close()
     return result
+
+
+def check_failed_mode_selection(cur, run_id, scenario, spec, records, missing, result):
+    """[2b] FAILED-mode selection check (backlog #310). For every sub-object the
+    scenario lists (it names the STG table), the run's rows must be exactly the
+    scenario's STG rows for which DMT_UTIL_PKG.FAILED_RETRY_SELECTED(run_id, ...)
+    = 'Y' (latest attempt in an earlier run FAILED / UNACCOUNTED / pre-TFM error).
+    Returns the listed-but-absent rows that SHOULD have been retried."""
+    cur.execute("SELECT SCENARIO_ID FROM DMT_SCENARIO_TBL WHERE SCENARIO_NAME = :1", [scenario])
+    row = cur.fetchone()
+    print("\n[2b] FAILED-mode selection (must equal the rows whose latest earlier attempt failed)")
+    if not row:
+        result['failures'].append(f"FAILED-mode check: scenario {scenario} not found")
+        return missing
+    scen_id = row[0]
+    still_missing = []
+    present_subs = {r[1] for r in records}
+    for sub, d in spec.items():
+        if sub not in present_subs and not any(m.startswith(sub + ' / ') for m in missing):
+            continue
+        tbl = d['stg_table']
+        cur.execute(f"SELECT STG_SEQUENCE_ID, SOURCE_ID, "
+                    f"DMT_UTIL_PKG.FAILED_RETRY_SELECTED(:r, :t, STG_SEQUENCE_ID) "
+                    f"FROM {tbl} WHERE SCENARIO_ID = :s", {"r": run_id, "t": tbl, "s": scen_id})
+        rows = cur.fetchall()
+        want = {seq for seq, _src, pick in rows if pick == 'Y'}
+        src_of = {seq: src for seq, src, _p in rows}
+        got = {r[5] for r in records if r[1] == sub and r[5] is not None}
+        extra, lacking = got - want, want - got
+        print(f"    {'FAIL ' if (extra or lacking) else 'OK   '}{sub:35s} retry set {len(want)}, "
+              f"in run {len(got)}, not-retried (latest earlier attempt LOADED or in flight) "
+              f"{len(rows) - len(want)}")
+        for seq in sorted(extra):
+            result['failures'].append(f"FAILED mode picked a row whose latest earlier attempt "
+                                      f"did not fail: {sub} / {src_of.get(seq, seq)}")
+        for seq in sorted(lacking):
+            result['failures'].append(f"FAILED mode skipped a row whose latest earlier attempt "
+                                      f"failed: {sub} / {src_of.get(seq, seq)}")
+        lacking_src = {f"{sub} / {src_of.get(s)}" for s in lacking}
+        still_missing += [m for m in missing if m.startswith(sub + ' / ') and m in lacking_src]
+    return still_missing
 
 
 def resolve_baseline(cur, run_id, baseline_arg, scenario, pipeline_codes):
