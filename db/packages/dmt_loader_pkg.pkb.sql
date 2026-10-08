@@ -5066,7 +5066,8 @@
             p_run_id => p_run_id,
             p_hdl_zip        => l_hdl_zip,
             p_filename       => l_filename,
-            p_log_context    => 'Workers');
+            p_log_context    => 'Workers',
+            p_cemli_code     => 'Workers');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
 
         -- Step 6: Submit HCM Data Loader import
@@ -5074,7 +5075,8 @@
             p_run_id => p_run_id,
             p_content_id     => l_content_id,
             p_dataset_name   => 'DMT Workers ' || TO_CHAR(p_run_id),
-            p_log_context    => 'Workers');
+            p_log_context    => 'Workers',
+            p_cemli_code     => 'Workers');
 
         -- Stamp request IDs on ZIP row
         COMMIT;
@@ -5086,7 +5088,8 @@
             p_timeout_sec    => 1800,
             p_raise_on_error => FALSE,
             p_log_context    => 'Workers',
-            x_dataset_status => l_dataset_status);
+            x_dataset_status => l_dataset_status,
+            p_cemli_code     => 'Workers');
 
         -- HDL base-lag retry: publish this cycle's HDL request id + data set status
         -- so EXECUTE_ONE can persist them and the queue can re-run the base proof on
@@ -5167,13 +5170,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'Salaries');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'Salaries',
+            p_cemli_code     => 'Salaries');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT Salaries ' || TO_CHAR(p_run_id), 'Salaries');
+            'DMT Salaries ' || TO_CHAR(p_run_id), 'Salaries',
+            p_cemli_code     => 'Salaries');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Salaries', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Salaries', l_dataset_status,
+            p_cemli_code     => 'Salaries');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5221,13 +5227,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'SalaryBases');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'SalaryBases',
+            p_cemli_code     => 'SalaryBases');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT SalaryBases ' || TO_CHAR(p_run_id), 'SalaryBases');
+            'DMT SalaryBases ' || TO_CHAR(p_run_id), 'SalaryBases',
+            p_cemli_code     => 'SalaryBases');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'SalaryBases', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'SalaryBases', l_dataset_status,
+            p_cemli_code     => 'SalaryBases');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5275,13 +5284,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'Absences');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'Absences',
+            p_cemli_code     => 'Absences');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT Absences ' || TO_CHAR(p_run_id), 'Absences');
+            'DMT Absences ' || TO_CHAR(p_run_id), 'Absences',
+            p_cemli_code     => 'Absences');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Absences', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'Absences', l_dataset_status,
+            p_cemli_code     => 'Absences');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5329,13 +5341,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'W2Balances');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'W2Balances',
+            p_cemli_code     => 'W2Balances');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT W2Balances ' || TO_CHAR(p_run_id), 'W2Balances');
+            'DMT W2Balances ' || TO_CHAR(p_run_id), 'W2Balances',
+            p_cemli_code     => 'W2Balances');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'W2Balances', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'W2Balances', l_dataset_status,
+            p_cemli_code     => 'W2Balances');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5383,13 +5398,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'BenParticipant');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'BenParticipant',
+            p_cemli_code     => 'BenParticipant');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT BenParticipant ' || TO_CHAR(p_run_id), 'BenParticipant');
+            'DMT BenParticipant ' || TO_CHAR(p_run_id), 'BenParticipant',
+            p_cemli_code     => 'BenParticipant');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenParticipant', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenParticipant', l_dataset_status,
+            p_cemli_code     => 'BenParticipant');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5437,13 +5455,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'BenDependent');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'BenDependent',
+            p_cemli_code     => 'BenDependent');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT BenDependent ' || TO_CHAR(p_run_id), 'BenDependent');
+            'DMT BenDependent ' || TO_CHAR(p_run_id), 'BenDependent',
+            p_cemli_code     => 'BenDependent');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenDependent', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenDependent', l_dataset_status,
+            p_cemli_code     => 'BenDependent');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5491,13 +5512,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'BenBeneficiary');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'BenBeneficiary',
+            p_cemli_code     => 'BenBeneficiary');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT BenBeneficiary ' || TO_CHAR(p_run_id), 'BenBeneficiary');
+            'DMT BenBeneficiary ' || TO_CHAR(p_run_id), 'BenBeneficiary',
+            p_cemli_code     => 'BenBeneficiary');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenBeneficiary', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'BenBeneficiary', l_dataset_status,
+            p_cemli_code     => 'BenBeneficiary');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5555,13 +5579,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'TaxCards');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'TaxCards',
+            p_cemli_code     => 'TaxCards');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT TaxCards ' || TO_CHAR(p_run_id), 'TaxCards');
+            'DMT TaxCards ' || TO_CHAR(p_run_id), 'TaxCards',
+            p_cemli_code     => 'TaxCards');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'TaxCards', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'TaxCards', l_dataset_status,
+            p_cemli_code     => 'TaxCards');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5609,13 +5636,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'TalentProfiles');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'TalentProfiles',
+            p_cemli_code     => 'TalentProfiles');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT TalentProfiles ' || TO_CHAR(p_run_id), 'TalentProfiles');
+            'DMT TalentProfiles ' || TO_CHAR(p_run_id), 'TalentProfiles',
+            p_cemli_code     => 'TalentProfiles');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'TalentProfiles', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'TalentProfiles', l_dataset_status,
+            p_cemli_code     => 'TalentProfiles');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5663,13 +5693,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'PerfEvaluations');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'PerfEvaluations',
+            p_cemli_code     => 'PerfEvaluations');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT PerfEvaluations ' || TO_CHAR(p_run_id), 'PerfEvaluations');
+            'DMT PerfEvaluations ' || TO_CHAR(p_run_id), 'PerfEvaluations',
+            p_cemli_code     => 'PerfEvaluations');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'PerfEvaluations', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'PerfEvaluations', l_dataset_status,
+            p_cemli_code     => 'PerfEvaluations');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.
@@ -5717,13 +5750,16 @@
             RETURN;
         END IF;
 
-        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'WorkSchedules');
+        l_content_id := DMT_HDL_UTIL_PKG.UPLOAD_HDL(p_run_id, l_hdl_zip, l_filename, 'WorkSchedules',
+            p_cemli_code     => 'WorkSchedules');
         DBMS_LOB.FREETEMPORARY(l_hdl_zip);
         l_request_id := DMT_HDL_UTIL_PKG.SUBMIT_HDL(p_run_id, l_content_id,
-            'DMT WorkSchedules ' || TO_CHAR(p_run_id), 'WorkSchedules');
+            'DMT WorkSchedules ' || TO_CHAR(p_run_id), 'WorkSchedules',
+            p_cemli_code     => 'WorkSchedules');
         COMMIT;
 
-        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'WorkSchedules', l_dataset_status);
+        DMT_HDL_UTIL_PKG.POLL_HDL(p_run_id, l_request_id, 1800, FALSE, 'WorkSchedules', l_dataset_status,
+            p_cemli_code     => 'WorkSchedules');
         -- HDL base-lag retry: publish this cycle's HDL request id + data set
         -- status so EXECUTE_ONE can persist them and the queue can re-run the
         -- base proof on a later tick if the base rows lag.

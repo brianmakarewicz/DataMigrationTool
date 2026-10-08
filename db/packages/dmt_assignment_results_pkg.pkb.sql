@@ -414,7 +414,8 @@ AS
             p_run_id        => p_run_id,
             p_request_id    => p_request_id,
             p_log_context   => C_CEMLI,
-            x_message_count => l_msg_count);
+            x_message_count => l_msg_count,
+            p_cemli_code     => C_CEMLI);
         APPLY_HDL_ERRORS(p_run_id, p_request_id);
 
         -- Contract v1 base-tier positive proof (design section 5), Option A shape:

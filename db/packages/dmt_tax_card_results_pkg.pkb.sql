@@ -178,7 +178,8 @@ AS
             p_run_id        => p_run_id,
             p_request_id    => p_request_id,
             p_log_context   => C_CEMLI,
-            x_message_count => l_msg_count);
+            x_message_count => l_msg_count,
+            p_cemli_code     => C_CEMLI);
         APPLY_HDL_ERRORS(p_run_id, p_request_id);
 
         -- Post-reconciliation: capture the Fusion DIR card id on each LOADED
@@ -186,7 +187,8 @@ AS
         DMT_HDL_UTIL_PKG.LOOKUP_FUSION_IDS(
             p_run_id => p_run_id,
             p_object_type    => 'TaxCards',
-            p_log_context    => C_CEMLI || ' > CalculationCard');
+            p_log_context    => C_CEMLI || ' > CalculationCard',
+            p_cemli_code     => C_CEMLI);
 
         -- Standard per-package LOADED-promotion hook. For TaxCards it is a stub:
         -- promotion + id capture are done inside DMT_HDL_UTIL_PKG above.
