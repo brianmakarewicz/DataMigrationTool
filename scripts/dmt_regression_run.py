@@ -38,10 +38,10 @@ Usage:
   python scripts/dmt_regression_run.py --status-only 113        # evaluate an existing run
   python scripts/dmt_regression_run.py --json out.json          # machine-readable summary
 
-Exit codes: 0 = pass (verdict PASS, or 'PASS (known review items only)' when every
-review item is a known pre-existing one listed in scripts/regression_known_review.json),
-1 = hard failures, 2 = structurally passed but has NEW review items (log errors /
-warnings needing triage).
+Exit codes: 0 = no NEW issues (verdict PASS, or 'PASS (no new failures; N known)' when
+every failure and review item is a known pre-existing one listed in
+scripts/regression_known_issues.json - owner decision 2026-10-08), 1 = NEW hard
+failures, 2 = no new failures but NEW review items (log errors / warnings needing triage).
 
 SUBMIT_PIPELINE hang workaround: the package call is attempted first with a
 90s call timeout; on timeout the run+queue rows are created inline as one
@@ -831,48 +831,82 @@ def resolve_baseline(cur, run_id, baseline_arg, scenario, pipeline_codes):
 
 
 # ---------------------------------------------------------------------------
-# Known pre-existing review items (owner decision 2026-10-08: "if something never
-# passed before, I don't want to hold everything up"). scripts/regression_known_review.json
-# lists them by category + object (+ sub) only, never by volatile text (prefixes,
-# keys, HTTP details). A review item that cannot be keyed, or is not listed, is NEW.
+# Known pre-existing issues. Owner decision 2026-10-08: "change the gate - so that
+# there are no NEW failures". scripts/regression_known_issues.json lists failures and
+# review items that were already there and are accepted for now, matched on a stable
+# category + object (+ sub) (+ key) only, never on volatile text (run prefixes, HTTP
+# details, counts). Anything that cannot be keyed, or is not listed, is NEW and blocks.
+# A sub-object that regressed against the step [5] baseline run is always NEW.
 
-KNOWN_REVIEW_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                 'regression_known_review.json')
+KNOWN_ISSUES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 'regression_known_issues.json')
+
+# (category, regex, groups) - groups name what each regex group holds.
+_ISSUE_PATTERNS = [
+    ('ZERO_RECORDS',      r'DONE with zero records: (\S+)',                    ('object',)),
+    ('REST_VERIFY',       r'REST verify ([^/:]+)/(.+?): [A-Z_]+\b',             ('object', 'sub')),
+    ('QUEUE_FAILED',      r'queue FAILED: (\S+)',                              ('object',)),
+    ('QUEUE_STUCK',       r'queue stuck: (\S+) left in ',                      ('object',)),
+    ('EXPECTED_OUTCOME',  r'EXPECTED OUTCOME not met: (.+?): ',                ('sub',)),
+    ('GOOD_ROWS_FAILED',  r'GOOD rows FAILED: (.+?) \(\d+ rows',               ('sub',)),
+    ('BAD_ROWS_LOADED',   r'BAD rows LOADED \(validation gap\): (.+?): ',      ('sub',)),
+    ('EMPTY_ERROR_TEXT',  r'FAILED rows with EMPTY error text: (.+?): ',       ('sub',)),
+    ('NON_TERMINAL_ROW',  r'row in non-terminal status \S+: (.+?) / (.+)$',    ('sub', 'key')),
+]
 
 
-def review_key(item):
-    """(category, object, sub) for a review string, or None if it has no stable key."""
-    m = re.match(r'DONE with zero records: (\S+)', item)
-    if m:
-        return ('ZERO_RECORDS', m.group(1), None)
-    m = re.match(r'REST verify ([^/:]+)/(.+?): [A-Z_]+\b', item)
-    if m:
-        return ('REST_VERIFY', m.group(1), m.group(2))
+def issue_key(item, prefix=None):
+    """dict(category, object, sub, key) for a failure/review string, or None when it
+    has no stable key (e.g. baseline regressions, run status) - those are always NEW.
+    A row key has the run prefix stripped so it is stable across runs."""
+    for cat, rx, groups in _ISSUE_PATTERNS:
+        m = re.match(rx, item)
+        if m:
+            k = {'category': cat, 'object': None, 'sub': None, 'key': None}
+            k.update(zip(groups, m.groups()))
+            if k['key'] and prefix and k['key'].startswith(str(prefix)):
+                k['key'] = k['key'][len(str(prefix)):]
+            return k
     return None
 
 
-def classify_review(review):
-    """Split review items into (known, new, cleared). cleared = listed known items
-    that did not appear in this run. An unreadable file makes every item NEW."""
-    try:
-        with open(KNOWN_REVIEW_FILE, encoding='utf-8') as f:
-            entries = json.load(f).get('known_review') or []
-    except (OSError, ValueError) as e:
-        print(f"WARNING: cannot read {KNOWN_REVIEW_FILE} ({e}); every review item counts as NEW")
-        entries = []
+def _regressed_subs(baseline_regressions):
+    """Sub-object names step [5] reported as regressed ("<sub>: good LOADED 3->1")."""
+    return {r.split(': ', 1)[0] for r in (baseline_regressions or [])}
 
-    def matches(e, k):
-        return (k is not None and e.get('category') == k[0] and e.get('object') == k[1]
-                and (e.get('sub') is None or e.get('sub') == k[2]))
 
+def classify_issues(items, kind, prefix=None, regressed_subs=(), entries=None):
+    """Split failures (kind 'FAIL') or review items (kind 'REVIEW') into
+    (known, new, matched_entry_indexes). An entry matches when its kind and category
+    agree and every one of object/sub/key it names is equal; it must name at least
+    an object or a sub. A known item whose sub-object regressed vs the baseline is NEW."""
+    if entries is None:
+        entries = load_known_issues()
     known, new, hit = [], [], set()
-    for r in review:
-        k = review_key(r)
-        idx = [i for i, e in enumerate(entries) if matches(e, k)]
-        (known if idx else new).append(r)
+    for it in items:
+        k = issue_key(it, prefix)
+        idx = []
+        if k is not None and not (k['sub'] and k['sub'] in regressed_subs):
+            for i, e in enumerate(entries):
+                if (e.get('kind', 'REVIEW') == kind and e.get('category') == k['category']
+                        and (e.get('object') or e.get('sub'))
+                        and all(e.get(f) is None or e.get(f) == k[f]
+                                for f in ('object', 'sub', 'key'))):
+                    idx.append(i)
+        (known if idx else new).append(it)
         hit.update(idx)
-    cleared = [e for i, e in enumerate(entries) if i not in hit]
-    return known, new, cleared
+    return known, new, hit
+
+
+def load_known_issues():
+    """The known_issues list; an unreadable file means nothing is known (fails closed)."""
+    try:
+        with open(KNOWN_ISSUES_FILE, encoding='utf-8') as f:
+            return json.load(f).get('known_issues') or []
+    except (OSError, ValueError) as e:
+        print(f"WARNING: cannot read {KNOWN_ISSUES_FILE} ({e}); every failure and "
+              f"review item counts as NEW")
+        return []
 
 
 def main():
@@ -917,36 +951,48 @@ def main():
 
     print(f"\n{'=' * 70}")
     n_fail, n_rev = len(result['failures']), len(result['review'])
-    known, new, cleared = classify_review(result['review'])
-    verdict = 'FAIL' if n_fail else ('PASS' if n_rev == 0 else
-              ('PASS (known review items only)' if not new else 'PASS (with review items)'))
-    print(f"VERDICT: {verdict} — RUN_ID={run_id}: {n_fail} failure(s), {n_rev} review item(s) "
-          f"({len(known)} known pre-existing, {len(new)} new)")
+    entries = load_known_issues()
+    regressed = _regressed_subs(result.get('baseline_regressions'))
+    kf, nf, hit_f = classify_issues(result['failures'], 'FAIL', result.get('prefix'), regressed, entries)
+    kr, nr, hit_r = classify_issues(result['review'], 'REVIEW', result.get('prefix'), regressed, entries)
+    cleared = [e for i, e in enumerate(entries) if i not in hit_f | hit_r]
+    n_known = len(kf) + len(kr)
+    if n_fail == 0 and n_rev == 0:
+        verdict = 'PASS'
+    elif not nf and not nr:
+        verdict = f'PASS (no new failures; {n_known} known)'
+    else:
+        verdict = 'FAIL' if nf else 'PASS (with review items)'
+    print(f"VERDICT: {verdict} — RUN_ID={run_id}: {n_fail} failure(s) ({len(nf)} new), "
+          f"{n_rev} review item(s) ({len(nr)} new)")
     print('=' * 70)
-    for f in result['failures']:
+    if nf or nr:
+        print(f"  NEW issues ({len(nf) + len(nr)}) - these block promotion:")
+    for f in nf:
         print(f"  FAIL    {f}")
-    if new:
-        print(f"  NEW review items ({len(new)}) - these block promotion:")
-    for r in new:
+    for r in nr:
         print(f"  REVIEW  {r}")
-    if known:
-        print(f"  KNOWN pre-existing review items ({len(known)}) - listed in "
-              f"scripts/regression_known_review.json, non-blocking:")
-    for r in known:
-        print(f"  KNOWN   {r}")
+    if n_known:
+        print(f"  KNOWN pre-existing issues ({n_known}) - listed in "
+              f"scripts/regression_known_issues.json, non-blocking:")
+    for f in kf:
+        print(f"  KNOWN FAIL    {f}")
+    for r in kr:
+        print(f"  KNOWN REVIEW  {r}")
     for e in cleared:
-        what = f"{e.get('category')} {e.get('object')}" + (f"/{e['sub']}" if e.get('sub') else '')
-        print(f"  KNOWN item cleared: {what} — remove it from regression_known_review.json")
+        what = ' '.join(str(e[f]) for f in ('kind', 'category', 'object', 'sub', 'key') if e.get(f))
+        print(f"  KNOWN item cleared: {what} — remove it from regression_known_issues.json")
     result['verdict'] = verdict
-    result['known_review'], result['new_review'] = known, new
-    result['known_review_cleared'] = cleared
+    result['known_failures'], result['new_failures'] = kf, nf
+    result['known_review'], result['new_review'] = kr, nr
+    result['known_issues_cleared'] = cleared
 
     if args.json:
         with open(args.json, 'w', encoding='utf-8') as fh:
             json.dump(result, fh, indent=2, default=str)
         print(f"\nJSON summary written to {args.json}")
 
-    sys.exit(0 if n_fail == 0 and not new else (2 if n_fail == 0 else 1))
+    sys.exit(0 if not nf and not nr else (1 if nf else 2))
 
 
 if __name__ == '__main__':

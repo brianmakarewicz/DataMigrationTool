@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Offline test of the known-review classifier in scripts/dmt_regression_run.py.
+"""Offline test of the known-issues classifier in scripts/dmt_regression_run.py.
 
-Feeds the 11 review items that full regression run 300 still reports on main
-5aa506a (after the REST lookup fix #669), all pre-existing and never passed, and
-checks they classify as KNOWN with zero NEW, while volatile text (prefixes, keys, HTTP detail) does not affect matching
-and anything unlisted is NEW. No database or network needed.
+Owner decision 2026-10-08: "change the gate - so that there are no NEW failures".
+Proves: the 11 review items run 300 reports classify as KNOWN with zero NEW; an
+unlisted failure is NEW (blocks) while a listed one is KNOWN (does not); volatile
+text (run prefix, HTTP detail, counts) does not affect matching; a listed item
+whose sub-object regressed against the baseline run is NEW. No database needed.
 
-    python test/unit/test_regression_known_review.py
+    python test/unit/test_regression_known_issues.py
 """
 import json
 import sys
@@ -20,38 +21,65 @@ ZERO = ["SalaryBases", "TaxCards", "W2Balances", "BenParticipant", "BenDependent
         "BenBeneficiary", "Absences", "PerfEvaluations", "WorkSchedules"]
 REST = [("BillingEvents", "Billing Events"), ("Customers", "Locations")]
 
+# A listed FAIL entry used only by this test (the committed list has none today).
+FAIL_ENTRIES = [
+    {"kind": "FAIL", "category": "GOOD_ROWS_FAILED", "sub": "GL Budget Lines",
+     "backlog": "test", "reason": "test"},
+    {"kind": "FAIL", "category": "NON_TERMINAL_ROW", "sub": "Item Master",
+     "key": "DMT-RT-SERIAL-001", "backlog": "test", "reason": "test"},
+]
+
 
 def main():
-    run300 = ([f"DONE with zero records: {o} (no staged regression data?)" for o in ZERO]
-              + [f"REST verify {o}/{s}: NOT_FOUND (Record not found in Fusion for {s} = 93354RT-X)"
-                 for o, s in REST])
     checks = []
+    run300 = ([f"DONE with zero records: {o} (no staged regression data?)" for o in ZERO]
+              + [f"REST verify {o}/{s}: NOT_FOUND (Record not found in Fusion for {s} = 1)"
+                 for o, s in REST])
+    entries = reg.load_known_issues()
+    k, n, hit = reg.classify_issues(run300, 'REVIEW', '93354', (), entries)
+    checks.append(("run 300's 11 review items are all KNOWN, 0 NEW, every entry used",
+                   (len(k), len(n), len(hit)) == (11, 0, len(entries))))
 
-    known, new, cleared = reg.classify_review(run300)
-    checks.append(("run 300's 11 items are all KNOWN, 0 NEW, 0 cleared",
-                   (len(known), len(new), len(cleared)) == (11, 0, 0)))
+    k, n, _ = reg.classify_issues(
+        ["REST verify BillingEvents/Billing Events: ERROR (ORA-20003 Status: 403 | URL x?q=99999RT)"],
+        'REVIEW', '99999', (), entries)
+    checks.append(("different status/HTTP detail still matches", (len(k), len(n)) == (1, 0)))
 
-    volatile = ["REST verify BillingEvents/Billing Events: ERROR (REST call failed: ORA-20003: HTTP GET "
-                "failed. Status: 403 | URL: https://x/y?q=99999RT)"]
-    k, n, c = reg.classify_review(volatile)
-    checks.append(("different status/prefix/HTTP detail still matches", (len(k), len(n)) == (1, 0)))
-    checks.append(("10 known items not seen are reported as cleared", len(c) == 10))
+    k, n, _ = reg.classify_issues(
+        ["REST verify Customers/Parties: NOT_FOUND (x)",
+         "DONE with zero records: Workers (no staged regression data?)",
+         "LOG ERROR x3: DMT_X_PKG.RUN: boom"], 'REVIEW', None, (), entries)
+    checks.append(("unlisted review items are NEW", (len(k), len(n)) == (0, 3)))
 
-    unlisted = ["REST verify Customers/Parties: NOT_FOUND (x)",
-                "REST verify Assets/Asset Books: NOT_FOUND (x)",
-                "DONE with zero records: Workers (no staged regression data?)",
-                "LOG ERROR x3: DMT_X_PKG.RUN: boom",
-                "queue SKIPPED: SalaryBases (dependency failed upstream)"]
-    k, n, _ = reg.classify_review(unlisted)
-    checks.append(("unlisted sub, unlisted object, log errors, skips are NEW",
-                   (len(k), len(n)) == (0, 5)))
+    k, n, _ = reg.classify_issues(["DONE with zero records: SalaryBases (x)"], 'FAIL',
+                                  None, (), entries)
+    checks.append(("a REVIEW entry never excuses a FAIL of the same shape", len(n) == 1))
 
-    entries = json.loads((REPO / "scripts" / "regression_known_review.json")
-                         .read_text(encoding="utf-8"))["known_review"]
-    checks.append(("every entry has category, object, backlog, reason",
-                   all(e.get("category") in ("ZERO_RECORDS", "REST_VERIFY") and e.get("object")
-                       and e.get("backlog") and e.get("reason")
-                       and (e["category"] != "REST_VERIFY" or e.get("sub")) for e in entries)))
+    fails = ["GOOD rows FAILED: GL Budget Lines (2 rows, 2 keys): 93354RT-GLB-1 x1 — boom",
+             "row in non-terminal status UNACCOUNTED: Item Master / 93354DMT-RT-SERIAL-001",
+             "GOOD rows FAILED: AP Invoice Lines (1 rows, 1 keys): 93354RT-AP-1 x1 — boom",
+             "row in non-terminal status UNACCOUNTED: Item Master / 93354DMT-RT-LOT-001",
+             "queue FAILED: Suppliers — ORA-00001",
+             "baseline regression vs run 299: GL Budget Lines: good LOADED 3->1"]
+    k, n, _ = reg.classify_issues(fails, 'FAIL', '93354', (), FAIL_ENTRIES)
+    checks.append(("listed failures are KNOWN (incl. row key with run prefix stripped)",
+                   k == fails[:2]))
+    checks.append(("unlisted failures, other row keys, baseline regressions are NEW (block)",
+                   n == fails[2:]))
+
+    k, n, _ = reg.classify_issues(fails[:1], 'FAIL', '93354', {"GL Budget Lines"}, FAIL_ENTRIES)
+    checks.append(("a listed failure whose sub-object regressed vs baseline is NEW",
+                   (len(k), len(n)) == (0, 1)))
+
+    k, n, _ = reg.classify_issues(fails[:1], 'FAIL', None, (),
+                                  [{"kind": "FAIL", "category": "GOOD_ROWS_FAILED"}])
+    checks.append(("an entry naming no object or sub matches nothing", (len(k), len(n)) == (0, 1)))
+
+    raw = json.loads((REPO / "scripts" / "regression_known_issues.json").read_text(encoding="utf-8"))
+    checks.append(("every committed entry has kind, category, object/sub, backlog, reason",
+                   all(e.get("kind") in ("FAIL", "REVIEW") and e.get("category")
+                       and (e.get("object") or e.get("sub")) and e.get("backlog") and e.get("reason")
+                       for e in raw["known_issues"])))
 
     bad = 0
     for name, ok in checks:

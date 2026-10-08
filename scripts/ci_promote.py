@@ -21,9 +21,10 @@ THE PROMOTION GATE (scripts/promotion_gate.py). Steps 1-3 each record evidence
 .ci_evidence/promotion_evidence.json, and every record and every gate decision
 is appended to .ci_evidence/promotion_log.jsonl. deploy-prod refuses unless that
 evidence shows, for the exact code being promoted: a clean local deploy, a FULL
-local regression with verdict PASS or 'PASS (known review items only)' (exit 0;
-the latter only when every review item is a never-passed item listed in
-scripts/regression_known_review.json) that finished within the last 24h,
+local regression with no NEW failures or review items (exit 0, verdict PASS or
+'PASS (no new failures; N known)': owner decision 2026-10-08, "change the gate - so
+that there are no NEW failures"; known items are listed in
+scripts/regression_known_issues.json) that finished within the last 24h,
 and a PASS click-through for that same run id, run after the regression.
 `python scripts/ci_promote.py gate` checks without deploying.
 
@@ -207,11 +208,11 @@ def force_local_prefix(v):
     print(f"[prefix] local DMT_RUN_PREFIX_SEQ set to issue {v} next")
 
 # ---------------------------------------------------------------- regression
-def _known_review_sha():
-    """sha256 of scripts/regression_known_review.json, or None if unreadable."""
+def _known_issues_sha():
+    """sha256 of scripts/regression_known_issues.json, or None if unreadable."""
     import hashlib
     try:
-        return hashlib.sha256((REPO / "scripts" / "regression_known_review.json")
+        return hashlib.sha256((REPO / "scripts" / "regression_known_issues.json")
                               .read_bytes()).hexdigest()
     except OSError:
         return None
@@ -220,8 +221,8 @@ def _known_review_sha():
 def run_regression(target, pipelines=None):
     """Run the deterministic regression against the target.
 
-    Returns a dict: ok (True only on exit 0 with verdict PASS or 'PASS (known
-    review items only)'), run_id, verdict, known_review / new_review counts,
+    Returns a dict: ok (True only on exit 0 with a passing verdict, i.e. no NEW
+    failures or review items), run_id, verdict, known/new failure and review counts,
     exit_code, pipelines, started_at, finished_at. The run id and verdict come
     from the harness's own --json summary, never from guessing.
     pipelines: optional subset (e.g. 'HCM') passed to dmt_regression_run.py."""
@@ -256,20 +257,23 @@ def run_regression(target, pipelines=None):
             os.remove(json_path)
         except OSError:
             pass
-    res = {"ok": rc == 0 and summary.get("verdict") in gate.PASSING_REGRESSION_VERDICTS,
+    res = {"ok": rc == 0 and gate.regression_verdict_passes(summary.get("verdict")),
            "run_id": summary.get("run_id"),
            "verdict": summary.get("verdict") or "UNKNOWN (no JSON summary)",
            "exit_code": rc,
+           "known_failures": len(summary.get("known_failures") or []),
+           "new_failures": len(summary.get("new_failures") or []),
            "known_review": len(summary.get("known_review") or []),
            "new_review": len(summary.get("new_review") or []),
-           # Pin the exact known-review list this verdict relied on, so any change
+           # Pin the exact known-issues list this verdict relied on, so any change
            # to that list is visible in the evidence and the promotion log.
-           "known_review_file_sha256": _known_review_sha(),
+           "known_issues_file_sha256": _known_issues_sha(),
            "pipelines": summary.get("pipeline_codes") or pipelines or gate.FULL_PIPELINES,
            "target": target, "started_at": started, "finished_at": finished}
     print(f"[regression:{target}] run {res['run_id']}: "
           f"{'PASS' if res['ok'] else 'FAIL'} (verdict {res['verdict']}, exit {rc}, "
-          f"{res['known_review']} known / {res['new_review']} new review item(s))")
+          f"new: {res['new_failures']} failure(s) / {res['new_review']} review; "
+          f"known: {res['known_failures']} failure(s) / {res['known_review']} review)")
     return res
 
 # ---------------------------------------------------------------- click-through

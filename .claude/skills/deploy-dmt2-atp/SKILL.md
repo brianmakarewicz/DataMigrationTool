@@ -88,14 +88,14 @@ This prints exactly what the ATP deploy step will decide, one line per check, wi
 deploying anything. It needs all of these, for the current commit:
 
 - a clean local deploy of this code, made before the regression started;
-- a full local regression with exit code 0, finished within the last 24 hours, whose
-  verdict is PASS or `PASS (known review items only)`. The second verdict means zero
-  failures and every review item is a never-passed item listed in
-  `scripts/regression_known_review.json` (owner decision 2026-10-08: "if something
-  never passed before, I don't want to hold everything up"). Any NEW review item or
-  any failure still blocks. Never add an item to that file to get past the gate; an
-  item belongs there only if it has never passed, and the owner decides. When the
-  harness prints "KNOWN item cleared", delete that entry;
+- a full local regression with exit code 0 and no NEW failures or review items,
+  finished within the last 24 hours (verdict PASS or `PASS (no new failures; N known)`).
+  Owner decision 2026-10-08, verbatim: "change the gate - so that there are no NEW
+  failures". KNOWN means listed in `scripts/regression_known_issues.json` (pre-existing
+  issues already accepted, matched on kind + category + object/sub/key). Anything not on
+  the list blocks, and so does a sub-object that did worse than in the baseline run.
+  Never add an item to that file to get past the gate; the owner decides what is
+  accepted. When the script prints "KNOWN item cleared", delete that entry;
 - a PASS click-through of the local console for that same run id, run after the
   regression finished.
 
@@ -117,8 +117,8 @@ If you are an agent and the gate refuses here, stop and report it to the owner.
 
 ### Owner override (the owner personally, never an agent or CI)
 
-The gate stays strict: it needs a clean regression PASS or `PASS (known review
-items only)` (exit 0) and a passing
+The gate stays strict: it needs a regression with no NEW failures or review
+items (exit 0) and a passing
 click-through for the same run on the same code. The one exception is an explicit
 override by the owner:
 
