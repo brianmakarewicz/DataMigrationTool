@@ -53,8 +53,13 @@ Live standard violations / gaps still present in this object's code (section 5 /
    header, procedures signal failure by re-raising rather than an `x_error_code` OUT parameter,
    no `l_step` breadcrumbs, and the validator keeps one nested DECLARE block for the upstream
    check.
-4. The reconciliation report matches base lines on `INTERFACE_LINE_ATTRIBUTE1 LIKE :P_PREFIX||'%'`
-   (prefix as a search value) rather than on base `REQUEST_ID = :P_IMPORT_ESS_ID`.
+4. **One work item, several loads.** ARInvoices is one work item that loops over its
+   (BU, batch source) groups, one load and one AutoInvoice import per group, and reconciles
+   each group inline with that group's own ids. The work item can record only one pair of
+   ids (the last group's), so a later reconcile-only rerun of a multi-group run re-reads only
+   the last group by job id. Rows already LOADED or FAILED are never touched by a rerun, so
+   this matters only for rows left UNACCOUNTED in an earlier group. Fix if it bites: make
+   ARInvoices spawn one child work item per group (as Requisitions and Items do).
 
 ## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
 
@@ -87,6 +92,18 @@ models both with one STG + one TFM table each.
    fix was required.
 
 ## History
+- 2026-10-07 recon report V4 (`DMT_AR_RECON_V4_DM`, alongside V1-V3; backlog #230): rows are
+  found only by the load's own Fusion job ids. Base lines by
+  `RA_CUSTOMER_TRX_LINES_ALL.REQUEST_ID` = the AutoInvoiceImportEss id, base distributions
+  through their loaded line, interface rows and errors by `LOAD_REQUEST_ID` (AutoInvoice clears
+  `REQUEST_ID` on the interface lines it rejects, so the import id is not added there). No LIKE
+  on the run prefix. `DMT_AR_RESULTS_PKG` passes the import id to the report; the import lookup
+  also matches the group's transaction source on AutoInvoiceImportEss argument 2.
+  Proof run 262 (prefix 93318, scenario RegressionTest2610071920): load 10075458, import
+  10075462 recorded on the work item and stamped by Fusion on all three base lines and headers;
+  3 lines LOADED ($1,400), 3 lines and 2 distributions FAILED ($1,500) with their own real error
+  or the cross-grain quote, 0 UNACCOUNTED; a reconcile-only rerun left both TFM tables
+  byte-identical.
 - 2026-10-07 recon report V3 (`DMT_AR_RECON_V3_DM`, alongside V1/V2): line RECORD_KEY =
   ATTRIBUTE1/ATTRIBUTE2 so keyset paging never drops a line of a multi-line invoice; transform
   stamps the same RECON_KEY; page cap sized for AutoAccounting rows DMT did not send. Verify in

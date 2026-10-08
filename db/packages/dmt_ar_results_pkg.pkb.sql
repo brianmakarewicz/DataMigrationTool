@@ -66,6 +66,9 @@ AS
 --                   tier pinned by INTERFACE_LINE_ATTRIBUTE2 (report DMT_REFERENCE).
 --   2026-10-07  BM  Recon V3: line key ATTRIBUTE1/ATTRIBUTE2 (unique, safe paging);
 --                   page cap sized for report rows DMT did not send.
+--   2026-10-07  BM  Recon V4: the report is called with the load's own load and
+--                   import ids and finds rows only by those job ids (base lines by
+--                   the AutoInvoice import REQUEST_ID), never by the run prefix.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_AR_RESULTS_PKG';
@@ -108,8 +111,9 @@ AS
     -- RECON_KEY = RECORD_KEY.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_ARINVOICES (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_request_id    IN VARCHAR2,
+        p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_ARINVOICES';
         l_gen_count NUMBER := 0;
@@ -128,13 +132,19 @@ AS
         INTO   l_gen_count
         FROM   dual;
 
+        -- Report V4 (owner decision 2026-10-07) finds rows only by this load's
+        -- Fusion job ids: base lines by the AutoInvoice import job's REQUEST_ID,
+        -- interface rows and errors by the load request id. Both ids belong to
+        -- this one load (one BU + batch source group), so the report runs once
+        -- per load with that load's own ids.
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count * C_REPORT_ROWS_PER_TFM_ROW,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => TO_NUMBER(p_request_id),
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count * C_REPORT_ROWS_PER_TFM_ROW,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -607,9 +617,10 @@ AS
 
     -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
-    -- Contract v1 apply. The ARInvoices load ESS id is the Contract v1
-    -- P_LOAD_REQUEST_ID; the report's run-scoped selectors pick up the whole run
-    -- regardless of how many batches it submitted (AR is grouped by BU+BatchSource).
+    -- Contract v1 apply once for ONE load (AR is grouped by BU + batch source, one
+    -- load per group): the load ESS id is the Contract v1 P_LOAD_REQUEST_ID and
+    -- the AutoInvoice import ESS id is P_IMPORT_ESS_ID. The report finds rows
+    -- only by these two job ids; the run prefix is never a search value.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
@@ -621,11 +632,12 @@ AS
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
-            p_message        => C_PROC || ' start. load_ess_id: ' || p_load_ess_id,
+            p_message        => C_PROC || ' start. load_ess_id: ' || p_load_ess_id
+                                || ', import_ess_id: ' || p_import_ess_id,
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        APPLY_CONTRACT_V1_ARINVOICES(p_run_id, TO_CHAR(p_load_ess_id));
+        APPLY_CONTRACT_V1_ARINVOICES(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id);
 
         -- Whole-document rejection (design section 5): rows AutoInvoice held back
         -- or rejected with their Fusion invoice carry the real error of the row

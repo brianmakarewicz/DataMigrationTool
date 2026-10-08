@@ -1,37 +1,75 @@
+-- Repo mirror of the SQL embedded in DMT_PO_RECON_V2_DM.xdm (the .xdm is authoritative;
+-- scripts/check_bip_recon_reports.py rule BIP-MIRROR keeps the two equal).
 -- ============================================================
--- PurchaseOrders reconciliation query -- BIP reconciliation report
--- contract v1 (nine columns, keyset pagination, six parameters).
--- Standalone copy of the SQL embedded in DMT_PO_RECON_DM.xdm; keep the
--- two in sync. Covers PurchaseOrders / BlanketPOs / Contracts (one
--- shared FBDI zip, interface + base tables, transformer and DM).
+-- PurchaseOrders BIP reconciliation query -- BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination), V2.
+-- Data source: ApplicationDB_FSCM. The repo mirror of this SQL is
+-- bip/PurchaseOrders/query.sql.
+-- V2 (2026-10-07) is deployed ALONGSIDE DMT_PO_RECON_DM (V1);
+-- BIP objects are never overwritten.
 --
--- Bind variables (Contract v1, six):
---   :P_RUN_ID          pipeline run id -- prefixes every stamped key
---   :P_LOAD_REQUEST_ID Import Orders load id -- per-batch INTERFACE selector
---   :P_IMPORT_ESS_ID   Import Orders ESS request id -- BASE selector (REQUEST_ID)
---   :P_PREFIX          run prefix -- declared for symmetry, not used here
---   :P_CHUNK_SIZE      keyset page size
---   :P_AFTER_KEY       keyset cursor (previous page's last RECORD_KEY)
+-- NINE columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE
 --
--- Nine columns, in contract order:
---   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS, FUSION_ID,
---   ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF, DMT_REFERENCE
+-- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY. No P_OFFSET / P_LIMIT.
 --
--- Eight tiers = 4 record types (headers/lines/line-locations/
--- distributions) x BASE + INTERFACE, UNION ALL-ed, ordered by RECORD_KEY.
---   BASE      = row present in a Fusion base table  => SUCCESS, FUSION_ID set.
---   INTERFACE = rejection left in the interface     => ERROR, real Fusion text.
--- See the DM header for the full row-selection rationale and the live
--- facts each tier was proven against.
+-- Row selection (owner decision 2026-10-07, backlog #264): rows
+-- are FOUND only by the Fusion job ids of ONE work item (one
+-- procurement-BU cycle = one load = one Import Orders run), and by
+-- the document style, because PurchaseOrders, BlanketPOs and
+-- Contracts share the PO interface and base tables.
+--   BASE headers, lines, schedules: REQUEST_ID = :P_IMPORT_ESS_ID
+--     (Import Orders stamps its own request id on PO_HEADERS_ALL,
+--     PO_LINES_ALL and PO_LINE_LOCATIONS_ALL), header
+--     TYPE_LOOKUP_CODE = 'STANDARD'.
+--   BASE distributions: through their loaded schedule (the
+--     schedule's REQUEST_ID = :P_IMPORT_ESS_ID); PO_DISTRIBUTIONS_ALL
+--     does not stamp REQUEST_ID on this pod.
+--   INTERFACE headers: LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID AND
+--     REQUEST_ID = :P_IMPORT_ESS_ID AND DOCUMENT_TYPE_CODE =
+--     'STANDARD'.
+--   INTERFACE lines, schedules, distributions: LOAD_REQUEST_ID =
+--     :P_LOAD_REQUEST_ID, under a header selected as above, joined on
+--     the Fusion interface ids (INTERFACE_HEADER_ID / LINE_ID /
+--     LINE_LOCATION_ID). Fusion leaves REQUEST_ID NULL on the child
+--     interface rows, so the import job is applied through the header.
+--   PO_INTERFACE_ERRORS: REQUEST_ID = :P_IMPORT_ESS_ID, joined per
+--     tier on the numeric interface id.
+-- The run prefix and run id are never used to select rows (no LIKE
+-- anywhere). P_RUN_ID and P_PREFIX are declared for contract
+-- symmetry only. The document number and line, schedule and
+-- distribution numbers are used only as RECORD_KEY, to match a row
+-- Fusion returned back to its TFM row.
+--
+-- INTERFACE tiers return rejections only (PROCESS_CODE <>
+-- 'ACCEPTED'); accepted rows are covered by the BASE tiers, so
+-- nothing is counted twice.
+--
+-- RECORD_KEY (= each tier's TFM RECON_KEY, stamped by
+-- DMT_PO_TRANSFORM_PKG; BASE and INTERFACE emit the same key):
+--   header    prefixed DOCUMENT_NUM (= base SEGMENT1)
+--   line      DOCUMENT_NUM || ':LN:' || LINE_NUM
+--   schedule  ... || ':LOC:' || SHIPMENT_NUM
+--   dist      ... || ':DIST:' || DISTRIBUTION_NUM
+-- Keyset: ORDER BY RECORD_KEY (pinned to BINARY so the ordering
+-- and the > comparison agree), only rows whose RECORD_KEY sorts
+-- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
+--
+-- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
+--   BASE (present in base table) => SUCCESS; INTERFACE (rejection) => ERROR.
+-- FUSION_ID non-null on every BASE row; ERROR_MESSAGE is the real
+-- Fusion text from PO_INTERFACE_ERRORS for that tier's own row, or
+-- NULL (the reconciler leaves such a row for the cross-grain
+-- propagation or the UNACCOUNTED sweep).
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    -- ========== BASE tier: positive proof, one block per record type ==========
-
-    -- BASE / headers. RECORD_KEY = base SEGMENT1 (prefixed DOCUMENT_NUM
-    -- = TFM business key; the base header does not persist the stamped key).
+    -- BASE / headers -- found by the import job's REQUEST_ID, Standard style.
     SELECT
         'PurchaseOrders'                     AS object_type,
         h.segment1                           AS record_key,
@@ -39,16 +77,16 @@ FROM (
         'SUCCESS'                            AS fusion_status,
         h.po_header_id                       AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        h.request_id                         AS load_request_id,
         h.segment1                           AS source_ref,
         h.interface_source_code              AS dmt_reference
     FROM   po_headers_all h
-    WHERE  h.request_id = :P_IMPORT_ESS_ID
-    AND    :P_IMPORT_ESS_ID IS NOT NULL
+    WHERE  h.request_id       = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    h.type_lookup_code = 'STANDARD'
 
     UNION ALL
 
-    -- BASE / lines. RECORD_KEY derived from parent segment1 + LINE_NUM.
+    -- BASE / lines -- found by the import job's REQUEST_ID, Standard style.
     SELECT
         'PurchaseOrders.Line'                AS object_type,
         h.segment1 || ':LN:' || l.line_num   AS record_key,
@@ -56,17 +94,18 @@ FROM (
         'SUCCESS'                            AS fusion_status,
         l.po_line_id                         AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        l.request_id                         AS load_request_id,
         h.segment1                           AS source_ref,
         h.interface_source_code              AS dmt_reference
     FROM   po_lines_all l
     JOIN   po_headers_all h ON h.po_header_id = l.po_header_id
-    WHERE  l.request_id = :P_IMPORT_ESS_ID
-    AND    :P_IMPORT_ESS_ID IS NOT NULL
+    WHERE  l.request_id       = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    h.type_lookup_code = 'STANDARD'
 
     UNION ALL
 
-    -- BASE / line-locations. RECORD_KEY = segment1 + LINE_NUM + SHIPMENT_NUM.
+    -- BASE / schedules (line locations) -- found by the import job's
+    -- REQUEST_ID, Standard style.
     SELECT
         'PurchaseOrders.LineLocation'        AS object_type,
         h.segment1 || ':LN:' || l.line_num || ':LOC:' || ll.shipment_num  AS record_key,
@@ -74,21 +113,19 @@ FROM (
         'SUCCESS'                            AS fusion_status,
         ll.line_location_id                  AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        ll.request_id                        AS load_request_id,
         h.segment1                           AS source_ref,
         h.interface_source_code              AS dmt_reference
     FROM   po_line_locations_all ll
     JOIN   po_lines_all   l ON l.po_line_id   = ll.po_line_id
     JOIN   po_headers_all h ON h.po_header_id = ll.po_header_id
-    WHERE  ll.request_id = :P_IMPORT_ESS_ID
-    AND    :P_IMPORT_ESS_ID IS NOT NULL
+    WHERE  ll.request_id      = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    h.type_lookup_code = 'STANDARD'
 
     UNION ALL
 
-    -- BASE / distributions. PO_DISTRIBUTIONS_ALL does not stamp REQUEST_ID
-    -- on this pod, so the distribution is confirmed transitively through
-    -- its loaded parent line-location. RECORD_KEY = segment1 + LINE_NUM +
-    -- SHIPMENT_NUM + DISTRIBUTION_NUM.
+    -- BASE / distributions -- through their loaded schedule (the
+    -- schedule's REQUEST_ID = the import job), Standard style.
     SELECT
         'PurchaseOrders.Distribution'        AS object_type,
         h.segment1 || ':LN:' || l.line_num || ':LOC:' || ll.shipment_num
@@ -97,25 +134,24 @@ FROM (
         'SUCCESS'                            AS fusion_status,
         d.po_distribution_id                 AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        ll.request_id                        AS load_request_id,
         h.segment1                           AS source_ref,
         h.interface_source_code              AS dmt_reference
     FROM   po_distributions_all d
     JOIN   po_line_locations_all ll ON ll.line_location_id = d.line_location_id
     JOIN   po_lines_all   l ON l.po_line_id   = d.po_line_id
     JOIN   po_headers_all h ON h.po_header_id = d.po_header_id
-    WHERE  ll.request_id = :P_IMPORT_ESS_ID
-    AND    :P_IMPORT_ESS_ID IS NOT NULL
+    WHERE  ll.request_id      = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    h.type_lookup_code = 'STANDARD'
 
     UNION ALL
 
-    -- ========== INTERFACE tier: rejections only (PROCESS_CODE <> ACCEPTED) ==========
-
-    -- INTERFACE / headers. RECORD_KEY = stamped header key; error from
-    -- PO_INTERFACE_ERRORS at the header level (no deeper interface id).
+    -- INTERFACE / headers -- found by the load and import job ids,
+    -- Standard style. Error = PO_INTERFACE_ERRORS rows of the import
+    -- job on this header that carry no deeper interface id.
     SELECT
         'PurchaseOrders'                     AS object_type,
-        h.interface_header_key               AS record_key,
+        h.document_num                       AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -132,22 +168,27 @@ FROM (
                    e.column_name || ': ' || e.error_message,
                    ' | ') WITHIN GROUP (ORDER BY e.interface_transaction_id), '') AS error_message
         FROM   po_interface_errors e
-        WHERE  e.interface_header_id IS NOT NULL
+        WHERE  e.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+        AND    e.interface_header_id IS NOT NULL
         AND    e.interface_line_id   IS NULL
         AND    e.interface_line_location_id IS NULL
         AND    e.interface_distribution_id  IS NULL
         GROUP BY e.interface_header_id
     ) he ON he.interface_header_id = h.interface_header_id
-    WHERE  h.load_request_id = :P_LOAD_REQUEST_ID
-    AND    h.interface_header_key LIKE :P_RUN_ID || '\_HDR\_%' ESCAPE '\'
+    WHERE  h.load_request_id    = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    h.request_id         = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    h.document_type_code = 'STANDARD'
     AND    NVL(h.process_code,'X') <> 'ACCEPTED'
 
     UNION ALL
 
-    -- INTERFACE / lines. RECORD_KEY = stamped line key; line-level error.
+    -- INTERFACE / lines -- found by the load job id, under a header of
+    -- this load and import (Standard style), joined on the Fusion
+    -- interface header id. Error = PO_INTERFACE_ERRORS of the import
+    -- job at the line level.
     SELECT
         'PurchaseOrders.Line'                AS object_type,
-        l.interface_line_key                 AS record_key,
+        lh.document_num || ':LN:' || l.line_num  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -158,27 +199,36 @@ FROM (
         l.interface_line_key                 AS source_ref,
         CAST(NULL AS VARCHAR2(240))          AS dmt_reference
     FROM   po_lines_interface l
+    JOIN   po_headers_interface lh
+           ON lh.interface_header_id = l.interface_header_id
     LEFT   JOIN (
         SELECT e.interface_line_id,
                NULLIF(LISTAGG(
                    e.column_name || ': ' || e.error_message,
                    ' | ') WITHIN GROUP (ORDER BY e.interface_transaction_id), '') AS error_message
         FROM   po_interface_errors e
-        WHERE  e.interface_line_id IS NOT NULL
+        WHERE  e.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+        AND    e.interface_line_id IS NOT NULL
         AND    e.interface_line_location_id IS NULL
         AND    e.interface_distribution_id  IS NULL
         GROUP BY e.interface_line_id
     ) le ON le.interface_line_id = l.interface_line_id
-    WHERE  l.load_request_id = :P_LOAD_REQUEST_ID
-    AND    l.interface_line_key LIKE :P_RUN_ID || '\_LN\_%' ESCAPE '\'
+    WHERE  l.load_request_id     = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    lh.load_request_id    = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    lh.request_id         = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    lh.document_type_code = 'STANDARD'
     AND    NVL(l.process_code,'X') <> 'ACCEPTED'
 
     UNION ALL
 
-    -- INTERFACE / line-locations. RECORD_KEY = stamped location key.
+    -- INTERFACE / schedules -- found by the load job id, under a header
+    -- of this load and import (Standard style), joined on the Fusion
+    -- interface ids. Error = PO_INTERFACE_ERRORS of the import job at
+    -- the schedule level.
     SELECT
         'PurchaseOrders.LineLocation'        AS object_type,
-        ll.interface_line_location_key       AS record_key,
+        llh.document_num || ':LN:' || lll.line_num
+            || ':LOC:' || ll.shipment_num    AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -189,26 +239,36 @@ FROM (
         ll.interface_line_location_key       AS source_ref,
         CAST(NULL AS VARCHAR2(240))          AS dmt_reference
     FROM   po_line_locations_interface ll
+    JOIN   po_lines_interface   lll ON lll.interface_line_id   = ll.interface_line_id
+    JOIN   po_headers_interface llh ON llh.interface_header_id = lll.interface_header_id
     LEFT   JOIN (
         SELECT e.interface_line_location_id,
                NULLIF(LISTAGG(
                    e.column_name || ': ' || e.error_message,
                    ' | ') WITHIN GROUP (ORDER BY e.interface_transaction_id), '') AS error_message
         FROM   po_interface_errors e
-        WHERE  e.interface_line_location_id IS NOT NULL
+        WHERE  e.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+        AND    e.interface_line_location_id IS NOT NULL
         AND    e.interface_distribution_id  IS NULL
         GROUP BY e.interface_line_location_id
     ) loce ON loce.interface_line_location_id = ll.interface_line_location_id
-    WHERE  ll.load_request_id = :P_LOAD_REQUEST_ID
-    AND    ll.interface_line_location_key LIKE :P_RUN_ID || '\_LOC\_%' ESCAPE '\'
+    WHERE  ll.load_request_id     = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    llh.load_request_id    = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    llh.request_id         = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    llh.document_type_code = 'STANDARD'
     AND    NVL(ll.process_code,'X') <> 'ACCEPTED'
 
     UNION ALL
 
-    -- INTERFACE / distributions. RECORD_KEY = stamped dist key.
+    -- INTERFACE / distributions -- found by the load job id, under a
+    -- header of this load and import (Standard style), joined on the
+    -- Fusion interface ids. Error = PO_INTERFACE_ERRORS of the import
+    -- job at the distribution level.
     SELECT
         'PurchaseOrders.Distribution'        AS object_type,
-        d.interface_distribution_key         AS record_key,
+        dh.document_num || ':LN:' || dl.line_num
+            || ':LOC:' || dll.shipment_num
+            || ':DIST:' || d.distribution_num  AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
@@ -219,19 +279,29 @@ FROM (
         d.interface_distribution_key         AS source_ref,
         CAST(NULL AS VARCHAR2(240))          AS dmt_reference
     FROM   po_distributions_interface d
+    JOIN   po_line_locations_interface dll ON dll.interface_line_location_id = d.interface_line_location_id
+    JOIN   po_lines_interface          dl  ON dl.interface_line_id           = dll.interface_line_id
+    JOIN   po_headers_interface        dh  ON dh.interface_header_id         = dl.interface_header_id
     LEFT   JOIN (
         SELECT e.interface_distribution_id,
                NULLIF(LISTAGG(
                    e.column_name || ': ' || e.error_message,
                    ' | ') WITHIN GROUP (ORDER BY e.interface_transaction_id), '') AS error_message
         FROM   po_interface_errors e
-        WHERE  e.interface_distribution_id IS NOT NULL
+        WHERE  e.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+        AND    e.interface_distribution_id IS NOT NULL
         GROUP BY e.interface_distribution_id
     ) de ON de.interface_distribution_id = d.interface_distribution_id
-    WHERE  d.load_request_id = :P_LOAD_REQUEST_ID
-    AND    d.interface_distribution_key LIKE :P_RUN_ID || '\_DIST\_%' ESCAPE '\'
+    WHERE  d.load_request_id     = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    dh.load_request_id    = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    dh.request_id         = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    dh.document_type_code = 'STANDARD'
     AND    NVL(d.process_code,'X') <> 'ACCEPTED'
 )
-WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
-ORDER BY record_key
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL
+-- in BIP, so NULL means "from the start". The ordering and the
+-- comparison are both pinned to BINARY so they agree.
+WHERE  (:P_AFTER_KEY IS NULL
+        OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
+ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY

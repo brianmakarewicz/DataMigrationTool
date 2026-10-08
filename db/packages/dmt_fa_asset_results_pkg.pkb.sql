@@ -31,6 +31,10 @@
 -- the interface, the report confirms nothing; ACCOUNT_ALL_OR_NOTHING then reads
 -- the SQL*Loader log to give those rows a real verdict. That log-based path is
 -- untouched by the Contract v1 migration.
+--
+-- REVISIONS:
+--   2026-10-07  BM  Report V2: called per work item with its own load + import
+--                   ids; rows found by the load job id, never by the prefix.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_FA_ASSET_RESULTS_PKG';
@@ -66,8 +70,9 @@
     -- carried down); the STG echo is unchanged.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_ASSETS (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_request_id    IN VARCHAR2,
+        p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_ASSETS';
         l_gen_count NUMBER := 0;
@@ -89,13 +94,20 @@
         INTO   l_gen_count
         FROM   dual;
 
+        -- Report V2 (owner decision 2026-10-07) finds rows only by this work
+        -- item's load job id: base assets and distributions through their POSTED
+        -- FA_MASS_ADDITIONS row (FA_ADDITIONS_B carries no request id), interface
+        -- rejections by LOAD_REQUEST_ID. One book = one load, so the report is
+        -- called once per work item with that item's own ids; the import id is
+        -- passed for contract symmetry.
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => TO_NUMBER(p_request_id),
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -536,7 +548,7 @@
                 ORDER BY REQUEST_ID
             ) LOOP
                 BEGIN
-                    l_one := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_TEXT(c.REQUEST_ID);
+                    l_one := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_TEXT(p_request_id => c.REQUEST_ID, p_cemli_code => C_CEMLI);
                 EXCEPTION WHEN OTHERS THEN l_one := NULL;  -- a missing child log is not fatal
                 END;
                 -- Skip children that did not load FA_MASS_ADDITIONS: their record
@@ -662,9 +674,10 @@
 
     -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged). Runs the shared
-    -- Contract v1 apply, then the Assets-only all-or-nothing SQL*Loader log path.
-    -- The Assets load ESS id is the Contract v1 P_LOAD_REQUEST_ID; the report's
-    -- run-scoped selectors (P_RUN_ID, P_PREFIX) pick up the whole run.
+    -- Contract v1 apply once for ONE work item (one book = one load), then the
+    -- Assets-only all-or-nothing SQL*Loader log path. The load ESS id is the
+    -- Contract v1 P_LOAD_REQUEST_ID and the import ESS id P_IMPORT_ESS_ID; the
+    -- report finds rows only by the load job id, never by the run prefix.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
@@ -681,7 +694,7 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        APPLY_CONTRACT_V1_ASSETS(p_run_id, TO_CHAR(p_load_ess_id));
+        APPLY_CONTRACT_V1_ASSETS(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id);
 
         -- Assets-ONLY exception: Fixed Assets loads/posts a book atomically, so
         -- a single rejected asset leaves the whole book unposted and the BIP

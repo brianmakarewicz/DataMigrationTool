@@ -29,11 +29,40 @@ None in this folder.
 
 ## Reconciliation Strategy (Three-Tier)
 1. **Tier 1: BIP → PJB_BILLING_EVENTS_INT** (interface table) — always purged after import (MOS 2534525.1). Will return 0 rows in practice. Kept for completeness.
-2. **Tier 2: BIP → PJB_BILLING_EVENTS** (base table) — catches successfully LOADED rows via prefix-based SOURCEREF match.
+2. **Tier 2: BIP → PJB_BILLING_EVENTS** (base table) — catches successfully LOADED rows by the import job's `REQUEST_ID` (report V2, 2026-10-07); SOURCEREF only matches a row to its TFM row.
 3. **Tier 3: Import Report XML** — downloaded from the `ImportBillingEventReportJob` child ESS job output. Contains G_6 (full interface row snapshot with IMPORT_STATUS) + G_7 (per-row error codes/messages). This is the primary error source since the interface table is always purged.
 
 Report child job found via: `DMT_ESS_UTIL_PKG.CAPTURE_REPORT_ESS_JOB` which looks up the exact job definition (`ImportBillingEventReportJob`) from `DMT_ERP_INTERFACE_OPTIONS_TBL.REPORT_JOB_DEF`, then queries `DMT_ESS_CHILD_JOB_RPT.xdo` with the exact `P_JOB_DEF`. Captured into `DMT_ESS_JOB_TBL` as a logical child of the import job for APEX UI display.
 
+
+## Reconciliation by Fusion job id, one call per work item (2026-10-07)
+
+Owner decision: the reconciliation report finds rows only by Fusion job ids, never by searching
+on the run prefix. SOURCEREF is used only to match a row Fusion returned to its TFM row.
+
+- **Report V2** `DMT_BILLING_EVENT_RECON_V2_DM` / `_RPT` (deployed alongside `BILLING_EVENT_DM`,
+  which is never overwritten): base events by `PJB_BILLING_EVENTS.REQUEST_ID = :P_IMPORT_ESS_ID`
+  (the Import Billing Events job), interface rows by `LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID`. No
+  `LIKE` anywhere. Keyset ordering and comparison pinned to BINARY. Registry repointed by the seed
+  and `db/migrations/2026-10-07_billing_events_recon_v2_registry.sql`; `query.sql` mirrors V2.
+- **Load id bug fixed.** `RECONCILE_BATCH` gave the Contract v1 fetch `NVL(import id, load id)` as
+  its load id, so the report's `P_LOAD_REQUEST_ID` carried the import id. It now passes the work
+  item's own load id and import id separately. The second report call (the import-report
+  harvest) sends the same two job ids instead of the retired `P_BATCH_ID` and the run prefix.
+
+Proof run 268 (prefix 93324, scenario RegressionTest2610071920, STANDALONE:BillingEvents): work
+item 1632 recorded load 10075576 and import 10075586; Fusion stamped `REQUEST_ID` 10075586 on both
+loaded events, and 10075586 is the only Import Billing Events job in that window. Outcomes match
+run 238: G1 and G2 LOADED (event ids 100002667522423 / 100002667522426), BAD1 FAILED with
+"FND_CMN_CMPLT_FLDS: You must complete the required fields." from the import report, 0
+UNACCOUNTED. Amount staged 1,002 = loaded 2 (Fusion base 1 + 1) + failed 1,000. A reconcile-only
+rerun of work item 1632 left the 3 TFM rows byte-identical. `dmt_regression_run.py` PASS (review
+items only: the pre-existing projectBillingEvents REST verify 403, also on run 238); Playwright
+click-through PASS.
+
+Known issue: the import job id is found by proximity to the load (Import Billing Events is not
+a child of the load and its ParameterList carries no batch id). It was correct here, but two
+Billing Events loads submitted at the same moment could swap import ids.
 ## Known-good Fusion record & mapping (2026-07-15)
 
 **Goal:** copy a real, already-accepted billing event and re-submit it for $1 so the GOOD

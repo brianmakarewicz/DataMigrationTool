@@ -74,6 +74,31 @@ line) to REJECTED with no error of its own, and it lands FAILED quoting the head
 FAILED with its own UOM error. 0 UNACCOUNTED. Line amounts tie out: staged 53,000 = loaded
 51,000 + failed 2,000. A reconcile-only rerun left every ERROR_TEXT byte-identical.
 
+## Reconciliation by Fusion job id (recon V2, 2026-10-07, backlog #258)
+
+`bip/BlanketPOs/DMT_BLANKET_PO_RECON_V2_DM.xdm` (deployed alongside V1, which is never
+overwritten) finds rows only by the work item's own Fusion job ids and the Blanket style,
+because BlanketPOs shares the PO interface and base tables with PurchaseOrders and Contracts:
+
+- Base headers and lines: `REQUEST_ID` = the import job (ImportBPAJob) and the header
+  `TYPE_LOOKUP_CODE = 'BLANKET'`.
+- Interface headers: `LOAD_REQUEST_ID` = the load job AND `REQUEST_ID` = the import job AND
+  `DOCUMENT_TYPE_CODE = 'BLANKET'`. Interface lines: their `LOAD_REQUEST_ID` under such a
+  header, joined on Fusion's `INTERFACE_HEADER_ID` (Fusion leaves `REQUEST_ID` NULL on the
+  interface lines).
+- `PO_INTERFACE_ERRORS`: `REQUEST_ID` = the import job, joined on the interface id.
+
+V1 also narrowed the interface rows with `LIKE :P_RUN_ID || '_HDR_%'` / `'_LN_%'`; that is
+gone. Document and line numbers are only the `RECORD_KEY`.
+
+Proof run 264 (prefix 93320, scenario RegressionTest2610071920, STANDALONE:BlanketPOs): load
+10075472 and import 10075476 (ImportBPAJob) are the ids Fusion stamped on the interface and
+base rows. Same result as run 253: BPA-001 and BPA-XG2 LOADED with their good lines, BAD1
+FAILED on its supplier error with its line quoting it, XG2 line 2 FAILED on its own UOM error,
+0 UNACCOUNTED, line amounts 53,000 staged = 51,000 loaded + 2,000 failed. A reconcile-only
+rerun left every TFM row byte-identical; regression harness PASS (7/7 expected outcomes);
+Playwright click-through PASS.
+
 ## Known Issues
 - **Root cause found (2026-04-06):** ESS WAIT was caused by wrong ESS job (ImportSPOJob instead of ImportBPAJob) and wrong UCM account. Seed script `schema/seed/05_dmt_erp_options_extra_seed.sql` was copying from row 21 (PO) instead of row 23 (BPA). Seed script fixed. ATP UPDATE + ParameterList code fix pending.
 - ParameterList code at `dmt_loader_pkg.pkb` line 1777 builds 9-arg ImportSPOJob format — needs rewrite to 8-arg ImportBPAJob format (see status.md [DB] task).

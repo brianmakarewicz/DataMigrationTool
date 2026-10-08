@@ -10,9 +10,6 @@
 --   against EGP_ITEM_CATEGORIES_INTERFACE status, then updates
 --   TFM/STG rows to LOADED or FAILED.
 --
--- LOAD_AND_RECONCILE: standalone runner path (ESS-only).
---   Retained for dev/test but not used by the production pipeline.
---
 -- BIP report path read from DMT_BIP_REPORT_TBL at runtime.
 -- CEMLI_CODE: 'ItemCategories'
 -- ============================================================
@@ -28,12 +25,6 @@
     PROCEDURE PARSE_AND_UPDATE (
         p_run_id IN NUMBER,
         p_xml            IN XMLTYPE
-    );
-
-    PROCEDURE LOAD_AND_RECONCILE (
-        p_run_id IN NUMBER,
-        p_fbdi_zip       IN BLOB,
-        p_filename       IN VARCHAR2
     );
 
 END DMT_EGP_ITEM_CAT_RESULTS_PKG;

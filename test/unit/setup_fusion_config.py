@@ -53,8 +53,8 @@ def main():
 
     set_config('FUSION_USERNAME', fin_user, 'Fusion REST/SOAP user (injected, not committed)')
     set_config('FUSION_PASSWORD', fin_pwd,  'Fusion REST/SOAP password (injected, not committed)')
-    set_config('BIP_USERNAME',    fin_user, 'BIP SOAP user (injected, not committed)')
-    set_config('BIP_PASSWORD',    fin_pwd,  'BIP SOAP password (injected, not committed)')
+    # No BIP_USERNAME / BIP_PASSWORD: BIP reports run as each object's central
+    # Fusion user (DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS, backlog #309).
     # HDL/UCM uploads need the HCM Data Loader role: hcm_impl, not fin_impl
     # (fin_impl gets HTTP 403 on hcmRestApi uploadFile — found 2026-07-08).
     # hcm_impl was added to connections.json the same day; fall back to fin_impl
@@ -66,7 +66,7 @@ def main():
         hcm_user, hcm_pwd = fin_user, fin_pwd
     set_config('HCM_USERNAME', hcm_user, 'HCM REST user (injected, not committed)')
     set_config('HCM_PASSWORD', hcm_pwd,  'HCM REST password (injected, not committed)')
-    print(f'Config injected: FUSION_URL={url}  user={fin_user}  (+BIP_*, HCM_* aliases)')
+    print(f'Config injected: FUSION_URL={url}  user={fin_user}  (+HCM_* keys, still read by the Verify-in-Fusion lookup until backlog #223)')
 
     # Per-CEMLI credential overrides. DMT_ERP_INTERFACE_OPTIONS_TBL ships in the seed
     # with FUSION_PASSWORD='***MASKED-SET-ME***' for objects that authenticate as a
