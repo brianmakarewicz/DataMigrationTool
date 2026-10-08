@@ -12,6 +12,9 @@ AS
 --  1.3  2026-10-07  Report V3 (DMT_PRJ_BUDGET_RECON_V3_DM): called per work item with its
 --                   own load + import ids; rows found by job id (base by the import
 --                   REQUEST_ID, interface by the load LOAD_REQUEST_ID), never by prefix
+--  1.4  2026-10-08  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog #172):
+--                   the plan version is the document; a rejected line's real error is
+--                   quoted onto its sibling lines.
 -- No absence=LOADED fallback. A row is LOADED only from a base-table hit
 -- with its PLAN_VERSION_ID, FAILED only with a real Fusion message, and is
 -- otherwise left for the shared unaccounted sweep.
@@ -21,6 +24,20 @@ AS
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_PRJ_BUDGET_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'ProjectBudgets';
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
+    -- Working set: "the plan version (DOC_PROJECT, DOC_PLAN_TYPE, DOC_VERSION_NAME,
+    -- DOC_VERSION_NUMBER) carries the source line SOURCE_SEQ with its own real
+    -- Fusion error, so every other line of that version must carry QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        DOC_PROJECT        DMT_PRJ_BUDGET_TFM_TBL.PROJECT_NUMBER%TYPE,
+        DOC_PLAN_TYPE      DMT_PRJ_BUDGET_TFM_TBL.FINANCIAL_PLAN_TYPE%TYPE,
+        DOC_VERSION_NAME   DMT_PRJ_BUDGET_TFM_TBL.PLAN_VERSION_NAME%TYPE,
+        DOC_VERSION_NUMBER DMT_PRJ_BUDGET_TFM_TBL.PLAN_VERSION_NUMBER%TYPE,
+        SOURCE_SEQ         NUMBER,           -- TFM_SEQUENCE_ID of the source line
+        QUOTED_ERROR       VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- --------------------------------------------------------
     -- (bip_soap_post + FETCH_BIP_RESULTS removed — the BIP runReport transport
@@ -467,6 +484,111 @@ AS
     END APPLY_CONTRACT_V1_PRJ_BUDGET;
 
     -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private)
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain" (decided 2026-10-07). The Fusion document is the plan version: Import
+    -- Project Budgets creates or rejects a plan version (PJO_PLAN_VERSIONS_B) as a
+    -- whole, but the BudgetsXfaceBIP report names only the line that failed
+    -- (LIST_G_12). A sibling line of the same version has no report row, so
+    -- without this step it stays GENERATED and the shared sweep marks it
+    -- UNACCOUNTED (backlog #172).
+    --
+    -- The document key is the plan version as DMT sends it: RUN_ID + PROJECT_NUMBER
+    -- + FINANCIAL_PLAN_TYPE + PLAN_VERSION_NAME (run-prefixed by the transform) +
+    -- PLAN_VERSION_NUMBER, compared null-safely.
+    --
+    -- Sources: lines of this run and work item with TFM_STATUS = 'FAILED' carrying
+    --   their OWN real Fusion error -- ERROR_TEXT contains '[FUSION_ERROR]' and does
+    --   NOT contain C_DOC_ERROR_MARKER (a quote is never re-quoted, so quotes never
+    --   chain).
+    -- Targets: every OTHER line of the same plan version that Fusion received
+    --   (FBDI_CSV_ID stamped at generation, not STAGED), that is not LOADED (LOADED
+    --   rows are never touched) and that does not already carry the exact quote.
+    --   The quote is appended (APPEND_ERROR, never overwrite) and the row set
+    --   FAILED. A version with no source error is untouched -- its lines fall to
+    --   the shared UNACCOUNTED sweep.
+    -- Idempotent: the "already carries the exact quote" guard means a second
+    --   reconcile pass adds nothing.
+    -- One collection of (version, source, quote) tuples is built by ONE static
+    -- SELECT, then ONE static bulk UPDATE (FORALL): a MERGE cannot read a PL/SQL
+    -- record collection through TABLE() (ORA-00902, AR run 248). NO dynamic SQL;
+    -- NO COMMIT (caller owns the txn).
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_lines  NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting same-plan-version (source, quote) pairs for run ' || p_run_id;
+        SELECT l.PROJECT_NUMBER,
+               l.FINANCIAL_PLAN_TYPE,
+               l.PLAN_VERSION_NAME,
+               l.PLAN_VERSION_NUMBER,
+               l.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'line', l.RECON_KEY,
+                   DBMS_LOB.SUBSTR(l.ERROR_TEXT, 3800, DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG)))
+        BULK COLLECT INTO l_pairs
+        FROM   DMT_PRJ_BUDGET_TFM_TBL l
+        WHERE  l.RUN_ID = p_run_id
+        -- Work-item scope, as the shared sweep scopes it: rows stamped with
+        -- another work item are excluded; unstamped rows are run-scoped.
+        AND    (p_work_queue_id IS NULL OR l.WORK_QUEUE_ID IS NULL
+                OR l.WORK_QUEUE_ID = p_work_queue_id)
+        AND    l.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, l_marker) = 0
+        AND    l.PROJECT_NUMBER IS NOT NULL;
+
+        -- One bulk UPDATE (FORALL over the pairs). Each pair appends its quote only
+        -- when the row does not already carry it, so a line quoted by several
+        -- sources gets each quote once and a second reconcile pass adds nothing.
+        -- The source line itself is never quoted onto itself.
+        l_step := 'appending quoted plan-version errors to budget lines';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PRJ_BUDGET_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.PROJECT_NUMBER = l_pairs(i).DOC_PROJECT
+            AND    DECODE(t.FINANCIAL_PLAN_TYPE, l_pairs(i).DOC_PLAN_TYPE, 1, 0) = 1
+            AND    DECODE(t.PLAN_VERSION_NAME, l_pairs(i).DOC_VERSION_NAME, 1, 0) = 1
+            AND    DECODE(t.PLAN_VERSION_NUMBER, l_pairs(i).DOC_VERSION_NUMBER, 1, 0) = 1
+            AND    t.TFM_SEQUENCE_ID <> l_pairs(i).SOURCE_SEQ
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_lines := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rejected budget-line sources: ' || l_pairs.COUNT
+                           || ' | sibling lines given a quoted document error: ' || l_lines || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
@@ -516,6 +638,13 @@ AS
             p_run_id        => p_run_id,
             p_import_ess_id => p_import_ess_id,
             x_matched       => l_ir_matched);
+
+        -- Whole-document rejection (design section 5): the other lines of a plan
+        -- version Fusion rejected carry the real error of the line that caused it.
+        -- Runs after the per-row apply and the import-report harvest and BEFORE
+        -- the shared unaccounted sweep (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
+        -- Backlog #172.
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object

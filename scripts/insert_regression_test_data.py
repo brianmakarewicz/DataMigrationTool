@@ -1735,6 +1735,25 @@ def main():
             'Y', 'Y', 'NOPROJ999.1', 'RT-TSK-BAD1'
         )
     """, label="BAD Task: non-existent project [BAD-UPS]")
+
+    # Cross-grain failure scenario (design section 5, backlog #195): a VALID
+    # task under the rejected project RTPRJ-BAD1. Its only defect is its
+    # project's, so it must land FAILED_WITH_DOCUMENT quoting the project's
+    # real Import Projects error.
+    run_sql(cur, """
+        INSERT INTO DMT_PJF_TASKS_STG_TBL (
+            PROJECT_NAME, PROJECT_NUMBER,
+            TASK_NAME, TASK_NUMBER,
+            PLANNING_START_DATE, PLANNING_END_DATE,
+            CHARGEABLE_FLAG, BILLABLE_FLAG,
+            SOURCE_TASK_REFERENCE, SOURCE_ID
+        ) VALUES (
+            'RT Project Bad-1', 'RTPRJ-BAD1',
+            'RT Bad Project Task', 'RTPRJ-BAD1.1',
+            DATE '2025-01-01', DATE '2025-12-31',
+            'Y', 'Y', 'RTPRJ-BAD1.1', 'RT-TSK-RTPRJ-BAD1.1'
+        )
+    """, label="BAD Task: valid task under rejected project RTPRJ-BAD1 [BAD-DOC]")
     tag_scenario(cur, "DMT_PJF_TASKS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1760,6 +1779,20 @@ def main():
         """, {"pname": pname, "mname": member_name, "memail": member_email,
               "role": role, "src": f"RT-TM-{pname[:10]}-{member_name[:10]}"},
         label=f"GOOD Team Member: {member_name} on {pname}")
+
+    # Cross-grain failure scenario (backlog #195): a valid team member on the
+    # rejected project RTPRJ-BAD1 -> FAILED_WITH_DOCUMENT.
+    run_sql(cur, """
+        INSERT INTO DMT_PJF_TEAM_MEMBERS_STG_TBL (
+            PROJECT_NAME, TEAM_MEMBER_NAME, TEAM_MEMBER_EMAIL,
+            PROJECT_ROLE_NAME, START_DATE_ACTIVE,
+            TRACK_TIME_FLAG, SOURCE_ID
+        ) VALUES (
+            'RT Project Bad-1', 'Alan Cook', 'alan.cook_esew-dev28@oraclepdemos.com',
+            'Project Manager', DATE '2025-01-01',
+            'Y', 'RT-TM-RTPRJ-BAD1-ACOOK'
+        )
+    """, label="BAD Team Member: Alan Cook on rejected project RTPRJ-BAD1 [BAD-DOC]")
     tag_scenario(cur, "DMT_PJF_TEAM_MEMBERS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1784,6 +1817,20 @@ def main():
         """, {"ref": f"RT-TXC-{pnum}", "pname": pname, "pnum": pnum,
               "etype": exp_type, "src": f"RT-TXC-{pnum}"},
         label=f"GOOD Txn Control: {pnum}/{exp_type}")
+
+    # Cross-grain failure scenario (backlog #195): a valid transaction control
+    # on the rejected project RTPRJ-BAD1 -> FAILED_WITH_DOCUMENT.
+    run_sql(cur, """
+        INSERT INTO DMT_PJC_TXN_CONTROLS_STG_TBL (
+            TXN_CTRL_REFERENCE, PROJECT_NAME, PROJECT_NUMBER,
+            EXPENDITURE_TYPE, CHARGEABLE_FLAG,
+            START_DATE_ACTIVE, SOURCE_ID
+        ) VALUES (
+            'RT-TXC-RTPRJ-BAD1', 'RT Project Bad-1', 'RTPRJ-BAD1',
+            'Professional Services', 'Y',
+            DATE '2025-01-01', 'RT-TXC-RTPRJ-BAD1'
+        )
+    """, label="BAD Txn Control: on rejected project RTPRJ-BAD1 [BAD-DOC]")
     tag_scenario(cur, "DMT_PJC_TXN_CONTROLS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -2028,6 +2075,36 @@ def main():
                 :ref, 'Create', :ref
             )
         """, {"pnum": pnum, "pname": pname, "ref": ref}, label=label)
+
+    # Cross-grain failure scenario (design section 5, backlog #197): ONE plan
+    # version ('RT XG Budget Version', its own name so it never joins GOOD1's
+    # version) on CFIT022 with two lines. XG-A is identical to GOOD1 apart from
+    # its reference; XG-B names a resource that does not exist [BAD-LKP]. The
+    # plan version is the Fusion document: XG-B FAILED with its own error from
+    # the BudgetsXfaceBIP report, XG-A FAILED_WITH_DOCUMENT quoting it.
+    for label, ref, resource in [
+        ("BAD Project Budget XG-A: valid line of a rejected plan version [BAD-DOC]",
+         "RT-PJB-XG-A", "Financial Resources"),
+        ("BAD Project Budget XG-B: non-existent resource [BAD-LKP]",
+         "RT-PJB-XG-B", "RT No Such Resource"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_PRJ_BUDGET_STG_TBL (
+                FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
+                TASK_NUMBER, PLAN_VERSION_NAME, PLAN_VERSION_STATUS,
+                RESOURCE_NAME, LINE_TYPE,
+                PLANNING_START_DATE, PLANNING_END_DATE, PLANNING_CURRENCY,
+                TOTAL_TC_RAW_COST, TOTAL_TC_REVENUE,
+                SRC_BUDGET_LINE_REFERENCE, PROCESSING_MODE, SOURCE_ID
+            ) VALUES (
+                'Cost and Revenue Budget', 'CFIT022', 'Data Load 6',
+                'CFIT022', 'RT XG Budget Version', 'Baseline',
+                :res, 'LINE',
+                DATE '2026-01-01', DATE '2028-01-01', 'USD',
+                70000, 80000,
+                :ref, 'Create', :ref
+            )
+        """, {"ref": ref, "res": resource}, label=label)
     tag_scenario(cur, "DMT_PRJ_BUDGET_STG_TBL", scenario_id)
 
     # ====================================================================
