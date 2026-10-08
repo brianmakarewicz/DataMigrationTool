@@ -178,10 +178,13 @@ AS
                 l_parent_ssid := pv(r.PERSON_NUMBER) || '_BENDEP';
                 l_line_no     := r.LINE_NO;
                 l_vals := l_sso                               || '|' ||
-                          -- child SourceSystemId = participant + dependent + line
+                          -- child SourceSystemId = participant + dependent + the
+                          -- row's own TFM id (not the generated line number), so
+                          -- reconciliation matches a message to this exact TFM
+                          -- row (backlog #288). LineNumber below stays sequential.
                           pv(r.PERSON_NUMBER) || '_' ||
                               pv(r.DEPENDENT_PERSON_NUMBER) || '_' ||
-                              TO_CHAR(l_line_no) || '_BENDEP' || '|' ||
+                              TO_CHAR(r.TFM_SEQUENCE_ID) || '_BENDEP' || '|' ||
                           l_parent_ssid                       || '|' ||
                           pv(r.PERSON_NUMBER)                 || '|' ||
                           pv(r.PLAN_NAME)                     || '|' ||
