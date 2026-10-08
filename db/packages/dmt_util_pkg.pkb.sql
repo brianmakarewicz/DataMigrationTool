@@ -512,12 +512,19 @@
     -- One static query over DMT_STG_ATTEMPT_V: the row's attempts in earlier
     -- runs, plus any pre-TFM error it already got in this run (relabelled so it
     -- can never qualify). KEEP (DENSE_RANK LAST) takes the most recent one.
+    -- AUTONOMOUS_TRANSACTION: the callers are INSERT INTO <TFM table> ... SELECT
+    -- and INSERT INTO DMT_STG_TFM_ERROR_TBL ... SELECT statements, and a function
+    -- called from a DML statement may not query the table that statement is
+    -- changing (ORA-04091). The autonomous read sees committed data only, which
+    -- is exactly the history it needs (earlier runs). It is read-only: it opens
+    -- no transaction, so there is nothing to commit.
     -- --------------------------------------------------------
     FUNCTION FAILED_RETRY_SELECTED (
         p_run_id          IN NUMBER,
         p_stg_table       IN VARCHAR2,
         p_stg_sequence_id IN NUMBER
     ) RETURN VARCHAR2 IS
+        PRAGMA AUTONOMOUS_TRANSACTION;
         l_outcome VARCHAR2(30);
     BEGIN
         SELECT MAX(CASE WHEN a.RUN_ID = p_run_id THEN 'THIS_RUN_STG_TFM_ERROR'

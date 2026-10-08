@@ -207,9 +207,13 @@ AS
     -- A row whose latest attempt is LOADED, or still in flight (STAGED /
     -- GENERATED), or that has never been attempted, is 'N'. A row already
     -- rejected before TFM in THIS run (p_run_id) is 'N', so a FAILED-mode
-    -- pre-validation rejection keeps the row out of this run's transform.
+    -- pre-validation rejection keeps the row out of this run's transform (the
+    -- run recipes commit after pre-validation, before transforming).
     -- Attempts of the current run are otherwise ignored, so the answer does
     -- not change while this run inserts its own TFM rows. Static SQL only.
+    -- Autonomous read (committed data only): it is called from INSERT ...
+    -- SELECT statements into the very TFM / error tables it reads, which a
+    -- normal function may not do (ORA-04091).
     -- --------------------------------------------------------
     FUNCTION FAILED_RETRY_SELECTED (
         p_run_id          IN NUMBER,
