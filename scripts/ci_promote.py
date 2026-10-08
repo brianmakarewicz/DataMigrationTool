@@ -207,6 +207,16 @@ def force_local_prefix(v):
     print(f"[prefix] local DMT_RUN_PREFIX_SEQ set to issue {v} next")
 
 # ---------------------------------------------------------------- regression
+def _known_review_sha():
+    """sha256 of scripts/regression_known_review.json, or None if unreadable."""
+    import hashlib
+    try:
+        return hashlib.sha256((REPO / "scripts" / "regression_known_review.json")
+                              .read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
 def run_regression(target, pipelines=None):
     """Run the deterministic regression against the target.
 
@@ -252,6 +262,9 @@ def run_regression(target, pipelines=None):
            "exit_code": rc,
            "known_review": len(summary.get("known_review") or []),
            "new_review": len(summary.get("new_review") or []),
+           # Pin the exact known-review list this verdict relied on, so any change
+           # to that list is visible in the evidence and the promotion log.
+           "known_review_file_sha256": _known_review_sha(),
            "pipelines": summary.get("pipeline_codes") or pipelines or gate.FULL_PIPELINES,
            "target": target, "started_at": started, "finished_at": finished}
     print(f"[regression:{target}] run {res['run_id']}: "

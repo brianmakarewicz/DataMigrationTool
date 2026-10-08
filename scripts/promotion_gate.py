@@ -463,6 +463,7 @@ def enforce(ident=None, stage="deploy-prod", owner_override=None,
                "regression_verdict": _reg_field("verdict"),
                "regression_known_review": _reg_field("known_review"),
                "regression_new_review": _reg_field("new_review"),
+               "known_review_file_sha256": _reg_field("known_review_file_sha256"),
                "reasons": [l.strip() for l in lines if "REFUSED" in l]})
     if ok or owner_override is None:
         if ok and owner_override is not None:
