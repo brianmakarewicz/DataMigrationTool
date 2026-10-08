@@ -30,7 +30,7 @@
 --   INTERFACE + ERROR + message (Journal Import rejection, the message
 --                    is GL_INTERFACE.STATUS, plus ': ' STATUS_DESCRIPTION
 --                    when Fusion wrote one) => FAILED
---   other lines of a rejected import group (GROUP_ID = work queue id, per
+--   other lines of a rejected import group (GROUP_ID = prefix || work queue id, per
 --                    ledger) => FAILED quoting that error (PROPAGATE_DOCUMENT_ERRORS)
 --   INTERFACE with no error is corroborating only, never LOADED on its
 --   own (LOADED requires a BASE/FUSION_ID row).
@@ -241,7 +241,7 @@
     -- line's real Fusion error onto every other not-LOADED line of the same
     -- group and ledger (design section 5, "Whole-document rejection carries the
     -- real error to every grain"), in the shared format
-    -- '[FUSION_ERROR] Rejected with document: line <key>: <real message>'.
+    -- '[FUSION_ERROR] Rejected with document: journal <journal> line <key>: <real message>'.
     -- Only a line whose own error is a real [FUSION_ERROR] (not itself a quote)
     -- is a source. Idempotent: a line already carrying the quote is skipped.
     -- Scoped to the run and work item; static SQL; NO COMMIT.
@@ -260,8 +260,11 @@
         l_step := 'collecting rejected lines for run ' || p_run_id;
         SELECT l.GROUP_ID || '~' || l.LEDGER_NAME,
                l.TFM_SEQUENCE_ID,
+               -- Names the journal (batch REFERENCE1) and the line that actually
+               -- errored, so a reader of a good journal's row sees that another
+               -- journal caused it: 'journal <key> line <n>: <real message>'.
                DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
-                   'line', l.RECON_KEY,
+                   'journal', l.REFERENCE1 || ' line ' || l.RECON_KEY,
                    DBMS_LOB.SUBSTR(l.ERROR_TEXT, 3800, DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG)))
         BULK COLLECT INTO l_pairs
         FROM   DMT_GL_INTERFACE_TFM_TBL l

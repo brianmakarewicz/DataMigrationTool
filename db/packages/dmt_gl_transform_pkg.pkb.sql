@@ -77,7 +77,7 @@
             s.ENTERED_DR, s.ENTERED_CR, s.ACCOUNTED_DR, s.ACCOUNTED_CR,
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.REFERENCE1, 100), s.REFERENCE2, s.REFERENCE4, s.REFERENCE5,
             s.REFERENCE6, s.REFERENCE7, s.REFERENCE8, s.REFERENCE10,
-            -- GROUP_ID is stamped at generation with the work queue id (one group
+            -- GROUP_ID is stamped at generation with prefix || the work queue id (one group
             -- per load, owner decision 2026-10-07, backlog #173); NULL until then.
             s.STAT_AMOUNT, CAST(NULL AS NUMBER),
             s.PERIOD_NAME,

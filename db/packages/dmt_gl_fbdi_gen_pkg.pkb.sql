@@ -239,6 +239,9 @@
         l_bytes       NUMBER;
         l_now         DATE := SYSDATE;
         l_row_count   NUMBER;
+        l_prefix      DMT_PIPELINE_RUN_TBL.PREFIX%TYPE;
+        l_group_txt   VARCHAR2(100);
+        l_group_id    NUMBER;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -255,12 +258,30 @@
         END IF;
 
         -- ============================================================
+        -- GROUP_ID (backlog #173, owner decision 2026-10-07): the run prefix
+        -- followed by the work queue id (prefix 93335 + work item 1500 =
+        -- 933351500); the work queue id alone when prefixing is off (cutover,
+        -- PREFIX NULL). One group per load, never shared with another load or
+        -- another user. GL_INTERFACE.GROUP_ID is NUMBER(18): a value longer than
+        -- 18 digits is refused here rather than truncated. RUN_GL_BALANCES reads
+        -- this stamped value back and submits Import Journals with it.
+        -- ============================================================
+        SELECT PREFIX INTO l_prefix FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = p_run_id;
+        l_group_txt := l_prefix || TO_CHAR(NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id));
+        IF LENGTH(l_group_txt) > 18 OR NOT REGEXP_LIKE(l_group_txt, '^[0-9]+$') THEN
+            RAISE_APPLICATION_ERROR(-20173,
+                C_PROC || ': GL group id ' || l_group_txt
+                || ' is not a number of at most 18 digits (GL_INTERFACE.GROUP_ID is NUMBER(18)).');
+        END IF;
+        l_group_id := TO_NUMBER(l_group_txt);
+
+        -- ============================================================
         -- Backlog #12 -- stamp the run-scoped per-record reference BEFORE the
         -- CSV is built, so the CSV picks up the stamped Slot C value.
         -- Carrier config (DMT_REF_CARRIER_CFG_TBL, cemli_code GLBalances):
         --   Slot A = REFERENCE21 (carried by RECON_KEY, set at transform)
-        --   Slot B = GROUP_ID    (= the work queue id: one group per load, stamped here;
-        --                         Import Journals is submitted with this exact group id)
+        --   Slot B = GROUP_ID    (= prefix || work queue id: one group per load, stamped
+        --                         here; Import Journals is submitted with this exact group id)
         --   Slot C = REFERENCE22 = DMT_REF_ID_PKG.BUILD_REF(run, work_queue, tfm)
         -- Slot C rides REFERENCE22 (-> GL_JE_LINES.REFERENCE_2), NOT an ATTRIBUTE
         -- column: proof-of-recipe run 301 showed GL Journal Import does not carry
@@ -274,11 +295,8 @@
         -- scope. Scoped to the STAGED rows this GENERATE call will emit (this ledger).
         UPDATE DMT_GL_INTERFACE_TFM_TBL
         SET    WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id,
-               -- GROUP_ID = the work queue id (backlog #173, owner decision
-               -- 2026-10-07): one group per load, never shared with another load
-               -- or another user. NVL to the run id only for a standalone call
-               -- with no work item. RUN_GL_BALANCES submits this same value.
-               GROUP_ID      = NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id),
+               -- GROUP_ID = prefix || work queue id (see l_group_id above).
+               GROUP_ID      = l_group_id,
                REFERENCE22   = DMT_REF_ID_PKG.BUILD_REF(
                                    p_run_id        => p_run_id,
                                    p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,

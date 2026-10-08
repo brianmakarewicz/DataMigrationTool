@@ -5766,6 +5766,7 @@
         l_gl_ledger_id VARCHAR2(50);
         l_gl_das_id    VARCHAR2(50);
         l_gl_source    VARCHAR2(240);
+        l_gl_group     VARCHAR2(40);
         l_gl_count     NUMBER := 0;
         l_gl_ok        BOOLEAN;
         l_gl_user      VARCHAR2(500);
@@ -5852,15 +5853,21 @@
             END;
 
             -- JournalImportLauncher: 7 args -- DAS_ID, Source, LedgerID, GroupID, N, N, N.
-            -- GroupID = this work item's queue id (backlog #173, owner decision
-            -- 2026-10-07): the generator stamped it as every line's GROUP_ID, so
-            -- the job imports exactly this load and never another user's pending
-            -- journals (never ALL). Journal Import holds the whole group when any
-            -- line errors (proven, probe load 10075834), so a load is all-or-nothing.
+            -- GroupID = the GROUP_ID the generator stamped on this ledger's lines
+            -- (prefix || work queue id; backlog #173, owner decision 2026-10-07),
+            -- read back so the job imports exactly this load and never another
+            -- user's pending journals (never ALL). Journal Import holds the whole
+            -- group when any line errors (proven, probe load 10075834), so a load
+            -- is all-or-nothing.
+            SELECT TO_CHAR(MAX(GROUP_ID)) INTO l_gl_group
+            FROM   DMT_GL_INTERFACE_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    LEDGER_NAME = led_rec.LEDGER_NAME
+            AND    TFM_STATUS = 'GENERATED';
             l_gl_param := NVL(l_gl_das_id, '#NULL') || ',' ||
                           l_gl_source || ',' ||
                           l_gl_ledger_id || ',' ||
-                          TO_CHAR(NVL(g_gen_queue_id, p_run_id)) || ',N,N,N';
+                          l_gl_group || ',N,N,N';
 
             DMT_UTIL_PKG.LOG(p_run_id,
                 'GL ParameterList for ' || led_rec.LEDGER_NAME || ': ' || l_gl_param,
