@@ -906,7 +906,7 @@ UNION ALL
 SELECT 'Absences', 'Absences',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PERSON_NUMBER || ' - ' || ABSENCE_TYPE,
-       PERSON_NUMBER,
+       TO_CHAR(FUSION_ABSENCE_ENTRY_ID),  -- lookup key: the absences REST resource is filtered by personAbsenceEntryId (#293)
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,

@@ -552,21 +552,24 @@ commit;
 -- ---------------------------------------------------------------------------
 -- Absences (100000030) — Contract v1 registration (design section 5). HDL load
 -- = no interface table; base-tier only from ANC_PER_ABS_ENTRIES via
--- HRC_INTEGRATION_KEY_MAP. RECON_KEY = prefixed PERSON_NUMBER || '_ABS'.
+-- HRC_INTEGRATION_KEY_MAP. V2 (backlog #293): rows selected by the HDL request
+-- id; RECON_KEY = the HDL SourceSystemId = the absence's own TFM sequence id.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 100000030                                            bip_report_id,
            'Absences'                                           cemli_code,
            'Absence Entry'                                      object_type,
-           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_V2_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_V2_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                          interface_table,
-           'Absence HDL base-table reconciliation (Contract v1)' notes,
+           'Absence HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #293): '
+             || 'rows selected by the HDL request id, key map joined on each row''s own owner, '
+             || 'absence confirmed in ANC_PER_ABS_ENTRIES. Deployed alongside V1, never overwriting it.' notes,
            1                                                    contract_version,
            'DMT_ABSENCE_TFM_TBL'                                tfm_table,
            'FUSION_ABSENCE_ENTRY_ID'                            fusion_id_column,
-           'DMT_UTIL_PKG.PREFIXED(run_prefix, PERSON_NUMBER, 30) || ''_ABS''' recon_key_sql
+           'TO_CHAR(TFM_SEQUENCE_ID)  (the HDL SourceSystemId)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)

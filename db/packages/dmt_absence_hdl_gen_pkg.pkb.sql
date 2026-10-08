@@ -21,8 +21,16 @@ AS
     -- ApprovalStatusCode, SubmissionDate
     -- Note: PersonAbsenceEntry uses V1 (not V2 like Worker/Salary)
     -- Employer (not EmployerName — V1 uses different attribute name)
+    -- Backlog #293 (attribute list read from the pod's HDL business-object
+    -- metadata, HRC_DL_BUS_OBJECT_ATTRS_VL, 2026-10-08):
+    --   * ApprovalStatus added. Every absence on the pod is AbsenceStatus
+    --     SUBMITTED with ApprovalStatus APPROVED; sending the processing status
+    --     without the approval status is what Fusion rejected as "conflicting
+    --     processing and approval statuses" (the old README blocker).
+    --   * Duration removed: PersonAbsenceEntry has no Duration attribute (only
+    --     StartDateDuration / EndDateDuration); Fusion derives the duration.
     C_ABSENCEENTRY_COLS CONSTANT VARCHAR2(4000) :=
-        'SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|Employer|AbsenceType|AbsenceStatus|StartDate|EndDate|StartTime|EndTime|Duration|AbsenceReason|Comments';
+        'SourceSystemOwner|SourceSystemId|PersonId(SourceSystemId)|Employer|AbsenceType|AbsenceStatus|ApprovalStatus|StartDate|EndDate|StartTime|EndTime|AbsenceReason|Comments';
 
 
 
@@ -108,17 +116,25 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
+                -- SourceSystemId = the absence's own TFM sequence id (backlog #293).
+                -- The SourceSystemOwner is unique per DMT instance (#287) and the
+                -- recon report selects rows by the HDL request id, so the TFM id is
+                -- unique enough, and a person can carry several absences (the old
+                -- PERSON_NUMBER || '_ABS' allowed only one per person per run).
+                -- PersonId(SourceSystemId) points at the Worker loaded by the
+                -- Workers object (cross-object; XREF resolvers are deferred by
+                -- policy), so it keeps the Workers key: the person number.
                 l_vals := l_sso                          || '|' ||
-                          pv(r.PERSON_NUMBER) || '_ABS'  || '|' ||  -- SourceSystemId
+                          TO_CHAR(r.TFM_SEQUENCE_ID)     || '|' ||  -- SourceSystemId
                           pv(r.PERSON_NUMBER)            || '|' ||  -- PersonId(SourceSystemId) FK
                           pv(r.EMPLOYER_NAME)            || '|' ||  -- Employer
                           pv(r.ABSENCE_TYPE)             || '|' ||
                           pv(r.ABSENCE_STATUS)           || '|' ||
+                          pv(r.APPROVAL_STATUS_CODE)     || '|' ||  -- ApprovalStatus
                           pv(r.START_DATE)               || '|' ||
                           pv(r.END_DATE)                 || '|' ||
                           pv(r.START_TIME)               || '|' ||
                           pv(r.END_TIME)                 || '|' ||
-                          pv(r.DURATION)                 || '|' ||
                           pv(r.ABSENCE_REASON)           || '|' ||
                           pv(r.COMMENTS);
                 DMT_HDL_UTIL_PKG.APPEND_DAT_LINE(l_dat, l_vals, p_discriminator => 'PersonAbsenceEntry');

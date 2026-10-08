@@ -102,6 +102,9 @@ REPORTS = [
     # Rows selected by the HDL request id; salary confirmed in CMP_SALARY.
     ("Salaries",                "DMT_SALARIES_RECON_V2_DM", "DMT_SALARIES_RECON_V2_RPT"),
     ("Absences",                "DMT_ABSENCES_RECON_DM", "DMT_ABSENCES_RECON_RPT"),
+    # Absences V2 (2026-10-08, backlog #293): alongside V1 (never overwritten).
+    # Rows selected by the HDL request id; absence confirmed in ANC_PER_ABS_ENTRIES.
+    ("Absences",                "DMT_ABSENCES_RECON_V2_DM", "DMT_ABSENCES_RECON_V2_RPT"),
     ("WorkSchedules",            "DMT_WORKSCHEDULES_RECON_DM", "DMT_WORKSCHEDULES_RECON_RPT"),
     ("PayrollRelationships",     "DMT_PAYROLLRELATIONSHIPS_RECON_DM", "DMT_PAYROLLRELATIONSHIPS_RECON_RPT"),
     ("Assignments",              "DMT_ASSIGNMENTS_RECON_DM", "DMT_ASSIGNMENTS_RECON_RPT"),
