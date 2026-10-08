@@ -207,6 +207,83 @@ def force_local_prefix(v):
     _sqlcl("local", f"alter sequence DMT_RUN_PREFIX_SEQ restart start with {v};\nexit\n")
     print(f"[prefix] local DMT_RUN_PREFIX_SEQ set to issue {v} next")
 
+def _seq_next(target):
+    """(value the target's DMT_RUN_PREFIX_SEQ issues next, exact?) read from
+    USER_SEQUENCES without consuming it. With NOCACHE (both instances today)
+    LAST_NUMBER is exactly the next value; with a cache it is only an upper
+    bound, so exact=False."""
+    con = _oracle(target); cur = con.cursor()
+    cur.execute("select last_number, cache_size from user_sequences "
+                "where sequence_name = 'DMT_RUN_PREFIX_SEQ'")
+    last, cache = cur.fetchone(); con.close()
+    return int(last), int(cache or 0) == 0
+
+def reserve_atp_prefix_above_local():
+    """Before an ATP regression: make the prefix ATP's SUBMIT_PIPELINE will draw
+    higher than every prefix local has used OR will issue next, then restart the
+    local sequence above it so later local runs cannot take it either.
+
+    Backlog #520/#521: after the local regression (prefix 93362) the local sequence
+    kept issuing 93363.. to local proof runs, and ATP's sequence then issued the
+    same numbers. ATP run 178 drew 93364, which local O2C proof run 310 had sent to
+    the shared Fusion pod an hour earlier: its AR lines were rejected as duplicate
+    transaction-flexfield keys and its customers (same TCA references, same batch
+    933645001) collided with run 310's records. next_prefix_from_atp() guards only
+    the local draw; this guards the ATP draw.
+
+    Only values at or below the local floor are consumed on ATP (they could never be
+    used safely anyway); the first safe value is left for the run itself."""
+    floor = max(local_max_used_prefix(), _seq_next("local")[0])
+    con = _oracle("atp"); cur = con.cursor()
+    draws = 0
+    while True:
+        nxt, exact = _seq_next("atp")
+        if exact and nxt > floor:
+            break
+        cur.execute("select DMT_RUN_PREFIX_SEQ.NEXTVAL from dual")
+        v = int(cur.fetchone()[0]); draws += 1
+        if not exact and v > floor:
+            nxt = v + 1          # cached sequence: v is spent, the run gets a later value
+            break
+        if draws >= 5000:
+            con.close()
+            raise SystemExit(f"[prefix] ATP DMT_RUN_PREFIX_SEQ still at {v} after {draws} draws, "
+                             f"not above the local floor {floor}; refusing to reuse a prefix")
+    con.close()
+    force_local_prefix(nxt + 1)
+    print(f"[prefix] ATP will issue {nxt} to its run ({draws} value(s) skipped; local floor "
+          f"{floor} = max of used and next-to-issue); local moved past it")
+    return nxt
+
+def prefix_used_on(target, prefix, exclude_run_id=None):
+    """Run ids on `target` that already used `prefix` (other than exclude_run_id)."""
+    con = _oracle(target); cur = con.cursor()
+    cur.execute("select run_id from DMT_PIPELINE_RUN_TBL where prefix = :p "
+                "and (:r is null or run_id <> :r) order by run_id",
+                p=str(prefix), r=exclude_run_id)
+    ids = [int(r[0]) for r in cur]; con.close()
+    return ids
+
+def run_prefix(target, run_id):
+    con = _oracle(target); cur = con.cursor()
+    cur.execute("select prefix from DMT_PIPELINE_RUN_TBL where run_id = :r", r=run_id)
+    row = cur.fetchone(); con.close()
+    return row[0] if row else None
+
+def assert_prefix_unique(target, run_id):
+    """True when the run's prefix was used by no run on the OTHER instance. Both
+    instances write to the same Fusion pod, so a shared prefix means duplicate
+    records and a meaningless result; the run is then reported as not passing."""
+    other = "local" if target == "atp" else "atp"
+    p = run_prefix(target, run_id)
+    clash = prefix_used_on(other, p) if p else []
+    if clash:
+        print(f"[prefix] FAIL: {target} run {run_id} used prefix {p}, which {other} run(s) "
+              f"{clash} already sent to the shared Fusion pod. Its results are not valid.")
+        return False
+    print(f"[prefix] ok: {target} run {run_id} prefix {p} is not used on {other}")
+    return True
+
 # ---------------------------------------------------------------- regression
 def _known_issues_sha():
     """sha256 of scripts/regression_known_issues.json, or None if unreadable."""
@@ -334,6 +411,8 @@ def stage_regression_local(pipelines=None):
     v = next_prefix_from_atp()
     force_local_prefix(v)
     res = run_regression("local", pipelines)
+    if res["run_id"] and not assert_prefix_unique("local", res["run_id"]):
+        res["ok"] = False
     gate.record("regression", res, ident)
     return res["ok"]
 
@@ -442,7 +521,10 @@ def stage_test_prod(yes, pipelines=None):
     same ATP run. Passes only if both pass."""
     if not yes:
         print("[test-prod] refusing without --yes (writes test data to Fusion from prod)"); return False
-    res = run_regression("atp", pipelines)  # ATP pulls its own NEXTVAL = v+1
+    reserve_atp_prefix_above_local()   # backlog #520/#521: never reuse a local prefix
+    res = run_regression("atp", pipelines)  # SUBMIT_PIPELINE draws the reserved value
+    if res["run_id"] and not assert_prefix_unique("atp", res["run_id"]):
+        res["ok"] = False
     gate.log_event({"event": "record", "step": "regression_atp", **res})
     if not res["run_id"]:
         print("[test-prod] no ATP run id came back; cannot run the ATP click-through")

@@ -92,10 +92,21 @@ Fusion. **ATP's sequence is the single source of truth.**
 
 - For a local test run, the script consumes `ATP.NEXTVAL = v` and forces the local
   sequence to issue `v` (`ALTER SEQUENCE ... RESTART START WITH v`, 23ai).
-- The prod run then consumes `ATP.NEXTVAL = v+1` on its own.
-- Result: local uses `v`, prod uses `v+1`, next cycle draws `v+2` — distinct, monotonic,
-  no bookkeeping beyond "always draw from ATP". The historical gap between the two
-  sequences is ignored; we just adopt ATP's number.
+- The local draw keeps consuming ATP values until `v` is above every prefix a local run
+  has already used (backlog #450).
+- Before the prod run, `test-prod` checks the other direction (backlog #520/#521). Local
+  proof runs submitted between promotions take `v+1, v+2, ...` from the local sequence,
+  the same numbers ATP issues next. So `test-prod` first consumes ATP values until ATP's
+  next value is above both the highest prefix local has used and the value the local
+  sequence issues next, then restarts the local sequence one above that value. The ATP
+  run draws the reserved value.
+- After each regression (local and prod) the script checks that no run on the other
+  instance used the same prefix. If one did, the regression is reported as not passing,
+  because both instances write to the same Fusion pod and the results would be
+  meaningless. ATP run 178 (prefix 93364, collided with local O2C proof run 310) is the
+  case that added this.
+- Remaining gap: a run started on ATP outside `ci_promote.py` (for example from the ATP
+  console) draws ATP's sequence with no local check.
 
 ## Prerequisites / open items
 
