@@ -1,7 +1,3 @@
--- bip/ARInvoices/query.sql -- EXACT SQL text of the deployed data model
--- /Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_DM.xdm (the CDATA body of
--- bip/ARInvoices/DMT_AR_RECON_V4_DM.xdm). Regenerate from the .xdm whenever
--- the data model changes; never edit separately.
 -- ============================================================
 -- DMT_AR_RECON_V4_DM (2026-10-07), deployed ALONGSIDE V1, V2 and V3
 -- (never overwritten). Change from V3: rows are FOUND only by the

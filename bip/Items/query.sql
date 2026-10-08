@@ -1,9 +1,3 @@
--- MIRROR of the deployed Contract-v1 data model
--- bip/Items/DMT_ITEM_RECON_V3_DM.xdm (deploy target /Custom/DMT2/Items/).
--- V3 (2026-10-07) is deployed alongside DMT_ITEM_RECON_DM and V2 (BIP objects
--- are never overwritten). V3 finds rows only by the work item's Fusion job ids.
--- The SQL below is the byte-exact CDATA body of that .xdm; regenerate this file
--- from the .xdm whenever the data model changes -- the mirror must never drift.
 -- ============================================================
 -- DMT_ITEM_RECON_V3_DM (2026-10-07), deployed ALONGSIDE V1 and V2.
 -- Items reconciliation data model -- BIP reconciliation report

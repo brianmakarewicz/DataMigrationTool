@@ -1,14 +1,3 @@
--- ============================================================
--- SupplierContacts BIP reconciliation query -- MIRROR of the deployed
--- data model bip/SupplierContacts/SUP_CONT_DM.xdm (deploy target
--- /Custom/DMT2/SupplierContacts/). The SQL below is the byte-exact
--- CDATA body of that .xdm; regenerate this file from the .xdm
--- whenever the data model changes -- the mirror must never drift.
--- Contract v1 parameters (design section 5): P_RUN_ID,
--- P_LOAD_REQUEST_ID (the selection key -- LOAD_REQUEST_ID is
--- populated even when the chained import job errors),
--- P_IMPORT_ESS_ID, P_PREFIX. P_BATCH_ID is retired.
--- ============================================================
 -- BASE-tier confirmation: a contact is LOADED only when its person party
 -- positively exists in HZ_PARTIES (joined on the per_party_id the import stamps
 -- on the interface row; PARTY_TYPE='PERSON'). STATUS is derived from base-table
@@ -37,4 +26,3 @@ SELECT
 FROM   poz_sup_contacts_int i
 LEFT JOIN hz_parties b ON b.party_id = i.per_party_id AND b.party_type = 'PERSON'
 WHERE   i.load_request_id = :P_LOAD_REQUEST_ID
-      

@@ -1,8 +1,8 @@
 -- ============================================================
 -- Requisitions BIP reconciliation query -- BIP reconciliation
 -- report contract v1 (nine columns, keyset pagination), V2.
--- Data source: ApplicationDB_FSCM. This mirrors the SQL embedded
--- in DMT_REQ_RECON_V2_DM.xdm for review; the .xdm is authoritative.
+-- Data source: ApplicationDB_FSCM. The repo mirror of this SQL is
+-- bip/Requisitions/query.sql.
 -- V2 (2026-10-07) is deployed ALONGSIDE DMT_REQ_RECON_DM (V1);
 -- BIP objects are never overwritten.
 --

@@ -100,7 +100,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000026,'ItemCategories','EGP_ITEM_CATEGORY','/Custom/DMT2/ItemCategories/ITEM_CAT_DM.xdm','/Custom/DMT2/ItemCategories/ITEM_CAT_RPT.xdo','EGP_ITEM_CATEGORIES_INTERFACE',to_date('2026-05-23 23:44:58','YYYY-MM-DD HH24:MI:SS'),'Item Category reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000026,'ItemCategories','EGP_ITEM_CATEGORY','/Custom/DMT2/Items/DMT_ITEM_RECON_V3_DM.xdm','/Custom/DMT2/Items/DMT_ITEM_RECON_V3_RPT.xdo','EGP_ITEM_CATEGORIES_INTERFACE',to_date('2026-05-23 23:44:58','YYYY-MM-DD HH24:MI:SS'),'Item categories reconcile through the Items report V3 (record type ItemCategory); the ItemCategories ITEM_CAT_DM / ITEM_CAT_RPT pair is retired (backlog #480).',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -2266,6 +2266,27 @@ when matched then update set
     t."TFM_TABLE"           = s.tfm_table,
     t."FUSION_ID_COLUMN"    = s.fusion_id_column,
     t."RECON_KEY_SQL"       = s.recon_key_sql;
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- ItemCategories (100000026) -- retired report re-pointed (backlog #480).
+-- Item categories are not a separate pipeline object: they ride in the Items
+-- FBDI zip and are reconciled by the Items report V3 (record type ItemCategory,
+-- DMT_EGP_ITEM_RESULTS_PKG.APPLY_CONTRACT_V1_ITEMS). The old ITEM_CAT_DM /
+-- ITEM_CAT_RPT pair and its DMT_EGP_ITEM_CAT_RESULTS_PKG reconciler are retired
+-- (no pipeline, queue or reconcile path reads this row), so the row now names the
+-- live Items V3 report instead of the retired one. The insert above names the
+-- same paths for a fresh install; this UPDATE converges an existing database
+-- (mirrored by db/migrations/2026-10-08_itemcategories_registry_repoint.sql).
+-- ---------------------------------------------------------------------------
+update "DMT_BIP_REPORT_TBL"
+set    "DM_CATALOG_PATH"     = '/Custom/DMT2/Items/DMT_ITEM_RECON_V3_DM.xdm',
+       "REPORT_CATALOG_PATH" = '/Custom/DMT2/Items/DMT_ITEM_RECON_V3_RPT.xdo',
+       "NOTES"               = 'Item categories reconcile through the Items report V3 '
+                            || '(record type ItemCategory); the ItemCategories ITEM_CAT_DM / '
+                            || 'ITEM_CAT_RPT pair is retired (backlog #480).'
+where  "CEMLI_CODE" = 'ItemCategories';
 
 commit;
 

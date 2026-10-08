@@ -87,7 +87,9 @@ REPORTS = [
     # the work item's Fusion job ids (base by the Item Import REQUEST_ID,
     # interface and errors by LOAD_REQUEST_ID / REQUEST_ID), never by the prefix.
     ("Items",                   "DMT_ITEM_RECON_V3_DM", "DMT_ITEM_RECON_V3_RPT"),
-    ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
+    # ItemCategories ITEM_CAT_DM / ITEM_CAT_RPT: retired (backlog #480). Item
+    # categories reconcile through the Items V3 report above (record type
+    # ItemCategory); registry row 100000026 now names that report.
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
     # Workers V2 (2026-10-07, backlog #289): alongside V1 (never overwritten).
     # Rows selected by the HDL request id; every person component proven on its
