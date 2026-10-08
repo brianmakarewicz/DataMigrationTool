@@ -387,6 +387,10 @@ AS
     --                   runs as, through GET_CEMLI_CREDENTIALS (backlog #309).
     --   p_params      : 'NAME|VALUE~NAME2|VALUE2' (Contract v1:
     --                   'P_RUN_ID|1~P_LOAD_REQUEST_ID|2~P_IMPORT_ESS_ID|3~P_PREFIX|10001').
+    --                   A caller whose values may contain '~' (a keyset
+    --                   P_AFTER_KEY such as 'Customers.Parties~<ref>') joins its
+    --                   pairs with C_BIP_PARAM_SEP instead; see
+    --                   BUILD_BIP_PARAM_ITEMS at the end of this spec (backlog #414).
     -- PROCEDURE per the section 7 procedures-only contract (network call):
     --   x_report_xml : the decoded report data; NULL with x_error_code =
     --                  C_SUCCESS means BIP produced no <reportBytes>
@@ -509,6 +513,32 @@ AS
     -- this PR; the DMT_DESIGN.html section-7 write-up is a pending follow-up.)
     PROCEDURE RUN_PREFLIGHT (
         p_run_id     IN  NUMBER,
+        x_error_code OUT NUMBER
+    );
+
+    -- --------------------------------------------------------
+    -- BIP runReport parameter list (backlog #414)
+    -- --------------------------------------------------------
+    -- Pair separator for RUN_BIP_REPORT's p_params that can never occur in a
+    -- parameter value: CHR(30), the ASCII record separator. XML 1.0 forbids
+    -- this character, so no value read back from a BIP report (a RECORD_KEY
+    -- used as the keyset P_AFTER_KEY) can contain it. When p_params contains
+    -- it, RUN_BIP_REPORT splits ONLY on it and every '~' stays inside its
+    -- value; when it is absent the legacy '~' separator applies, so every
+    -- existing caller is unchanged. A single-pair call whose value may hold
+    -- '~' ends the string with C_BIP_PARAM_SEP.
+    C_BIP_PARAM_SEP CONSTANT VARCHAR2(1) := CHR(30);
+
+    -- Build the runReport <v2:item> list from a p_params string (the body of
+    -- <v2:listOfParamNameValues>). Each pair is split on its FIRST '|' (name,
+    -- then value; the value may itself contain '|'), and both are XML-escaped
+    -- so a value carrying '&', '<' or '>' reaches BIP intact. Empty pairs are
+    -- skipped. Called by RUN_BIP_REPORT; public so the unit suite can prove
+    -- the split without a Fusion call. x_error_code = C_SUCCESS or C_ERROR
+    -- (detail logged here; x_items NULL on error).
+    PROCEDURE BUILD_BIP_PARAM_ITEMS (
+        p_params     IN  VARCHAR2,
+        x_items      OUT CLOB,
         x_error_code OUT NUMBER
     );
 

@@ -964,6 +964,69 @@
     END BIP_REPORT_XML;
 
     -- --------------------------------------------------------
+    -- BUILD_BIP_PARAM_ITEMS — p_params string -> runReport <v2:item> list
+    -- (backlog #414). Pairs are joined by C_BIP_PARAM_SEP when the string
+    -- contains it, otherwise by the legacy '~'. A keyset P_AFTER_KEY such as
+    -- 'Customers.Parties~<ref>' therefore travels whole: under the legacy
+    -- split it was cut at its first '~' and page 2 restarted near the first
+    -- key. Name and value split on the FIRST '|'; both are XML-escaped.
+    -- --------------------------------------------------------
+    PROCEDURE BUILD_BIP_PARAM_ITEMS (
+        p_params     IN  VARCHAR2,
+        x_items      OUT CLOB,
+        x_error_code OUT NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'BUILD_BIP_PARAM_ITEMS';
+        l_sep   VARCHAR2(1);
+        l_rem   VARCHAR2(32767) := p_params;
+        l_pair  VARCHAR2(32767);
+        l_pos   PLS_INTEGER;
+    BEGIN
+        x_items      := NULL;
+        x_error_code := C_ERROR;   -- pessimistic until proven successful
+
+        l_sep := CASE WHEN INSTR(p_params, C_BIP_PARAM_SEP) > 0
+                      THEN C_BIP_PARAM_SEP ELSE '~' END;
+
+        DBMS_LOB.CREATETEMPORARY(x_items, TRUE);
+        WHILE l_rem IS NOT NULL LOOP
+            l_pos := INSTR(l_rem, l_sep);
+            IF l_pos > 0 THEN
+                l_pair := SUBSTR(l_rem, 1, l_pos - 1);
+                l_rem  := SUBSTR(l_rem, l_pos + 1);
+            ELSE
+                l_pair := l_rem;
+                l_rem  := NULL;
+            END IF;
+            IF l_pair IS NOT NULL THEN
+                l_pos := INSTR(l_pair, '|');
+                DBMS_LOB.APPEND(x_items, TO_CLOB(
+                    '<v2:item><v2:name>' ||
+                    DBMS_XMLGEN.CONVERT(SUBSTR(l_pair, 1, l_pos - 1)) ||
+                    '</v2:name><v2:values><v2:item>' ||
+                    DBMS_XMLGEN.CONVERT(SUBSTR(l_pair, l_pos + 1)) ||
+                    '</v2:item></v2:values></v2:item>'));
+            END IF;
+        END LOOP;
+        x_error_code := C_SUCCESS;
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_error_code := C_ERROR;
+            BEGIN
+                IF x_items IS NOT NULL AND DBMS_LOB.ISTEMPORARY(x_items) = 1 THEN
+                    DBMS_LOB.FREETEMPORARY(x_items);
+                END IF;
+            EXCEPTION WHEN OTHERS THEN NULL; END;
+            x_items := NULL;
+            LOG_ERROR(
+                p_run_id    => NULL,
+                p_message   => C_PROC || ' failed building the runReport parameter list.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => 'DMT_UTIL_PKG',
+                p_procedure => C_PROC);
+    END BUILD_BIP_PARAM_ITEMS;
+
+    -- --------------------------------------------------------
     -- RUN_BIP_REPORT â€” run a deployed BIP report (SOAP v2 ReportService)
     -- through the shared HTTP_REQUEST transport and return its data as
     -- XMLTYPE via x_report_xml. Centralised replacement for the
@@ -1018,11 +1081,7 @@
         l_env       CLOB;
         l_resp      CLOB;
         l_status    NUMBER;
-        l_rem       VARCHAR2(4000) := p_params;
-        l_pair      VARCHAR2(600);
-        l_pos       INTEGER;
-        l_pname     VARCHAR2(200);
-        l_pval      VARCHAR2(2000);
+        l_items_err NUMBER;
         -- Backlog #148: bounded retry on TRANSIENT TRANSPORT faults only.
         -- A transport fault is a network/connection blip on the runReport
         -- POST (UTL_HTTP/ORA-29273 'HTTP request failed', connection reset,
@@ -1089,27 +1148,17 @@
                 p_procedure => C_PROC);
         END IF;
 
-        -- Build parameterNameValues items from 'NAME|VAL~NAME2|VAL2'
+        -- Build parameterNameValues items from 'NAME|VAL~NAME2|VAL2' (or the
+        -- C_BIP_PARAM_SEP-joined form, backlog #414) in the shared builder.
         l_step := 'building runReport parameter list';
-        DBMS_LOB.CREATETEMPORARY(l_items, TRUE);
-        WHILE l_rem IS NOT NULL LOOP
-            l_pos := INSTR(l_rem, '~');
-            IF l_pos > 0 THEN
-                l_pair := SUBSTR(l_rem, 1, l_pos - 1);
-                l_rem  := SUBSTR(l_rem, l_pos + 1);
-            ELSE
-                l_pair := l_rem;
-                l_rem  := NULL;
-            END IF;
-            IF l_pair IS NOT NULL THEN
-                l_pos   := INSTR(l_pair, '|');
-                l_pname := SUBSTR(l_pair, 1, l_pos - 1);
-                l_pval  := SUBSTR(l_pair, l_pos + 1);
-                DBMS_LOB.APPEND(l_items, TO_CLOB(
-                    '<v2:item><v2:name>' || l_pname || '</v2:name>' ||
-                    '<v2:values><v2:item>' || l_pval || '</v2:item></v2:values></v2:item>'));
-            END IF;
-        END LOOP;
+        BUILD_BIP_PARAM_ITEMS(p_params     => p_params,
+                              x_items      => l_items,
+                              x_error_code => l_items_err);
+        IF l_items_err <> C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20037,
+                C_PROC || ': could not build the runReport parameter list '
+                || '(detail logged by BUILD_BIP_PARAM_ITEMS).');
+        END IF;
 
         l_step := 'building runReport SOAP envelope for ' || l_path;
         DBMS_LOB.CREATETEMPORARY(l_env, TRUE);

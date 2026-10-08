@@ -24,6 +24,7 @@
         p_fusion_batch_id IN NUMBER  DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'FETCH_ROWS';
+        C_SEP  CONSTANT VARCHAR2(1)  := DMT_UTIL_PKG.C_BIP_PARAM_SEP;   -- #414
         l_contract_ver  NUMBER;
         l_prefix        VARCHAR2(30);
         l_chunk_size    NUMBER;
@@ -83,7 +84,7 @@
         -- Optional Fusion import batch id (Customers): sent only when given, so the
         -- report call of every object that does not pass it stays byte-identical.
         IF p_fusion_batch_id IS NOT NULL THEN
-            l_batch_param := '~P_FUSION_BATCH_ID|' || TO_CHAR(p_fusion_batch_id, 'TM9');
+            l_batch_param := C_SEP || 'P_FUSION_BATCH_ID|' || TO_CHAR(p_fusion_batch_id, 'TM9');
         END IF;
 
         DMT_UTIL_PKG.LOG(
@@ -104,18 +105,23 @@
             DMT_UTIL_PKG.RUN_BIP_REPORT(
                 p_run_id     => p_run_id,
                 p_cemli_code => p_cemli_code,
-                p_params     => 'P_RUN_ID|'           || TO_CHAR(p_run_id) ||
-                                '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
-                                '~P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
-                                '~P_PREFIX|'          || l_prefix ||
+                -- Pairs are joined by DMT_UTIL_PKG.C_BIP_PARAM_SEP, not '~':
+                -- from page 2 P_AFTER_KEY is the last RECORD_KEY received, and
+                -- several reports build RECORD_KEY with '~' (Customers
+                -- 'Customers.Parties~<ref>'). Under the '~' split that key was
+                -- cut short and page 2 restarted near the first key (#414).
+                p_params     => 'P_RUN_ID|'                    || TO_CHAR(p_run_id) ||
+                                C_SEP || 'P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
+                                C_SEP || 'P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
+                                C_SEP || 'P_PREFIX|'          || l_prefix ||
                                 l_batch_param ||
-                                '~P_CHUNK_SIZE|'      || TO_CHAR(l_chunk_size) ||
-                                '~P_AFTER_KEY|'       || l_after_key ||
+                                C_SEP || 'P_CHUNK_SIZE|'      || TO_CHAR(l_chunk_size) ||
+                                C_SEP || 'P_AFTER_KEY|'       || l_after_key ||
                                 -- P_WQ_ID only when given (the Projects report,
                                 -- owner-approved exception 2026-10-07); no other
                                 -- report receives a parameter it does not declare.
                                 CASE WHEN p_work_queue_id IS NOT NULL
-                                     THEN '~P_WQ_ID|' || TO_CHAR(p_work_queue_id) END,
+                                     THEN C_SEP || 'P_WQ_ID|' || TO_CHAR(p_work_queue_id) END,
                 x_report_xml => l_xml,
                 x_error_code => l_err);
 
