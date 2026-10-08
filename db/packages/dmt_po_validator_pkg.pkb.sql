@@ -170,7 +170,7 @@ AS
                        '[PRE_VALIDATION] Supplier ''' || h.VENDOR_NAME ||
                        ''' is not loaded — PO record skipped.'
                 FROM   DMT_PO_HEADERS_INT_STG_TBL h
-                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, h.STG_STATUS) = 'Y'
+                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, h.STG_STATUS, p_run_id, 'DMT_PO_HEADERS_INT_STG_TBL', h.STG_SEQUENCE_ID) = 'Y'
                 AND    (p_scenario_id IS NULL OR h.SCENARIO_ID = p_scenario_id)
                 AND    NOT EXISTS (
                            SELECT 1
@@ -193,7 +193,7 @@ AS
                            '[PRE_VALIDATION] Parent PO header ''' || ln.INTERFACE_HEADER_KEY ||
                            ''' failed upstream validation — line skipped.'
                     FROM   DMT_PO_LINES_INT_STG_TBL ln
-                    WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ln.STG_STATUS) = 'Y'
+                    WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ln.STG_STATUS, p_run_id, 'DMT_PO_LINES_INT_STG_TBL', ln.STG_SEQUENCE_ID) = 'Y'
                     AND    (p_scenario_id IS NULL OR ln.SCENARIO_ID = p_scenario_id)
                     AND    EXISTS (
                                SELECT 1
@@ -219,7 +219,7 @@ AS
                            '[PRE_VALIDATION] Parent PO line ''' || loc.INTERFACE_LINE_KEY ||
                            ''' failed upstream validation — line location skipped.'
                     FROM   DMT_PO_LINE_LOCS_INT_STG_TBL loc
-                    WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, loc.STG_STATUS) = 'Y'
+                    WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, loc.STG_STATUS, p_run_id, 'DMT_PO_LINE_LOCS_INT_STG_TBL', loc.STG_SEQUENCE_ID) = 'Y'
                     AND    (p_scenario_id IS NULL OR loc.SCENARIO_ID = p_scenario_id)
                     AND    EXISTS (
                                SELECT 1
@@ -239,7 +239,7 @@ AS
                            '[PRE_VALIDATION] Parent PO line location ''' || d.INTERFACE_LINE_LOCATION_KEY ||
                            ''' failed upstream validation — distribution skipped.'
                     FROM   DMT_PO_DISTS_INT_STG_TBL d
-                    WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, d.STG_STATUS) = 'Y'
+                    WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, d.STG_STATUS, p_run_id, 'DMT_PO_DISTS_INT_STG_TBL', d.STG_SEQUENCE_ID) = 'Y'
                     AND    (p_scenario_id IS NULL OR d.SCENARIO_ID = p_scenario_id)
                     AND    EXISTS (
                                SELECT 1

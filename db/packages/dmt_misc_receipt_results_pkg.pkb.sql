@@ -38,7 +38,7 @@ AS
 --
 -- After the transaction tier settles, lot detail is accounted by its parent
 -- transaction's verdict (found outcome via the parent, not a fabricated verdict),
--- then all outcomes are echoed back to the STG table. Serial detail carries no
+-- and outcomes stay on the TFM rows (no STG write, backlog #310). Serial detail carries no
 -- stored parent-transaction key in the TFM table and is left for the honest sweep.
 -- ============================================================
 
@@ -319,23 +319,8 @@ AS
                        AND t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER
                        AND t.TFM_STATUS='FAILED');
 
-        -- Echo to STG
-        UPDATE DMT_INV_TRX_STG_TBL stg
-        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_INV_TRX_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-
-        UPDATE DMT_INV_TRX_STG_TBL stg
-        SET    stg.STG_STATUS     = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_INV_TRX_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_INV_TRX_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,

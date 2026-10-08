@@ -93,8 +93,8 @@
             'STAGED'
         FROM   DMT_GL_INTERFACE_STG_TBL s
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_GL_INTERFACE_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -129,8 +129,8 @@
         UPDATE DMT_GL_INTERFACE_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS, p_run_id, 'DMT_GL_INTERFACE_STG_TBL', STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND (p_scenario_id IS NULL
              OR SCENARIO_ID = p_scenario_id
@@ -156,7 +156,7 @@
                 SELECT p_run_id, 'GLBalances', 'GL Journals', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_GL_INTERFACE_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y' )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_GL_INTERFACE_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM DMT_GL_INTERFACE_TFM_TBL t
