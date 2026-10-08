@@ -204,14 +204,13 @@
         l_offset   INTEGER := 1;
         l_amount   INTEGER;
         l_body_len INTEGER;
-        l_raw      RAW(600);
-        l_auth     VARCHAR2(500);
+        l_auth     VARCHAR2(2000);
     BEGIN
-        l_raw  := UTL_ENCODE.BASE64_ENCODE(
-                       UTL_RAW.CAST_TO_RAW(
-                           NVL(p_username, DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME')) || ':' ||
-                           NVL(p_password, DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'))));
-        l_auth := 'Basic ' || UTL_RAW.CAST_TO_VARCHAR2(l_raw);
+        -- Central header build (backlog #309): the caller passes the user+password
+        -- pair from DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS; no pair = the default user
+        -- resolved by the same utility; half a pair raises. Never a private NVL.
+        l_auth := DMT_UTIL_PKG.BASIC_AUTH_HEADER(p_username => p_username,
+                                                 p_password => p_password);
 
         UTL_HTTP.SET_RESPONSE_ERROR_CHECK(FALSE);
         UTL_HTTP.SET_TRANSFER_TIMEOUT(600);
@@ -521,11 +520,15 @@
     -- paramList NEW,N,<run_id> stamps IMPORT_REQUEST_ID on each row
     -- loaded into the interface table, enabling BIP reconciliation to filter by it.
     -- Returns the Import ESS job ID for polling and reconciliation.
+    -- p_cemli_code: the object the job is submitted for. The job is submitted
+    -- as that object's central Fusion user (GET_CEMLI_CREDENTIALS, backlog
+    -- #309) -- the same user the caller then polls it as.
     -- --------------------------------------------------------
     FUNCTION SUBMIT_IMPORT_JOB (
         p_run_id         IN NUMBER,
         p_job_name       IN VARCHAR2,
-        p_param_list     IN VARCHAR2 DEFAULT NULL  -- ESS ParameterList; NULL => 'NEW,N,<run_id>'
+        p_param_list     IN VARCHAR2 DEFAULT NULL,  -- ESS ParameterList; NULL => 'NEW,N,<run_id>'
+        p_cemli_code     IN VARCHAR2
     ) RETURN VARCHAR2 IS
         C_PROC      CONSTANT VARCHAR2(30) := 'SUBMIT_IMPORT_JOB';
         C_NS_ACTION CONSTANT VARCHAR2(200) :=
@@ -550,7 +553,13 @@
         l_tag_start    INTEGER;
         l_val_start    INTEGER;
         l_val_end      INTEGER;
+        l_user         VARCHAR2(500);
+        l_pass         VARCHAR2(500);
     BEGIN
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                                           x_username   => l_user,
+                                           x_password   => l_pass);
+
         -- Split job name into package + definition on the LAST separator.
         -- Accept either ',' or ';' (ERP options store either):
         --   /oracle/apps/ess/prc/poz/supplierImport,ImportSuppliers
@@ -607,7 +616,9 @@
                 l_param_xml ||
                 '</typ:submitESSJobRequest>' ||
                 '</soapenv:Body></soapenv:Envelope>'),
-            p_run_id => p_run_id);
+            p_run_id         => p_run_id,
+            p_username       => l_user,
+            p_password       => l_pass);
 
         -- Extract Import ESS job ID from <result> element
         l_tag_start := DBMS_LOB.INSTR(l_response, '<result');
@@ -685,8 +696,17 @@
         l_tag_start     INTEGER;
         l_val_start     INTEGER;
         l_val_end       INTEGER;
+        l_user          VARCHAR2(500) := p_username;
+        l_pass          VARCHAR2(500) := p_password;
     BEGIN
         l_proc := NVL2(p_log_context, p_log_context || ' > ', '') || C_PROC;
+        -- Poll as the object's central Fusion user (backlog #309). A caller
+        -- that passes no pair gets the CEMLI's user, never a silent global.
+        IF p_username IS NULL AND p_password IS NULL THEN
+            DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                                               x_username   => l_user,
+                                               x_password   => l_pass);
+        END IF;
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => 'POLL_ESS_JOB start. ESS job: ' || p_ess_job_id ||
@@ -710,8 +730,8 @@
                     p_soap_action    => C_NS_ACTION || 'getESSJobStatus',
                     p_body           => TO_CLOB(l_soap_body),
                     p_run_id => p_run_id,
-                    p_username       => p_username,
-                    p_password       => p_password);
+                    p_username       => l_user,
+                    p_password       => l_pass);
             EXCEPTION
                 WHEN OTHERS THEN
                     -- A failure on the *status-check* call must never be conflated with the
@@ -1002,8 +1022,8 @@
         C_SLEEP_SEC   CONSTANT NUMBER        := 15;
 
         l_base_url    VARCHAR2(500);
-        l_bip_user    VARCHAR2(100);
-        l_bip_pass    VARCHAR2(100);
+        l_bip_user    VARCHAR2(500);
+        l_bip_pass    VARCHAR2(500);
         l_url         VARCHAR2(500);
         l_env         CLOB;
         l_resp        CLOB;
@@ -1016,8 +1036,10 @@
         l_job_def     VARCHAR2(200);
     BEGIN
         l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_bip_user := DMT_UTIL_PKG.GET_CONFIG('BIP_USERNAME');
-        l_bip_pass := DMT_UTIL_PKG.GET_CONFIG('BIP_PASSWORD');
+        -- BIP lookup runs as the object's central Fusion user (backlog #309).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                                           x_username   => l_bip_user,
+                                           x_password   => l_bip_pass);
         l_url      := l_base_url || '/xmlpserver/services/v2/ReportService';
         l_log_proc := p_cemli_code || ' > ' || C_PROC;
 
@@ -1038,11 +1060,6 @@
         -- ERP options may use comma or semicolon as separator between package path and job definition.
         -- e.g. '.../supplierImport,ImportSuppliers' or '.../reqImport;RequisitionImportJob'
         l_job_def  := SUBSTR(l_job_name, GREATEST(INSTR(l_job_name, ','), INSTR(l_job_name, ';')) + 1);
-
-        IF l_bip_user IS NULL OR l_bip_pass IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20051,
-                'GET_IMPORT_ESS_ID: BIP_USERNAME or BIP_PASSWORD not found in DMT_CONFIG_TBL.');
-        END IF;
 
         DMT_UTIL_PKG.LOG(p_run_id,
             'GET_IMPORT_ESS_ID start. Load ESS ID: ' || p_load_ess_id ||
@@ -3527,7 +3544,8 @@
         l_ex_import_id := SUBMIT_IMPORT_JOB(
             p_run_id     => p_run_id,
             p_job_name   => l_job_name,
-            p_param_list => l_param_list);
+            p_param_list => l_param_list,
+            p_cemli_code => C_CEMLI);
 
         -- Poll the costing import to terminal. WARNING is normal when some rows reject.
         POLL_ESS_JOB(p_run_id, l_ex_import_id, 1800, FALSE, C_OBJ, C_CEMLI, l_ex_status,
@@ -4712,6 +4730,8 @@
         l_ou_count     NUMBER := 0;
         l_any_staged   NUMBER := 0;
         l_ou_ok        BOOLEAN;
+        l_ap_user      VARCHAR2(500);
+        l_ap_pass      VARCHAR2(500);
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -4728,8 +4748,12 @@
         DMT_AP_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         COMMIT;
 
-        -- ERP options for the load submissions (AP uses default Fusion credentials --
-        -- the monolith passed none to submit_and_reconcile_one).
+        -- ERP options and the central Fusion user for the load submissions
+        -- (backlog #309): submit, poll and the report-child poll all run as
+        -- the APInvoices user from GET_CEMLI_CREDENTIALS.
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => C_CEMLI,
+                                           x_username   => l_ap_user,
+                                           x_password   => l_ap_pass);
         get_erp_options(
             p_cemli_code           => C_CEMLI,
             x_ucm_account          => l_ucm_account,
@@ -4790,8 +4814,8 @@
                 p_fbdi_csv_id       => l_ou_csv_id,
                 p_param_list        => l_ou_param,
                 p_group_label       => 'OU: ' || ou_rec.OPERATING_UNIT,
-                p_username          => NULL,
-                p_password          => NULL,
+                p_username          => l_ap_user,
+                p_password          => l_ap_pass,
                 x_load_ess_id       => l_ou_load_id,
                 x_import_ess_id     => l_ou_import_id,
                 x_success           => l_ou_ok);
@@ -5744,8 +5768,14 @@
         l_gl_source    VARCHAR2(240);
         l_gl_count     NUMBER := 0;
         l_gl_ok        BOOLEAN;
+        l_gl_user      VARCHAR2(500);
+        l_gl_pass      VARCHAR2(500);
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
+        -- Central Fusion user for every GLBalances call (backlog #309).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => C_CEMLI,
+                                           x_username   => l_gl_user,
+                                           x_password   => l_gl_pass);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BALANCES start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
 
@@ -5843,8 +5873,8 @@
                 p_fbdi_csv_id       => l_gl_csv_id,
                 p_param_list        => l_gl_param,
                 p_group_label       => 'Ledger: ' || led_rec.LEDGER_NAME,
-                p_username          => NULL,
-                p_password          => NULL,
+                p_username          => l_gl_user,
+                p_password          => l_gl_pass,
                 x_load_ess_id       => l_gl_load_id,
                 x_import_ess_id     => l_gl_import_id,
                 x_success           => l_gl_ok);
@@ -5930,8 +5960,14 @@
         l_gb_ledgers    NUMBER := 0;
         l_gb_rows       NUMBER := 0;
         l_gb_runs       NUMBER := 0;
+        l_gb_user       VARCHAR2(500);
+        l_gb_pass       VARCHAR2(500);
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
+        -- Central Fusion user for every GLBudgets call (backlog #309).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => C_CEMLI,
+                                           x_username   => l_gb_user,
+                                           x_password   => l_gb_pass);
         DMT_UTIL_PKG.LOG(p_run_id,
             'RUN_GL_BUDGETS start. Integration ID: ' || p_run_id, 'INFO', C_PKG, C_PROC);
 
@@ -5982,7 +6018,9 @@
             p_interface_details => l_ifd,
             p_doc_account       => l_ucm_account,
             p_parameter_list    => '#NULL',
-            p_log_context       => C_OBJ);
+            p_log_context       => C_OBJ,
+            p_username          => l_gb_user,
+            p_password          => l_gb_pass);
         DBMS_LOB.FREETEMPORARY(l_gb_zip);
 
         UPDATE DMT_FBDI_ZIP_TBL SET PARAMETER_LIST = '#NULL'
@@ -5990,7 +6028,8 @@
                               WHERE FBDI_CSV_ID = l_gb_csv_id);
         COMMIT;
 
-        POLL_ESS_JOB(p_run_id, l_gb_load_id, 1800, FALSE, C_OBJ, C_CEMLI, l_gb_status);
+        POLL_ESS_JOB(p_run_id, l_gb_load_id, 1800, FALSE, C_OBJ, C_CEMLI, l_gb_status,
+                     p_username => l_gb_user, p_password => l_gb_pass);
         IF l_gb_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
             DMT_UTIL_PKG.LOG(p_run_id,
                 'GL Budget Load ESS ' || l_gb_load_id || ' returned ' || l_gb_status ||
@@ -6043,8 +6082,10 @@
             l_gb_import_id := SUBMIT_IMPORT_JOB(
                 p_run_id     => p_run_id,
                 p_job_name   => l_job_name,
-                p_param_list => rn.RUN_NAME);   -- single arg: the Run Name
-            POLL_ESS_JOB(p_run_id, l_gb_import_id, 1800, FALSE, C_OBJ, C_CEMLI, l_gb_status);
+                p_param_list => rn.RUN_NAME,    -- single arg: the Run Name
+                p_cemli_code => C_CEMLI);
+            POLL_ESS_JOB(p_run_id, l_gb_import_id, 1800, FALSE, C_OBJ, C_CEMLI, l_gb_status,
+                         p_username => l_gb_user, p_password => l_gb_pass);
             DMT_UTIL_PKG.LOG(p_run_id,
                 'ValidateAndLoadBudgets ' || l_gb_import_id || ' for ' || rn.RUN_NAME ||
                 ' -> ' || l_gb_status, 'INFO', C_PKG, C_OBJ || ' > ' || C_PROC);

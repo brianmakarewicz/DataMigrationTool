@@ -383,8 +383,8 @@
         C_RPT_PATH CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_HIERARCHY_RPT.xdo';
 
         l_base_url  VARCHAR2(500);
-        l_bip_user  VARCHAR2(100);
-        l_bip_pass  VARCHAR2(100);
+        l_bip_user  VARCHAR2(500);
+        l_bip_pass  VARCHAR2(500);
         l_url       VARCHAR2(500);
         l_env       CLOB;
         l_resp      CLOB;
@@ -396,8 +396,10 @@
             'INFO', C_PKG, C_PROC);
 
         l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_bip_user := NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_USERNAME'), DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME'));
-        l_bip_pass := NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_PASSWORD'), DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'));
+        -- BIP runs as the object's central Fusion user (backlog #309).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                                           x_username   => l_bip_user,
+                                           x_password   => l_bip_pass);
         l_url      := l_base_url || '/xmlpserver/services/v2/ReportService';
 
         -- Call runReport on the pre-deployed static DM with P_PARENT_REQUEST_ID
@@ -496,50 +498,38 @@
             -- Don't re-raise â€” hierarchy capture is diagnostic, not critical path
     END CAPTURE_ESS_HIERARCHY;
 
-    -- ============================================================
-    -- DOWNLOAD_ESS_FILE
-    -- Calls downloadESSJobExecutionDetails on ErpIntegrationService.
-    -- Returns the raw SOAP response as CLOB (legacy â€” use DOWNLOAD_ESS_FILE_BLOB for MTOM).
-    -- ============================================================
-    FUNCTION DOWNLOAD_ESS_FILE (
-        p_request_id IN NUMBER,
-        p_file_type  IN VARCHAR2 DEFAULT NULL
-    ) RETURN CLOB IS
-        l_base_url VARCHAR2(500);
-        l_env      CLOB;
-        l_resp     CLOB;
-        l_action   CONSTANT VARCHAR2(200) :=
-            C_ERP_NS_TYPES || 'downloadESSJobExecutionDetails';
-        l_file_type_xml VARCHAR2(100) := '';
+    -- --------------------------------------------------------
+    -- Private: pick the Fusion user+password pair for an ESS download
+    -- (backlog #309). A caller-supplied pair wins; else the CEMLI's central
+    -- user (GET_CEMLI_CREDENTIALS); else both stay NULL and
+    -- DOWNLOAD_ESS_FILE_BLOB traces the request id to its CEMLI.
+    -- --------------------------------------------------------
+    PROCEDURE resolve_download_user (
+        p_cemli_code IN  VARCHAR2,
+        p_username   IN  VARCHAR2,
+        p_password   IN  VARCHAR2,
+        x_username   OUT VARCHAR2,
+        x_password   OUT VARCHAR2
+    ) IS
     BEGIN
-        l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-
-        IF p_file_type IS NOT NULL THEN
-            l_file_type_xml := '<typ:fileType>' || p_file_type || '</typ:fileType>';
+        x_username := p_username;
+        x_password := p_password;
+        IF p_username IS NULL AND p_password IS NULL AND p_cemli_code IS NOT NULL THEN
+            DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                                               x_username   => x_username,
+                                               x_password   => x_password);
         END IF;
-
-        l_env := TO_CLOB(
-            '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"' ||
-            ' xmlns:typ="' || C_ERP_NS_TYPES || '">' ||
-            '<soapenv:Header/><soapenv:Body>' ||
-            '<typ:downloadESSJobExecutionDetails>' ||
-            '<typ:requestId>' || TO_CHAR(p_request_id) || '</typ:requestId>' ||
-            l_file_type_xml ||
-            '</typ:downloadESSJobExecutionDetails>' ||
-            '</soapenv:Body></soapenv:Envelope>');
-
-        l_resp := soap_http(
-            p_url         => l_base_url || '/fscmService/ErpIntegrationService',
-            p_soap_action => l_action,
-            p_body        => l_env);
-
-        RETURN l_resp;
-    END DOWNLOAD_ESS_FILE;
+    END resolve_download_user;
 
     -- ============================================================
     -- DOWNLOAD_ESS_FILE_BLOB
     -- Calls downloadESSJobExecutionDetails, returns MTOM response as BLOB.
     -- Use this for all ESS output downloads â€” binary-safe.
+    -- Every ESS download funnels through here, so this is where the Fusion
+    -- user is decided (backlog #309): a caller-supplied user+password pair
+    -- (from GET_CEMLI_CREDENTIALS) wins; with no pair the request id is
+    -- traced to the CEMLI that submitted it (GET_CREDENTIALS_FOR_REQUEST),
+    -- because Fusion refuses another user's ESS output (HTTP 500).
     -- ============================================================
     FUNCTION DOWNLOAD_ESS_FILE_BLOB (
         p_request_id IN NUMBER,
@@ -552,8 +542,16 @@
         l_action   CONSTANT VARCHAR2(200) :=
             C_ERP_NS_TYPES || 'downloadESSJobExecutionDetails';
         l_file_type_xml VARCHAR2(100) := '';
+        l_user     VARCHAR2(500) := p_username;
+        l_pass     VARCHAR2(500) := p_password;
     BEGIN
         l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
+
+        IF p_username IS NULL AND p_password IS NULL THEN
+            DMT_UTIL_PKG.GET_CREDENTIALS_FOR_REQUEST(p_request_id => p_request_id,
+                                                     x_username   => l_user,
+                                                     x_password   => l_pass);
+        END IF;
 
         IF p_file_type IS NOT NULL THEN
             l_file_type_xml := '<typ:fileType>' || p_file_type || '</typ:fileType>';
@@ -573,8 +571,8 @@
             p_url         => l_base_url || '/fscmService/ErpIntegrationService',
             p_soap_action => l_action,
             p_body        => l_env,
-            p_username    => p_username,
-            p_password    => p_password);
+            p_username    => l_user,
+            p_password    => l_pass);
     END DOWNLOAD_ESS_FILE_BLOB;
 
     -- ============================================================
@@ -610,7 +608,10 @@
     -- ============================================================
     FUNCTION GET_ESS_OUTPUT_TEXT (
         p_request_id IN NUMBER,
-        p_file_type  IN VARCHAR2 DEFAULT NULL
+        p_file_type  IN VARCHAR2 DEFAULT NULL,
+        p_username   IN VARCHAR2 DEFAULT NULL,
+        p_password   IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB IS
         l_zip      BLOB;
         l_entries  t_zip_entries;
@@ -620,8 +621,17 @@
         l_src_off  INTEGER := 1;
         l_lang_ctx INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
         l_warning  INTEGER;
+        l_user     VARCHAR2(500);
+        l_pass     VARCHAR2(500);
     BEGIN
-        l_zip := GET_ESS_ZIP(p_request_id);
+        resolve_download_user(p_cemli_code => p_cemli_code,
+                              p_username   => p_username,
+                              p_password   => p_password,
+                              x_username   => l_user,
+                              x_password   => l_pass);
+        l_zip := GET_ESS_ZIP(p_request_id => p_request_id,
+                             p_username   => l_user,
+                             p_password   => l_pass);
         IF l_zip IS NULL THEN
             RETURN NULL;
         END IF;
@@ -689,7 +699,8 @@
     FUNCTION GET_ESS_OUTPUT_XML (
         p_request_id IN NUMBER,
         p_username   IN VARCHAR2 DEFAULT NULL,
-        p_password   IN VARCHAR2 DEFAULT NULL
+        p_password   IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB IS
         l_zip      BLOB;
         l_entries  t_zip_entries;
@@ -699,8 +710,15 @@
         l_src_off  INTEGER := 1;
         l_lang_ctx INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
         l_warning  INTEGER;
+        l_user     VARCHAR2(500);
+        l_pass     VARCHAR2(500);
     BEGIN
-        l_zip := GET_ESS_ZIP(p_request_id => p_request_id, p_username => p_username, p_password => p_password);
+        resolve_download_user(p_cemli_code => p_cemli_code,
+                              p_username   => p_username,
+                              p_password   => p_password,
+                              x_username   => l_user,
+                              x_password   => l_pass);
+        l_zip := GET_ESS_ZIP(p_request_id => p_request_id, p_username => l_user, p_password => l_pass);
         IF l_zip IS NULL THEN
             RETURN NULL;
         END IF;
@@ -765,6 +783,8 @@
         l_offset     INTEGER := 1;
         l_out_len    INTEGER;
         l_chunk_num  INTEGER := 0;
+        l_user       VARCHAR2(500);
+        l_pass       VARCHAR2(500);
     BEGIN
         l_log_ctx := NVL2(p_cemli_code, p_cemli_code || ' > ', '') || C_PROC;
 
@@ -772,7 +792,17 @@
             'Downloading ESS output for request ' || p_request_id || ' ...',
             'INFO', C_PKG, l_log_ctx);
 
-        l_output := GET_ESS_OUTPUT_TEXT(p_request_id);
+        -- Download as the object's central Fusion user (backlog #309): the
+        -- user that submitted the job. With no CEMLI, DOWNLOAD_ESS_FILE_BLOB
+        -- traces the request id to its CEMLI instead.
+        IF p_cemli_code IS NOT NULL THEN
+            DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                                               x_username   => l_user,
+                                               x_password   => l_pass);
+        END IF;
+        l_output := GET_ESS_OUTPUT_TEXT(p_request_id => p_request_id,
+                                        p_username   => l_user,
+                                        p_password   => l_pass);
 
         IF l_output IS NULL THEN
             DMT_UTIL_PKG.LOG(p_run_id,
@@ -1077,8 +1107,8 @@
 
         l_report_job_def VARCHAR2(200);
         l_base_url  VARCHAR2(500);
-        l_bip_user  VARCHAR2(100);
-        l_bip_pass  VARCHAR2(100);
+        l_bip_user  VARCHAR2(500);
+        l_bip_pass  VARCHAR2(500);
         l_url       VARCHAR2(500);
         l_env       CLOB;
         l_resp      CLOB;
@@ -1149,8 +1179,10 @@
         DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code, x_username => l_ess_user, x_password => l_ess_pass);
 
         l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_bip_user := NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_USERNAME'), DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME'));
-        l_bip_pass := NVL(DMT_UTIL_PKG.GET_CONFIG('BIP_PASSWORD'), DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'));
+        -- BIP runs as the object's central Fusion user (backlog #309).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                                           x_username   => l_bip_user,
+                                           x_password   => l_bip_pass);
         l_url      := l_base_url || '/xmlpserver/services/v2/ReportService';
 
         -- Query for the Report child job using the exact job definition
