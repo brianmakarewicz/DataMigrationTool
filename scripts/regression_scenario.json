@@ -496,6 +496,17 @@
           "RT-SUSE-RT-SITEUSE-XP": "FAILED_WITH_DOCUMENT"
         }
       }
+    },
+    "RegressionTest2610072102": {
+      "GL Journals": {
+        "stg_table": "DMT_GL_INTERFACE_STG_TBL",
+        "rows": {
+          "RT-GL-RT-JNL-G1-78630": "LOADED",
+          "RT-GL-RT-JNL-G1-77600": "LOADED",
+          "RT-GL-RT-JNL-BAD1-99999": "FAILED",
+          "RT-GL-RT-JNL-BAD1-78630": "FAILED_WITH_DOCUMENT"
+        }
+      }
     }
   }
 }
