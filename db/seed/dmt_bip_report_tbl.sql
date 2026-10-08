@@ -1756,13 +1756,21 @@ commit;
 -- STG_SEQUENCE_ID)); the base tier (INV_MATERIAL_TXNS) and interface tier
 -- (INV_TRANSACTIONS_INTERFACE at PROCESS_FLAG = 3, real error inline) never
 -- overlap on that key.
+-- V2 (2026-10-07, owner decision, backlog #262): DMT_INV_TRX_RECON_V2_DM finds
+-- rows only by the work item's load job id (INV_MATERIAL_TXNS and
+-- INV_TRANSACTIONS_INTERFACE LOAD_REQUEST_ID = load id; serials through a
+-- transaction of that load). The 'DMT-' || run id TRANSACTION_REFERENCE is never
+-- a search value. V1 stays deployed (never overwritten).
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'MiscReceipts'                                          cemli_code,
-           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_RPT.xdo'   report_catalog_path,
-           'Miscellaneous receiving receipt import reconciliation (Contract v1, single-tier)' notes,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V2_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V2_RPT.xdo' report_catalog_path,
+           'Miscellaneous receiving receipt import reconciliation (Contract v1, single-tier). '
+           || 'V2 (2026-10-07): rows found only by the work item''s Fusion load job id '
+           || '(LOAD_REQUEST_ID on the posted transaction and the rejected interface row), never by '
+           || 'the run id. Deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_INV_TRX_TFM_TBL'                                   tfm_table,
            'FUSION_ID'                                             fusion_id_column,
