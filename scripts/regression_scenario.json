@@ -520,6 +520,52 @@
           "RT-GL-RT-JNL-BAD1-78630": "FAILED_WITH_DOCUMENT"
         }
       }
+    },
+    "RegressionTest2610072130": {
+      "Workers": {
+        "stg_table": "DMT_WORKER_STG_TBL",
+        "rows": {
+          "RT-RT-WKR-G1": "LOADED",
+          "RT-RT-WKR-B1": "FAILED",
+          "RT-RT-WKR-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Person Names": {
+        "stg_table": "DMT_PERSON_NAME_STG_TBL",
+        "rows": {
+          "RT-WKR-G1-NME": "LOADED",
+          "RT-WKR-XG1-NME": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Person Emails": {
+        "stg_table": "DMT_PERSON_EMAIL_STG_TBL",
+        "rows": {
+          "RT-WKR-XG1-EML-BAD": "FAILED"
+        }
+      },
+      "Work Relationships": {
+        "stg_table": "DMT_WORK_REL_STG_TBL",
+        "rows": {
+          "RT-WKR-G1-WR": "LOADED",
+          "RT-WKR-XG1-WR": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Assignments": {
+        "stg_table": "DMT_ASSIGNMENT_STG_TBL",
+        "rows": {
+          "RT-ET-RT-WKR-G1": "LOADED",
+          "RT-ET-RT-WKR-G1B": "LOADED",
+          "RT-ET-RT-WKR-BASG": "FAILED",
+          "RT-ET-RT-WKR-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Salaries": {
+        "stg_table": "DMT_SALARY_STG_TBL",
+        "rows": {
+          "RT-SAL-RT-WKR-G1": "LOADED",
+          "RT-SAL-RT-WKR-BSAL": "FAILED"
+        }
+      }
     }
   }
 }
