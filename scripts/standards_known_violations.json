@@ -115,13 +115,6 @@
     },
     {
       "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-FUSION-ERROR-FORM|dmt_misc_receipt_results_pkg.pkb.sql|composed '[FUSION_ERROR] Lot not created; its inventory transaction was rejected",
-      "backlog": 212,
-      "found": "2026-10-07",
-      "detail": "line 312: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] Lot not created; its inventory transaction was rejected"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
       "key": "SWEEP-TAG|dmt_poz_sup_addr_results_pkg.pkb.sql|[RECONCILE_ERROR]",
       "backlog": 213,
       "found": "2026-10-07",
