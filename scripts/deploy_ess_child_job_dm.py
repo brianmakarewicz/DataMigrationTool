@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Dev/test shim: deploy the common ESS child-job data model (V2) to /Custom/DMT2/common
+"""Dev/test shim: deploy the common ESS child-job data model (V3) to /Custom/DMT2/common
 via the DB's own DMT_BIP_DEPLOY_PKG (git-first: reads the committed .xdm file),
 then optionally run a parametrized runReport self-test.
 
@@ -11,6 +11,11 @@ job carries the batch id (Items 1, Requisitions 2). It is deployed under its own
 name ALONGSIDE the original DMT_ESS_CHILD_JOB_DM / _RPT, which are never
 overwritten (this script no longer deploys V1).
 
+V3 (2026-10-08, backlog #501) adds an optional second argument match
+(P_MATCH2_ARG_POS / P_MATCH2_VALUE): ARInvoices matches the business unit id on
+argument 1 as well as the transaction source on argument 2. Deployed under its
+own name alongside V1 and V2 (neither is overwritten; this script now deploys V3).
+
 Usage:
     python scripts/deploy_ess_child_job_dm.py            # deploy DM only
     python scripts/deploy_ess_child_job_dm.py --test     # deploy + parametrized runReport self-test
@@ -19,11 +24,11 @@ import os, re, sys
 import oracledb
 
 REPO = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-XDM_PATH = os.path.join(REPO, "bip", "common", "DMT_ESS_CHILD_JOB_V2_DM.xdm")
+XDM_PATH = os.path.join(REPO, "bip", "common", "DMT_ESS_CHILD_JOB_V3_DM.xdm")
 FOLDER = "/Custom/DMT2/common"
-DM_NAME = "DMT_ESS_CHILD_JOB_V2_DM"
-RPT_NAME = "DMT_ESS_CHILD_JOB_V2_RPT"
-RPT_PATH = "/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V2_RPT.xdo"
+DM_NAME = "DMT_ESS_CHILD_JOB_V3_DM"
+RPT_NAME = "DMT_ESS_CHILD_JOB_V3_RPT"
+RPT_PATH = "/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V3_RPT.xdo"
 DEFAULT_CONN = "dmt_owner/DmtLocal#2026@localhost:1523/FREEPDB1"
 
 
@@ -53,7 +58,7 @@ def main():
     # Deploy the DM + its XML-output report wrapper together (single sanctioned
     # call; deletes prior versions, redeploys both so the report re-surfaces the
     # DM's parameters including the new P_BATCH_ID). Report name matches the path
-    # get_import_ess_id calls: DMT_ESS_CHILD_JOB_V2_RPT.xdo.
+    # get_import_ess_id calls: DMT_ESS_CHILD_JOB_V3_RPT.xdo.
     cur.execute("""BEGIN DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT(
                        p_folder=>:f, p_dm_name=>:dm, p_rpt_name=>:rpt, p_xdm_xml=>:d); END;""",
                 {"f": FOLDER, "dm": DM_NAME, "rpt": RPT_NAME, "d": xdm})

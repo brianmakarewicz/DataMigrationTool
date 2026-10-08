@@ -999,25 +999,36 @@
     --     ARInvoices passes its group's batch source NAME on 2:
     --     AutoInvoiceImportEss argument 2 = transaction source (argument 1 is
     --     the BU id, not its name). The value is XML-escaped in the envelope.
+    --   * p_match2_arg_pos / p_match2_value (backlog #501) add a SECOND
+    --     submitted-argument match that must also hold. ARInvoices passes its
+    --     group's business unit id on argument 1, so two groups with the same
+    --     transaction source in different business units, loading at the same
+    --     time, can never take each other's import id. NULL = no second match.
     --
     -- Uses the pre-deployed static BIP report (AD#16 — no ephemeral BIP):
-    --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_V2_RPT.xdo (V2 adds
-    --   P_BATCH_ARG_POS; deployed alongside V1, which is never overwritten).
-    -- Called via runReport with P_LOAD_ESS_ID, P_JOB_DEF, P_BATCH_ID and
-    -- P_BATCH_ARG_POS bound parameters.
+    --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_V3_RPT.xdo (V3 adds
+    --   P_MATCH2_ARG_POS / P_MATCH2_VALUE, V2 added P_BATCH_ARG_POS; deployed
+    --   alongside V1 and V2, which are never overwritten). With the V3
+    --   parameters empty it returns exactly what V2 returns.
+    -- Called via runReport with P_LOAD_ESS_ID, P_JOB_DEF, P_BATCH_ID,
+    -- P_BATCH_ARG_POS, P_MATCH2_ARG_POS and P_MATCH2_VALUE bound parameters.
+    -- find_import_ess_id is the private worker; the public GET_IMPORT_ESS_ID
+    -- below keeps its signature and passes no second match.
     --
     -- Retries every 15 seconds for up to 15 minutes.
     -- Raises -20050 if no job found after timeout.
     -- --------------------------------------------------------
-    FUNCTION get_import_ess_id (
+    FUNCTION find_import_ess_id (
         p_run_id IN NUMBER,
         p_cemli_code     IN VARCHAR2,
         p_load_ess_id    IN VARCHAR2,
         p_batch_id       IN VARCHAR2 DEFAULT NULL,
-        p_batch_arg_pos  IN NUMBER   DEFAULT NULL
+        p_batch_arg_pos  IN NUMBER   DEFAULT NULL,
+        p_match2_arg_pos IN NUMBER   DEFAULT NULL,
+        p_match2_value   IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2 IS
         C_PROC        CONSTANT VARCHAR2(50)  := 'GET_IMPORT_ESS_ID';
-        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V2_RPT.xdo';
+        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V3_RPT.xdo';
         C_MAX_TRIES   CONSTANT INTEGER       := 60;
         C_SLEEP_SEC   CONSTANT NUMBER        := 15;
 
@@ -1068,6 +1079,9 @@
                  THEN '. Batch id match: ' || p_batch_id || ' on submit.argument'
                       || NVL(TO_CHAR(p_batch_arg_pos), '1')
                  ELSE '. No batch id (proximity/absparent match)' END ||
+            CASE WHEN p_match2_value IS NOT NULL
+                 THEN '. Also match ' || p_match2_value || ' on submit.argument'
+                      || TO_CHAR(p_match2_arg_pos) END ||
             '. Will poll up to ' || C_MAX_TRIES ||
             ' times (every ' || C_SLEEP_SEC || 's). CEMLI: ' || p_cemli_code,
             'INFO', C_PKG, l_log_proc);
@@ -1104,6 +1118,14 @@
                 '            <v2:item>' ||
                 '              <v2:name>P_BATCH_ARG_POS</v2:name>' ||
                 '              <v2:values><v2:item>' || TO_CHAR(p_batch_arg_pos) || '</v2:item></v2:values>' ||
+                '            </v2:item>' ||
+                '            <v2:item>' ||
+                '              <v2:name>P_MATCH2_ARG_POS</v2:name>' ||
+                '              <v2:values><v2:item>' || TO_CHAR(p_match2_arg_pos) || '</v2:item></v2:values>' ||
+                '            </v2:item>' ||
+                '            <v2:item>' ||
+                '              <v2:name>P_MATCH2_VALUE</v2:name>' ||
+                '              <v2:values><v2:item>' || DBMS_XMLGEN.CONVERT(p_match2_value) || '</v2:item></v2:values>' ||
                 '            </v2:item>' ||
                 '          </v2:listOfParamNameValues>' ||
                 '        </v2:parameterNameValues>' ||
@@ -1144,6 +1166,8 @@
                     ', definition LIKE ''%' || l_job_def || '%''' ||
                     CASE WHEN p_batch_id IS NOT NULL
                          THEN ', batch id ' || p_batch_id ELSE '' END ||
+                    CASE WHEN p_match2_value IS NOT NULL
+                         THEN ', argument ' || p_match2_arg_pos || ' = ' || p_match2_value ELSE '' END ||
                     ') not found after ' ||
                     (C_MAX_TRIES * C_SLEEP_SEC / 60) ||
                     ' minutes. Integration: ' || p_run_id ||
@@ -1168,6 +1192,22 @@
                 p_package        => C_PKG,
                 p_procedure      => l_log_proc);
             RAISE;
+    END find_import_ess_id;
+
+    -- Public form (spec unchanged): no second argument match.
+    FUNCTION get_import_ess_id (
+        p_run_id IN NUMBER,
+        p_cemli_code     IN VARCHAR2,
+        p_load_ess_id    IN VARCHAR2,
+        p_batch_id       IN VARCHAR2 DEFAULT NULL,
+        p_batch_arg_pos  IN NUMBER   DEFAULT NULL
+    ) RETURN VARCHAR2 IS
+    BEGIN
+        RETURN find_import_ess_id(p_run_id        => p_run_id,
+                                  p_cemli_code    => p_cemli_code,
+                                  p_load_ess_id   => p_load_ess_id,
+                                  p_batch_id      => p_batch_id,
+                                  p_batch_arg_pos => p_batch_arg_pos);
     END get_import_ess_id;
 
     -- --------------------------------------------------------
@@ -1855,7 +1895,10 @@
         x_load_ess_id     OUT VARCHAR2,
         x_import_ess_id   OUT VARCHAR2,
         x_success         OUT BOOLEAN,
-        p_batch_source    IN VARCHAR2 DEFAULT NULL
+        p_batch_source    IN VARCHAR2 DEFAULT NULL,
+        -- Backlog #501: the group's business unit id (AutoInvoiceImportEss
+        -- argument 1, which Fusion stores as the id, not the name).
+        p_bu_id           IN VARCHAR2 DEFAULT NULL
     ) IS
         C_PROC            CONSTANT VARCHAR2(40) := 'AR_SUBMIT_AND_RECONCILE_ONE';
         l_load_status     VARCHAR2(50);
@@ -1911,11 +1954,16 @@
         -- its own submitted transaction source (argument 2) as well as by being the
         -- first such import after the load: the recorded import id must be the job
         -- that stamped this group's transactions (owner rule 2026-10-07).
+        -- Backlog #501: also match argument 1, the business unit id, so a group
+        -- with the same source in another business unit never takes this import.
         BEGIN
-            x_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id,
-                                                 p_batch_id      => p_batch_source,
-                                                 p_batch_arg_pos => CASE WHEN p_batch_source IS NOT NULL
-                                                                         THEN 2 END);
+            x_import_ess_id := find_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id,
+                                                  p_batch_id       => p_batch_source,
+                                                  p_batch_arg_pos  => CASE WHEN p_batch_source IS NOT NULL
+                                                                          THEN 2 END,
+                                                  p_match2_arg_pos => CASE WHEN p_bu_id IS NOT NULL
+                                                                          THEN 1 END,
+                                                  p_match2_value   => p_bu_id);
         EXCEPTION
             WHEN OTHERS THEN
                 DMT_UTIL_PKG.LOG(p_run_id,
@@ -3227,7 +3275,11 @@
                 x_import_ess_id     => l_ar_import_id,
                 x_success           => l_ar_ok,
                 -- AutoInvoiceImportEss argument 2 = this group's transaction source.
-                p_batch_source      => grp_rec.BATCH_SOURCE_NAME);
+                p_batch_source      => grp_rec.BATCH_SOURCE_NAME,
+                -- Argument 1 = this group's business unit, stored by Fusion as its
+                -- id (backlog #501). GET_LOOKUP raises if the BU is unknown; the
+                -- preflight refreshes this lookup from Fusion.
+                p_bu_id             => DMT_UTIL_PKG.GET_LOOKUP('BU_NAME_TO_BU_ID', grp_rec.BU_NAME));
 
             IF NOT l_ar_ok THEN
                 DECLARE

@@ -468,6 +468,26 @@ AS
                 CONTINUE;
             END IF;
 
+            -- Backlog #515 catch-all: a split parent is re-checked when its last
+            -- child settles through the accounting gate, but a child that ended
+            -- FAILED another way (an exception) never reaches the gate. Re-check
+            -- every split parent here, once all items are terminal, and recount
+            -- the failures in case a parent was just set FAILED.
+            FOR par IN (
+                SELECT p.QUEUE_ID
+                FROM   DMT_WORK_QUEUE_TBL p
+                WHERE  p.RUN_ID = run_rec.RUN_ID
+                AND    p.WORK_STATUS = 'DONE'
+                AND    EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL c
+                               WHERE  c.PARENT_QUEUE_ID = p.QUEUE_ID)
+            ) LOOP
+                DMT_QUEUE_WORKER_PKG.SETTLE_SPLIT_PARENT(p_parent_queue_id => par.QUEUE_ID);
+            END LOOP;
+            SELECT SUM(CASE WHEN WORK_STATUS = 'FAILED' THEN 1 ELSE 0 END)
+            INTO   l_failed
+            FROM   DMT_WORK_QUEUE_TBL
+            WHERE  RUN_ID = run_rec.RUN_ID;
+
             -- Every item is terminal — settle per the Overview table.
             IF l_failed > 0 THEN
                 -- Overview run-status table, FAILED row: "The run itself
