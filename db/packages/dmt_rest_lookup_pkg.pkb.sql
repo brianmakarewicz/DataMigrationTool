@@ -30,7 +30,7 @@ AS
         l_cfg_filter       DMT_REST_LOOKUP_TBL.QUERY_FILTER%TYPE;
         l_cfg_fields       DMT_REST_LOOKUP_TBL.DISPLAY_FIELDS%TYPE;
         l_cfg_labels       DMT_REST_LOOKUP_TBL.DISPLAY_LABELS%TYPE;
-        l_cfg_auth         DMT_REST_LOOKUP_TBL.AUTH_TYPE%TYPE;
+        l_cfg_cemli        DMT_REST_LOOKUP_TBL.CEMLI_CODE%TYPE;
         l_cfg_fw_version   DMT_REST_LOOKUP_TBL.REST_FRAMEWORK_VERSION%TYPE;
         l_cfg_absent_field DMT_REST_LOOKUP_TBL.ABSENT_FIELD%TYPE;
         l_cfg_absent_value DMT_REST_LOOKUP_TBL.ABSENT_VALUE%TYPE;
@@ -95,9 +95,9 @@ AS
                 END;
         END;
 
-        SELECT REST_ENDPOINT, QUERY_FILTER, DISPLAY_FIELDS, DISPLAY_LABELS, AUTH_TYPE,
+        SELECT REST_ENDPOINT, QUERY_FILTER, DISPLAY_FIELDS, DISPLAY_LABELS, CEMLI_CODE,
                REST_FRAMEWORK_VERSION, ABSENT_FIELD, ABSENT_VALUE, NOT_APPLICABLE_REASON
-        INTO   l_cfg_endpoint, l_cfg_filter, l_cfg_fields, l_cfg_labels, l_cfg_auth,
+        INTO   l_cfg_endpoint, l_cfg_filter, l_cfg_fields, l_cfg_labels, l_cfg_cemli,
                l_cfg_fw_version, l_cfg_absent_field, l_cfg_absent_value, l_cfg_na_reason
         FROM   DMT_REST_LOOKUP_TBL
         WHERE  OBJECT_TYPE = l_resolved_type
@@ -123,32 +123,28 @@ AS
         -- load runs as, from the same central source the loader uses, so a record
         -- is visible to the verify exactly when it was visible to the load
         -- (Requisitions and purchase agreements are data-security-scoped to their
-        -- preparer/buyer, calvin.roth, and return count 0 to fin_impl):
-        --   * AUTH_TYPE = 'HCM' -> the HDL load user, resolved exactly as
-        --     DMT_HDL_UTIL_PKG.get_auth does (HCM_USERNAME, else FUSION_USERNAME);
-        --   * otherwise         -> DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS for the object
-        --     code, i.e. DMT_ERP_INTERFACE_OPTIONS_TBL.FUSION_USERNAME/PASSWORD with
-        --     the loader's own fallback to the global FUSION_USERNAME (fin_impl).
-        -- There is no verify-only credential override: the per-object user lives
-        -- in one seeded home, the ERP interface options row.
-        -- The button passes a sub-object display label (e.g. 'Req Headers') that
-        -- may have its own registry row, so map it back to its object code
-        -- ('Requisitions') via the catalog for the credential lookup.
-        SELECT MIN(CEMLI_CODE) INTO l_obj_code
-        FROM   DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = p_object_type;
-        l_obj_code := NVL(l_obj_code, l_resolved_type);
-
-        IF l_cfg_auth = 'HCM' THEN
-            l_username := NVL(DMT_UTIL_PKG.GET_CONFIG('HCM_USERNAME'),
-                              DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME'));
-            l_password := NVL(DMT_UTIL_PKG.GET_CONFIG('HCM_PASSWORD'),
-                              DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'));
-        ELSE
-            DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(
-                p_cemli_code => l_obj_code,
-                x_username   => l_username,
-                x_password   => l_password);
+        -- preparer/buyer, calvin.roth, and return count 0 to fin_impl; HCM objects
+        -- read as hcm_impl). Every object, ERP and HCM alike, resolves its pair
+        -- through DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS for its object code, i.e.
+        -- DMT_ERP_INTERFACE_OPTIONS_TBL.FUSION_USERNAME/PASSWORD with the loader's
+        -- own fallback to the global FUSION_USERNAME (backlog #309, #430).
+        -- There is no verify-only credential: the per-object user lives in one
+        -- seeded home, the ERP interface options row.
+        -- The object code is, in order: the registry row's CEMLI_CODE (set on the
+        -- rows whose label is not in the display catalog, e.g. 'Payroll
+        -- Relationships'); else the catalog code for the label the button passed
+        -- (e.g. 'Req Headers' -> 'Requisitions'); else the registry key itself
+        -- (rows keyed by object code, e.g. 'SalaryBases').
+        IF l_cfg_cemli IS NULL THEN
+            SELECT MIN(CEMLI_CODE) INTO l_obj_code
+            FROM   DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = p_object_type;
         END IF;
+        l_obj_code := COALESCE(l_cfg_cemli, l_obj_code, l_resolved_type);
+
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(
+            p_cemli_code => l_obj_code,
+            x_username   => l_username,
+            x_password   => l_password);
 
         -- Basic header for the resolved credentials. HTTP_REQUEST uses the GLOBAL
         -- (fin_impl) auth unless an explicit header is passed, so build it here and

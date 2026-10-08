@@ -743,3 +743,17 @@ when matched then update set
 when not matched then insert ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES","REST_FRAMEWORK_VERSION","ABSENT_FIELD","ABSENT_VALUE","NOT_APPLICABLE_REASON")
   values ('Profile Items', '/hcmRestApi/resources/11.13.18.05/talentPersonProfiles', 'languageSections.languageItems.LanguageId={KEY} or competencySections.competencyItems.CompetencyId={KEY}', 'FUSION_PROFILE_ITEM_ID', 'ProfileId,ProfileCode,PersonNumber,DisplayName,LastUpdateDate', 'Profile ID,Code,Person,Name,Updated', 'HCM', 'Y', 'Profile items - the owning profile read with a child filter on the item id (language items: LanguageId, verified; competency items: CompetencyId, attribute accepted by the pod, no LOADED competency item yet to prove). REST-Framework-Version 4. Verified live on the demo pod 2026-10-08.', '4', NULL, NULL, NULL);
 commit;
+
+-- Backlog #430: the HCM registry rows whose OBJECT_TYPE is not in the object display
+-- catalog name their object code, so the verify resolves their Fusion user (hcm_impl)
+-- through DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS like every other object. Re-runnable.
+merge into "DMT_REST_LOOKUP_TBL" t
+using (select 'Participant Enrollments'  as "OBJECT_TYPE", 'BenParticipant'       as "CEMLI_CODE" from dual union all
+       select 'Dependent Enrollments',                     'BenDependent'                         from dual union all
+       select 'Beneficiary Designations',                  'BenBeneficiary'                       from dual union all
+       select 'Performance Evaluations',                   'PerfEvaluations'                      from dual union all
+       select 'Payroll Relationships',                     'PayrollRelationships'                 from dual) s
+on (t."OBJECT_TYPE" = s."OBJECT_TYPE")
+when matched then update set t."CEMLI_CODE" = s."CEMLI_CODE"
+  where t."CEMLI_CODE" is null or t."CEMLI_CODE" <> s."CEMLI_CODE";
+commit;

@@ -1,5 +1,6 @@
 -- Seed data for DMT_CONFIG_TBL (37 rows, snapshot 2026-07-03; +2 no-hardcoded-IDs keys 2026-07-12;
--- +2 BIP transport-retry keys 2026-10-03, Backlog #148)
+-- +2 BIP transport-retry keys 2026-10-03, Backlog #148; -2 retired HCM_USERNAME/HCM_PASSWORD 2026-10-08,
+-- Backlog #430: every Fusion user comes from DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS)
 -- Idempotent: duplicate-key inserts are skipped.
 begin
   insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('AP_IMPORT_JOB_NAME','/oracle/apps/ess/financials/payables/invoices/payablesImport,PayablesImportEss',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
@@ -77,16 +78,6 @@ end;
 /
 begin
   insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('FUSION_USERNAME','fin_impl',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
-exception when dup_val_on_index then null;
-end;
-/
-begin
-  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('HCM_PASSWORD','***MASKED-SET-ME***',NULL,to_date('2026-04-04 13:51:18','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
-exception when dup_val_on_index then null;
-end;
-/
-begin
-  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('HCM_USERNAME','hcm_impl',NULL,to_date('2026-04-04 13:51:18','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
 exception when dup_val_on_index then null;
 end;
 /
