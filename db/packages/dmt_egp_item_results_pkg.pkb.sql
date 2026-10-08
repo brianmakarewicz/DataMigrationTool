@@ -46,139 +46,12 @@
     END GET_PARTITION_KEYS;
 
     -- --------------------------------------------------------
-    -- (bip_soap_post + FETCH_BIP_RESULTS removed — the BIP runReport transport
-    --  is now the shared DMT_UTIL_PKG.RUN_BIP_REPORT, called from RECONCILE_BATCH
-    --  / LOAD_AND_RECONCILE. It builds the same v2 runReport envelope, posts it,
-    --  checks the SOAP fault, extracts <reportBytes> and decodes any size,
-    --  returning the parsed XMLTYPE. b64_to_clob was already centralised in
-    --  DMT_UTIL_PKG.BASE64_DECODE_CLOB.)
-
-    -- --------------------------------------------------------
-    -- PARSE_AND_UPDATE
-    -- Receives the already-decoded BIP report XMLTYPE (NULL on zero rows) from
-    -- the shared transport DMT_UTIL_PKG.RUN_BIP_REPORT and updates TFM rows
-    -- (nothing is copied back to STG, backlog #310).
-    --
-    -- The report's STATUS element is derived from positive presence in the base
-    -- table EGP_SYSTEM_ITEMS_B ('PROCESSED' = present, 'REJECTED' = absent), not
-    -- from the interface PROCESS_FLAG. PROCESS_FLAG is still carried for display.
-    -- Match key: ITEM_NUMBER + ORGANIZATION_CODE
-    -- --------------------------------------------------------
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id IN NUMBER,
-        p_xml            IN XMLTYPE
-    ) IS
-        C_PROC   CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
-        l_xml    XMLTYPE := p_xml;
-        l_loaded NUMBER := 0;
-        l_failed NUMBER := 0;
-    BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        -- l_xml is the decoded BIP report XMLTYPE from RUN_BIP_REPORT (NULL on
-        -- zero rows).
-        IF l_xml IS NULL THEN
-            DMT_UTIL_PKG.LOG(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ': No <reportBytes> in BIP response. No rows updated.',
-                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RETURN;
-        END IF;
-
-        -- Process item rows from BIP XML.
-        -- STATUS comes from the report's base-table join (positive presence in
-        -- EGP_SYSTEM_ITEMS_B): 'PROCESSED' = the item genuinely reached the base
-        -- table, 'REJECTED' = it did not. We no longer infer loaded/failed from
-        -- the interface PROCESS_FLAG -- Rule #1: base confirmation, not interface
-        -- inference. (Validated live 2026-07-14: some PROCESS_FLAG=7 rows never
-        -- reached the base table, and some PROCESS_FLAG=3 rows did.)
-        FOR r IN (
-            SELECT x.item_number,
-                   x.organization_code,
-                   x.inventory_item_id,
-                   UPPER(x.status)        AS status,
-                   x.error_message
-            FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
-                COLUMNS
-                    item_number        VARCHAR2(300)  PATH 'ITEM_NUMBER',
-                    organization_code  VARCHAR2(30)   PATH 'ORGANIZATION_CODE',
-                    inventory_item_id  NUMBER         PATH 'INVENTORY_ITEM_ID',
-                    status             VARCHAR2(15)   PATH 'STATUS',
-                    error_message      VARCHAR2(4000) PATH 'ERROR_MESSAGE'
-            ) x
-        ) LOOP
-            IF r.status = 'PROCESSED' THEN
-                -- Success: item positively present in EGP_SYSTEM_ITEMS_B.
-                -- LEGACY PATH: the registered Items report is now the nine-column
-                -- Contract v1 DM (DMT_ITEM_RECON_DM), which emits OBJECT_TYPE /
-                -- FUSION_ID (the per-org composite), not the STATUS / INVENTORY_ITEM_ID
-                -- elements this loop reads, so this branch no longer matches rows --
-                -- LOADED-with-composite is stamped by APPLY_CONTRACT_V1_ITEMS above.
-                -- Retained only for the standalone dev/test transport shape.
-                UPDATE DMT_EGP_ITEM_TFM_TBL
-                SET    TFM_STATUS              = 'LOADED',
-                       FUSION_INVENTORY_ITEM_ID = r.inventory_item_id,
-                       RESULTS_UPDATED_DATE    = SYSDATE,
-                       LAST_UPDATED_DATE       = SYSDATE
-                WHERE  RUN_ID      = p_run_id
-                AND    ITEM_NUMBER         = r.item_number
-                AND    ORGANIZATION_CODE   = r.organization_code
-                AND    TFM_STATUS         != 'LOADED';
-                l_loaded := l_loaded + SQL%ROWCOUNT;
-            ELSIF r.error_message IS NOT NULL THEN
-                -- FAILED only with a REAL Fusion error. A non-PROCESSED status
-                -- means the item is not in the base table, but base-absence is NOT
-                -- a verdict: the item load splits across several load-controller
-                -- requests, so an item absent from THIS report may still load (and
-                -- reconcile LOADED) on a later sub-load's report. We mark FAILED
-                -- only when the report carried a real per-row Fusion error message;
-                -- otherwise the row is left GENERATED so a later reconcile can still
-                -- promote it to LOADED (this is what resolves the two-batch Items
-                -- reconcile race) and the honest sweep accounts for the rest.
-                UPDATE DMT_EGP_ITEM_TFM_TBL
-                SET    TFM_STATUS              = 'FAILED',
-                       ERROR_TEXT              = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] ' || r.error_message),
-                       RESULTS_UPDATED_DATE    = SYSDATE,
-                       LAST_UPDATED_DATE       = SYSDATE
-                WHERE  RUN_ID      = p_run_id
-                AND    ITEM_NUMBER         = r.item_number
-                AND    ORGANIZATION_CODE   = r.organization_code
-                -- Never downgrade a confirmed LOADED. The item load can split
-                -- across several load-controller requests; an item confirmed
-                -- present by one sub-load must not be flipped to FAILED because
-                -- a later sub-load's report doesn't carry it.
-                AND    TFM_STATUS      NOT IN ('LOADED','FAILED');
-                l_failed := l_failed + SQL%ROWCOUNT;
-            END IF;
-        END LOOP;
-
-        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
-        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
-
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. LOADED: ' || l_loaded ||
-                                ', FAILED: ' || l_failed || '.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            RAISE;
-    END PARSE_AND_UPDATE;
+    -- (PARSE_AND_UPDATE removed, backlog #482. It read the pre-Contract-v1 report
+    --  shape -- ITEM_NUMBER / ORGANIZATION_CODE / STATUS under /DATA_DS/G_1 -- and
+    --  was fed by a second, run-scoped report call that passed the retired
+    --  P_BATCH_ID = run id. The registered Items report V3 returns only the nine
+    --  contract columns, so that pass matched no row. APPLY_CONTRACT_V1_ITEMS below
+    --  is the one reconcile path; it selects by the work item's ESS job ids only.)
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_ITEMS (private)
@@ -491,9 +364,6 @@
         p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
-        l_xml      XMLTYPE;
-        l_err_code NUMBER;
-        l_any BOOLEAN := FALSE;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -505,67 +375,24 @@
         -- Items record types): the shared fetch returns the nine-column recon
         -- report rows and the APPLY is STATIC SQL against this object's two TFM
         -- tables, keyed on RECON_KEY. This is the ONLY path to LOADED (a real
-        -- base-table row). It runs FIRST so a genuinely-costed row is confirmed
-        -- before the interface/import-report harvest below looks at what is left.
-        -- Rows already terminal are untouched. Item master rows are scoped by the
-        -- run prefix. Item category rows are scoped by the LOAD ESS id (the value
-        -- Fusion stamps on EGP_ITEM_CATEGORIES_INTERFACE.LOAD_REQUEST_ID) or the
-        -- import ESS id (stamped on its REQUEST_ID), so each is passed as itself;
-        -- the old NVL(import, load) bind sent the import id as the load id and
-        -- the category tier returned nothing (run 236).
+        -- base-table row). Rows already terminal are untouched. The report (V3)
+        -- selects only by this work item's ESS job ids: the LOAD ESS id (stamped
+        -- on the interface tables' LOAD_REQUEST_ID) and the Item Import ESS id
+        -- (stamped on base and interface REQUEST_ID), each passed as itself; the
+        -- old NVL(import, load) bind sent the import id as the load id and the
+        -- category tier returned nothing (run 236).
         APPLY_CONTRACT_V1_ITEMS(
             p_run_id        => p_run_id,
             p_load_ess_id   => p_load_ess_id,
             p_import_ess_id => p_import_ess_id);
 
-        -- One Item Import can spread its interface rows across SEVERAL
-        -- InterfaceLoaderController requests (Fusion chunks the FBDI load), and
-        -- the base-table report is filtered by a single load_request_id. So we
-        -- reconcile once per load-controller request recorded for this run's
-        -- Items load; a single p_load_ess_id would see only some of the items.
-        FOR lr IN (
-            SELECT DISTINCT REQUEST_ID
-            FROM   DMT_ESS_JOB_TBL
-            WHERE  RUN_ID         = p_run_id
-            AND    CEMLI_CODE     = 'Items'
-            AND    JOB_SHORT_NAME = 'InterfaceLoaderController'
-            AND    REQUEST_ID IS NOT NULL
-        ) LOOP
-            l_any := TRUE;
-            -- Shared transport: parsed XMLTYPE (NULL on zero rows). On
-            -- transport/SOAP failure it returns NULL with C_ERROR — raise so the
-            -- failure is loud (as the old FETCH_BIP_RESULTS raised).
-            DMT_UTIL_PKG.RUN_BIP_REPORT(
-                p_run_id     => p_run_id,
-                p_cemli_code => C_CEMLI,
-                p_params     => 'P_BATCH_ID|' || TO_CHAR(p_run_id) ||
-                                '~P_LOAD_REQUEST_ID|' || TO_CHAR(lr.REQUEST_ID),
-                x_report_xml => l_xml,
-                x_error_code => l_err_code);
-            IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
-                RAISE_APPLICATION_ERROR(-20034,
-                    C_PROC || ': BIP runReport fetch failed for ' || C_CEMLI ||
-                    ' (detail in DMT_LOG_TBL).');
-            END IF;
-            PARSE_AND_UPDATE(p_run_id, l_xml);
-        END LOOP;
-
-        -- Fallback: if no load-controller request was recorded, use the id passed in.
-        IF NOT l_any AND p_load_ess_id IS NOT NULL THEN
-            DMT_UTIL_PKG.RUN_BIP_REPORT(
-                p_run_id     => p_run_id,
-                p_cemli_code => C_CEMLI,
-                p_params     => 'P_BATCH_ID|' || TO_CHAR(p_run_id) ||
-                                '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id),
-                x_report_xml => l_xml,
-                x_error_code => l_err_code);
-            IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
-                RAISE_APPLICATION_ERROR(-20034,
-                    C_PROC || ': BIP runReport fetch failed for ' || C_CEMLI ||
-                    ' (detail in DMT_LOG_TBL).');
-            END IF;
-            PARSE_AND_UPDATE(p_run_id, l_xml);
-        END IF;
+        -- No second pass (backlog #482). The old loop re-ran the report once per
+        -- InterfaceLoaderController request of the whole RUN with the retired
+        -- P_BATCH_ID = run id (design section 5: recon selects by ESS job id
+        -- only, never by run id or prefix). V3 already covers a load that Fusion
+        -- chunked over several load requests: base items and base categories are
+        -- found by REQUEST_ID = this work item's Item Import id, and interface /
+        -- EGP_IMPORT_ERRORS rows by LOAD_REQUEST_ID or REQUEST_ID = that import id.
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object

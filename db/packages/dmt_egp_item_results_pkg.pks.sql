@@ -6,9 +6,9 @@
 -- Post-load BIP reconciliation for Items.
 --
 -- RECONCILE_BATCH: called by run_one_object_type after ESS
---   import completes. Calls BIP report to match imported rows
---   against EGP_SYSTEM_ITEMS_INTERFACE status, then updates
---   TFM/STG rows to LOADED or FAILED.
+--   import completes. Runs the Items Contract v1 report (V3) once,
+--   selected by the work item's ESS job ids, and stamps TFM rows
+--   LOADED (base-table row) or FAILED (real Fusion error).
 --
 -- BIP report path read from DMT_BIP_REPORT_TBL at runtime.
 -- CEMLI_CODE: 'Items'
@@ -33,13 +33,6 @@
         p_load_ess_id    IN NUMBER,
         p_import_ess_id  IN NUMBER DEFAULT NULL,
         p_work_queue_id IN NUMBER DEFAULT NULL
-    );
-
-    -- Parse the decoded BIP report XMLTYPE (from DMT_UTIL_PKG.RUN_BIP_REPORT)
-    -- and update TFM + STG tables.
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id IN NUMBER,
-        p_xml            IN XMLTYPE
     );
 
     -- RESET_UNACCOUNTED -- re-run-reconcile recovery (backlog #95). Static UPDATE

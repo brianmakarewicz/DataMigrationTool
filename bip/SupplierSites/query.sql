@@ -1,14 +1,3 @@
--- ============================================================
--- SupplierSites BIP reconciliation query -- MIRROR of the deployed
--- data model bip/SupplierSites/SUP_SITE_DM.xdm (deploy target
--- /Custom/DMT2/SupplierSites/). The SQL below is the byte-exact
--- CDATA body of that .xdm; regenerate this file from the .xdm
--- whenever the data model changes -- the mirror must never drift.
--- Contract v1 parameters (design section 5): P_RUN_ID,
--- P_LOAD_REQUEST_ID (the selection key -- LOAD_REQUEST_ID is
--- populated even when the chained import job errors),
--- P_IMPORT_ESS_ID, P_PREFIX. P_BATCH_ID is retired.
--- ============================================================
 -- BASE-tier confirmation: a site is LOADED only when it positively exists in the
 -- base table POZ_SUPPLIER_SITES_ALL_M. The interface leaves VENDOR_SITE_ID NULL
 -- even for PROCESSED rows, so the base row is resolved by business key
@@ -38,4 +27,3 @@ FROM   poz_supplier_sites_int i
 LEFT JOIN poz_supplier_sites_all_m b
        ON b.vendor_id = i.vendor_id AND b.vendor_site_code = i.vendor_site_code
 WHERE  i.load_request_id = :P_LOAD_REQUEST_ID
-      

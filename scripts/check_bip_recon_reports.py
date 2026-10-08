@@ -17,7 +17,7 @@ with no registry row falls back to its single DMT_*_RECON_DM.xdm. bip/common/ (l
 and diagnostic models, not reconciliation reports) and bip/PlanningBudgets/ (object
 out of scope, no catalog row -- same exemption as check_flag_stg_failed.py) are
 skipped. The SQL analysed is the deployed .xdm's own SQL (it is authoritative);
-query.sql is checked only for being its mirror (rule BIP-MIRROR).
+query.sql is checked only for being its mirror (rules BIP-MIRROR, BIP-MIRROR-EXACT).
 
 RULES (each names the design-document section that states it)
 -------------------------------------------------------------
@@ -31,6 +31,18 @@ BIP-MIRROR  bip/<Object>/query.sql mirrors the deployed .xdm SQL.
     must exactly match the query deployed in Fusion". Also fails when the registered
     .xdm file does not exist in the repo (the mirror cannot be verified and the deploy
     script cannot deploy it).
+
+BIP-MIRROR-EXACT  bip/<Object>/query.sql is the registered .xdm's SQL, character
+    for character. Same design rule as BIP-MIRROR ("The two must be
+    character-for-character identical"), applied literally: query.sql must equal the
+    <sql> CDATA of the registered .xdm, comments included. Only CRLF-vs-LF, the leading
+    blank lines and the trailing whitespace of the whole file are normalised. A multi-dataset
+    model's query.sql is its statements in order, joined by a line holding ';' and a
+    blank line. A comment present in only one copy is a difference: BIP-MIRROR
+    ignores comments and so let a stale header (or a stale FUSION_ID behind one)
+    survive (backlog #215). Regenerate a mirror from its .xdm (the .xdm is
+    authoritative) with:
+        python scripts/check_bip_recon_reports.py --write-mirror <Object> [...]
 
 BIP-REGISTRY-FILE  Every data model / report the registry or the deploy manifest names
     exists in the repo. Every '/Custom/DMT2/<Object>/<NAME>.xdm' or '.xdo' path in
@@ -77,8 +89,8 @@ BIP-ERROR-ROW  No row is reported as an error without a real error row behind it
     string, the record is [UNACCOUNTED], not [FUSION_ERROR]").
 
 NOT CHECKED (declared, per the "Checker fidelity" standard in section 7):
-  * NOT CHECKED: whitespace- and comment-only differences between query.sql and the
-    .xdm (query.sql may carry an extra explanatory header).
+  * NOT CHECKED: CRLF-vs-LF, leading-blank-line and trailing-whitespace differences between
+    query.sql and the .xdm (everything else is checked by BIP-MIRROR-EXACT).
   * NOT CHECKED: the six Contract-v1 parameters / parameter-set parity -- section 7
     "BIP parameter-set parity" needs the package call sites; not part of this rule set.
   * NOT CHECKED: whether an allow-listed error column is the RIGHT row's error (row
@@ -288,6 +300,49 @@ def check_mirror(obj, dm_name, dm_path):
                   "(query.sql names: %s)" % (obj, dm_name, ", ".join(claimed) or "none"))]
 
 
+def mirror_text(dm_path):
+    """The exact query.sql text a registered .xdm implies (BIP-MIRROR-EXACT)."""
+    sqls = [_trim(s) for s in xdm_sqls(dm_path)]
+    return "\n;\n\n".join(sqls) + "\n"
+
+
+def _trim(text):
+    """CRLF -> LF, drop leading blank lines and trailing whitespace of the whole text."""
+    return text.replace("\r\n", "\n").lstrip("\n").rstrip()
+
+
+def check_mirror_exact(obj, dm_name, dm_path):
+    key = "BIP-MIRROR-EXACT|%s|%s" % (obj, dm_name)
+    q = os.path.join(BIP_DIR, obj, "query.sql")
+    if not os.path.exists(dm_path) or not os.path.exists(q):
+        return []           # BIP-MIRROR already reports the missing file
+    with open(q, encoding="utf-8", errors="replace") as fh:
+        have = _trim(fh.read())
+    want = _trim(mirror_text(dm_path))
+    if have == want:
+        return []
+    hl, wl = have.split("\n"), want.split("\n")
+    n = next((i for i in range(min(len(hl), len(wl))) if hl[i] != wl[i]),
+             min(len(hl), len(wl)))
+    return [(key, "bip/%s/query.sql is not the %s.xdm SQL character for character "
+                  "(first difference at line %d; regenerate with --write-mirror %s)"
+                  % (obj, dm_name, n + 1, obj))]
+
+
+def write_mirror(objs):
+    """--write-mirror <Object> ...: copy each registered .xdm's SQL into query.sql."""
+    reg = {o: p for o, _dm, p, _note in objects_to_check()}
+    for obj in objs:
+        if obj not in reg or not os.path.exists(reg[obj]):
+            print("no registered data model in the repo for %s" % obj)
+            return 1
+        with open(os.path.join(BIP_DIR, obj, "query.sql"), "w", encoding="utf-8",
+                  newline="\n") as fh:
+            fh.write(mirror_text(reg[obj]))
+        print("wrote bip/%s/query.sql from %s" % (obj, os.path.basename(reg[obj])))
+    return 0
+
+
 def branch_label(br, names):
     """A stable name for a UNION branch: its OBJECT_TYPE and SOURCE_TYPE literals."""
     bits = []
@@ -389,12 +444,15 @@ def objects_to_check():
 
 
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--write-mirror":
+        return write_mirror(sys.argv[2:])
     print("BIP reconciliation report conformance check")
     print("=" * 72)
     found = check_xdm_comments()
     found += check_registry_files()
     for obj, dm, path, note in objects_to_check():
         f = check_mirror(obj, dm, path)
+        f += check_mirror_exact(obj, dm, path)
         if os.path.exists(path):
             sqls = xdm_sqls(path)
         else:
@@ -410,7 +468,8 @@ def main():
                 uniq.append((k, m))
         print("  %-5s %-24s %s.xdm  (%s)" % ("OK" if not uniq else "VIOL", obj, dm, note))
         found += uniq
-    print("\nNOT CHECKED: whitespace/comment-only differences between query.sql and the .xdm")
+    print("\nNOT CHECKED: CRLF/LF, leading blank line and trailing whitespace differences between "
+          "query.sql and the .xdm")
     print("NOT CHECKED: Contract-v1 parameter set / package-vs-xdm parameter parity")
     print("NOT CHECKED: whether an allow-listed error column belongs to the RIGHT row "
           "(runtime; regression scenario)")

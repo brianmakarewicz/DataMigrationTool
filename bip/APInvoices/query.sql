@@ -1,7 +1,3 @@
--- bip/APInvoices/query.sql -- EXACT SQL text of the deployed data model
--- /Custom/DMT2/APInvoices/DMT_AP_RECON_V2_DM.xdm (the CDATA body of
--- bip/APInvoices/DMT_AP_RECON_V2_DM.xdm). Regenerate from the .xdm whenever
--- the data model changes; never edit separately.
 -- ============================================================
 -- DMT_AP_RECON_V2_DM (2026-10-07), deployed ALONGSIDE V1
 -- DMT_AP_RECON_DM (never overwritten). APInvoices reconciliation
@@ -145,4 +141,3 @@ WHERE  (:P_AFTER_KEY IS NULL
         OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
 ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
-      

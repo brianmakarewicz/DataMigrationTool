@@ -1,61 +1,105 @@
 -- ============================================================
--- GLBudgets BIP reconciliation query — BIP reconciliation
--- report Contract v1 (nine columns, keyset pagination).
--- Data source: ApplicationDB_FSCM. This mirrors the SQL embedded
--- in GL_BUDGET_DM.xdm for review; the .xdm is authoritative.
+-- GLBudgets reconciliation data model — BIP reconciliation
+-- report Contract v1 (nine columns, keyset pagination, the six
+-- standard parameters). Sibling of the GLBalances exemplar
+-- (bip/GLBalances/DMT_GL_BAL_RECON_DM.xdm); conformed to the same
+-- shape 2026-09-20.
 --
--- NINE columns, in contract order:
+-- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
 --   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
---   DMT_REFERENCE
+--   DMT_REFERENCE.
 --
--- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
---   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY. No P_OFFSET / P_LIMIT,
---   no P_RUN_START / P_LEDGER_ID.
+-- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
+--   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--   No P_OFFSET / P_LIMIT, no P_RUN_START / P_LEDGER_ID.
 --
--- Keyset: ORDER BY RECORD_KEY, only rows whose RECORD_KEY sorts
--- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
+-- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
+-- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
+-- :P_CHUNK_SIZE of them. An empty :P_AFTER_KEY (bound as NULL by
+-- BIP on the first call) selects from the start; each next call
+-- passes the last RECORD_KEY received until a short page returns.
 --
--- WHY GLBudgets differs (structural, proven live 2026-09-20 —
--- see objects/GLBudget/README.md and DMT_DESIGN section 5):
+-- WHY GLBudgets differs from every other object (structural, not a
+-- shortcut — see objects/GLBudget/README.md and DMT_DESIGN section
+-- 5 / the #12 carrier map, both proven live 2026-09-20):
 --   * Budgets are CELLS, not transactions. GL_BUDGET_BALANCES holds
---     one row per (ledger + budget + period + 30 segments + currency
---     + currency_type) with NO surrogate id, run id, request id or
---     prefix. RECORD_KEY IS that composite cell key.
---   * No reachable Fusion surrogate id: GL_BUDGET_VERSIONS is
---     VPD-blocked (live SELECT -> ORA-00942). The honest, non-null
---     Fusion base-table id for a loaded cell is the GL account it
---     sits on: GL_CODE_COMBINATIONS.CODE_COMBINATION_ID.
+--     ONE row per (ledger + budget_name + period + 30 account
+--     segments + currency + currency_type) and carries NO surrogate
+--     id, NO run id, NO request id, and NO prefix stamp. Its only
+--     identity is that composite cell key -- so RECORD_KEY / the
+--     keyset key IS that cell key. There is no per-line REFERENCE_1
+--     the way GL journals have.
+--   * There is no reachable Fusion surrogate id for a budget cell.
+--     GL_BUDGET_VERSIONS.BUDGET_VERSION_ID (the id the design's
+--     carrier map names) is VPD-blocked on this instance -- a live
+--     SELECT returns ORA-00942. The honest, non-null, non-fabricated
+--     Fusion base-table id for a loaded cell is therefore the GL
+--     account it sits on: GL_CODE_COMBINATIONS.CODE_COMBINATION_ID,
+--     resolved by the cell's chart-of-accounts + 30 segments. This
+--     is a real Fusion id from a real base table (proven: cell
+--     101-10-77600-120-000-000 -> 300000047301444).
 --
 -- Row selection:
---   BASE rows are loaded cells in GL_BUDGET_BALANCES scoped to the run
---     by a LAST_UPDATE_DATE window. A budget cell carries no run id,
---     request id or prefix, and import CONSUMES (deletes) the interface
---     rows of every cell it loads successfully -- so on a clean
---     all-success run there is no surviving interface footprint to join
---     back to. The signal that survives success is the cell's own
---     LAST_UPDATE_DATE: a cell this run loaded was touched at or after
---     the run's Validate and Load Budgets job (:P_IMPORT_ESS_ID) began.
---     BASE = cells with LAST_UPDATE_DATE >= that job's PROCESSSTART in
---     ESS_REQUEST_HISTORY. If :P_IMPORT_ESS_ID does not resolve, the
---     window is NULL and BASE returns nothing (never the whole cube).
---     FUSION_ID = the cell's CODE_COMBINATION_ID (30-segment join).
---   INTERFACE rows are the FAILED GL_BUDGET_INTERFACE rejections the
---     load left carrying :P_LOAD_REQUEST_ID, with real error text.
+--   BASE  rows are the loaded budget cells in GL_BUDGET_BALANCES for
+--         THIS run. A budget cell carries no run/request/prefix stamp,
+--         and import CONSUMES (deletes) the interface rows of every
+--         cell it loads successfully -- so on a clean all-success run
+--         there is NO surviving interface footprint to join a loaded
+--         cell back to. The only run signal that survives success is
+--         the balance row's own LAST_UPDATE_DATE: a cell this run
+--         loaded was touched at or after the run's Validate and Load
+--         Budgets job began. That job is :P_IMPORT_ESS_ID, whose
+--         PROCESSSTART in ESS_REQUEST_HISTORY is the run-start; BASE
+--         is scoped to cells with LAST_UPDATE_DATE >= that run-start.
+--         (Proven live 2026-09-20: the 06-26 cells this run loaded
+--         at 01:00:04 sit just after the job's 00:59:56 PROCESSSTART.)
+--         If :P_IMPORT_ESS_ID does not resolve to a PROCESSSTART the
+--         window is NULL and BASE returns nothing -- it never falls
+--         back to returning the whole cube. FUSION_ID = the cell
+--         account's CODE_COMBINATION_ID.
+--   INTERFACE rows are the GL_BUDGET_INTERFACE rows the load left
+--         behind carrying :P_LOAD_REQUEST_ID with STATUS='FAILED' --
+--         a per-cell rejection with its real Fusion ERROR_MESSAGE.
+--   (:P_RUN_ID and :P_PREFIX are declared for contract symmetry; the
+--    budget cube stamps neither, so the run-start window scopes BASE
+--    and LOAD_REQUEST_ID scopes the INTERFACE rejections.)
 --
--- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
---   BASE (loaded cell) => SUCCESS; INTERFACE (FAILED) => ERROR.
+-- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
+--   BASE  (loaded cell present)                 => SUCCESS
+--   INTERFACE (FAILED rejection left behind)    => ERROR
+-- FUSION_ID is non-null on every BASE/SUCCESS row (CODE_COMBINATION_ID).
+-- ERROR_MESSAGE is non-null on every ERROR row.
 --
 -- Keys:
---   RECORD_KEY / SOURCE_REF = composite cell key
---       ledger|budget|period|currency|seg1..seg30 (~ NULL as '#').
---   DMT_REFERENCE           = NULL (no DFF carrier on a budget cell).
---   FUSION_ID               = GL_CODE_COMBINATIONS.CODE_COMBINATION_ID.
+--   RECORD_KEY / SOURCE_REF = the composite cell key
+--       ledger|budget|period|currency|seg1..seg30 (~ NULL as '#'),
+--       the same grain DMT_GL_BUDGET_RESULTS_PKG builds from the TFM
+--       row -- one key definition serving screens and BIP matching.
+--   DMT_REFERENCE           = NULL: a budget cell has no DFF/ATTRIBUTE
+--       carrier in GL_BUDGET_BALANCES, so the Slot C reference cannot
+--       be read back. SOURCE_REF is the reliable carrier here.
+--   FUSION_ID               = the cell's NATURAL composite key, the four
+--       parts joined with tildes:
+--         ledger_id ~ budget_name ~ period_name ~ code_combination_id
+--       (backlog #87). The bare CODE_COMBINATION_ID is not unique proof
+--       of THIS budget cell -- the same GL account carries many periods
+--       and budgets -- so FUSION_ID now carries the full cell identity
+--       that round-trips from the base tables (all four parts proven
+--       queryable as the reporting user 2026-09-30; the design's
+--       GL_BUDGET_VERSIONS.BUDGET_VERSION_ID stays VPD-blocked,
+--       ORA-00942). FUSION_ID is a STRING (xsd:string below), not an
+--       integer, because it is now a composite. It remains non-null on
+--       every BASE/SUCCESS row.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
+    -- Tier: BASE -- one row per loaded budget cell for this run.
+    -- The cell is scoped to the run by a LAST_UPDATE_DATE window that
+    -- opens at the run's Validate and Load Budgets PROCESSSTART; the
+    -- 30-segment account join resolves the cell's real GL account id.
     SELECT
         'GLBudgets'                          AS object_type,
         bb.ledger_id || '|' || bb.budget_name || '|' || bb.period_name
@@ -73,7 +117,13 @@ FROM (
                                              AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
-        gcc.code_combination_id              AS fusion_id,
+        -- Natural composite cell key as proof of load (backlog #87):
+        --   ledger_id ~ budget_name ~ period_name ~ code_combination_id.
+        -- The code_combination_id alone is not unique to a budget cell;
+        -- the four tilde-joined parts are, and all four are queryable
+        -- from the base tables (the VPD-blocked BUDGET_VERSION_ID is not).
+        bb.ledger_id || '~' || bb.budget_name || '~' || bb.period_name
+          || '~' || gcc.code_combination_id  AS fusion_id,
         CAST(NULL AS VARCHAR2(2000))         AS error_message,
         TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
         bb.ledger_id || '|' || bb.budget_name || '|' || bb.period_name
@@ -142,6 +192,9 @@ FROM (
 
     UNION ALL
 
+    -- Tier: INTERFACE -- FAILED rows still in GL_BUDGET_INTERFACE
+    -- after import are per-cell rejections carrying the real Fusion
+    -- error text and the run's load_request_id.
     SELECT
         'GLBudgets'                          AS object_type,
         gi.ledger_id || '|' || gi.budget_name || '|' || gi.period_name
@@ -159,7 +212,7 @@ FROM (
                                              AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
-        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(200))          AS fusion_id,
         CASE WHEN gi.error_message IS NOT NULL
              THEN '[LINE] ' || gi.error_message END
                                              AS error_message,
@@ -182,6 +235,11 @@ FROM (
     WHERE  gi.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
     AND    gi.status = 'FAILED'
 )
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start": return every row. On later
+-- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
+-- greater keys are returned. RECORD_KEY is compared as text (the cell
+-- key is a string); the reconciler feeds back the exact key it received.
 WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
 ORDER BY record_key
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY

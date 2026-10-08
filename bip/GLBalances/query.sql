@@ -1,9 +1,4 @@
 -- ============================================================
--- GLBalances BIP reconciliation query: mirror of the SQL embedded in
--- DMT_GL_BAL_RECON_V4_DM.xdm (the deployed data model the registry points
--- at; the .xdm is authoritative). Data source: ApplicationDB_FSCM.
--- ============================================================
--- ============================================================
 -- GLBalances reconciliation data model V4 (backlog #173), Contract v1:
 -- nine columns, keyset pagination, the six standard parameters.
 -- Deployed ALONGSIDE V1 and V3, never overwriting them.

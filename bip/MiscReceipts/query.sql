@@ -1,5 +1,3 @@
--- Repo mirror of the SQL embedded in DMT_INV_TRX_RECON_V2_DM.xdm (the .xdm is authoritative;
--- scripts/check_bip_recon_reports.py rule BIP-MIRROR keeps the two equal).
 -- ============================================================
 -- MiscReceipts (inventory transactions) BIP reconciliation query
 -- -- BIP reconciliation report contract v1 (nine columns, keyset
