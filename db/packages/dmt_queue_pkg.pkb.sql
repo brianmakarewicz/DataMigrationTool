@@ -749,6 +749,15 @@ AS
                     WHERE  q.RUN_ID = p_run_id
                     AND    q.CEMLI_CODE = obj.CEMLI_CODE
                     AND    q.WORK_STATUS IN ('DONE', 'FAILED')
+                    -- A spawn-per-partition PARENT (the item that split into child
+                    -- items) owns no records and has no job ids; its children carry
+                    -- the loads. Re-opening it would reconcile nothing and then run
+                    -- a run-wide sweep over its children's freshly reset rows (its
+                    -- PARTITION_KEY is NULL, so its sweep is not item-scoped).
+                    -- Only the children are re-opened, each with its own ids
+                    -- (backlog #313).
+                    AND    NOT EXISTS (SELECT 1 FROM DMT_WORK_QUEUE_TBL c
+                                       WHERE  c.PARENT_QUEUE_ID = q.QUEUE_ID)
                     AND    ( EXISTS (SELECT 1 FROM DMT_PIPELINE_DEF_TBL d
                                      WHERE d.CEMLI_CODE = q.CEMLI_CODE
                                        AND d.RECON_PROC IS NOT NULL)

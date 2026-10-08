@@ -69,6 +69,11 @@ AS
 --   2026-10-07  BM  Recon V4: the report is called with the load's own load and
 --                   import ids and finds rows only by those job ids (base lines by
 --                   the AutoInvoice import REQUEST_ID), never by the run prefix.
+--   2026-10-08  BM  Backlog #313: ARInvoices spawns one child work item per
+--                   (BU, batch source) group (GET_PARTITION_KEYS), so every group's
+--                   load and import ids are recorded on its own work item and a
+--                   reconcile-only rerun re-reads every group. RECONCILE_BATCH
+--                   skips the fetch when it has no load id (split parent row).
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_AR_RESULTS_PKG';
@@ -102,6 +107,33 @@ AS
         QUOTED_ERROR      VARCHAR2(4000)   -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
     );
     TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
+
+    -- --------------------------------------------------------
+    -- GET_PARTITION_KEYS (public) -- see spec. One JSON token per distinct
+    -- (BU_NAME, BATCH_SOURCE_NAME) of this run's STAGED AR lines, keyed by the two
+    -- column names; the loader decodes both with DMT_LOADER_PKG.DECODE_PARTITION_KEY.
+    -- A line with a NULL BU or batch source cannot form an AutoInvoice submission
+    -- (both are ParameterList arguments), so it is not given a group; it stays
+    -- STAGED and the parent's accounting shows it unprocessed rather than being
+    -- sent under a wrong parameter. STATIC SQL; no COMMIT.
+    -- --------------------------------------------------------
+    FUNCTION GET_PARTITION_KEYS (
+        p_run_id IN NUMBER
+    ) RETURN DMT_PARTITION_KEY_TBL IS
+        l_keys DMT_PARTITION_KEY_TBL;
+    BEGIN
+        SELECT JSON_OBJECT('BU_NAME'           VALUE BU_NAME,
+                           'BATCH_SOURCE_NAME' VALUE BATCH_SOURCE_NAME)
+        BULK COLLECT INTO l_keys
+        FROM  (SELECT DISTINCT BU_NAME, BATCH_SOURCE_NAME
+               FROM   DMT_RA_LINES_TFM_TBL
+               WHERE  RUN_ID = p_run_id
+               AND    TFM_STATUS = 'STAGED'
+               AND    BU_NAME IS NOT NULL
+               AND    BATCH_SOURCE_NAME IS NOT NULL
+               ORDER BY BU_NAME, BATCH_SOURCE_NAME);
+        RETURN l_keys;
+    END GET_PARTITION_KEYS;
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_ARINVOICES (private)
@@ -586,9 +618,12 @@ AS
     -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
     -- Contract v1 apply once for ONE load (AR is grouped by BU + batch source, one
-    -- load per group): the load ESS id is the Contract v1 P_LOAD_REQUEST_ID and
-    -- the AutoInvoice import ESS id is P_IMPORT_ESS_ID. The report finds rows
-    -- only by these two job ids; the run prefix is never a search value.
+    -- load per group, each group its own child work item since backlog #313): the
+    -- load ESS id is the Contract v1 P_LOAD_REQUEST_ID and the AutoInvoice import
+    -- ESS id is P_IMPORT_ESS_ID. The report finds rows only by these two job ids;
+    -- the run prefix is never a search value. A work item with no load id (the
+    -- split parent row, which owns no records) has no job to read, so nothing is
+    -- fetched and no row is touched; its records belong to the child items.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
@@ -601,9 +636,22 @@ AS
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => C_PROC || ' start. load_ess_id: ' || p_load_ess_id
-                                || ', import_ess_id: ' || p_import_ess_id,
+                                || ', import_ess_id: ' || p_import_ess_id
+                                || ', work item: ' || p_work_queue_id,
             p_package        => C_PKG,
             p_procedure      => C_PROC);
+
+        IF p_load_ess_id IS NULL THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': work item ' || p_work_queue_id
+                               || ' carries no load ESS id, so there is no Fusion job to '
+                               || 'reconcile against. Nothing fetched; no row changed.',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RETURN;
+        END IF;
 
         APPLY_CONTRACT_V1_ARINVOICES(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id);
 

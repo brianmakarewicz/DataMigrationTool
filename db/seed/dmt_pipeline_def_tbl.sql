@@ -148,7 +148,11 @@ using (
     union all select 'APInvoices', 'DMT_LOADER_PKG.RUN_AP_INVOICES', 'ASYNC', 'DMT_AP_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'MiscReceipts', 'DMT_LOADER_PKG.RUN_MISC_RECEIPTS', 'SYNC', 'DMT_MISC_RECEIPT_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'Customers', 'DMT_LOADER_PKG.RUN_CUSTOMERS', 'ASYNC', 'DMT_CUST_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
-    union all select 'ARInvoices', 'DMT_LOADER_PKG.RUN_AR_INVOICES', 'ASYNC', 'DMT_AR_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
+    -- ARInvoices spawns one child work item per (BU_NAME, BATCH_SOURCE_NAME) group
+    -- (backlog #313): AutoInvoice takes one business unit and one transaction source
+    -- per submission, so one child = one load + import, and each child records its
+    -- own job ids. GET_PARTITION_KEYS returns a TWO-column composite JSON token.
+    union all select 'ARInvoices', 'DMT_LOADER_PKG.RUN_AR_INVOICES', 'ASYNC', 'DMT_AR_RESULTS_PKG.RECONCILE_BATCH', 'N', 'DMT_AR_RESULTS_PKG.GET_PARTITION_KEYS' from dual
     union all select 'ARReceipts', null, 'ASYNC', null, 'N', null from dual
     union all select 'Projects', 'DMT_LOADER_PKG.RUN_PROJECTS', 'ASYNC', 'DMT_PROJECT_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
     union all select 'BillingEvents', 'DMT_LOADER_PKG.RUN_BILLING_EVENTS', 'ASYNC', 'DMT_BILLING_EVENT_RESULTS_PKG.RECONCILE_BATCH', 'N', null from dual
