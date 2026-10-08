@@ -2,7 +2,8 @@
 """Offline test of the known-issues classifier in scripts/dmt_regression_run.py.
 
 Owner decision 2026-10-08: "change the gate - so that there are no NEW failures".
-Proves: the 11 review items run 300 reports classify as KNOWN with zero NEW; an
+Proves: run 300's review items classify as KNOWN with zero NEW, except the
+BillingEvents REST verify, cleared by PR #673 (backlog #462) and so NEW again; an
 unlisted failure is NEW (blocks) while a listed one is KNOWN (does not); volatile
 text (run prefix, HTTP detail, counts) does not affect matching; a listed item
 whose sub-object regressed against the baseline run is NEW. No database needed.
@@ -19,7 +20,9 @@ import dmt_regression_run as reg  # noqa: E402
 
 ZERO = ["SalaryBases", "TaxCards", "W2Balances", "BenParticipant", "BenDependent",
         "BenBeneficiary", "Absences", "PerfEvaluations", "WorkSchedules"]
-REST = [("BillingEvents", "Billing Events"), ("Customers", "Locations")]
+REST = [("Customers", "Locations")]
+# Cleared by PR #673 (BillingEvents runs as ppm_impl, backlog #462): no longer listed.
+CLEARED_REST = [("BillingEvents", "Billing Events")]
 
 # A listed FAIL entry used only by this test (the committed list has none today).
 FAIL_ENTRIES = [
@@ -37,11 +40,17 @@ def main():
                  for o, s in REST])
     entries = reg.load_known_issues()
     k, n, hit = reg.classify_issues(run300, 'REVIEW', '93354', (), entries)
-    checks.append(("run 300's 11 review items are all KNOWN, 0 NEW, every entry used",
-                   (len(k), len(n), len(hit)) == (11, 0, len(entries))))
+    checks.append(("run 300's 10 still-listed review items are all KNOWN, 0 NEW, every entry used",
+                   (len(k), len(n), len(hit)) == (10, 0, len(entries))))
 
     k, n, _ = reg.classify_issues(
-        ["REST verify BillingEvents/Billing Events: ERROR (ORA-20003 Status: 403 | URL x?q=99999RT)"],
+        [f"REST verify {o}/{s}: ERROR (ORA-20003 Status: 403)" for o, s in CLEARED_REST],
+        'REVIEW', '93354', (), entries)
+    checks.append(("the cleared BillingEvents REST verify item is NEW again (blocks)",
+                   (len(k), len(n)) == (0, 1)))
+
+    k, n, _ = reg.classify_issues(
+        ["REST verify Customers/Locations: ERROR (ORA-20003 Status: 403 | URL x?q=99999RT)"],
         'REVIEW', '99999', (), entries)
     checks.append(("different status/HTTP detail still matches", (len(k), len(n)) == (1, 0)))
 
