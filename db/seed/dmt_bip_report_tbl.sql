@@ -989,12 +989,13 @@ using (
     select 100000036                                                        bip_report_id,
            'TalentProfiles'                                                 cemli_code,
            'Talent Profile'                                                 object_type,
-           '/Custom/DMT2/TalentProfiles/DMT_TALENTPROFILES_RECON_V2_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/TalentProfiles/DMT_TALENTPROFILES_RECON_V2_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/TalentProfiles/DMT_TALENTPROFILES_RECON_V3_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/TalentProfiles/DMT_TALENTPROFILES_RECON_V3_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                                      interface_table,
            'Talent profile HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #451): '
              || 'rows selected by the HDL request id, key map joined on each row''s own owner, '
-             || 'profile and items each proven on their own base row. Deployed alongside V1.' notes,
+             || 'profile and items each proven on their own base row. V3: profile matched on key-map '
+             || 'object Profile. Deployed alongside V1 and V2.' notes,
            1                                                                contract_version,
            'DMT_TALENT_PROF_TFM_TBL'                                        tfm_table,
            'FUSION_PROFILE_ID'                                              fusion_id_column,

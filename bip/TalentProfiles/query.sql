@@ -1,5 +1,5 @@
--- DMT_TALENTPROFILES_RECON_V2_DM query (Contract v1, design section 5).
--- Mirror of the CDATA SQL in DMT_TALENTPROFILES_RECON_V2_DM.xdm (the registered
+-- DMT_TALENTPROFILES_RECON_V3_DM query (Contract v1, design section 5).
+-- Mirror of the CDATA SQL in DMT_TALENTPROFILES_RECON_V3_DM.xdm (the registered
 -- version), kept here for review and for running the query standalone against
 -- live Fusion (bind the six parameters). V1 stays deployed; BIP objects are never
 -- overwritten. Backlog #451.
@@ -10,6 +10,8 @@
 -- id and returned only when this load's physical line finished LOADED_SUCCESS and
 -- the surrogate exists in its base table:
 --   TalentProfile -> HRT_PROFILES_B.PROFILE_ID       (RECORD_KEY <person>_TPROF)
+--     (the key map names this object 'Profile'; it is returned as OBJECT_TYPE
+--      'TalentProfile'. V2 filtered on 'TalentProfile' and missed it, run 298.)
 --   ProfileItem   -> HRT_PROFILE_ITEMS.PROFILE_ITEM_ID (RECORD_KEY <person>_TPITM)
 
 SELECT object_type,
@@ -22,7 +24,8 @@ SELECT object_type,
        source_ref,
        dmt_reference
 FROM (
-    SELECT m.object_name                     AS object_type,
+    SELECT CASE m.object_name WHEN 'Profile' THEN 'TalentProfile'
+                ELSE m.object_name END        AS object_type,
            r.key_source_id                   AS record_key,
            'BASE'                            AS source_type,
            'SUCCESS'                         AS fusion_status,
@@ -37,12 +40,12 @@ FROM (
     JOIN   hrc_integration_key_map  m ON m.source_system_owner = r.key_source_owner
                                      AND m.source_system_id    = r.key_source_id
     WHERE  b.request_id = :P_LOAD_REQUEST_ID
-    AND    m.object_name IN ('TalentProfile', 'ProfileItem')
+    AND    m.object_name IN ('Profile', 'ProfileItem')
     AND    EXISTS (SELECT 1
                    FROM   hrc_dl_physical_lines p
                    WHERE  p.row_id = r.row_id
                    AND    p.validated_loaded_status = 'LOADED_SUCCESS')
-    AND    (   (m.object_name = 'TalentProfile'
+    AND    (   (m.object_name = 'Profile'
                 AND EXISTS (SELECT 1 FROM hrt_profiles_b x
                             WHERE x.profile_id = m.surrogate_id))
             OR (m.object_name = 'ProfileItem'
