@@ -20,7 +20,8 @@
         p_row_cap       IN  NUMBER   DEFAULT NULL,
         x_rows          OUT T_RECON_TBL,
         x_error_code    OUT NUMBER,
-        p_work_queue_id IN  NUMBER   DEFAULT NULL
+        p_work_queue_id IN  NUMBER   DEFAULT NULL,
+        p_fusion_batch_id IN NUMBER  DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'FETCH_ROWS';
         l_contract_ver  NUMBER;
@@ -34,6 +35,7 @@
         l_last_key      VARCHAR2(1000);
         l_max_pages     PLS_INTEGER;
         l_n             PLS_INTEGER := 0;
+        l_batch_param   VARCHAR2(100);
     BEGIN
         x_error_code := DMT_UTIL_PKG.C_ERROR;   -- pessimistic until proven
 
@@ -78,11 +80,19 @@
         -- cannot loop forever. +2 pages of slack, floor of 2.
         l_max_pages := GREATEST(2, CEIL(NVL(p_row_cap, 0) / GREATEST(l_chunk_size, 1)) + 2);
 
+        -- Optional Fusion import batch id (Customers): sent only when given, so the
+        -- report call of every object that does not pass it stays byte-identical.
+        IF p_fusion_batch_id IS NOT NULL THEN
+            l_batch_param := '~P_FUSION_BATCH_ID|' || TO_CHAR(p_fusion_batch_id, 'TM9');
+        END IF;
+
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,
             p_message   => C_PROC || ' start. CEMLI: ' || p_cemli_code ||
                            ' | ChunkSize: ' || l_chunk_size || ' | MaxPages: ' || l_max_pages ||
-                           ' | LoadReqId: ' || NVL(TO_CHAR(p_load_ess_id), '(null)'),
+                           ' | LoadReqId: ' || NVL(TO_CHAR(p_load_ess_id), '(null)') ||
+                           CASE WHEN p_fusion_batch_id IS NOT NULL
+                                THEN ' | FusionBatchId: ' || TO_CHAR(p_fusion_batch_id, 'TM9') END,
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
@@ -98,6 +108,7 @@
                                 '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
                                 '~P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
                                 '~P_PREFIX|'          || l_prefix ||
+                                l_batch_param ||
                                 '~P_CHUNK_SIZE|'      || TO_CHAR(l_chunk_size) ||
                                 '~P_AFTER_KEY|'       || l_after_key ||
                                 -- P_WQ_ID only when given (the Projects report,

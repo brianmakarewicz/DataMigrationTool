@@ -195,7 +195,7 @@
           {
             "placeholder": "{RUN_ID}",
             "golden": "116",
-            "local": "$RUN_ID",
+            "local": "$PREFIX$RUN_ID",
             "match": "whole_field",
             "fields": [
               0
@@ -218,7 +218,7 @@
           {
             "placeholder": "{RUN_ID}",
             "golden": "116",
-            "local": "$RUN_ID",
+            "local": "$PREFIX$RUN_ID",
             "match": "whole_field",
             "fields": [
               0
@@ -241,7 +241,7 @@
           {
             "placeholder": "{RUN_ID}",
             "golden": "116",
-            "local": "$RUN_ID",
+            "local": "$PREFIX$RUN_ID",
             "match": "whole_field",
             "fields": [
               0
@@ -282,7 +282,7 @@
           {
             "placeholder": "{RUN_ID}",
             "golden": "116",
-            "local": "$RUN_ID",
+            "local": "$PREFIX$RUN_ID",
             "match": "whole_field",
             "fields": [
               0
@@ -314,7 +314,7 @@
           {
             "placeholder": "{RUN_ID}",
             "golden": "116",
-            "local": "$RUN_ID",
+            "local": "$PREFIX$RUN_ID",
             "match": "whole_field",
             "fields": [
               0
@@ -355,7 +355,7 @@
           {
             "placeholder": "{RUN_ID}",
             "golden": "116",
-            "local": "$RUN_ID",
+            "local": "$PREFIX$RUN_ID",
             "match": "whole_field",
             "fields": [
               0
@@ -396,7 +396,7 @@
           {
             "placeholder": "{RUN_ID}",
             "golden": "116",
-            "local": "$RUN_ID",
+            "local": "$PREFIX$RUN_ID",
             "match": "whole_field",
             "fields": [
               0
@@ -423,7 +423,8 @@
         ],
         "date_mask_fields": []
       }
-    }
+    },
+    "_note_batch_id": "Field 0 is BATCH_ID. The golden run 116 had no source batch, so it carried the run id (116). Since 2026-10-07 the transform sends the run prefix followed by the source batch id, or by the work-queue id (the run id outside a work item, as in this offline harness), so the local value is $PREFIX$RUN_ID."
   },
   "GLBalances": {
     "golden_zip": "test/fbdi_zips/GLBalances_100000740.zip",
