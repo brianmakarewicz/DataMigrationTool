@@ -1477,13 +1477,20 @@ commit;
 -- '#IMPORT_REPORT#' and the real per-row text is harvested from the import report
 -- XML by the reconciler's Tier 3. This MERGE converges the four Contract v1
 -- columns on the BillingEvents row seeded earlier in this file.
+-- V2 (2026-10-07, owner decision): DMT_BILLING_EVENT_RECON_V2_DM finds rows only
+-- by the work item's Fusion job ids (base events by PJB_BILLING_EVENTS.REQUEST_ID =
+-- the import job id, interface rows by LOAD_REQUEST_ID = the load job id); the
+-- run prefix is never a search value. V1 (BILLING_EVENT_DM) stays deployed; BIP
+-- objects are never overwritten.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'BillingEvents'                                        cemli_code,
-           '/Custom/DMT2/BillingEvents/BILLING_EVENT_DM.xdm'      dm_catalog_path,
-           '/Custom/DMT2/BillingEvents/BILLING_EVENT_RPT.xdo'     report_catalog_path,
-           'Project billing event import reconciliation (Contract v1 -- nine columns, keyset; interface tier is the #IMPORT_REPORT# no-carrier special case)' notes,
+           '/Custom/DMT2/BillingEvents/DMT_BILLING_EVENT_RECON_V2_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/BillingEvents/DMT_BILLING_EVENT_RECON_V2_RPT.xdo' report_catalog_path,
+           'Project billing event import reconciliation (Contract v1 -- nine columns, keyset; interface tier is the #IMPORT_REPORT# no-carrier special case). '
+           || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import REQUEST_ID, '
+           || 'interface by LOAD_REQUEST_ID), never by the run prefix; deployed alongside V1.' notes,
            1                                                      contract_version,
            'DMT_PJB_BILL_EVENTS_TFM_TBL'                          tfm_table,
            'FUSION_EVENT_ID'                                      fusion_id_column,
