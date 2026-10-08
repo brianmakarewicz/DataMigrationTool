@@ -1819,7 +1819,9 @@
     --     chains AutoInvoiceImportEss, which creates the transactions itself (base
     --     REQUEST_ID = the import id). ARInvoices uses ar_submit_and_reconcile_one
     --     below. (The former second AutoInvoiceMasterEss job was removed -- see
-    --     docs/findings/known_good_ARInvoices.md.)
+    --     docs/findings/known_good_ARInvoices.md.) Since backlog #313 ARInvoices IS
+    --     spawn-per-partition: one child work item per group, each recording its own
+    --     load and import ids (see RUN_AR_INVOICES).
     --   * MiscReceipts — SINGLE-LOAD SYNC. loadAndImportData does not chain an
     --     import for INV transactions (interfaceDetails is DMT-local, not a real
     --     Fusion FUN_ERP_INTERFACE_OPTIONS row), so the import step submits
@@ -1828,9 +1830,9 @@
     --
     -- Behaviour is preserved byte-for-byte with the pre-refactor path through
     -- run_one_object_type + its nested submit_and_reconcile_one for these three
-    -- objects. None of the three is spawn-per-partition, so g_partition_key is
-    -- always NULL for them and backlog #70's per-child ESS-id stamping does not
-    -- apply (their ESS ids ride the single work-queue item exactly as PO's do).
+    -- objects. Customers and MiscReceipts are not spawn-per-partition, so
+    -- g_partition_key is always NULL for them and their ESS ids ride the single
+    -- work-queue item exactly as PO's do; ARInvoices spawns per group (#313).
     -- ========================================================================
 
     -- Shared helper for ARInvoices: submit one (BU, batch source) group's FBDI zip,
@@ -1880,6 +1882,11 @@
         WHERE  FBDI_ZIP_ID = (SELECT FBDI_ZIP_ID FROM DMT_FBDI_CSV_TBL
                               WHERE FBDI_CSV_ID = p_fbdi_csv_id);
         COMMIT;
+
+        -- Backlog #313: record this group's load id on its own work item as soon as
+        -- the load is submitted, so the id is kept even when the load then fails
+        -- (the import id is added below once found). Commits.
+        stamp_item_ess_ids(x_load_ess_id, NULL);
 
         -- Poll Load job.
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -1977,10 +1984,12 @@
             END;
         END IF;
 
-        -- Backlog #70 (non-partitioned): stamp this work item's own load + import ess
-        -- ids on its own queue row. For AR the import id is the AutoInvoiceImportEss
-        -- id -- the job that actually created the transactions (base REQUEST_ID).
-        -- Last group with real ids wins.
+        -- Backlog #70 / #313: stamp this work item's own load + import ess ids on its
+        -- own queue row. For AR the import id is the AutoInvoiceImportEss id -- the
+        -- job that actually created the transactions (base REQUEST_ID). Each
+        -- (BU, batch source) group is its own child work item, so every group's ids
+        -- are kept. (Only a direct call with no queue context loops several groups
+        -- in one pass, and it has no work item to stamp.)
         stamp_item_ess_ids(x_load_ess_id, x_import_ess_id);
 
         -- Reconcile via BIP — single registry-driven dispatch (once per group).
@@ -3056,16 +3065,34 @@
     -- --------------------------------------------------------
     -- RUN_AR_INVOICES (public) — self-contained recipe (backlog #8, fourth family).
     -- GROUPED by (BU_NAME, BATCH_SOURCE_NAME): one FBDI zip + one loadAndImportData
-    -- (chaining AutoInvoiceImportEss) + one BIP reconcile per group, all inline
-    -- in a single work-queue item (NOT spawn-per-partition -- ARInvoices is in
-    -- DMT_CEMLI_SPLIT_CFG with CHILD_PARTITION_COLUMN NULL, so it loads as one work
-    -- item like the Purchasing family). Uses ar_submit_and_reconcile_one.
+    -- (chaining AutoInvoiceImportEss) + one BIP reconcile per group. Uses
+    -- ar_submit_and_reconcile_one.
+    -- SPAWN-PER-PARTITION since backlog #313 (2026-10-08): ARInvoices has a row in
+    -- DMT_CEMLI_SPLIT_CFG with CHILD_PARTITION_COLUMN set and a GET_PARTITION_KEYS
+    -- (DMT_AR_RESULTS_PKG), so the queue worker drives this recipe in three passes,
+    -- the same shape as RUN_EXPENDITURES:
+    --   (1) PARENT transform-only pass (g_transform_only): validate + transform
+    --       once, return before generate; the worker then spawns one child work
+    --       item per (BU, batch source) group.
+    --   (2) CHILD pass (g_partition_key = that group's JSON key): generate, load,
+    --       import and reconcile ONLY that group. The child's own work item records
+    --       that group's load and import ids, and its rows carry its WORK_QUEUE_ID,
+    --       so a reconcile-only rerun re-reads every group with its own ids. Before
+    --       this, one work item looped all groups and kept only the last group's ids.
+    --   (3) Direct call with no queue context (g_partition_key NULL, e.g.
+    --       RUN_ORDER_TO_CASH), or a work item queued before this change
+    --       (PARTITION_KEY 'ALL'): transform and loop every group, as before.
     -- Upstream dependency: customers must be LOADED.
     -- --------------------------------------------------------
     PROCEDURE RUN_AR_INVOICES (p_run_id IN NUMBER, p_scenario_name IN VARCHAR2 DEFAULT NULL, p_run_mode IN VARCHAR2 DEFAULT 'NEW', p_skip_bu_refresh IN BOOLEAN DEFAULT FALSE) IS
         C_PROC   CONSTANT VARCHAR2(40) := 'RUN_AR_INVOICES';
         C_CEMLI  CONSTANT VARCHAR2(30) := 'ARInvoices';
         C_OBJ    CONSTANT VARCHAR2(30) := 'ARInvoices';
+        -- A spawned child carries a JSON group key; NULL (direct call) and the
+        -- legacy 'ALL' sentinel both mean "the whole run".
+        l_is_child     CONSTANT BOOLEAN := g_partition_key IS NOT NULL AND g_partition_key <> 'ALL';
+        l_grp_bu       VARCHAR2(240);
+        l_grp_src      VARCHAR2(240);
         v_scenario_id  NUMBER;
         l_ucm_account  VARCHAR2(200);
         l_job_name     VARCHAR2(500);
@@ -3087,14 +3114,40 @@
 
         sup_preamble(p_run_id, C_CEMLI, C_OBJ, p_skip_bu_refresh);
 
-        -- Phase 1: pre-transform validation.
-        DMT_AR_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        COMMIT;
+        -- Phase 1+2 run only when this is NOT a spawned child: the parent already
+        -- validated and transformed the run, and transforming again would reset the
+        -- child's STAGED rows.
+        IF NOT l_is_child THEN
+            -- Phase 1: pre-transform validation.
+            DMT_AR_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            COMMIT;
 
-        -- Phase 2: transform STG -> TFM (lines + distributions).
-        DMT_AR_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        DMT_AR_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
-        COMMIT;
+            -- Phase 2: transform STG -> TFM (lines + distributions).
+            DMT_AR_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            DMT_AR_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            COMMIT;
+        END IF;
+
+        -- Parent transform-only pass: stop here. The queue worker reads the distinct
+        -- (BU, batch source) keys and spawns one child work item per group.
+        IF g_transform_only THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'RUN_AR_INVOICES transform-only pass complete (spawn-per-partition parent).',
+                'INFO', C_PKG, C_PROC);
+            RETURN;
+        END IF;
+
+        -- A spawned child loads exactly one group: decode its BU and batch source.
+        IF l_is_child THEN
+            l_grp_bu  := DECODE_PARTITION_KEY(g_partition_key, 'BU_NAME');
+            l_grp_src := DECODE_PARTITION_KEY(g_partition_key, 'BATCH_SOURCE_NAME');
+            IF l_grp_bu IS NULL OR l_grp_src IS NULL THEN
+                RAISE_APPLICATION_ERROR(-20059,
+                    'ARInvoices: partition child carries no BU_NAME and BATCH_SOURCE_NAME '
+                    || '(key ' || g_partition_key || '). AutoInvoice needs both as '
+                    || 'ParameterList arguments 1 and 2.');
+            END IF;
+        END IF;
 
         -- ERP options + credentials for the load submissions.
         get_erp_options(
@@ -3106,12 +3159,15 @@
 
         -- Phase 3+4: per-group load cycle. Each distinct (BU_NAME, BATCH_SOURCE_NAME)
         -- gets its own FBDI zip, loadAndImportData call (chaining AutoInvoiceImportEss),
-        -- and BIP reconciliation (inline per group).
+        -- and BIP reconciliation (inline per group). A spawned child sees only its
+        -- own group, so the loop runs once; a direct call loops every group.
         FOR grp_rec IN (
             SELECT DISTINCT BU_NAME, BATCH_SOURCE_NAME
             FROM   DMT_RA_LINES_TFM_TBL
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS = 'STAGED'
+            AND    (l_grp_bu  IS NULL OR BU_NAME           = l_grp_bu)
+            AND    (l_grp_src IS NULL OR BATCH_SOURCE_NAME = l_grp_src)
             ORDER BY BU_NAME, BATCH_SOURCE_NAME
         ) LOOP
             l_ar_count := l_ar_count + 1;
@@ -3174,10 +3230,23 @@
                     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
                     WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
                     AND BU_NAME=grp_rec.BU_NAME AND BATCH_SOURCE_NAME=grp_rec.BATCH_SOURCE_NAME;
-                    UPDATE DMT_RA_DISTS_TFM_TBL
-                    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err)
-                    WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED'
-                    AND BU_NAME=grp_rec.BU_NAME;
+                    -- Distributions of THIS group's lines only (the group is BU +
+                    -- batch source; a distribution carries no batch source of its
+                    -- own, so it is tied to its group through its line, exactly as
+                    -- the generator selected it). Scoping by BU alone would fail
+                    -- another batch source's distributions in the same BU.
+                    UPDATE DMT_RA_DISTS_TFM_TBL d
+                    SET d.TFM_STATUS='FAILED', d.ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(d.ERROR_TEXT,l_err)
+                    WHERE d.RUN_ID=p_run_id AND d.TFM_STATUS='GENERATED'
+                    AND d.BU_NAME=grp_rec.BU_NAME
+                    AND EXISTS (
+                        SELECT 1 FROM DMT_RA_LINES_TFM_TBL l
+                        WHERE  l.RUN_ID                    = d.RUN_ID
+                        AND    l.INTERFACE_LINE_CONTEXT    = d.INTERFACE_LINE_CONTEXT
+                        AND    l.INTERFACE_LINE_ATTRIBUTE1 = d.INTERFACE_LINE_ATTRIBUTE1
+                        AND    l.INTERFACE_LINE_ATTRIBUTE2 = d.INTERFACE_LINE_ATTRIBUTE2
+                        AND    l.BU_NAME                   = grp_rec.BU_NAME
+                        AND    l.BATCH_SOURCE_NAME         = grp_rec.BATCH_SOURCE_NAME);
                     COMMIT;
                 END;
                 CONTINUE;
@@ -6460,15 +6529,18 @@
             RUN_ASSETS(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
         ELSIF p_cemli_code = 'Expenditures' THEN
             RUN_EXPENDITURES(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
+        ELSIF p_cemli_code = 'ARInvoices' THEN
+            -- Backlog #313: one child work item per (BU, batch source) group.
+            RUN_AR_INVOICES(p_run_id, p_scenario_name, p_run_mode, p_skip_bu_refresh => TRUE);
         ELSE
             -- Only spawn-per-partition objects are dispatched here by the queue worker,
-            -- and all four now have explicit cases above. A non-spawn object reaching
+            -- and all five now have explicit cases above. A non-spawn object reaching
             -- this point means a mis-seeded registry (CHILD_PARTITION_COLUMN set without
             -- a matching recipe) -- fail loudly rather than silently no-op.
             RAISE_APPLICATION_ERROR(-20048,
                 'RUN_TRANSFORM_ONLY: ' || p_cemli_code || ' has no spawn-per-partition '
-                || 'transform-only recipe. Only Requisitions/Items/Assets/Expenditures '
-                || 'are spawn-per-partition (backlog #8).');
+                || 'transform-only recipe. Only Requisitions/Items/Assets/Expenditures/'
+                || 'ARInvoices are spawn-per-partition (backlog #8, #313).');
         END IF;
         g_transform_only := FALSE;
         DMT_UTIL_PKG.LOG(p_run_id, 'RUN_TRANSFORM_ONLY complete for ' || p_cemli_code || '.',
