@@ -283,6 +283,7 @@ prompt == Tables ==
 @@tables/dmt_gms_awd_references_tfm_tbl.sql
 @@tables/dmt_gms_awd_terms_stg_tbl.sql
 @@tables/dmt_gms_awd_terms_tfm_tbl.sql
+@@tables/dmt_hdl_message_gtt.sql
 @@tables/dmt_hz_accounts_stg_tbl.sql
 @@tables/dmt_hz_accounts_tfm_tbl.sql
 @@tables/dmt_hz_acct_sites_stg_tbl.sql

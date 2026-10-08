@@ -101,28 +101,20 @@ AS
 
         -- Finalize RECON_KEY = the DesignateDependent child SourceSystemId that
         -- DMT_BEN_DEPEND_HDL_GEN_PKG emits:
-        --     <prefixed PERSON_NUMBER>_<prefixed DEPENDENT_PERSON_NUMBER>_<LINE_NO>_BENDEP
-        -- LINE_NO is the dependent's position within the participant.
-        --
-        -- LINE_NO WINDOW MUST MATCH THE GENERATOR EXACTLY (defect fixed 2026-09-22):
-        -- the generator ranks with ROW_NUMBER() OVER (PARTITION BY PERSON_NUMBER
-        -- ORDER BY TFM_SEQUENCE_ID) over ALL of the run's STAGED rows. This MERGE
-        -- ranks over the SAME population (RUN_ID = p_run_id AND TFM_STATUS = 'STAGED')
-        -- -- it does NOT restrict the windowed row set to RECON_KEY IS NULL, which
-        -- was the prior bug: on a retry some rows already had a RECON_KEY, so the
-        -- transform ranked only the not-yet-keyed subset while the generator ranked
-        -- the full set, producing different LINE_NO values and a key that no longer
-        -- matched the emitted SourceSystemId. Both windows now cover the identical
-        -- rows, so LINE_NO agrees on every run. PERSON_NUMBER and
-        -- DEPENDENT_PERSON_NUMBER already carry the run prefix (set in the INSERT).
+        --     <prefixed PERSON_NUMBER>_<prefixed DEPENDENT_PERSON_NUMBER>_<TFM_SEQUENCE_ID>_BENDEP
+        -- Backlog #288 (2026-10-07): the third segment is the row's own TFM id, no
+        -- longer a per-person LINE_NO window. The window had to match the
+        -- generator's window exactly on every run (a retry that ranked a different
+        -- row set produced a key that no longer matched the emitted SourceSystemId);
+        -- the TFM id is fixed per row, so the transform, the generator and the
+        -- reconciler can never disagree. PERSON_NUMBER and DEPENDENT_PERSON_NUMBER
+        -- already carry the run prefix (set in the INSERT).
         MERGE INTO DMT_BEN_DEPEND_TFM_TBL tgt
         USING (
             SELECT TFM_SEQUENCE_ID,
                    PERSON_NUMBER || '_' ||
                        DEPENDENT_PERSON_NUMBER || '_' ||
-                       TO_CHAR(ROW_NUMBER() OVER (
-                           PARTITION BY PERSON_NUMBER
-                           ORDER BY TFM_SEQUENCE_ID)) ||
+                       TO_CHAR(TFM_SEQUENCE_ID) ||
                        '_BENDEP' AS NEW_RECON_KEY
             FROM   DMT_BEN_DEPEND_TFM_TBL
             WHERE  RUN_ID = p_run_id
