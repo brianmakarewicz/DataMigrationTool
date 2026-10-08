@@ -54,6 +54,16 @@ AS
 -- Outcomes are written to the four TFM tables only; nothing is written back to
 -- staging (the TFM row is the sole record of the Fusion outcome). NO COMMIT —
 -- the orchestrator owns the transaction boundary.
+--
+-- REVISIONS:
+--   2026-10-07  BM  Report V2 (DMT_PROJECT_RECON_V2_DM), owner-approved exception
+--                   (design section 5): called once per work item with its own
+--                   load id, import id and work-queue id. Base projects are found
+--                   by PM_PROJECT_REFERENCE LIKE '<run_id>:<work_queue_id>:%' (the
+--                   reference the transform stamps; Fusion stamps no job id on the
+--                   project base tables); tasks, team members and transaction
+--                   controls through their project; interface rows by
+--                   LOAD_REQUEST_ID. Never by the run prefix.
 -- ============================================================
 
     C_PKG    CONSTANT VARCHAR2(50) := 'DMT_PROJECT_RESULTS_PKG';
@@ -343,8 +353,10 @@ AS
     -- are never marked FAILED carrying the marker.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_PROJECTS (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER,
+        p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_PROJECTS';
         l_gen_count NUMBER := 0;
@@ -367,13 +379,20 @@ AS
         INTO   l_gen_count
         FROM   dual;
 
+        -- Report V2 finds this work item's rows only: base projects by the
+        -- reference the transform stamped ('<run_id>:<work_queue_id>:...', the
+        -- owner-approved exception -- Fusion stamps no job id on the project base
+        -- tables), the other base tiers through their project, interface rows by
+        -- the load job's LOAD_REQUEST_ID. P_WQ_ID is sent for Projects only.
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code,
+            p_work_queue_id => p_work_queue_id);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -660,8 +679,12 @@ AS
     -- the real per-row Fusion error text onto the '#IMPORT_REPORT#' marker rows
     -- the apply left GENERATED (the interface tables carry no error-text column,
     -- so this harvest is the ONLY source of real per-row error detail). The
-    -- Projects load ESS id is the Contract v1 P_LOAD_REQUEST_ID; the report's
-    -- run-scoped selectors (P_RUN_ID, P_PREFIX) pick up the whole run.
+    -- report is called once for ONE work item, with that item's own load id,
+    -- import id and work-queue id; the run prefix is never a search value.
+    -- The work-queue id is p_work_queue_id when the queue passes it (the async
+    -- reconcile and the reconcile-only rerun always do), else the id of the work
+    -- item running now (DMT_LOADER_PKG.g_gen_queue_id, the same value the
+    -- transform stamped into the source reference on the inline path).
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id         IN NUMBER,
@@ -672,18 +695,24 @@ AS
         C_PROC       CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_ir_matched NUMBER := 0;
         l_still_gen  NUMBER := 0;
+        l_wq_id      NUMBER := NVL(p_work_queue_id, DMT_LOADER_PKG.g_gen_queue_id);
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id  => p_run_id,
             p_message => C_PROC || ' start. load_ess_id: ' || p_load_ess_id ||
-                         ' | import_ess_id: ' || NVL(TO_CHAR(p_import_ess_id), 'NULL'),
+                         ' | import_ess_id: ' || NVL(TO_CHAR(p_import_ess_id), 'NULL') ||
+                         ' | work_queue_id: ' || NVL(TO_CHAR(l_wq_id), 'NULL'),
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
         -- Contract v1 fetch + per-tier apply: BASE/SUCCESS rows -> LOADED (stamp
         -- FUSION_ID); real Fusion ERROR rows -> FAILED. The '#IMPORT_REPORT#'
         -- marker rows are intentionally left GENERATED.
-        APPLY_CONTRACT_V1_PROJECTS(p_run_id, TO_CHAR(p_load_ess_id));
+        APPLY_CONTRACT_V1_PROJECTS(
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id,
+            p_work_queue_id => l_wq_id);
 
         -- Import-report harvest: overlay the real per-row Fusion message onto the
         -- marker rows (and any other still-GENERATED row) from the child

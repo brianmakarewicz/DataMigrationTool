@@ -21,7 +21,7 @@ AS
 --   3. Download Import Report XML via GET_ESS_OUTPUT_XML.
 --   4. Parse G_6 + G_7: match SOURCEREF → TFM, mark LOADED or FAILED.
 --   5. Sweep: remaining GENERATED → FAILED with RECONCILE_ERROR.
---   6. Echo outcomes to STG.
+--   6. (No STG write: outcomes stay on the TFM rows, backlog #310.)
 --
 -- REVISIONS:
 --   2026-10-07  BM  Report V2: called per work item with its own load id as
@@ -461,25 +461,8 @@ AS
         -- surfaces it as UNRECONCILED — no fabricated FAILED.)
         l_not_recon := 0;
 
-        -- ====================================================
-        -- Echo outcomes back to STG
-        -- ====================================================
-        UPDATE DMT_PJB_BILL_EVENTS_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_PJB_BILL_EVENTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_PJB_BILL_EVENTS_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_PJB_BILL_EVENTS_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_PJB_BILL_EVENTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 

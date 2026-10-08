@@ -156,7 +156,7 @@ AS
         SELECT p_run_id, 'Customers', 'Parties', p.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] PARTY_TYPE is required.'
         FROM   DMT_HZ_PARTIES_STG_TBL p
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS, p_run_id, 'DMT_HZ_PARTIES_STG_TBL', p.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR p.SCENARIO_ID = p_scenario_id)
         AND    p.PARTY_TYPE IS NULL;
         l_party_failed := l_party_failed + SQL%ROWCOUNT;
@@ -167,7 +167,7 @@ AS
         SELECT p_run_id, 'Customers', 'Parties', p.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] ORGANIZATION_NAME is required when PARTY_TYPE is ''ORGANIZATION''.'
         FROM   DMT_HZ_PARTIES_STG_TBL p
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS, p_run_id, 'DMT_HZ_PARTIES_STG_TBL', p.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR p.SCENARIO_ID = p_scenario_id)
         AND    UPPER(p.PARTY_TYPE) = 'ORGANIZATION'
         AND    p.ORGANIZATION_NAME IS NULL;
@@ -179,7 +179,7 @@ AS
         SELECT p_run_id, 'Customers', 'Parties', p.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] PERSON_LAST_NAME is required when PARTY_TYPE is ''PERSON''.'
         FROM   DMT_HZ_PARTIES_STG_TBL p
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS, p_run_id, 'DMT_HZ_PARTIES_STG_TBL', p.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR p.SCENARIO_ID = p_scenario_id)
         AND    UPPER(p.PARTY_TYPE) = 'PERSON'
         AND    p.PERSON_LAST_NAME IS NULL;
@@ -191,7 +191,7 @@ AS
         SELECT p_run_id, 'Customers', 'Parties', p.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] PARTY_ORIG_SYSTEM_REFERENCE is required.'
         FROM   DMT_HZ_PARTIES_STG_TBL p
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS, p_run_id, 'DMT_HZ_PARTIES_STG_TBL', p.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR p.SCENARIO_ID = p_scenario_id)
         AND    p.PARTY_ORIG_SYSTEM_REFERENCE IS NULL;
         l_party_failed := l_party_failed + SQL%ROWCOUNT;
@@ -205,7 +205,7 @@ AS
         SELECT p_run_id, 'Customers', 'Parties', p.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] BATCH_ID is required (customer batch / partition key).'
         FROM   DMT_HZ_PARTIES_STG_TBL p
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, p.STG_STATUS, p_run_id, 'DMT_HZ_PARTIES_STG_TBL', p.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR p.SCENARIO_ID = p_scenario_id)
         AND    p.BATCH_ID IS NULL;
         l_party_failed := l_party_failed + SQL%ROWCOUNT;
@@ -225,7 +225,7 @@ AS
         SELECT p_run_id, 'Customers', 'Locations', x.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.'
         FROM   DMT_HZ_LOCATIONS_STG_TBL x
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS, p_run_id, 'DMT_HZ_LOCATIONS_STG_TBL', x.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR x.SCENARIO_ID = p_scenario_id)
         AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_loc_failed := l_loc_failed + SQL%ROWCOUNT;
@@ -235,7 +235,7 @@ AS
         SELECT p_run_id, 'Customers', 'Party Sites', x.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.'
         FROM   DMT_HZ_PARTY_SITES_STG_TBL x
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITES_STG_TBL', x.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR x.SCENARIO_ID = p_scenario_id)
         AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_ps_failed := l_ps_failed + SQL%ROWCOUNT;
@@ -245,7 +245,7 @@ AS
         SELECT p_run_id, 'Customers', 'Party Site Uses', x.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.'
         FROM   DMT_HZ_PARTY_SITE_USES_STG_TBL x
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITE_USES_STG_TBL', x.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR x.SCENARIO_ID = p_scenario_id)
         AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_psu_failed := l_psu_failed + SQL%ROWCOUNT;
@@ -255,7 +255,7 @@ AS
         SELECT p_run_id, 'Customers', 'Accounts', x.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.'
         FROM   DMT_HZ_ACCOUNTS_STG_TBL x
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS, p_run_id, 'DMT_HZ_ACCOUNTS_STG_TBL', x.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR x.SCENARIO_ID = p_scenario_id)
         AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_acct_failed := l_acct_failed + SQL%ROWCOUNT;
@@ -265,7 +265,7 @@ AS
         SELECT p_run_id, 'Customers', 'Account Sites', x.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.'
         FROM   DMT_HZ_ACCT_SITES_STG_TBL x
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITES_STG_TBL', x.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR x.SCENARIO_ID = p_scenario_id)
         AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_as_failed := l_as_failed + SQL%ROWCOUNT;
@@ -275,7 +275,7 @@ AS
         SELECT p_run_id, 'Customers', 'Account Site Uses', x.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] BATCH_ID is required and must match a customer (party) BATCH_ID in the same batch.'
         FROM   DMT_HZ_ACCT_SITE_USES_STG_TBL x
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, x.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITE_USES_STG_TBL', x.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR x.SCENARIO_ID = p_scenario_id)
         AND    (x.BATCH_ID IS NULL OR NOT EXISTS (SELECT 1 FROM DMT_HZ_PARTIES_STG_TBL p WHERE p.SCENARIO_ID = x.SCENARIO_ID AND p.BATCH_ID = x.BATCH_ID));
         l_asu_failed := l_asu_failed + SQL%ROWCOUNT;
@@ -294,7 +294,7 @@ AS
                '[PRE_VALIDATION] Parent party ''' || ps.PARTY_ORIG_SYSTEM_REFERENCE ||
                ''' failed validation — party site skipped.'
         FROM   DMT_HZ_PARTY_SITES_STG_TBL ps
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ps.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ps.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITES_STG_TBL', ps.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR ps.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e0
                            WHERE e0.RUN_ID = p_run_id AND e0.SUB_OBJECT = 'Party Sites'
@@ -317,7 +317,7 @@ AS
                '[PRE_VALIDATION] Parent party site ''' || psu.SITE_ORIG_SYSTEM_REFERENCE ||
                ''' failed validation — party site use skipped.'
         FROM   DMT_HZ_PARTY_SITE_USES_STG_TBL psu
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, psu.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, psu.STG_STATUS, p_run_id, 'DMT_HZ_PARTY_SITE_USES_STG_TBL', psu.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR psu.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e0
                            WHERE e0.RUN_ID = p_run_id AND e0.SUB_OBJECT = 'Party Site Uses'
@@ -340,7 +340,7 @@ AS
                '[PRE_VALIDATION] Parent party ''' || a.PARTY_ORIG_SYSTEM_REFERENCE ||
                ''' failed validation — account skipped.'
         FROM   DMT_HZ_ACCOUNTS_STG_TBL a
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS, p_run_id, 'DMT_HZ_ACCOUNTS_STG_TBL', a.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR a.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e0
                            WHERE e0.RUN_ID = p_run_id AND e0.SUB_OBJECT = 'Accounts'
@@ -363,7 +363,7 @@ AS
                '[PRE_VALIDATION] Parent account ''' || acs.CUST_ORIG_SYSTEM_REFERENCE ||
                ''' failed validation — account site skipped.'
         FROM   DMT_HZ_ACCT_SITES_STG_TBL acs
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, acs.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, acs.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITES_STG_TBL', acs.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR acs.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e0
                            WHERE e0.RUN_ID = p_run_id AND e0.SUB_OBJECT = 'Account Sites'
@@ -386,7 +386,7 @@ AS
                '[PRE_VALIDATION] Parent account site ''' || asu.CUST_SITE_ORIG_SYS_REF ||
                ''' failed validation — account site use skipped.'
         FROM   DMT_HZ_ACCT_SITE_USES_STG_TBL asu
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, asu.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, asu.STG_STATUS, p_run_id, 'DMT_HZ_ACCT_SITE_USES_STG_TBL', asu.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR asu.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e0
                            WHERE e0.RUN_ID = p_run_id AND e0.SUB_OBJECT = 'Account Site Uses'

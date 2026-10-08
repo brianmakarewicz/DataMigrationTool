@@ -78,7 +78,10 @@ reconcile-only rerun left every TFM status and ERROR_TEXT byte-identical.
 - `RT-1099-G1` is seeded as a GOOD invoice but its line is rejected every run
   (`INVALID DISTRIBUTION ACCT | INVALID TYPE 1099`: the seed uses a dash-separated account and
   TYPE_1099 `07`). It is listed in the expected outcomes as it actually behaves (line FAILED,
-  header FAILED with its document); fixing the seed is a separate item.
+  header FAILED with its document). Cause confirmed as test data (backlog #308,
+  `docs/findings/ap_1099_g1_rejection.md`): the chart of accounts delimiter is `.`, and
+  `TYPE_1099` must be an `AP_INCOME_TAX_TYPES` code (`MISC7`). The seed is corrected for
+  scenarios minted from 2026-10-07 on; existing scenarios keep the old rows.
 - The reconciler still echoes outcomes back to the two STG tables (pre-existing; a
   reconcile-only rerun appends the TFM error text to the STG row again).
 

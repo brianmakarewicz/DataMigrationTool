@@ -22,6 +22,47 @@ E2E LOADED on the frozen stack (9 LOADED: 3 Projects, 2 Tasks, 2 Team Members, 2
 Projects is ONE object: a single FBDI zip (`Projects_*.zip`) carrying four record-type CSVs —
 like PurchaseOrders, NOT a family of separate objects. One load ESS job (ImportProjectJobDef).
 
+## Reconciliation by the stamped work-item reference (owner-approved exception, 2026-10-07)
+
+Reconciliation reports find rows by Fusion job id, but the project base tables carry none:
+`PJF_PROJECTS_ALL_B.REQUEST_ID` is NULL after import, the task, team-member and
+transaction-control base tables have no request-id column, and the interface is purged after a
+successful import. The owner approved this exception (design section 5, DECIDED 2026-10-07),
+which works like Customers:
+
+- **Stamp.** `DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_PROJECTS` writes the FBDI Source Reference
+  (`SOURCE_PROJECT_REFERENCE`, stored by Fusion as `PJF_PROJECTS_ALL_B.PM_PROJECT_REFERENCE`) as
+  `<run_id>:<work_queue_id>:<legacy source project reference>`, using the legacy project number
+  when the source has no reference. With prefixing off (`USE_PREFIX = N` at cutover) it writes
+  the plain legacy value. The work-queue id is `DMT_LOADER_PKG.g_gen_queue_id`, the item the
+  transform runs in. TFM column widened 25 -> 100 (Fusion's width); create script, guarded
+  ALTER and `db/migrations/2026-10-07_projects_source_ref_widen.sql`.
+- **Report V2** `DMT_PROJECT_RECON_V2_DM` / `_RPT` (deployed alongside V1, never overwritten)
+  selects base projects by `pm_project_reference LIKE :P_RUN_ID||':'||:P_WQ_ID||':%'`; tasks,
+  team members and transaction controls are reached through their project; interface rows are
+  selected by `LOAD_REQUEST_ID`. No `LIKE` on the run prefix. Keyset pinned to BINARY.
+- **P_WQ_ID** is a seventh report parameter. `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` gained an
+  optional `p_work_queue_id` and sends `P_WQ_ID` only when it is given, which only
+  `DMT_PROJECT_RESULTS_PKG` does. `RECONCILE_BATCH` uses `p_work_queue_id` when the queue passes
+  it (the async reconcile and a reconcile-only rerun do), else the item running now.
+- Registry (the Projects row and the three auditor rows) repointed by the seed and
+  `db/migrations/2026-10-07_projects_recon_v2_registry.sql`.
+- Verified first: `PM_PROJECT_REFERENCE` is VARCHAR2(100), and Fusion keeps the reference with
+  `SOURCE_APPLICATION_CODE` left empty (the project gets `PM_PRODUCT_CODE = OPEN_INTERFACE`, a
+  defined value of lookup `PJF_PM_PRODUCT_CODE`). No Fusion setup was changed.
+
+Proof run 278 (prefix 93334, scenario RegressionTest2610071920, STANDALONE:Projects): work item
+1646 recorded load 10075841 / import 10075849 (Import Projects report child 10075857). Fusion
+holds projects 93334RTPRJ001 / 93334RTPRJ002 (ids 300000334930842 / 300000334930867) with
+`PM_PROJECT_REFERENCE` `278:1646:RTPRJ001` / `278:1646:RTPRJ002` and `PM_PRODUCT_CODE`
+OPEN_INTERFACE. The report returned 8 rows; every LOADED row's Fusion id matches the base table
+(2 projects, 2 tasks, 2 team members, 2 transaction controls). RTPRJ-BAD1 FAILED with its own
+error from the import report ("The project status isn't valid ..."); 0 UNACCOUNTED; counts match
+run 238. A reconcile-only rerun left all 9 TFM rows byte-identical. `dmt_regression_run.py` PASS
+with two pre-existing review items (the Team Members REST lookup is NOT_FOUND, as in run 238, and
+the error that REST call logs); Playwright click-through PASS. The prefix-off path was not run
+live.
+
 ## Pipeline
 - Module: Projects
 - FBDI Template: PjfProjectsInterface.xlsm

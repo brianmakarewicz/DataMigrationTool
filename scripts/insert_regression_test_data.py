@@ -166,8 +166,10 @@ def main():
         #  class as the Items/MiscReceipts accumulation below).
         "DMT_WORKER_TFM_TBL",
         "DMT_PERSON_NAME_TFM_TBL",
+        "DMT_PERSON_EMAIL_TFM_TBL",
         "DMT_WORKER_STG_TBL",
         "DMT_PERSON_NAME_STG_TBL",
+        "DMT_PERSON_EMAIL_STG_TBL",
         "DMT_ASSIGNMENT_TFM_TBL",
         "DMT_WORK_REL_TFM_TBL",
         "DMT_ASSIGNMENT_STG_TBL",
@@ -1400,8 +1402,19 @@ def main():
 
     # ====================================================================
     # 20. GL JOURNALS (DMT_GL_INTERFACE_STG_TBL)
-    #     GOOD: 1 balanced journal (2 lines: DR/CR)
-    #     BAD:  1 unbalanced journal (DR only, no CR) [BAD-AMT]
+    #     GOOD: 2 balanced journals (G1, G2; 2 lines each)
+    #     BAD:  1 journal of 2 lines; line 1 is on natural account 99999, which is not in the
+    #           chart's value set: Journal Import rejects it with its own error
+    #           (GL_INTERFACE.STATUS EF04 + STATUS_DESCRIPTION 'FLEX-VALUE DOES NOT
+    #           EXIST ...'), proven by the gold fixture (prefix 90219). Replaces the
+    #           earlier unbalanced journal (backlog #173): Journal Import ACCEPTS an
+    #           unbalanced journal on this ledger and records no error for it, so it
+    #           was never a Fusion rejection.
+    #     All lines of one load share one GROUP_ID (the work queue id), and Journal
+    #     Import holds the WHOLE group when any line errors (proven, probe load
+    #     10075834): the good journals are rejected with the bad one, so every line
+    #     of this load ends FAILED -- BAD1 line 1 with its own error, every other
+    #     line FAILED_WITH_DOCUMENT quoting it (backlog #173).
     # ====================================================================
     print("\n=== 20. GL Journals ===")
     gl_lines = [
@@ -1412,9 +1425,20 @@ def main():
          "78630", 5000.00, None,    "RT-JNL-G1", "RT good journal - debit",  "04-26"),
         ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
          "77600", None,    5000.00, "RT-JNL-G1", "RT good journal - credit", "04-26"),
-        # BAD: unbalanced (debit only)
+        # GOOD: second balanced journal in the same load (accounts 60540 / 62510,
+        # valid per objects/GLBalances/README.md).
         ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
-         "78630", 9999.99, None,    "RT-JNL-BAD1", "BAD: unbalanced debit only", "04-26"),
+         "60540", 1200.00, None,    "RT-JNL-G2", "RT good journal 2 - debit",  "04-26"),
+        ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
+         "62510", None,    1200.00, "RT-JNL-G2", "RT good journal 2 - credit", "04-26"),
+        # BAD journal (2 lines, balanced): line 1 is on natural account 99999,
+        # which does not exist (Journal Import EF04, its own real error); line 2
+        # is valid and is rejected only because Journal Import holds the whole
+        # group (FAILED_WITH_DOCUMENT, quoting line 1's error).
+        ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
+         "99999", 9999.99, None,    "RT-JNL-BAD1", "BAD: invalid natural account 99999", "04-26"),
+        ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
+         "78630", None,    9999.99, "RT-JNL-BAD1", "BAD journal: valid credit line", "04-26"),
     ]
     for gl_status, ledger, acct_dt, cat, source, seg3, dr, cr, ref4, ref10, period in gl_lines:
         run_sql(cur, """
@@ -2585,6 +2609,22 @@ def main():
     # 1099-invoice time Fusion holds it as "<prefix>RT-SUP-G1" and the unprefixed
     # reference fails as INVALID SUPPLIER. The 1099 nature is carried by the
     # line's TYPE_1099 field, not by the supplier, so the test intent is preserved.
+    #
+    # Corrected 2026-10-07 (backlog #308, docs/findings/ap_1099_g1_rejection.md).
+    # Every load up to run 254 rejected the line with INVALID DISTRIBUTION ACCT and
+    # INVALID TYPE 1099. Applies only to scenarios minted from this seed from now
+    # on; existing write-once scenarios keep their original rows.
+    #   * The account uses '.', the delimiter of this chart of accounts (id 21).
+    #     101.10.68010.120.000.000 is an enabled combination (CCID 701593). The old
+    #     dash form '101-10-68010-120-000-000' does not parse.
+    #   * TYPE_1099 is an income tax type code from AP_INCOME_TAX_TYPES. 'MISC7'
+    #     (non-employee compensation) is what the old '07' meant. JGA (1254) is
+    #     federally reportable (default MISC3), and Fusion already holds JGA lines
+    #     with an overriding type (MISC4), so a line-level override is accepted.
+    #   * INCOME_TAX_REGION 'CA' is a valid, active region. Kept.
+    #   * Dates are SYSDATE, like the GOOD rows above. The fixed 2025-06-15 sat in a
+    #     period that is already closed in GL and would also be rejected once
+    #     Payables closes it.
     run_sql(cur, """
         INSERT INTO DMT_AP_INVOICES_INT_STG_TBL (
             INVOICE_ID, OPERATING_UNIT, SOURCE,
@@ -2594,10 +2634,10 @@ def main():
             GL_DATE, CALC_TAX_DURING_IMPORT_FLAG, SOURCE_ID
         ) VALUES (
             800010, :bu, 'Manual Invoice Entry',
-            'RT-1099-G1', 5000.00, DATE '2025-06-15',
+            'RT-1099-G1', 5000.00, SYSDATE,
             :vname, :vnum, :vsite,
             'USD', 'STANDARD',
-            DATE '2025-06-15', 'Y', 'RT-1099-G1'
+            SYSDATE, 'Y', 'RT-1099-G1'
         )
     """, {"bu": BU, "vname": "JGA", "vnum": "1254",
           "vsite": "JGA US1"},
@@ -2612,8 +2652,8 @@ def main():
         ) VALUES (
             800010, 1, 'ITEM',
             5000.00, 'RT 1099 reportable payment',
-            '101-10-68010-120-000-000', DATE '2025-06-15',
-            '07', 'CA', 'RT-1099LN-G1'
+            '101.10.68010.120.000.000', SYSDATE,
+            'MISC7', 'CA', 'RT-1099LN-G1'
         )
     """, label="GOOD 1099 Invoice Line: 800010")
     tag_scenario(cur, "DMT_AP_INVOICES_INT_STG_TBL", scenario_id)
@@ -2791,9 +2831,15 @@ def main():
     # transform/generator carry through unchanged — so seed the strings already in
     # HDL format (a DATE literal would implicitly become DD-MON-YY and be rejected).
     print("\n=== 41. Workers (HCM) ===")
+    # RT-WKR-XG1 (backlog #289, design section 5 cross-grain scenario): a valid
+    # worker, name, work relationship and assignment whose ONLY defect is its email
+    # (invalid EmailType). HCM Data Loader rejects the whole Worker object, so the
+    # email row is FAILED with its own error and every other row of the person is
+    # FAILED quoting it ("Rejected with document:").
     for pnum, action, dob, label in [
         ("RT-WKR-G1", "HIRE",      "1985/03/15", "GOOD Worker: RT-WKR-G1 (HIRE)"),
         ("RT-WKR-B1", "TERMINATE", None,         "BAD Worker: TERMINATE action [BAD-REQ]"),
+        ("RT-WKR-XG1", "HIRE",     "1986/04/16", "Cross-grain Worker: RT-WKR-XG1 (only the email is bad)"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_WORKER_STG_TBL (
@@ -2820,8 +2866,30 @@ def main():
             'RT-WKR-G1-NME', 'NEW'
         )
     """, label="GOOD Worker name: Regina Tester")
+    run_sql(cur, """
+        INSERT INTO DMT_PERSON_NAME_STG_TBL (
+            PERSON_NUMBER, EFFECTIVE_START_DATE, NAME_TYPE,
+            LEGISLATION_CODE, LAST_NAME, FIRST_NAME,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-XG1', '2026/01/01', 'GLOBAL',
+            'US', 'Grain', 'Xavier',
+            'RT-WKR-XG1-NME', 'NEW'
+        )
+    """, label="Cross-grain Worker name: Xavier Grain")
+    # The cross-grain worker's only defect: an EmailType that is not a valid code.
+    run_sql(cur, """
+        INSERT INTO DMT_PERSON_EMAIL_STG_TBL (
+            PERSON_NUMBER, EMAIL_TYPE, EMAIL_ADDRESS, PRIMARY_FLAG,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-XG1', 'ZZ_NOT_A_TYPE', 'xavier.grain@example.com', 'Y',
+            'RT-WKR-XG1-EML-BAD', 'NEW'
+        )
+    """, label="Cross-grain Worker email: invalid EmailType [BAD-LKP]")
     tag_scenario(cur, "DMT_WORKER_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_PERSON_NAME_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_PERSON_EMAIL_STG_TBL", scenario_id)
 
     # ====================================================================
     # 42. ASSIGNMENTS (HCM HDL) — needs a WorkRelationship row too, because the
@@ -2842,6 +2910,17 @@ def main():
             'RT-WKR-G1-WR', 'NEW'
         )
     """, label="Work relationship for RT-WKR-G1")
+    run_sql(cur, """
+        INSERT INTO DMT_WORK_REL_STG_TBL (
+            PERSON_NUMBER, DATE_START, EFFECTIVE_START_DATE,
+            LEGAL_EMPLOYER_NAME, ACTION_CODE, WORKER_TYPE, PRIMARY_FLAG,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-XG1', '2026/01/01', '2026/01/01',
+            'US1 Legal Entity', 'HIRE', 'E', 'Y',
+            'RT-WKR-XG1-WR', 'NEW'
+        )
+    """, label="Work relationship for cross-grain worker RT-WKR-XG1")
     # The generator now keys the Assignment SourceSystemId off the source
     # ASSIGNMENT_NUMBER (|| '_ASG'), NOT the person, so distinct assignment
     # numbers are distinct HDL records. RT-WKR-G1 gets TWO assignments to prove
@@ -2857,6 +2936,7 @@ def main():
         ("RT-WKR-G1",   "ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "Y", "2026/01/01", "GOOD Assignment: RT-WKR-G1 (primary)"),
         ("RT-WKR-G1",   "ET-RT-WKR-G1B", "ACTIVE_PROCESS", "US1 Business Unit", "N", "2026/02/01", "GOOD Assignment: RT-WKR-G1 (second — proves multiple assignments/person, staggered date)"),
         ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "Y", "2026/01/01", "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
+        ("RT-WKR-XG1",  "ET-RT-WKR-XG1", "ACTIVE_PROCESS", "US1 Business Unit", "Y", "2026/01/01", "Cross-grain Assignment: valid, rejected with RT-WKR-XG1's Worker document"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_ASSIGNMENT_STG_TBL (

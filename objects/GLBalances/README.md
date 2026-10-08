@@ -17,7 +17,11 @@
 - **DataAccessSetID:** 300000046975980 (US Primary Ledger)
 - **Source:** Spreadsheet (must match USER_JE_SOURCE_NAME in data exactly)
 - **LedgerID:** 300000046975971 (US Primary Ledger)
-- **GroupID:** integration_id (isolates this run's rows)
+- **GroupID:** the run prefix followed by the work queue id (backlog #410; the work
+  queue id alone when prefixing is off). The generator stamps it on every line and the
+  job is submitted with that exact group, never `ALL`. Journal Import holds the whole
+  group when any line errors, so a load is all-or-nothing: every other line is FAILED
+  quoting the real error and naming the journal and line that caused it.
 - **Last 3:** N,N,N
 
 Discovered via BIP query against `gl_ledgers` + `gl_access_sets` on 2026-04-02.
@@ -38,6 +42,23 @@ None in this folder.
 None currently.
 
 ## History
+- 2026-10-08 (backlog #410, proof run 286): GROUP_ID = prefix || work queue id
+  (933421657 for prefix 93342, work item 1657); quoted group errors name the journal
+  and line that caused them.
+- 2026-10-08 (backlog #173 follow-up, proof run 282): GROUP_ID = work queue id, Import
+  Journals submitted with that exact group (never ALL, which could import other users'
+  journals on a shared pod). Probe load 10075834 proved one bad journal holds the whole
+  group (2 good journals rolled back to status P). Recon report V4; propagation by
+  group + ledger; every line of a rejected load ends FAILED with the real error.
+- 2026-10-07 (backlog #173, proof run 276): **real Fusion errors and per-journal
+  rejection.** Journal Import rejects a whole GROUP_ID when any line errors, so each
+  journal now gets its own GROUP_ID and Import Journals runs once per load with GroupID
+  ALL. Recon report V3 (`DMT_GL_BAL_RECON_V3_DM`) returns only Fusion's own error
+  (`GL_INTERFACE.STATUS`, plus `: STATUS_DESCRIPTION` when present) and selects rows by
+  job id (Journal Import child request id in the batch name; LOAD_REQUEST_ID).
+  `PROPAGATE_DOCUMENT_ERRORS` quotes a rejected line's error onto the other lines of its
+  journal. Unbalanced journals (accepted by Fusion with no error) fall to UNACCOUNTED.
+  Findings: `docs/findings/glbalances_real_error.md`.
 - 2026-09-20: **Conformed to the BIP reconciliation report contract v1 as the
   reference implementation.** The recon data model now returns the NINE standard
   columns in contract order (OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
@@ -93,7 +114,7 @@ with one STG + one TFM table.
    away from the tab, so it is not a finding against this audit.
 
 ## Lessons Learned
-- **GL_INTERFACE status P = success.** Unlike other interface tables where presence = failure, GL_INTERFACE keeps processed rows with status `P` until purged. BIP reconciliation must check the status value, not just presence.
+- **GL_INTERFACE status P = the line passed validation, NOT that it loaded.** When any line of its GROUP_ID is rejected, Journal Import imports nothing for the group and the valid lines stay in GL_INTERFACE with status P (run 263). Load success is proven only by the base tables.
 - **GL_INTERFACE status codes:** P=Processed(success), NEW=unprocessed, E=error, EFxx=specific error code.
 - **ParameterList must match ledger.** DataAccessSetID and LedgerID must correspond to the ledger named in the data. Query `gl_ledgers` + `gl_access_sets` to find correct IDs.
 - **Use open periods.** Test data must use a period with `closing_status = 'O'` in `gl_period_statuses`. Query to find open periods: `SELECT period_name FROM gl_period_statuses WHERE application_id = 101 AND closing_status = 'O' AND ledger_id = <id>`.

@@ -43,3 +43,13 @@ exception when others then
   if sqlcode not in (-955,-1408) then raise; end if;
 end;
 /
+
+-- FAILED-mode selection (backlog #310): DMT_UTIL_PKG.FAILED_RETRY_SELECTED reads
+-- this table per staging row through DMT_STG_ATTEMPT_V, keyed by the SUB_OBJECT
+-- (which names the STG table) and the STG_SEQUENCE_ID.
+begin
+  execute immediate 'CREATE INDEX "DMT_STG_TFM_ERROR_N3" ON "DMT_STG_TFM_ERROR_TBL" ("SUB_OBJECT", "STG_SEQUENCE_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/

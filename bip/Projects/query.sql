@@ -1,102 +1,70 @@
 -- ============================================================
--- Projects reconciliation query -- BIP reconciliation report
--- contract v1 (nine columns, keyset pagination, six standard
--- parameters). Mirrors the SQL embedded in DMT_PROJECT_RECON_DM.xdm
--- for review; the .xdm is authoritative.
+-- Projects reconciliation data model V2 -- BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination) plus the
+-- owner-approved P_WQ_ID parameter. Data source:
+-- ApplicationDB_FSCM. The repo mirror of this SQL is
+-- bip/Projects/query.sql; the .xdm is authoritative.
+-- V2 (2026-10-07) is deployed ALONGSIDE DMT_PROJECT_RECON_DM (V1);
+-- BIP objects are never overwritten.
 --
 -- NINE response columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
 --   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
---   DMT_REFERENCE.
+--   DMT_REFERENCE (plus the debug-only DEBUG_DISPOSITION, not
+--   mapped into the report output).
 --
--- SIX parameters (Contract v1): P_RUN_ID, P_LOAD_REQUEST_ID,
---   P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
---   No P_OFFSET / P_LIMIT.
+-- PARAMETERS: the six Contract v1 parameters (P_RUN_ID,
+--   P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE,
+--   P_AFTER_KEY) plus P_WQ_ID, the work item's queue id.
 --
--- KEYSET pagination: rows are ordered by RECORD_KEY and only rows
--- whose RECORD_KEY sorts AFTER :P_AFTER_KEY are returned, at most
--- :P_CHUNK_SIZE of them. The reconciler's shared fetch loop calls
--- with an empty cursor first, then passes the last RECORD_KEY it
--- received on each next call, until a page returns fewer than
--- P_CHUNK_SIZE rows. An empty :P_AFTER_KEY selects from the start
--- (every non-null RECORD_KEY sorts after the empty string).
---
--- Projects is ONE object loaded by one FBDI zip / one Import ESS job,
--- carrying four record types. OBJECT_TYPE discriminates the tier so
--- the reconciler knows which TFM table each row belongs to:
+-- Projects is ONE object (one FBDI zip / one Import Projects job)
+-- with four record types; OBJECT_TYPE discriminates the tier:
 --   Projects, Tasks, TeamMembers, TxnControls.
 --
--- ROW SELECTION -- what actually works on this instance (proven live,
--- confirmed 2026-09-20 against loaded prefix 10061):
---   The FBDI reference columns the contract prefers are NOT populated
---   for Projects on this demo: PJF_PROJECTS_ALL_B.REQUEST_ID is NULL
---   after import (so base->interface on :P_LOAD_REQUEST_ID cannot
---   match a base row), and PM_PROJECT_REFERENCE / ATTRIBUTE1 /
---   ATTRIBUTE_CATEGORY come back empty (so neither the DFF nor the
---   native source-ref path finds anything). The only reliable base
---   identity is the run prefix stamped into PROJECT_NUMBER (SEGMENT1).
---   This matches the object's proven reconciler (README DB-17).
---   So:
---     BASE  rows  -> matched by SEGMENT1 LIKE :P_PREFIX || '%'
---                    (positive LOADED confirmation).
---     INTERFACE   -> the interface rows the Import ESS job left behind,
---                    carrying :P_LOAD_REQUEST_ID. Import purges the
---                    successfully-imported rows, so anything still
---                    present is a rejection (IMPORT_STATUS / LOAD_STATUS
---                    carry the disposition; there is no per-row error
---                    text column -- see below).
---   :P_RUN_ID and :P_IMPORT_ESS_ID are declared for contract symmetry.
+-- ROW SELECTION -- owner-approved exception (DECIDED 2026-10-07,
+-- design section 5). Reports find rows by Fusion job id, but the
+-- project base tables carry none: PJF_PROJECTS_ALL_B.REQUEST_ID is
+-- NULL after import, the task, team-member and transaction-control
+-- base tables have no request-id column, and the interface is purged
+-- after a successful import. So, like Customers, the transform
+-- stamps the FBDI SOURCE_PROJECT_REFERENCE (stored by Fusion as
+-- PJF_PROJECTS_ALL_B.PM_PROJECT_REFERENCE) with
+-- '<run_id>:<work_queue_id>:<legacy reference>' when prefixing is
+-- on, and this report selects the work item's projects by
+--     PM_PROJECT_REFERENCE LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
+-- That exact work-item scope is the only text-scoped row selection
+-- allowed, and only for Projects. Tasks, team members and
+-- transaction controls are reached through their project.
+--   INTERFACE rows (all four tiers) are selected by the load job's
+--   LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID (anything left behind after
+--   import is a rejection).
+-- No LIKE on the run prefix. RECORD_KEY stays the prefixed project
+-- number (and its task / team / control extensions); it is used
+-- only to match a row Fusion returned back to its TFM row.
 --
--- FUSION_STATUS is normalized to exactly SUCCESS / ERROR here:
---   BASE (row exists in the Fusion base table)     => SUCCESS
---   INTERFACE (rejection left behind by Import)     => ERROR
---
--- FUSION_ID:
---   Projects    BASE => PJF_PROJECTS_ALL_B.PROJECT_ID
---   Tasks       BASE => PJF_PROJ_ELEMENTS_B.PROJ_ELEMENT_ID
---   TxnControls BASE => PJC_TRANSACTION_CONTROLS.TXN_CONTROL_ID
+-- FUSION_STATUS normalized to exactly SUCCESS / ERROR:
+--   BASE (row present in the Fusion base table)  => SUCCESS
+--   INTERFACE (rejection left behind by Import)  => ERROR
+-- FUSION_ID: Projects BASE = PROJECT_ID; Tasks BASE = PROJ_ELEMENT_ID;
+--   TxnControls BASE = TXN_CONTROL_ID (PJC_TRANSACTION_CONTROLS);
+--   TeamMembers BASE = PROJ_RESOURCE_ID (PJT_PROJECT_RESOURCE);
 --   INTERFACE rows have no Fusion id yet (NULL).
---   TeamMembers BASE => PJT_PROJECT_RESOURCE.PROJ_RESOURCE_ID
---   INTERFACE rows have no Fusion id yet (NULL).
+-- ERROR_MESSAGE: the Projects interface tables carry no error-text
+--   column, so an ERROR row returns the Contract v1 marker
+--   '#IMPORT_REPORT#'; the reconciler takes the real per-row message
+--   from the Import Report XML (the child ImportProjectReportJob).
 --
--- ERROR_MESSAGE: the Projects interface tables carry NO error-text
---   column (confirmed: PJF_PROJECTS_ALL_XFACE has only IMPORT_STATUS /
---   LOAD_STATUS, no MESSAGE_TEXT / ERROR_MESSAGE). The real per-row
---   rejection message lives only in the Import Report XML that the
---   reconciler package pulls from the child ImportProjectReportJob.
---   Per Contract v1, an ERROR row therefore returns the literal marker
---   '#IMPORT_REPORT#' -- a wire-time signal telling the reconciler to
---   invoke the import-report fallback and overlay the true Fusion
---   message. The human-readable interface disposition (IMPORT_STATUS /
---   LOAD_STATUS) is kept for troubleshooting in DEBUG_DISPOSITION, a
---   debug-only tenth column PAST the nine contract columns; it is not
---   mapped into the report output.
---
--- SOURCE_REF / DMT_REFERENCE: the FBDI SOURCE_PROJECT_REFERENCE and
---   ATTRIBUTE1 the pipeline sends are not read back on this instance
---   (empty in the base table), so the reliable, always-present source
---   reference is PROJECT_NUMBER itself. SOURCE_REF = the record's
---   business key; DMT_REFERENCE = PROJECT_NUMBER (the prefix-scoped run
---   key). Both are populated on every row so the reconciler always has
---   a handle back to the originating record.
---
--- Keys per tier (RECORD_KEY, ordered, unique within a run):
---   Projects    : PROJECT_NUMBER
---   Tasks       : PROJECT_NUMBER || '/' || TASK_NUMBER
---   TeamMembers : PROJECT_NUMBER || '/TM/' || <party/member key>
---   TxnControls : PROJECT_NUMBER || '/TC/' || <control key>
+-- Keyset: ORDER BY RECORD_KEY (pinned to BINARY so the ordering
+-- and the > comparison agree), only rows whose RECORD_KEY sorts
+-- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
 -- ============================================================
--- The nine contract columns are selected by the report. DEBUG_DISPOSITION
--- is a tenth, debug-only column carried in the SQL for troubleshooting; it
--- is NOT mapped as a report element and never reaches the contract output.
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference,
     debug_disposition
 FROM (
-    -- ---- Projects tier : BASE (positive LOADED confirmation) --------
-    -- Matched by run prefix on SEGMENT1; REQUEST_ID is NULL on the base
-    -- table so the prefix is the only reliable base identity.
+    -- Projects tier : BASE -- the work item's projects, found by the reference
+    -- DMT stamps (<run_id>:<work_queue_id>:<legacy ref>), owner-approved exception.
     SELECT
         'Projects'                           AS object_type,
         p.segment1                           AS record_key,
@@ -109,12 +77,12 @@ FROM (
         p.segment1                           AS dmt_reference,
         CAST(NULL AS VARCHAR2(4000))         AS debug_disposition
     FROM   pjf_projects_all_b p
-    WHERE  :P_PREFIX IS NOT NULL
-    AND    p.segment1 LIKE :P_PREFIX || '%'
+    WHERE  :P_RUN_ID IS NOT NULL AND :P_WQ_ID IS NOT NULL
+    AND    p.pm_project_reference LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
 
     UNION ALL
 
-    -- ---- Projects tier : INTERFACE (rejections left behind) ---------
+    -- Projects tier : INTERFACE (rejections left behind).
     SELECT
         'Projects'                           AS object_type,
         x.project_number                     AS record_key,
@@ -135,11 +103,7 @@ FROM (
 
     UNION ALL
 
-    -- ---- Tasks tier : BASE ------------------------------------------
-    -- PJF_PROJ_ELEMENTS_B holds one PJF_STRUCTURES row per project and
-    -- one PJF_TASKS row per task; only PJF_TASKS rows are real tasks.
-    -- The base table has no project number, so join to the project for
-    -- the prefix filter and the record key.
+    -- Tasks tier : BASE (PJF_TASKS rows only; join project for the key).
     SELECT
         'Tasks'                              AS object_type,
         p.segment1 || '/' || e.element_number AS record_key,
@@ -153,13 +117,13 @@ FROM (
         CAST(NULL AS VARCHAR2(4000))         AS debug_disposition
     FROM   pjf_proj_elements_b e
     JOIN   pjf_projects_all_b  p ON p.project_id = e.project_id
-    WHERE  :P_PREFIX IS NOT NULL
-    AND    p.segment1 LIKE :P_PREFIX || '%'
+    WHERE  :P_RUN_ID IS NOT NULL AND :P_WQ_ID IS NOT NULL
+    AND    p.pm_project_reference LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
     AND    e.object_type = 'PJF_TASKS'
 
     UNION ALL
 
-    -- ---- Tasks tier : INTERFACE (rejections left behind) ------------
+    -- Tasks tier : INTERFACE (rejections left behind).
     SELECT
         'Tasks'                              AS object_type,
         t.project_number || '/' || t.task_number AS record_key,
@@ -180,26 +144,22 @@ FROM (
 
     UNION ALL
 
-    -- ---- TeamMembers tier : BASE (positive LOADED confirmation) -----
+    -- TeamMembers tier : BASE (positive LOADED confirmation).
     -- Team members DO land in a queryable Fusion base table on this instance:
-    -- PJT_PROJECT_RESOURCE (Project Management team-member assignments), one
-    -- row per loaded member with a real id (PROJ_RESOURCE_ID), keyed to the
-    -- project via PROJECT_ID and to the person via RESOURCE_ID. The prior
-    -- "no base table" claim checked only the FINANCIAL project-parties view
-    -- PJF_PROJECT_PARTIES, which is a different representation and is empty
-    -- for every DMT-migrated project; PJT_PROJECT_RESOURCE is where the
-    -- Import Project process actually persists the accepted members.
-    -- Confirmed live 2026-09-21 (run 327 / prefix 10267):
-    --   Alan Cook     -> PROJ_RESOURCE_ID 300000333829040 (project 10267RTPRJ001)
-    --   Mandy Steward -> PROJ_RESOURCE_ID 300000333829065 (project 10267RTPRJ002)
-    -- The base table carries no project number, so join to PJF_PROJECTS_ALL_VL
-    -- for the prefix filter and the descriptive project NAME, and to
-    -- PJT_PRJ_ENTERPRISE_RESOURCE_VL for the member DISPLAY_NAME, so the
-    -- RECORD_KEY (project NAME || '/TM/' || display name) matches the
-    -- transform's RECON_KEY exactly (PROJECT_NAME || '/TM/' ||
-    -- TEAM_MEMBER_NAME). FUSION_ID = PROJ_RESOURCE_ID so the reconciler marks
-    -- the TFM row LOADED with a real Fusion base id -- Rule #1 satisfied the
-    -- same way every other tier satisfies it.
+    -- PJT_PROJECT_RESOURCE (Project Management team-member assignments), one row per
+    -- loaded member with a real id (PROJ_RESOURCE_ID), keyed to the project via
+    -- PROJECT_ID and to the person via RESOURCE_ID. The prior "no base table" claim
+    -- checked only the FINANCIAL project-parties view PJF_PROJECT_PARTIES, a
+    -- different representation that is empty for every DMT-migrated project;
+    -- PJT_PROJECT_RESOURCE is where Import Project actually persists accepted members.
+    -- Confirmed live 2026-09-21 (run 327 / prefix 10267): Alan Cook -> PROJ_RESOURCE_ID
+    -- 300000333829040, Mandy Steward -> 300000333829065. The base table carries no
+    -- project number, so join PJF_PROJECTS_ALL_VL for the prefix filter and the
+    -- descriptive project NAME, and PJT_PRJ_ENTERPRISE_RESOURCE_VL for the member
+    -- DISPLAY_NAME, so RECORD_KEY (project NAME || '/TM/' || display name) matches the
+    -- transform's RECON_KEY exactly (PROJECT_NAME || '/TM/' || TEAM_MEMBER_NAME).
+    -- FUSION_ID = PROJ_RESOURCE_ID so the reconciler marks the TFM row LOADED with a
+    -- real Fusion base id -- Rule #1 satisfied exactly like every other tier.
     SELECT
         'TeamMembers'                        AS object_type,
         pv.name || '/TM/' || er.display_name AS record_key,
@@ -214,15 +174,15 @@ FROM (
     FROM   pjt_project_resource            pr
     JOIN   pjf_projects_all_vl             pv ON pv.project_id  = pr.project_id
     JOIN   pjt_prj_enterprise_resource_vl er ON er.resource_id = pr.resource_id
-    WHERE  :P_PREFIX IS NOT NULL
-    AND    pv.segment1 LIKE :P_PREFIX || '%'
+    JOIN   pjf_projects_all_b             pb ON pb.project_id  = pr.project_id
+    WHERE  :P_RUN_ID IS NOT NULL AND :P_WQ_ID IS NOT NULL
+    AND    pb.pm_project_reference LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
 
     UNION ALL
 
-    -- ---- TeamMembers tier : INTERFACE (rejections left behind) -------
-    -- Anything still in the interface table after import is a rejection
-    -- (Import purges the accepted members). Keyed by project name + member
-    -- name (the interface table carries no project number).
+    -- TeamMembers tier : INTERFACE (rejections left behind).
+    -- Anything still in the interface table after import is a rejection (Import
+    -- purges the accepted members). Keyed by project name + member name.
     SELECT
         'TeamMembers'                        AS object_type,
         tm.project_name || '/TM/' || tm.team_member_name AS record_key,
@@ -243,18 +203,17 @@ FROM (
 
     UNION ALL
 
-    -- ---- TxnControls tier : BASE (positive LOADED confirmation) -----
+    -- TxnControls tier : BASE (positive LOADED confirmation).
     -- Transaction controls DO land in a queryable Fusion base table on this
-    -- instance: PJC_TRANSACTION_CONTROLS, one row per loaded control with a
-    -- real id (TXN_CONTROL_ID) and the source TXN_CTRL_REFERENCE, keyed to
-    -- the project via PROJECT_ID. Confirmed live 2026-09-21 (run 325 /
-    -- prefix 10265): RT-TXC-RTPRJ001 -> TXN_CONTROL_ID 100002642117705,
-    -- RT-TXC-RTPRJ002 -> 100002642117706. The base table carries no project
-    -- number, so join to PJF_PROJECTS_ALL_B for the prefix filter and the
-    -- RECORD_KEY (PROJECT_NUMBER || '/TC/' || TXN_CTRL_REFERENCE), which
-    -- matches the transform's RECON_KEY exactly. FUSION_ID = TXN_CONTROL_ID
-    -- so the reconciler marks the TFM row LOADED with a real Fusion base id
-    -- -- Rule #1 satisfied the same way every other object satisfies it.
+    -- instance: PJC_TRANSACTION_CONTROLS, one row per loaded control with a real id
+    -- (TXN_CONTROL_ID) and the source TXN_CTRL_REFERENCE, keyed to the project via
+    -- PROJECT_ID. Confirmed live 2026-09-21 (run 325 / prefix 10265):
+    -- RT-TXC-RTPRJ001 -> TXN_CONTROL_ID 100002642117705, RT-TXC-RTPRJ002 ->
+    -- 100002642117706. The base table carries no project number, so join to
+    -- PJF_PROJECTS_ALL_B for the prefix filter and the RECORD_KEY (PROJECT_NUMBER ||
+    -- '/TC/' || TXN_CTRL_REFERENCE), which matches the transform's RECON_KEY exactly.
+    -- FUSION_ID = TXN_CONTROL_ID so the reconciler marks the TFM row LOADED with a
+    -- real Fusion base id -- Rule #1 satisfied the same way every other object is.
     SELECT
         'TxnControls'                        AS object_type,
         p.segment1 || '/TC/' || tc.txn_ctrl_reference AS record_key,
@@ -268,17 +227,17 @@ FROM (
         CAST(NULL AS VARCHAR2(4000))         AS debug_disposition
     FROM   pjc_transaction_controls tc
     JOIN   pjf_projects_all_b        p ON p.project_id = tc.project_id
-    WHERE  :P_PREFIX IS NOT NULL
-    AND    p.segment1 LIKE :P_PREFIX || '%'
+    WHERE  :P_RUN_ID IS NOT NULL AND :P_WQ_ID IS NOT NULL
+    AND    p.pm_project_reference LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
 
     UNION ALL
 
-    -- ---- TxnControls tier : INTERFACE (rejections left in staging) --
-    -- Anything still sitting in the staging table after import is a
-    -- rejection (the staging rows are emptied on success). Keyed by
-    -- project number + control reference. The staging table carries no
-    -- per-row error text, so return the '#IMPORT_REPORT#' marker and let
-    -- the reconciler overlay the true Fusion message from the child report.
+    -- TxnControls tier : INTERFACE (rejections left in staging).
+    -- Anything still sitting in the staging table after import is a rejection (the
+    -- staging rows are emptied on success). The staging table carries no per-row
+    -- error text, so return the '#IMPORT_REPORT#' marker and let the reconciler
+    -- overlay the true Fusion message from the child report. Keyed by project number
+    -- + control reference.
     SELECT
         'TxnControls'                        AS object_type,
         tc.project_number || '/TC/' || tc.txn_ctrl_reference AS record_key,
@@ -297,9 +256,11 @@ FROM (
     WHERE  tc.load_request_id = :P_LOAD_REQUEST_ID
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
--- BIP, so treat NULL as "from the start": return every row. On later
--- pages P_AFTER_KEY carries the previous page's last RECORD_KEY and only
--- greater keys are returned. RECORD_KEY is compared as text.
-WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
-ORDER BY record_key
+-- BIP, so treat NULL as "from the start". On later pages P_AFTER_KEY
+-- carries the previous page's last RECORD_KEY; only greater keys return.
+-- The ordering and the comparison are both pinned to BINARY so they agree.
+WHERE  (:P_AFTER_KEY IS NULL
+        OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
+ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      

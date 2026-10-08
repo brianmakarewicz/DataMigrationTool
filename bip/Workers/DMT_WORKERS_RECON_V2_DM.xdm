@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <!--
+    DMT_WORKERS_RECON_V2_DM - Contract v1 reconciliation data model for the person
+    tiers of the Workers HDL load (design section 5). Version 2, deployed ALONGSIDE
+    DMT_WORKERS_RECON_DM (BIP objects are never overwritten). Backlog #289.
+
+    What changed from V1:
+      * Rows are SELECTED by the HDL request id, never by the run prefix (design
+        section 5, "Reports find rows by Fusion job id"). P_LOAD_REQUEST_ID is the
+        HDL data set RequestId; HRC_DL_DATA_SET_BUS_OBJS carries it, and its file
+        lines and file rows give every SourceSystemOwner and SourceSystemId this
+        load sent. Each is joined to HRC_INTEGRATION_KEY_MAP on its OWN owner and
+        id (the owner is per DMT instance, backlog #287).
+      * A row is returned only when this load's physical line for it finished
+        LOADED_SUCCESS and the key-map surrogate exists in its base table.
+      * Every person component is proven on its own key-map object, so each
+        component TFM row is LOADED from its own proof row, never from its
+        parent's verdict: Person (PER_ALL_PEOPLE_F), PersonName
+        (PER_PERSON_NAMES_F), EmailAddress (PER_EMAIL_ADDRESSES), Phone
+        (PER_PHONES), Address (PER_ADDRESSES_F), NationalIdentifier
+        (PER_NATIONAL_IDENTIFIERS), PersonLegislativeInfo (PER_PEOPLE_LEGISLATIVE_F).
+        The work relationship and assignment tiers are proven by
+        DMT_ASSIGNMENTS_RECON_V2_DM.
+
+    OBJECT_TYPE = the key-map object name, RECORD_KEY = SOURCE_REF = the exact
+    SourceSystemId the generator wrote, FUSION_ID = the base-table id. BASE /
+    SUCCESS rows only: HDL per-record failures arrive in the HDL REST messages.
+    Keyset pagination on RECORD_KEY pinned to BINARY.
+  -->
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="worker_recon" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT object_type,
+       record_key,
+       source_type,
+       fusion_status,
+       fusion_id,
+       error_message,
+       load_request_id,
+       source_ref,
+       dmt_reference
+FROM (
+    SELECT m.object_name                     AS object_type,
+           r.key_source_id                   AS record_key,
+           'BASE'                            AS source_type,
+           'SUCCESS'                         AS fusion_status,
+           MAX(m.surrogate_id)               AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))      AS error_message,
+           :P_LOAD_REQUEST_ID                AS load_request_id,
+           r.key_source_id                   AS source_ref,
+           CAST(NULL AS VARCHAR2(240))       AS dmt_reference
+    FROM   hrc_dl_data_set_bus_objs b
+    JOIN   hrc_dl_file_lines        l ON l.data_set_bus_obj_id = b.data_set_bus_obj_id
+    JOIN   hrc_dl_file_rows         r ON r.line_id = l.line_id
+    JOIN   hrc_integration_key_map  m ON m.source_system_owner = r.key_source_owner
+                                     AND m.source_system_id    = r.key_source_id
+    WHERE  b.request_id = :P_LOAD_REQUEST_ID
+    AND    m.object_name IN ('Person', 'PersonName', 'EmailAddress', 'Phone',
+                             'Address', 'PersonAddress', 'NationalIdentifier',
+                             'PersonLegislativeInfo')
+    AND    EXISTS (SELECT 1
+                   FROM   hrc_dl_physical_lines p
+                   WHERE  p.row_id = r.row_id
+                   AND    p.validated_loaded_status = 'LOADED_SUCCESS')
+    AND    (   (m.object_name = 'Person'
+                AND EXISTS (SELECT 1 FROM per_all_people_f x
+                            WHERE x.person_id = m.surrogate_id))
+            OR (m.object_name = 'PersonName'
+                AND EXISTS (SELECT 1 FROM per_person_names_f x
+                            WHERE x.person_name_id = m.surrogate_id))
+            OR (m.object_name = 'EmailAddress'
+                AND EXISTS (SELECT 1 FROM per_email_addresses x
+                            WHERE x.email_address_id = m.surrogate_id))
+            OR (m.object_name = 'Phone'
+                AND EXISTS (SELECT 1 FROM per_phones x
+                            WHERE x.phone_id = m.surrogate_id))
+            OR (m.object_name IN ('Address', 'PersonAddress')
+                AND EXISTS (SELECT 1 FROM per_addresses_f x
+                            WHERE x.address_id = m.surrogate_id))
+            OR (m.object_name = 'NationalIdentifier'
+                AND EXISTS (SELECT 1 FROM per_national_identifiers x
+                            WHERE x.national_identifier_id = m.surrogate_id))
+            OR (m.object_name = 'PersonLegislativeInfo'
+                AND EXISTS (SELECT 1 FROM per_people_legislative_f x
+                            WHERE x.person_legislative_id = m.surrogate_id)))
+    GROUP BY m.object_name, r.key_source_id
+)
+WHERE  (:P_AFTER_KEY IS NULL
+        OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
+ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="worker_recon">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:string"  tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:string"  tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="2"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="3"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="4"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="5"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="6"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

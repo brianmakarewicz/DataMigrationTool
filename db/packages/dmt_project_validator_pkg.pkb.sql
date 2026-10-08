@@ -135,7 +135,7 @@ AS
                    ''' is not present in this source — orphan task skipped.'
             FROM   DMT_PJF_TASKS_STG_TBL t
             WHERE  t.PROJECT_NUMBER IS NOT NULL
-            AND    DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, t.STG_STATUS) = 'Y'
+            AND    DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, t.STG_STATUS, p_run_id, 'DMT_PJF_TASKS_STG_TBL', t.STG_SEQUENCE_ID) = 'Y'
             AND    (p_scenario_id IS NULL OR t.SCENARIO_ID = p_scenario_id)
             AND    NOT EXISTS (
                        SELECT 1 FROM DMT_PJF_PROJECTS_STG_TBL p

@@ -43,7 +43,7 @@
         -- rewrote every scenario's rows.
         SELECT COUNT(*) INTO l_valid
         FROM   DMT_POZ_SUP_SITE_ASSN_STG_TBL
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS, p_run_id, 'DMT_POZ_SUP_SITE_ASSN_STG_TBL', STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id);
 
         DMT_UTIL_PKG.LOG(p_run_id,

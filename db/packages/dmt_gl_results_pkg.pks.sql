@@ -21,8 +21,14 @@
 -- GL two-tier semantics (FUSION_STATUS is normalized in the DM to
 -- SUCCESS/ERROR, so the APPLY is object-agnostic):
 --   BASE  + SUCCESS (balanced/postable)          => LOADED
---   BASE  + ERROR   (unbalanced, will not post)  => FAILED
---   INTERFACE + ERROR (Journal-Import rejection) => FAILED
+--   BASE  + ERROR   (unbalanced; report V2 returns NO message, since
+--                    Fusion records no error for it) => left GENERATED,
+--                    settled UNACCOUNTED by the shared sweep
+--   INTERFACE + ERROR + message (Journal Import rejection, the message
+--                    is GL_INTERFACE.STATUS, plus ': ' STATUS_DESCRIPTION
+--                    when Fusion wrote one) => FAILED
+--   other lines of a rejected import group (GROUP_ID = prefix || work queue id, per
+--                    ledger) => FAILED quoting that error (PROPAGATE_DOCUMENT_ERRORS)
 --   INTERFACE with no error is corroborating only, never LOADED on its
 --   own (LOADED requires a BASE row with a real FUSION_ID).
 -- The FUSION_ID captured on LOADED is the per-line composite

@@ -43,7 +43,7 @@ begin
 	"PROJECT_NUMBER" VARCHAR2(25), 
 	"SOURCE_TEMPLATE_NUMBER" VARCHAR2(25), 
 	"SOURCE_APPLICATION_CODE" VARCHAR2(30), 
-	"SOURCE_PROJECT_REFERENCE" VARCHAR2(25), 
+	"SOURCE_PROJECT_REFERENCE" VARCHAR2(100), 
 	"ORGANIZATION_NAME" VARCHAR2(240), 
 	"LEGAL_ENTITY_NAME" VARCHAR2(240), 
 	"DESCRIPTION" VARCHAR2(2000), 
@@ -298,4 +298,22 @@ begin
   end if;
 end;
 /
+-- SOURCE_PROJECT_REFERENCE widened 25 -> 100 (2026-10-07, owner-approved
+-- Projects reconciliation exception, design section 5). The transform stamps
+-- '<run_id>:<work_queue_id>:<legacy reference>' here when prefixing is on; the
+-- Fusion target (PJF_PROJECTS_ALL_XFACE.SOURCE_PROJECT_REFERENCE /
+-- PJF_PROJECTS_ALL_B.PM_PROJECT_REFERENCE) is VARCHAR2(100). Guarded in-file
+-- ALTER so an existing DB converges via db/install.sql (the CREATE above
+-- carries the width for fresh installs). Widening is safe and idempotent.
+declare
+  l_len pls_integer;
+begin
+  select char_length into l_len from user_tab_columns
+  where table_name = 'DMT_PJF_PROJECTS_TFM_TBL' and column_name = 'SOURCE_PROJECT_REFERENCE';
+  if l_len < 100 then
+    execute immediate 'ALTER TABLE "DMT_PJF_PROJECTS_TFM_TBL" MODIFY ("SOURCE_PROJECT_REFERENCE" VARCHAR2(100))';
+  end if;
+end;
+/
+COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."SOURCE_PROJECT_REFERENCE" IS 'FBDI Source Reference, stored by Fusion as PJF_PROJECTS_ALL_B.PM_PROJECT_REFERENCE. With prefixing on: <run_id>:<work_queue_id>:<legacy reference, else legacy project number>; with prefixing off: the legacy reference (else legacy project number). The Projects recon report selects the work item''s projects by it (owner-approved exception 2026-10-07).';
 COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';

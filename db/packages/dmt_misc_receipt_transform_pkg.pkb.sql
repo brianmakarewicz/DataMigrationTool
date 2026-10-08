@@ -206,9 +206,8 @@
             SYSDATE
         FROM DMT_INV_TRX_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_INV_TRX_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         -- Scope to this run's scenario. p_scenario_id was accepted but never
         -- applied, so every scenario's staged transactions were transformed.
@@ -311,8 +310,7 @@
         -- scenario filter picked up every OTHER scenario's never-run detail rows
         -- (and, in ALL mode, skipped this scenario's own already-run rows).
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_INV_TRX_LOTS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -328,8 +326,7 @@
         UPDATE DMT_INV_TRX_LOTS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
-            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS, p_run_id, 'DMT_INV_TRX_LOTS_STG_TBL', STG_SEQUENCE_ID) = 'Y'
           )
         AND    EXISTS (
             SELECT 1 FROM DMT_INV_TRX_LOTS_TFM_TBL t
@@ -418,8 +415,7 @@
         -- scenario filter picked up every OTHER scenario's never-run detail rows
         -- (and, in ALL mode, skipped this scenario's own already-run rows).
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_INV_TRX_SERIALS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -435,8 +431,7 @@
         UPDATE DMT_INV_TRX_SERIALS_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS) = 'Y'
-            OR (p_reprocess_errors AND STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS, p_run_id, 'DMT_INV_TRX_SERIALS_STG_TBL', STG_SEQUENCE_ID) = 'Y'
           )
         AND    EXISTS (
             SELECT 1 FROM DMT_INV_TRX_SERIALS_TFM_TBL t
@@ -470,8 +465,7 @@
                 SELECT p_run_id, 'MiscReceipts', 'Inventory Transactions', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_INV_TRX_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_INV_TRX_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND (p_scenario_id IS NULL
                      OR s.SCENARIO_ID = p_scenario_id
                      OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
@@ -494,8 +488,7 @@
                 SELECT p_run_id, 'MiscReceipts', 'Transaction Lots', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_INV_TRX_LOTS_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_INV_TRX_LOTS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND (p_scenario_id IS NULL
                      OR s.SCENARIO_ID = p_scenario_id
                      OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
@@ -518,8 +511,7 @@
                 SELECT p_run_id, 'MiscReceipts', 'Transaction Serials', s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_INV_TRX_SERIALS_STG_TBL s
-                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                         OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED')) )
+                WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_INV_TRX_SERIALS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
                 AND (p_scenario_id IS NULL
                      OR s.SCENARIO_ID = p_scenario_id
                      OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))

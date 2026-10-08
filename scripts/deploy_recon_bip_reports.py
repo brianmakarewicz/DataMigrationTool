@@ -64,6 +64,12 @@ REPORTS = [
     # REQUEST_ID, interface rows by LOAD_REQUEST_ID), never by the run prefix.
     ("ARInvoices",              "DMT_AR_RECON_V4_DM", "DMT_AR_RECON_V4_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
+    # GLBalances V3 (backlog #173): alongside V1; real Journal Import error
+    # (STATUS[: STATUS_DESCRIPTION]) only, rows selected by job id.
+    ("GLBalances",              "DMT_GL_BAL_RECON_V3_DM", "DMT_GL_BAL_RECON_V3_RPT"),
+    # GLBalances V4 (backlog #173): GROUP_ID = work queue id, never ALL; base rows
+    # by the import job's own GroupID/LedgerID arguments.
+    ("GLBalances",              "DMT_GL_BAL_RECON_V4_DM", "DMT_GL_BAL_RECON_V4_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
     # MiscReceipts V2 (2026-10-07, backlog #262): rows found only by the work
     # item's load job id (LOAD_REQUEST_ID). Deployed alongside
@@ -79,6 +85,10 @@ REPORTS = [
     ("Items",                   "DMT_ITEM_RECON_V3_DM", "DMT_ITEM_RECON_V3_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
+    # Workers V2 (2026-10-07, backlog #289): alongside V1 (never overwritten).
+    # Rows selected by the HDL request id; every person component proven on its
+    # own key-map row and base table.
+    ("Workers",                 "DMT_WORKERS_RECON_V2_DM", "DMT_WORKERS_RECON_V2_RPT"),
     ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),
     ("Salaries",                "DMT_SALARIES_RECON_DM", "DMT_SALARIES_RECON_RPT"),
     ("Absences",                "DMT_ABSENCES_RECON_DM", "DMT_ABSENCES_RECON_RPT"),
@@ -96,10 +106,19 @@ REPORTS = [
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
     ("PerfEvaluations",          "DMT_PERFEVALUATIONS_RECON_DM", "DMT_PERFEVALUATIONS_RECON_RPT"),
     ("Projects",                 "DMT_PROJECT_RECON_DM",       "DMT_PROJECT_RECON_RPT"),
+    # Projects V2 (2026-10-07, owner-approved exception): base projects found by
+    # PM_PROJECT_REFERENCE LIKE '<run_id>:<work_queue_id>:%' (no job id on the
+    # project base tables), interface rows by LOAD_REQUEST_ID. Deployed alongside
+    # DMT_PROJECT_RECON_DM (never overwritten).
+    ("Projects",                 "DMT_PROJECT_RECON_V2_DM",    "DMT_PROJECT_RECON_V2_RPT"),
     # ProjectBudgets recon V2 (2026-10-07, known-good fix): deployed alongside the
     # original PRJ_BUDGET_DM (never overwritten). Run scoped by the prefixed
     # PM_BUDGET_REFERENCE so budgets on EXISTING projects reconcile.
     ("ProjectBudgets",           "DMT_PRJ_BUDGET_RECON_V2_DM",           "DMT_PRJ_BUDGET_RECON_V2_RPT"),
+    # ProjectBudgets V3 (2026-10-07, owner decision): rows found only by the work
+    # item's Fusion job ids (import REQUEST_ID / load LOAD_REQUEST_ID), never by
+    # the run prefix. Deployed alongside V1 and V2 (never overwritten).
+    ("ProjectBudgets",           "DMT_PRJ_BUDGET_RECON_V3_DM",           "DMT_PRJ_BUDGET_RECON_V3_RPT"),
     # Grants V2 (2026-10-07, docs/findings/known_good_Grants.md): BASE tier keyed
     # on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, prefix-scoped. Deployed alongside
     # the original DMT_GRANT_RECON_DM (never overwritten).
@@ -167,6 +186,8 @@ REPORTS = [
     ("ARInvoices",               "AR_CMP_DM",                  "AR_CMP_RPT"),
     ("PurchaseOrders",           "PO_CMP_DM",                  "PO_CMP_RPT"),
     ("GLBalances",               "GL_BAL_CMP_DM",              "GL_BAL_CMP_RPT"),
+    # GLBalances CMP V2 (backlog #173): reads the run's GROUP_ID range.
+    ("GLBalances",               "GL_BAL_CMP_V2_DM",           "GL_BAL_CMP_V2_RPT"),
     ("GLBudgets",                "GL_BUDGET_CMP_DM",           "GL_BUDGET_CMP_RPT"),
 ]
 

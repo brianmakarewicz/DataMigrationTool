@@ -129,9 +129,11 @@ ERROR_SOURCES = {
                                     "token1_value", "token2_value", "token3_value",
                                     "token4_value", "token5_value"},
                   "fnd_new_messages": {"message_text"}},
-    # Journal Import writes its rejection as the error code in GL_INTERFACE.STATUS
-    # (e.g. EF04, EU02). REFERENCE1..REFERENCE10 are OUR carried values, never errors.
-    "GLBalances": {"gl_interface": {"status"}},
+    # Journal Import writes its rejection as the error code(s) in GL_INTERFACE.STATUS
+    # (e.g. EF04, EF04,EC03) and its message text in GL_INTERFACE.STATUS_DESCRIPTION
+    # (e.g. 'FLEX-VALUE DOES NOT EXIST (SEGMENT=Account) ...', proven live, backlog
+    # #173). REFERENCE1..REFERENCE10 are OUR carried values, never errors.
+    "GLBalances": {"gl_interface": {"status", "status_description"}},
     "GLBudgets": {"gl_budget_interface": {"error_message"}},
     "Grants": {"gms_award_headers_int": {"processed_message", "message_user_details",
                                          "message_user_action"}},
