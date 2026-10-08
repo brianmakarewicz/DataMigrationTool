@@ -58,11 +58,11 @@ Live standard violations / gaps still present in this object's code (section 5 /
    last group's load and import ids. It is now spawn-per-partition: the parent work item
    validates and transforms once, then one child work item per group generates, loads,
    reconciles and records that group's own ids (see History). Remaining limits, logged as
-   backlog #500-#504: a line with no BU or batch source gets no group and stays STAGED; the
-   import-id lookup matches the group by transaction source only, not by BU; the child label
-   shows only the batch source; the reconcile apply is scoped by run and key rather than by
-   the child work item; and the reconcile-only rerun across several children has not yet
-   been exercised live with UNACCOUNTED rows.
+   backlog #501, #502 and #504: the import-id lookup matches the group by transaction source
+   only, not by BU; the child label shows only the batch source; and the reconcile-only rerun
+   across several children has not yet been exercised live with UNACCOUNTED rows. (#500, a
+   line with no BU or batch source left STAGED, and #503, the reconcile apply not scoped to
+   the child work item, are fixed; see History.)
 
 ## Table-name vs FBDI-tab audit (backlog #90, 2026-10-01)
 
@@ -95,6 +95,14 @@ models both with one STG + one TFM table each.
    fix was required.
 
 ## History
+- 2026-10-08 a line with no BU or batch source is failed, with the rest of its DMT invoice
+  (backlog #500), and the reconcile apply is scoped to the child work item (backlog #503).
+  `DMT_AR_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM` runs after transform and before the split: the
+  line gets `[POST_VALIDATION] BU_NAME (business unit) is required...`, every other line and
+  distribution of its invoice gets `[POST_VALIDATION] Rejected with document: line <attr1>/<attr2>: ...`,
+  and none of the invoice is sent. Scenario RegressionTest2610081442 adds invoice 86753401 (line 2
+  with no BU). Proof run 310 (prefix 93364): 4 lines LOADED, 6 lines and 4 distributions FAILED,
+  0 UNACCOUNTED, all 64 listed rows at their expected outcome, verdict PASS.
 - 2026-10-08 one child work item per (BU, batch source) group (backlog #313). Registry:
   `DMT_CEMLI_SPLIT_CFG.CHILD_PARTITION_COLUMN = BATCH_SOURCE_NAME` (label only) and
   `DMT_PIPELINE_DEF_TBL.PARTITION_KEYS_PROC = DMT_AR_RESULTS_PKG.GET_PARTITION_KEYS`, which returns

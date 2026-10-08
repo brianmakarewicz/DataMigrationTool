@@ -11,6 +11,10 @@ AS
 -- status only (no message) and are flagged FAILED afterwards by the
 -- standard FLAG_STG_FAILED helper. No validator writes ERROR_TEXT on a
 -- *_STG_TBL row.
+--
+-- REVISIONS:
+--   2026-10-08  BM  Backlog #500: VALIDATE_POST_TRANSFORM fails a line with no
+--                   BU or batch source, and the rest of its DMT invoice.
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_AR_VALIDATOR_PKG';
@@ -220,25 +224,136 @@ AS
 
     -- --------------------------------------------------------
     -- VALIDATE_POST_TRANSFORM
-    -- Data quality checks on TFM rows after transformation.
-    -- Stub -- no rules implemented yet.
+    -- Data quality checks on this run's STAGED TFM rows, after transform and
+    -- before any FBDI is generated.
+    --
+    -- Rule 1 (backlog #500): an AR line with no business unit (BU_NAME) or no
+    --   transaction source (BATCH_SOURCE_NAME) cannot be sent to Fusion.
+    --   AutoInvoice takes both as ParameterList arguments 1 and 2, so such a
+    --   line belongs to no (BU, batch source) load group: GET_PARTITION_KEYS
+    --   gives it no child work item and it would stay STAGED, never accounted.
+    --   It is marked FAILED here with a [POST_VALIDATION] error naming the
+    --   missing field(s).
+    -- Rule 2 (design section 5, whole-document rejection): the line's DMT
+    --   invoice (same run, INTERFACE_LINE_CONTEXT and INTERFACE_LINE_ATTRIBUTE1)
+    --   cannot be loaded whole, so every other line of that invoice and every
+    --   distribution of the invoice is marked FAILED quoting the line's error
+    --   under its key, in the shared document-error form
+    --   '[POST_VALIDATION] Rejected with document: line <attr1>/<attr2>: ...'.
+    --   (The tag stays [POST_VALIDATION]: this is a DMT check, not a Fusion
+    --   error, so DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR's [FUSION_ERROR] form is
+    --   not used.) Only STAGED rows and rows this check already failed are
+    --   touched; a row already carrying the exact quote is skipped, so the
+    --   check is idempotent.
+    -- STATIC SQL; NO COMMIT (the caller owns the transaction).
     -- --------------------------------------------------------
     PROCEDURE VALIDATE_POST_TRANSFORM (
         p_run_id IN NUMBER
     )
     IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'VALIDATE_POST_TRANSFORM';
+        C_TAG    CONSTANT VARCHAR2(20) := '[POST_VALIDATION] ';
+        C_NULL   CONSTANT VARCHAR2(1)  := '~';   -- NULL = NULL in the invoice key
+        TYPE t_src_rec IS RECORD (
+            TFM_SEQUENCE_ID           NUMBER,
+            INTERFACE_LINE_CONTEXT    VARCHAR2(150),
+            INTERFACE_LINE_ATTRIBUTE1 VARCHAR2(150),
+            OWN_ERROR                 VARCHAR2(1000),
+            QUOTED_ERROR              VARCHAR2(1500)
+        );
+        TYPE t_src_tbl IS TABLE OF t_src_rec;
+        l_src      t_src_tbl;
+        l_marker   VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_siblings NUMBER := 0;
+        l_dists    NUMBER := 0;
+        l_step     VARCHAR2(200);
     BEGIN
-        -- No post-transform validations implemented yet.
-        -- Future: check CURRENCY_CODE, AMOUNT > 0, LINE_TYPE valid, etc.
-        NULL;
+        l_step := 'collecting AR lines with no business unit or transaction source, run '
+                  || p_run_id;
+        SELECT TFM_SEQUENCE_ID,
+               INTERFACE_LINE_CONTEXT,
+               INTERFACE_LINE_ATTRIBUTE1,
+               C_TAG || msg,
+               C_TAG || l_marker || 'line ' || INTERFACE_LINE_ATTRIBUTE1 || '/'
+                     || INTERFACE_LINE_ATTRIBUTE2 || ': ' || msg
+        BULK COLLECT INTO l_src
+        FROM  (SELECT l.TFM_SEQUENCE_ID, l.INTERFACE_LINE_CONTEXT,
+                      l.INTERFACE_LINE_ATTRIBUTE1, l.INTERFACE_LINE_ATTRIBUTE2,
+                      CASE
+                          WHEN l.BU_NAME IS NULL AND l.BATCH_SOURCE_NAME IS NULL
+                          THEN 'BU_NAME (business unit) and BATCH_SOURCE_NAME (transaction source) are required'
+                          WHEN l.BU_NAME IS NULL
+                          THEN 'BU_NAME (business unit) is required'
+                          ELSE 'BATCH_SOURCE_NAME (transaction source) is required'
+                      END
+                      || '. AutoInvoice takes the business unit and the transaction source as '
+                      || 'its first two parameters, so this AR invoice line cannot be sent to '
+                      || 'Fusion -- line not loaded.' AS msg
+               FROM   DMT_RA_LINES_TFM_TBL l
+               WHERE  l.RUN_ID     = p_run_id
+               AND    l.TFM_STATUS = 'STAGED'
+               AND    (l.BU_NAME IS NULL OR l.BATCH_SOURCE_NAME IS NULL));
+
+        l_step := 'failing ' || l_src.COUNT || ' AR line(s) with no business unit or transaction source';
+        FORALL i IN 1 .. l_src.COUNT
+            UPDATE DMT_RA_LINES_TFM_TBL t
+            SET    t.TFM_STATUS        = 'FAILED',
+                   t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
+                                             p_existing  => t.ERROR_TEXT,
+                                             p_new_error => l_src(i).OWN_ERROR),
+                   t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.TFM_SEQUENCE_ID = l_src(i).TFM_SEQUENCE_ID
+            AND    t.TFM_STATUS      = 'STAGED';
+
+        l_step := 'failing the other lines of the same DMT invoices with the quoted error';
+        FORALL i IN 1 .. l_src.COUNT
+            UPDATE DMT_RA_LINES_TFM_TBL t
+            SET    t.TFM_STATUS        = 'FAILED',
+                   t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
+                                             p_existing  => t.ERROR_TEXT,
+                                             p_new_error => l_src(i).QUOTED_ERROR),
+                   t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID          = p_run_id
+            AND    t.TFM_SEQUENCE_ID <> l_src(i).TFM_SEQUENCE_ID
+            AND    NVL(t.INTERFACE_LINE_CONTEXT, C_NULL)    = NVL(l_src(i).INTERFACE_LINE_CONTEXT, C_NULL)
+            AND    NVL(t.INTERFACE_LINE_ATTRIBUTE1, C_NULL) = NVL(l_src(i).INTERFACE_LINE_ATTRIBUTE1, C_NULL)
+            AND    (t.TFM_STATUS = 'STAGED'
+                    OR (t.TFM_STATUS = 'FAILED' AND DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0))
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_src(i).QUOTED_ERROR), 0) = 0;
+        l_siblings := SQL%ROWCOUNT;
+
+        l_step := 'failing the distributions of the same DMT invoices with the quoted error';
+        FORALL i IN 1 .. l_src.COUNT
+            UPDATE DMT_RA_DISTS_TFM_TBL t
+            SET    t.TFM_STATUS        = 'FAILED',
+                   t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
+                                             p_existing  => t.ERROR_TEXT,
+                                             p_new_error => l_src(i).QUOTED_ERROR),
+                   t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    NVL(t.INTERFACE_LINE_CONTEXT, C_NULL)    = NVL(l_src(i).INTERFACE_LINE_CONTEXT, C_NULL)
+            AND    NVL(t.INTERFACE_LINE_ATTRIBUTE1, C_NULL) = NVL(l_src(i).INTERFACE_LINE_ATTRIBUTE1, C_NULL)
+            AND    (t.TFM_STATUS = 'STAGED'
+                    OR (t.TFM_STATUS = 'FAILED' AND DBMS_LOB.INSTR(t.ERROR_TEXT, C_TAG) > 0))
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_src(i).QUOTED_ERROR), 0) = 0;
+        l_dists := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Lines with no business unit or transaction '
+                           || 'source: ' || l_src.COUNT
+                           || ' | other lines of their invoices: ' || l_siblings
+                           || ' | distributions: ' || l_dists || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => 'VALIDATE_POST_TRANSFORM failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => 'VALIDATE_POST_TRANSFORM');
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
             RAISE;
     END VALIDATE_POST_TRANSFORM;
 

@@ -3125,6 +3125,13 @@
             -- Phase 2: transform STG -> TFM (lines + distributions).
             DMT_AR_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_AR_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+
+            -- Phase 2b (backlog #500): post-transform validation. A line with no
+            -- business unit or transaction source belongs to no load group (both are
+            -- AutoInvoice parameters), so it is failed here with a [POST_VALIDATION]
+            -- error, together with the rest of its DMT invoice, instead of staying
+            -- STAGED and unaccounted.
+            DMT_AR_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM(p_run_id => p_run_id);
             COMMIT;
         END IF;
 
