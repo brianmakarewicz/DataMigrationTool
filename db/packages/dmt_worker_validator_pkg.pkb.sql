@@ -87,7 +87,7 @@ AS
                          ' is not a supported worker action (HIRE, ADD_CWK).'
                END
         FROM   DMT_WORKER_STG_TBL w
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, w.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, w.STG_STATUS, p_run_id, 'DMT_WORKER_STG_TBL', w.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR w.SCENARIO_ID = p_scenario_id)
         AND (  w.PERSON_NUMBER IS NULL
             OR NVL(w.ACTION_CODE, 'X') NOT IN ('HIRE', 'ADD_CWK') );
@@ -107,7 +107,7 @@ AS
                || '(PERSON_NUMBER=' || w.PERSON_NUMBER
                || '); an assignment number is required and cannot be fabricated.'
         FROM   DMT_WORKER_STG_TBL w
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, w.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, w.STG_STATUS, p_run_id, 'DMT_WORKER_STG_TBL', w.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR w.SCENARIO_ID = p_scenario_id)
         AND    w.PERSON_NUMBER IS NOT NULL
         AND    NVL(w.ACTION_CODE, 'X') IN ('HIRE', 'ADD_CWK')

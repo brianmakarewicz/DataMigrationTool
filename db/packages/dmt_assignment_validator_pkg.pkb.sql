@@ -81,7 +81,7 @@ AS
         SELECT p_run_id, 'Assignments', 'Assignments', a.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] ASSIGNMENT_NUMBER is required.'
         FROM   DMT_ASSIGNMENT_STG_TBL a
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS, p_run_id, 'DMT_ASSIGNMENT_STG_TBL', a.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR a.SCENARIO_ID = p_scenario_id)
         AND    a.ASSIGNMENT_NUMBER IS NULL;
         l_bad := SQL%ROWCOUNT;
