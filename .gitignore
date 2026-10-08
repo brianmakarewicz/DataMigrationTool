@@ -14,3 +14,8 @@ docs/.design_change_approved
 
 # ATP promotion-gate evidence (scripts/promotion_gate.py) - local, never committed
 .ci_evidence/
+
+# Local-only artifacts (not code): agent worktrees, APEX 26.1 installer images served by dmt2-ords, ORDS config
+.claude/worktrees/
+apex/installer/
+apex/ords/
