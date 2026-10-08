@@ -31,13 +31,6 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|Contracts|DMT_CONTRACT_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/Contracts/query.sql does not match the SQL of the deployed DMT_CONTRACT_RECON_DM.xdm (query.sql names: none)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-MIRROR|GLBalances|DMT_GL_BAL_RECON_DM",
       "backlog": 215,
       "found": "2026-10-07",
@@ -280,6 +273,286 @@
       "backlog": 161,
       "found": "2026-10-07",
       "detail": "line 230: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ap_pay_term_results_pkg|LOAD_AND_RECONCILE|DMT_AP_PAY_TERM_HDR_STG_TBL|STG_STATUS=<subselect>",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ap_pay_term_results_pkg.pkb.sql:784 DMT_AP_PAY_TERM_RESULTS_PKG.LOAD_AND_RECONCILE UPDATE DMT_AP_PAY_TERM_HDR_STG_TBL SET STG_STATUS=<subselect> -- copies STG_STATUS from a sub-select (TFM outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ap_pay_term_results_pkg|LOAD_AND_RECONCILE|DMT_AP_PAY_TERM_LINE_STG_TBL|STG_STATUS=<subselect>",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ap_pay_term_results_pkg.pkb.sql:796 DMT_AP_PAY_TERM_RESULTS_PKG.LOAD_AND_RECONCILE UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL SET STG_STATUS=<subselect> -- copies STG_STATUS from a sub-select (TFM outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ap_results_pkg|APPLY_CONTRACT_V1_APINVOICES|DMT_AP_INVOICES_INT_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ap_results_pkg.pkb.sql:296 DMT_AP_RESULTS_PKG.APPLY_CONTRACT_V1_APINVOICES UPDATE DMT_AP_INVOICES_INT_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ap_results_pkg|APPLY_CONTRACT_V1_APINVOICES|DMT_AP_INVOICES_INT_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ap_results_pkg.pkb.sql:301 DMT_AP_RESULTS_PKG.APPLY_CONTRACT_V1_APINVOICES UPDATE DMT_AP_INVOICES_INT_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ap_results_pkg|APPLY_CONTRACT_V1_APINVOICES|DMT_AP_INVOICE_LINES_INT_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ap_results_pkg.pkb.sql:312 DMT_AP_RESULTS_PKG.APPLY_CONTRACT_V1_APINVOICES UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ap_results_pkg|APPLY_CONTRACT_V1_APINVOICES|DMT_AP_INVOICE_LINES_INT_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ap_results_pkg.pkb.sql:317 DMT_AP_RESULTS_PKG.APPLY_CONTRACT_V1_APINVOICES UPDATE DMT_AP_INVOICE_LINES_INT_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ar_results_pkg|APPLY_CONTRACT_V1_ARINVOICES|DMT_RA_LINES_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ar_results_pkg.pkb.sql:314 DMT_AR_RESULTS_PKG.APPLY_CONTRACT_V1_ARINVOICES UPDATE DMT_RA_LINES_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ar_results_pkg|APPLY_CONTRACT_V1_ARINVOICES|DMT_RA_LINES_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ar_results_pkg.pkb.sql:319 DMT_AR_RESULTS_PKG.APPLY_CONTRACT_V1_ARINVOICES UPDATE DMT_RA_LINES_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ar_results_pkg|APPLY_CONTRACT_V1_ARINVOICES|DMT_RA_DISTS_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ar_results_pkg.pkb.sql:330 DMT_AR_RESULTS_PKG.APPLY_CONTRACT_V1_ARINVOICES UPDATE DMT_RA_DISTS_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_ar_results_pkg|APPLY_CONTRACT_V1_ARINVOICES|DMT_RA_DISTS_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_ar_results_pkg.pkb.sql:335 DMT_AR_RESULTS_PKG.APPLY_CONTRACT_V1_ARINVOICES UPDATE DMT_RA_DISTS_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_billing_event_results_pkg|PARSE_AND_UPDATE|DMT_PJB_BILL_EVENTS_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_billing_event_results_pkg.pkb.sql:460 DMT_BILLING_EVENT_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_PJB_BILL_EVENTS_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_billing_event_results_pkg|PARSE_AND_UPDATE|DMT_PJB_BILL_EVENTS_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_billing_event_results_pkg.pkb.sql:466 DMT_BILLING_EVENT_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_PJB_BILL_EVENTS_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_egp_item_cat_results_pkg|PARSE_AND_UPDATE|DMT_EGP_ITEM_CAT_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_egp_item_cat_results_pkg.pkb.sql:122 DMT_EGP_ITEM_CAT_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_EGP_ITEM_CAT_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_egp_item_cat_results_pkg|PARSE_AND_UPDATE|DMT_EGP_ITEM_CAT_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_egp_item_cat_results_pkg.pkb.sql:129 DMT_EGP_ITEM_CAT_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_EGP_ITEM_CAT_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_egp_item_cat_results_pkg|LOAD_AND_RECONCILE|DMT_EGP_ITEM_CAT_STG_TBL|STG_STATUS=FAILED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_egp_item_cat_results_pkg.pkb.sql:281 DMT_EGP_ITEM_CAT_RESULTS_PKG.LOAD_AND_RECONCILE UPDATE DMT_EGP_ITEM_CAT_STG_TBL SET STG_STATUS=FAILED -- is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_egp_item_results_pkg|PARSE_AND_UPDATE|DMT_EGP_ITEM_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_egp_item_results_pkg.pkb.sql:164 DMT_EGP_ITEM_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_EGP_ITEM_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_egp_item_results_pkg|PARSE_AND_UPDATE|DMT_EGP_ITEM_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_egp_item_results_pkg.pkb.sql:171 DMT_EGP_ITEM_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_EGP_ITEM_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_egp_item_results_pkg|LOAD_AND_RECONCILE|DMT_EGP_ITEM_STG_TBL|STG_STATUS=FAILED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_egp_item_results_pkg.pkb.sql:690 DMT_EGP_ITEM_RESULTS_PKG.LOAD_AND_RECONCILE UPDATE DMT_EGP_ITEM_STG_TBL SET STG_STATUS=FAILED -- is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_expenditure_results_pkg|PARSE_AND_UPDATE|DMT_PJC_EXPENDITURES_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_expenditure_results_pkg.pkb.sql:512 DMT_EXPENDITURE_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_PJC_EXPENDITURES_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_expenditure_results_pkg|PARSE_AND_UPDATE|DMT_PJC_EXPENDITURES_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_expenditure_results_pkg.pkb.sql:518 DMT_EXPENDITURE_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_PJC_EXPENDITURES_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_fa_asset_results_pkg|APPLY_CONTRACT_V1_ASSETS|DMT_FA_ASSET_HDR_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_fa_asset_results_pkg.pkb.sql:339 DMT_FA_ASSET_RESULTS_PKG.APPLY_CONTRACT_V1_ASSETS UPDATE DMT_FA_ASSET_HDR_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_fa_asset_results_pkg|APPLY_CONTRACT_V1_ASSETS|DMT_FA_ASSET_HDR_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_fa_asset_results_pkg.pkb.sql:345 DMT_FA_ASSET_RESULTS_PKG.APPLY_CONTRACT_V1_ASSETS UPDATE DMT_FA_ASSET_HDR_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_fa_asset_results_pkg|ACCOUNT_ALL_OR_NOTHING|DMT_FA_ASSET_HDR_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_fa_asset_results_pkg.pkb.sql:638 DMT_FA_ASSET_RESULTS_PKG.ACCOUNT_ALL_OR_NOTHING UPDATE DMT_FA_ASSET_HDR_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_gl_budget_results_pkg|APPLY_CONTRACT_V1_GLBUDGETS|DMT_GL_BUDGET_INT_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_gl_budget_results_pkg.pkb.sql:217 DMT_GL_BUDGET_RESULTS_PKG.APPLY_CONTRACT_V1_GLBUDGETS UPDATE DMT_GL_BUDGET_INT_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_gl_budget_results_pkg|APPLY_CONTRACT_V1_GLBUDGETS|DMT_GL_BUDGET_INT_STG_TBL|STG_STATUS=FAILED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_gl_budget_results_pkg.pkb.sql:220 DMT_GL_BUDGET_RESULTS_PKG.APPLY_CONTRACT_V1_GLBUDGETS UPDATE DMT_GL_BUDGET_INT_STG_TBL SET STG_STATUS=FAILED -- is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_hdl_util_pkg|RECONCILE_HDL|p_stg_table|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_hdl_util_pkg.pkb.sql:703 DMT_HDL_UTIL_PKG.RECONCILE_HDL UPDATE p_stg_table SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_hdl_util_pkg|RECONCILE_HDL|p_stg_table|STG_STATUS=FAILED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_hdl_util_pkg.pkb.sql:711 DMT_HDL_UTIL_PKG.RECONCILE_HDL UPDATE p_stg_table SET STG_STATUS=FAILED -- is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_inv_uom_results_pkg|LOAD_AND_RECONCILE|DMT_INV_UOM_STG_TBL|STG_STATUS=<subselect>",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_inv_uom_results_pkg.pkb.sql:501 DMT_INV_UOM_RESULTS_PKG.LOAD_AND_RECONCILE UPDATE DMT_INV_UOM_STG_TBL SET STG_STATUS=<subselect> -- copies STG_STATUS from a sub-select (TFM outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_misc_receipt_results_pkg|APPLY_CONTRACT_V1_MISC_RECEIPTS|DMT_INV_TRX_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_misc_receipt_results_pkg.pkb.sql:323 DMT_MISC_RECEIPT_RESULTS_PKG.APPLY_CONTRACT_V1_MISC_RECEIPTS UPDATE DMT_INV_TRX_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_misc_receipt_results_pkg|APPLY_CONTRACT_V1_MISC_RECEIPTS|DMT_INV_TRX_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_misc_receipt_results_pkg.pkb.sql:329 DMT_MISC_RECEIPT_RESULTS_PKG.APPLY_CONTRACT_V1_MISC_RECEIPTS UPDATE DMT_INV_TRX_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_plan_budget_results_pkg|PARSE_AND_UPDATE|DMT_PLAN_BUDGET_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_plan_budget_results_pkg.pkb.sql:80 DMT_PLAN_BUDGET_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_PLAN_BUDGET_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_plan_budget_results_pkg|PARSE_AND_UPDATE|DMT_PLAN_BUDGET_STG_TBL|STG_STATUS=FAILED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_plan_budget_results_pkg.pkb.sql:82 DMT_PLAN_BUDGET_RESULTS_PKG.PARSE_AND_UPDATE UPDATE DMT_PLAN_BUDGET_STG_TBL SET STG_STATUS=FAILED -- is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_req_results_pkg|APPLY_CONTRACT_V1_REQUISITIONS|DMT_POR_REQ_HEADERS_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_req_results_pkg.pkb.sql:390 DMT_REQ_RESULTS_PKG.APPLY_CONTRACT_V1_REQUISITIONS UPDATE DMT_POR_REQ_HEADERS_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_req_results_pkg|APPLY_CONTRACT_V1_REQUISITIONS|DMT_POR_REQ_HEADERS_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_req_results_pkg.pkb.sql:395 DMT_REQ_RESULTS_PKG.APPLY_CONTRACT_V1_REQUISITIONS UPDATE DMT_POR_REQ_HEADERS_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_req_results_pkg|APPLY_CONTRACT_V1_REQUISITIONS|DMT_POR_REQ_LINES_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_req_results_pkg.pkb.sql:406 DMT_REQ_RESULTS_PKG.APPLY_CONTRACT_V1_REQUISITIONS UPDATE DMT_POR_REQ_LINES_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_req_results_pkg|APPLY_CONTRACT_V1_REQUISITIONS|DMT_POR_REQ_LINES_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_req_results_pkg.pkb.sql:411 DMT_REQ_RESULTS_PKG.APPLY_CONTRACT_V1_REQUISITIONS UPDATE DMT_POR_REQ_LINES_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_req_results_pkg|APPLY_CONTRACT_V1_REQUISITIONS|DMT_POR_REQ_DISTS_STG_TBL|STG_STATUS=LOADED",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_req_results_pkg.pkb.sql:422 DMT_REQ_RESULTS_PKG.APPLY_CONTRACT_V1_REQUISITIONS UPDATE DMT_POR_REQ_DISTS_STG_TBL SET STG_STATUS=LOADED -- sets STG_STATUS='LOADED' (a load outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_req_results_pkg|APPLY_CONTRACT_V1_REQUISITIONS|DMT_POR_REQ_DISTS_STG_TBL|STG_STATUS=FAILED,ERROR_TEXT",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_req_results_pkg.pkb.sql:427 DMT_REQ_RESULTS_PKG.APPLY_CONTRACT_V1_REQUISITIONS UPDATE DMT_POR_REQ_DISTS_STG_TBL SET STG_STATUS=FAILED,ERROR_TEXT -- copies ERROR_TEXT from a TFM row; is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_zx_results_pkg|LOAD_AND_RECONCILE|DMT_ZX_REGIME_STG_TBL|STG_STATUS=<subselect>",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_zx_results_pkg.pkb.sql:723 DMT_ZX_RESULTS_PKG.LOAD_AND_RECONCILE UPDATE DMT_ZX_REGIME_STG_TBL SET STG_STATUS=<subselect> -- copies STG_STATUS from a sub-select (TFM outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
+    },
+    {
+      "checker": "check_flag_stg_failed",
+      "key": "STG-WRITEBACK|dmt_zx_results_pkg|LOAD_AND_RECONCILE|DMT_ZX_RATE_STG_TBL|STG_STATUS=<subselect>",
+      "backlog": 310,
+      "found": "2026-10-07",
+      "detail": "db/packages/dmt_zx_results_pkg.pkb.sql:735 DMT_ZX_RESULTS_PKG.LOAD_AND_RECONCILE UPDATE DMT_ZX_RATE_STG_TBL SET STG_STATUS=<subselect> -- copies STG_STATUS from a sub-select (TFM outcome); is driven by TFM_STATUS (a load outcome); is in a reconcile package"
     }
   ]
 }

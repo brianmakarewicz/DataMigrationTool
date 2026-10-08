@@ -9,6 +9,11 @@ AS
 -- Tier 2: PJC_EXP_ITEMS_ALL (base table, positive confirmation)
 -- No absence=LOADED fallback. Every row gets positive verification
 -- or is marked FAILED with a reconciliation error.
+-- REVISIONS:
+--   2026-10-07  BM  Report V2 (DMT_EXP_RECON_V2_DM): called per work item
+--                   with its own load + import ids; rows found by job id
+--                   (base by the import REQUEST_ID, interface by the import
+--                   REQUEST_ID / the load LOAD_REQUEST_ID), never by prefix.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_EXPENDITURE_RESULTS_PKG';
@@ -556,8 +561,9 @@ AS
     -- BillingEvents): it reuses the shared fetch and applies statically.
     --
     -- The shared package DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs the Expenditures
-    -- nine-column recon report over BIP (keyset paged, run-prefix scoped) and
-    -- returns the parsed rows — no dynamic SQL, no TFM reference there. The APPLY
+    -- nine-column recon report over BIP (keyset paged) for ONE work item: report
+    -- V2 finds rows only by that item's own load and import job ids (owner
+    -- decision 2026-10-07), never by the run prefix, and returns the parsed rows — no dynamic SQL, no TFM reference there. The APPLY
     -- here is STATIC SQL against the compile-time-known Expenditures TFM table:
     --   * BASE / SUCCESS / FUSION_ID NOT NULL  -> LOADED, stamp FUSION_ID into
     --       FUSION_EXPENDITURE_ITEM_ID. The ONLY path to LOADED.
@@ -571,8 +577,9 @@ AS
     -- alongside the existing PARSE_AND_UPDATE path without double-counting.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_EXPENDITURES (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1_EXPENDITURES';
         l_gen_count NUMBER := 0;
@@ -590,13 +597,19 @@ AS
         FROM   DMT_PJC_EXPENDITURES_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
+        -- Report V2 finds rows only by this work item's Fusion job ids: base
+        -- items and import rejections by the import job's REQUEST_ID, staging
+        -- rows by the load job's LOAD_REQUEST_ID. Both ids are the work item's
+        -- own (one (source, document) partition = one load = one Import Costs
+        -- submission), so the report is called once per work item.
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -758,11 +771,12 @@ AS
         -- the ONLY path to LOADED (a real base-table row). It runs FIRST so a
         -- genuinely-costed row is confirmed before the interface/import-report
         -- harvest below looks at what is left. Rows already terminal are untouched.
-        -- The load ESS id feeds the report's LOAD_REQUEST_ID for traceability;
-        -- run-scoped row selection is by the stamped prefix (see the DM header).
+        -- The report finds rows only by this work item's own load and import
+        -- job ids (DMT_EXP_RECON_V2_DM); the run prefix is never a search value.
         APPLY_CONTRACT_V1_EXPENDITURES(
-            p_run_id     => p_run_id,
-            p_request_id => TO_CHAR(NVL(p_import_ess_id, p_load_ess_id)));
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id);
 
         -- Shared transport: parsed XMLTYPE (NULL on zero rows). On transport/SOAP
         -- failure it returns NULL with C_ERROR — raise so the failure is loud (as
