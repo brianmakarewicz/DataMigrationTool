@@ -6,6 +6,11 @@ The owner's rule: nothing is promoted to ATP unless BOTH of these passed locally
 for the exact code being promoted:
   1. a full local regression run (scripts/dmt_regression_run.py, all pipelines,
      verdict PASS / exit 0), and
+     (owner decision 2026-10-08, verbatim: "change the gate - so that there are no
+     NEW failures" - verdict 'PASS (no new failures; N known)' / exit 0 is also
+     accepted. The harness gives it only when every failure and review item is a
+     pre-existing one listed in scripts/regression_known_issues.json and none
+     regressed against the baseline run; any NEW failure or review item blocks.)
   2. the Playwright console click-through for that same run id
      (test/playwright/dmt_console_verify.py --run-id N, verdict PASS).
 
@@ -73,6 +78,18 @@ FULL_PIPELINES = "P2P,O2C,FINANCIALS,PROJECTS,HCM"
 # credentials may have moved on since. 24 hours covers "regress in the
 # afternoon, promote the next morning" without letting week-old proof through.
 MAX_EVIDENCE_AGE_HOURS = 24
+
+# Regression verdicts that count as a pass (always together with exit code 0 and
+# zero new failures / review items in the evidence). The second form exists only
+# for known pre-existing issues (owner decision 2026-10-08, "change the gate - so
+# that there are no NEW failures"; see scripts/regression_known_issues.json).
+KNOWN_ONLY_VERDICT_PREFIX = "PASS (no new failures; "
+
+
+def regression_verdict_passes(verdict):
+    """True for 'PASS' or 'PASS (no new failures; N known)'. Nothing else passes."""
+    v = str(verdict or "")
+    return v == "PASS" or (v.startswith(KNOWN_ONLY_VERDICT_PREFIX) and v.endswith(" known)"))
 
 UNTRACKED_MATTERS = ("db/", "apex/", "bip/", "scripts/", "test/")
 
@@ -282,11 +299,16 @@ def check_gate_detail(ident=None, now=None, evidence=None):
         if missing:
             fail(f"regression run {rid} covered pipelines '{reg.get('pipelines')}', "
                  f"missing {','.join(missing)} from the full set {FULL_PIPELINES}")
-        if reg.get("exit_code") != 0 or reg.get("verdict") != "PASS":
+        if (reg.get("exit_code") != 0 or not regression_verdict_passes(reg.get("verdict"))
+                or reg.get("new_failures") or reg.get("new_review")):
             fail(f"regression run {rid} did not pass: verdict "
-                 f"'{reg.get('verdict')}', exit code {reg.get('exit_code')}")
+                 f"'{reg.get('verdict')}', exit code {reg.get('exit_code')}, new failures "
+                 f"{reg.get('new_failures')}, new review items {reg.get('new_review')}")
         else:
-            good(f"regression run {rid} verdict PASS (exit 0)")
+            good(f"regression run {rid} verdict {reg.get('verdict')} (exit 0)"
+                 + (f", known pre-existing: {reg.get('known_failures') or 0} failure(s), "
+                    f"{reg.get('known_review') or 0} review item(s)"
+                    if reg.get("known_failures") or reg.get("known_review") else ""))
         if reg.get("dirty"):
             fail(f"regression run {rid} ran from a working tree with uncommitted changes")
         if not rid:
@@ -425,6 +447,12 @@ def authorize_owner_override(reason, ident, failures, stdin=None,
     return done(True, f"owner override accepted for commit {short}")
 
 
+def _reg_field(key):
+    """One field of the recorded regression evidence, for the promotion log."""
+    ev = load_evidence() or {}
+    return (ev.get("regression") or {}).get(key) if isinstance(ev, dict) else None
+
+
 def enforce(ident=None, stage="deploy-prod", owner_override=None,
             stdin=None, ask=None, user=None):
     """Print the gate decision, log it durably, and return True/False.
@@ -442,6 +470,12 @@ def enforce(ident=None, stage="deploy-prod", owner_override=None,
     log_event({"event": "gate", "stage": stage, "decision": banner,
                "commit": ident["commit"], "tree": ident["tree"],
                "dirty": ident["dirty"],
+               "regression_verdict": _reg_field("verdict"),
+               "regression_known_failures": _reg_field("known_failures"),
+               "regression_new_failures": _reg_field("new_failures"),
+               "regression_known_review": _reg_field("known_review"),
+               "regression_new_review": _reg_field("new_review"),
+               "known_issues_file_sha256": _reg_field("known_issues_file_sha256"),
                "reasons": [l.strip() for l in lines if "REFUSED" in l]})
     if ok or owner_override is None:
         if ok and owner_override is not None:

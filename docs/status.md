@@ -1,5 +1,7 @@
 # DMT2 -- Session Status Log
 
+- **2026-10-08 -- ATP gate now blocks only on NEW failures (PR #670).** Owner decision, verbatim: "change the gate - so that there are no NEW failures". `scripts/regression_known_issues.json` lists accepted pre-existing failures and review items; today it holds 11 review items (9 HCM objects with zero records, Verify-in-Fusion for BillingEvents #462 and Customers/Locations #468) and no failures. Anything not on the list, or any sub-object that did worse than in the baseline run, still blocks. Verdict `PASS (no new failures; N known)` gives exit 0, which the gate accepts. The list's sha256 and the known/new counts go into the promotion evidence and log. No bypass flag; owner override unchanged.
+
 ## Session -- 2026-10-07 evening -- Cross-grain errors, job-id reconciliation, strict ATP gate, combined baseline (IN PROGRESS, nothing on ATP yet)
 
 **Bottom line.** Today the owner made a set of rules about how errors and reconciliation must work,
