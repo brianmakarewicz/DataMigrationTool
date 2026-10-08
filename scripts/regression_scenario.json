@@ -507,6 +507,19 @@
           "RT-GL-RT-JNL-BAD1-78630": "FAILED_WITH_DOCUMENT"
         }
       }
+    },
+    "RegressionTest2610072127": {
+      "GL Journals": {
+        "stg_table": "DMT_GL_INTERFACE_STG_TBL",
+        "rows": {
+          "RT-GL-RT-JNL-G1-78630": "FAILED_WITH_DOCUMENT",
+          "RT-GL-RT-JNL-G1-77600": "FAILED_WITH_DOCUMENT",
+          "RT-GL-RT-JNL-G2-60540": "FAILED_WITH_DOCUMENT",
+          "RT-GL-RT-JNL-G2-62510": "FAILED_WITH_DOCUMENT",
+          "RT-GL-RT-JNL-BAD1-99999": "FAILED",
+          "RT-GL-RT-JNL-BAD1-78630": "FAILED_WITH_DOCUMENT"
+        }
+      }
     }
   }
 }
