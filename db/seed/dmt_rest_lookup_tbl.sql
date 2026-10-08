@@ -85,7 +85,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Salaries','/hcmRestApi/resources/11.13.18.05/salaries','AssignmentNumber={KEY}','PERSON_NUMBER','SalaryId,AssignmentNumber,SalaryAmount,SalaryBasisName,DateFrom,ActionCode','Salary ID,Assignment,Amount,Basis,From Date,Action','HCM','Y',NULL);
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Salaries','/hcmRestApi/resources/11.13.18.05/salaries','AssignmentNumber={KEY}','ASSIGNMENT_NUMBER','SalaryId,AssignmentNumber,SalaryAmount,SalaryBasisName,DateFrom,ActionCode','Salary ID,Assignment,Amount,Basis,From Date,Action','HCM','Y',NULL);
 exception when dup_val_on_index then null;
 end;
 /

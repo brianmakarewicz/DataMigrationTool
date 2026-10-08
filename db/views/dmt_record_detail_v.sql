@@ -756,7 +756,7 @@ UNION ALL
 SELECT 'Salaries', 'Salaries',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        PERSON_NUMBER || ' - ' || SALARY_AMOUNT,
-       PERSON_NUMBER,
+       ASSIGNMENT_NUMBER,  -- lookup key: the salaries REST resource is filtered by AssignmentNumber (#291)
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
