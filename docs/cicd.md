@@ -34,7 +34,7 @@ Stages (each runnable alone):
 - **deploy-local** — idempotent sync of the working tree's `db/` into local (packages,
   views, seeds, idempotent table `add_col`s), recompile, assert 0 invalid. (`install.sql`
   is fresh-install only — it exits on the first "already exists".)
-- **test-local** — deploy-local, set the prefix (see below), run the deterministic
+- **test-local** — deploy-local, sync the prefix (see below), run the deterministic
   regression on local. **Hard gate.**
 - **merge** — respects the mandated review gate; it does **not** bypass it. `pr-review.yml`
   is the binding reviewer (CLAUDE.md) and auto-merges clean PRs, so this stage *waits* for
@@ -84,29 +84,38 @@ click-through runs against ATP. The step-by-step runbook is the project skill
   overrides such as Grants' `ppm_impl`) and the Fusion network access from
   `connections.json`. `deploy-local` and `deploy-prod` run it automatically after deploying.
 
-## Prefix leapfrog (no duplicate records in the shared Fusion pod)
+## Prefix sync (no duplicate records in the shared Fusion pod)
 
 Each run stamps every test record with a numeric prefix from `DMT_RUN_PREFIX_SEQ`.
 Each instance has its own sequence, so equal values would push duplicate records to
-Fusion. **ATP's sequence is the single source of truth.**
+Fusion.
 
-- For a local test run, the script consumes `ATP.NEXTVAL = v` and forces the local
-  sequence to issue `v` (`ALTER SEQUENCE ... RESTART START WITH v`, 23ai).
-- The local draw keeps consuming ATP values until `v` is above every prefix a local run
-  has already used (backlog #450).
-- Before the prod run, `test-prod` checks the other direction (backlog #520/#521). Local
-  proof runs submitted between promotions take `v+1, v+2, ...` from the local sequence,
-  the same numbers ATP issues next. So `test-prod` first consumes ATP values until ATP's
-  next value is above both the highest prefix local has used and the value the local
-  sequence issues next, then restarts the local sequence one above that value. The ATP
-  run draws the reserved value.
+Owner rule (2026-10-08): "make sure you update the prefix WITHOUT WASTING THEM. don't
+'grab a few extra'. Grab the next one. If you need to move back to local or run another
+test on ATP, you can always re-update."
+
+- Immediately before every regression submission, `sync_prefix_for(target)` computes
+  N = the highest prefix ever used on local or on ATP, plus one. "Used" means the numeric
+  `PREFIX` (and `DEPENDENT_PREFIX`) values in each instance's `DMT_PIPELINE_RUN_TBL`;
+  every package that draws `DMT_RUN_PREFIX_SEQ.NEXTVAL` records the value there.
+- It then sets only the target instance's sequence so its very next `NEXTVAL` returns
+  exactly N (`ALTER SEQUENCE ... RESTART START WITH N`, run as the schema owner
+  DMT_OWNER / DMT2_OWNER, never ADMIN). No values are drawn to probe and nothing is
+  skipped. If RESTART were rejected, the fallback changes the increment so one draw
+  lands exactly on N-1 (a value already at or below the highest used) and then restores
+  INCREMENT BY 1. When the sequence already issues N next, nothing is altered.
+- `regression-local` syncs local; `test-prod` syncs ATP. The other instance is not
+  touched: when work moves back to it, its next run re-syncs it.
 - After each regression (local and prod) the script checks that no run on the other
   instance used the same prefix. If one did, the regression is reported as not passing,
   because both instances write to the same Fusion pod and the results would be
   meaningless. ATP run 178 (prefix 93364, collided with local O2C proof run 310) is the
-  case that added this.
-- Remaining gap: a run started on ATP outside `ci_promote.py` (for example from the ATP
-  console) draws ATP's sequence with no local check.
+  case that added this (backlog #520/#521).
+- This replaced the earlier leapfrog (backlog #450 and #520/#521), which drew ATP values
+  until they were above local's and skipped ATP past local's next value, wasting numbers.
+- Remaining gap: a run started outside `ci_promote.py` (for example from either console)
+  draws its instance's sequence with no sync, so it can repeat a prefix the other
+  instance used. The post-run uniqueness check catches this only for regressions.
 
 ## Prerequisites / open items
 

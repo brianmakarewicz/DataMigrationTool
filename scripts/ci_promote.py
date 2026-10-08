@@ -36,11 +36,18 @@ and asks the person to type the commit's short SHA. Every attempt is printed
 loudly and logged to .ci_evidence/promotion_log.jsonl. AGENTS AND CI MUST NEVER
 USE IT: when the gate refuses, report the refusal to the owner.
 
-Prefix leapfrog (so local and prod never push duplicate records to the shared
-Fusion pod): ATP's DMT_RUN_PREFIX_SEQ is the single source of truth. For a local
-test run we consume ATP.NEXTVAL = v and force the local sequence to issue v; the
-prod run then consumes ATP.NEXTVAL = v+1 on its own. Distinct, monotonic, no
-bookkeeping beyond "always draw from ATP" — i.e. "just use the ATP version".
+Prefix sync (so local and prod never push duplicate records to the shared Fusion
+pod). Owner rule 2026-10-08: "make sure you update the prefix WITHOUT WASTING THEM.
+don't 'grab a few extra'. Grab the next one. If you need to move back to local or
+run another test on ATP, you can always re-update." Immediately before every
+regression submission, sync_prefix_for(target) computes N = max(highest prefix
+ever used on local, highest ever used on ATP) + 1 ("used" = numeric PREFIX /
+DEPENDENT_PREFIX in DMT_PIPELINE_RUN_TBL) and sets ONLY that target's
+DMT_RUN_PREFIX_SEQ so its very next NEXTVAL is exactly N (ALTER SEQUENCE ...
+RESTART START WITH N as the schema owner; no probe draws, nothing skipped). The
+other instance is not touched: when work moves back there, its next run re-syncs.
+After the run, assert_prefix_unique() fails the regression loudly if the run's
+prefix was used on the other instance.
 
 Instances (from ~/workspace/connections.json; never hardcode creds):
   local (TEST) : dmt_owner  @ //localhost:1523/FREEPDB1   (Oracle Free 23ai + APEX 24.2)
@@ -58,7 +65,7 @@ Examples:
 Safety: prod-affecting stages (deploy-prod, test-prod) require --yes (or the
 PROMOTE_YES=1 env) so they never fire unattended by accident. test-prod and
 test-local both write prefixed test records to the real Fusion demo pod — that
-is what the regression does; the leapfrog keeps them from colliding.
+is what the regression does; the prefix sync keeps them from colliding.
 """
 import argparse, glob, json, os, re, subprocess, sys, tempfile
 from pathlib import Path
@@ -169,91 +176,107 @@ def deploy_apex(target):
     print(f"[deploy-apex:{target}] {'OK' if rc == 0 else 'FAILED'}")
     return rc == 0
 
-# ---------------------------------------------------------------- prefix leapfrog
-def local_max_used_prefix():
-    """Highest numeric prefix any LOCAL run has already used. Local runs (manual
-    proof runs, not only regressions) also write prefixed records to the shared
-    Fusion pod, so a drawn prefix must be above this (backlog #450)."""
-    con = _oracle("local"); cur = con.cursor()
-    cur.execute("select nvl(max(to_number(prefix default null on conversion error)), 0) "
+# ---------------------------------------------------------------- prefix sync
+PREFIX_SEQ = "DMT_RUN_PREFIX_SEQ"
+PREFIX_MAX = 99999      # the sequence's MAXVALUE (db/sequences/dmt_run_prefix_seq.sql)
+
+def max_used_prefix(target):
+    """Highest numeric prefix ever used on `target`. DMT_PIPELINE_RUN_TBL is the
+    permanent registry of issued prefixes: every NEXTVAL of DMT_RUN_PREFIX_SEQ in
+    the packages (DMT_PIPELINE_INIT_PKG and the six DMT_LOADER_PKG entry points)
+    is inserted there as PREFIX in the same block. DEPENDENT_PREFIX only names a
+    prefix an earlier run already used; it is included so the result can never be
+    below a referenced prefix. Non-numeric values are ignored. Reads only."""
+    con = _oracle(target); cur = con.cursor()
+    cur.execute("select greatest("
+                "nvl(max(to_number(prefix default null on conversion error)), 0), "
+                "nvl(max(to_number(dependent_prefix default null on conversion error)), 0)) "
                 "from DMT_PIPELINE_RUN_TBL")
     v = int(cur.fetchone()[0]); con.close()
     return v
 
-def next_prefix_from_atp():
-    """Consume ATP.DMT_RUN_PREFIX_SEQ.NEXTVAL - the single source of truth - until
-    the value is above every prefix already used locally. Backlog #450: run 293
-    drew 93322 from ATP while local run 266 had already used 93322 against the
-    shared Fusion pod, so its Workers collided with run 266's records."""
-    floor = local_max_used_prefix()
-    con = _oracle("atp"); cur = con.cursor()
-    draws = 0
-    while True:
-        cur.execute("select DMT_RUN_PREFIX_SEQ.NEXTVAL from dual")
-        v = int(cur.fetchone()[0]); draws += 1
-        if v > floor:
-            break
-        if draws >= 5000:
-            con.close()
-            raise SystemExit(f"[prefix] ATP DMT_RUN_PREFIX_SEQ still at {v} after {draws} draws, "
-                             f"below local max used prefix {floor}; refusing to reuse a prefix")
-    con.close()
-    print(f"[prefix] drew v={v} from ATP DMT_RUN_PREFIX_SEQ (source of truth; "
-          f"{draws} draw(s), local max used prefix {floor})")
-    return v
+def _seq_state(cur):
+    """(LAST_NUMBER, CACHE_SIZE, INCREMENT_BY) of DMT_RUN_PREFIX_SEQ, read from
+    USER_SEQUENCES without consuming a value. With NOCACHE (both instances) and
+    no draw since a RESTART, LAST_NUMBER is exactly the value NEXTVAL returns."""
+    cur.execute("select last_number, cache_size, increment_by from user_sequences "
+                "where sequence_name = :s", s=PREFIX_SEQ)
+    row = cur.fetchone()
+    if not row:
+        raise SystemExit(f"[prefix] {PREFIX_SEQ} not found in USER_SEQUENCES; refusing to guess")
+    return int(row[0]), int(row[1] or 0), int(row[2])
 
-def force_local_prefix(v):
-    """Make the LOCAL sequence issue exactly v next (23ai RESTART)."""
-    _sqlcl("local", f"alter sequence DMT_RUN_PREFIX_SEQ restart start with {v};\nexit\n")
-    print(f"[prefix] local DMT_RUN_PREFIX_SEQ set to issue {v} next")
+def _set_next(cur, n):
+    """Make the sequence's very next NEXTVAL return exactly n, drawing nothing.
+    Primary: ALTER SEQUENCE ... RESTART START WITH n (Oracle 23ai/26ai, both
+    instances). Fallback when RESTART is rejected: the INCREMENT BY trick with one
+    draw that lands exactly on n-1 (a value at or below the highest used, so
+    nothing above n is discarded), then INCREMENT BY 1 again."""
+    try:
+        cur.execute(f"alter sequence {PREFIX_SEQ} restart start with {int(n)}")
+        return "restart"
+    except Exception as e:  # noqa: BLE001 - any ORA- here means RESTART unsupported
+        print(f"[prefix] RESTART START WITH rejected ({e}); using the INCREMENT BY trick")
+    last, cache, inc = _seq_state(cur)
+    if cache:
+        raise SystemExit(f"[prefix] {PREFIX_SEQ} is CACHE {cache}; the INCREMENT BY trick "
+                         f"cannot land exactly. Refusing (no prefix wasted).")
+    # NOCACHE: LAST_NUMBER = last issued + INCREMENT_BY, and NEXTVAL with a new
+    # increment returns last issued + step; choose step so that draw is n - 1.
+    step = (int(n) - 1) - (last - inc)
+    if step == 0:
+        # last issued is already n - 1: only the increment needs restoring
+        cur.execute(f"alter sequence {PREFIX_SEQ} increment by 1")
+        return "increment reset"
+    cur.execute(f"alter sequence {PREFIX_SEQ} increment by {step}")
+    try:
+        cur.execute(f"select {PREFIX_SEQ}.NEXTVAL from dual")
+        landed = int(cur.fetchone()[0])
+    finally:
+        cur.execute(f"alter sequence {PREFIX_SEQ} increment by 1")
+    if landed != int(n) - 1:
+        raise SystemExit(f"[prefix] INCREMENT BY trick landed on {landed}, expected {int(n) - 1}")
+    return "increment"
 
-def _seq_next(target):
-    """(value the target's DMT_RUN_PREFIX_SEQ issues next, exact?) read from
-    USER_SEQUENCES without consuming it. With NOCACHE (both instances today)
-    LAST_NUMBER is exactly the next value; with a cache it is only an upper
-    bound, so exact=False."""
+def sync_prefix_for(target):
+    """Set ONLY `target`'s DMT_RUN_PREFIX_SEQ so its very next NEXTVAL is exactly
+    N = max(highest prefix ever used on local, highest ever used on ATP) + 1.
+
+    Owner rule (2026-10-08): "make sure you update the prefix WITHOUT WASTING THEM.
+    don't 'grab a few extra'. Grab the next one. If you need to move back to local
+    or run another test on ATP, you can always re-update." So: no probe draws, no
+    skipping ahead, and the other instance is never touched - the next run there
+    calls this for that instance and re-syncs it. Called immediately before every
+    regression submission (regression-local -> local, test-prod -> atp).
+
+    History: replaces next_prefix_from_atp() (backlog #450, drew ATP NEXTVAL until
+    above local) and reserve_atp_prefix_above_local() (backlog #520/#521, skipped
+    ATP past local's used and next-to-issue values), both of which discarded
+    numbers. ATP run 178 / local run 310 (both 93364) is the collision this and
+    assert_prefix_unique() prevent.
+
+    DDL runs on the target's own connection, which is the schema owner
+    (DMT_OWNER local / DMT2_OWNER ATP), never ADMIN. Idempotent: when the target
+    already issues N next, nothing is altered. Returns N."""
+    n = max(max_used_prefix("local"), max_used_prefix("atp")) + 1
+    if n > PREFIX_MAX:
+        raise SystemExit(f"[prefix] next prefix {n} exceeds {PREFIX_SEQ} MAXVALUE {PREFIX_MAX}")
     con = _oracle(target); cur = con.cursor()
-    cur.execute("select last_number, cache_size from user_sequences "
-                "where sequence_name = 'DMT_RUN_PREFIX_SEQ'")
-    last, cache = cur.fetchone(); con.close()
-    return int(last), int(cache or 0) == 0
-
-def reserve_atp_prefix_above_local():
-    """Before an ATP regression: make the prefix ATP's SUBMIT_PIPELINE will draw
-    higher than every prefix local has used OR will issue next, then restart the
-    local sequence above it so later local runs cannot take it either.
-
-    Backlog #520/#521: after the local regression (prefix 93362) the local sequence
-    kept issuing 93363.. to local proof runs, and ATP's sequence then issued the
-    same numbers. ATP run 178 drew 93364, which local O2C proof run 310 had sent to
-    the shared Fusion pod an hour earlier: its AR lines were rejected as duplicate
-    transaction-flexfield keys and its customers (same TCA references, same batch
-    933645001) collided with run 310's records. next_prefix_from_atp() guards only
-    the local draw; this guards the ATP draw.
-
-    Only values at or below the local floor are consumed on ATP (they could never be
-    used safely anyway); the first safe value is left for the run itself."""
-    floor = max(local_max_used_prefix(), _seq_next("local")[0])
-    con = _oracle("atp"); cur = con.cursor()
-    draws = 0
-    while True:
-        nxt, exact = _seq_next("atp")
-        if exact and nxt > floor:
-            break
-        cur.execute("select DMT_RUN_PREFIX_SEQ.NEXTVAL from dual")
-        v = int(cur.fetchone()[0]); draws += 1
-        if not exact and v > floor:
-            nxt = v + 1          # cached sequence: v is spent, the run gets a later value
-            break
-        if draws >= 5000:
-            con.close()
-            raise SystemExit(f"[prefix] ATP DMT_RUN_PREFIX_SEQ still at {v} after {draws} draws, "
-                             f"not above the local floor {floor}; refusing to reuse a prefix")
-    con.close()
-    force_local_prefix(nxt + 1)
-    print(f"[prefix] ATP will issue {nxt} to its run ({draws} value(s) skipped; local floor "
-          f"{floor} = max of used and next-to-issue); local moved past it")
-    return nxt
+    try:
+        last, cache, inc = _seq_state(cur)
+        if last == n and cache == 0 and inc == 1:
+            how = "already set"
+        else:
+            how = _set_next(cur, n)
+            last, cache, inc = _seq_state(cur)
+            if last != n or inc != 1:
+                raise SystemExit(f"[prefix] {target} {PREFIX_SEQ} reads LAST_NUMBER={last} "
+                                 f"INCREMENT_BY={inc} after sync, expected {n}/1")
+    finally:
+        con.close()
+    print(f"[prefix] {target} {PREFIX_SEQ} will issue {n} next ({how}; N = max used on "
+          f"local and ATP + 1; the other instance is not touched)")
+    return n
 
 def prefix_used_on(target, prefix, exclude_run_id=None):
     """Run ids on `target` that already used `prefix` (other than exclude_run_id)."""
@@ -404,12 +427,11 @@ def stage_deploy_local():
     return ok
 
 def stage_regression_local(pipelines=None):
-    """Full regression on local, with the ATP prefix leapfrog, recorded as
+    """Full regression on local, with the prefix sync, recorded as
     promotion evidence. A --pipelines subset is recorded too, but the gate only
     accepts the full pipeline set."""
     ident = gate.code_identity()
-    v = next_prefix_from_atp()
-    force_local_prefix(v)
+    sync_prefix_for("local")   # owner rule 2026-10-08: next = max used (local, ATP) + 1, no waste
     res = run_regression("local", pipelines)
     if res["run_id"] and not assert_prefix_unique("local", res["run_id"]):
         res["ok"] = False
@@ -521,8 +543,8 @@ def stage_test_prod(yes, pipelines=None):
     same ATP run. Passes only if both pass."""
     if not yes:
         print("[test-prod] refusing without --yes (writes test data to Fusion from prod)"); return False
-    reserve_atp_prefix_above_local()   # backlog #520/#521: never reuse a local prefix
-    res = run_regression("atp", pipelines)  # SUBMIT_PIPELINE draws the reserved value
+    sync_prefix_for("atp")     # owner rule 2026-10-08: next = max used (local, ATP) + 1, no waste
+    res = run_regression("atp", pipelines)  # SUBMIT_PIPELINE draws exactly that value
     if res["run_id"] and not assert_prefix_unique("atp", res["run_id"]):
         res["ok"] = False
     gate.log_event({"event": "record", "step": "regression_atp", **res})

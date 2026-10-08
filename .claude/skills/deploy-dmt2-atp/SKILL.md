@@ -55,9 +55,17 @@ python scripts/ci_promote.py regression-local
 ```
 
 Do not pass `--pipelines`: the gate only accepts a run that covered every pipeline
-(P2P, O2C, FINANCIALS, PROJECTS, HCM). The run can take up to 90 minutes. It draws
-its prefix from ATP so local and ATP never send duplicate records to the shared
-Fusion pod. The run id and the verdict are recorded as evidence.
+(P2P, O2C, FINANCIALS, PROJECTS, HCM). The run can take up to 90 minutes. The run id
+and the verdict are recorded as evidence.
+
+Run prefixes (owner rule, 2026-10-08): "make sure you update the prefix WITHOUT
+WASTING THEM. don't 'grab a few extra'. Grab the next one. If you need to move back
+to local or run another test on ATP, you can always re-update." Just before it
+submits, the script sets the local `DMT_RUN_PREFIX_SEQ` so the run gets exactly the
+highest prefix ever used on local or ATP plus one. It draws nothing to probe and
+does not touch ATP; `test-prod` does the same for ATP before the ATP run. After each
+run the script fails the regression loudly if the other instance already used that
+prefix, because both instances write to the same Fusion pod.
 
 The verdict must be **PASS** (exit code 0). "PASS (with review items)" or FAIL is
 not a pass, and the gate will refuse. Investigate and fix the failures, commit the
@@ -162,7 +170,9 @@ user there and re-run; never type a password into the database by hand.
 python scripts/ci_promote.py test-prod --yes
 ```
 
-This runs the same regression on ATP and then the same console click-through against
+This first sets ATP's `DMT_RUN_PREFIX_SEQ` (as DMT2_OWNER) so the ATP run gets exactly
+the highest prefix ever used on local or ATP plus one, leaving local untouched. It then
+runs the same regression on ATP and then the same console click-through against
 the ATP console (`--base-url` set to the ATP ORDS URL from `connections.json`) for
 that ATP run. Both must pass. To repeat only the click-through for an existing ATP
 run:
