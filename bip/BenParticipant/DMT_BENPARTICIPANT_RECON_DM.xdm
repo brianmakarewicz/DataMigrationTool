@@ -7,7 +7,7 @@
 
     RE-POINTED 2026-09-22 to the CORRECT Fusion object. BenParticipant loads through the
     HCM Data Loader as the ParticipantEnrollment business object
-    (ParticipantEnrollment.dat -- see db/packages/dmt_ben_partic_hdl_gen_pkg.pkb.sql).
+    (ParticipantEnrollment.dat; see db/packages/dmt_ben_partic_hdl_gen_pkg.pkb.sql).
     The prior model loaded/reconciled as PersonBenefitBalance (benefit BALANCES, not
     enrollments), which also collided on the file name PersonBenefitBalance.dat with the
     Dependent and Beneficiary generators. Corrected here.

@@ -2,7 +2,7 @@
 -- Mirror of the CDATA SQL in DMT_SALARIES_RECON_V2_DM.xdm (the registered
 -- version), kept here for review and for running the query standalone against
 -- live Fusion (bind the six parameters). The original data model
--- (DMT_SALARY_RECON_DM.xdm in the repo) stays deployed; BIP objects are never
+-- (DMT_SALARIES_RECON_DM.xdm in the repo) stays deployed; BIP objects are never
 -- overwritten. Backlog #291.
 --
 -- Salaries HDL load. Rows are selected by the HDL request id (P_LOAD_REQUEST_ID

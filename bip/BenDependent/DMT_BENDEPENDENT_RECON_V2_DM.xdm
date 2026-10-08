@@ -2,8 +2,14 @@
 <dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
            defaultDataSourceRef="ApplicationDB_FSCM">
   <!--
-    DMT_BENDEPENDENT_RECON_DM - Contract v1 (nine-column) reconciliation data model
+    DMT_BENDEPENDENT_RECON_V2_DM - Contract v1 (nine-column) reconciliation data model
     for BenDependent (design section 5, "BIP reconciliation report contract - v1").
+
+    V2 (2026-10-08, backlog #214): deployed alongside DMT_BENDEPENDENT_RECON_DM, never overwriting
+    it. The only change from V1 is the header comment: V1 had a double hyphen inside
+    this XML comment, which XML forbids, so BIP rejected the model and runReport
+    returned HTTP 500. The SQL is unchanged. Selecting rows by the HDL request id
+    instead of the run prefix is tracked separately (backlog #295).
 
     RE-POINTED 2026-09-22 to the CORRECT Fusion object. BenDependent loads through the
     HCM Data Loader as the DependentEnrollment business object with its child component

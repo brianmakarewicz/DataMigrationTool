@@ -81,6 +81,7 @@
         x_error_code    OUT NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'fetch_and_stage';
+        C_SEP       CONSTANT VARCHAR2(1)  := DMT_UTIL_PKG.C_BIP_PARAM_SEP;   -- #414
         l_prefix    VARCHAR2(30);
         l_chunk     PLS_INTEGER;
         l_after_key VARCHAR2(1000) := NULL;   -- empty cursor on first call
@@ -124,12 +125,14 @@
             DMT_UTIL_PKG.RUN_BIP_REPORT(
                 p_run_id     => p_run_id,
                 p_cemli_code => p_cemli_code,
-                p_params     => 'P_RUN_ID|'           || TO_CHAR(p_run_id) ||
-                                '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
-                                '~P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
-                                '~P_PREFIX|'          || l_prefix ||
-                                '~P_CHUNK_SIZE|'      || TO_CHAR(l_chunk) ||
-                                '~P_AFTER_KEY|'       || l_after_key,
+                -- Pairs joined by DMT_UTIL_PKG.C_BIP_PARAM_SEP, not '~', so a
+                -- RECORD_KEY containing '~' pages whole as P_AFTER_KEY (#414).
+                p_params     => 'P_RUN_ID|'                    || TO_CHAR(p_run_id) ||
+                                C_SEP || 'P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
+                                C_SEP || 'P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
+                                C_SEP || 'P_PREFIX|'          || l_prefix ||
+                                C_SEP || 'P_CHUNK_SIZE|'      || TO_CHAR(l_chunk) ||
+                                C_SEP || 'P_AFTER_KEY|'       || l_after_key,
                 x_report_xml => l_xml,
                 x_error_code => l_err);
 

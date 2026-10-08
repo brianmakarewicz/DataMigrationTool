@@ -3,27 +3,6 @@
   "violations": [
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-XDM-COMMENT|bip/BenDependent/DMT_BENDEPENDENT_RECON_DM.xdm|xml-comment",
-      "backlog": 214,
-      "found": "2026-10-07",
-      "detail": "bip/BenDependent/DMT_BENDEPENDENT_RECON_DM.xdm line 4: XML comment contains '--' (illegal in XML; BIP rejects the data model)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-XDM-COMMENT|bip/BenParticipant/DMT_BENPARTICIPANT_RECON_DM.xdm|xml-comment",
-      "backlog": 214,
-      "found": "2026-10-07",
-      "detail": "bip/BenParticipant/DMT_BENPARTICIPANT_RECON_DM.xdm line 4: XML comment contains '--' (illegal in XML; BIP rejects the data model)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|BenBeneficiary|DMT_BENBENEFICIARY_RECON_DM",
-      "backlog": 216,
-      "found": "2026-10-07",
-      "detail": "registered data model bip/BenBeneficiary/DMT_BENBENEFICIARY_RECON_DM.xdm does not exist in the repo (registry/deploy name and file name disagree)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-NINE-COLUMNS|CashBanks|DMT_CEBANK_RECON_DM",
       "backlog": 130,
       "found": "2026-10-07",
@@ -182,6 +161,20 @@
       "backlog": 161,
       "found": "2026-10-07",
       "detail": "line 230: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-REGISTRY-FILE|seed|Items/ITEM_DM.xdm",
+      "backlog": 470,
+      "found": "2026-10-08",
+      "detail": "db/seed/dmt_bip_report_tbl.sql names /Custom/DMT2/Items/ITEM_DM.xdm but bip/Items/ITEM_DM.xdm does not exist"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-REGISTRY-FILE|seed|Items/ITEM_RPT.xdo",
+      "backlog": 470,
+      "found": "2026-10-08",
+      "detail": "db/seed/dmt_bip_report_tbl.sql names /Custom/DMT2/Items/ITEM_RPT.xdo but bip/Items/ITEM_RPT.xdo does not exist"
     }
   ]
 }

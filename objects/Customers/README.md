@@ -365,9 +365,12 @@ byte-identical (same MD5 over status, Fusion ids, batch, work item and ERROR_TEX
   reconcile of each batch and for a reconcile-only rerun of the last batch, but if the LAST batch's
   load failed, a reconcile-only rerun would use the queue row's ids (the previous batch) with the
   last batch's id. The rerun only touches UNACCOUNTED rows, and the inline reconcile is correct.
-- **Keyset paging past one page (backlog #414).** `DMT_UTIL_PKG.RUN_BIP_REPORT` splits the parameter
-  string on `~`, and Customers RECORD_KEYs contain `~`, so a second page's `P_AFTER_KEY` is cut
-  short. Only a Customers load with more than `BIP_CHUNK_SIZE` (5,000) report rows is affected.
+- **RESOLVED 2026-10-08 — keyset paging past one page (backlog #414).** `RUN_BIP_REPORT` used to
+  split the parameter string on every `~`, so a Customers RECORD_KEY (`Customers.Parties~<ref>`)
+  sent as page 2's `P_AFTER_KEY` was cut short. `FETCH_ROWS` now joins its parameters with
+  `DMT_UTIL_PKG.C_BIP_PARAM_SEP` (CHR(30), which cannot occur in report data), so the key travels
+  whole. Proven live on run 300 (work item 1796) with a session-only `BIP_CHUNK_SIZE` of 7:
+  5 pages, 30 rows, 30 distinct keys, identical to the one-page fetch.
 - **RESOLVED 2026-07-11 — `batchId is null` is fixed; 20/20 customers reached the
   HZ base tables (`hz_cust_accounts`).** The customer bulk import needs an
   `HZ_IMP_BATCH_SUMMARY` batch to consume; the positional `NEW,N,<run_id>` form

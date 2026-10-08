@@ -32,6 +32,17 @@ BIP-MIRROR  bip/<Object>/query.sql mirrors the deployed .xdm SQL.
     .xdm file does not exist in the repo (the mirror cannot be verified and the deploy
     script cannot deploy it).
 
+BIP-REGISTRY-FILE  Every data model / report the registry or the deploy manifest names
+    exists in the repo. Every '/Custom/DMT2/<Object>/<NAME>.xdm' or '.xdo' path in
+    db/seed/dmt_bip_report_tbl.sql (every row, not only the last per object; CMP rows
+    included) must exist as bip/<Object>/<NAME>.xdm / .xdo, and every (cemli, dm_name)
+    entry of REPORTS in scripts/deploy_recon_bip_reports.py must exist as
+    bip/<cemli>/<dm_name>.xdm (the script reads exactly that file; it generates the
+    .xdo itself). A name that exists only in the registry or the manifest cannot be
+    deployed from the repo and its mirror cannot be verified (backlog #216). Design doc
+    section 5, "Artifacts & naming" (the repo mirrors each catalog folder), and
+    section 7, the BIP mirror standard.
+
 BIP-NINE-COLUMNS  The report returns exactly the nine contract columns, in order:
     OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS, FUSION_ID, ERROR_MESSAGE,
     LOAD_REQUEST_ID, SOURCE_REF, DMT_REFERENCE.
@@ -85,6 +96,7 @@ Exit code 0 = no new violations; 1 = at least one new violation.
 Run from the repo root:  python scripts/check_bip_recon_reports.py
 """
 
+import ast
 import glob
 import html
 import os
@@ -99,6 +111,7 @@ CHECKER = "check_bip_recon_reports"
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIP_DIR = os.path.join(REPO, "bip")
 SEED = os.path.join(REPO, "db", "seed", "dmt_bip_report_tbl.sql")
+DEPLOY_SCRIPT = os.path.join(REPO, "scripts", "deploy_recon_bip_reports.py")
 
 SKIP_FOLDERS = {"common", "PlanningBudgets"}
 
@@ -229,6 +242,30 @@ def check_xdm_comments():
     return found
 
 
+def check_registry_files():
+    """BIP-REGISTRY-FILE: every registry / deploy-manifest name has its repo file."""
+    found = []
+    seed = lineage.strip_comments(open(SEED, encoding="utf-8").read())
+    for obj, name in sorted(set(re.findall(
+            r"/Custom/DMT2/([^/'\s]+)/([^/'\s]+\.(?:xdm|xdo))", seed))):
+        if not os.path.exists(os.path.join(BIP_DIR, obj, name)):
+            found.append(("BIP-REGISTRY-FILE|seed|%s/%s" % (obj, name),
+                          "db/seed/dmt_bip_report_tbl.sql names /Custom/DMT2/%s/%s but "
+                          "bip/%s/%s does not exist" % (obj, name, obj, name)))
+    tree = ast.parse(open(DEPLOY_SCRIPT, encoding="utf-8").read())
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and getattr(node.targets[0], "id", None) == "REPORTS"):
+            for entry in ast.literal_eval(node.value):
+                cemli, dm_name = entry[0], entry[1]
+                if not os.path.exists(os.path.join(BIP_DIR, cemli, dm_name + ".xdm")):
+                    found.append(("BIP-REGISTRY-FILE|deploy|%s/%s.xdm" % (cemli, dm_name),
+                                  "scripts/deploy_recon_bip_reports.py REPORTS names "
+                                  "(%s, %s) but bip/%s/%s.xdm does not exist"
+                                  % (cemli, dm_name, cemli, dm_name)))
+    return found
+
+
 def check_mirror(obj, dm_name, dm_path):
     key = "BIP-MIRROR|%s|%s" % (obj, dm_name)
     q = os.path.join(BIP_DIR, obj, "query.sql")
@@ -355,6 +392,7 @@ def main():
     print("BIP reconciliation report conformance check")
     print("=" * 72)
     found = check_xdm_comments()
+    found += check_registry_files()
     for obj, dm, path, note in objects_to_check():
         f = check_mirror(obj, dm, path)
         if os.path.exists(path):
